@@ -1,0 +1,8 @@
+server:
+  port: 10000
+spring:
+  application:
+    name: Excalibase graphql
+  threads:
+    virtual:
+      enabled: true
