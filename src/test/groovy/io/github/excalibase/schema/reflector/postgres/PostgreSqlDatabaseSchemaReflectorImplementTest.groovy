@@ -20,7 +20,7 @@ class PostgreSqlDatabaseSchemaReflectorImplementTest extends Specification {
             .withPassword("test_pass")
 
     JdbcTemplate jdbcTemplate
-    PostgreSqlDatabaseSchemaReflectorImplement schemaReflector
+    PostgresDatabaseSchemaReflectorImplement schemaReflector
 
     def setupSpec() {
         postgres.start()
@@ -33,7 +33,7 @@ class PostgreSqlDatabaseSchemaReflectorImplementTest extends Specification {
                 postgres.getPassword()
         )
         jdbcTemplate = new JdbcTemplate(dataSource)
-        schemaReflector = new PostgreSqlDatabaseSchemaReflectorImplement(jdbcTemplate)
+        schemaReflector = new PostgresDatabaseSchemaReflectorImplement(jdbcTemplate)
         // Set the allowed schema using reflection to simulate @Value injection
         schemaReflector.allowedSchema = "test_schema"
         jdbcTemplate.execute("CREATE SCHEMA IF NOT EXISTS test_schema")

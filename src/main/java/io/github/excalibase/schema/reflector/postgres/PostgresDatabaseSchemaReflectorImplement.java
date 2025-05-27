@@ -13,13 +13,13 @@ import java.util.List;
 import java.util.Map;
 
 @Service
-public class PostgreSqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaReflector {
+public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchemaReflector {
     private final JdbcTemplate jdbcTemplate;
 
     @Value("${app.allowedSchema}")
     private String allowedSchema;
 
-    public PostgreSqlDatabaseSchemaReflectorImplement(JdbcTemplate jdbcTemplate) {
+    public PostgresDatabaseSchemaReflectorImplement(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 
