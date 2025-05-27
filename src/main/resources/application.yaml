@@ -6,3 +6,12 @@ spring:
   threads:
     virtual:
       enabled: true
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: jdbc:postgresql://localhost:5432/hana
+    username: hana001
+    password: password123
+    hikari:
+      schema: hana
+app:
+  allowedSchema: public
