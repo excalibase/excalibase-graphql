@@ -12,19 +12,22 @@ import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLOutputType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeReference;
+import io.github.excalibase.annotation.ExcalibaseService;
+import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.EmptySchemaException;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
-import org.springframework.stereotype.Service;
 
 import java.util.Map;
 
 import static graphql.Scalars.*;
 
-@Service
-public class PostgresSqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGenerator {
+@ExcalibaseService(
+        serviceName = SupportedDatabaseConstant.POSTGRES
+)
+public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGenerator {
     @Override
     public GraphQLSchema generateSchema(Map<String, TableInfo> tables) {
         if (tables == null || tables.isEmpty()) {

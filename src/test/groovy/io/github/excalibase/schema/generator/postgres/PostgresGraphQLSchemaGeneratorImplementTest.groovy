@@ -8,12 +8,12 @@ import io.github.excalibase.model.ForeignKeyInfo
 import io.github.excalibase.model.TableInfo
 import spock.lang.Specification
 
-class PostgresSqlGraphQLSchemaGeneratorImplementTest extends Specification {
+class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
 
-    PostgresSqlGraphQLSchemaGeneratorImplement generator
+    PostgresGraphQLSchemaGeneratorImplement generator
 
     def setup() {
-        generator = new PostgresSqlGraphQLSchemaGeneratorImplement()
+        generator = new PostgresGraphQLSchemaGeneratorImplement()
     }
 
     def "should throw exception for empty table map"() {
