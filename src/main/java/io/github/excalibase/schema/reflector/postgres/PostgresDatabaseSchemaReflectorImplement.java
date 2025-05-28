@@ -1,22 +1,25 @@
 package io.github.excalibase.schema.reflector.postgres;
 
+import io.github.excalibase.annotation.ExcalibaseService;
+import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-@Service
+@ExcalibaseService(
+        serviceName = SupportedDatabaseConstant.POSTGRES
+)
 public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchemaReflector {
     private final JdbcTemplate jdbcTemplate;
 
-    @Value("${app.allowedSchema}")
+    @Value("${app.allowed-schema}")
     private String allowedSchema;
 
     public PostgresDatabaseSchemaReflectorImplement(JdbcTemplate jdbcTemplate) {

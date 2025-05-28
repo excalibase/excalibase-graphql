@@ -14,4 +14,5 @@ spring:
     hikari:
       schema: hana
 app:
-  allowedSchema: public
+  allowed-schema: public
+  database-type: postgres
