@@ -5,6 +5,7 @@ import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.SelectedField;
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.config.AppConfig;
+import io.github.excalibase.constant.ColumnTypeConstant;
 import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.constant.SQLSyntax;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
@@ -141,12 +142,12 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
             // Add pagination if specified using LIMIT and OFFSET
             if (limit != null) {
-                sql.append(SQLSyntax.LIMIT_WITH_PARAM.formatted(" :limit"));
+                sql.append(SQLSyntax.LIMIT_WITH_SPACE + " :limit");
                 paramSource.addValue(FieldConstant.LIMIT, limit);
             }
 
             if (offset != null) {
-                sql.append(SQLSyntax.OFFSET_WITH_PARAM.formatted(":offset"));
+                sql.append(SQLSyntax.OFFSET_WITH_SPACE + ":offset");
                 paramSource.addValue(FieldConstant.OFFSET, offset);
             }
 
@@ -172,14 +173,14 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
             List<String> requestedFields = environment.getSelectionSet().getFields().stream()
                     .map(SelectedField::getName)
-                    .filter(field -> !field.equals("edges") && !field.equals("pageInfo") && !field.equals("totalCount"))
+                    .filter(field -> !field.equals(FieldConstant.EDGES) && !field.equals(FieldConstant.PAGE_INFO) && !field.equals(FieldConstant.TOTAL_COUNT))
                     .filter(availableColumns::contains)
                     .collect(Collectors.toList());
 
             Set<String> relationshipFields = environment.getSelectionSet().getFields().stream()
-                    .filter(field -> field.getName().equals("edges"))
+                    .filter(field -> field.getName().equals(FieldConstant.EDGES))
                     .flatMap(field -> field.getSelectionSet().getFields().stream())
-                    .filter(field -> field.getName().equals("node"))
+                    .filter(field -> field.getName().equals(FieldConstant.NODE))
                     .flatMap(field -> field.getSelectionSet().getFields().stream())
                     .filter(field -> !availableColumns.contains(field.getName()))
                     .map(SelectedField::getName)
@@ -206,30 +207,30 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             String before = null;
             Integer offset = null;
 
-            if (arguments.containsKey("first")) {
-                first = (Integer) arguments.get("first");
-                arguments.remove("first");
+            if (arguments.containsKey(FieldConstant.FIRST)) {
+                first = (Integer) arguments.get(FieldConstant.FIRST);
+                arguments.remove(FieldConstant.FIRST);
             }
 
-            if (arguments.containsKey("after")) {
-                after = (String) arguments.get("after");
-                arguments.remove("after");
+            if (arguments.containsKey(FieldConstant.AFTER)) {
+                after = (String) arguments.get(FieldConstant.AFTER);
+                arguments.remove(FieldConstant.AFTER);
             }
 
-            if (arguments.containsKey("last")) {
-                last = (Integer) arguments.get("last");
-                arguments.remove("last");
+            if (arguments.containsKey(FieldConstant.LAST)) {
+                last = (Integer) arguments.get(FieldConstant.LAST);
+                arguments.remove(FieldConstant.LAST);
             }
 
-            if (arguments.containsKey("before")) {
-                before = (String) arguments.get("before");
-                arguments.remove("before");
+            if (arguments.containsKey(FieldConstant.BEFORE)) {
+                before = (String) arguments.get(FieldConstant.BEFORE);
+                arguments.remove(FieldConstant.BEFORE);
             }
 
             // Offset-based pagination parameter (fallback when no cursor parameters)
-            if (arguments.containsKey("offset")) {
-                offset = (Integer) arguments.get("offset");
-                arguments.remove("offset");
+            if (arguments.containsKey(FieldConstant.OFFSET)) {
+                offset = (Integer) arguments.get(FieldConstant.OFFSET);
+                arguments.remove(FieldConstant.OFFSET);
             }
 
             boolean useCursorPagination = offset == null && (first != null || last != null || after != null || before != null);
@@ -359,12 +360,12 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             }
 
             Integer limit = first != null ? first : (last != null ? last : 10); // Default to 10 if neither specified
-            dataSql.append(SQLSyntax.LIMIT_WITH_PARAM.formatted(":limit"));
+            dataSql.append(SQLSyntax.LIMIT_WITH_SPACE + ":limit");
             paramSource.addValue(FieldConstant.LIMIT, limit);
 
             // Add OFFSET for offset-based pagination
             if (useOffsetPagination) {
-                dataSql.append(SQLSyntax.OFFSET_WITH_PARAM.formatted(":offset"));
+                dataSql.append(SQLSyntax.OFFSET_WITH_SPACE + ":offset");
                 paramSource.addValue(FieldConstant.OFFSET, offset);
             }
             List<Map<String, Object>> nodes = namedParameterJdbcTemplate.queryForList(dataSql.toString(), paramSource);
@@ -401,11 +402,11 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             boolean hasPreviousPage = false;
 
             if (!edges.isEmpty()) {
-                String startCursor = (String) edges.getFirst().get("cursor");
-                String endCursor = (String) edges.getLast().get("cursor");
+                String startCursor = (String) edges.getFirst().get(FieldConstant.CURSOR);
+                String endCursor = (String) edges.getLast().get(FieldConstant.CURSOR);
 
-                pageInfo.put("startCursor", startCursor);
-                pageInfo.put("endCursor", endCursor);
+                pageInfo.put(FieldConstant.START_CURSOR, startCursor);
+                pageInfo.put(FieldConstant.END_CURSOR, endCursor);
 
                 if (first != null) {
                     Map<String, Object> lastRecordCursor = new HashMap<>();
@@ -479,9 +480,9 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
      * Creates a DataFetcher for relationship fields that checks the batch context first.
      * This handles fetching the related record(s) for a given foreign key efficiently.
      *
-     * @param tableName The name of the table containing the foreign key
+     * @param tableName        The name of the table containing the foreign key
      * @param foreignKeyColumn The name of the foreign key column
-     * @param referencedTable The name of the referenced table
+     * @param referencedTable  The name of the referenced table
      * @param referencedColumn The name of the referenced column
      * @return A DataFetcher that fetches the related record
      */
@@ -582,10 +583,10 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         TableInfo tableInfo = tables.get(tableName);
 
         // Get batch context or create it
-        Map<String, Object> batchContext = environment.getGraphQlContext().get("BATCH_CONTEXT");
+        Map<String, Object> batchContext = environment.getGraphQlContext().get(BATCH_CONTEXT);
         if (batchContext == null) {
             batchContext = new HashMap<>();
-            environment.getGraphQlContext().put("BATCH_CONTEXT", batchContext);
+            environment.getGraphQlContext().put(BATCH_CONTEXT, batchContext);
         }
 
         // Process each relationship field
@@ -625,7 +626,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         StringBuilder sql = new StringBuilder(SQLSyntax.SELECT_WITH_SPACE);
                         sql.append(buildColumnList(new ArrayList<>(requestedFields)));
                         sql.append(SQLSyntax.FROM_WITH_SPACE).append(getQualifiedTableName(referencedTable));
-                        sql.append(SQLSyntax.WHERE_WITH_SPACE).append(quoteIdentifier(referencedColumn)).append(SQLSyntax.IN_WITH_PARAM.formatted("(:ids)"));
+                        sql.append(SQLSyntax.WHERE_WITH_SPACE).append(quoteIdentifier(referencedColumn)).append(SQLSyntax.IN_WITH_SPACE + "(:ids)");
 
                         MapSqlParameterSource params = new MapSqlParameterSource();
                         params.addValue("ids", new ArrayList<>(foreignKeyValues));
@@ -688,7 +689,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             String paramName = "cursor_" + currentField + "_" + direction;
 
             String operator;
-            if ("after".equals(direction)) {
+            if (FieldConstant.AFTER.equals(direction)) {
                 operator = "ASC".equalsIgnoreCase(currentDirection) ? ">" : "<";
             } else {
                 operator = "ASC".equalsIgnoreCase(currentDirection) ? "<" : ">";
@@ -699,7 +700,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             if (andConditions.size() == 1) {
                 orConditions.add(andConditions.getFirst());
             } else {
-                orConditions.add("(" + String.join(" AND ", andConditions) + ")");
+                orConditions.add("(" + String.join(SQLSyntax.AND_WITH_SPACE, andConditions) + ")");
             }
         }
 
@@ -725,15 +726,15 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         String type = columnType != null ? columnType.toLowerCase() : "";
 
         try {
-            if (type.contains("uuid")) {
+            if (type.contains(ColumnTypeConstant.UUID)) {
                 paramSource.addValue(paramName, UUID.fromString(valueStr));
-            } else if (type.contains("int") && !type.contains("bigint")) {
+            } else if (type.contains(ColumnTypeConstant.INT) && !type.contains(ColumnTypeConstant.BIGINT)) {
                 paramSource.addValue(paramName, Integer.parseInt(valueStr));
-            } else if (type.contains("bigint")) {
+            } else if (type.contains(ColumnTypeConstant.BIGINT)) {
                 paramSource.addValue(paramName, Long.parseLong(valueStr));
-            } else if (type.contains("decimal") || type.contains("numeric") || type.contains("double") || type.contains("float")) {
+            } else if (type.contains(ColumnTypeConstant.DECIMAL) || type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DOUBLE) || type.contains(ColumnTypeConstant.FLOAT)) {
                 paramSource.addValue(paramName, Double.parseDouble(valueStr));
-            } else if (type.contains("bool")) {
+            } else if (type.contains(ColumnTypeConstant.BOOL)) {
                 paramSource.addValue(paramName, Boolean.parseBoolean(valueStr));
             } else {
                 paramSource.addValue(paramName, valueStr);
@@ -779,7 +780,17 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     private List<String> buildWhereConditions(Map<String, Object> arguments, MapSqlParameterSource paramSource,
                                               Map<String, String> columnTypes) {
         List<String> conditions = new ArrayList<>();
-        List<String> operators = List.of("contains", "startsWith", "endsWith", "gt", "gte", "lt", "lte", "isNull", "isNotNull");
+        List<String> operators = List.of(
+                FieldConstant.OPERATOR_CONTAINS,
+                FieldConstant.OPERATOR_STARTS_WITH,
+                FieldConstant.OPERATOR_ENDS_WITH,
+                FieldConstant.OPERATOR_GT,
+                FieldConstant.OPERATOR_GTE,
+                FieldConstant.OPERATOR_LT,
+                FieldConstant.OPERATOR_LTE,
+                FieldConstant.OPERATOR_IS_NULL,
+                FieldConstant.OPERATOR_IS_NOT_NULL
+        );
 
         for (Map.Entry<String, Object> entry : arguments.entrySet()) {
             String key = entry.getKey();
@@ -808,35 +819,35 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 String quotedFieldName = "\"" + fieldName + "\"";
 
                 switch (operator) {
-                    case "contains":
+                    case FieldConstant.OPERATOR_CONTAINS:
                         conditions.add(quotedFieldName + " LIKE :" + key);
                         paramSource.addValue(key, "%" + value + "%");
                         break;
-                    case "startsWith":
+                    case FieldConstant.OPERATOR_STARTS_WITH:
                         conditions.add(quotedFieldName + " LIKE :" + key);
                         paramSource.addValue(key, value + "%");
                         break;
-                    case "endsWith":
+                    case FieldConstant.OPERATOR_ENDS_WITH:
                         conditions.add(quotedFieldName + " LIKE :" + key);
                         paramSource.addValue(key, "%" + value);
                         break;
-                    case "gt":
+                    case FieldConstant.OPERATOR_GT:
                         conditions.add(quotedFieldName + " > :" + key);
                         paramSource.addValue(key, value);
                         break;
-                    case "gte":
+                    case FieldConstant.OPERATOR_GTE:
                         conditions.add(quotedFieldName + " >= :" + key);
                         paramSource.addValue(key, value);
                         break;
-                    case "lt":
+                    case FieldConstant.OPERATOR_LT:
                         conditions.add(quotedFieldName + " < :" + key);
                         paramSource.addValue(key, value);
                         break;
-                    case "lte":
+                    case FieldConstant.OPERATOR_LTE:
                         conditions.add(quotedFieldName + " <= :" + key);
                         paramSource.addValue(key, value);
                         break;
-                    case "isNull":
+                    case FieldConstant.OPERATOR_IS_NULL:
                         // Ignore the actual value, just add the IS NULL condition
                         if (value instanceof Boolean && (Boolean) value) {
                             conditions.add(quotedFieldName + " IS NULL");
@@ -844,7 +855,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                             conditions.add(quotedFieldName + " IS NOT NULL");
                         }
                         break;
-                    case "isNotNull":
+                    case FieldConstant.OPERATOR_IS_NOT_NULL:
                         // Ignore the actual value, just add the IS NOT NULL condition
                         if (value instanceof Boolean && (Boolean) value) {
                             conditions.add(quotedFieldName + " IS NOT NULL");
@@ -862,7 +873,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 String quotedKey = "\"" + key + "\"";
 
                 // Handle UUID type conversion
-                if (columnType.contains("uuid") && value instanceof String) {
+                if (columnType.contains(ColumnTypeConstant.UUID) && value instanceof String) {
                     try {
                         // Convert string to UUID
                         UUID uuid = UUID.fromString((String) value);
@@ -874,20 +885,20 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     }
                 }
                 // Handle numeric type conversions
-                else if (columnType.contains("int") || columnType.contains("decimal") ||
-                        columnType.contains("numeric") || columnType.contains("double") ||
-                        columnType.contains("float")) {
+                else if (columnType.contains(ColumnTypeConstant.INT) || columnType.contains(ColumnTypeConstant.DECIMAL) ||
+                        columnType.contains(ColumnTypeConstant.NUMERIC) || columnType.contains(ColumnTypeConstant.DOUBLE) ||
+                        columnType.contains(ColumnTypeConstant.FLOAT)) {
 
                     if (value instanceof String) {
                         try {
                             // Check if it's an integer type
-                            if (columnType.contains("int") || columnType.contains("serial")) {
+                            if (columnType.contains(ColumnTypeConstant.INT) || columnType.contains(ColumnTypeConstant.SERIAL)) {
                                 int numericValue = Integer.parseInt((String) value);
                                 conditions.add(quotedKey + " = :" + key);
                                 paramSource.addValue(key, numericValue);
                             }
                             // Check if it's a long type
-                            else if (columnType.contains("bigint")) {
+                            else if (columnType.contains(ColumnTypeConstant.BIGINT)) {
                                 long numericValue = Long.parseLong((String) value);
                                 conditions.add(quotedKey + " = :" + key);
                                 paramSource.addValue(key, numericValue);

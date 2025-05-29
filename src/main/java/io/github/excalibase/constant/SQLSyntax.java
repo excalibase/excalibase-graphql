@@ -10,9 +10,9 @@ public class SQLSyntax {
     public static final String SELECT_WITH_SPACE = "SELECT ";
     public static final String ORDER_BY_WITH_SPACE = " ORDER BY ";
 
-    public static final String IN_WITH_PARAM = " IN %s";
-    public static final String LIMIT_WITH_PARAM = " LIMIT %s";
-    public static final String OFFSET_WITH_PARAM = " OFFSET %s";
+    public static final String IN_WITH_SPACE = " IN ";
+    public static final String LIMIT_WITH_SPACE = " LIMIT ";
+    public static final String OFFSET_WITH_SPACE = " OFFSET ";
 
     public static final String SELECT_COUNT_FROM_WITH_SPACE = "SELECT COUNT(*) FROM ";
 }

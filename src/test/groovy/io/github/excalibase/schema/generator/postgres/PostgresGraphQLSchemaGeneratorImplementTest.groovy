@@ -2,6 +2,7 @@ package io.github.excalibase.schema.generator.postgres
 
 import graphql.Scalars
 import graphql.schema.*
+import io.github.excalibase.constant.FieldConstant
 import io.github.excalibase.exception.EmptySchemaException
 import io.github.excalibase.model.ColumnInfo
 import io.github.excalibase.model.ForeignKeyInfo
@@ -191,10 +192,10 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         connectionField.getName() == "productsConnection"
 
         and: "should have cursor pagination arguments"
-        connectionField.getArgument("first") != null
-        connectionField.getArgument("after") != null
-        connectionField.getArgument("last") != null
-        connectionField.getArgument("before") != null
+        connectionField.getArgument(FieldConstant.FIRST) != null
+        connectionField.getArgument(FieldConstant.AFTER) != null
+        connectionField.getArgument(FieldConstant.LAST) != null
+        connectionField.getArgument(FieldConstant.BEFORE) != null
 
         and: "should create Edge and Connection types"
         GraphQLObjectType edgeType = schema.getType("productsEdge") as GraphQLObjectType
@@ -400,12 +401,12 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         orderDirectionEnum.getValue("DESC") != null
 
         and: "should create PageInfo type"
-        GraphQLObjectType pageInfoType = schema.getType("PageInfo") as GraphQLObjectType
+        GraphQLObjectType pageInfoType = schema.getType(FieldConstant.PAGE_INFO) as GraphQLObjectType
         pageInfoType != null
-        pageInfoType.getFieldDefinition("hasNextPage") != null
-        pageInfoType.getFieldDefinition("hasPreviousPage") != null
-        pageInfoType.getFieldDefinition("startCursor") != null
-        pageInfoType.getFieldDefinition("endCursor") != null
+        pageInfoType.getFieldDefinition(FieldConstant.HAS_NEXT_PAGE) != null
+        pageInfoType.getFieldDefinition(FieldConstant.HAS_PREVIOUS_PAGE) != null
+        pageInfoType.getFieldDefinition(FieldConstant.START_CURSOR) != null
+        pageInfoType.getFieldDefinition(FieldConstant.END_CURSOR) != null
     }
 
     def "should create OrderByInput type for each table"() {

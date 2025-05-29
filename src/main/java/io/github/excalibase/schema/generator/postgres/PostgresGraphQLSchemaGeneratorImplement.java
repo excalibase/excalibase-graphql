@@ -13,6 +13,9 @@ import graphql.schema.GraphQLOutputType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLTypeReference;
 import io.github.excalibase.annotation.ExcalibaseService;
+import io.github.excalibase.constant.ColumnTypeConstant;
+import io.github.excalibase.constant.FieldConstant;
+import io.github.excalibase.constant.GraphqlConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.EmptySchemaException;
 import io.github.excalibase.model.ColumnInfo;
@@ -67,25 +70,25 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLObjectType createPageInfoType() {
         return GraphQLObjectType.newObject()
-                .name("PageInfo")
+                .name(FieldConstant.PAGE_INFO)
                 .description("Information about pagination in a connection")
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name("hasNextPage")
+                        .name(FieldConstant.HAS_NEXT_PAGE)
                         .type(GraphQLBoolean)
                         .description("When paginating forwards, are there more items?")
                         .build())
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name("hasPreviousPage")
+                        .name(FieldConstant.HAS_PREVIOUS_PAGE)
                         .type(GraphQLBoolean)
                         .description("When paginating backwards, are there more items?")
                         .build())
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name("startCursor")
+                        .name(FieldConstant.START_CURSOR)
                         .type(GraphQLString)
                         .description("The cursor to continue from when paginating backwards")
                         .build())
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name("endCursor")
+                        .name(FieldConstant.END_CURSOR)
                         .type(GraphQLString)
                         .description("The cursor to continue from when paginating forwards")
                         .build())
@@ -149,12 +152,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .name(tableName + "Edge")
                 .description("An edge in a connection for " + tableName)
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name("node")
+                        .name(FieldConstant.NODE)
                         .type(nodeType)
                         .description("The item at the end of the edge")
                         .build())
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name("cursor")
+                        .name(FieldConstant.CURSOR)
                         .type(GraphQLString)
                         .description("A cursor for pagination")
                         .build())
@@ -166,17 +169,17 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .name(tableName + "Connection")
                 .description("A connection to a list of " + tableName)
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name("edges")
+                        .name(FieldConstant.EDGES)
                         .type(new GraphQLList(edgeType))
                         .description("A list of edges")
                         .build())
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name("pageInfo")
+                        .name(FieldConstant.PAGE_INFO)
                         .type(new GraphQLNonNull(pageInfoType))
                         .description("Information to aid in pagination")
                         .build())
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name("totalCount")
+                        .name(FieldConstant.TOTAL_COUNT)
                         .type(GraphQLInt)
                         .description("The total number of items in the connection")
                         .build())
@@ -202,7 +205,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLObjectType createQueryType(Map<String, TableInfo> tables) {
         GraphQLObjectType.Builder queryBuilder = GraphQLObjectType.newObject()
-                .name("Query")
+                .name(GraphqlConstant.QUERY)
                 .description("Root query type");
 
         // Add query fields for each table
@@ -231,7 +234,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // Add orderBy argument
         fieldBuilder.argument(GraphQLArgument.newArgument()
-                .name("orderBy")
+                .name(FieldConstant.ORDER_BY)
                 .type(GraphQLTypeReference.typeRef(tableName + "OrderByInput"))
                 .description("Order results by specified fields")
                 .build());
@@ -252,7 +255,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // Add ordering to connection fields
         connectionFieldBuilder.argument(GraphQLArgument.newArgument()
-                .name("orderBy")
+                .name(FieldConstant.ORDER_BY)
                 .type(GraphQLTypeReference.typeRef(tableName + "OrderByInput"))
                 .description("Order results by specified fields")
                 .build());
@@ -276,19 +279,19 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // For string columns, add additional filtering options
         if (argType == GraphQLString) {
             fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_contains")
+                    .name(column.getName() + "_" + FieldConstant.OPERATOR_CONTAINS)
                     .type(GraphQLString)
                     .description("Filter where " + column.getName() + " contains text")
                     .build());
 
             fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_startsWith")
+                    .name(column.getName() + "_" + FieldConstant.OPERATOR_STARTS_WITH)
                     .type(GraphQLString)
                     .description("Filter where " + column.getName() + " starts with text")
                     .build());
 
             fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_endsWith")
+                    .name(column.getName() + "_" + FieldConstant.OPERATOR_ENDS_WITH)
                     .type(GraphQLString)
                     .description("Filter where " + column.getName() + " ends with text")
                     .build());
@@ -297,25 +300,25 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // For numeric columns, add comparison operators
         if (argType == GraphQLInt || argType == GraphQLFloat) {
             fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_gt")
+                    .name(column.getName() + "_" + FieldConstant.OPERATOR_GT)
                     .type(argType)
                     .description("Filter where " + column.getName() + " is greater than")
                     .build());
 
             fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_gte")
+                    .name(column.getName() + "_" + FieldConstant.OPERATOR_GTE)
                     .type(argType)
                     .description("Filter where " + column.getName() + " is greater than or equal")
                     .build());
 
             fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_lt")
+                    .name(column.getName() + "_" + FieldConstant.OPERATOR_LT)
                     .type(argType)
                     .description("Filter where " + column.getName() + " is less than")
                     .build());
 
             fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_lte")
+                    .name(column.getName() + "_" + FieldConstant.OPERATOR_LTE)
                     .type(argType)
                     .description("Filter where " + column.getName() + " is less than or equal")
                     .build());
@@ -324,13 +327,13 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private void addPaginationArguments(GraphQLFieldDefinition.Builder fieldBuilder) {
         fieldBuilder.argument(GraphQLArgument.newArgument()
-                .name("limit")
+                .name(FieldConstant.LIMIT)
                 .type(GraphQLInt)
                 .description("Maximum number of records to return")
                 .build());
 
         fieldBuilder.argument(GraphQLArgument.newArgument()
-                .name("offset")
+                .name(FieldConstant.OFFSET)
                 .type(GraphQLInt)
                 .description("Number of records to skip")
                 .build());
@@ -338,31 +341,31 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private void addCursorPaginationArguments(GraphQLFieldDefinition.Builder fieldBuilder) {
         fieldBuilder.argument(GraphQLArgument.newArgument()
-                .name("first")
+                .name(FieldConstant.FIRST)
                 .type(GraphQLInt)
                 .description("Returns the first n elements from the list")
                 .build());
 
         fieldBuilder.argument(GraphQLArgument.newArgument()
-                .name("after")
+                .name(FieldConstant.AFTER)
                 .type(GraphQLString)
                 .description("Returns elements after the provided cursor")
                 .build());
 
         fieldBuilder.argument(GraphQLArgument.newArgument()
-                .name("last")
+                .name(FieldConstant.LAST)
                 .type(GraphQLInt)
                 .description("Returns the last n elements from the list")
                 .build());
 
         fieldBuilder.argument(GraphQLArgument.newArgument()
-                .name("before")
+                .name(FieldConstant.BEFORE)
                 .type(GraphQLString)
                 .description("Returns elements before the provided cursor")
                 .build());
 
         fieldBuilder.argument(GraphQLArgument.newArgument()
-                .name("offset")
+                .name(FieldConstant.OFFSET)
                 .type(GraphQLInt)
                 .description("Number of records to skip (fallback when cursor parameters are not used)")
                 .build());
@@ -370,7 +373,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLObjectType createMutationType(Map<String, TableInfo> tables) {
         GraphQLObjectType.Builder mutationBuilder = GraphQLObjectType.newObject()
-                .name("Mutation")
+                .name(GraphqlConstant.MUTATION)
                 .description("Root mutation type");
 
         // Add mutation fields for each table
@@ -557,17 +560,17 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private GraphQLOutputType mapDatabaseTypeToGraphQLType(String dbType) {
         String type = dbType.toLowerCase();
 
-        if (type.contains("int") || type.equals("bigint") || type.equals("smallint")) {
+        if (type.contains(ColumnTypeConstant.INT) || type.equals(ColumnTypeConstant.BIGINT) || type.equals(ColumnTypeConstant.SMALLINT)) {
             return GraphQLInt;
-        } else if (type.contains("numeric") || type.contains("decimal") ||
-                type.contains("real") || type.contains("double precision")) {
+        } else if (type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DECIMAL) ||
+                type.contains(ColumnTypeConstant.REAL) || type.contains(ColumnTypeConstant.DOUBLE_PRECISION)) {
             return GraphQLFloat;
-        } else if (type.contains("boolean")) {
+        } else if (type.contains(ColumnTypeConstant.BOOLEAN)) {
             return GraphQLBoolean;
-        } else if (type.contains("uuid")) {
+        } else if (type.contains(ColumnTypeConstant.UUID)) {
             return GraphQLID;
-        } else if (type.contains("timestamp") || type.contains("date") ||
-                type.contains("time")) {
+        } else if (type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.DATE) ||
+                type.contains(ColumnTypeConstant.TIME)) {
             return GraphQLString;
         } else {
             return GraphQLString;

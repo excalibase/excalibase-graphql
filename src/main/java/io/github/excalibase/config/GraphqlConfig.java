@@ -4,6 +4,7 @@ import graphql.GraphQL;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLCodeRegistry;
 import graphql.schema.GraphQLSchema;
+import io.github.excalibase.constant.GraphqlConstant;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
@@ -44,14 +45,14 @@ public class GraphqlConfig {
 
             // Add data fetcher for the table query with offset-based pagination
             codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates("Query", tableName.toLowerCase()),
+                    FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase()),
                     dataFetcher.createTableDataFetcher(tableName)
             );
 
             // Add data fetcher for the connection (cursor-based pagination && offset-based pagination)
             // This follows the Relay Connection Specification
             codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates("Query", tableName.toLowerCase() + "Connection"),
+                    FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase() + GraphqlConstant.CONNECTION_SUFFIX),
                     dataFetcher.createConnectionDataFetcher(tableName)
             );
 

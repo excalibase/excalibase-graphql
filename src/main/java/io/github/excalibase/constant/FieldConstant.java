@@ -17,4 +17,22 @@ public class FieldConstant {
     public static final String ERROR = "error";
     public static final String NODE = "node";
     public static final String CURSOR = "cursor";
+    public static final String FIRST = "first";
+    public static final String LAST = "last";
+    public static final String BEFORE = "before";
+    public static final String AFTER = "after";
+
+    // Query operators
+    public static final String OPERATOR_CONTAINS = "contains";
+    public static final String OPERATOR_STARTS_WITH = "startsWith";
+    public static final String OPERATOR_ENDS_WITH = "endsWith";
+    public static final String OPERATOR_GT = "gt";
+    public static final String OPERATOR_GTE = "gte";
+    public static final String OPERATOR_LT = "lt";
+    public static final String OPERATOR_LTE = "lte";
+    public static final String OPERATOR_IS_NULL = "isNull";
+    public static final String OPERATOR_IS_NOT_NULL = "isNotNull";
+
+    // Context keys
+    public static final String BATCH_CONTEXT = "BATCH_CONTEXT";
 }
