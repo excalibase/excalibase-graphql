@@ -360,6 +360,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .type(GraphQLString)
                 .description("Returns elements before the provided cursor")
                 .build());
+
+        fieldBuilder.argument(GraphQLArgument.newArgument()
+                .name("offset")
+                .type(GraphQLInt)
+                .description("Number of records to skip (fallback when cursor parameters are not used)")
+                .build());
     }
 
     private GraphQLObjectType createMutationType(Map<String, TableInfo> tables) {

@@ -1,8 +1,11 @@
 package io.github.excalibase.config;
 
 import graphql.GraphQL;
+import graphql.schema.FieldCoordinates;
+import graphql.schema.GraphQLCodeRegistry;
 import graphql.schema.GraphQLSchema;
 import io.github.excalibase.model.TableInfo;
+import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import io.github.excalibase.service.ServiceLookup;
@@ -31,7 +34,43 @@ public class GraphqlConfig {
         IGraphQLSchemaGenerator schemaGenerator = getGraphQLSchemaGenerator();
         Map<String, TableInfo> tables = schemaReflector.reflectSchema();
         GraphQLSchema schema = schemaGenerator.generateSchema(tables);
-        return null;
+        IDatabaseDataFetcher dataFetcher = serviceLookup.forBean(IDatabaseDataFetcher.class, appConfig.getDatabaseType().getName());
+
+        GraphQLCodeRegistry.Builder codeRegistry = GraphQLCodeRegistry.newCodeRegistry();
+
+        for (var entry : tables.entrySet()) {
+            String tableName = entry.getKey();
+            var tableInfo = entry.getValue();
+
+            // Add data fetcher for the table query with offset-based pagination
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates("Query", tableName.toLowerCase()),
+                    dataFetcher.createTableDataFetcher(tableName)
+            );
+
+            // Add data fetcher for the connection (cursor-based pagination && offset-based pagination)
+            // This follows the Relay Connection Specification
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates("Query", tableName.toLowerCase() + "Connection"),
+                    dataFetcher.createConnectionDataFetcher(tableName)
+            );
+
+            // Add data fetchers for relationships
+            for (var fk : tableInfo.getForeignKeys()) {
+                codeRegistry.dataFetcher(
+                        FieldCoordinates.coordinates(tableName, fk.getReferencedTable().toLowerCase()),
+                        dataFetcher.createRelationshipDataFetcher(
+                                tableName,
+                                fk.getColumnName(),
+                                fk.getReferencedTable(),
+                                fk.getReferencedColumn()
+                        )
+                );
+            }
+        }
+
+        schema = schema.transform(builder -> builder.codeRegistry(codeRegistry.build()));
+        return GraphQL.newGraphQL(schema).build();
     }
 
     private IGraphQLSchemaGenerator getGraphQLSchemaGenerator() {
