@@ -11,7 +11,7 @@ import spock.lang.Specification
 
 import javax.sql.DataSource
 
-class PostgreSqlDatabaseSchemaReflectorImplementTest extends Specification {
+class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
 
     @Shared
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
