@@ -15,6 +15,7 @@ public class ColumnTypeConstant {
     public static final String BOOL = "bool";
     public static final String BOOLEAN = "boolean";
     public static final String SERIAL = "serial";
+    public static final String BIGSERIAL = "bigserial";
     public static final String TIMESTAMP = "timestamp";
     public static final String DATE = "date";
     public static final String TIME = "time";

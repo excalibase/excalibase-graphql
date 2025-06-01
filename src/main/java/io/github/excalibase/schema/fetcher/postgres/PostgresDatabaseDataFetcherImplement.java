@@ -25,6 +25,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -233,6 +234,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 arguments.remove(FieldConstant.OFFSET);
             }
 
+            //TODO this maybe not good practice, need to revisit this
             boolean useCursorPagination = offset == null && (first != null || last != null || after != null || before != null);
             boolean useOffsetPagination = !useCursorPagination && offset != null;
 
@@ -340,23 +342,6 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 }
 
                 dataSql.append(String.join(", ", orderClauses));
-            } else if (useCursorPagination) {
-                // For cursor-based pagination, orderBy is required to generate meaningful cursors
-                // Return an error response indicating orderBy is required
-                Map<String, Object> errorConnection = new HashMap<>();
-                errorConnection.put(FieldConstant.EDGES, new ArrayList<>());
-
-                Map<String, Object> errorPageInfo = new HashMap<>();
-                errorPageInfo.put(FieldConstant.HAS_NEXT_PAGE, false);
-                errorPageInfo.put(FieldConstant.HAS_PREVIOUS_PAGE, false);
-                errorPageInfo.put(FieldConstant.START_CURSOR, null);
-                errorPageInfo.put(FieldConstant.END_CURSOR, null);
-
-                errorConnection.put(FieldConstant.PAGE_INFO, errorPageInfo);
-                errorConnection.put(FieldConstant.TOTAL_COUNT, 0);
-                errorConnection.put(FieldConstant.ERROR, CURSOR_ERROR);
-
-                return errorConnection;
             }
 
             Integer limit = first != null ? first : (last != null ? last : 10); // Default to 10 if neither specified
@@ -391,7 +376,11 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     edge.put(FieldConstant.CURSOR, cursor);
                 } else {
                     // For offset-based pagination, cursor can be null or a simple index
-                    edge.put(FieldConstant.CURSOR, null);
+                    String cursor = null;
+                    if (useCursorPagination) {
+                        cursor = "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument.";
+                    }
+                    edge.put(FieldConstant.CURSOR, cursor);
                 }
 
                 return edge;
@@ -408,7 +397,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 pageInfo.put(FieldConstant.START_CURSOR, startCursor);
                 pageInfo.put(FieldConstant.END_CURSOR, endCursor);
 
-                if (first != null) {
+                if (useCursorPagination && !orderByFields.isEmpty()) {
                     Map<String, Object> lastRecordCursor = new HashMap<>();
                     for (String orderField : orderByFields.keySet()) {
                         lastRecordCursor.put(orderField, nodes.getLast().get(orderField));
@@ -433,15 +422,14 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
                     Integer nextCount = namedParameterJdbcTemplate.queryForObject(checkNextSql.toString(), nextParams, Integer.class);
                     hasNextPage = nextCount != null && nextCount > 0;
-                }
 
-                if (last != null || before != null) {
+                    // Check if there's a previous page by simulating a "before" cursor with the first record
                     Map<String, Object> firstRecordCursor = new HashMap<>();
                     for (String orderField : orderByFields.keySet()) {
                         firstRecordCursor.put(orderField, nodes.getFirst().get(orderField));
                     }
 
-                    StringBuilder checkPrevSql = new StringBuilder("SELECT COUNT(*) FROM ")
+                    StringBuilder checkPrevSql = new StringBuilder(SQLSyntax.SELECT_COUNT_FROM_WITH_SPACE)
                             .append(getQualifiedTableName(tableName));
 
                     List<String> prevConditions = new ArrayList<>();
@@ -451,9 +439,9 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         prevConditions.addAll(buildWhereConditions(arguments, prevParams, columnTypes));
                     }
 
-                    List<String> cursorConditions = new ArrayList<>();
-                    buildCursorConditions(cursorConditions, firstRecordCursor, orderByFields, columnTypes, prevParams, "before");
-                    prevConditions.addAll(cursorConditions);
+                    List<String> cursorConditions2 = new ArrayList<>();
+                    buildCursorConditions(cursorConditions2, firstRecordCursor, orderByFields, columnTypes, prevParams, "before");
+                    prevConditions.addAll(cursorConditions2);
 
                     if (!prevConditions.isEmpty()) {
                         checkPrevSql.append(SQLSyntax.WHERE_WITH_SPACE).append(String.join(SQLSyntax.AND_WITH_SPACE, prevConditions));
@@ -501,10 +489,20 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         (Map<Object, Map<String, Object>>) batchContext.get(referencedTable);
                 return batchResults.get(foreignKeyValue);
             } else {
-                log.warn("Batch context not found for table: {}", referencedTable);
+                log.warn("Batch context not found for table: {}. Fallback to individual query", referencedTable);
+                Map<String, TableInfo> tables = getSchemaReflector().reflectSchema();
+                TableInfo referencedTableInfo = tables.get(referencedTable);
+                Set<String> availableColumns = referencedTableInfo != null
+                        ? referencedTableInfo.getColumns().stream()
+                        .map(ColumnInfo::getName)
+                        .collect(Collectors.toSet())
+                        : new HashSet<>();
+
+                // Filter requested fields to only include actual database columns (not nested relationships)
                 List<String> requestedFields = environment.getSelectionSet().getFields().stream()
                         .map(SelectedField::getName)
-                        .toList();
+                        .filter(availableColumns::contains) // Only include fields that exist as columns
+                        .collect(Collectors.toList());
 
                 StringBuilder sql = new StringBuilder(SQLSyntax.SELECT_WITH_SPACE);
                 sql.append(buildColumnList(requestedFields));
@@ -614,8 +612,18 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                             .map(field -> field.getSelectionSet().getFields())
                             .orElse(List.of());
 
+                    // Get the table info for the referenced table to know which fields are actual columns
+                    TableInfo referencedTableInfo = tables.get(referencedTable);
+                    Set<String> availableColumns = referencedTableInfo != null
+                            ? referencedTableInfo.getColumns().stream()
+                            .map(ColumnInfo::getName)
+                            .collect(Collectors.toSet())
+                            : new HashSet<>();
+
+                    // Filter requested fields to only include actual database columns (not nested relationships)
                     Set<String> requestedFields = selectedFields.stream()
                             .map(SelectedField::getName)
+                            .filter(availableColumns::contains) // Only include fields that exist as columns
                             .collect(Collectors.toSet());
 
                     if (!requestedFields.isEmpty()) {
@@ -623,16 +631,15 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         requestedFields.add(referencedColumn);
 
                         // Build and execute batch query
-                        StringBuilder sql = new StringBuilder(SQLSyntax.SELECT_WITH_SPACE);
-                        sql.append(buildColumnList(new ArrayList<>(requestedFields)));
-                        sql.append(SQLSyntax.FROM_WITH_SPACE).append(getQualifiedTableName(referencedTable));
-                        sql.append(SQLSyntax.WHERE_WITH_SPACE).append(quoteIdentifier(referencedColumn)).append(SQLSyntax.IN_WITH_SPACE + "(:ids)");
+                        String sql = SQLSyntax.SELECT_WITH_SPACE + buildColumnList(new ArrayList<>(requestedFields)) +
+                                SQLSyntax.FROM_WITH_SPACE + getQualifiedTableName(referencedTable) +
+                                SQLSyntax.WHERE_WITH_SPACE + quoteIdentifier(referencedColumn) + SQLSyntax.IN_WITH_SPACE + "(:ids)";
 
                         MapSqlParameterSource params = new MapSqlParameterSource();
                         params.addValue("ids", new ArrayList<>(foreignKeyValues));
 
                         List<Map<String, Object>> relatedRecords = namedParameterJdbcTemplate.queryForList(
-                                sql.toString(), params);
+                                sql, params);
 
                         // cache the related records in the batch context so we don't have to query again
                         Map<Object, Map<String, Object>> relatedRecordsMap = new HashMap<>();
@@ -887,7 +894,8 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 // Handle numeric type conversions
                 else if (columnType.contains(ColumnTypeConstant.INT) || columnType.contains(ColumnTypeConstant.DECIMAL) ||
                         columnType.contains(ColumnTypeConstant.NUMERIC) || columnType.contains(ColumnTypeConstant.DOUBLE) ||
-                        columnType.contains(ColumnTypeConstant.FLOAT)) {
+                        columnType.contains(ColumnTypeConstant.FLOAT) || columnType.contains(ColumnTypeConstant.BIGINT)
+                        || columnType.contains(ColumnTypeConstant.SERIAL) || columnType.contains(ColumnTypeConstant.BIGSERIAL)) {
 
                     if (value instanceof String) {
                         try {
