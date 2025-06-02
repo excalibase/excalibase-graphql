@@ -8,6 +8,7 @@ import io.github.excalibase.constant.GraphqlConstant;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
+import io.github.excalibase.schema.mutator.IDatabaseMutator;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import io.github.excalibase.service.ServiceLookup;
 import org.slf4j.Logger;
@@ -35,7 +36,8 @@ public class GraphqlConfig {
         IGraphQLSchemaGenerator schemaGenerator = getGraphQLSchemaGenerator();
         Map<String, TableInfo> tables = schemaReflector.reflectSchema();
         GraphQLSchema schema = schemaGenerator.generateSchema(tables);
-        IDatabaseDataFetcher dataFetcher = serviceLookup.forBean(IDatabaseDataFetcher.class, appConfig.getDatabaseType().getName());
+        IDatabaseDataFetcher dataFetcher = getDatabaseDataFetcher();
+        IDatabaseMutator mutationResolver = getDatabaseMutator();
 
         GraphQLCodeRegistry.Builder codeRegistry = GraphQLCodeRegistry.newCodeRegistry();
 
@@ -68,6 +70,38 @@ public class GraphqlConfig {
                         )
                 );
             }
+
+            String capitalizedTableName = tableName.substring(0, 1).toUpperCase() + tableName.substring(1).toLowerCase();
+
+            // Create mutation
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName),
+                    mutationResolver.createCreateMutationResolver(tableName)
+            );
+
+            // Update mutation
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates("Mutation", "update" + capitalizedTableName),
+                    mutationResolver.createUpdateMutationResolver(tableName)
+            );
+
+            // Delete mutation
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates("Mutation", "delete" + capitalizedTableName),
+                    mutationResolver.createDeleteMutationResolver(tableName)
+            );
+
+            // Bulk create mutation
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates("Mutation", "createMany" + capitalizedTableName + "s"),
+                    mutationResolver.createBulkCreateMutationResolver(tableName)
+            );
+
+            // Create with relationships mutation
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName + "WithRelations"),
+                    mutationResolver.createCreateWithRelationshipsMutationResolver(tableName)
+            );
         }
 
         schema = schema.transform(builder -> builder.codeRegistry(codeRegistry.build()));
@@ -80,5 +114,13 @@ public class GraphqlConfig {
 
     private IDatabaseSchemaReflector getDatabaseSchemaReflector() {
         return serviceLookup.forBean(IDatabaseSchemaReflector.class, appConfig.getDatabaseType().getName());
+    }
+
+    private IDatabaseMutator getDatabaseMutator() {
+        return serviceLookup.forBean(IDatabaseMutator.class, appConfig.getDatabaseType().getName());
+    }
+
+    private IDatabaseDataFetcher getDatabaseDataFetcher() {
+        return serviceLookup.forBean(IDatabaseDataFetcher.class, appConfig.getDatabaseType().getName());
     }
 }
