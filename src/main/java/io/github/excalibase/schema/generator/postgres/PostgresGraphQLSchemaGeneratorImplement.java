@@ -22,6 +22,8 @@ import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Map;
 
@@ -31,6 +33,8 @@ import static graphql.Scalars.*;
         serviceName = SupportedDatabaseConstant.POSTGRES
 )
 public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGenerator {
+    private static final Logger log = LoggerFactory.getLogger(PostgresGraphQLSchemaGeneratorImplement.class);
+
     @Override
     public GraphQLSchema generateSchema(Map<String, TableInfo> tables) {
         if (tables == null || tables.isEmpty()) {
@@ -41,7 +45,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Create common types
         GraphQLEnumType orderDirectionEnum = createOrderDirectionEnum();
         GraphQLObjectType pageInfoType = createPageInfoType();
-        
+
         schemaBuilder.additionalType(orderDirectionEnum);
         schemaBuilder.additionalType(pageInfoType);
 
@@ -559,8 +563,11 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLOutputType mapDatabaseTypeToGraphQLType(String dbType) {
         String type = dbType.toLowerCase();
-
-        if (type.contains(ColumnTypeConstant.INT) || type.equals(ColumnTypeConstant.BIGINT) || type.equals(ColumnTypeConstant.SMALLINT)) {
+        log.debug("Request db type: {}", type);
+        // TODO: Maybe could use constant list type of each GraphQLOutputType?
+        if (type.contains(ColumnTypeConstant.INT) || type.equals(ColumnTypeConstant.BIGINT)
+                || type.equals(ColumnTypeConstant.SMALLINT) || type.equals(ColumnTypeConstant.SERIAL)
+                || type.equals(ColumnTypeConstant.BIGSERIAL)) {
             return GraphQLInt;
         } else if (type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DECIMAL) ||
                 type.contains(ColumnTypeConstant.REAL) || type.contains(ColumnTypeConstant.DOUBLE_PRECISION)) {
