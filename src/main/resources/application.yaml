@@ -16,3 +16,13 @@ spring:
 app:
   allowed-schema: public
   database-type: postgres
+logging:
+  level:
+    root: ${log.level.root:info}
+    org:
+      springframework: ${log.level.spring:info}
+    io:
+      github:
+        excalibase: ${log.level.app:info}
+  pattern:
+    console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1.}): %msg%n%throwable"
