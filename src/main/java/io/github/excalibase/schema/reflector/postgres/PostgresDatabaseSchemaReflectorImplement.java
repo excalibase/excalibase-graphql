@@ -1,6 +1,7 @@
 package io.github.excalibase.schema.reflector.postgres;
 
 import io.github.excalibase.annotation.ExcalibaseService;
+import io.github.excalibase.constant.SqlConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;

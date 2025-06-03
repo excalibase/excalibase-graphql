@@ -1,5 +1,8 @@
 package io.github.excalibase.constant;
 
+/**
+ * SQL syntax constants for query building.
+ */
 public class SQLSyntax {
     private SQLSyntax() {
     }

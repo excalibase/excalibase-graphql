@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 Excalibase Team and/or its affiliates
+ * and other contributors as indicated by the @author tags.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.excalibase.schema.fetcher.postgres;
 
 import graphql.schema.DataFetcher;
@@ -34,6 +50,9 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * PostgreSQL implementation of IDatabaseDataFetcher.
+ */
 @ExcalibaseService(
         serviceName = SupportedDatabaseConstant.POSTGRES
 )
@@ -55,13 +74,6 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         this.appConfig = appConfig;
     }
 
-    /**
-     * Creates a DataFetcher for fetching data from a specific table.
-     * This method constructs the SQL query based on the provided table name and handles pagination and filtering.
-     *
-     * @param tableName The name of the table to fetch data from
-     * @return A DataFetcher that retrieves data from the specified table
-     */
     @Override
     public DataFetcher<List<Map<String, Object>>> createTableDataFetcher(String tableName) {
         return environment -> {
@@ -464,16 +476,6 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         };
     }
 
-    /**
-     * Creates a DataFetcher for relationship fields that checks the batch context first.
-     * This handles fetching the related record(s) for a given foreign key efficiently.
-     *
-     * @param tableName        The name of the table containing the foreign key
-     * @param foreignKeyColumn The name of the foreign key column
-     * @param referencedTable  The name of the referenced table
-     * @param referencedColumn The name of the referenced column
-     * @return A DataFetcher that fetches the related record
-     */
     @Override
     public DataFetcher<Map<String, Object>> createRelationshipDataFetcher(String tableName, String foreignKeyColumn, String referencedTable, String referencedColumn) {
         return environment -> {

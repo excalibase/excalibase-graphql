@@ -29,6 +29,13 @@ import java.util.Map;
 
 import static graphql.Scalars.*;
 
+/**
+ * PostgreSQL implementation of GraphQL schema generator.
+ * 
+ * <p>Generates complete GraphQL schemas from PostgreSQL table metadata including:
+ * query fields with filtering/pagination, mutation fields for CRUD operations,
+ * and connection types following Relay specification.</p>
+ */
 @ExcalibaseService(
         serviceName = SupportedDatabaseConstant.POSTGRES
 )
