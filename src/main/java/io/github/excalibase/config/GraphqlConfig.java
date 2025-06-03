@@ -1,3 +1,19 @@
+/*
+ * Copyright 2025 Excalibase Team and/or its affiliates
+ * and other contributors as indicated by the @author tags.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.excalibase.config;
 
 import graphql.GraphQL;
@@ -18,6 +34,9 @@ import org.springframework.context.annotation.Configuration;
 
 import java.util.Map;
 
+/**
+ * Configuration for dynamically generating GraphQL schema from database metadata.
+ */
 @Configuration
 public class GraphqlConfig {
     private static final Logger log = LoggerFactory.getLogger(GraphqlConfig.class);
@@ -29,6 +48,9 @@ public class GraphqlConfig {
         this.serviceLookup = serviceLookup;
     }
 
+    /**
+     * Creates GraphQL instance with schema and resolvers generated from database tables.
+     */
     @Bean
     public GraphQL graphQL() {
         log.info("Loading GraphQL for database :{} ", appConfig.getDatabaseType().getName());

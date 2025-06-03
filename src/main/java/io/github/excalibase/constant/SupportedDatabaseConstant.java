@@ -1,8 +1,10 @@
 package io.github.excalibase.constant;
 
+/**
+ * Constants for currently supported database types.
+ */
 public class SupportedDatabaseConstant {
     private SupportedDatabaseConstant() {}
 
-    // Values should match exactly with DatabaseType enum getName() values
     public static final String POSTGRES = "Postgres";
 }

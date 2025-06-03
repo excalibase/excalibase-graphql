@@ -12,6 +12,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.Collections;
 import java.util.Map;
 
+/**
+ * REST controller that provides GraphQL endpoint.
+ */
 @RestController
 @RequestMapping("/graphql")
 public class GraphqlController {
@@ -21,6 +24,12 @@ public class GraphqlController {
         this.graphQL = graphQL;
     }
 
+    /**
+     * Executes GraphQL queries and mutations.
+     * 
+     * @param request contains 'query' and optional 'variables'
+     * @return GraphQL execution result
+     */
     @PostMapping()
     public ResponseEntity<Map<String, Object>> graphql(@RequestBody Map<String, Object> request) {
         String query = (String) request.get("query");
