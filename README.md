@@ -12,10 +12,13 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 ### ✨ Current Features
 - **🔄 Automatic Schema Generation**: Creates GraphQL types from PostgreSQL tables
 - **📊 Rich Querying**: Filtering, sorting, and pagination out of the box
+- **🗓️ Enhanced Date/Time Filtering**: Comprehensive date and timestamp operations with multiple format support
+- **🔍 Advanced Filter Types**: StringFilter, IntFilter, FloatFilter, BooleanFilter, DateTimeFilter with operators like eq, neq, gt, gte, lt, lte, in, notIn, isNull, isNotNull
 - **🔗 Relationship Resolution**: Automatic foreign key relationship handling
 - **🛠️ CRUD Operations**: Full create, read, update, delete support
 - **📄 Cursor Pagination**: Relay-spec compatible connection queries
 - **⚡ N+1 Prevention**: Built-in query optimization
+- **🔧 OR Operations**: Complex logical conditions with nested filtering
 
 ### 🚧 Planned Features
 
@@ -68,6 +71,47 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 4. **Access GraphQL endpoint**
 
    Your GraphQL endpoint will be available at: `http://localhost:10000/graphql`
+
+## 🌟 Enhanced Filtering System
+
+Excalibase GraphQL features a comprehensive filtering system that goes beyond basic GraphQL capabilities:
+
+### 🎯 **Key Advantages**
+
+- **🗓️ Intelligent Date Handling**: Supports multiple date formats (`2023-12-25`, `2023-12-25 14:30:00`, ISO 8601) with automatic type conversion
+- **🔧 Rich Operator Support**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, `isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`, `like`, `ilike`
+- **🔗 Complex Logical Operations**: OR conditions with nested filtering
+- **⚡ Type-Safe**: Dedicated filter types for String, Int, Float, Boolean, and DateTime
+- **🔄 Backward Compatible**: Legacy filter syntax still supported
+- **📊 Production Ready**: 95% feature completeness with comprehensive test coverage
+
+### 💡 **Quick Examples**
+
+**Date Range Filtering:**
+```graphql
+{ 
+  users(where: { created_at: { gte: "2023-01-01", lt: "2024-01-01" } }) 
+  { id name created_at } 
+}
+```
+
+**Complex OR Conditions:**
+```graphql
+{ 
+  users(or: [
+    { name: { startsWith: "John" } }, 
+    { email: { endsWith: "@admin.com" } }
+  ]) { id name email } 
+}
+```
+
+**Array Operations:**
+```graphql
+{ 
+  users(where: { id: { in: [1, 2, 3, 4, 5] } }) 
+  { id name } 
+}
+```
 
 ## Example Usage
 
@@ -148,6 +192,61 @@ query {
       endCursor
     }
     totalCount
+  }
+}
+
+# Enhanced filtering with new filter types
+query {
+  users(
+    where: {
+      name: { startsWith: "John" }
+      email: { isNotNull: true }
+      id: { in: [1, 2, 3, 4, 5] }
+      created_at: { 
+        gte: "2023-01-01",
+        lt: "2024-01-01" 
+      }
+    }
+  ) {
+    id
+    name
+    email
+    created_at
+  }
+}
+
+# OR operations with enhanced filters
+query {
+  users(
+    or: [
+      { name: { eq: "Alice" } },
+      { name: { eq: "Bob" } },
+      { email: { endsWith: "@example.com" } }
+    ]
+  ) {
+    id
+    name
+    email
+  }
+}
+
+# Complex date/timestamp filtering
+query {
+  posts(
+    where: {
+      published_at: { 
+        gte: "2023-12-01 00:00:00",
+        lt: "2023-12-31 23:59:59"
+      }
+      title: { contains: "GraphQL" }
+    }
+  ) {
+    id
+    title
+    published_at
+    users {
+      name
+    }
   }
 }
 ```
@@ -295,20 +394,52 @@ logging:
 
 ## 🧪 Testing
 
-The project includes comprehensive tests using Spock and Testcontainers:
+The project includes comprehensive tests using Spock, Spring Boot MockMvc, and Testcontainers:
 
 ```bash
 # Run all tests
 mvn test
 
-# Run specific test
+# Run specific test classes
 mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
+mvn test -Dtest=GraphqlControllerTest
+
+# Run enhanced filtering tests
+mvn test -Dtest=DateTimeFilteringIntegrationTest
 
 # Run with coverage
 mvn clean test jacoco:report
 ```
 
-Tests automatically spin up real PostgreSQL containers for integration testing.
+### Test Coverage
+
+**✅ Enhanced Date/Time Filtering Tests:**
+- Date equality, range, and comparison operations
+- Timestamp filtering with multiple format support
+- Cross-precision operations (date-only on timestamp columns)
+- OR operations with complex nested conditions
+- IN/NOT IN array operations
+- Null/Not null checks
+- Error handling for invalid date formats
+
+**✅ Controller Tests (MockMvc):**
+- GraphQL schema introspection validation
+- All filter types (StringFilter, IntFilter, DateTimeFilter, etc.)
+- Connection queries with enhanced filtering
+- Legacy filter syntax backward compatibility
+- Real PostgreSQL database integration
+
+**✅ Integration Tests:**
+- Automatic PostgreSQL container spin-up
+- Real database schema and data testing
+- Performance and edge case validation
+
+### Test Configuration
+
+Tests use the same PostgreSQL configuration as the main application:
+- Database: `hana` on `localhost:5432`
+- Test server runs on port `10001`
+- Full feature parity with production environment
 
 ## Supported Database Types
 
@@ -319,19 +450,113 @@ Tests automatically spin up real PostgreSQL containers for integration testing.
 | Oracle | 🚧 Planned | - |
 | SQL Server | 🚧 Planned | - |
 
-## Filtering & Querying
+## 🔍 Enhanced Filtering & Querying
 
-### Available Operators
+### Filter Types
 
-**String fields:**
-- `field_contains`, `field_startsWith`, `field_endsWith`
-- `field_isNull`, `field_isNotNull`
+Excalibase GraphQL provides comprehensive filter types for all data types:
 
-**Numeric fields:**
-- `field_gt`, `field_gte`, `field_lt`, `field_lte`
+#### **StringFilter**
+```graphql
+{
+  users(where: { 
+    name: { 
+      eq: "John",           # Exact match
+      neq: "Jane",          # Not equal
+      contains: "oh",       # Contains substring
+      startsWith: "J",      # Starts with
+      endsWith: "n",        # Ends with
+      like: "J%n",          # SQL LIKE pattern
+      ilike: "j%N",         # Case-insensitive LIKE
+      isNull: false,        # Null check
+      isNotNull: true,      # Not null check
+      in: ["John", "Jane"], # In array
+      notIn: ["Bob"]        # Not in array
+    }
+  }) { id name }
+}
+```
 
-**All fields:**
-- Direct equality: `field: value`
+#### **IntFilter / FloatFilter**
+```graphql
+{
+  users(where: { 
+    age: { 
+      eq: 25,               # Equal
+      neq: 30,              # Not equal
+      gt: 18,               # Greater than
+      gte: 21,              # Greater than or equal
+      lt: 65,               # Less than
+      lte: 64,              # Less than or equal
+      in: [25, 30, 35],     # In array
+      notIn: [40, 45],      # Not in array
+      isNull: false         # Null checks
+    }
+  }) { id name age }
+}
+```
+
+#### **DateTimeFilter**
+Supports multiple date formats with intelligent type conversion:
+
+```graphql
+{
+  users(where: { 
+    created_at: { 
+      eq: "2023-12-25",                    # Date only
+      gte: "2023-01-01 00:00:00",          # Timestamp
+      lt: "2023-12-31T23:59:59.999Z",      # ISO format
+      in: ["2023-01-01", "2023-06-01"]     # Date array
+    }
+  }) { id name created_at }
+}
+```
+
+**Supported Date Formats:**
+- `"2023-12-25"` (yyyy-MM-dd)
+- `"2023-12-25 14:30:00"` (yyyy-MM-dd HH:mm:ss)
+- `"2023-12-25 14:30:00.123"` (with milliseconds)
+- `"2023-12-25T14:30:00Z"` (ISO 8601)
+
+#### **BooleanFilter**
+```graphql
+{
+  users(where: { 
+    is_active: { 
+      eq: true,
+      isNull: false
+    }
+  }) { id name is_active }
+}
+```
+
+### OR Operations
+
+Combine multiple conditions with logical OR:
+
+```graphql
+{
+  users(
+    or: [
+      { name: { startsWith: "John" } },
+      { email: { endsWith: "@admin.com" } },
+      { age: { gte: 65 } }
+    ]
+  ) { id name email age }
+}
+```
+
+### Legacy Filter Support
+
+For backward compatibility, the old filter syntax is still supported:
+
+```graphql
+{
+  users(filter: "name='John' AND age>25") {
+    id name age
+  }
+}
+```
 
 ### Pagination
 

@@ -38,6 +38,12 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.sql.Date;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -722,37 +728,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         }
     }
 
-    /**
-     * Adds a parameter to the parameter source with proper type conversion.
-     */
-    private void addTypedParameter(MapSqlParameterSource paramSource, String paramName, Object value, String columnType) {
-        if (value == null || value.toString().isEmpty()) {
-            paramSource.addValue(paramName, null);
-            return;
-        }
 
-        String valueStr = value.toString();
-        String type = columnType != null ? columnType.toLowerCase() : "";
-
-        try {
-            if (type.contains(ColumnTypeConstant.UUID)) {
-                paramSource.addValue(paramName, UUID.fromString(valueStr));
-            } else if (type.contains(ColumnTypeConstant.INT) && !type.contains(ColumnTypeConstant.BIGINT)) {
-                paramSource.addValue(paramName, Integer.parseInt(valueStr));
-            } else if (type.contains(ColumnTypeConstant.BIGINT)) {
-                paramSource.addValue(paramName, Long.parseLong(valueStr));
-            } else if (type.contains(ColumnTypeConstant.DECIMAL) || type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DOUBLE) || type.contains(ColumnTypeConstant.FLOAT)) {
-                paramSource.addValue(paramName, Double.parseDouble(valueStr));
-            } else if (type.contains(ColumnTypeConstant.BOOL)) {
-                paramSource.addValue(paramName, Boolean.parseBoolean(valueStr));
-            } else {
-                paramSource.addValue(paramName, valueStr);
-            }
-        } catch (Exception e) {
-            log.warn("Error converting cursor value for {} : {} ", paramName, e.getMessage());
-            paramSource.addValue(paramName, valueStr);
-        }
-    }
 
     /**
      * Gets the column types for a table from the schema reflector.
@@ -778,8 +754,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
     /**
      * Builds WHERE conditions for SQL queries based on GraphQL filter arguments.
-     * Supports various operators like equals, contains, startsWith, endsWith,
-     * greater than, less than, etc.
+     * Now supports the new filter format: {where: {customer_id: {eq: 524}}} and OR conditions.
      *
      * @param arguments   The GraphQL filter arguments
      * @param paramSource The SQL parameter source to populate
@@ -789,6 +764,36 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     private List<String> buildWhereConditions(Map<String, Object> arguments, MapSqlParameterSource paramSource,
                                               Map<String, String> columnTypes) {
         List<String> conditions = new ArrayList<>();
+        
+        // Handle the "where" argument (new filter format)
+        if (arguments.containsKey("where")) {
+            Map<String, Object> whereConditions = (Map<String, Object>) arguments.get("where");
+            conditions.addAll(buildFilterConditions(whereConditions, paramSource, columnTypes, "where"));
+        }
+        
+        // Handle the "or" argument (array of filter objects)
+        if (arguments.containsKey("or")) {
+            List<Map<String, Object>> orConditions = (List<Map<String, Object>>) arguments.get("or");
+            if (!orConditions.isEmpty()) {
+                List<String> orParts = new ArrayList<>();
+                for (int i = 0; i < orConditions.size(); i++) {
+                    Map<String, Object> orCondition = orConditions.get(i);
+                    List<String> orSubConditions = buildFilterConditions(orCondition, paramSource, columnTypes, "or_" + i);
+                    if (!orSubConditions.isEmpty()) {
+                        if (orSubConditions.size() == 1) {
+                            orParts.add(orSubConditions.get(0));
+                        } else {
+                            orParts.add("(" + String.join(" AND ", orSubConditions) + ")");
+                        }
+                    }
+                }
+                if (!orParts.isEmpty()) {
+                    conditions.add("(" + String.join(" OR ", orParts) + ")");
+                }
+            }
+        }
+        
+        // Handle legacy format for backward compatibility (direct column filters like customer_id_eq: 524)
         List<String> operators = List.of(
                 FieldConstant.OPERATOR_CONTAINS,
                 FieldConstant.OPERATOR_STARTS_WITH,
@@ -804,6 +809,13 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         for (Map.Entry<String, Object> entry : arguments.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
+
+            // Skip special arguments
+            if (key.equals("where") || key.equals("or") || key.equals(FieldConstant.ORDER_BY) || 
+                key.equals(FieldConstant.LIMIT) || key.equals(FieldConstant.OFFSET) || key.equals(FieldConstant.FIRST) || 
+                key.equals(FieldConstant.LAST) || key.equals(FieldConstant.BEFORE) || key.equals(FieldConstant.AFTER)) {
+                continue;
+            }
 
             if (value == null) {
                 String quotedKey = "\"" + key + "\"";
@@ -877,7 +889,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         break;
                 }
             } else {
-                // Basic equality condition
+                // Basic equality condition (legacy format)
                 String columnType = columnTypes.getOrDefault(key, "").toLowerCase();
                 String quotedKey = "\"" + key + "\"";
 
@@ -936,5 +948,300 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         }
 
         return conditions;
+    }
+    
+    /**
+     * Builds filter conditions from the new filter object format.
+     * Handles filters like {customer_id: {eq: 524, gt: 100}}
+     */
+    private List<String> buildFilterConditions(Map<String, Object> filterObj, MapSqlParameterSource paramSource, 
+                                               Map<String, String> columnTypes, String paramPrefix) {
+        List<String> conditions = new ArrayList<>();
+        
+        for (Map.Entry<String, Object> entry : filterObj.entrySet()) {
+            String columnName = entry.getKey();
+            Object filterValue = entry.getValue();
+            
+            if (filterValue == null) {
+                continue;
+            }
+            
+            // filterValue should be a Map containing operators like {eq: 524, gt: 100}
+            if (!(filterValue instanceof Map)) {
+                continue;
+            }
+            
+            Map<String, Object> operators = (Map<String, Object>) filterValue;
+            String quotedColumnName = "\"" + columnName + "\"";
+            
+            for (Map.Entry<String, Object> opEntry : operators.entrySet()) {
+                String operator = opEntry.getKey();
+                Object value = opEntry.getValue();
+                
+                if (value == null && !operator.equals("isNull") && !operator.equals("isNotNull")) {
+                    continue;
+                }
+                
+                String paramName = paramPrefix + "_" + columnName + "_" + operator;
+                
+                switch (operator.toLowerCase()) {
+                    case "eq":
+                        conditions.add(quotedColumnName + " = :" + paramName);
+                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        break;
+                        
+                    case "neq":
+                        conditions.add(quotedColumnName + " <> :" + paramName);
+                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        break;
+                        
+                    case "gt":
+                        conditions.add(quotedColumnName + " > :" + paramName);
+                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        break;
+                        
+                    case "gte":
+                        conditions.add(quotedColumnName + " >= :" + paramName);
+                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        break;
+                        
+                    case "lt":
+                        conditions.add(quotedColumnName + " < :" + paramName);
+                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        break;
+                        
+                    case "lte":
+                        conditions.add(quotedColumnName + " <= :" + paramName);
+                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        break;
+                        
+                    case "like":
+                        conditions.add(quotedColumnName + " LIKE :" + paramName);
+                        paramSource.addValue(paramName, "%" + value + "%");
+                        break;
+                        
+                    case "ilike":
+                        conditions.add(quotedColumnName + " ILIKE :" + paramName);
+                        paramSource.addValue(paramName, "%" + value + "%");
+                        break;
+                        
+                    case "contains":
+                        conditions.add(quotedColumnName + " LIKE :" + paramName);
+                        paramSource.addValue(paramName, "%" + value + "%");
+                        break;
+                        
+                    case "startswith":
+                        conditions.add(quotedColumnName + " LIKE :" + paramName);
+                        paramSource.addValue(paramName, value + "%");
+                        break;
+                        
+                    case "endswith":
+                        conditions.add(quotedColumnName + " LIKE :" + paramName);
+                        paramSource.addValue(paramName, "%" + value);
+                        break;
+                        
+                    case "isnull":
+                        if (value instanceof Boolean && (Boolean) value) {
+                            conditions.add(quotedColumnName + " IS NULL");
+                        } else {
+                            conditions.add(quotedColumnName + " IS NOT NULL");
+                        }
+                        break;
+                        
+                    case "isnotnull":
+                        if (value instanceof Boolean && (Boolean) value) {
+                            conditions.add(quotedColumnName + " IS NOT NULL");
+                        } else {
+                            conditions.add(quotedColumnName + " IS NULL");
+                        }
+                        break;
+                        
+                    case "in":
+                        if (value instanceof List) {
+                            List<?> valueList = (List<?>) value;
+                            if (!valueList.isEmpty()) {
+                                conditions.add(quotedColumnName + " IN (:" + paramName + ")");
+                                addTypedParameter(paramSource, paramName, valueList, columnTypes.get(columnName));
+                            }
+                        }
+                        break;
+                        
+                    case "notin":
+                        if (value instanceof List) {
+                            List<?> valueList = (List<?>) value;
+                            if (!valueList.isEmpty()) {
+                                conditions.add(quotedColumnName + " NOT IN (:" + paramName + ")");
+                                addTypedParameter(paramSource, paramName, valueList, columnTypes.get(columnName));
+                            }
+                        }
+                        break;
+                        
+                    default:
+                        // Unknown operator, skip
+                        break;
+                }
+            }
+        }
+        
+        return conditions;
+    }
+
+    /**
+     * Adds a parameter to the parameter source with proper type conversion.
+     * Includes comprehensive date/timestamp handling.
+     */
+    private void addTypedParameter(MapSqlParameterSource paramSource, String paramName, Object value, String columnType) {
+        if (value == null || value.toString().isEmpty()) {
+            paramSource.addValue(paramName, null);
+            return;
+        }
+        
+        String type = columnType != null ? columnType.toLowerCase() : "";
+        
+        try {
+            // Handle arrays for IN/NOT IN operations
+            if (value instanceof List<?>) {
+                List<?> listValue = (List<?>) value;
+                if (listValue.isEmpty()) {
+                    paramSource.addValue(paramName, listValue);
+                    return;
+                }
+                
+                List<Object> convertedList = new ArrayList<>();
+                for (Object item : listValue) {
+                    if (item == null) {
+                        convertedList.add(null);
+                    } else {
+                        String itemStr = item.toString();
+                        if (type.contains(ColumnTypeConstant.UUID)) {
+                            convertedList.add(UUID.fromString(itemStr));
+                        } else if (type.contains(ColumnTypeConstant.INT) && !type.contains(ColumnTypeConstant.BIGINT)) {
+                            convertedList.add(Integer.parseInt(itemStr));
+                        } else if (type.contains(ColumnTypeConstant.BIGINT)) {
+                            convertedList.add(Long.parseLong(itemStr));
+                        } else if (type.contains(ColumnTypeConstant.DECIMAL) || type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DOUBLE) || type.contains(ColumnTypeConstant.FLOAT)) {
+                            convertedList.add(Double.parseDouble(itemStr));
+                        } else if (type.contains(ColumnTypeConstant.BOOL)) {
+                            convertedList.add(Boolean.parseBoolean(itemStr));
+                        } else if (type.contains(ColumnTypeConstant.DATE) || type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.TIME)) {
+                            // Handle date/timestamp conversion for arrays
+                            Object convertedDate = convertToDateTime(itemStr, type);
+                            convertedList.add(convertedDate);
+                        } else {
+                            convertedList.add(itemStr);
+                        }
+                    }
+                }
+                paramSource.addValue(paramName, convertedList);
+                return;
+            }
+            
+            // Handle single values
+            String valueStr = value.toString();
+            
+            if (type.contains(ColumnTypeConstant.UUID)) {
+                paramSource.addValue(paramName, UUID.fromString(valueStr));
+            } else if (type.contains(ColumnTypeConstant.INT) && !type.contains(ColumnTypeConstant.BIGINT)) {
+                paramSource.addValue(paramName, Integer.parseInt(valueStr));
+            } else if (type.contains(ColumnTypeConstant.BIGINT)) {
+                paramSource.addValue(paramName, Long.parseLong(valueStr));
+            } else if (type.contains(ColumnTypeConstant.DECIMAL) || type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DOUBLE) || type.contains(ColumnTypeConstant.FLOAT)) {
+                paramSource.addValue(paramName, Double.parseDouble(valueStr));
+            } else if (type.contains(ColumnTypeConstant.BOOL)) {
+                paramSource.addValue(paramName, Boolean.parseBoolean(valueStr));
+            } else if (type.contains(ColumnTypeConstant.DATE) || type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.TIME)) {
+                // Handle date/timestamp conversion with multiple formats
+                Object convertedDate = convertToDateTime(valueStr, type);
+                paramSource.addValue(paramName, convertedDate);
+            } else {
+                // Default to string
+                paramSource.addValue(paramName, valueStr);
+            }
+        } catch (Exception e) {
+            log.warn("Error converting value for {} : {} ", paramName, e.getMessage());
+            // Fallback to string
+            String valueStr = value.toString();
+            paramSource.addValue(paramName, valueStr);
+        }
+    }
+    
+    /**
+     * Converts a string value to appropriate date/timestamp type based on column type
+     */
+    private Object convertToDateTime(String valueStr, String columnType) {
+        // Try multiple date/time formats
+        String[] dateFormats = {
+            "yyyy-MM-dd",           // 2006-02-14
+            "yyyy-MM-dd HH:mm:ss",  // 2013-05-26 14:49:45
+            "yyyy-MM-dd HH:mm:ss.SSS", // 2013-05-26 14:49:45.738
+            "yyyy-MM-dd'T'HH:mm:ss",    // ISO format
+            "yyyy-MM-dd'T'HH:mm:ss.SSS" // ISO format with milliseconds
+        };
+        
+        String type = columnType.toLowerCase();
+        
+        // For date columns, try to parse as LocalDate first
+        if (type.contains(ColumnTypeConstant.DATE) && !type.contains(ColumnTypeConstant.TIMESTAMP)) {
+            try {
+                LocalDate localDate = LocalDate.parse(valueStr, DateTimeFormatter.ISO_DATE);
+                return Date.valueOf(localDate);
+            } catch (DateTimeParseException e) {
+                // If ISO format fails, try other formats
+                for (String format : dateFormats) {
+                    try {
+                        DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format);
+                        if (format.contains("HH")) {
+                            // Contains time, parse as datetime then extract date
+                            LocalDateTime dateTime = LocalDateTime.parse(valueStr, formatter);
+                            return Date.valueOf(dateTime.toLocalDate());
+                        } else {
+                            // Date only
+                            LocalDate localDate = LocalDate.parse(valueStr, formatter);
+                            return Date.valueOf(localDate);
+                        }
+                    } catch (DateTimeParseException ignored) {
+                        // Try next format
+                    }
+                }
+            }
+        }
+        
+        // For timestamp columns, try to parse as LocalDateTime
+        if (type.contains(ColumnTypeConstant.TIMESTAMP)) {
+            // Try parsing with different formats
+            for (String format : dateFormats) {
+                try {
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern(format);
+                    if (format.contains("HH")) {
+                        // Contains time
+                        LocalDateTime dateTime = LocalDateTime.parse(valueStr, formatter);
+                        return Timestamp.valueOf(dateTime);
+                    } else {
+                        // Date only, assume start of day
+                        LocalDate localDate = LocalDate.parse(valueStr, formatter);
+                        return Timestamp.valueOf(localDate.atStartOfDay());
+                    }
+                } catch (DateTimeParseException ignored) {
+                    // Try next format
+                }
+            }
+            
+            // Try ISO formats
+            try {
+                LocalDateTime dateTime = LocalDateTime.parse(valueStr, DateTimeFormatter.ISO_LOCAL_DATE_TIME);
+                return Timestamp.valueOf(dateTime);
+            } catch (DateTimeParseException e) {
+                try {
+                    LocalDate localDate = LocalDate.parse(valueStr, DateTimeFormatter.ISO_LOCAL_DATE);
+                    return Timestamp.valueOf(localDate.atStartOfDay());
+                } catch (DateTimeParseException ignored) {
+                    // Fall through to string fallback
+                }
+            }
+        }
+        
+        // If all parsing fails, return as string and let PostgreSQL handle it
+        log.warn("Could not parse date/time value: {} for column type: {}, using string fallback", valueStr, columnType);
+        return valueStr;
     }
 }

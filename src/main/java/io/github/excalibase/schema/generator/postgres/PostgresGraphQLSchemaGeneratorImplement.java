@@ -25,6 +25,7 @@ import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashMap;
 import java.util.Map;
 
 import static graphql.Scalars.*;
@@ -56,11 +57,18 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         schemaBuilder.additionalType(orderDirectionEnum);
         schemaBuilder.additionalType(pageInfoType);
 
-        // Create type definitions for each table
-        createTableTypes(schemaBuilder, tables, pageInfoType);
+        // Create filter input types
+        Map<String, GraphQLInputObjectType> filterInputTypes = createFilterInputTypes();
+        for (GraphQLInputObjectType filterType : filterInputTypes.values()) {
+            schemaBuilder.additionalType(filterType);
+        }
+
+        // Create type definitions for each table and their filter input types
+        Map<String, GraphQLInputObjectType> tableFilterTypes = new HashMap<>();
+        createTableTypes(schemaBuilder, tables, pageInfoType, filterInputTypes, tableFilterTypes);
 
         // Create Query type
-        GraphQLObjectType queryType = createQueryType(tables);
+        GraphQLObjectType queryType = createQueryType(tables, tableFilterTypes);
         schemaBuilder.query(queryType);
 
         // Create Mutation type
@@ -106,7 +114,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .build();
     }
 
-    private void createTableTypes(GraphQLSchema.Builder schemaBuilder, Map<String, TableInfo> tables, GraphQLObjectType pageInfoType) {
+    private void createTableTypes(GraphQLSchema.Builder schemaBuilder, Map<String, TableInfo> tables, GraphQLObjectType pageInfoType, Map<String, GraphQLInputObjectType> filterInputTypes, Map<String, GraphQLInputObjectType> tableFilterTypes) {
         for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
             String tableName = entry.getKey();
             TableInfo tableInfo = entry.getValue();
@@ -126,6 +134,11 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             // Create order by input type
             GraphQLInputObjectType orderByInputType = createOrderByInput(tableName, tableInfo);
             schemaBuilder.additionalType(orderByInputType);
+
+            // Create filter input type for the table
+            GraphQLInputObjectType filterType = createFilterInputTypeForTable(tableName, tableInfo, filterInputTypes);
+            tableFilterTypes.put(tableName, filterType);
+            schemaBuilder.additionalType(filterType);
         }
     }
 
@@ -214,7 +227,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         return orderByInputBuilder.build();
     }
 
-    private GraphQLObjectType createQueryType(Map<String, TableInfo> tables) {
+    private GraphQLObjectType createQueryType(Map<String, TableInfo> tables, Map<String, GraphQLInputObjectType> tableFilterTypes) {
         GraphQLObjectType.Builder queryBuilder = GraphQLObjectType.newObject()
                 .name(GraphqlConstant.QUERY)
                 .description("Root query type");
@@ -222,22 +235,36 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add query fields for each table
         for (String tableName : tables.keySet()) {
             TableInfo tableInfo = tables.get(tableName);
-            addQueryFields(queryBuilder, tableName, tableInfo);
-            addConnectionFields(queryBuilder, tableName, tableInfo);
+            addQueryFields(queryBuilder, tableName, tableInfo, tableFilterTypes.get(tableName));
+            addConnectionFields(queryBuilder, tableName, tableInfo, tableFilterTypes);
         }
 
         return queryBuilder.build();
     }
 
-    private void addQueryFields(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo) {
+    private void addQueryFields(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo, GraphQLInputObjectType filterType) {
         GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
                 .name(tableName.toLowerCase())
                 .type(new GraphQLList(GraphQLTypeReference.typeRef(tableName)))
                 .description("Query all records from " + tableName);
 
-        // Add filtering arguments
+        // Add the where argument using the table's filter type
+        fieldBuilder.argument(GraphQLArgument.newArgument()
+            .name("where")
+            .type(filterType)
+            .description("Filter conditions for " + tableName)
+            .build());
+        
+        // Add OR filter argument
+        fieldBuilder.argument(GraphQLArgument.newArgument()
+            .name("or")
+            .type(new GraphQLList(filterType))
+            .description("OR conditions for " + tableName)
+            .build());
+
+        // Add filtering arguments (keep legacy for backward compatibility)
         for (ColumnInfo column : tableInfo.getColumns()) {
-            addFilteringArguments(fieldBuilder, column);
+            addFilteringArguments(fieldBuilder, column, filterType);
         }
 
         // Add pagination arguments
@@ -253,16 +280,26 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         queryBuilder.field(fieldBuilder.build());
     }
 
-    private void addConnectionFields(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo) {
+    private void addConnectionFields(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo, Map<String, GraphQLInputObjectType> tableFilterTypes) {
         GraphQLFieldDefinition.Builder connectionFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
                 .name(tableName.toLowerCase() + "Connection")
                 .type(GraphQLTypeReference.typeRef(tableName + "Connection"))
                 .description("Connection to " + tableName + " records for cursor-based pagination following the Relay specification");
 
-        // Add filtering arguments
-        for (ColumnInfo column : tableInfo.getColumns()) {
-            addFilteringArguments(connectionFieldBuilder, column);
-        }
+        // Add the where argument using the table's filter type
+        GraphQLInputObjectType tableFilterType = tableFilterTypes.get(tableName);
+        connectionFieldBuilder.argument(GraphQLArgument.newArgument()
+            .name("where")
+            .type(tableFilterType)
+            .description("Filter conditions for " + tableName)
+            .build());
+        
+        // Add OR filter argument
+        connectionFieldBuilder.argument(GraphQLArgument.newArgument()
+            .name("or")
+            .type(new GraphQLList(tableFilterType))
+            .description("OR conditions for " + tableName)
+            .build());
 
         // Add ordering to connection fields
         connectionFieldBuilder.argument(GraphQLArgument.newArgument()
@@ -277,7 +314,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         queryBuilder.field(connectionFieldBuilder.build());
     }
 
-    private void addFilteringArguments(GraphQLFieldDefinition.Builder fieldBuilder, ColumnInfo column) {
+    private void addFilteringArguments(GraphQLFieldDefinition.Builder fieldBuilder, ColumnInfo column, GraphQLInputObjectType filterType) {
         GraphQLInputType argType = mapDatabaseTypeToGraphQLInputType(column.getType());
 
         // Add an argument for exact matching
@@ -332,6 +369,15 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                     .name(column.getName() + "_" + FieldConstant.OPERATOR_LTE)
                     .type(argType)
                     .description("Filter where " + column.getName() + " is less than or equal")
+                    .build());
+        }
+
+        // Add filter arguments
+        if (filterType != null) {
+            fieldBuilder.argument(GraphQLArgument.newArgument()
+                    .name(column.getName() + "_filter")
+                    .type(filterType)
+                    .description("Filter by " + column.getName())
                     .build());
         }
     }
@@ -593,5 +639,319 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLInputType mapDatabaseTypeToGraphQLInputType(String dbType) {
         return (GraphQLInputType) mapDatabaseTypeToGraphQLType(dbType);
+    }
+
+    /**
+     * Creates filter input types for different scalar types
+     */
+    private Map<String, GraphQLInputObjectType> createFilterInputTypes() {
+        Map<String, GraphQLInputObjectType> filterTypes = new HashMap<>();
+        
+        // String filter type
+        GraphQLInputObjectType stringFilter = GraphQLInputObjectType.newInputObject()
+            .name("StringFilter")
+            .description("String filter options")
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("eq")
+                .type(GraphQLString)
+                .description("Equals")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("neq")
+                .type(GraphQLString)
+                .description("Not equals")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("contains")
+                .type(GraphQLString)
+                .description("Contains text")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("startsWith")
+                .type(GraphQLString)
+                .description("Starts with text")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("endsWith")
+                .type(GraphQLString)
+                .description("Ends with text")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("like")
+                .type(GraphQLString)
+                .description("Like pattern")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("ilike")
+                .type(GraphQLString)
+                .description("Case-insensitive like pattern")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNull")
+                .type(GraphQLBoolean)
+                .description("Is null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNotNull")
+                .type(GraphQLBoolean)
+                .description("Is not null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("in")
+                .type(new GraphQLList(GraphQLString))
+                .description("In list of values")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("notIn")
+                .type(new GraphQLList(GraphQLString))
+                .description("Not in list of values")
+                .build())
+            .build();
+        filterTypes.put("StringFilter", stringFilter);
+        
+        // Integer filter type
+        GraphQLInputObjectType intFilter = GraphQLInputObjectType.newInputObject()
+            .name("IntFilter")
+            .description("Integer filter options")
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("eq")
+                .type(GraphQLInt)
+                .description("Equals")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("neq")
+                .type(GraphQLInt)
+                .description("Not equals")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("gt")
+                .type(GraphQLInt)
+                .description("Greater than")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("gte")
+                .type(GraphQLInt)
+                .description("Greater than or equal")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("lt")
+                .type(GraphQLInt)
+                .description("Less than")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("lte")
+                .type(GraphQLInt)
+                .description("Less than or equal")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNull")
+                .type(GraphQLBoolean)
+                .description("Is null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNotNull")
+                .type(GraphQLBoolean)
+                .description("Is not null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("in")
+                .type(new GraphQLList(GraphQLInt))
+                .description("In list of values")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("notIn")
+                .type(new GraphQLList(GraphQLInt))
+                .description("Not in list of values")
+                .build())
+            .build();
+        filterTypes.put("IntFilter", intFilter);
+        
+        // Float filter type
+        GraphQLInputObjectType floatFilter = GraphQLInputObjectType.newInputObject()
+            .name("FloatFilter")
+            .description("Float filter options")
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("eq")
+                .type(GraphQLFloat)
+                .description("Equals")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("neq")
+                .type(GraphQLFloat)
+                .description("Not equals")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("gt")
+                .type(GraphQLFloat)
+                .description("Greater than")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("gte")
+                .type(GraphQLFloat)
+                .description("Greater than or equal")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("lt")
+                .type(GraphQLFloat)
+                .description("Less than")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("lte")
+                .type(GraphQLFloat)
+                .description("Less than or equal")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNull")
+                .type(GraphQLBoolean)
+                .description("Is null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNotNull")
+                .type(GraphQLBoolean)
+                .description("Is not null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("in")
+                .type(new GraphQLList(GraphQLFloat))
+                .description("In list of values")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("notIn")
+                .type(new GraphQLList(GraphQLFloat))
+                .description("Not in list of values")
+                .build())
+            .build();
+        filterTypes.put("FloatFilter", floatFilter);
+        
+        // Boolean filter type
+        GraphQLInputObjectType booleanFilter = GraphQLInputObjectType.newInputObject()
+            .name("BooleanFilter")
+            .description("Boolean filter options")
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("eq")
+                .type(GraphQLBoolean)
+                .description("Equals")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("neq")
+                .type(GraphQLBoolean)
+                .description("Not equals")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNull")
+                .type(GraphQLBoolean)
+                .description("Is null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNotNull")
+                .type(GraphQLBoolean)
+                .description("Is not null")
+                .build())
+            .build();
+        filterTypes.put("BooleanFilter", booleanFilter);
+        
+        // DateTime filter type for timestamps and dates
+        GraphQLInputObjectType dateTimeFilter = GraphQLInputObjectType.newInputObject()
+            .name("DateTimeFilter")
+            .description("DateTime filter options for timestamps and dates")
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("eq")
+                .type(GraphQLString)
+                .description("Equals (ISO format: YYYY-MM-DD or YYYY-MM-DD HH:MM:SS)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("neq")
+                .type(GraphQLString)
+                .description("Not equals")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("gt")
+                .type(GraphQLString)
+                .description("Greater than (after)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("gte")
+                .type(GraphQLString)
+                .description("Greater than or equal (after or on)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("lt")
+                .type(GraphQLString)
+                .description("Less than (before)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("lte")
+                .type(GraphQLString)
+                .description("Less than or equal (before or on)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNull")
+                .type(GraphQLBoolean)
+                .description("Is null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNotNull")
+                .type(GraphQLBoolean)
+                .description("Is not null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("in")
+                .type(new GraphQLList(GraphQLString))
+                .description("In list of dates/timestamps")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("notIn")
+                .type(new GraphQLList(GraphQLString))
+                .description("Not in list of dates/timestamps")
+                .build())
+            .build();
+        filterTypes.put("DateTimeFilter", dateTimeFilter);
+        
+        return filterTypes;
+    }
+
+    /**
+     * Gets the filter type name based on database column type
+     */
+    private String getFilterTypeNameForColumn(String dbType) {
+        String type = dbType.toLowerCase();
+        
+        if (type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.DATE) || type.contains(ColumnTypeConstant.TIME)) {
+            return "DateTimeFilter";
+        } else if (type.contains(ColumnTypeConstant.INT) || type.equals(ColumnTypeConstant.BIGINT) || type.equals(ColumnTypeConstant.SMALLINT) || type.contains(ColumnTypeConstant.SERIAL)) {
+            return "IntFilter";
+        } else if (type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DECIMAL) || 
+                  type.contains(ColumnTypeConstant.REAL) || type.contains(ColumnTypeConstant.DOUBLE_PRECISION) || type.contains(ColumnTypeConstant.FLOAT)) {
+            return "FloatFilter";
+        } else if (type.contains(ColumnTypeConstant.BOOLEAN) || type.equals(ColumnTypeConstant.BOOL)) {
+            return "BooleanFilter";
+        } else {
+            return "StringFilter";
+        }
+    }
+
+    /**
+     * Creates a filter input type for a specific table
+     */
+    private GraphQLInputObjectType createFilterInputTypeForTable(String tableName, TableInfo tableInfo, Map<String, GraphQLInputObjectType> filterInputTypes) {
+        GraphQLInputObjectType.Builder filterBuilder = GraphQLInputObjectType.newInputObject()
+            .name(tableName + "Filter")
+            .description("Filter input for " + tableName);
+        
+        // Add filter fields for each column
+        for (ColumnInfo column : tableInfo.getColumns()) {
+            String filterTypeName = getFilterTypeNameForColumn(column.getType());
+            
+            if (filterInputTypes.containsKey(filterTypeName)) {
+                filterBuilder.field(GraphQLInputObjectField.newInputObjectField()
+                    .name(column.getName())
+                    .type(filterInputTypes.get(filterTypeName))
+                    .description("Filter options for " + column.getName())
+                    .build());
+            }
+        }
+        
+        GraphQLInputObjectType tableFilterType = filterBuilder.build();
+        return tableFilterType;
     }
 }

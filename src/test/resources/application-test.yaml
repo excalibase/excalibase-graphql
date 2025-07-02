@@ -1,0 +1,35 @@
+server:
+  port: 0  # Use random port for testing to avoid conflicts
+
+spring:
+  application:
+    name: Excalibase graphql Test
+  threads:
+    virtual:
+      enabled: true
+  # Database configuration will be provided by TestContainers via DynamicPropertySource
+  # Remove hardcoded database connection details
+
+app:
+  allowed-schema: public
+  database-type: postgres
+
+logging:
+  level:
+    root: info
+    org:
+      springframework: info
+    io:
+      github:
+        excalibase: DEBUG
+  pattern:
+    console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1.}): %msg%n%throwable"
+
+# GraphQL configuration for testing
+spring.graphql:
+  graphiql:
+    enabled: true
+    path: /graphiql
+  path: /graphql
+  websocket:
+    path: /graphql
