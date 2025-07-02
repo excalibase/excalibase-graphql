@@ -25,4 +25,4 @@ logging:
       github:
         excalibase: ${log.level.app:info}
   pattern:
-    console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1.}): %msg%n%throwable"
+    console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1}): %msg%n%throwable"
