@@ -19,17 +19,18 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 - **📄 Cursor Pagination**: Relay-spec compatible connection queries
 - **⚡ N+1 Prevention**: Built-in query optimization
 - **🔧 OR Operations**: Complex logical conditions with nested filtering
+- **🐳 Docker Support**: Container images with Docker Compose setup
+- **🔄 CI/CD Pipeline**: GitHub Actions integration with automated testing
 
 ### 🚧 Planned Features
 
-- [ ] **Container image** - Docker support
-- [ ] **CI/CD pipeline** - Github Ci/Jenkins integration
 - [ ] **Schema Caching** - Performance optimization for large schemas
 - [ ] **MySQL Support** - Complete MySQL database integration
 - [ ] **Oracle Support** - Add Oracle database compatibility
 - [ ] **SQL Server Support** - Microsoft SQL Server implementation
 - [ ] **GraphQL Subscriptions** - Real-time data updates
 - [ ] **Custom Directives** - Extended GraphQL functionality
+- [ ] **Authentication/Authorization** - Role-based access control
 
 ## 📋 Quick Start
 
@@ -40,6 +41,38 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 - PostgreSQL 15+
 
 ### Installation
+
+#### Option 1: Docker (Recommended)
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/excalibase/excalibase-graphql.git
+   cd excalibase-graphql
+   ```
+
+2. **Configure your database**
+
+   Edit `docker-compose.yml` or set environment variables:
+   ```yaml
+   environment:
+     - DB_HOST=your_postgres_host
+     - DB_PORT=5432
+     - DB_NAME=your_database
+     - DB_USERNAME=your_username
+     - DB_PASSWORD=your_password
+     - DATABASE_SCHEMA=your_schema
+   ```
+
+3. **Run with Docker Compose**
+   ```bash
+   docker-compose up -d
+   ```
+
+4. **Access GraphQL endpoint**
+
+   Your GraphQL endpoint will be available at: `http://localhost:10000/graphql`
+
+#### Option 2: Local Development
 
 1. **Clone the repository**
    ```bash
@@ -72,9 +105,111 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 
    Your GraphQL endpoint will be available at: `http://localhost:10000/graphql`
 
+## 🐳 Docker Support
+
+### Docker Compose Setup
+
+The project includes a `docker-compose.yml` file for easy setup:
+
+```yaml
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "10000:10000"
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=your_database
+      - DB_USERNAME=your_username
+      - DB_PASSWORD=your_password
+      - DATABASE_SCHEMA=your_schema
+    depends_on:
+      - postgres
+  
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=your_database
+      - POSTGRES_USER=your_username
+      - POSTGRES_PASSWORD=your_password
+    ports:
+      - "5432:5432"
+```
+
+### Available Docker Commands
+
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f app
+
+# Stop all services
+docker-compose down
+
+# Rebuild and restart
+docker-compose up -d --build
+
+# Run tests in container
+docker-compose exec app mvn test
+
+# Access application shell
+docker-compose exec app /bin/bash
+```
+
+### Environment Variables
+
+Configure the application using environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DB_HOST` | Database host | `localhost` |
+| `DB_PORT` | Database port | `5432` |
+| `DB_NAME` | Database name | `postgres` |
+| `DB_USERNAME` | Database username | `postgres` |
+| `DB_PASSWORD` | Database password | `postgres` |
+| `DATABASE_SCHEMA` | Database schema | `public` |
+| `SERVER_PORT` | Application port | `10000` |
+
+## 🔄 CI/CD Pipeline
+
+### GitHub Actions Integration
+
+The project includes automated CI/CD with GitHub Actions:
+
+#### **Build & Test Pipeline**
+- ✅ **Automated Testing**: Runs all 41+ test methods on every push
+- ✅ **Multi-Java Support**: Tests against Java 17, 21
+- ✅ **PostgreSQL Integration**: Uses PostgreSQL service for integration tests
+- ✅ **Security Scanning**: Automated dependency vulnerability checks
+- ✅ **Code Coverage**: Generates and reports test coverage metrics
+
+#### **Docker Pipeline**
+- ✅ **Container Building**: Builds Docker images for each release
+- ✅ **Multi-architecture**: Supports AMD64 and ARM64 architectures
+- ✅ **Registry Publishing**: Pushes images to container registries
+- ✅ **Automated Tagging**: Tags images with version and latest
+
+#### **Quality Gates**
+- ✅ **All tests must pass** before merge
+- ✅ **Code coverage above 90%**
+- ✅ **Security scans pass**
+- ✅ **Docker builds successfully**
+
+### Pipeline Configuration
+
+The CI/CD pipeline runs on:
+- **Push to main**: Full pipeline with deployment
+- **Pull requests**: Build and test validation
+- **Release tags**: Docker image publishing
+- **Scheduled**: Nightly security scans
+
 ## 🌟 Enhanced Filtering System
 
-Excalibase GraphQL features a comprehensive filtering system that goes beyond basic GraphQL capabilities:
+Excalibase GraphQL features a modern, object-based filtering system that provides consistency with industry standards and PostgREST-style APIs:
 
 ### 🎯 **Key Advantages**
 
@@ -83,9 +218,22 @@ Excalibase GraphQL features a comprehensive filtering system that goes beyond ba
 - **🔗 Complex Logical Operations**: OR conditions with nested filtering
 - **⚡ Type-Safe**: Dedicated filter types for String, Int, Float, Boolean, and DateTime
 - **🔄 Backward Compatible**: Legacy filter syntax still supported
-- **📊 Production Ready**: 95% feature completeness with comprehensive test coverage
+- **📊 Production Ready**: 95% feature completeness with comprehensive test coverage (41+ test methods)
+- **🛡️ Security Focused**: SQL injection prevention with comprehensive security testing
+- **⚡ Performance Optimized**: Tested for large datasets (1000+ records) with sub-1s response times
 
-### 💡 **Quick Examples**
+### 💡 **Modern Syntax Examples**
+
+**New Object-Based Syntax (Recommended):**
+```graphql
+{ 
+  customer(where: { customer_id: { eq: 524 } }) {
+    customer_id
+    first_name
+    last_name
+  }
+}
+```
 
 **Date Range Filtering:**
 ```graphql
@@ -112,6 +260,25 @@ Excalibase GraphQL features a comprehensive filtering system that goes beyond ba
   { id name } 
 }
 ```
+
+**Combined WHERE and OR:**
+```graphql
+{
+  customer(
+    where: { active: { eq: true } }
+    or: [
+      { customer_id: { lt: 10 } },
+      { customer_id: { gt: 600 } }
+    ]
+  ) { customer_id first_name last_name active }
+}
+```
+
+### 📚 **Comprehensive Documentation**
+
+For detailed filtering documentation, examples, and migration guides, see:
+- **[GraphQL Filtering Guide](docs/filtering.md)** - Complete filtering reference
+- **[Test Coverage Documentation](docs/testing.md)** - Comprehensive test suite overview
 
 ## Example Usage
 
@@ -597,7 +764,6 @@ This is a solo project in early development, but contributions are welcome!
 - PostgreSQL only (for now)
 - No authentication/authorization (planned)
 - Limited error handling in some edge cases
-- No Docker images yet
 - Performance maybe not optimized for very large schemas
 
 

@@ -1,19 +1,98 @@
 # Excalibase GraphQL
 
-> Automatic GraphQL API generation from PostgreSQL database schemas
+<div style="text-align: center; margin: 2rem 0;">
+  <h2 style="color: #2196f3; margin-bottom: 1rem;">Automatic GraphQL API generation from PostgreSQL database schemas</h2>
+  <p style="font-size: 1.2em; color: #666;">Transform your PostgreSQL database into a powerful GraphQL API in minutes</p>
+</div>
 
 ## Overview
 
 Excalibase GraphQL is a Spring Boot application that automatically generates a complete GraphQL API from your existing PostgreSQL database. Simply point it at your database and get instant GraphQL queries and mutations with built-in pagination, filtering, and relationship resolution.
 
+<div class="feature-grid">
+<div class="feature-card">
+<h3>🚀 Zero Configuration</h3>
+<p>Auto-generates GraphQL schema from your database structure. No manual type definitions needed.</p>
+</div>
+
+<div class="feature-card">
+<h3>🔍 Advanced Filtering</h3>
+<p>Modern object-based filtering with 15+ operators. Supports complex nested conditions and type safety.</p>
+</div>
+
+<div class="feature-card">
+<h3>⚡ High Performance</h3>
+<p>Optimized for production with <span class="perf-metric">sub-1s</span> response times and built-in N+1 query prevention.</p>
+</div>
+
+<div class="feature-card">
+<h3>🛡️ Security First</h3>
+<p>Comprehensive security testing with SQL injection prevention and input validation.</p>
+</div>
+
+<div class="feature-card">
+<h3>📈 Production Ready</h3>
+<p>Docker support, CI/CD integration, and extensive test coverage for enterprise deployment.</p>
+</div>
+
+<div class="feature-card">
+<h3>🔗 Relationship Magic</h3>
+<p>Foreign keys automatically become GraphQL relationships. Supports one-to-one, one-to-many, and many-to-many.</p>
+</div>
+</div>
+
 ## Quick Start
 
-### Prerequisites
-- Java 21+
-- Maven 3.8+
-- PostgreSQL 15+
+<div class="quickstart-grid">
+<div class="quickstart-step">
+<h3>📦 Install</h3>
+<p>Get started with Docker in under 2 minutes.</p>
 
-### Installation
+```bash
+git clone https://github.com/excalibase/excalibase-graphql.git
+cd excalibase-graphql
+```
+</div>
+
+<div class="quickstart-step">
+<h3>⚙️ Configure</h3>
+<p>Set your database connection details.</p>
+
+```bash
+export DB_HOST=localhost
+export DB_NAME=your_database
+export DB_USERNAME=postgres
+export DB_PASSWORD=your_password
+```
+</div>
+
+<div class="quickstart-step">
+<h3>🚀 Launch</h3>
+<p>Start the GraphQL API server.</p>
+
+```bash
+docker-compose up -d
+```
+</div>
+
+<div class="quickstart-step">
+<h3>🎯 Query</h3>
+<p>Access your GraphQL endpoint.</p>
+
+```
+http://localhost:10000/graphql
+```
+</div>
+</div>
+
+### Prerequisites
+
+- **Java 21+** - Required for running the application
+- **PostgreSQL 15+** - Supported database version  
+- **Docker** - Recommended for easy deployment
+- **Maven 3.8+** - For local development builds
+
+#### Option 2: Local Development
 
 1. **Clone the repository:**
    ```bash
@@ -141,49 +220,120 @@ mutation {
 
 ## Key Features
 
-### ✅ Currently Available
+### <span class="status-available">✅ Currently Available</span>
 
-- **Automatic Schema Generation**: GraphQL types created from database tables
-- **Rich Querying**: Filtering, sorting, pagination out of the box
-- **Relationship Resolution**: Foreign keys automatically become GraphQL relationships
-- **CRUD Operations**: Create, read, update, delete mutations
-- **Cursor Pagination**: Relay-spec compatible connections
-- **N+1 Prevention**: Automatic query batching for relationships
+<div class="feature-grid">
+<div class="feature-card">
+<h3>🎯 Advanced Filtering</h3>
+<p>Modern object-based filtering with <span class="test-badge functional">41+ tests</span> and 15+ operators including string matching, numeric comparisons, and date ranges.</p>
+</div>
 
-### 🚧 In Development
+<div class="feature-card">
+<h3>⚡ High Performance</h3>
+<p>Optimized for large datasets with <span class="perf-metric">sub-1s</span> response times, N+1 query prevention, and intelligent batching.</p>
+</div>
 
-- Docker support
-- Authentication & authorization
-- MySQL/Oracle database support
-- CI/CD pipeline
-- Performance optimizations
+<div class="feature-card">
+<h3>🛡️ Security Tested</h3>
+<p>Comprehensive security testing with <span class="test-badge security">13+ security tests</span> covering SQL injection prevention and input validation.</p>
+</div>
 
-## Filtering & Pagination
+<div class="feature-card">
+<h3>📊 Performance Tested</h3>
+<p><span class="test-badge performance">6+ performance tests</span> ensuring scalability with 1000+ records and 20+ concurrent requests.</p>
+</div>
 
-### Available Filter Operators
+<div class="feature-card">
+<h3>🔗 Smart Relationships</h3>
+<p>Foreign keys automatically become GraphQL relationships with support for one-to-one, one-to-many, and many-to-many patterns.</p>
+</div>
 
-**String fields:**
+<div class="feature-card">
+<h3>🐳 Production Ready</h3>
+<p>Docker support, CI/CD integration, and comprehensive test coverage for enterprise deployment.</p>
+</div>
+</div>
+
+### <span class="status-development">🚧 In Development</span>
+
+- **Authentication & Authorization** - Role-based access control
+- **Multi-Database Support** - MySQL, Oracle, SQL Server
+- **GraphQL Subscriptions** - Real-time data updates
+- **Schema Caching** - Improved performance for large schemas
+
+## 🌟 Enhanced Filtering System
+
+Excalibase GraphQL now features a modern, object-based filtering system that provides consistency with industry standards:
+
+### Modern Object-Based Syntax
+
+**New Syntax (Recommended):**
+```graphql
+{
+  customer(where: { customer_id: { eq: 524 } }) {
+    customer_id
+    first_name
+    last_name
+  }
+}
+```
+
+**Complex Filtering:**
 ```graphql
 {
   users(
-    name_contains: "john"      # Contains substring
-    name_startsWith: "John"    # Starts with
-    name_endsWith: "Doe"       # Ends with
-    email_isNotNull: true      # Not null check
+    where: { 
+      name: { startsWith: "John" },
+      age: { gte: 18, lt: 65 },
+      active: { eq: true }
+    }
+  ) { id name age }
+}
+```
+
+**OR Operations:**
+```graphql
+{
+  users(or: [
+    { name: { eq: "Alice" } },
+    { email: { endsWith: "@admin.com" } }
+  ]) { id name email }
+}
+```
+
+### Available Filter Operations
+
+**All Data Types:**
+- `eq`, `neq`, `isNull`, `isNotNull`, `in`, `notIn`
+
+**String Operations:**
+- `contains`, `startsWith`, `endsWith`, `like`, `ilike`
+
+**Numeric Operations:**
+- `gt`, `gte`, `lt`, `lte`
+
+**Date/Time Operations:**
+- Supports multiple formats: `"2023-12-25"`, `"2023-12-25 14:30:00"`, ISO 8601
+
+### Legacy Support
+
+The old syntax continues to work for backward compatibility:
+```graphql
+{
+  users(
+    name_contains: "john"      # Legacy syntax
+    name_startsWith: "John"    # Still supported
+    email_isNotNull: true
   ) { id name }
 }
 ```
 
-**Numeric fields:**
-```graphql
-{
-  posts(
-    id_gte: 10                 # Greater than or equal
-    id_lt: 100                 # Less than
-    created_at_gt: "2024-01-01"
-  ) { id title }
-}
-```
+### 📚 Comprehensive Documentation
+
+- **[Complete Filtering Guide](filtering.md)** - All operations, examples, and migration guides
+- **[Test Coverage Documentation](testing.md)** - 41+ comprehensive test methods
+- **Security**: SQL injection prevention with comprehensive security testing
+- **Performance**: Optimized for large datasets (1000+ records) with sub-1s response times
 
 ### Pagination Options
 
@@ -321,7 +471,7 @@ mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
 
 - **PostgreSQL only**: MySQL, Oracle, SQL Server support planned
 - **No authentication**: Built-in auth/authz coming soon
-- **No Docker images**: Docker support in development
+- **Docker available**: Use `docker-compose up -d` for easy setup
 - **Basic error handling**: Some edge cases need improvement
 - **Performance**: Not yet optimized for very large schemas
 
@@ -364,4 +514,4 @@ Apache License 2.0 - see [LICENSE](https://github.com/excalibase/excalibase-grap
 
 ---
 
-**⭐ Star the project** on GitHub if you find it useful!
+**⭐ Star the project** on GitHub if you find it useful!Test edit: Sat Jul 12 23:50:29 +07 2025
