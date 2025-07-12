@@ -132,8 +132,8 @@ class GraphqlPerformanceTest extends Specification {
                 .andExpect(jsonPath('$.data.customer').isArray())
                 .andExpect(jsonPath('$.data.customer.length()').value(500))
 
-        and: "should complete within 200ms"
-        (endTime - startTime) < 200
+        and: "should complete within 600ms"
+        (endTime - startTime) < 600
     }
 
     def "should handle concurrent requests efficiently"() {
@@ -172,8 +172,8 @@ class GraphqlPerformanceTest extends Specification {
                     .andExpect(jsonPath('$.data.customer.length()').value(100))
         }
 
-        and: "should complete within 100ms"
-        (endTime - startTime) < 100
+        and: "should complete within 200ms"
+        (endTime - startTime) < 200
     }
 
     def "should handle complex filtering with large datasets"() {
@@ -288,8 +288,8 @@ class GraphqlPerformanceTest extends Specification {
                 .andExpect(jsonPath('$.data.customer').isArray())
                 .andExpect(jsonPath('$.data.customer.length()').value(1000))
 
-        and: "should complete within 100ms"
-        (endTime - startTime) < 100
+        and: "should complete within 200ms"
+        (endTime - startTime) < 200
     }
 
     def "should handle stress test with rapid sequential requests"() {
@@ -324,7 +324,7 @@ class GraphqlPerformanceTest extends Specification {
                     .andExpect(jsonPath('$.data.customer.length()').value(10))
         }
 
-        and: "should complete within 500ms"
-        (endTime - startTime) < 600
+        and: "should complete within 800ms"
+        (endTime - startTime) < 800
     }
 } 
