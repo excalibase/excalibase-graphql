@@ -12,6 +12,26 @@ Thank you for your interest in contributing! This project is currently in early 
 
 ### Development Setup
 
+#### Option 1: Docker Development (Recommended)
+
+1. **Fork and clone:**
+   ```bash
+   git clone https://github.com/your-username/excalibase-graphql.git
+   cd excalibase-graphql
+   ```
+
+2. **Run with Docker Compose:**
+   ```bash
+   docker-compose up -d
+   ```
+
+3. **Run tests:**
+   ```bash
+   docker-compose exec app mvn test
+   ```
+
+#### Option 2: Local Development
+
 1. **Fork and clone:**
    ```bash
    git clone https://github.com/your-username/excalibase-graphql.git
@@ -227,9 +247,9 @@ test: add integration tests for relationship queries
 
 1. **MySQL Support**: Add MySQL database implementation
 2. **Basic Authentication**: Simple JWT or API key auth
-3. **Docker Support**: Dockerfile and docker-compose setup
-4. **Error Handling**: Better error messages and validation
-5. **Documentation**: More examples and use cases
+3. **Error Handling**: Better error messages and validation
+4. **Documentation**: More examples and use cases
+5. **Schema Caching**: Performance optimization for large schemas
 
 ### Good First Issues
 
