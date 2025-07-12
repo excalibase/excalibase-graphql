@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://excalibase.github.io/excalibase-graphql/</loc>
+         <lastmod>2025-07-12</lastmod>
+    </url>
+    <url>
+         <loc>https://excalibase.github.io/excalibase-graphql/CONTRIBUTING/</loc>
+         <lastmod>2025-07-12</lastmod>
+    </url>
+    <url>
+         <loc>https://excalibase.github.io/excalibase-graphql/filtering/</loc>
+         <lastmod>2025-07-12</lastmod>
+    </url>
+    <url>
+         <loc>https://excalibase.github.io/excalibase-graphql/testing/</loc>
+         <lastmod>2025-07-12</lastmod>
+    </url>
+    <url>
+         <loc>https://excalibase.github.io/excalibase-graphql/api/</loc>
+         <lastmod>2025-07-12</lastmod>
+    </url>
+    <url>
+         <loc>https://excalibase.github.io/excalibase-graphql/quickstart/</loc>
+         <lastmod>2025-07-12</lastmod>
+    </url>
+</urlset>

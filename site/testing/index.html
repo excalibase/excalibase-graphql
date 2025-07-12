@@ -1,0 +1,2196 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Automatic GraphQL API generation from PostgreSQL database schemas">
+      
+      
+        <meta name="author" content="Excalibase Team">
+      
+      
+        <link rel="canonical" href="https://excalibase.github.io/excalibase-graphql/testing/">
+      
+      
+        <link rel="prev" href="../filtering/">
+      
+      
+        <link rel="next" href="../CONTRIBUTING/">
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.6.15">
+    
+    
+      
+        <title>Testing - Excalibase GraphQL</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.342714a4.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#graphql-enhanced-filtering-comprehensive-test-coverage" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Excalibase GraphQL" class="md-header__button md-logo" aria-label="Excalibase GraphQL" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4M4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4m0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Excalibase GraphQL
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Testing
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="blue" data-md-color-accent="blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/excalibase/excalibase-graphql" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    excalibase/excalibase-graphql
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href=".." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../quickstart/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Quick Start
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../api/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../filtering/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Filtering
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    <li class="md-tabs__item md-tabs__item--active">
+      <a href="./" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Testing
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../CONTRIBUTING/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Contributing
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Excalibase GraphQL" class="md-nav__button md-logo" aria-label="Excalibase GraphQL" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4M4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4m0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4"/></svg>
+
+    </a>
+    Excalibase GraphQL
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/excalibase/excalibase-graphql" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    excalibase/excalibase-graphql
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Home
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Quick Start
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    API Reference
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../filtering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Filtering
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    Testing
+    
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    Testing
+    
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#test-suite-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      📋 Test Suite Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      🧪 Test Classes
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🧪 Test Classes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-graphqlcontrollertest-main-functional-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. GraphqlControllerTest (Main Functional Tests)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. GraphqlControllerTest (Main Functional Tests)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-functionality-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Core Functionality Tests
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-functionality-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Advanced Functionality Tests
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-graphqlperformancetest-performance-load-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. GraphqlPerformanceTest (Performance &amp; Load Tests)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. GraphqlPerformanceTest (Performance &amp; Load Tests)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#performance-test-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Performance Test Coverage
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#load-testing-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Load Testing Features
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-graphqlsecuritytest-security-injection-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. GraphqlSecurityTest (Security &amp; Injection Tests)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. GraphqlSecurityTest (Security &amp; Injection Tests)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#security-test-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Security Test Coverage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      🛠️ Test Infrastructure
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🛠️ Test Infrastructure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dependencies-added" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dependencies Added
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Configuration
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#coverage-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      📊 Coverage Statistics
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📊 Coverage Statistics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-method-count" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Method Count
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-types-covered" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data Types Covered
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filter-operations-tested" class="md-nav__link">
+    <span class="md-ellipsis">
+      Filter Operations Tested
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edge-cases-covered" class="md-nav__link">
+    <span class="md-ellipsis">
+      Edge Cases Covered
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      🚀 Running the Tests
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🚀 Running the Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-all-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Run All Tests
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-specific-test-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Run Specific Test Classes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-tests-with-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Run Tests with Coverage
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#continuous-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Continuous Integration
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      📈 Performance Benchmarks
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📈 Performance Benchmarks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#response-time-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Response Time Targets
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#concurrency-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Concurrency Targets
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Memory Usage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      🔐 Security Validation
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🔐 Security Validation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#injection-prevention" class="md-nav__link">
+    <span class="md-ellipsis">
+      Injection Prevention
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#input-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Input Validation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Error Handling
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quality-assurance" class="md-nav__link">
+    <span class="md-ellipsis">
+      ✅ Quality Assurance
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Quality Assurance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-quality-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Quality Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-data-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Data Coverage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#detailed-test-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      📋 Detailed Test Examples
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📋 Detailed Test Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#functional-test-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Functional Test Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-test-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Performance Test Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security-test-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Security Test Example
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-maintenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      🎯 Test Maintenance
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🎯 Test Maintenance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-new-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adding New Tests
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-data-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Data Management
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cicd-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      CI/CD Integration
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CI/CD Integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#automated-testing-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      Automated Testing Pipeline
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cicd-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      CI/CD Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pipeline-triggers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pipeline Triggers
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-results-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      🔍 Test Results Analysis
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🔍 Test Results Analysis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coverage-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      Coverage Reports
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-execution-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Execution Time
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      🎯 Next Steps
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🎯 Next Steps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#potential-enhancements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Potential Enhancements
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#monitoring-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      Monitoring &amp; Metrics
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quality-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quality Gates
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../CONTRIBUTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    Contributing
+    
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#test-suite-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      📋 Test Suite Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      🧪 Test Classes
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🧪 Test Classes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-graphqlcontrollertest-main-functional-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. GraphqlControllerTest (Main Functional Tests)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="1. GraphqlControllerTest (Main Functional Tests)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#core-functionality-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Core Functionality Tests
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#advanced-functionality-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Advanced Functionality Tests
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-graphqlperformancetest-performance-load-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. GraphqlPerformanceTest (Performance &amp; Load Tests)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. GraphqlPerformanceTest (Performance &amp; Load Tests)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#performance-test-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Performance Test Coverage
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#load-testing-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Load Testing Features
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-graphqlsecuritytest-security-injection-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. GraphqlSecurityTest (Security &amp; Injection Tests)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. GraphqlSecurityTest (Security &amp; Injection Tests)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#security-test-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Security Test Coverage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-infrastructure" class="md-nav__link">
+    <span class="md-ellipsis">
+      🛠️ Test Infrastructure
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🛠️ Test Infrastructure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#dependencies-added" class="md-nav__link">
+    <span class="md-ellipsis">
+      Dependencies Added
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Configuration
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#coverage-statistics" class="md-nav__link">
+    <span class="md-ellipsis">
+      📊 Coverage Statistics
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📊 Coverage Statistics">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-method-count" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Method Count
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#data-types-covered" class="md-nav__link">
+    <span class="md-ellipsis">
+      Data Types Covered
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#filter-operations-tested" class="md-nav__link">
+    <span class="md-ellipsis">
+      Filter Operations Tested
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#edge-cases-covered" class="md-nav__link">
+    <span class="md-ellipsis">
+      Edge Cases Covered
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-the-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      🚀 Running the Tests
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🚀 Running the Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#run-all-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Run All Tests
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-specific-test-classes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Run Specific Test Classes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#run-tests-with-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Run Tests with Coverage
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#continuous-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Continuous Integration
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#performance-benchmarks" class="md-nav__link">
+    <span class="md-ellipsis">
+      📈 Performance Benchmarks
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📈 Performance Benchmarks">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#response-time-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Response Time Targets
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#concurrency-targets" class="md-nav__link">
+    <span class="md-ellipsis">
+      Concurrency Targets
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Memory Usage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#security-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      🔐 Security Validation
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🔐 Security Validation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#injection-prevention" class="md-nav__link">
+    <span class="md-ellipsis">
+      Injection Prevention
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#input-validation" class="md-nav__link">
+    <span class="md-ellipsis">
+      Input Validation
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      Error Handling
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#quality-assurance" class="md-nav__link">
+    <span class="md-ellipsis">
+      ✅ Quality Assurance
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="✅ Quality Assurance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#test-quality-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Quality Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-data-coverage" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Data Coverage
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#detailed-test-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      📋 Detailed Test Examples
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="📋 Detailed Test Examples">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#functional-test-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Functional Test Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#performance-test-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Performance Test Example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security-test-example" class="md-nav__link">
+    <span class="md-ellipsis">
+      Security Test Example
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-maintenance" class="md-nav__link">
+    <span class="md-ellipsis">
+      🎯 Test Maintenance
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🎯 Test Maintenance">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#adding-new-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Adding New Tests
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-data-management" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Data Management
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cicd-integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      CI/CD Integration
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CI/CD Integration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#automated-testing-pipeline" class="md-nav__link">
+    <span class="md-ellipsis">
+      Automated Testing Pipeline
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cicd-features" class="md-nav__link">
+    <span class="md-ellipsis">
+      CI/CD Features
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pipeline-triggers" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pipeline Triggers
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#test-results-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      🔍 Test Results Analysis
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🔍 Test Results Analysis">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coverage-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      Coverage Reports
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#test-execution-time" class="md-nav__link">
+    <span class="md-ellipsis">
+      Test Execution Time
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#next-steps" class="md-nav__link">
+    <span class="md-ellipsis">
+      🎯 Next Steps
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="🎯 Next Steps">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#potential-enhancements" class="md-nav__link">
+    <span class="md-ellipsis">
+      Potential Enhancements
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#monitoring-metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      Monitoring &amp; Metrics
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quality-gates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Quality Gates
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="graphql-enhanced-filtering-comprehensive-test-coverage">GraphQL Enhanced Filtering - Comprehensive Test Coverage<a class="headerlink" href="#graphql-enhanced-filtering-comprehensive-test-coverage" title="Permanent link">&para;</a></h1>
+<h2 id="test-suite-overview">📋 Test Suite Overview<a class="headerlink" href="#test-suite-overview" title="Permanent link">&para;</a></h2>
+<p>This document outlines the comprehensive test coverage for the enhanced GraphQL filtering system, covering functionality, performance, security, and edge cases.</p>
+<h2 id="test-classes">🧪 Test Classes<a class="headerlink" href="#test-classes" title="Permanent link">&para;</a></h2>
+<h3 id="1-graphqlcontrollertest-main-functional-tests">1. <strong>GraphqlControllerTest</strong> (Main Functional Tests)<a class="headerlink" href="#1-graphqlcontrollertest-main-functional-tests" title="Permanent link">&para;</a></h3>
+<p><strong>Location</strong>: <code>src/test/groovy/io/github/excalibase/controller/GraphqlControllerTest.groovy</code></p>
+<h4 id="core-functionality-tests">Core Functionality Tests<a class="headerlink" href="#core-functionality-tests" title="Permanent link">&para;</a></h4>
+<ul>
+<li>✅ <strong>Schema Introspection</strong> - Validates enhanced filter types are properly exposed</li>
+<li>✅ <strong>Basic Date Equality</strong> - Tests date filtering with exact matches</li>
+<li>✅ <strong>Timestamp Range Filtering</strong> - Tests datetime range operations (gte, lt)</li>
+<li>✅ <strong>OR Operations</strong> - Tests multiple condition OR logic</li>
+<li>✅ <strong>Integer IN Operations</strong> - Tests array-based filtering</li>
+<li>✅ <strong>Null Operations</strong> - Tests isNull/isNotNull functionality</li>
+<li>✅ <strong>String Operations</strong> - Tests startsWith, contains, endsWith operations</li>
+<li>✅ <strong>Filtered Queries</strong> - Tests enhanced filtering with result limits</li>
+<li>✅ <strong>Legacy Compatibility</strong> - Ensures backward compatibility</li>
+</ul>
+<h4 id="advanced-functionality-tests">Advanced Functionality Tests<a class="headerlink" href="#advanced-functionality-tests" title="Permanent link">&para;</a></h4>
+<ul>
+<li>✅ <strong>Complex Nested AND/OR</strong> - Multi-level boolean logic</li>
+<li>✅ <strong>Case Sensitivity</strong> - Tests case-sensitive vs case-insensitive operations</li>
+<li>✅ <strong>Empty Result Sets</strong> - Validates queries returning no results</li>
+<li>✅ <strong>Boundary Value Testing</strong> - Tests numeric field boundaries</li>
+<li>✅ <strong>Large IN Arrays</strong> - Tests performance with large array inputs</li>
+<li>✅ <strong>NOT IN Operations</strong> - Tests negation filtering</li>
+<li>✅ <strong>Multi-field Filtering</strong> - Tests simultaneous multiple field filters</li>
+<li>✅ <strong>Special Characters</strong> - Tests handling of special characters (@, ., etc.)</li>
+<li>✅ <strong>Date Range Queries</strong> - Tests cross-month date filtering</li>
+<li>✅ <strong>Timestamp Precision</strong> - Tests various timestamp formats</li>
+<li>✅ <strong>Combined Where/OR</strong> - Tests mixing where and or clauses</li>
+<li>✅ <strong>Performance Complex Queries</strong> - Tests response time for complex operations</li>
+<li>✅ <strong>Type Validation</strong> - Tests parameter type validation</li>
+<li>✅ <strong>SQL Injection Prevention</strong> - Tests malicious input handling</li>
+</ul>
+<h3 id="2-graphqlperformancetest-performance-load-tests">2. <strong>GraphqlPerformanceTest</strong> (Performance &amp; Load Tests)<a class="headerlink" href="#2-graphqlperformancetest-performance-load-tests" title="Permanent link">&para;</a></h3>
+<p><strong>Location</strong>: <code>src/test/groovy/io/github/excalibase/controller/GraphqlPerformanceTest.groovy</code></p>
+<h4 id="performance-test-coverage">Performance Test Coverage<a class="headerlink" href="#performance-test-coverage" title="Permanent link">&para;</a></h4>
+<ul>
+<li>✅ <strong>Large Result Sets</strong> (500+ records) - &lt; 1000ms</li>
+<li>✅ <strong>Concurrent Requests</strong> (20 simultaneous) - &lt; 2000ms</li>
+<li>✅ <strong>Complex Filtering on Large Datasets</strong> (1000+ records) - &lt; 800ms</li>
+<li>✅ <strong>Limited Query Performance</strong> (filtered results from 1000+ records) - &lt; 500ms</li>
+<li>✅ <strong>Large IN Arrays</strong> (1000 IDs) - &lt; 600ms</li>
+<li>✅ <strong>Stress Testing</strong> (100 rapid sequential requests) - &lt; 5000ms</li>
+</ul>
+<h4 id="load-testing-features">Load Testing Features<a class="headerlink" href="#load-testing-features" title="Permanent link">&para;</a></h4>
+<ul>
+<li>🔄 <strong>Testcontainers with 1000+ records</strong></li>
+<li>🔄 <strong>Multi-threaded concurrent testing</strong></li>
+<li>🔄 <strong>Memory usage validation</strong></li>
+<li>🔄 <strong>Response time benchmarking</strong></li>
+</ul>
+<h3 id="3-graphqlsecuritytest-security-injection-tests">3. <strong>GraphqlSecurityTest</strong> (Security &amp; Injection Tests)<a class="headerlink" href="#3-graphqlsecuritytest-security-injection-tests" title="Permanent link">&para;</a></h3>
+<p><strong>Location</strong>: <code>src/test/groovy/io/github/excalibase/controller/GraphqlSecurityTest.groovy</code></p>
+<h4 id="security-test-coverage">Security Test Coverage<a class="headerlink" href="#security-test-coverage" title="Permanent link">&para;</a></h4>
+<ul>
+<li>🔒 <strong>SQL Injection Prevention</strong> - String field injection attempts</li>
+<li>🔒 <strong>LIKE Operation Injection</strong> - Pattern-based injection attempts</li>
+<li>🔒 <strong>NoSQL Injection Patterns</strong> - Alternative injection techniques</li>
+<li>🔒 <strong>Long String Attacks</strong> - 10,000+ character inputs</li>
+<li>🔒 <strong>Numeric Field Injection</strong> - Type-based injection attempts</li>
+<li>🔒 <strong>Regex Pattern Attacks</strong> - Malicious regex patterns</li>
+<li>🔒 <strong>Information Disclosure</strong> - Error message analysis</li>
+<li>🔒 <strong>Special Character Encoding</strong> - Control character attacks</li>
+<li>🔒 <strong>Time-based Injection</strong> - pg_sleep injection attempts</li>
+<li>🔒 <strong>Unicode Attacks</strong> - International character exploitation</li>
+<li>🔒 <strong>Query Complexity</strong> - Deep nesting validation</li>
+<li>🔒 <strong>Malformed JSON</strong> - Input validation testing</li>
+</ul>
+<h2 id="test-infrastructure">🛠️ Test Infrastructure<a class="headerlink" href="#test-infrastructure" title="Permanent link">&para;</a></h2>
+<h3 id="dependencies-added">Dependencies Added<a class="headerlink" href="#dependencies-added" title="Permanent link">&para;</a></h3>
+<div class="language-xml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="cm">&lt;!-- Groovy and Spock Testing --&gt;</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>-<span class="w"> </span>Groovy<span class="w"> </span>4.0.15
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>-<span class="w"> </span>Spock<span class="w"> </span>Core<span class="w"> </span>2.3-groovy-4.0
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>-<span class="w"> </span>Spock<span class="w"> </span>Spring<span class="w"> </span>Integration<span class="w"> </span>2.3-groovy-4.0
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="cm">&lt;!-- Testcontainers --&gt;</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>-<span class="w"> </span>Testcontainers<span class="w"> </span>Core<span class="w"> </span>1.19.3
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>-<span class="w"> </span>PostgreSQL<span class="w"> </span>Testcontainer<span class="w"> </span>1.19.3
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>-<span class="w"> </span>Spock<span class="w"> </span>Testcontainer<span class="w"> </span>Integration<span class="w"> </span>1.19.3
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="cm">&lt;!-- Build Plugin --&gt;</span>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>-<span class="w"> </span>GMavenPlus<span class="w"> </span>Plugin<span class="w"> </span>3.0.2
+</span></code></pre></div>
+<h3 id="test-configuration">Test Configuration<a class="headerlink" href="#test-configuration" title="Permanent link">&para;</a></h3>
+<p><strong>Location</strong>: <code>src/test/resources/application-test.yml</code></p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">PostgreSQL test database configuration</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Debug logging for GraphQL operations</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SQL query logging with parameters</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Test-specific GraphQL settings</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Query complexity limits</span>
+</span></code></pre></div>
+<h2 id="coverage-statistics">📊 Coverage Statistics<a class="headerlink" href="#coverage-statistics" title="Permanent link">&para;</a></h2>
+<h3 id="test-method-count">Test Method Count<a class="headerlink" href="#test-method-count" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Functional Tests</strong>: 22 methods</li>
+<li><strong>Performance Tests</strong>: 6 methods  </li>
+<li><strong>Security Tests</strong>: 13 methods</li>
+<li><strong>Total Test Methods</strong>: <strong>41+</strong></li>
+</ul>
+<h3 id="data-types-covered">Data Types Covered<a class="headerlink" href="#data-types-covered" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ <strong>Integers</strong> (eq, neq, gt, gte, lt, lte, in, notIn)</li>
+<li>✅ <strong>Strings</strong> (eq, neq, contains, startsWith, endsWith, like, ilike, in, notIn)</li>
+<li>✅ <strong>Dates</strong> (eq, neq, gt, gte, lt, lte)</li>
+<li>✅ <strong>Timestamps</strong> (eq, neq, gt, gte, lt, lte) </li>
+<li>✅ <strong>Booleans</strong> (eq, neq)</li>
+<li>✅ <strong>Null values</strong> (isNull, isNotNull)</li>
+</ul>
+<h3 id="filter-operations-tested">Filter Operations Tested<a class="headerlink" href="#filter-operations-tested" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ <strong>Basic Operators</strong>: eq, neq, gt, gte, lt, lte</li>
+<li>✅ <strong>String Operators</strong>: contains, startsWith, endsWith, like, ilike</li>
+<li>✅ <strong>Array Operators</strong>: in, notIn</li>
+<li>✅ <strong>Null Operators</strong>: isNull, isNotNull</li>
+<li>✅ <strong>Boolean Logic</strong>: AND (where), OR (or clauses)</li>
+</ul>
+<h3 id="edge-cases-covered">Edge Cases Covered<a class="headerlink" href="#edge-cases-covered" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ <strong>Empty result sets</strong></li>
+<li>✅ <strong>Boundary values</strong> (min/max integers, dates)</li>
+<li>✅ <strong>Large datasets</strong> (1000+ records)</li>
+<li>✅ <strong>Large input arrays</strong> (1000+ elements)</li>
+<li>✅ <strong>Special characters</strong> (@, ., %, _, etc.)</li>
+<li>✅ <strong>Unicode characters</strong></li>
+<li>✅ <strong>Extremely long strings</strong> (10,000+ chars)</li>
+<li>✅ <strong>Invalid type inputs</strong></li>
+<li>✅ <strong>Malicious inputs</strong> (SQL injection attempts)</li>
+</ul>
+<h2 id="running-the-tests">🚀 Running the Tests<a class="headerlink" href="#running-the-tests" title="Permanent link">&para;</a></h2>
+<h3 id="run-all-tests">Run All Tests<a class="headerlink" href="#run-all-tests" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>mvn<span class="w"> </span><span class="nb">test</span>
+</span></code></pre></div>
+<h3 id="run-specific-test-classes">Run Specific Test Classes<a class="headerlink" href="#run-specific-test-classes" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Functional tests only</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>mvn<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-Dtest<span class="o">=</span>GraphqlControllerTest
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Performance tests only  </span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>mvn<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-Dtest<span class="o">=</span>GraphqlPerformanceTest
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="c1"># Security tests only</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>mvn<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-Dtest<span class="o">=</span>GraphqlSecurityTest
+</span></code></pre></div>
+<h3 id="run-tests-with-coverage">Run Tests with Coverage<a class="headerlink" href="#run-tests-with-coverage" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>mvn<span class="w"> </span><span class="nb">test</span><span class="w"> </span>jacoco:report
+</span></code></pre></div>
+<h3 id="continuous-integration">Continuous Integration<a class="headerlink" href="#continuous-integration" title="Permanent link">&para;</a></h3>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Run tests in CI environment</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>mvn<span class="w"> </span>clean<span class="w"> </span><span class="nb">test</span><span class="w"> </span>-Dspring.profiles.active<span class="o">=</span><span class="nb">test</span>
+</span></code></pre></div>
+<h2 id="performance-benchmarks">📈 Performance Benchmarks<a class="headerlink" href="#performance-benchmarks" title="Permanent link">&para;</a></h2>
+<h3 id="response-time-targets">Response Time Targets<a class="headerlink" href="#response-time-targets" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Simple queries</strong>: &lt; 200ms</li>
+<li><strong>Complex filtering</strong>: &lt; 800ms</li>
+<li><strong>Large result sets</strong>: &lt; 1000ms  </li>
+<li><strong>Concurrent requests</strong>: &lt; 2000ms total</li>
+<li><strong>Filtered queries</strong>: &lt; 500ms</li>
+</ul>
+<h3 id="concurrency-targets">Concurrency Targets<a class="headerlink" href="#concurrency-targets" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>20 simultaneous requests</strong>: All succeed</li>
+<li><strong>100 sequential requests</strong>: &lt; 5000ms total</li>
+<li><strong>Large IN arrays</strong>: 1000+ elements handled efficiently</li>
+</ul>
+<h3 id="memory-usage">Memory Usage<a class="headerlink" href="#memory-usage" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Heap memory</strong>: &lt; 512MB during tests</li>
+<li><strong>Database connections</strong>: Properly managed and closed</li>
+<li><strong>Resource cleanup</strong>: Automatic after each test</li>
+</ul>
+<h2 id="security-validation">🔐 Security Validation<a class="headerlink" href="#security-validation" title="Permanent link">&para;</a></h2>
+<h3 id="injection-prevention">Injection Prevention<a class="headerlink" href="#injection-prevention" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ <strong>SQL injection</strong> through string filters</li>
+<li>✅ <strong>NoSQL injection</strong> patterns</li>
+<li>✅ <strong>Time-based injection</strong> (pg_sleep)</li>
+<li>✅ <strong>Regex DoS</strong> attacks</li>
+<li>✅ <strong>Unicode/encoding</strong> attacks</li>
+</ul>
+<h3 id="input-validation">Input Validation<a class="headerlink" href="#input-validation" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ <strong>Type validation</strong> for all filter inputs</li>
+<li>✅ <strong>Length validation</strong> for string inputs</li>
+<li>✅ <strong>Character encoding</strong> validation</li>
+<li>✅ <strong>JSON structure</strong> validation</li>
+</ul>
+<h3 id="error-handling">Error Handling<a class="headerlink" href="#error-handling" title="Permanent link">&para;</a></h3>
+<ul>
+<li>✅ <strong>Graceful degradation</strong> for invalid inputs</li>
+<li>✅ <strong>Information disclosure</strong> prevention</li>
+<li>✅ <strong>Appropriate error messages</strong> without internal details</li>
+</ul>
+<h2 id="quality-assurance">✅ Quality Assurance<a class="headerlink" href="#quality-assurance" title="Permanent link">&para;</a></h2>
+<h3 id="test-quality-features">Test Quality Features<a class="headerlink" href="#test-quality-features" title="Permanent link">&para;</a></h3>
+<ul>
+<li>🔍 <strong>Real database testing</strong> with PostgreSQL Testcontainers</li>
+<li>🔍 <strong>Comprehensive data setup</strong> with varied test records</li>
+<li>🔍 <strong>Isolation</strong> - each test class uses independent containers</li>
+<li>🔍 <strong>Cleanup</strong> - automatic resource cleanup after tests</li>
+<li>🔍 <strong>Assertions</strong> - detailed verification of responses</li>
+<li>🔍 <strong>Performance monitoring</strong> - response time measurements</li>
+<li>🔍 <strong>Error case testing</strong> - both positive and negative scenarios</li>
+</ul>
+<h3 id="test-data-coverage">Test Data Coverage<a class="headerlink" href="#test-data-coverage" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>12 basic test records</strong> for functional testing</li>
+<li><strong>1000+ records</strong> for performance testing  </li>
+<li><strong>Varied data types</strong> including nulls, dates, booleans</li>
+<li><strong>Special characters</strong> and edge case values</li>
+<li><strong>International characters</strong> and Unicode</li>
+</ul>
+<h2 id="detailed-test-examples">📋 Detailed Test Examples<a class="headerlink" href="#detailed-test-examples" title="Permanent link">&para;</a></h2>
+<h3 id="functional-test-example">Functional Test Example<a class="headerlink" href="#functional-test-example" title="Permanent link">&para;</a></h3>
+<div class="language-groovy highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="kt">def</span><span class="w"> </span><span class="nf">&quot;should handle complex OR operations with mixed field types&quot;</span><span class="o">()</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span><span class="nl">given:</span><span class="w"> </span><span class="s2">&quot;GraphQL query with complex OR conditions&quot;</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="kt">def</span><span class="w"> </span><span class="n">query</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s1">&#39;&#39;&#39;</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="s1">        query {</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="s1">            customer(or: [</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="s1">                { customer_id: { lt: 5 } },</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="s1">                { first_name: { startsWith: &quot;A&quot; } },</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="s1">                { active: { eq: true } }</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="s1">            ]) {</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a><span class="s1">                customer_id</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a><span class="s1">                first_name</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a><span class="s1">                active</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a><span class="s1">            }</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a><span class="s1">        }</span>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a><span class="s1">    &#39;&#39;&#39;</span>
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="w">    </span><span class="nl">when:</span><span class="w"> </span><span class="s2">&quot;executing the query&quot;</span>
+</span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="w">    </span><span class="kt">def</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">graphqlTester</span><span class="o">.</span><span class="na">query</span><span class="o">(</span><span class="n">query</span><span class="o">).</span><span class="na">execute</span><span class="o">()</span>
+</span><span id="__span-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a>
+</span><span id="__span-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="w">    </span><span class="nl">then:</span><span class="w"> </span><span class="s2">&quot;should return filtered results&quot;</span>
+</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="w">    </span><span class="n">result</span><span class="o">.</span><span class="na">errors</span><span class="o">.</span><span class="na">isEmpty</span><span class="o">()</span>
+</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a><span class="w">    </span><span class="n">result</span><span class="o">.</span><span class="na">data</span><span class="o">.</span><span class="na">customer</span><span class="o">.</span><span class="na">size</span><span class="o">()</span><span class="w"> </span><span class="o">&gt;=</span><span class="w"> </span><span class="mi">3</span>
+</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="performance-test-example">Performance Test Example<a class="headerlink" href="#performance-test-example" title="Permanent link">&para;</a></h3>
+<div class="language-groovy highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="kt">def</span><span class="w"> </span><span class="nf">&quot;should handle large IN arrays efficiently&quot;</span><span class="o">()</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">    </span><span class="nl">given:</span><span class="w"> </span><span class="s2">&quot;large array of 1000 customer IDs&quot;</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">    </span><span class="kt">def</span><span class="w"> </span><span class="n">largeIdArray</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">(</span><span class="mi">1</span><span class="o">..</span><span class="mi">1000</span><span class="o">).</span><span class="na">collect</span><span class="w"> </span><span class="o">{</span><span class="w"> </span><span class="n">it</span><span class="w"> </span><span class="o">}</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="w">    </span><span class="nl">when:</span><span class="w"> </span><span class="s2">&quot;filtering with large IN array&quot;</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">    </span><span class="kt">def</span><span class="w"> </span><span class="n">startTime</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">()</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">    </span><span class="kt">def</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">performQuery</span><span class="o">(</span><span class="n">largeIdArray</span><span class="o">)</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">    </span><span class="kt">def</span><span class="w"> </span><span class="n">endTime</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">System</span><span class="o">.</span><span class="na">currentTimeMillis</span><span class="o">()</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">    </span><span class="nl">then:</span><span class="w"> </span><span class="s2">&quot;should complete within performance threshold&quot;</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="n">endTime</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="n">startTime</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">600</span><span class="w"> </span><span class="c1">// 600ms threshold</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">    </span><span class="n">result</span><span class="o">.</span><span class="na">data</span><span class="o">.</span><span class="na">customer</span><span class="o">.</span><span class="na">size</span><span class="o">()</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="security-test-example">Security Test Example<a class="headerlink" href="#security-test-example" title="Permanent link">&para;</a></h3>
+<div class="language-groovy highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="kt">def</span><span class="w"> </span><span class="nf">&quot;should prevent SQL injection in string filters&quot;</span><span class="o">()</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">    </span><span class="nl">given:</span><span class="w"> </span><span class="s2">&quot;malicious SQL injection payload&quot;</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">    </span><span class="kt">def</span><span class="w"> </span><span class="n">maliciousInput</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;&#39;; DROP TABLE users; --&quot;</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nl">when:</span><span class="w"> </span><span class="s2">&quot;attempting SQL injection&quot;</span>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">    </span><span class="kt">def</span><span class="w"> </span><span class="n">result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">graphqlTester</span><span class="o">.</span><span class="na">query</span><span class="o">(</span><span class="s2">&quot;&quot;&quot;</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="s2">        query {</span>
+</span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="s2">            users(where: { name: { eq: &quot;$maliciousInput&quot; } }) {</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="s2">                id name</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="s2">            }</span>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="s2">        }</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="s2">    &quot;&quot;&quot;</span><span class="o">).</span><span class="na">execute</span><span class="o">()</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">    </span><span class="nl">then:</span><span class="w"> </span><span class="s2">&quot;should safely handle malicious input&quot;</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">    </span><span class="n">result</span><span class="o">.</span><span class="na">errors</span><span class="o">.</span><span class="na">isEmpty</span><span class="o">()</span>
+</span><span id="__span-8-16"><a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a><span class="w">    </span><span class="n">result</span><span class="o">.</span><span class="na">data</span><span class="o">.</span><span class="na">users</span><span class="o">.</span><span class="na">size</span><span class="o">()</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span>
+</span><span id="__span-8-17"><a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a><span class="w">    </span><span class="c1">// Database should remain intact</span>
+</span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a><span class="o">}</span>
+</span></code></pre></div>
+<h2 id="test-maintenance">🎯 Test Maintenance<a class="headerlink" href="#test-maintenance" title="Permanent link">&para;</a></h2>
+<h3 id="adding-new-tests">Adding New Tests<a class="headerlink" href="#adding-new-tests" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Follow naming conventions</strong>: Use descriptive test method names</li>
+<li><strong>Test both positive and negative cases</strong></li>
+<li><strong>Include performance assertions</strong> where appropriate</li>
+<li><strong>Add security validation</strong> for new filter types</li>
+<li><strong>Document edge cases</strong> and expected behaviors</li>
+</ol>
+<h3 id="test-data-management">Test Data Management<a class="headerlink" href="#test-data-management" title="Permanent link">&para;</a></h3>
+<div class="language-groovy highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1">// Standard test data setup</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kt">def</span><span class="w"> </span><span class="nf">setupData</span><span class="o">()</span><span class="w"> </span><span class="o">{</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">    </span><span class="c1">// Create varied test records</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">    </span><span class="n">customerRepository</span><span class="o">.</span><span class="na">saveAll</span><span class="o">([</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">Customer</span><span class="o">(</span><span class="nl">name:</span><span class="w"> </span><span class="s2">&quot;Alice&quot;</span><span class="o">,</span><span class="w"> </span><span class="nl">active:</span><span class="w"> </span><span class="kc">true</span><span class="o">,</span><span class="w"> </span><span class="nl">created:</span><span class="w"> </span><span class="s2">&quot;2023-01-01&quot;</span><span class="o">),</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">        </span><span class="k">new</span><span class="w"> </span><span class="n">Customer</span><span class="o">(</span><span class="nl">name:</span><span class="w"> </span><span class="s2">&quot;Bob&quot;</span><span class="o">,</span><span class="w"> </span><span class="nl">active:</span><span class="w"> </span><span class="kc">false</span><span class="o">,</span><span class="w"> </span><span class="nl">created:</span><span class="w"> </span><span class="s2">&quot;2023-06-15&quot;</span><span class="o">),</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">        </span><span class="c1">// ... more test data</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">    </span><span class="o">])</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="o">}</span>
+</span></code></pre></div>
+<h3 id="cicd-integration">CI/CD Integration<a class="headerlink" href="#cicd-integration" title="Permanent link">&para;</a></h3>
+<p>The project includes comprehensive CI/CD integration with GitHub Actions:</p>
+<h4 id="automated-testing-pipeline"><strong>Automated Testing Pipeline</strong><a class="headerlink" href="#automated-testing-pipeline" title="Permanent link">&para;</a></h4>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># GitHub Actions configuration</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Run Tests</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mvn test -Dspring.profiles.active=test</span>
+</span><span id="__span-10-4"><a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>
+</span><span id="__span-10-5"><a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Generate Coverage Report</span>
+</span><span id="__span-10-6"><a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mvn jacoco:report</span>
+</span><span id="__span-10-7"><a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>
+</span><span id="__span-10-8"><a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Upload Coverage</span>
+</span><span id="__span-10-9"><a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">  </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">codecov/codecov-action@v2</span>
+</span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>
+</span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Security Scan</span>
+</span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mvn dependency-check:check</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>
+</span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Build Docker Image</span>
+</span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a><span class="w">  </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">docker build -t excalibase/graphql:latest .</span>
+</span></code></pre></div>
+<h4 id="cicd-features"><strong>CI/CD Features</strong><a class="headerlink" href="#cicd-features" title="Permanent link">&para;</a></h4>
+<ul>
+<li>✅ <strong>Automated Testing</strong>: Runs all 41+ test methods on every push</li>
+<li>✅ <strong>Multi-Java Support</strong>: Tests against Java 17, 21</li>
+<li>✅ <strong>PostgreSQL Integration</strong>: Uses PostgreSQL service for integration tests</li>
+<li>✅ <strong>Security Scanning</strong>: Automated dependency vulnerability checks</li>
+<li>✅ <strong>Code Coverage</strong>: Generates and reports test coverage metrics</li>
+<li>✅ <strong>Docker Integration</strong>: Builds and tests Docker images</li>
+<li>✅ <strong>Quality Gates</strong>: All tests must pass before merge</li>
+</ul>
+<h4 id="pipeline-triggers"><strong>Pipeline Triggers</strong><a class="headerlink" href="#pipeline-triggers" title="Permanent link">&para;</a></h4>
+<ul>
+<li><strong>Push to main</strong>: Full pipeline with deployment</li>
+<li><strong>Pull requests</strong>: Build and test validation</li>
+<li><strong>Release tags</strong>: Docker image publishing</li>
+<li><strong>Scheduled</strong>: Nightly security scans</li>
+</ul>
+<h2 id="test-results-analysis">🔍 Test Results Analysis<a class="headerlink" href="#test-results-analysis" title="Permanent link">&para;</a></h2>
+<h3 id="coverage-reports">Coverage Reports<a class="headerlink" href="#coverage-reports" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Line coverage</strong>: 95%+</li>
+<li><strong>Branch coverage</strong>: 90%+</li>
+<li><strong>Method coverage</strong>: 100%</li>
+<li><strong>Class coverage</strong>: 100%</li>
+</ul>
+<h3 id="test-execution-time">Test Execution Time<a class="headerlink" href="#test-execution-time" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>Unit tests</strong>: &lt; 30 seconds</li>
+<li><strong>Integration tests</strong>: &lt; 2 minutes</li>
+<li><strong>Performance tests</strong>: &lt; 5 minutes</li>
+<li><strong>Security tests</strong>: &lt; 1 minute</li>
+</ul>
+<h2 id="next-steps">🎯 Next Steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
+<h3 id="potential-enhancements">Potential Enhancements<a class="headerlink" href="#potential-enhancements" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Integration Tests</strong> with real external APIs</li>
+<li><strong>Mutation Testing</strong> for GraphQL writes</li>
+<li><strong>Schema Evolution Tests</strong> for backward compatibility</li>
+<li><strong>Multi-database Testing</strong> (MySQL, SQL Server)</li>
+<li><strong>GraphQL Subscription Testing</strong> for real-time features</li>
+<li><strong>Load Testing</strong> with JMeter/Gatling integration</li>
+<li><strong>Contract Testing</strong> with consumer-driven contracts</li>
+<li><strong>Authentication Testing</strong> once auth is implemented</li>
+</ol>
+<h3 id="monitoring-metrics">Monitoring &amp; Metrics<a class="headerlink" href="#monitoring-metrics" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Test execution time</strong> tracking ✅ <strong>Implemented in CI/CD</strong></li>
+<li><strong>Test coverage reports</strong> (JaCoCo) ✅ <strong>Implemented in CI/CD</strong></li>
+<li><strong>Performance regression</strong> detection ✅ <strong>Implemented in CI/CD</strong></li>
+<li><strong>Security scan</strong> integration ✅ <strong>Implemented in CI/CD</strong></li>
+<li><strong>Continuous testing</strong> in CI/CD pipeline ✅ <strong>Implemented</strong></li>
+<li><strong>Docker test environments</strong> ✅ <strong>Implemented</strong></li>
+</ol>
+<h3 id="quality-gates">Quality Gates<a class="headerlink" href="#quality-gates" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>All tests must pass</strong> before merge</li>
+<li><strong>Coverage must be above 90%</strong></li>
+<li><strong>Performance tests must meet SLA</strong></li>
+<li><strong>Security tests must show no vulnerabilities</strong></li>
+</ul>
+<hr />
+<p><strong>Total Test Coverage</strong>: <strong>41+ comprehensive test methods</strong> covering functionality, performance, security, and edge cases for the enhanced GraphQL filtering system. 🎉 </p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024 Excalibase Team
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+        <div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/excalibase/excalibase-graphql" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 496 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M165.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M244.8 8C106.1 8 0 113.3 0 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C428.2 457.8 496 362.9 496 252 496 113.3 383.5 8 244.8 8M97.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://hub.docker.com/r/excalibase/excalibase-graphql" target="_blank" rel="noopener" title="hub.docker.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.7.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2024 Fonticons, Inc.--><path d="M349.9 236.3h-66.1v-59.4h66.1zm0-204.3h-66.1v60.7h66.1zm78.2 144.8H362v59.4h66.1zm-156.3-72.1h-66.1v60.1h66.1zm78.1 0h-66.1v60.1h66.1zm276.8 100c-14.4-9.7-47.6-13.2-73.1-8.4-3.3-24-16.7-44.9-41.1-63.7l-14-9.3-9.3 14c-18.4 27.8-23.4 73.6-3.7 103.8-8.7 4.7-25.8 11.1-48.4 10.7H2.4c-8.7 50.8 5.8 116.8 44 162.1 37.1 43.9 92.7 66.2 165.4 66.2 157.4 0 273.9-72.5 328.4-204.2 21.4.4 67.6.1 91.3-45.2 1.5-2.5 6.6-13.2 8.5-17.1zm-511.1-27.9h-66v59.4h66.1v-59.4zm78.1 0h-66.1v59.4h66.1zm78.1 0h-66.1v59.4h66.1zm-78.1-72.1h-66.1v60.1h66.1z"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      <script id="__config" type="application/json">{"base": "..", "features": ["navigation.instant", "navigation.tabs", "navigation.top", "search.highlight", "search.suggest", "content.code.copy"], "search": "../assets/javascripts/workers/search.d50fe291.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.56ea9cef.min.js"></script>
+      
+        <script src="../javascripts/extra.js"></script>
+      
+        <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+        <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    
+  </body>
+</html>
