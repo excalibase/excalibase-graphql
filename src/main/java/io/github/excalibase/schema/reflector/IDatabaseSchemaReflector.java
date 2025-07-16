@@ -62,4 +62,26 @@ public interface IDatabaseSchemaReflector {
      *                         are found in the configured schema
      */
     Map<String, TableInfo> reflectSchema();
+    
+    /**
+     * Clears the schema cache for all schemas.
+     * This method should be called when database schema changes are detected.
+     * 
+     * <p>Implementations should clear any cached schema metadata to ensure
+     * that subsequent calls to {@link #reflectSchema()} will fetch fresh
+     * data from the database.</p>
+     */
+    void clearCache();
+    
+    /**
+     * Clears the schema cache for a specific schema.
+     * This method should be called when database schema changes are detected for a specific schema.
+     * 
+     * <p>Implementations should clear cached schema metadata for the specified schema
+     * to ensure that subsequent calls to {@link #reflectSchema()} will fetch fresh
+     * data from the database for that schema.</p>
+     * 
+     * @param schema The schema name to clear from cache
+     */
+    void clearCache(String schema);
 }
