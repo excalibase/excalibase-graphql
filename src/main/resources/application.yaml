@@ -16,6 +16,8 @@ spring:
 app:
   allowed-schema: public
   database-type: postgres
+  cache:
+    schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
 logging:
   level:
     root: ${log.level.root:info}
