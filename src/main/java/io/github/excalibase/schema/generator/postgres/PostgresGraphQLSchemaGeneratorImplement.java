@@ -16,11 +16,13 @@ import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.constant.ColumnTypeConstant;
 import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.constant.GraphqlConstant;
+import io.github.excalibase.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.EmptySchemaException;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
+import io.github.excalibase.scalar.JsonScalar;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -617,22 +619,64 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private GraphQLOutputType mapDatabaseTypeToGraphQLType(String dbType) {
         String type = dbType.toLowerCase();
         log.debug("Request db type: {}", type);
-        // TODO: Maybe could use constant list type of each GraphQLOutputType?
-        if (type.contains(ColumnTypeConstant.INT) || type.equals(ColumnTypeConstant.BIGINT)
-                || type.equals(ColumnTypeConstant.SMALLINT) || type.equals(ColumnTypeConstant.SERIAL)
-                || type.equals(ColumnTypeConstant.BIGSERIAL)) {
+        
+        // Handle array types
+        if (type.contains(ColumnTypeConstant.ARRAY_SUFFIX)) {
+            String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
+            GraphQLOutputType elementType = mapDatabaseTypeToGraphQLType(baseType);
+            return new GraphQLList(elementType);
+        }
+        
+        // Integer types
+        if (PostgresTypeOperator.isIntegerType(type)) {
             return GraphQLInt;
-        } else if (type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DECIMAL) ||
-                type.contains(ColumnTypeConstant.REAL) || type.contains(ColumnTypeConstant.DOUBLE_PRECISION)) {
+        }
+        
+        // Floating point types
+        else if (PostgresTypeOperator.isFloatingPointType(type)) {
             return GraphQLFloat;
-        } else if (type.contains(ColumnTypeConstant.BOOLEAN)) {
+        }
+        
+        // Boolean types
+        else if (PostgresTypeOperator.isBooleanType(type)) {
             return GraphQLBoolean;
-        } else if (type.contains(ColumnTypeConstant.UUID)) {
+        }
+        
+        // JSON types
+        else if (PostgresTypeOperator.isJsonType(type)) {
+            return JsonScalar.JSON;
+        }
+        
+        // UUID types
+        else if (type.contains(ColumnTypeConstant.UUID)) {
             return GraphQLID;
-        } else if (type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.DATE) ||
-                type.contains(ColumnTypeConstant.TIME)) {
+        }
+        
+        // Date/Time types (including enhanced ones)
+        else if (PostgresTypeOperator.isDateTimeType(type)) {
             return GraphQLString;
-        } else {
+        }
+        
+        // Binary and network types
+        else if (type.contains(ColumnTypeConstant.BYTEA) || type.contains(ColumnTypeConstant.INET) ||
+                type.contains(ColumnTypeConstant.CIDR) || type.contains(ColumnTypeConstant.MACADDR) ||
+                type.contains(ColumnTypeConstant.MACADDR8)) {
+            return GraphQLString;
+        }
+        
+        // Bit types
+        else if (type.contains(ColumnTypeConstant.BIT) || type.contains(ColumnTypeConstant.VARBIT)) {
+            return GraphQLString;
+        }
+        
+        // XML type
+        else if (type.contains(ColumnTypeConstant.XML)) {
+            return GraphQLString;
+        }
+        
+        // Default to string for any unhandled types
+        else {
+            log.debug("Unmapped database type '{}', defaulting to GraphQLString", type);
             return GraphQLString;
         }
     }
@@ -907,6 +951,68 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .build();
         filterTypes.put("DateTimeFilter", dateTimeFilter);
         
+        // JSON filter type for JSON/JSONB columns
+        GraphQLInputObjectType jsonFilter = GraphQLInputObjectType.newInputObject()
+            .name("JSONFilter")
+            .description("JSON filter options for JSON and JSONB columns")
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("eq")
+                .type(JsonScalar.JSON)
+                .description("Equals JSON value")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("neq")
+                .type(JsonScalar.JSON)
+                .description("Not equals JSON value")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("contains")
+                .type(GraphQLString)
+                .description("Text search within JSON/JSONB content")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("containedBy")
+                .type(JsonScalar.JSON)
+                .description("JSON contained by (<@)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("hasKey")
+                .type(GraphQLString)
+                .description("Has key (?)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("hasKeys")
+                .type(new GraphQLList(GraphQLString))
+                .description("Has all keys (?&)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("hasAnyKeys")
+                .type(new GraphQLList(GraphQLString))
+                .description("Has any of the keys (?|)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("path")
+                .type(GraphQLString)
+                .description("JSON path exists (#>)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("pathText")
+                .type(GraphQLString)
+                .description("JSON path as text (#>>)")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNull")
+                .type(GraphQLBoolean)
+                .description("Is null")
+                .build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNotNull")
+                .type(GraphQLBoolean)
+                .description("Is not null")
+                .build())
+            .build();
+        filterTypes.put("JSONFilter", jsonFilter);
+        
         return filterTypes;
     }
 
@@ -916,16 +1022,41 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private String getFilterTypeNameForColumn(String dbType) {
         String type = dbType.toLowerCase();
         
-        if (type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.DATE) || type.contains(ColumnTypeConstant.TIME)) {
+        // Handle array types - use the base type's filter
+        if (type.contains(ColumnTypeConstant.ARRAY_SUFFIX)) {
+            String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
+            return getFilterTypeNameForColumn(baseType);
+        }
+        
+        // JSON/JSONB types
+        if (type.contains(ColumnTypeConstant.JSON) || type.contains(ColumnTypeConstant.JSONB)) {
+            return "JSONFilter";
+        }
+        
+        // Date/Time types (including enhanced ones)
+        else if (type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.TIMESTAMPTZ) ||
+                type.contains(ColumnTypeConstant.DATE) || type.contains(ColumnTypeConstant.TIME) ||
+                type.contains(ColumnTypeConstant.TIMETZ) || type.contains(ColumnTypeConstant.INTERVAL)) {
             return "DateTimeFilter";
-        } else if (type.contains(ColumnTypeConstant.INT) || type.equals(ColumnTypeConstant.BIGINT) || type.equals(ColumnTypeConstant.SMALLINT) || type.contains(ColumnTypeConstant.SERIAL)) {
+        }
+        
+        // Integer types
+        else if (PostgresTypeOperator.isIntegerType(type)) {
             return "IntFilter";
-        } else if (type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DECIMAL) || 
-                  type.contains(ColumnTypeConstant.REAL) || type.contains(ColumnTypeConstant.DOUBLE_PRECISION) || type.contains(ColumnTypeConstant.FLOAT)) {
+        }
+        
+        // Floating point types
+        else if (PostgresTypeOperator.isFloatingPointType(type)) {
             return "FloatFilter";
-        } else if (type.contains(ColumnTypeConstant.BOOLEAN) || type.equals(ColumnTypeConstant.BOOL)) {
+        }
+        
+        // Boolean types
+        else if (PostgresTypeOperator.isBooleanType(type)) {
             return "BooleanFilter";
-        } else {
+        }
+        
+        // Default to string filter for text, binary, network, and other types
+        else {
             return "StringFilter";
         }
     }

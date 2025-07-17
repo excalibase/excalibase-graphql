@@ -817,7 +817,8 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
         when: "using malformed after cursor"
         def fetcher = dataFetcher.createConnectionDataFetcher("logs")
-        def result = fetcher.get(environment)
+        fetcher.get(environment)
+        
         then: "should throw DataFetcherException"
         def e = thrown(DataFetcherException)
         e.getMessage() == "Invalid cursor format for 'after': invalid-cursor"
@@ -1602,6 +1603,459 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         departmentMap.size() == 2
         departmentMap[1].name == "Engineering"
         departmentMap[2].name == "Marketing"
+    }
+
+    // ========== Enhanced PostgreSQL Types Tests ==========
+
+    def "should handle JSON and JSONB type filtering"() {
+        given: "a table with JSON and JSONB columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.json_table (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                json_data JSON,
+                jsonb_data JSONB
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.json_table (name, json_data, jsonb_data) VALUES 
+            ('Record 1', '{"name": "John", "age": 30}', '{"tags": ["developer", "java"], "active": true}'),
+            ('Record 2', '{"name": "Jane", "age": 25}', '{"tags": ["designer", "css"], "active": false}'),
+            ('Record 3', NULL, '{"tags": [], "active": true}')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "json_table",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "json_data", type: "json", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "jsonb_data", type: "jsonb", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["json_table": tableInfo]
+
+        when: "filtering by JSON contains operation"
+        def environment = createMockEnvironment(
+                ["id", "name", "json_data"],
+                ["json_data_contains": "John"]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("json_table")
+        def result = fetcher.get(environment)
+
+        then: "should return records with JSON containing 'John'"
+        result.size() == 1
+        result[0].name == "Record 1"
+
+        when: "filtering by JSONB contains operation"
+        environment = createMockEnvironment(
+                ["id", "name", "jsonb_data"],
+                ["jsonb_data_contains": "developer"]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return records with JSONB containing 'developer'"
+        result.size() == 1
+        result[0].name == "Record 1"
+
+        when: "filtering for null JSON values"
+        environment = createMockEnvironment(
+                ["id", "name", "json_data"],
+                ["json_data_isNull": true]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return records with null JSON"
+        result.size() == 1
+        result[0].name == "Record 3"
+    }
+
+    def "should handle interval type filtering with proper casting"() {
+        given: "a table with interval columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.interval_table (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                duration INTERVAL,
+                wait_time INTERVAL
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.interval_table (name, duration, wait_time) VALUES 
+            ('Task 1', '2 days 3 hours', '30 minutes'),
+            ('Task 2', '1 week 2 days', '1 hour'),
+            ('Task 3', '30 minutes', '5 minutes')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "interval_table",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "duration", type: "interval", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "wait_time", type: "interval", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["interval_table": tableInfo]
+
+        when: "filtering by interval exact match"
+        def environment = createMockEnvironment(
+                ["id", "name", "duration"],
+                ["duration": "2 days 3 hours"]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("interval_table")
+        def result = fetcher.get(environment)
+
+        then: "should return record with matching interval"
+        result.size() == 1
+        result[0].name == "Task 1"
+
+        when: "filtering by interval greater than"
+        environment = createMockEnvironment(
+                ["id", "name", "duration"],
+                ["duration_gt": "1 hour"]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return records with duration greater than 1 hour"
+        result.size() == 2
+        result.every { it.name in ["Task 1", "Task 2"] }
+
+        when: "filtering by interval less than"
+        environment = createMockEnvironment(
+                ["id", "name", "duration"],
+                ["duration_lt": "1 day"]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return records with duration less than 1 day"
+        result.size() == 1
+        result[0].name == "Task 3"
+    }
+
+    def "should handle network type filtering"() {
+        given: "a table with network columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.network_table (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                ip_address INET,
+                subnet CIDR,
+                mac_address MACADDR
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.network_table (name, ip_address, subnet, mac_address) VALUES 
+            ('Server 1', '192.168.1.1', '192.168.0.0/24', '08:00:27:00:00:00'),
+            ('Server 2', '10.0.0.1', '10.0.0.0/16', '00:1B:44:11:3A:B7'),
+            ('Server 3', '2001:db8::1', '2001:db8::/32', 'AA:BB:CC:DD:EE:FF')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "network_table",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "ip_address", type: "inet", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "subnet", type: "cidr", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "mac_address", type: "macaddr", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["network_table": tableInfo]
+
+        when: "filtering by IP address"
+        def environment = createMockEnvironment(
+                ["id", "name", "ip_address"],
+                ["ip_address": "192.168.1.1"]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("network_table")
+        def result = fetcher.get(environment)
+
+        then: "should return record with matching IP"
+        result.size() == 1
+        result[0].name == "Server 1"
+
+        when: "filtering by subnet contains"
+        environment = createMockEnvironment(
+                ["id", "name", "subnet"],
+                ["subnet_startsWith": "192.168"]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return records with subnet starting with '192.168'"
+        result.size() == 1
+        result[0].name == "Server 1"
+
+        when: "filtering by MAC address pattern"
+        environment = createMockEnvironment(
+                ["id", "name", "mac_address"],
+                ["mac_address_contains": "00:1B"]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return records with MAC containing '00:1B'"
+        result.size() == 1
+        result[0].name == "Server 2"
+    }
+
+    def "should handle enhanced datetime types"() {
+        given: "a table with enhanced datetime columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.datetime_table (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                event_time TIMESTAMPTZ,
+                local_time TIMETZ
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.datetime_table (name, event_time, local_time) VALUES 
+            ('Event 1', '2023-01-15 10:30:00+00', '14:30:00+00'),
+            ('Event 2', '2023-02-20 15:45:00+00', '09:15:00+00'),
+            ('Event 3', '2023-03-25 20:00:00+00', '18:00:00+00')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "datetime_table",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "event_time", type: "timestamptz", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "local_time", type: "timetz", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["datetime_table": tableInfo]
+
+        when: "filtering by timestamptz range"
+        def environment = createMockEnvironment(
+                ["id", "name", "event_time"],
+                [
+                        "event_time_gte": "2023-01-01T00:00:00Z",
+                        "event_time_lt": "2023-02-01T00:00:00Z"
+                ]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("datetime_table")
+        def result = fetcher.get(environment)
+
+        then: "should return events in the date range"
+        result.size() == 1
+        result[0].name == "Event 1"
+
+        when: "filtering by timetz exact match"
+        environment = createMockEnvironment(
+                ["id", "name", "local_time"],
+                ["local_time": "14:30:00+00"]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return events with matching local time"
+        result.size() == 1
+        result[0].name == "Event 1"
+    }
+
+    def "should handle numeric types with precision"() {
+        given: "a table with numeric precision columns"
+
+        jdbcTemplate.execute("SET lc_monetary = 'C'")
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.numeric_table (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                price NUMERIC(10,2),
+                cost NUMERIC(10,2)
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.numeric_table (name, price, cost) VALUES 
+            ('Product 1', 1234.56, '999.99'),
+            ('Product 2', 2500.75, '1500.00'),
+            ('Product 3', 0.00, '0.00')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "numeric_table",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "price", type: "numeric", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "cost", type: "numeric", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["numeric_table": tableInfo]
+
+        when: "filtering by numeric range"
+        def environment = createMockEnvironment(
+                ["id", "name", "price"],
+                [
+                        "price_gte": 1000.00,
+                        "price_lte": 2000.00
+                ]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("numeric_table")
+        def result = fetcher.get(environment)
+
+        then: "should return products in price range"
+        result.size() == 1
+        result[0].name == "Product 1"
+
+        when: "filtering by numeric greater than"
+        environment = createMockEnvironment(
+                ["id", "name", "cost"],
+                ["cost_gt": 1000.00]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return products with cost greater than 1000"
+        result.size() == 1
+        result[0].name == "Product 2"
+    }
+
+    def "should handle binary and XML types"() {
+        given: "a table with binary and XML columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.binary_xml_table (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                binary_data BYTEA,
+                xml_data XML
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.binary_xml_table (name, binary_data, xml_data) VALUES 
+            ('Record 1', '\\x48656c6c6f', '<person><name>John</name><age>30</age></person>'),
+            ('Record 2', '\\x576f726c64', '<product><name>Laptop</name><price>1500</price></product>'),
+            ('Record 3', NULL, '<empty/>')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "binary_xml_table",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "binary_data", type: "bytea", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "xml_data", type: "xml", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["binary_xml_table": tableInfo]
+
+        when: "filtering for non-null binary data"
+        def environment = createMockEnvironment(
+                ["id", "name", "binary_data"],
+                ["binary_data_isNotNull": true]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("binary_xml_table")
+        def result = fetcher.get(environment)
+
+        then: "should return records with binary data"
+        result.size() == 2
+        result.every { it.name in ["Record 1", "Record 2"] }
+
+        when: "filtering by XML content contains"
+        environment = createMockEnvironment(
+                ["id", "name", "xml_data"],
+                ["xml_data_contains": "John"]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return records with XML containing 'John'"
+        result.size() == 1
+        result[0].name == "Record 1"
+
+        when: "filtering by XML tag structure"
+        environment = createMockEnvironment(
+                ["id", "name", "xml_data"],
+                ["xml_data_contains": "<product>"]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return records with XML containing product tag"
+        result.size() == 1
+        result[0].name == "Record 2"
+    }
+
+    def "should handle complex enhanced type filtering combinations"() {
+        given: "a table with multiple enhanced types"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.enhanced_mixed (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                json_metadata JSON,
+                price NUMERIC(10,2),
+                created_at TIMESTAMPTZ,
+                ip_address INET
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.enhanced_mixed (name, json_metadata, price, created_at, ip_address) VALUES 
+            ('Item 1', '{"category": "electronics", "featured": true}', 1500.00, '2023-01-15 10:30:00+00', '192.168.1.1'),
+            ('Item 2', '{"category": "books", "featured": false}', 25.99, '2023-02-20 15:45:00+00', '10.0.0.1'),
+            ('Item 3', '{"category": "electronics", "featured": true}', 899.99, '2023-03-25 20:00:00+00', '2001:db8::1')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "enhanced_mixed",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "json_metadata", type: "json", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "price", type: "numeric", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "created_at", type: "timestamptz", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "ip_address", type: "inet", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["enhanced_mixed": tableInfo]
+
+        when: "filtering with multiple enhanced type conditions"
+        def environment = createMockEnvironment(
+                ["id", "name", "json_metadata", "price"],
+                [
+                        "json_metadata_contains": "electronics",
+                        "price_gte": 1000.00,
+                        "created_at_gte": "2023-01-01T00:00:00Z"
+                ]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("enhanced_mixed")
+        def result = fetcher.get(environment)
+
+        then: "should return items matching all enhanced type conditions"
+        result.size() == 1
+        result[0].name == "Item 1"
+
+        when: "filtering with network type and JSON combination"
+        environment = createMockEnvironment(
+                ["id", "name", "json_metadata", "ip_address"],
+                [
+                        "ip_address_startsWith": "192.168",
+                        "json_metadata_contains": "featured"
+                ]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return items matching network and JSON conditions"
+        result.size() == 1
+        result[0].name == "Item 1"
     }
 
 // Helper method for empty relationship fields
