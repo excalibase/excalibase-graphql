@@ -39,3 +39,6 @@ build/
 .DS_Store
 /charts/local/Chart.lock
 /charts/local/charts/
+
+### MkDocs ###
+site/

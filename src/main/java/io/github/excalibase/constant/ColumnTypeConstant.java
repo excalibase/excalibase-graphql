@@ -43,4 +43,60 @@ public class ColumnTypeConstant {
     
     /** Time column type */
     public static final String TIME = "time";
+
+    // JSON types
+    
+    /** JSON column type */
+    public static final String JSON = "json";
+    
+    /** JSONB column type (binary JSON) */
+    public static final String JSONB = "jsonb";
+
+    // Array and composite types
+    
+    /** Array type suffix */
+    public static final String ARRAY_SUFFIX = "[]";
+
+    // Binary and network types
+    
+    /** Binary data type */
+    public static final String BYTEA = "bytea";
+    
+    /** Network address type */
+    public static final String INET = "inet";
+    
+    /** Network address type with subnet */
+    public static final String CIDR = "cidr";
+    
+    /** MAC address type */
+    public static final String MACADDR = "macaddr";
+    
+    /** MAC address type (8 bytes) */
+    public static final String MACADDR8 = "macaddr8";
+
+    // Enhanced date/time types
+    
+    /** Timestamp with timezone */
+    public static final String TIMESTAMPTZ = "timestamptz";
+    
+    /** Time with timezone */
+    public static final String TIMETZ = "timetz";
+    
+    /** Interval type */
+    public static final String INTERVAL = "interval";
+
+    // Additional numeric types
+    
+
+    
+    /** Bit string type */
+    public static final String BIT = "bit";
+    
+    /** Variable bit string type */
+    public static final String VARBIT = "varbit";
+
+    // Text and XML types
+    
+    /** XML type */
+    public static final String XML = "xml";
 } 

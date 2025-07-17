@@ -23,6 +23,7 @@ import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.constant.ColumnTypeConstant;
 import io.github.excalibase.constant.FieldConstant;
+import io.github.excalibase.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.SQLSyntax;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.DataFetcherException;
@@ -838,35 +839,91 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
             if (isOperatorFilter) {
                 String quotedFieldName = "\"" + fieldName + "\"";
+                // Get column type for all operator filters
+                String fieldColumnType = columnTypes.getOrDefault(fieldName, "").toLowerCase();
 
                 switch (operator) {
                     case FieldConstant.OPERATOR_CONTAINS:
-                        conditions.add(quotedFieldName + " LIKE :" + key);
-                        paramSource.addValue(key, "%" + value + "%");
+                        // Handle JSON types differently in legacy format too
+                        if (fieldColumnType.contains("json")) {
+                            conditions.add(quotedFieldName + "::text LIKE :" + key);
+                            paramSource.addValue(key, "%" + value + "%");
+                        } else if (fieldColumnType.contains("xml")) {
+                            conditions.add(quotedFieldName + "::text LIKE :" + key);
+                            paramSource.addValue(key, "%" + value + "%");
+                        } else if (fieldColumnType.contains("inet") || fieldColumnType.contains("cidr") || fieldColumnType.contains("macaddr")) {
+                            conditions.add(quotedFieldName + "::text ILIKE :" + key);
+                            paramSource.addValue(key, "%" + value + "%");
+                        } else {
+                            conditions.add(quotedFieldName + " LIKE :" + key);
+                            paramSource.addValue(key, "%" + value + "%");
+                        }
                         break;
                     case FieldConstant.OPERATOR_STARTS_WITH:
-                        conditions.add(quotedFieldName + " LIKE :" + key);
-                        paramSource.addValue(key, value + "%");
+                        if (fieldColumnType.contains("inet") || fieldColumnType.contains("cidr") || fieldColumnType.contains("macaddr") || fieldColumnType.contains("xml")) {
+                            conditions.add(quotedFieldName + "::text ILIKE :" + key);
+                            paramSource.addValue(key, value + "%");
+                        } else {
+                            conditions.add(quotedFieldName + " LIKE :" + key);
+                            paramSource.addValue(key, value + "%");
+                        }
                         break;
                     case FieldConstant.OPERATOR_ENDS_WITH:
-                        conditions.add(quotedFieldName + " LIKE :" + key);
-                        paramSource.addValue(key, "%" + value);
+                        if (fieldColumnType.contains("inet") || fieldColumnType.contains("cidr") || fieldColumnType.contains("macaddr") || fieldColumnType.contains("xml")) {
+                            conditions.add(quotedFieldName + "::text ILIKE :" + key);
+                            paramSource.addValue(key, "%" + value);
+                        } else {
+                            conditions.add(quotedFieldName + " LIKE :" + key);
+                            paramSource.addValue(key, "%" + value);
+                        }
                         break;
                     case FieldConstant.OPERATOR_GT:
-                        conditions.add(quotedFieldName + " > :" + key);
-                        paramSource.addValue(key, value);
+                        if (fieldColumnType.contains(ColumnTypeConstant.INTERVAL)) {
+                            conditions.add(quotedFieldName + " > :" + key + "::interval");
+                            paramSource.addValue(key, value.toString());
+                        } else if (fieldColumnType.contains("timestamp") || fieldColumnType.contains("time")) {
+                            conditions.add(quotedFieldName + " > :" + key + "::" + fieldColumnType);
+                            paramSource.addValue(key, value.toString());
+                        } else {
+                            conditions.add(quotedFieldName + " > :" + key);
+                            paramSource.addValue(key, value);
+                        }
                         break;
                     case FieldConstant.OPERATOR_GTE:
-                        conditions.add(quotedFieldName + " >= :" + key);
-                        paramSource.addValue(key, value);
+                        if (fieldColumnType.contains(ColumnTypeConstant.INTERVAL)) {
+                            conditions.add(quotedFieldName + " >= :" + key + "::interval");
+                            paramSource.addValue(key, value.toString());
+                        } else if (fieldColumnType.contains("timestamp") || fieldColumnType.contains("time")) {
+                            conditions.add(quotedFieldName + " >= :" + key + "::" + fieldColumnType);
+                            paramSource.addValue(key, value.toString());
+                        } else {
+                            conditions.add(quotedFieldName + " >= :" + key);
+                            paramSource.addValue(key, value);
+                        }
                         break;
                     case FieldConstant.OPERATOR_LT:
-                        conditions.add(quotedFieldName + " < :" + key);
-                        paramSource.addValue(key, value);
+                        if (fieldColumnType.contains(ColumnTypeConstant.INTERVAL)) {
+                            conditions.add(quotedFieldName + " < :" + key + "::interval");
+                            paramSource.addValue(key, value.toString());
+                        } else if (fieldColumnType.contains("timestamp") || fieldColumnType.contains("time")) {
+                            conditions.add(quotedFieldName + " < :" + key + "::" + fieldColumnType);
+                            paramSource.addValue(key, value.toString());
+                        } else {
+                            conditions.add(quotedFieldName + " < :" + key);
+                            paramSource.addValue(key, value);
+                        }
                         break;
                     case FieldConstant.OPERATOR_LTE:
-                        conditions.add(quotedFieldName + " <= :" + key);
-                        paramSource.addValue(key, value);
+                        if (fieldColumnType.contains(ColumnTypeConstant.INTERVAL)) {
+                            conditions.add(quotedFieldName + " <= :" + key + "::interval");
+                            paramSource.addValue(key, value.toString());
+                        } else if (fieldColumnType.contains("timestamp") || fieldColumnType.contains("time")) {
+                            conditions.add(quotedFieldName + " <= :" + key + "::" + fieldColumnType);
+                            paramSource.addValue(key, value.toString());
+                        } else {
+                            conditions.add(quotedFieldName + " <= :" + key);
+                            paramSource.addValue(key, value);
+                        }
                         break;
                     case FieldConstant.OPERATOR_IS_NULL:
                         // Ignore the actual value, just add the IS NULL condition
@@ -905,16 +962,28 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         throw new DataFetcherException("Invalid UUID format for column " + key + ": " + value, e);
                     }
                 }
+                // Handle interval types with proper casting
+                else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                    conditions.add(quotedKey + " = :" + key + "::interval");
+                    paramSource.addValue(key, value.toString());
+                }
+                // Handle network types (inet, cidr, macaddr) with casting
+                else if (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr")) {
+                    conditions.add(quotedKey + " = :" + key + "::" + columnType);
+                    paramSource.addValue(key, value.toString());
+                }
+                // Handle enhanced datetime types with casting
+                else if (columnType.contains("timestamp") || columnType.contains("time")) {
+                    conditions.add(quotedKey + " = :" + key + "::" + columnType);
+                    paramSource.addValue(key, value.toString());
+                }
                 // Handle numeric type conversions
-                else if (columnType.contains(ColumnTypeConstant.INT) || columnType.contains(ColumnTypeConstant.DECIMAL) ||
-                        columnType.contains(ColumnTypeConstant.NUMERIC) || columnType.contains(ColumnTypeConstant.DOUBLE) ||
-                        columnType.contains(ColumnTypeConstant.FLOAT) || columnType.contains(ColumnTypeConstant.BIGINT)
-                        || columnType.contains(ColumnTypeConstant.SERIAL) || columnType.contains(ColumnTypeConstant.BIGSERIAL)) {
+                else if (PostgresTypeOperator.isIntegerType(columnType) || PostgresTypeOperator.isFloatingPointType(columnType)) {
 
                     if (value instanceof String) {
                         try {
                             // Check if it's an integer type
-                            if (columnType.contains(ColumnTypeConstant.INT) || columnType.contains(ColumnTypeConstant.SERIAL)) {
+                            if (PostgresTypeOperator.isIntegerType(columnType)) {
                                 int numericValue = Integer.parseInt((String) value);
                                 conditions.add(quotedKey + " = :" + key);
                                 paramSource.addValue(key, numericValue);
@@ -984,35 +1053,82 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 
                 String paramName = paramPrefix + "_" + columnName + "_" + operator;
                 
+                String columnType = columnTypes.get(columnName);
+                boolean isInterval = columnType != null && columnType.toLowerCase().contains(ColumnTypeConstant.INTERVAL);
+                
                 switch (operator.toLowerCase()) {
                     case "eq":
-                        conditions.add(quotedColumnName + " = :" + paramName);
-                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        if (isInterval) {
+                            conditions.add(quotedColumnName + " = :" + paramName + "::interval");
+                        } else if (columnType != null && (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr"))) {
+                            conditions.add(quotedColumnName + " = :" + paramName + "::" + columnType);
+                        } else if (columnType != null && (columnType.contains("timestamp") || columnType.contains("time"))) {
+                            conditions.add(quotedColumnName + " = :" + paramName + "::" + columnType);
+                        } else if (columnType != null && columnType.contains("xml")) {
+                            conditions.add(quotedColumnName + "::text = :" + paramName);
+                        } else {
+                            conditions.add(quotedColumnName + " = :" + paramName);
+                        }
+                        addTypedParameter(paramSource, paramName, value, columnType);
                         break;
                         
                     case "neq":
-                        conditions.add(quotedColumnName + " <> :" + paramName);
-                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        if (isInterval) {
+                            conditions.add(quotedColumnName + " != :" + paramName + "::interval");
+                        } else if (columnType != null && (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr"))) {
+                            conditions.add(quotedColumnName + " != :" + paramName + "::" + columnType);
+                        } else if (columnType != null && (columnType.contains("timestamp") || columnType.contains("time"))) {
+                            conditions.add(quotedColumnName + " != :" + paramName + "::" + columnType);
+                        } else if (columnType != null && columnType.contains("xml")) {
+                            conditions.add(quotedColumnName + "::text != :" + paramName);
+                        } else {
+                            conditions.add(quotedColumnName + " != :" + paramName);
+                        }
+                        addTypedParameter(paramSource, paramName, value, columnType);
                         break;
                         
                     case "gt":
-                        conditions.add(quotedColumnName + " > :" + paramName);
-                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        if (isInterval) {
+                            conditions.add(quotedColumnName + " > :" + paramName + "::interval");
+                        } else if (columnType != null && (columnType.contains("timestamp") || columnType.contains("time"))) {
+                            conditions.add(quotedColumnName + " > :" + paramName + "::" + columnType);
+                        } else {
+                            conditions.add(quotedColumnName + " > :" + paramName);
+                        }
+                        addTypedParameter(paramSource, paramName, value, columnType);
                         break;
                         
                     case "gte":
-                        conditions.add(quotedColumnName + " >= :" + paramName);
-                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        if (isInterval) {
+                            conditions.add(quotedColumnName + " >= :" + paramName + "::interval");
+                        } else if (columnType != null && (columnType.contains("timestamp") || columnType.contains("time"))) {
+                            conditions.add(quotedColumnName + " >= :" + paramName + "::" + columnType);
+                        } else {
+                            conditions.add(quotedColumnName + " >= :" + paramName);
+                        }
+                        addTypedParameter(paramSource, paramName, value, columnType);
                         break;
                         
                     case "lt":
-                        conditions.add(quotedColumnName + " < :" + paramName);
-                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        if (isInterval) {
+                            conditions.add(quotedColumnName + " < :" + paramName + "::interval");
+                        } else if (columnType != null && (columnType.contains("timestamp") || columnType.contains("time"))) {
+                            conditions.add(quotedColumnName + " < :" + paramName + "::" + columnType);
+                        } else {
+                            conditions.add(quotedColumnName + " < :" + paramName);
+                        }
+                        addTypedParameter(paramSource, paramName, value, columnType);
                         break;
                         
                     case "lte":
-                        conditions.add(quotedColumnName + " <= :" + paramName);
-                        addTypedParameter(paramSource, paramName, value, columnTypes.get(columnName));
+                        if (isInterval) {
+                            conditions.add(quotedColumnName + " <= :" + paramName + "::interval");
+                        } else if (columnType != null && (columnType.contains("timestamp") || columnType.contains("time"))) {
+                            conditions.add(quotedColumnName + " <= :" + paramName + "::" + columnType);
+                        } else {
+                            conditions.add(quotedColumnName + " <= :" + paramName);
+                        }
+                        addTypedParameter(paramSource, paramName, value, columnType);
                         break;
                         
                     case "like":
@@ -1026,18 +1142,48 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         break;
                         
                     case "contains":
-                        conditions.add(quotedColumnName + " LIKE :" + paramName);
-                        paramSource.addValue(paramName, "%" + value + "%");
+                        // Handle JSON types differently
+                        if (columnType != null && (columnType.toLowerCase().contains("json"))) {
+                            // For JSON/JSONB, use PostgreSQL text search on the JSON representation
+                            conditions.add(quotedColumnName + "::text LIKE :" + paramName);
+                            paramSource.addValue(paramName, "%" + value + "%");
+                        } else if (columnType != null && columnType.toLowerCase().contains("xml")) {
+                            // For XML, cast to text for LIKE operations
+                            conditions.add(quotedColumnName + "::text LIKE :" + paramName);
+                            paramSource.addValue(paramName, "%" + value + "%");
+                        } else if (columnType != null && (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr"))) {
+                            // For network types, cast to text for case-insensitive LIKE operations
+                            conditions.add(quotedColumnName + "::text ILIKE :" + paramName);
+                            paramSource.addValue(paramName, "%" + value + "%");
+                        } else {
+                            // Standard string LIKE operation
+                            conditions.add(quotedColumnName + " LIKE :" + paramName);
+                            paramSource.addValue(paramName, "%" + value + "%");
+                        }
                         break;
                         
                     case "startswith":
-                        conditions.add(quotedColumnName + " LIKE :" + paramName);
-                        paramSource.addValue(paramName, value + "%");
+                        if (columnType != null && (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr"))) {
+                            // Network types need to be cast to text for LIKE operations  
+                            conditions.add(quotedColumnName + "::text ILIKE :" + paramName);
+                            paramSource.addValue(paramName, value + "%");
+                        } else {
+                            // Standard string LIKE operation
+                            conditions.add(quotedColumnName + " LIKE :" + paramName);
+                            paramSource.addValue(paramName, value + "%");
+                        }
                         break;
                         
                     case "endswith":
-                        conditions.add(quotedColumnName + " LIKE :" + paramName);
-                        paramSource.addValue(paramName, "%" + value);
+                        if (columnType != null && (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr"))) {
+                            // Network types need to be cast to text for LIKE operations
+                            conditions.add(quotedColumnName + "::text ILIKE :" + paramName);
+                            paramSource.addValue(paramName, "%" + value);
+                        } else {
+                            // Standard string LIKE operation
+                            conditions.add(quotedColumnName + " LIKE :" + paramName);
+                            paramSource.addValue(paramName, "%" + value);
+                        }
                         break;
                         
                     case "isnull":
@@ -1060,8 +1206,21 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         if (value instanceof List) {
                             List<?> valueList = (List<?>) value;
                             if (!valueList.isEmpty()) {
-                                conditions.add(quotedColumnName + " IN (:" + paramName + ")");
-                                addTypedParameter(paramSource, paramName, valueList, columnTypes.get(columnName));
+                                if (isInterval) {
+                                    // For intervals, we need to cast each element individually
+                                    StringBuilder inClause = new StringBuilder("(");
+                                    for (int i = 0; i < valueList.size(); i++) {
+                                        if (i > 0) inClause.append(", ");
+                                        String itemParamName = paramName + "_" + i;
+                                        inClause.append(":").append(itemParamName).append("::interval");
+                                        paramSource.addValue(itemParamName, valueList.get(i).toString());
+                                    }
+                                    inClause.append(")");
+                                    conditions.add(quotedColumnName + " IN " + inClause.toString());
+                                } else {
+                                    conditions.add(quotedColumnName + " IN (:" + paramName + ")");
+                                    addTypedParameter(paramSource, paramName, valueList, columnType);
+                                }
                             }
                         }
                         break;
@@ -1070,8 +1229,21 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         if (value instanceof List) {
                             List<?> valueList = (List<?>) value;
                             if (!valueList.isEmpty()) {
-                                conditions.add(quotedColumnName + " NOT IN (:" + paramName + ")");
-                                addTypedParameter(paramSource, paramName, valueList, columnTypes.get(columnName));
+                                if (isInterval) {
+                                    // For intervals, we need to cast each element individually
+                                    StringBuilder notInClause = new StringBuilder("(");
+                                    for (int i = 0; i < valueList.size(); i++) {
+                                        if (i > 0) notInClause.append(", ");
+                                        String itemParamName = paramName + "_" + i;
+                                        notInClause.append(":").append(itemParamName).append("::interval");
+                                        paramSource.addValue(itemParamName, valueList.get(i).toString());
+                                    }
+                                    notInClause.append(")");
+                                    conditions.add(quotedColumnName + " NOT IN " + notInClause.toString());
+                                } else {
+                                    conditions.add(quotedColumnName + " NOT IN (:" + paramName + ")");
+                                    addTypedParameter(paramSource, paramName, valueList, columnType);
+                                }
                             }
                         }
                         break;
@@ -1115,16 +1287,17 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         String itemStr = item.toString();
                         if (type.contains(ColumnTypeConstant.UUID)) {
                             convertedList.add(UUID.fromString(itemStr));
-                        } else if (type.contains(ColumnTypeConstant.INT) && !type.contains(ColumnTypeConstant.BIGINT)) {
+                        } else if (PostgresTypeOperator.isIntegerType(type)) {
                             convertedList.add(Integer.parseInt(itemStr));
-                        } else if (type.contains(ColumnTypeConstant.BIGINT)) {
-                            convertedList.add(Long.parseLong(itemStr));
-                        } else if (type.contains(ColumnTypeConstant.DECIMAL) || type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DOUBLE) || type.contains(ColumnTypeConstant.FLOAT)) {
+                        } else if (PostgresTypeOperator.isFloatingPointType(type)) {
                             convertedList.add(Double.parseDouble(itemStr));
-                        } else if (type.contains(ColumnTypeConstant.BOOL)) {
+                        } else if (PostgresTypeOperator.isBooleanType(type)) {
                             convertedList.add(Boolean.parseBoolean(itemStr));
-                        } else if (type.contains(ColumnTypeConstant.DATE) || type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.TIME)) {
-                            // Handle date/timestamp conversion for arrays
+                        } else if (type.contains(ColumnTypeConstant.INTERVAL)) {
+                            // Intervals should be passed as strings - PostgreSQL will handle the conversion
+                            convertedList.add(itemStr);
+                        } else if (PostgresTypeOperator.isDateTimeType(type) && !type.contains(ColumnTypeConstant.INTERVAL)) {
+                            // Handle date/timestamp conversion for arrays (excluding intervals)
                             Object convertedDate = convertToDateTime(itemStr, type);
                             convertedList.add(convertedDate);
                         } else {
@@ -1141,16 +1314,17 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             
             if (type.contains(ColumnTypeConstant.UUID)) {
                 paramSource.addValue(paramName, UUID.fromString(valueStr));
-            } else if (type.contains(ColumnTypeConstant.INT) && !type.contains(ColumnTypeConstant.BIGINT)) {
+            } else if (PostgresTypeOperator.isIntegerType(type)) {
                 paramSource.addValue(paramName, Integer.parseInt(valueStr));
-            } else if (type.contains(ColumnTypeConstant.BIGINT)) {
-                paramSource.addValue(paramName, Long.parseLong(valueStr));
-            } else if (type.contains(ColumnTypeConstant.DECIMAL) || type.contains(ColumnTypeConstant.NUMERIC) || type.contains(ColumnTypeConstant.DOUBLE) || type.contains(ColumnTypeConstant.FLOAT)) {
+            } else if (PostgresTypeOperator.isFloatingPointType(type)) {
                 paramSource.addValue(paramName, Double.parseDouble(valueStr));
-            } else if (type.contains(ColumnTypeConstant.BOOL)) {
+            } else if (PostgresTypeOperator.isBooleanType(type)) {
                 paramSource.addValue(paramName, Boolean.parseBoolean(valueStr));
-            } else if (type.contains(ColumnTypeConstant.DATE) || type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.TIME)) {
-                // Handle date/timestamp conversion with multiple formats
+            } else if (type.contains(ColumnTypeConstant.INTERVAL)) {
+                // Intervals are durations, not timestamps - pass as string for PostgreSQL to handle
+                paramSource.addValue(paramName, valueStr);
+            } else if (PostgresTypeOperator.isDateTimeType(type) && !type.contains(ColumnTypeConstant.INTERVAL)) {
+                // Handle date/timestamp conversion with multiple formats (excluding intervals)
                 Object convertedDate = convertToDateTime(valueStr, type);
                 paramSource.addValue(paramName, convertedDate);
             } else {

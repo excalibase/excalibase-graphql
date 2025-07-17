@@ -384,6 +384,120 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         dataTypesType.getFieldDefinition("time_col").type == Scalars.GraphQLString
     }
 
+    def "should handle enhanced PostgreSQL data types correctly"() {
+        given: "a table with enhanced PostgreSQL data types"
+        def columns = [
+            new ColumnInfo("id", "integer", false, true),
+            // JSON types
+            new ColumnInfo("json_col", "json", false, true),
+            new ColumnInfo("jsonb_col", "jsonb", false, true),
+            // Array types
+            new ColumnInfo("int_array", "integer[]", false, true),
+            new ColumnInfo("text_array", "text[]", false, true),
+            // Enhanced date/time types
+            new ColumnInfo("timestamptz_col", "timestamptz", false, true),
+            new ColumnInfo("timetz_col", "timetz", false, true),
+            new ColumnInfo("interval_col", "interval", false, true),
+            // Additional numeric types
+            new ColumnInfo("bit_col", "bit", false, true),
+            new ColumnInfo("varbit_col", "varbit", false, true),
+            // Binary and network types
+            new ColumnInfo("bytea_col", "bytea", false, true),
+            new ColumnInfo("inet_col", "inet", false, true),
+            new ColumnInfo("cidr_col", "cidr", false, true),
+            new ColumnInfo("macaddr_col", "macaddr", false, true),
+            new ColumnInfo("macaddr8_col", "macaddr8", false, true),
+            // XML type
+            new ColumnInfo("xml_col", "xml", false, true)
+        ]
+        def tableInfo = new TableInfo("enhanced_types_table", columns, [])
+        Map<String, TableInfo> tables = ["enhanced_types_table": tableInfo]
+
+        when: "generating schema"
+        GraphQLSchema schema = generator.generateSchema(tables)
+
+        then: "should map enhanced database types to correct GraphQL types"
+        GraphQLObjectType enhancedTypesType = schema.getType("enhanced_types_table") as GraphQLObjectType
+        enhancedTypesType != null
+
+        // JSON/JSONB types should map to our custom JSON scalar
+        enhancedTypesType.getFieldDefinition("json_col").type.name == "JSON"
+        enhancedTypesType.getFieldDefinition("jsonb_col").type.name == "JSON"
+
+        // Array types should map to GraphQLList
+        enhancedTypesType.getFieldDefinition("int_array").type instanceof GraphQLList
+        enhancedTypesType.getFieldDefinition("text_array").type instanceof GraphQLList
+        
+        // Check that array element types are correct
+        GraphQLList intArrayType = enhancedTypesType.getFieldDefinition("int_array").type as GraphQLList
+        intArrayType.wrappedType == Scalars.GraphQLInt
+        
+        GraphQLList textArrayType = enhancedTypesType.getFieldDefinition("text_array").type as GraphQLList
+        textArrayType.wrappedType == Scalars.GraphQLString
+
+        // Enhanced date/time types should map to GraphQLString
+        enhancedTypesType.getFieldDefinition("timestamptz_col").type == Scalars.GraphQLString
+        enhancedTypesType.getFieldDefinition("timetz_col").type == Scalars.GraphQLString
+        enhancedTypesType.getFieldDefinition("interval_col").type == Scalars.GraphQLString
+
+        // Bit types should map to GraphQLString
+        enhancedTypesType.getFieldDefinition("bit_col").type == Scalars.GraphQLString
+        enhancedTypesType.getFieldDefinition("varbit_col").type == Scalars.GraphQLString
+
+        // Binary and network types should map to GraphQLString
+        enhancedTypesType.getFieldDefinition("bytea_col").type == Scalars.GraphQLString
+        enhancedTypesType.getFieldDefinition("inet_col").type == Scalars.GraphQLString
+        enhancedTypesType.getFieldDefinition("cidr_col").type == Scalars.GraphQLString
+        enhancedTypesType.getFieldDefinition("macaddr_col").type == Scalars.GraphQLString
+        enhancedTypesType.getFieldDefinition("macaddr8_col").type == Scalars.GraphQLString
+
+        // XML type should map to GraphQLString
+        enhancedTypesType.getFieldDefinition("xml_col").type == Scalars.GraphQLString
+    }
+
+    def "should create appropriate filter types for enhanced PostgreSQL types"() {
+        given: "a table with enhanced PostgreSQL data types"
+        def columns = [
+            new ColumnInfo("json_col", "json", false, true),
+            new ColumnInfo("jsonb_col", "jsonb", false, true),
+            new ColumnInfo("int_array", "integer[]", false, true),
+            new ColumnInfo("timestamptz_col", "timestamptz", false, true),
+            new ColumnInfo("inet_col", "inet", false, true)
+        ]
+        def tableInfo = new TableInfo("filter_test_table", columns, [])
+        Map<String, TableInfo> tables = ["filter_test_table": tableInfo]
+
+        when: "generating schema"
+        GraphQLSchema schema = generator.generateSchema(tables)
+
+        then: "should create appropriate filter input types"
+        // Check that JSON filter type exists
+        GraphQLInputObjectType jsonFilter = schema.getType("JSONFilter") as GraphQLInputObjectType
+        jsonFilter != null
+        jsonFilter.getFieldDefinition("eq") != null
+        jsonFilter.getFieldDefinition("contains") != null
+        jsonFilter.getFieldDefinition("hasKey") != null
+        jsonFilter.getFieldDefinition("hasKeys") != null
+        jsonFilter.getFieldDefinition("path") != null
+
+        // Check that table filter type includes correct filter assignments
+        GraphQLInputObjectType tableFilter = schema.getType("filter_test_tableFilter") as GraphQLInputObjectType
+        tableFilter != null
+        
+        // JSON columns should use JSONFilter
+        tableFilter.getFieldDefinition("json_col").type.name == "JSONFilter"
+        tableFilter.getFieldDefinition("jsonb_col").type.name == "JSONFilter"
+        
+        // Array types should use the base type's filter
+        tableFilter.getFieldDefinition("int_array").type.name == "IntFilter"
+        
+        // Enhanced date/time should use DateTimeFilter
+        tableFilter.getFieldDefinition("timestamptz_col").type.name == "DateTimeFilter"
+        
+        // Network types should use StringFilter
+        tableFilter.getFieldDefinition("inet_col").type.name == "StringFilter"
+    }
+
     def "should create OrderDirection enum and PageInfo type"() {
         given: "any table"
         def columns = [new ColumnInfo("id", "integer", true, false)]

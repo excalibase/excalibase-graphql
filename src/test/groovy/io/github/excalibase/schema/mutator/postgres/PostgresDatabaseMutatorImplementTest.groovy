@@ -813,4 +813,519 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         finalCategoryCount == 1
         finalPostCount == 0
     }
+
+    // ========== Enhanced PostgreSQL Types Mutation Tests ==========
+
+    def "should create records with JSON and JSONB types"() {
+        given: "a table with JSON and JSONB columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.json_records (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                json_data JSON,
+                jsonb_data JSONB
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "json_records",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "json_data", type: "json", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "jsonb_data", type: "jsonb", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["json_records": tableInfo]
+
+        and: "environment with JSON data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "JSON Record",
+                "json_data": '{"name": "John", "age": 30, "active": true}',
+                "jsonb_data": '{"tags": ["developer", "java"], "score": 95.5}'
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with JSON/JSONB data"
+        def mutationResolver = mutator.createCreateMutationResolver("json_records")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with JSON data"
+        result != null
+        result.name == "JSON Record"
+        result.json_data != null
+        result.jsonb_data != null
+        result.id != null
+    }
+
+    def "should create records with interval types"() {
+        given: "a table with interval columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.interval_records (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                duration INTERVAL,
+                wait_time INTERVAL
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "interval_records",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "duration", type: "interval", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "wait_time", type: "interval", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["interval_records": tableInfo]
+
+        and: "environment with interval data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Task Record",
+                "duration": "2 days 3 hours",
+                "wait_time": "30 minutes"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with interval data"
+        def mutationResolver = mutator.createCreateMutationResolver("interval_records")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with interval data"
+        result != null
+        result.name == "Task Record"
+        result.duration != null
+        result.wait_time != null
+        result.id != null
+    }
+
+    def "should create records with network types"() {
+        given: "a table with network columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.network_records (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                ip_address INET,
+                subnet CIDR,
+                mac_address MACADDR
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "network_records",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "ip_address", type: "inet", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "subnet", type: "cidr", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "mac_address", type: "macaddr", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["network_records": tableInfo]
+
+        and: "environment with network data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Network Device",
+                "ip_address": "192.168.1.100",
+                "subnet": "192.168.0.0/24",
+                "mac_address": "08:00:27:12:34:56"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with network data"
+        def mutationResolver = mutator.createCreateMutationResolver("network_records")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with network data"
+        result != null
+        result.name == "Network Device"
+        result.ip_address != null
+        result.subnet != null
+        result.mac_address != null
+        result.id != null
+    }
+
+    def "should create records with enhanced datetime types"() {
+        given: "a table with enhanced datetime columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.datetime_records (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                event_time TIMESTAMPTZ,
+                local_time TIMETZ
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "datetime_records",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "event_time", type: "timestamptz", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "local_time", type: "timetz", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["datetime_records": tableInfo]
+
+        and: "environment with enhanced datetime data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Event Record",
+                "event_time": "2023-01-15T10:30:00+00:00",
+                "local_time": "14:30:00+00"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with enhanced datetime data"
+        def mutationResolver = mutator.createCreateMutationResolver("datetime_records")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with datetime data"
+        result != null
+        result.name == "Event Record"
+        result.event_time != null
+        result.local_time != null
+        result.id != null
+    }
+
+    def "should create records with numeric precision types"() {
+        given: "a table with numeric precision columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.numeric_records (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                price NUMERIC(10,2),
+                cost NUMERIC(8,2)
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "numeric_records",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "price", type: "numeric", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "cost", type: "numeric", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["numeric_records": tableInfo]
+
+        and: "environment with numeric data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Product Record",
+                "price": "1234.56",
+                "cost": "999.99"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with numeric data"
+        def mutationResolver = mutator.createCreateMutationResolver("numeric_records")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with numeric data"
+        result != null
+        result.name == "Product Record"
+        result.price == 1234.56
+        result.cost != null
+        result.id != null
+    }
+
+    def "should create records with binary and XML types"() {
+        given: "a table with binary and XML columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.binary_xml_records (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                binary_data BYTEA,
+                xml_data XML
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "binary_xml_records",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "binary_data", type: "bytea", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "xml_data", type: "xml", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["binary_xml_records": tableInfo]
+
+        and: "environment with binary and XML data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Binary XML Record",
+                "binary_data": "Hello World", // Will be converted to bytea
+                "xml_data": "<person><name>John</name><age>30</age></person>"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with binary and XML data"
+        def mutationResolver = mutator.createCreateMutationResolver("binary_xml_records")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with binary and XML data"
+        result != null
+        result.name == "Binary XML Record"
+        result.binary_data != null
+        result.xml_data != null
+        result.id != null
+    }
+
+    def "should update records with enhanced PostgreSQL types"() {
+        given: "a table with enhanced types and existing data"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.enhanced_updates (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                json_data JSON,
+                interval_data INTERVAL,
+                ip_address INET,
+                price NUMERIC(10,2)
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.enhanced_updates (name, json_data, interval_data, ip_address, price) 
+            VALUES ('Original Record', '{"status": "draft"}', '1 hour', '192.168.1.1', 100.00)
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "enhanced_updates",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "json_data", type: "json", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "interval_data", type: "interval", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "ip_address", type: "inet", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "price", type: "numeric", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["enhanced_updates": tableInfo]
+
+        and: "environment with update data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "id": 1,
+                "name": "Updated Record",
+                "json_data": '{"status": "published", "views": 150}',
+                "interval_data": "2 days 3 hours",
+                "ip_address": "10.0.0.1",
+                "price": "299.99"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "updating record with enhanced types"
+        def mutationResolver = mutator.createUpdateMutationResolver("enhanced_updates")
+        def result = mutationResolver.get(environment)
+
+        then: "should return updated record with enhanced type data"
+        result != null
+        result.id == 1
+        result.name == "Updated Record"
+        result.json_data != null
+        result.interval_data != null
+        result.ip_address != null
+        result.price == 299.99
+    }
+
+    def "should bulk create records with enhanced types"() {
+        given: "a table with enhanced type columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.enhanced_bulk (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                json_metadata JSON,
+                created_time TIMESTAMPTZ
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "enhanced_bulk",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "json_metadata", type: "json", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "created_time", type: "timestamptz", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["enhanced_bulk": tableInfo]
+
+        and: "environment with multiple enhanced type inputs"
+        def environment = Mock(DataFetchingEnvironment)
+        def inputs = [
+                [
+                        "name": "Record 1",
+                        "json_metadata": '{"category": "electronics", "featured": true}',
+                        "created_time": "2023-01-15T10:30:00+00:00"
+                ],
+                [
+                        "name": "Record 2",
+                        "json_metadata": '{"category": "books", "featured": false}',
+                        "created_time": "2023-02-20T15:45:00+00:00"
+                ],
+                [
+                        "name": "Record 3",
+                        "json_metadata": '{"category": "electronics", "featured": true}',
+                        "created_time": "2023-03-25T20:00:00+00:00"
+                ]
+        ]
+        environment.getArgument("inputs") >> inputs
+
+        when: "performing bulk create with enhanced types"
+        def mutationResolver = mutator.createBulkCreateMutationResolver("enhanced_bulk")
+        def result = mutationResolver.get(environment)
+
+        then: "should return all created records with enhanced type data"
+        result.size() == 3
+        result.every { it.id != null && it.name != null }
+        result.every { it.json_metadata != null && it.created_time != null }
+        result[0].name == "Record 1"
+        result[1].name == "Record 2"
+        result[2].name == "Record 3"
+    }
+
+    def "should handle complex enhanced type mutations with validation"() {
+        given: "a table with all enhanced PostgreSQL types"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.complex_enhanced (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                json_col JSON,
+                jsonb_col JSONB,
+                interval_col INTERVAL,
+                timestamptz_col TIMESTAMPTZ,
+                timetz_col TIMETZ,
+                numeric_col NUMERIC(10,2),
+                inet_col INET,
+                cidr_col CIDR,
+                macaddr_col MACADDR,
+                bytea_col BYTEA,
+                xml_col XML
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "complex_enhanced",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "json_col", type: "json", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "jsonb_col", type: "jsonb", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "interval_col", type: "interval", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "timestamptz_col", type: "timestamptz", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "timetz_col", type: "timetz", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "numeric_col", type: "numeric", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "inet_col", type: "inet", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "cidr_col", type: "cidr", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "macaddr_col", type: "macaddr", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "bytea_col", type: "bytea", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "xml_col", type: "xml", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["complex_enhanced": tableInfo]
+
+        and: "environment with comprehensive enhanced type data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Complex Enhanced Record",
+                "json_col": '{"name": "John", "age": 30, "city": "New York"}',
+                "jsonb_col": '{"score": 95, "tags": ["developer", "java"], "active": true}',
+                "interval_col": "2 days 3 hours",
+                "timestamptz_col": "2023-01-15T10:30:00+00:00",
+                "timetz_col": "14:30:00+00",
+                "numeric_col": "1234.56",
+                "inet_col": "192.168.1.1",
+                "cidr_col": "192.168.0.0/24",
+                "macaddr_col": "08:00:27:00:00:00",
+                "bytea_col": "Hello World",
+                "xml_col": "<person><name>John</name><age>30</age></person>"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with all enhanced types"
+        def mutationResolver = mutator.createCreateMutationResolver("complex_enhanced")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with all enhanced type data properly handled"
+        result != null
+        result.name == "Complex Enhanced Record"
+        result.json_col != null
+        result.jsonb_col != null
+        result.interval_col != null
+        result.timestamptz_col != null
+        result.timetz_col != null
+        result.numeric_col == 1234.56
+        result.inet_col != null
+        result.cidr_col != null
+        result.macaddr_col != null
+        result.bytea_col != null
+        result.xml_col != null
+        result.id != null
+    }
+
+    def "should handle enhanced type conversion errors gracefully"() {
+        given: "a table with enhanced types"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.enhanced_errors (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                interval_col INTERVAL,
+                inet_col INET
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "enhanced_errors",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "interval_col", type: "interval", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "inet_col", type: "inet", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["enhanced_errors": tableInfo]
+
+        and: "environment with invalid enhanced type data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Error Record",
+                "interval_col": "invalid-interval-format",
+                "inet_col": "not-an-ip-address"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with invalid enhanced type data"
+        def mutationResolver = mutator.createCreateMutationResolver("enhanced_errors")
+        mutationResolver.get(environment)
+
+        then: "should throw DataMutationException for invalid data"
+        thrown(DataMutationException)
+    }
 }

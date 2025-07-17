@@ -5,6 +5,7 @@ import graphql.schema.DataFetchingEnvironment;
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.constant.ColumnTypeConstant;
+import io.github.excalibase.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.SQLSyntax;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.DataMutationException;
@@ -486,22 +487,79 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     }
 
     private String buildInsertSql(String tableName, Set<String> fieldNames) {
+        Map<String, String> columnTypes = getColumnTypes(tableName);
+        
         return "INSERT INTO " + getQualifiedTableName(tableName) + " (" +
                fieldNames.stream().map(this::quoteIdentifier).collect(Collectors.joining(", ")) +
                ") VALUES (" +
-               fieldNames.stream().map(field -> ":" + field).collect(Collectors.joining(", ")) +
+               fieldNames.stream().map(field -> {
+                   String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
+                   if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                       return ":" + field + "::interval";
+                   } else if (columnType.contains("json")) {
+                       return ":" + field + "::" + columnType;
+                   } else if (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr")) {
+                       return ":" + field + "::" + columnType;
+                   } else if (columnType.contains("timestamp") || columnType.contains("time")) {
+                       return ":" + field + "::" + columnType;
+                   } else if (columnType.contains("xml")) {
+                       return ":" + field + "::xml";
+                   } else if (columnType.contains("bytea")) {
+                       return ":" + field + "::bytea";
+                   } else {
+                       return ":" + field;
+                   }
+               }).collect(Collectors.joining(", ")) +
                ") RETURNING *";
     }
 
     private String buildUpdateSql(String tableName, Set<String> updateFields, Set<String> whereFields) {
+        Map<String, String> columnTypes = getColumnTypes(tableName);
+        
         return "UPDATE " + getQualifiedTableName(tableName) + " SET " +
-               updateFields.stream().map(field -> quoteIdentifier(field) + " = :" + field).collect(Collectors.joining(", ")) +
+               updateFields.stream().map(field -> {
+                   String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
+                   if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                       return quoteIdentifier(field) + " = :" + field + "::interval";
+                   } else if (columnType.contains("json")) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr")) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains("timestamp") || columnType.contains("time")) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains("xml")) {
+                       return quoteIdentifier(field) + " = :" + field + "::xml";
+                   } else if (columnType.contains("bytea")) {
+                       return quoteIdentifier(field) + " = :" + field + "::bytea";
+                   } else {
+                       return quoteIdentifier(field) + " = :" + field;
+                   }
+               }).collect(Collectors.joining(", ")) +
                " WHERE " +
-               whereFields.stream().map(field -> quoteIdentifier(field) + " = :" + field).collect(Collectors.joining(" AND ")) +
+               whereFields.stream().map(field -> {
+                   String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
+                   if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                       return quoteIdentifier(field) + " = :" + field + "::interval";
+                   } else if (columnType.contains("json")) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr")) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains("timestamp") || columnType.contains("time")) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains("xml")) {
+                       return quoteIdentifier(field) + " = :" + field + "::xml";
+                   } else if (columnType.contains("bytea")) {
+                       return quoteIdentifier(field) + " = :" + field + "::bytea";
+                   } else {
+                       return quoteIdentifier(field) + " = :" + field;
+                   }
+               }).collect(Collectors.joining(" AND ")) +
                " RETURNING *";
     }
 
     private String buildBulkInsertSql(String tableName, Set<String> allFields, int recordCount) {
+        Map<String, String> columnTypes = getColumnTypes(tableName);
+        
         StringBuilder sql = new StringBuilder("INSERT INTO ")
             .append(getQualifiedTableName(tableName))
             .append(" (")
@@ -512,7 +570,24 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             if (i > 0) sql.append(", ");
             final int index = i; // Make it final for use in stream
             sql.append("(")
-               .append(allFields.stream().map(field -> ":" + field + "_" + index).collect(Collectors.joining(", ")))
+               .append(allFields.stream().map(field -> {
+                   String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
+                   if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                       return ":" + field + "_" + index + "::interval";
+                   } else if (columnType.contains("json")) {
+                       return ":" + field + "_" + index + "::" + columnType;
+                   } else if (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr")) {
+                       return ":" + field + "_" + index + "::" + columnType;
+                   } else if (columnType.contains("timestamp") || columnType.contains("time")) {
+                       return ":" + field + "_" + index + "::" + columnType;
+                   } else if (columnType.contains("xml")) {
+                       return ":" + field + "_" + index + "::xml";
+                   } else if (columnType.contains("bytea")) {
+                       return ":" + field + "_" + index + "::bytea";
+                   } else {
+                       return ":" + field + "_" + index;
+                   }
+               }).collect(Collectors.joining(", ")))
                .append(")");
         }
         
@@ -564,14 +639,17 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         try {
             if (columnType.contains(ColumnTypeConstant.UUID)) {
                 paramSource.addValue(paramName, UUID.fromString(valueStr));
-            } else if (columnType.contains(ColumnTypeConstant.INT) && !columnType.contains(ColumnTypeConstant.BIGINT)) {
+            } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                // For interval types, pass as string - PostgreSQL will handle the conversion
+                paramSource.addValue(paramName, valueStr);
+            } else if (columnType.contains(ColumnTypeConstant.INT) && !columnType.contains(ColumnTypeConstant.BIGINT)
+                       && !columnType.equals(ColumnTypeConstant.INTERVAL)) {
                 paramSource.addValue(paramName, Integer.parseInt(valueStr));
             } else if (columnType.contains(ColumnTypeConstant.BIGINT)) {
                 paramSource.addValue(paramName, Long.parseLong(valueStr));
-            } else if (columnType.contains(ColumnTypeConstant.DECIMAL) || columnType.contains(ColumnTypeConstant.NUMERIC) || 
-                      columnType.contains(ColumnTypeConstant.DOUBLE) || columnType.contains(ColumnTypeConstant.FLOAT)) {
+            } else if (PostgresTypeOperator.isFloatingPointType(columnType)) {
                 paramSource.addValue(paramName, Double.parseDouble(valueStr));
-            } else if (columnType.contains(ColumnTypeConstant.BOOL)) {
+            } else if (PostgresTypeOperator.isBooleanType(columnType)) {
                 paramSource.addValue(paramName, Boolean.parseBoolean(valueStr));
             } else if ((columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.DATE)) && value instanceof String) {
                 try {
