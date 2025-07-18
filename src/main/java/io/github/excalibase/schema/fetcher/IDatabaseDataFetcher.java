@@ -88,4 +88,23 @@ public interface IDatabaseDataFetcher {
             String foreignKeyColumn,
             String referencedTable,
             String referencedColumn);
+           
+    /**
+     * Creates a reverse relationship data fetcher for resolving one-to-many relationships.
+     * 
+     * <p>This method creates a data fetcher that resolves reverse relationships where
+     * one record in the source table has multiple related records in the target table.
+     * For example, a customer having multiple orders.</p>
+     * 
+     * @param sourcetableName the name of the source table (e.g., "customer")
+     * @param targetTableName the name of the target table containing foreign keys (e.g., "orders")
+     * @param foreignKeyColumn the name of the foreign key column in the target table
+     * @param referencedColumn the name of the column in the source table being referenced
+     * @return a data fetcher that resolves the reverse relationship and returns a list of related records
+     */
+    DataFetcher<List<Map<String, Object>>> createReverseRelationshipDataFetcher(
+            String sourcetableName,
+            String targetTableName,
+            String foreignKeyColumn,
+            String referencedColumn);
 }

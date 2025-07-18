@@ -73,9 +73,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         GraphQLObjectType queryType = createQueryType(tables, tableFilterTypes);
         schemaBuilder.query(queryType);
 
-        // Create Mutation type
-        GraphQLObjectType mutationType = createMutationType(tables);
-        schemaBuilder.mutation(mutationType);
+        // Create Mutation type only if there are tables (not just views)
+        boolean hasTables = tables.values().stream().anyMatch(table -> !table.isView());
+        if (hasTables) {
+            GraphQLObjectType mutationType = createMutationType(tables);
+            schemaBuilder.mutation(mutationType);
+        }
 
         return schemaBuilder.build();
     }
@@ -121,8 +124,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             String tableName = entry.getKey();
             TableInfo tableInfo = entry.getValue();
 
-            // Create ObjectType for the table
-            GraphQLObjectType nodeType = createNodeType(tableName, tableInfo);
+            // Create ObjectType for the table with reverse relationships
+            GraphQLObjectType nodeType = createNodeType(tableName, tableInfo, tables);
             schemaBuilder.additionalType(nodeType);
 
             // Create Edge type for this node
@@ -145,6 +148,10 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     }
 
     private GraphQLObjectType createNodeType(String tableName, TableInfo tableInfo) {
+        return createNodeType(tableName, tableInfo, new HashMap<>());
+    }
+    
+    private GraphQLObjectType createNodeType(String tableName, TableInfo tableInfo, Map<String, TableInfo> allTables) {
         GraphQLObjectType.Builder typeBuilder = GraphQLObjectType.newObject()
                 .name(tableName)
                 .description("Type for table " + tableName);
@@ -160,7 +167,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             typeBuilder.field(fieldBuilder.build());
         }
 
-        // Add fields for relationships
+        // Add fields for forward relationships (foreign keys from this table)
         for (ForeignKeyInfo fk : tableInfo.getForeignKeys()) {
             GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
                     .name(fk.getReferencedTable().toLowerCase())
@@ -168,6 +175,46 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                     .description("Relationship to " + fk.getReferencedTable());
 
             typeBuilder.field(fieldBuilder.build());
+        }
+        
+        // Add fields for reverse relationships (foreign keys from other tables pointing to this table)
+        if (!allTables.isEmpty()) {
+            log.debug("Processing reverse relationships for table: {}", tableName);
+            for (Map.Entry<String, TableInfo> entry : allTables.entrySet()) {
+                String otherTableName = entry.getKey();
+                TableInfo otherTableInfo = entry.getValue();
+                
+                // Skip self-references and views
+                if (otherTableName.equals(tableName) || otherTableInfo.isView()) {
+                    log.debug("Skipping table {} (self-reference: {}, view: {})", otherTableName, 
+                            otherTableName.equals(tableName), otherTableInfo.isView());
+                    continue;
+                }
+                
+                log.debug("Checking table {} for foreign keys referencing {}", otherTableName, tableName);
+                // Find foreign keys in other tables that reference this table
+                for (ForeignKeyInfo fk : otherTableInfo.getForeignKeys()) {
+                    log.debug("Found foreign key: {} -> {}.{}", fk.getColumnName(), fk.getReferencedTable(), fk.getReferencedColumn());
+                    if (fk.getReferencedTable().equalsIgnoreCase(tableName)) {
+                        // Add reverse relationship field (plural name since it's one-to-many)
+                        String reverseFieldName = otherTableName.toLowerCase();
+                        // Make it plural if it doesn't end with 's'
+                        if (!reverseFieldName.endsWith("s")) {
+                            reverseFieldName += "s";
+                        }
+                        
+                        log.info("Adding reverse relationship field '{}' to table '{}' referencing table '{}'", 
+                                reverseFieldName, tableName, otherTableName);
+                        
+                        GraphQLFieldDefinition.Builder reverseFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
+                                .name(reverseFieldName)
+                                .type(new GraphQLList(GraphQLTypeReference.typeRef(otherTableName)))
+                                .description("Reverse relationship to " + otherTableName + " via " + fk.getColumnName());
+
+                        typeBuilder.field(reverseFieldBuilder.build());
+                    }
+                }
+            }
         }
 
         return typeBuilder.build();
@@ -435,10 +482,15 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .name(GraphqlConstant.MUTATION)
                 .description("Root mutation type");
 
-        // Add mutation fields for each table
-        for (String tableName : tables.keySet()) {
-            TableInfo tableInfo = tables.get(tableName);
-            addMutationFields(mutationBuilder, tableName, tableInfo, tables);
+        // Add mutation fields only for tables, not views
+        for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
+            String tableName = entry.getKey();
+            TableInfo tableInfo = entry.getValue();
+            
+            // Only add mutations for tables, not views
+            if (!tableInfo.isView()) {
+                addMutationFields(mutationBuilder, tableName, tableInfo, tables);
+            }
         }
 
         return mutationBuilder.build();
@@ -1082,7 +1134,16 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             }
         }
         
+        // Build the filter type first to get a reference to it
         GraphQLInputObjectType tableFilterType = filterBuilder.build();
-        return tableFilterType;
+        
+        // Add OR field that accepts a list of the same filter type
+        filterBuilder.field(GraphQLInputObjectField.newInputObjectField()
+            .name("or")
+            .type(new GraphQLList(GraphQLTypeReference.typeRef(tableName + "Filter")))
+            .description("OR conditions")
+            .build());
+        
+        return filterBuilder.build();
     }
 }

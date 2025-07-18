@@ -80,7 +80,7 @@ public class GraphqlConfig {
                     dataFetcher.createConnectionDataFetcher(tableName)
             );
 
-            // Add data fetchers for relationships
+            // Add data fetchers for forward relationships
             for (var fk : tableInfo.getForeignKeys()) {
                 codeRegistry.dataFetcher(
                         FieldCoordinates.coordinates(tableName, fk.getReferencedTable().toLowerCase()),
@@ -93,37 +93,73 @@ public class GraphqlConfig {
                 );
             }
 
+            // Add data fetchers for reverse relationships (other tables referencing this table)
+            for (var otherEntry : tables.entrySet()) {
+                String otherTableName = otherEntry.getKey();
+                var otherTableInfo = otherEntry.getValue();
+
+                // Skip self-references and views
+                if (otherTableName.equals(tableName) || otherTableInfo.isView()) {
+                    continue;
+                }
+
+                // Find foreign keys in other tables that reference this table
+                for (var otherFk : otherTableInfo.getForeignKeys()) {
+                    if (otherFk.getReferencedTable().equalsIgnoreCase(tableName)) {
+                        // Create reverse relationship field name (plural)
+                        String reverseFieldName = otherTableName.toLowerCase();
+                        if (!reverseFieldName.endsWith("s")) {
+                            reverseFieldName += "s";
+                        }
+
+                        // Add reverse relationship data fetcher that returns a list
+                        codeRegistry.dataFetcher(
+                                FieldCoordinates.coordinates(tableName, reverseFieldName),
+                                dataFetcher.createReverseRelationshipDataFetcher(
+                                        tableName,
+                                        otherTableName,
+                                        otherFk.getColumnName(),
+                                        otherFk.getReferencedColumn()
+                                )
+                        );
+                    }
+                }
+            }
+
             String capitalizedTableName = tableName.substring(0, 1).toUpperCase() + tableName.substring(1).toLowerCase();
 
-            // Create mutation
-            codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName),
-                    mutationResolver.createCreateMutationResolver(tableName)
-            );
+            // Only add mutations for tables, not views
+            if (!tableInfo.isView()) {
+                // Create mutation
+                codeRegistry.dataFetcher(
+                        FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName),
+                        mutationResolver.createCreateMutationResolver(tableName)
+                );
 
-            // Update mutation
-            codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates("Mutation", "update" + capitalizedTableName),
-                    mutationResolver.createUpdateMutationResolver(tableName)
-            );
+                // Update mutation
+                codeRegistry.dataFetcher(
+                        FieldCoordinates.coordinates("Mutation", "update" + capitalizedTableName),
+                        mutationResolver.createUpdateMutationResolver(tableName)
+                );
 
-            // Delete mutation
-            codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates("Mutation", "delete" + capitalizedTableName),
-                    mutationResolver.createDeleteMutationResolver(tableName)
-            );
+                // Delete mutation
+                codeRegistry.dataFetcher(
+                        FieldCoordinates.coordinates("Mutation", "delete" + capitalizedTableName),
+                        mutationResolver.createDeleteMutationResolver(tableName)
+                );
 
-            // Bulk create mutation
-            codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates("Mutation", "createMany" + capitalizedTableName + "s"),
-                    mutationResolver.createBulkCreateMutationResolver(tableName)
-            );
+                // Bulk create mutation
+                codeRegistry.dataFetcher(
+                        FieldCoordinates.coordinates("Mutation", "createMany" + capitalizedTableName + "s"),
+                        mutationResolver.createBulkCreateMutationResolver(tableName)
+                );
 
-            // Create with relationships mutation
-            codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName + "WithRelations"),
-                    mutationResolver.createCreateWithRelationshipsMutationResolver(tableName)
-            );
+                // Create with relationships mutation
+                codeRegistry.dataFetcher(
+                        FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName + "WithRelations"),
+                        mutationResolver.createCreateWithRelationshipsMutationResolver(tableName)
+                );
+            }
         }
 
         schema = schema.transform(builder -> builder.codeRegistry(codeRegistry.build()));

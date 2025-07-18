@@ -43,9 +43,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.sql.Array;
 import java.sql.Date;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -171,7 +173,14 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 paramSource.addValue(FieldConstant.OFFSET, offset);
             }
 
+            // After executing the query and getting results, we need to process PostgreSQL arrays
             List<Map<String, Object>> results = namedParameterJdbcTemplate.queryForList(sql.toString(), paramSource);
+            
+            // Convert PostgreSQL arrays to Java Lists for GraphQL compatibility
+            if (tableInfo != null) {
+                results = convertPostgresArraysToLists(results, tableInfo);
+            }
+
             if (!relationshipFields.isEmpty() && !results.isEmpty()) {
                 preloadRelationships(environment, tableName, relationshipFields, results);
             }
@@ -361,6 +370,20 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 }
 
                 dataSql.append(String.join(", ", orderClauses));
+            } else if (useCursorPagination) {
+                // For cursor pagination without explicit orderBy, default to primary key
+                String primaryKeyColumn = tableInfo != null ? 
+                    tableInfo.getColumns().stream()
+                        .filter(ColumnInfo::isPrimaryKey)
+                        .map(ColumnInfo::getName)
+                        .findFirst()
+                        .orElse("id") // fallback to 'id' if no primary key found
+                    : "id";
+                    
+                if (availableColumns.contains(primaryKeyColumn)) {
+                    dataSql.append(SQLSyntax.ORDER_BY_WITH_SPACE).append(quoteIdentifier(primaryKeyColumn)).append(" ASC");
+                    orderByFields.put(primaryKeyColumn, "ASC"); // Add to orderByFields for cursor generation
+                }
             }
 
             Integer limit = first != null ? first : (last != null ? last : 10); // Default to 10 if neither specified
@@ -373,6 +396,11 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 paramSource.addValue(FieldConstant.OFFSET, offset);
             }
             List<Map<String, Object>> nodes = namedParameterJdbcTemplate.queryForList(dataSql.toString(), paramSource);
+            
+            // Convert PostgreSQL arrays to Java Lists for GraphQL compatibility
+            if (tableInfo != null) {
+                nodes = convertPostgresArraysToLists(nodes, tableInfo);
+            }
 
             if (!relationshipFields.isEmpty() && !nodes.isEmpty()) {
                 preloadRelationships(environment, tableName, relationshipFields, nodes);
@@ -512,6 +540,16 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         .map(SelectedField::getName)
                         .filter(availableColumns::contains) // Only include fields that exist as columns
                         .collect(Collectors.toList());
+                
+                // If no specific fields requested, fetch all available columns
+                if (requestedFields.isEmpty() && !availableColumns.isEmpty()) {
+                    requestedFields = new ArrayList<>(availableColumns);
+                }
+                
+                // Always ensure the referenced column is included for proper relationship mapping
+                if (!requestedFields.contains(referencedColumn)) {
+                    requestedFields.add(referencedColumn);
+                }
 
                 StringBuilder sql = new StringBuilder(SQLSyntax.SELECT_WITH_SPACE);
                 sql.append(buildColumnList(requestedFields));
@@ -523,6 +561,55 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     log.error("Error fetching relationship: {}", e.getMessage());
                     throw new DataFetcherException("Error fetching relationship for " + referencedTable + ": " + e.getMessage(), e);
                 }
+            }
+        };
+    }
+    
+    @Override
+    public DataFetcher<List<Map<String, Object>>> createReverseRelationshipDataFetcher(
+            String sourceTableName, String targetTableName, String foreignKeyColumn, String referencedColumn) {
+        return environment -> {
+            Map<String, Object> source = environment.getSource();
+            Object referencedValue = source.get(referencedColumn);
+            if (referencedValue == null) {
+                return List.of();
+            }
+            
+            Map<String, TableInfo> tables = getSchemaReflector().reflectSchema();
+            TableInfo targetTableInfo = tables.get(targetTableName);
+            Set<String> availableColumns = targetTableInfo != null
+                    ? targetTableInfo.getColumns().stream()
+                    .map(ColumnInfo::getName)
+                    .collect(Collectors.toSet())
+                    : new HashSet<>();
+
+            // Filter requested fields to only include actual database columns (not nested relationships)
+            List<String> requestedFields = environment.getSelectionSet().getFields().stream()
+                    .map(SelectedField::getName)
+                    .filter(availableColumns::contains) // Only include fields that exist as columns
+                    .collect(Collectors.toList());
+
+            if (requestedFields.isEmpty() && !availableColumns.isEmpty()) {
+                requestedFields = new ArrayList<>(availableColumns);
+            }
+
+            StringBuilder sql = new StringBuilder(SQLSyntax.SELECT_WITH_SPACE);
+            sql.append(buildColumnList(requestedFields));
+            sql.append(SQLSyntax.FROM_WITH_SPACE).append(getQualifiedTableName(targetTableName));
+            sql.append(SQLSyntax.WHERE_WITH_SPACE).append(quoteIdentifier(foreignKeyColumn)).append(" = ?");
+            
+            try {
+                List<Map<String, Object>> results = jdbcTemplate.queryForList(sql.toString(), referencedValue);
+                
+                // Convert PostgreSQL arrays to Java Lists for GraphQL compatibility
+                if (targetTableInfo != null) {
+                    results = convertPostgresArraysToLists(results, targetTableInfo);
+                }
+                
+                return results;
+            } catch (Exception e) {
+                log.error("Error fetching reverse relationship from {} to {}: {}", sourceTableName, targetTableName, e.getMessage());
+                throw new DataFetcherException("Error fetching reverse relationship from " + sourceTableName + " to " + targetTableName + ": " + e.getMessage(), e);
             }
         };
     }
@@ -1417,5 +1504,171 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         // If all parsing fails, return as string and let PostgreSQL handle it
         log.warn("Could not parse date/time value: {} for column type: {}, using string fallback", valueStr, columnType);
         return valueStr;
+    }
+
+    /**
+     * Converts PostgreSQL array columns to Java Lists for GraphQL compatibility
+     */
+    private List<Map<String, Object>> convertPostgresArraysToLists(List<Map<String, Object>> results, TableInfo tableInfo) {
+        // Get array column information
+        Map<String, String> arrayColumns = tableInfo.getColumns().stream()
+                .filter(col -> PostgresTypeOperator.isArrayType(col.getType()))
+                .collect(Collectors.toMap(ColumnInfo::getName, ColumnInfo::getType));
+        
+        if (arrayColumns.isEmpty()) {
+            return results; // No array columns, return as-is
+        }
+        
+        return results.stream().map(row -> {
+            Map<String, Object> convertedRow = new HashMap<>(row);
+            
+            for (Map.Entry<String, String> arrayCol : arrayColumns.entrySet()) {
+                String columnName = arrayCol.getKey();
+                String columnType = arrayCol.getValue();
+                Object value = row.get(columnName);
+                
+                if (value != null) {
+                    List<Object> convertedArray = convertPostgresArrayToList(value, columnType);
+                    convertedRow.put(columnName, convertedArray);
+                }
+            }
+            
+            return convertedRow;
+        }).collect(Collectors.toList());
+    }
+    
+    /**
+     * Converts a PostgreSQL array value to a Java List
+     */
+    private List<Object> convertPostgresArrayToList(Object arrayValue, String columnType) {
+        try {
+            // Handle java.sql.Array objects
+            if (arrayValue instanceof Array) {
+                Array sqlArray = (Array) arrayValue;
+                Object[] elements = (Object[]) sqlArray.getArray();
+                return Arrays.stream(elements)
+                        .map(element -> convertArrayElement(element, columnType))
+                        .collect(Collectors.toList());
+            }
+            
+            // Handle PostgreSQL string representation like "{1,2,3}" or "{apple,banana,cherry}"
+            if (arrayValue instanceof String) {
+                String arrayStr = (String) arrayValue;
+                return parsePostgresArrayString(arrayStr, columnType);
+            }
+            
+            // If already a List (shouldn't happen but just in case)
+            if (arrayValue instanceof List) {
+                return (List<Object>) arrayValue;
+            }
+            
+            log.warn("Unexpected array value type: {} for column type: {}", arrayValue.getClass(), columnType);
+            return List.of(); // Return empty list as fallback
+            
+        } catch (Exception e) {
+            log.error("Error converting PostgreSQL array to List for column type: {}", columnType, e);
+            return List.of(); // Return empty list on error
+        }
+    }
+    
+    /**
+     * Parses PostgreSQL array string representation like "{1,2,3}" into a Java List
+     */
+    private List<Object> parsePostgresArrayString(String arrayStr, String columnType) {
+        if (arrayStr == null || arrayStr.trim().isEmpty()) {
+            return List.of();
+        }
+        
+        // Remove curly braces and split by comma
+        String trimmed = arrayStr.trim();
+        if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            trimmed = trimmed.substring(1, trimmed.length() - 1);
+        }
+        
+        if (trimmed.isEmpty()) {
+            return List.of(); // Empty array
+        }
+        
+        // Handle quoted string arrays vs unquoted numeric arrays
+        List<String> elements;
+        if (trimmed.contains("\"")) {
+            // String array with quotes: {"apple","banana","cherry"}
+            elements = parseQuotedArrayElements(trimmed);
+        } else {
+            // Simple comma-separated values: 1,2,3,4,5
+            elements = Arrays.stream(trimmed.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+        }
+        
+        // Convert elements to appropriate types based on base column type
+        String baseType = columnType.replace(ColumnTypeConstant.ARRAY_SUFFIX, "").toLowerCase();
+        return elements.stream()
+                .map(element -> convertArrayElement(element, baseType))
+                .collect(Collectors.toList());
+    }
+    
+    /**
+     * Parses quoted array elements handling escaped quotes
+     */
+    private List<String> parseQuotedArrayElements(String arrayContent) {
+        List<String> elements = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+        boolean escaped = false;
+        
+        for (char c : arrayContent.toCharArray()) {
+            if (escaped) {
+                current.append(c);
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == '"') {
+                inQuotes = !inQuotes;
+            } else if (c == ',' && !inQuotes) {
+                if (current.length() > 0) {
+                    elements.add(current.toString().trim());
+                    current = new StringBuilder();
+                }
+            } else {
+                current.append(c);
+            }
+        }
+        
+        if (current.length() > 0) {
+            elements.add(current.toString().trim());
+        }
+        
+        return elements;
+    }
+    
+    /**
+     * Converts individual array elements to the appropriate Java type
+     */
+    private Object convertArrayElement(Object element, String baseType) {
+        if (element == null) {
+            return null;
+        }
+        
+        String elementStr = element.toString();
+        String type = baseType.toLowerCase();
+        
+        try {
+            if (PostgresTypeOperator.isIntegerType(type)) {
+                return Integer.parseInt(elementStr);
+            } else if (PostgresTypeOperator.isFloatingPointType(type)) {
+                return Double.parseDouble(elementStr);
+            } else if (PostgresTypeOperator.isBooleanType(type)) {
+                return Boolean.parseBoolean(elementStr);
+            } else if (type.contains(ColumnTypeConstant.UUID)) {
+                return elementStr; // Keep UUIDs as strings in GraphQL
+            } else {
+                return elementStr; // Default to string
+            }
+        } catch (NumberFormatException e) {
+            log.warn("Could not convert array element '{}' to type '{}', using string", elementStr, type);
+            return elementStr;
+        }
     }
 }

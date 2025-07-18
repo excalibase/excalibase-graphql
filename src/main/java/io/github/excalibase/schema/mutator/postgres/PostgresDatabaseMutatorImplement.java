@@ -494,7 +494,9 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                ") VALUES (" +
                fieldNames.stream().map(field -> {
                    String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
-                   if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                   if (PostgresTypeOperator.isArrayType(columnType)) {
+                       return ":" + field + "::" + columnType;
+                   } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
                        return ":" + field + "::interval";
                    } else if (columnType.contains("json")) {
                        return ":" + field + "::" + columnType;
@@ -519,7 +521,9 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         return "UPDATE " + getQualifiedTableName(tableName) + " SET " +
                updateFields.stream().map(field -> {
                    String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
-                   if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                   if (PostgresTypeOperator.isArrayType(columnType)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
                        return quoteIdentifier(field) + " = :" + field + "::interval";
                    } else if (columnType.contains("json")) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
@@ -572,7 +576,9 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             sql.append("(")
                .append(allFields.stream().map(field -> {
                    String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
-                   if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                   if (PostgresTypeOperator.isArrayType(columnType)) {
+                       return ":" + field + "_" + index + "::" + columnType;
+                   } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
                        return ":" + field + "_" + index + "::interval";
                    } else if (columnType.contains("json")) {
                        return ":" + field + "_" + index + "::" + columnType;
@@ -629,14 +635,20 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     }
 
     private void addTypedParameter(MapSqlParameterSource paramSource, String paramName, Object value, String columnType) {
-        if (value == null || value.toString().isEmpty()) {
+        if (value == null || (value instanceof String && value.toString().isEmpty())) {
             paramSource.addValue(paramName, null);
             return;
         }
 
-        String valueStr = value.toString();
-        
         try {
+            // Handle array types
+            if (PostgresTypeOperator.isArrayType(columnType)) {
+                handleArrayParameter(paramSource, paramName, value, columnType);
+                return;
+            }
+
+            String valueStr = value.toString();
+            
             if (columnType.contains(ColumnTypeConstant.UUID)) {
                 paramSource.addValue(paramName, UUID.fromString(valueStr));
             } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
@@ -664,7 +676,169 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             }
         } catch (Exception e) {
             log.warn("Error converting value for parameter {}: {}, using as string", paramName, e.getMessage());
-            paramSource.addValue(paramName, valueStr);
+            paramSource.addValue(paramName, value.toString());
+        }
+    }
+
+    /**
+     * Handles PostgreSQL array parameter conversion
+     */
+    private void handleArrayParameter(MapSqlParameterSource paramSource, String paramName, Object value, String columnType) {
+        if (value == null) {
+            paramSource.addValue(paramName, null);
+            return;
+        }
+
+        try {
+            // If value is already a List (from GraphQL), convert to PostgreSQL array format
+            if (value instanceof List<?>) {
+                List<?> listValue = (List<?>) value;
+                
+                if (listValue.isEmpty()) {
+                    // For empty arrays, pass as null and let PostgreSQL handle the casting
+                    paramSource.addValue(paramName, null);
+                    return;
+                }
+
+                // Get the base type of the array for PostgreSQL
+                String baseType = columnType.replace(ColumnTypeConstant.ARRAY_SUFFIX, "").toLowerCase();
+                String pgBaseTypeName = mapToPGArrayTypeName(baseType);
+                
+                // Convert List elements to appropriate types
+                Object[] convertedArray = convertListToTypedArray(listValue, baseType);
+                
+                // For PostgreSQL, we'll pass the array as a formatted string that PostgreSQL can parse
+                // This approach works better with Spring JDBC and PostgreSQL casting
+                String arrayString = formatArrayForPostgreSQL(convertedArray, pgBaseTypeName);
+                paramSource.addValue(paramName, arrayString);
+                
+            } else if (value instanceof String) {
+                // Handle string representation of array (fallback)
+                String arrayStr = (String) value;
+                if (arrayStr.startsWith("{") && arrayStr.endsWith("}")) {
+                    // Already in PostgreSQL format, pass as-is
+                    paramSource.addValue(paramName, arrayStr);
+                } else {
+                    log.warn("Unexpected array string format for {}: {}", paramName, arrayStr);
+                    paramSource.addValue(paramName, arrayStr);
+                }
+            } else {
+                log.warn("Unexpected array value type for {}: {}", paramName, value.getClass());
+                paramSource.addValue(paramName, value);
+            }
+            
+        } catch (Exception e) {
+            log.error("Error handling array parameter {}: {}", paramName, e.getMessage());
+            // Fallback to raw value
+            paramSource.addValue(paramName, value);
+        }
+    }
+
+    /**
+     * Maps database base types to PostgreSQL array type names
+     */
+    private String mapToPGArrayTypeName(String baseType) {
+        if (PostgresTypeOperator.isIntegerType(baseType)) {
+            if (baseType.contains(ColumnTypeConstant.BIGINT)) {
+                return "bigint";
+            } else {
+                return "integer";
+            }
+        } else if (PostgresTypeOperator.isFloatingPointType(baseType)) {
+            if (baseType.contains("double") || baseType.contains("precision")) {
+                return "double precision";
+            } else {
+                return "real";
+            }
+        } else if (PostgresTypeOperator.isBooleanType(baseType)) {
+            return "boolean";
+        } else if (baseType.contains("varchar") || baseType.contains("character varying")) {
+            return "text"; // Use text for varchar arrays for simplicity
+        } else if (baseType.contains("decimal") || baseType.contains("numeric")) {
+            return "numeric";
+        } else {
+            return "text"; // Default to text for other types
+        }
+    }
+
+    /**
+     * Formats an array for PostgreSQL in string format
+     */
+    private String formatArrayForPostgreSQL(Object[] array, String baseType) {
+        if (array == null || array.length == 0) {
+            return "{}";
+        }
+
+        StringBuilder sb = new StringBuilder("{");
+        for (int i = 0; i < array.length; i++) {
+            if (i > 0) {
+                sb.append(",");
+            }
+            
+            Object element = array[i];
+            if (element == null) {
+                sb.append("NULL");
+            } else if (needsQuoting(baseType)) {
+                // Quote string-like values and escape internal quotes
+                String elementStr = element.toString().replace("\"", "\\\"");
+                sb.append("\"").append(elementStr).append("\"");
+            } else {
+                // Numeric and boolean values don't need quoting
+                sb.append(element.toString());
+            }
+        }
+        sb.append("}");
+        return sb.toString();
+    }
+
+    /**
+     * Determines if array elements need quoting based on PostgreSQL type
+     */
+    private boolean needsQuoting(String pgTypeName) {
+        return "text".equals(pgTypeName) || 
+               pgTypeName.contains("varchar") || 
+               pgTypeName.contains("char") ||
+               pgTypeName.contains("uuid");
+    }
+
+    /**
+     * Converts a Java List to a typed array for PostgreSQL
+     */
+    private Object[] convertListToTypedArray(List<?> listValue, String baseType) {
+        return listValue.stream()
+                .map(element -> convertArrayElement(element, baseType))
+                .toArray();
+    }
+
+    /**
+     * Converts individual array elements to the appropriate Java type
+     */
+    private Object convertArrayElement(Object element, String baseType) {
+        if (element == null) {
+            return null;
+        }
+
+        String elementStr = element.toString();
+        
+        try {
+            if (PostgresTypeOperator.isIntegerType(baseType)) {
+                if (baseType.contains(ColumnTypeConstant.BIGINT)) {
+                    return Long.parseLong(elementStr);
+                } else {
+                    return Integer.parseInt(elementStr);
+                }
+            } else if (PostgresTypeOperator.isFloatingPointType(baseType)) {
+                return Double.parseDouble(elementStr);
+            } else if (PostgresTypeOperator.isBooleanType(baseType)) {
+                return Boolean.parseBoolean(elementStr);
+            } else if (baseType.contains(ColumnTypeConstant.UUID)) {
+                return elementStr; // Keep UUIDs as strings for PostgreSQL
+            } else {
+                return elementStr; // Default to string
+            }
+        } catch (NumberFormatException e) {
+            log.warn("Could not convert array element '{}' to type '{}', using as string", elementStr, baseType);
+            return elementStr;
         }
     }
 

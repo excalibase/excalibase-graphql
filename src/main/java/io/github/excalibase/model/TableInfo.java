@@ -27,11 +27,20 @@ public class TableInfo {
     private String name;
     private List<ColumnInfo> columns = new ArrayList<>();
     private List<ForeignKeyInfo> foreignKeys = new ArrayList<>();
+    private boolean isView = false;
 
     public TableInfo(String name, List<ColumnInfo> columns, List<ForeignKeyInfo> foreignKeys) {
         this.name = name;
         this.columns = columns;
         this.foreignKeys = foreignKeys;
+        this.isView = false;
+    }
+
+    public TableInfo(String name, List<ColumnInfo> columns, List<ForeignKeyInfo> foreignKeys, boolean isView) {
+        this.name = name;
+        this.columns = columns;
+        this.foreignKeys = foreignKeys;
+        this.isView = isView;
     }
 
     public TableInfo() {
@@ -59,5 +68,13 @@ public class TableInfo {
 
     public void setForeignKeys(List<ForeignKeyInfo> foreignKeys) {
         this.foreignKeys = foreignKeys;
+    }
+
+    public boolean isView() {
+        return isView;
+    }
+
+    public void setView(boolean view) {
+        isView = view;
     }
 }

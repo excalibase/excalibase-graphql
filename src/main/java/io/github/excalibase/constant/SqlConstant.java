@@ -26,6 +26,16 @@ public class SqlConstant {
             WHERE schemaname = ?
             """;
     
+    public static final String GET_VIEW_NAME = """
+            SELECT viewname as name, 'view' as type
+            FROM pg_catalog.pg_views
+            WHERE schemaname = ?
+            UNION ALL
+            SELECT matviewname as name, 'materialized_view' as type
+            FROM pg_catalog.pg_matviews
+            WHERE schemaname = ?
+            """;
+    
     public static final String GET_COLUMNS = """
             SELECT a.attname as column_name,
                    pg_catalog.format_type(a.atttypid, a.atttypmod) as data_type,
@@ -39,6 +49,20 @@ public class SqlConstant {
               AND n.nspname = ?
               AND a.attnum > 0
               AND NOT a.attisdropped
+            """;
+    
+    public static final String GET_VIEW_COLUMNS = """
+            SELECT a.attname as column_name,
+                   pg_catalog.format_type(a.atttypid, a.atttypmod) as data_type,
+                   CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable
+            FROM pg_catalog.pg_attribute a
+            JOIN pg_catalog.pg_class c ON (a.attrelid = c.oid)
+            JOIN pg_catalog.pg_namespace n ON (c.relnamespace = n.oid)
+            WHERE c.relname = ?
+              AND n.nspname = ?
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+              AND (c.relkind = 'v' OR c.relkind = 'm')
             """;
     
     public static final String GET_PRIMARY_KEYS = """
