@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "10001:10000"  # Unique external port 10001 -> internal 10000
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/excalibase_e2e
+      - SPRING_DATASOURCE_USERNAME=excalibase_user
+      - SPRING_DATASOURCE_PASSWORD=excalibase_pass
+      - SPRING_DATASOURCE_HIKARI_SCHEMA=public
+      - APP_ALLOWED_SCHEMA=public
+      - APP_DATABASE_TYPE=postgres
+      - SERVER_PORT=10000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - excalibase-test-network
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5433:5432"  # Unique external port 5433 -> internal 5432
+    environment:
+      - POSTGRES_DB=excalibase_e2e
+      - POSTGRES_USER=excalibase_user
+      - POSTGRES_PASSWORD=excalibase_pass
+    volumes:
+      - ./scripts/initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U excalibase_user -d excalibase_e2e"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - excalibase-test-network
+
+volumes:
+  postgres_test_data:
+
+networks:
+  excalibase-test-network:
+    driver: bridge 

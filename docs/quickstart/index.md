@@ -41,6 +41,25 @@ Excalibase GraphQL automatically generates a complete GraphQL API from your Post
 - ✅ **Pagination** with cursor-based connections
 - ✅ **Performance optimization** with N+1 query prevention
 
+## 🔗 Important: Relationship Queries
+
+When querying relationships, **always include the foreign key field(s)** in your selection:
+
+```graphql
+{
+  orders {
+    order_id
+    customer_id        # ← Required for relationship
+    customer {
+      first_name
+      last_name
+    }
+  }
+}
+```
+
+**Why?** The relationship resolver needs the foreign key values to fetch related data. Without them, relationships will return `null`.
+
 ## Next Steps
 
 1. **[API Reference →](../api/index.md)** - Explore the GraphQL API capabilities

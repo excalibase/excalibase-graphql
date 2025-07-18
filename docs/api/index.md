@@ -240,6 +240,96 @@ Excalibase GraphQL automatically generates GraphQL types from your PostgreSQL ta
 | **`BYTEA`** | `String` | **Binary data (hex)** | `"48656c6c6f"` |
 | **`XML`** | `String` | **XML document** | `"<user><name>John</name></user>"` |
 
+## 🔗 Relationships
+
+Excalibase automatically generates GraphQL relationships based on foreign key constraints in your PostgreSQL database. Both forward and reverse relationships are supported.
+
+### 🔑 **Critical Requirement: Foreign Key Fields**
+
+**⚠️ Important:** When querying relationships, you **must include the foreign key field(s)** in your GraphQL selection. The relationship resolver needs these values to fetch related data.
+
+#### ✅ Correct - Include Foreign Key
+```graphql
+{
+  orders {
+    order_id
+    customer_id        # ← Foreign key field REQUIRED
+    customer {         # ← Relationship works
+      first_name
+      last_name
+    }
+  }
+}
+```
+
+#### ❌ Incorrect - Missing Foreign Key
+```graphql
+{
+  orders {
+    order_id
+    # Missing customer_id!
+    customer {         # ← Will return null
+      first_name
+      last_name
+    }
+  }
+}
+```
+
+### Relationship Types
+
+#### Forward Relationships (Many-to-One)
+Based on foreign keys in the current table:
+
+```graphql
+{
+  orders {
+    order_id
+    customer_id        # Foreign key field
+    customer {         # Single related object
+      customer_id
+      first_name
+      email
+    }
+  }
+}
+```
+
+#### Reverse Relationships (One-to-Many)
+Automatically generated for the referenced table:
+
+```graphql
+{
+  customer(where: { customer_id: { eq: 1 } }) {
+    customer_id
+    first_name
+    orders {           # List of related objects
+      order_id
+      total_amount
+      order_date
+    }
+  }
+}
+```
+
+### Best Practices
+
+1. **Always include foreign key fields** when querying relationships
+2. **Use filtering** to limit the number of related records:
+   ```graphql
+   {
+     customer {
+       customer_id
+       orders(where: { status: { eq: "active" } }) {
+         order_id
+         status
+       }
+     }
+   }
+   ```
+3. **Limit field selection** to only what you need for better performance
+4. **Use pagination** for large result sets in reverse relationships
+
 ## API Sections
 
 Explore the different aspects of the API:

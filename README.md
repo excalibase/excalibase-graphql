@@ -140,24 +140,43 @@ services:
 
 ### Available Docker Commands
 
+**Production Setup (Easy for Users):**
 ```bash
 # Start all services
 docker-compose up -d
 
 # View logs
-docker-compose logs -f app
+docker-compose logs -f excalibase-app
 
 # Stop all services
 docker-compose down
+```
 
+**E2E Testing Setup:**
+```bash
+# Use test environment (different ports to avoid conflicts)
+docker-compose -f docker-compose.test.yml up -d
+
+# Or use Makefile for complete testing workflow
+make start          # Complete e2e test (build + test + cleanup)
+make dev           # Start services for development
+make test-only     # Run tests against running services
+make clean         # Stop and cleanup
+```
+
+**Development:**
+```bash
 # Rebuild and restart
 docker-compose up -d --build
 
-# Run tests in container
-docker-compose exec app mvn test
+# Run tests in container (production setup)
+docker-compose exec excalibase-app mvn test
+
+# Run tests in container (test setup)
+docker-compose -f docker-compose.test.yml exec app mvn test
 
 # Access application shell
-docker-compose exec app /bin/bash
+docker-compose exec excalibase-app /bin/bash
 ```
 
 ### Environment Variables
@@ -173,6 +192,156 @@ Configure the application using environment variables:
 | `DB_PASSWORD` | Database password | `postgres` |
 | `DATABASE_SCHEMA` | Database schema | `public` |
 | `SERVER_PORT` | Application port | `10000` |
+
+## 🧪 End-to-End Testing
+
+Excalibase GraphQL includes a comprehensive E2E testing suite that validates the complete GraphQL API using Docker Compose with unique ports to avoid conflicts.
+
+### Quick Start E2E Testing
+
+```bash
+# Run complete E2E test suite (builds, starts services, runs tests, cleans up)
+make start
+
+# Start development environment (keeps services running)
+make dev
+
+# Run only tests (against already running services)
+make test-only
+
+# See all available commands
+make help
+```
+
+> **Note**: We use a `Makefile` for streamlined development workflow. All e2e testing operations are handled through `make` commands for consistency and ease of use.
+
+### E2E Test Configuration
+
+The E2E setup uses unique ports to avoid conflicts:
+- **GraphQL API**: `http://localhost:10001/graphql` (unique port 10001)
+- **PostgreSQL**: `localhost:5433` (unique port 5433)
+
+### E2E Test Coverage
+
+The test suite includes **25+ comprehensive tests** covering:
+
+#### **Schema & Introspection**
+- ✅ GraphQL schema introspection
+- ✅ Query and Mutation type validation
+- ✅ Field availability verification
+
+#### **Basic GraphQL Operations**
+- ✅ Query all customers
+- ✅ Filtering with WHERE clauses
+- ✅ OR operations with multiple conditions
+- ✅ Pagination (limit, offset)
+- ✅ Ordering (ASC/DESC)
+
+#### **Enhanced PostgreSQL Types** 🆕
+- ✅ JSON/JSONB column operations
+- ✅ Array types (INTEGER[], TEXT[])
+- ✅ Enhanced datetime (TIMESTAMPTZ, TIMETZ, INTERVAL)
+- ✅ Network types (INET, CIDR, MACADDR)
+- ✅ Binary and XML types
+
+#### **Relationships & Views**
+- ✅ Foreign key relationship traversal
+- ⚠️ **Important**: Include foreign key fields in queries for relationships to work
+- ✅ PostgreSQL views (read-only queries)
+- ✅ Materialized views
+- ✅ Complex relationship queries
+
+#### **CRUD Operations**
+- ✅ Create mutations
+- ✅ Update mutations
+- ✅ Data validation
+
+#### **Advanced Features**
+- ✅ Cursor-based pagination (connections)
+- ✅ Complex filtering (date ranges, string operations)
+- ✅ Boolean and array filters
+- ✅ Error handling validation
+- ✅ Performance testing (< 1000ms response times)
+
+### Sample Test Data
+
+The E2E tests use rich sample data including:
+
+```sql
+-- Customer table (12 records)
+customer: MARY SMITH, PATRICIA JOHNSON, etc.
+
+-- Enhanced types table (3 records with full PostgreSQL type coverage)
+enhanced_types: JSON objects, arrays, network addresses, XML documents
+
+-- Orders table (5 records with foreign key relationships)
+orders: Realistic order data linking to customers
+
+-- Views (read-only testing)
+active_customers: Filtered view of active customers
+enhanced_types_summary: Materialized view with JSON extraction
+```
+
+### Available Make Commands
+
+```bash
+# Main commands
+make start          # Complete e2e test (build + test + cleanup)
+make dev            # Start services for development (no cleanup)
+make test-only      # Run tests against running services
+make clean          # Stop services and cleanup
+
+# Development workflow
+make test-quick     # Quick test (skip build)
+make restart        # Restart services
+make rebuild        # Full rebuild and restart
+
+# Monitoring and debugging
+make logs           # Show all service logs
+make logs-app       # Show application logs only
+make status         # Show service status
+
+# Database operations
+make db-shell       # Connect to PostgreSQL shell
+make db-reset       # Reset database with fresh data
+
+# Sample queries
+make query-customers        # Run sample customer query
+make query-enhanced-types   # Run enhanced types query
+make query-schema          # Query GraphQL schema
+```
+
+### Manual Testing After E2E
+
+If you use `make dev`, you can manually explore the API:
+
+```bash
+# Visit GraphQL endpoint in browser
+make open-api
+
+# Test with built-in queries
+make query-customers
+make query-enhanced-types
+
+# Or test with curl directly
+curl -X POST http://localhost:10001/graphql \
+  -H "Content-Type: application/json" \
+  -d '{"query": "{ customer { customer_id first_name last_name } }"}'
+
+# Cleanup when done
+make clean
+```
+
+### Dependencies
+
+The E2E tests require:
+- **Make** (usually pre-installed on macOS/Linux)
+- **Docker** and **Docker Compose**
+- **curl** (for HTTP requests)
+- **jq** (for JSON processing)
+- **Maven** (for building the application)
+
+Use `make check-deps` to verify all dependencies are installed, or `make install-deps` on macOS to auto-install missing tools.
 
 ## 🔄 CI/CD Pipeline
 
@@ -319,7 +488,8 @@ query {
     id
     title
     content
-    users {  # Automatic relationship resolution
+    user_id      # Foreign key required for relationship
+    users {      # Automatic relationship resolution
       name
       email
     }
@@ -455,6 +625,7 @@ mutation {
   }) {
     id
     title
+    user_id    # Foreign key field
     users {
       name
     }
