@@ -644,4 +644,173 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         relationshipInput != null
         relationshipInput.fieldDefinitions.size() == 2 // Only the actual columns
     }
+
+    def "should generate schema for views without mutations"() {
+        given: "a table and a view"
+        def tableColumns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("name", "character varying(100)", false, false),
+            new ColumnInfo("email", "character varying(200)", false, false),
+            new ColumnInfo("active", "boolean", false, false)
+        ]
+        def viewColumns = [
+            new ColumnInfo("id", "integer", false, false), // Views don't have primary keys
+            new ColumnInfo("name", "character varying(100)", false, false),
+            new ColumnInfo("email", "character varying(200)", false, false)
+        ]
+
+        def tableInfo = new TableInfo("users", tableColumns, [], false) // false = not a view
+        def viewInfo = new TableInfo("active_users", viewColumns, [], true) // true = is a view
+
+        Map<String, TableInfo> tables = [
+            "users": tableInfo,
+            "active_users": viewInfo
+        ]
+
+        when: "generating schema"
+        GraphQLSchema schema = generator.generateSchema(tables)
+
+        then: "should create types for both table and view"
+        GraphQLObjectType usersType = schema.getType("users") as GraphQLObjectType
+        usersType != null
+        usersType.fieldDefinitions.size() == 4
+
+        GraphQLObjectType activeUsersType = schema.getType("active_users") as GraphQLObjectType
+        activeUsersType != null
+        activeUsersType.fieldDefinitions.size() == 3
+
+        and: "should create query fields for both table and view"
+        GraphQLObjectType queryType = schema.getQueryType()
+        queryType.getFieldDefinition("users") != null
+        queryType.getFieldDefinition("active_users") != null
+        queryType.getFieldDefinition("usersConnection") != null
+        queryType.getFieldDefinition("active_usersConnection") != null
+
+        and: "should create mutations only for table, not for view"
+        GraphQLObjectType mutationType = schema.getMutationType()
+        mutationType.getFieldDefinition("createUsers") != null
+        mutationType.getFieldDefinition("updateUsers") != null
+        mutationType.getFieldDefinition("deleteUsers") != null
+        mutationType.getFieldDefinition("createManyUserss") != null
+        mutationType.getFieldDefinition("createUsersWithRelations") != null
+
+        // View should not have mutations
+        mutationType.getFieldDefinition("createActive_users") == null
+        mutationType.getFieldDefinition("updateActive_users") == null
+        mutationType.getFieldDefinition("deleteActive_users") == null
+        mutationType.getFieldDefinition("createManyActive_userss") == null
+        mutationType.getFieldDefinition("createActive_usersWithRelations") == null
+    }
+
+    def "should handle schema with only views"() {
+        given: "only views in the schema"
+        def viewColumns = [
+            new ColumnInfo("id", "integer", false, false),
+            new ColumnInfo("total_amount", "numeric", false, false),
+            new ColumnInfo("month", "timestamp with time zone", false, false)
+        ]
+
+        def viewInfo = new TableInfo("monthly_sales", viewColumns, [], true)
+        Map<String, TableInfo> tables = ["monthly_sales": viewInfo]
+
+        when: "generating schema"
+        GraphQLSchema schema = generator.generateSchema(tables)
+
+        then: "should create schema successfully"
+        GraphQLObjectType monthlySalesType = schema.getType("monthly_sales") as GraphQLObjectType
+        monthlySalesType != null
+        monthlySalesType.fieldDefinitions.size() == 3
+
+        and: "should create query fields for the view"
+        GraphQLObjectType queryType = schema.getQueryType()
+        queryType.getFieldDefinition("monthly_sales") != null
+        queryType.getFieldDefinition("monthly_salesConnection") != null
+
+        and: "should not create any mutations"
+        GraphQLObjectType mutationType = schema.getMutationType()
+        mutationType == null
+    }
+
+    def "should handle mixed tables and views with relationships"() {
+        given: "tables and views with relationships"
+        def userColumns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("name", "character varying(100)", false, false),
+            new ColumnInfo("department_id", "integer", false, false)
+        ]
+        def departmentColumns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("name", "character varying(100)", false, false)
+        ]
+        def employeeViewColumns = [
+            new ColumnInfo("id", "integer", false, false),
+            new ColumnInfo("employee_name", "character varying(100)", false, false),
+            new ColumnInfo("department_name", "character varying(100)", false, false)
+        ]
+
+        def userForeignKeys = [new ForeignKeyInfo("department_id", "departments", "id")]
+
+        def usersTable = new TableInfo("users", userColumns, userForeignKeys, false)
+        def departmentsTable = new TableInfo("departments", departmentColumns, [], false)
+        def employeeView = new TableInfo("employee_details", employeeViewColumns, [], true)
+
+        Map<String, TableInfo> tables = [
+            "users": usersTable,
+            "departments": departmentsTable,
+            "employee_details": employeeView
+        ]
+
+        when: "generating schema"
+        GraphQLSchema schema = generator.generateSchema(tables)
+
+        then: "should create all types"
+        schema.getType("users") != null
+        schema.getType("departments") != null
+        schema.getType("employee_details") != null
+
+        and: "should create mutations only for tables"
+        GraphQLObjectType mutationType = schema.getMutationType()
+        mutationType.getFieldDefinition("createUsers") != null
+        mutationType.getFieldDefinition("createDepartments") != null
+        mutationType.getFieldDefinition("createEmployee_details") == null
+
+        and: "should create relationship fields for tables but not views"
+        GraphQLObjectType usersType = schema.getType("users") as GraphQLObjectType
+        usersType.getFieldDefinition("departments") != null
+
+        GraphQLObjectType employeeDetailsType = schema.getType("employee_details") as GraphQLObjectType
+        // Views don't have foreign key relationships in the traditional sense
+        employeeDetailsType.fieldDefinitions.size() == 3 // Only the view columns
+    }
+
+    def "should create proper filter types for views"() {
+        given: "a view with various column types"
+        def viewColumns = [
+            new ColumnInfo("id", "integer", false, false),
+            new ColumnInfo("name", "character varying(100)", false, false),
+            new ColumnInfo("amount", "numeric(10,2)", false, false),
+            new ColumnInfo("is_active", "boolean", false, false),
+            new ColumnInfo("created_at", "timestamp", false, false)
+        ]
+
+        def viewInfo = new TableInfo("summary_view", viewColumns, [], true)
+        Map<String, TableInfo> tables = ["summary_view": viewInfo]
+
+        when: "generating schema"
+        GraphQLSchema schema = generator.generateSchema(tables)
+
+        then: "should create filter input types for the view"
+        GraphQLInputObjectType filterType = schema.getType("summary_viewFilter") as GraphQLInputObjectType
+        filterType != null
+
+        and: "filter should have fields for all columns"
+        filterType.getFieldDefinition("id") != null
+        filterType.getFieldDefinition("name") != null
+        filterType.getFieldDefinition("amount") != null
+        filterType.getFieldDefinition("is_active") != null
+        filterType.getFieldDefinition("created_at") != null
+
+        and: "should support OR operations"
+        filterType.getFieldDefinition("or") != null
+    }
 }

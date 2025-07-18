@@ -4,6 +4,7 @@ import graphql.GraphQLContext
 import graphql.schema.DataFetchingEnvironment
 import graphql.schema.DataFetchingFieldSelectionSet
 import graphql.schema.SelectedField
+
 import io.github.excalibase.config.AppConfig
 import io.github.excalibase.constant.DatabaseType
 import io.github.excalibase.constant.SupportedDatabaseConstant
@@ -2058,7 +2059,380 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         result[0].name == "Item 1"
     }
 
-// Helper method for empty relationship fields
+    // ========== PostgreSQL Array Types Tests ==========
+
+    def "should handle integer array types"() {
+        given: "a table with integer array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.integer_arrays (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                int_array INTEGER[],
+                bigint_array BIGINT[]
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.integer_arrays (name, int_array, bigint_array) VALUES 
+            ('Record 1', '{1,2,3,4,5}', '{100,200,300}'),
+            ('Record 2', '{10,20,30}', '{1000,2000,3000,4000}'),
+            ('Record 3', NULL, '{999}')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "integer_arrays",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "int_array", type: "integer[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "bigint_array", type: "bigint[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["integer_arrays": tableInfo]
+
+        when: "fetching all records"
+        def environment = createMockEnvironment(
+                ["id", "name", "int_array", "bigint_array"],
+                [:]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("integer_arrays")
+        def result = fetcher.get(environment)
+
+        then: "should return arrays as Java Lists"
+        result.size() == 3
+        
+        result[0].int_array == [1, 2, 3, 4, 5]
+        result[0].bigint_array == [100L, 200L, 300L]
+        
+        result[1].int_array == [10, 20, 30]
+        result[1].bigint_array == [1000L, 2000L, 3000L, 4000L]
+        
+        result[2].int_array == null
+        result[2].bigint_array == [999L]
+
+        when: "filtering by array content"
+        environment = createMockEnvironment(
+                ["id", "name", "int_array"],
+                ["name": "Record 1"]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return record with correct array format"
+        result.size() == 1
+        result[0].int_array == [1, 2, 3, 4, 5]
+        result[0].int_array instanceof List
+        result[0].int_array.every { it instanceof Integer }
+    }
+
+    def "should handle text array types"() {
+        given: "a table with text array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.text_arrays (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                text_array TEXT[],
+                varchar_array VARCHAR(50)[]
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.text_arrays (name, text_array, varchar_array) VALUES 
+            ('Record 1', '{"apple","banana","cherry"}', '{"red","green","blue"}'),
+            ('Record 2', '{"hello","world"}', '{"foo","bar","baz"}'),
+            ('Record 3', '{}', '{"single"}')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "text_arrays",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "text_array", type: "text[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "varchar_array", type: "character varying[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["text_arrays": tableInfo]
+
+        when: "fetching all records"
+        def environment = createMockEnvironment(
+                ["id", "name", "text_array", "varchar_array"],
+                [:]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("text_arrays")
+        def result = fetcher.get(environment)
+
+        then: "should return string arrays as Java Lists"
+        result.size() == 3
+        
+        result[0].text_array == ["apple", "banana", "cherry"]
+        result[0].varchar_array == ["red", "green", "blue"]
+        
+        result[1].text_array == ["hello", "world"]
+        result[1].varchar_array == ["foo", "bar", "baz"]
+        
+        result[2].text_array == []
+        result[2].varchar_array == ["single"]
+
+        and: "arrays should be proper Java Lists with String elements"
+        result[0].text_array instanceof List
+        result[0].text_array.every { it instanceof String }
+        result[0].varchar_array instanceof List
+        result[0].varchar_array.every { it instanceof String }
+    }
+
+    def "should handle boolean and numeric array types"() {
+        given: "a table with boolean and numeric array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.mixed_arrays (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                bool_array BOOLEAN[],
+                decimal_array DECIMAL(5,2)[],
+                float_array FLOAT[]
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.mixed_arrays (name, bool_array, decimal_array, float_array) VALUES 
+            ('Record 1', '{true,false,true}', '{10.50,20.75,30.25}', '{1.1,2.2,3.3}'),
+            ('Record 2', '{false,false}', '{99.99}', '{4.4,5.5}'),
+            ('Record 3', '{true}', '{}', '{6.6}')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "mixed_arrays",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "bool_array", type: "boolean[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "decimal_array", type: "decimal[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "float_array", type: "float[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["mixed_arrays": tableInfo]
+
+        when: "fetching all records"
+        def environment = createMockEnvironment(
+                ["id", "name", "bool_array", "decimal_array", "float_array"],
+                [:]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("mixed_arrays")
+        def result = fetcher.get(environment)
+
+        then: "should return properly typed arrays as Java Lists"
+        result.size() == 3
+        
+        result[0].bool_array == [true, false, true]
+        result[0].decimal_array == [10.50, 20.75, 30.25]
+        result[0].float_array == [1.1, 2.2, 3.3]
+        
+        result[1].bool_array == [false, false]
+        result[1].decimal_array == [99.99]
+        result[1].float_array == [4.4, 5.5]
+        
+        result[2].bool_array == [true]
+        result[2].decimal_array == []
+        result[2].float_array == [6.6]
+
+        and: "arrays should be proper Java Lists with correct element types"
+        result[0].bool_array instanceof List
+        result[0].bool_array.every { it instanceof Boolean }
+        result[0].decimal_array instanceof List
+        result[0].decimal_array.every { it instanceof Number }
+        result[0].float_array instanceof List
+        result[0].float_array.every { it instanceof Number }
+    }
+
+    def "should handle complex array scenarios with null values"() {
+        given: "a table with arrays containing various null scenarios"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.null_arrays (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                mixed_int_array INTEGER[],
+                nullable_text_array TEXT[]
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.null_arrays (name, mixed_int_array, nullable_text_array) VALUES 
+            ('With Arrays', '{1,2,3}', '{"one","two","three"}'),
+            ('Null Arrays', NULL, NULL),
+            ('Empty Arrays', '{}', '{}'),
+            ('Single Values', '{42}', '{"single"}')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "null_arrays",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "mixed_int_array", type: "integer[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "nullable_text_array", type: "text[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["null_arrays": tableInfo]
+
+        when: "fetching all records"
+        def environment = createMockEnvironment(
+                ["id", "name", "mixed_int_array", "nullable_text_array"],
+                [:]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("null_arrays")
+        def result = fetcher.get(environment)
+
+        then: "should handle null and empty arrays correctly"
+        result.size() == 4
+        
+        // Record with proper arrays
+        result[0].mixed_int_array == [1, 2, 3]
+        result[0].nullable_text_array == ["one", "two", "three"]
+        
+        // Record with null arrays
+        result[1].mixed_int_array == null
+        result[1].nullable_text_array == null
+        
+        // Record with empty arrays
+        result[2].mixed_int_array == []
+        result[2].nullable_text_array == []
+        
+        // Record with single element arrays
+        result[3].mixed_int_array == [42]
+        result[3].nullable_text_array == ["single"]
+
+        when: "filtering for non-null arrays"
+        environment = createMockEnvironment(
+                ["id", "name", "mixed_int_array"],
+                ["mixed_int_array_isNotNull": true]
+        )
+        result = fetcher.get(environment)
+
+        then: "should return records with non-null arrays"
+        result.size() == 3
+        result.every { it.mixed_int_array != null }
+    }
+
+    def "should handle array types in connection fetcher"() {
+        given: "a table with array columns for connection testing"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.array_connections (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(100),
+                tags TEXT[],
+                scores INTEGER[]
+            )
+        """)
+
+        (1..5).each { i ->
+            jdbcTemplate.execute("""
+                INSERT INTO test_schema.array_connections (title, tags, scores) VALUES 
+                ('Title ${i}', '{"tag${i}","common"}', '{${i},${i*10},${i*100}}')
+            """)
+        }
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "array_connections",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "title", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "tags", type: "text[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "scores", type: "integer[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["array_connections": tableInfo]
+
+        when: "fetching connection with array fields"
+        def environment = createMockConnectionEnvironment(
+                ["id", "title", "tags", "scores"],
+                [
+                        "first": 3,
+                        "orderBy": ["id": "ASC"]
+                ]
+        )
+        def fetcher = dataFetcher.createConnectionDataFetcher("array_connections")
+        def result = fetcher.get(environment)
+
+        then: "should return connection with properly converted arrays"
+        result.edges.size() == 3
+        result.totalCount == 5
+
+        def nodes = result.edges.collect { it.node }
+        nodes[0].tags == ["tag1", "common"]
+        nodes[0].scores == [1, 10, 100]
+        nodes[1].tags == ["tag2", "common"]
+        nodes[1].scores == [2, 20, 200]
+        nodes[2].tags == ["tag3", "common"]
+        nodes[2].scores == [3, 30, 300]
+
+        and: "arrays should be proper Java Lists"
+        nodes.every { node ->
+            node.tags instanceof List && node.tags.every { it instanceof String } &&
+            node.scores instanceof List && node.scores.every { it instanceof Integer }
+        }
+    }
+
+    def "should handle arrays with special characters and escaping"() {
+        given: "a table with arrays containing special characters"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.special_arrays (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                special_text_array TEXT[]
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.special_arrays (name, special_text_array) VALUES 
+            ('Quotes', '{"hello \\"world\\"","it''s working"}'),
+            ('Commas', '{"item,with,commas","simple"}'),
+            ('Backslashes', '{"path\\\\to\\\\file","another"}')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "special_arrays",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "special_text_array", type: "text[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["special_arrays": tableInfo]
+
+        when: "fetching records with special characters in arrays"
+        def environment = createMockEnvironment(
+                ["id", "name", "special_text_array"],
+                [:]
+        )
+        def fetcher = dataFetcher.createTableDataFetcher("special_arrays")
+        def result = fetcher.get(environment)
+
+        then: "should properly handle special characters in array elements"
+        result.size() == 3
+        
+        // Arrays should be converted to proper Java Lists regardless of special characters
+        result[0].special_text_array instanceof List
+        result[1].special_text_array instanceof List
+        result[2].special_text_array instanceof List
+        
+        // All elements should be strings
+        result.every { record ->
+            record.special_text_array.every { it instanceof String }
+        }
+    }
+
+    // Helper method for empty relationship fields
     private DataFetchingEnvironment createMockEnvironmentWithEmptyRelationshipFields(List<String> selectedFields, List<String> relationshipFields, Map<String, Object> arguments) {
         def environment = Mock(DataFetchingEnvironment)
         def selectionSet = Mock(DataFetchingFieldSelectionSet)
@@ -2236,5 +2610,247 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         environment.getGraphQlContext() >> graphQLContext
 
         return environment
+    }
+
+    def "should handle forward foreign key relationships properly"() {
+        given: "tables with foreign key relationships"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.customers (\n                customer_id SERIAL PRIMARY KEY,\n                first_name VARCHAR(45) NOT NULL,\n                last_name VARCHAR(45) NOT NULL,\n                email VARCHAR(50)\n            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.orders (\n                order_id SERIAL PRIMARY KEY,\n                customer_id INTEGER REFERENCES test_schema.customers(customer_id),\n                total_amount NUMERIC(10,2) NOT NULL,\n                order_date DATE DEFAULT CURRENT_DATE\n            )
+        """)
+
+        // Insert test data
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.customers (customer_id, first_name, last_name, email) VALUES \n            (1, 'John', 'Doe', 'john@example.com'),\n            (2, 'Jane', 'Smith', 'jane@example.com')
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.orders (order_id, customer_id, total_amount) VALUES\n            (1, 1, 299.99),\n            (2, 1, 149.50),\n            (3, 2, 89.99)
+        """)
+
+        and: "mocked schema reflector with foreign key info"
+        def customersTableInfo = new TableInfo(
+                name: "customers",
+                columns: [
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "first_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "last_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "email", type: "varchar", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: [],
+                view: false
+        )
+
+        def ordersTableInfo = new TableInfo(
+                name: "orders",
+                columns: [
+                        new ColumnInfo(name: "order_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "total_amount", type: "numeric", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "order_date", type: "date", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: [
+                        new ForeignKeyInfo("customer_id", "customers", "customer_id")
+                ],
+                view: false
+        )
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.reflectSchema() >> ["customers": customersTableInfo, "orders": ordersTableInfo]
+        dataFetcher.schemaReflector = mockReflector
+
+        when: "fetching orders with customer relationship"
+        def environment = createMockEnvironment(["order_id", "customer_id", "total_amount", "customers"], [:])
+        def selectedFields = Mock(DataFetchingFieldSelectionSet)
+        def customerField = Mock(SelectedField) {
+            getName() >> "customers"
+            getSelectionSet() >> Mock(DataFetchingFieldSelectionSet) {
+                getFields() >> [
+                        Mock(SelectedField) { getName() >> "customer_id" },
+                        Mock(SelectedField) { getName() >> "first_name" },
+                        Mock(SelectedField) { getName() >> "last_name" }
+                ]
+            }
+        }
+                selectedFields.getFields() >> [
+            Mock(SelectedField) { getName() >> "order_id" },
+            Mock(SelectedField) { getName() >> "customer_id" },
+            Mock(SelectedField) { getName() >> "total_amount" },
+            customerField
+        ]
+        environment.getSelectionSet() >> selectedFields
+
+        def tableFetcher = dataFetcher.createTableDataFetcher("orders")
+        def results = tableFetcher.get(environment)
+
+        then: "should return orders data"
+        results != null
+        results.size() == 3
+        results[0].order_id == 1
+        results[0].total_amount == 299.99
+        results[0].customer_id == 1
+
+        and: "relationship data should be preloaded in batch context"
+        def batchContext = environment.getGraphQlContext().get("batchContext")
+        batchContext != null
+        batchContext["customers"] != null
+    }
+
+    def "should handle relationship data fetcher properly"() {
+        given: "tables with foreign key relationships"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_customers (\n                customer_id SERIAL PRIMARY KEY,\n                first_name VARCHAR(45) NOT NULL,\n                last_name VARCHAR(45) NOT NULL\n            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_orders (\n                order_id SERIAL PRIMARY KEY,\n                customer_id INTEGER REFERENCES test_schema.test_customers(customer_id),\n                total_amount NUMERIC(10,2) NOT NULL\n            )
+        """)
+
+        // Insert test data
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.test_customers (customer_id, first_name, last_name) VALUES \n            (1, 'John', 'Doe'),\n            (2, 'Jane', 'Smith')
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.test_orders (order_id, customer_id, total_amount) VALUES\n            (1, 1, 299.99)
+        """)
+
+        and: "mocked schema reflector"
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.reflectSchema() >> [
+                "test_customers": new TableInfo(
+                        name: "test_customers",
+                        columns: [
+                                new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                                new ColumnInfo(name: "first_name", type: "varchar", primaryKey: false, nullable: false),
+                                new ColumnInfo(name: "last_name", type: "varchar", primaryKey: false, nullable: false)
+                        ],
+                        foreignKeys: [],
+                        view: false
+                )
+        ]
+        dataFetcher.schemaReflector = mockReflector
+
+        when: "using relationship data fetcher"
+        def relationshipFetcher = dataFetcher.createRelationshipDataFetcher(
+                "test_orders", "customer_id", "test_customers", "customer_id"
+        )
+
+        def mockEnvironment = Mock(DataFetchingEnvironment)
+        def sourceData = ["customer_id": 1, "order_id": 1, "total_amount": 299.99]
+        mockEnvironment.getSource() >> sourceData
+        mockEnvironment.getGraphQlContext() >> Mock(GraphQLContext) {
+            get("batchContext") >> null
+        }
+
+        def selectedFields = Mock(DataFetchingFieldSelectionSet)
+        selectedFields.getFields() >> [
+                Mock(SelectedField) { getName() >> "customer_id" },
+                Mock(SelectedField) { getName() >> "first_name" },
+                Mock(SelectedField) { getName() >> "last_name" }
+        ]
+        mockEnvironment.getSelectionSet() >> selectedFields
+
+        def result = relationshipFetcher.get(mockEnvironment)
+
+        then: "should return related customer data"
+        result != null
+        result.customer_id == 1
+        result.first_name == "John"
+        result.last_name == "Doe"
+    }
+
+    def "should handle connection pagination with required orderBy"() {
+        given: "a table with data"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.paginated_customers (\n                id SERIAL PRIMARY KEY,\n                name VARCHAR(100) NOT NULL,\n                email VARCHAR(100),\n                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP\n            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.paginated_customers (id, name, email) VALUES \n            (1, 'Alice', 'alice@example.com'),\n            (2, 'Bob', 'bob@example.com'),\n            (3, 'Charlie', 'charlie@example.com'),\n            (4, 'David', 'david@example.com'),\n            (5, 'Eve', 'eve@example.com')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "paginated_customers",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "email", type: "varchar", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "created_at", type: "timestamp", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: [],
+                view: false
+        )
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.reflectSchema() >> ["paginated_customers": tableInfo]
+        dataFetcher.schemaReflector = mockReflector
+
+        when: "fetching connection with orderBy"
+        def environment = createMockConnectionEnvironment(
+                ["id", "name", "email"],
+                ["first": 3, "orderBy": ["id": "ASC"]]
+        )
+        def connectionFetcher = dataFetcher.createConnectionDataFetcher("paginated_customers")
+        def result = connectionFetcher.get(environment)
+
+        then: "should return properly structured connection result"
+        result != null
+        result.edges != null
+        result.edges.size() == 3
+        result.pageInfo != null
+        result.pageInfo.hasNextPage == true
+        result.pageInfo.hasPreviousPage == false
+        result.totalCount == 5
+
+        and: "edges should contain proper node data"
+        result.edges[0].node.id == 1
+        result.edges[0].node.name == "Alice"
+        result.edges[1].node.id == 2
+        result.edges[1].node.name == "Bob"
+        result.edges[2].node.id == 3
+        result.edges[2].node.name == "Charlie"
+    }
+
+    def "should handle connection pagination without orderBy gracefully"() {
+        given: "a table with data"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.no_order_customers (\n                id SERIAL PRIMARY KEY,\n                name VARCHAR(100) NOT NULL\n            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.no_order_customers (id, name) VALUES \n            (1, 'Alice'),\n            (2, 'Bob'),\n            (3, 'Charlie')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "no_order_customers",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "varchar", primaryKey: false, nullable: false)
+                ],
+                foreignKeys: [],
+                view: false
+        )
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.reflectSchema() >> ["no_order_customers": tableInfo]
+        dataFetcher.schemaReflector = mockReflector
+
+        when: "fetching connection without orderBy"
+        def environment = createMockConnectionEnvironment(
+                ["id", "name"],
+                ["first": 2]
+        )
+        def connectionFetcher = dataFetcher.createConnectionDataFetcher("no_order_customers")
+        def result = connectionFetcher.get(environment)
+
+        then: "should return result with informative cursor message"
+        result != null
+        result.edges != null
+        result.edges.size() == 2
+        result.edges[0].cursor == "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
     }
 }

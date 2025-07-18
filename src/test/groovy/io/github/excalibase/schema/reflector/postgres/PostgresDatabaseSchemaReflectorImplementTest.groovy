@@ -352,4 +352,175 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
         tablesB.containsKey("table_b")
         !tablesB.containsKey("table_a")
     }
+
+    def "should detect and reflect database views"() {
+        given: "a table and a view based on it"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(200) UNIQUE,
+                active BOOLEAN DEFAULT true,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE VIEW test_schema.active_users AS
+            SELECT id, name, email, created_at
+            FROM test_schema.users
+            WHERE active = true
+        """)
+
+        when: "reflecting the schema"
+        Map<String, TableInfo> tables = schemaReflector.reflectSchema()
+
+        then: "should contain both table and view"
+        tables.size() == 2
+        tables.containsKey("users")
+        tables.containsKey("active_users")
+
+        and: "table should be marked as table"
+        TableInfo usersTable = tables.get("users")
+        usersTable.name == "users"
+        !usersTable.isView()
+        usersTable.columns.size() == 5
+
+        and: "view should be marked as view"
+        TableInfo activeUsersView = tables.get("active_users")
+        activeUsersView.name == "active_users"
+        activeUsersView.isView()
+        activeUsersView.columns.size() == 4
+
+        and: "view should have correct columns"
+        Set<String> viewColumnNames = activeUsersView.columns.collect { it.name } as Set
+        viewColumnNames == ["id", "name", "email", "created_at"] as Set
+
+        and: "table should have primary keys but view should not"
+        usersTable.columns.find { it.name == "id" }.primaryKey
+        !activeUsersView.columns.find { it.name == "id" }.primaryKey
+
+        and: "table may have foreign keys but view should not"
+        // Views don't have primary keys or foreign keys in the same way tables do
+        activeUsersView.foreignKeys.isEmpty()
+    }
+
+    def "should reflect complex view with joins"() {
+        given: "tables with relationships and a view that joins them"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.departments (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.employees (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                department_id INTEGER REFERENCES test_schema.departments(id),
+                salary DECIMAL(10,2)
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE VIEW test_schema.employee_details AS
+            SELECT 
+                e.id,
+                e.name as employee_name,
+                d.name as department_name,
+                e.salary
+            FROM test_schema.employees e
+            JOIN test_schema.departments d ON e.department_id = d.id
+        """)
+
+        when: "reflecting the schema"
+        Map<String, TableInfo> tables = schemaReflector.reflectSchema()
+
+        then: "should contain all tables and views"
+        tables.size() == 3
+        tables.containsKey("departments")
+        tables.containsKey("employees")
+        tables.containsKey("employee_details")
+
+        and: "view should be properly detected"
+        TableInfo employeeDetailsView = tables.get("employee_details")
+        employeeDetailsView.isView()
+        employeeDetailsView.columns.size() == 4
+
+        and: "view columns should have correct types"
+        employeeDetailsView.columns.find { it.name == "id" }.type == "integer"
+        employeeDetailsView.columns.find { it.name == "employee_name" }.type == "character varying(100)"
+        employeeDetailsView.columns.find { it.name == "department_name" }.type == "character varying(100)"
+        employeeDetailsView.columns.find { it.name == "salary" }.type == "numeric(10,2)"
+    }
+
+    def "should handle schema with only views"() {
+        given: "a table in different schema and a view in test schema"
+        jdbcTemplate.execute("CREATE SCHEMA IF NOT EXISTS other_schema")
+        jdbcTemplate.execute("""
+            CREATE TABLE other_schema.source_table (
+                id SERIAL PRIMARY KEY,
+                data VARCHAR(100)
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE VIEW test_schema.external_view AS
+            SELECT id, data
+            FROM other_schema.source_table
+        """)
+
+        when: "reflecting the schema"
+        Map<String, TableInfo> tables = schemaReflector.reflectSchema()
+
+        then: "should only contain the view from test schema"
+        tables.size() == 1
+        tables.containsKey("external_view")
+
+        and: "view should be properly detected"
+        TableInfo externalView = tables.get("external_view")
+        externalView.isView()
+        externalView.columns.size() == 2
+    }
+
+    def "should handle materialized views"() {
+        given: "a table and a materialized view"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.sales (
+                id SERIAL PRIMARY KEY,
+                product VARCHAR(100),
+                amount DECIMAL(10,2),
+                sale_date DATE
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE MATERIALIZED VIEW test_schema.monthly_sales AS
+            SELECT 
+                DATE_TRUNC('month', sale_date) as month,
+                product,
+                SUM(amount) as total_amount
+            FROM test_schema.sales
+            GROUP BY DATE_TRUNC('month', sale_date), product
+        """)
+
+        when: "reflecting the schema"
+        Map<String, TableInfo> tables = schemaReflector.reflectSchema()
+
+        then: "should contain both table and materialized view"
+        tables.size() == 2
+        tables.containsKey("sales")
+        tables.containsKey("monthly_sales")
+
+        and: "materialized view should be detected as view"
+        TableInfo monthlySalesView = tables.get("monthly_sales")
+        monthlySalesView.isView()
+        monthlySalesView.columns.size() == 3
+
+        and: "materialized view columns should have correct types"
+        monthlySalesView.columns.find { it.name == "month" }.type.contains("timestamp")
+        monthlySalesView.columns.find { it.name == "product" }.type == "character varying(100)"
+        monthlySalesView.columns.find { it.name == "total_amount" }.type == "numeric"
+    }
 }

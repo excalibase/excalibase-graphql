@@ -1328,4 +1328,767 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         then: "should throw DataMutationException for invalid data"
         thrown(DataMutationException)
     }
+
+    // ========== PostgreSQL Array Types Mutation Tests ==========
+
+    def "should create records with integer array types"() {
+        given: "a table with integer array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.integer_array_mutations (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                int_array INTEGER[],
+                bigint_array BIGINT[]
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "integer_array_mutations",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "int_array", type: "integer[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "bigint_array", type: "bigint[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["integer_array_mutations": tableInfo]
+
+        and: "environment with array data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Array Record",
+                "int_array": [1, 2, 3, 4, 5],
+                "bigint_array": [100, 200, 300]
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with integer arrays"
+        def mutationResolver = mutator.createCreateMutationResolver("integer_array_mutations")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with array data"
+        result != null
+        result.name == "Array Record"
+        result.int_array != null
+        result.bigint_array != null
+        result.id != null
+
+        and: "verify database content"
+        def dbRecord = jdbcTemplate.queryForMap("SELECT * FROM test_schema.integer_array_mutations WHERE id = ?", result.id)
+        dbRecord.name == "Array Record"
+    }
+
+    def "should create records with text array types"() {
+        given: "a table with text array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.text_array_mutations (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                text_array TEXT[],
+                varchar_array VARCHAR(50)[]
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "text_array_mutations",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "text_array", type: "text[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "varchar_array", type: "character varying[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["text_array_mutations": tableInfo]
+
+        and: "environment with text array data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Text Array Record",
+                "text_array": ["apple", "banana", "cherry"],
+                "varchar_array": ["red", "green", "blue"]
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with text arrays"
+        def mutationResolver = mutator.createCreateMutationResolver("text_array_mutations")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with text array data"
+        result != null
+        result.name == "Text Array Record"
+        result.text_array != null
+        result.varchar_array != null
+        result.id != null
+
+        and: "verify database content"
+        def dbRecord = jdbcTemplate.queryForMap("SELECT * FROM test_schema.text_array_mutations WHERE id = ?", result.id)
+        dbRecord.name == "Text Array Record"
+    }
+
+    def "should create records with boolean and numeric array types"() {
+        given: "a table with boolean and numeric array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.mixed_array_mutations (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                bool_array BOOLEAN[],
+                decimal_array DECIMAL(5,2)[],
+                float_array FLOAT[]
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "mixed_array_mutations",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "bool_array", type: "boolean[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "decimal_array", type: "decimal[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "float_array", type: "float[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["mixed_array_mutations": tableInfo]
+
+        and: "environment with mixed array data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Mixed Arrays",
+                "bool_array": [true, false, true],
+                "decimal_array": [10.50, 20.75, 30.25],
+                "float_array": [1.1, 2.2, 3.3]
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with mixed arrays"
+        def mutationResolver = mutator.createCreateMutationResolver("mixed_array_mutations")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with mixed array data"
+        result != null
+        result.name == "Mixed Arrays"
+        result.bool_array != null
+        result.decimal_array != null
+        result.float_array != null
+        result.id != null
+    }
+
+    def "should create records with empty and null arrays"() {
+        given: "a table with array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.null_array_mutations (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                int_array INTEGER[],
+                text_array TEXT[]
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "null_array_mutations",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "int_array", type: "integer[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "text_array", type: "text[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["null_array_mutations": tableInfo]
+
+        when: "creating record with empty arrays"
+        def environment = Mock(DataFetchingEnvironment)
+        environment.getArgument("input") >> [
+                "name": "Empty Arrays",
+                "int_array": [],
+                "text_array": []
+        ]
+        def mutationResolver = mutator.createCreateMutationResolver("null_array_mutations")
+        def result = mutationResolver.get(environment)
+
+        then: "should handle empty arrays correctly"
+        result != null
+        result.name == "Empty Arrays"
+        result.id != null
+
+        when: "creating record with null arrays"
+        environment.getArgument("input") >> [
+                "name": "Null Arrays",
+                "int_array": null,
+                "text_array": null
+        ]
+        result = mutationResolver.get(environment)
+
+        then: "should handle null arrays correctly"
+        result != null
+        result.name == "Null Arrays"
+        result.id != null
+
+        when: "creating record with single element arrays"
+        environment.getArgument("input") >> [
+                "name": "Single Element Arrays",
+                "int_array": [42],
+                "text_array": ["single"]
+        ]
+        result = mutationResolver.get(environment)
+
+        then: "should handle single element arrays correctly"
+        result != null
+        result.name == "Single Element Arrays"
+        result.id != null
+    }
+
+    def "should update records with array types"() {
+        given: "a table with array columns and existing data"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.array_updates (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                int_array INTEGER[],
+                text_array TEXT[]
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.array_updates (name, int_array, text_array) 
+            VALUES ('Original', '{1,2,3}', '{"old","values"}')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "array_updates",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "int_array", type: "integer[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "text_array", type: "text[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["array_updates": tableInfo]
+
+        and: "environment with updated array data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "id": 1,
+                "name": "Updated Arrays",
+                "int_array": [10, 20, 30, 40],
+                "text_array": ["new", "updated", "values"]
+        ]
+        environment.getArgument("input") >> input
+
+        when: "updating record with array data"
+        def mutationResolver = mutator.createUpdateMutationResolver("array_updates")
+        def result = mutationResolver.get(environment)
+
+        then: "should return updated record with new array data"
+        result != null
+        result.id == 1
+        result.name == "Updated Arrays"
+        result.int_array != null
+        result.text_array != null
+
+        and: "verify database was updated"
+        def dbRecord = jdbcTemplate.queryForMap("SELECT * FROM test_schema.array_updates WHERE id = 1")
+        dbRecord.name == "Updated Arrays"
+    }
+
+    def "should bulk create records with array types"() {
+        given: "a table with array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.bulk_array_mutations (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                int_array INTEGER[],
+                text_array TEXT[]
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "bulk_array_mutations",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "int_array", type: "integer[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "text_array", type: "text[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["bulk_array_mutations": tableInfo]
+
+        and: "environment with multiple array inputs"
+        def environment = Mock(DataFetchingEnvironment)
+        def inputs = [
+                [
+                        "name": "Bulk Record 1",
+                        "int_array": [1, 2, 3],
+                        "text_array": ["a", "b", "c"]
+                ],
+                [
+                        "name": "Bulk Record 2",
+                        "int_array": [4, 5, 6],
+                        "text_array": ["d", "e", "f"]
+                ],
+                [
+                        "name": "Bulk Record 3",
+                        "int_array": [],
+                        "text_array": ["single"]
+                ]
+        ]
+        environment.getArgument("inputs") >> inputs
+
+        when: "performing bulk create with arrays"
+        def mutationResolver = mutator.createBulkCreateMutationResolver("bulk_array_mutations")
+        def result = mutationResolver.get(environment)
+
+        then: "should return all created records with array data"
+        result.size() == 3
+        result.every { it.id != null && it.name != null }
+        result[0].name == "Bulk Record 1"
+        result[1].name == "Bulk Record 2"
+        result[2].name == "Bulk Record 3"
+
+        and: "verify database contains all records"
+        def dbRecordCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM test_schema.bulk_array_mutations", Integer.class)
+        dbRecordCount == 3
+    }
+
+    def "should handle arrays with special characters in mutations"() {
+        given: "a table with text array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.special_char_arrays (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                special_array TEXT[]
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "special_char_arrays",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "special_array", type: "text[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["special_char_arrays": tableInfo]
+
+        and: "environment with special character array data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Special Characters",
+                "special_array": ["hello, world", "it's working", "path\\to\\file", "quote\"test"]
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with special character arrays"
+        def mutationResolver = mutator.createCreateMutationResolver("special_char_arrays")
+        def result = mutationResolver.get(environment)
+
+        then: "should handle special characters correctly"
+        result != null
+        result.name == "Special Characters"
+        result.special_array != null
+        result.id != null
+
+        and: "verify database content"
+        def dbRecord = jdbcTemplate.queryForMap("SELECT * FROM test_schema.special_char_arrays WHERE id = ?", result.id)
+        dbRecord.name == "Special Characters"
+    }
+
+    def "should create records with mixed enhanced types including arrays"() {
+        given: "a table with both enhanced types and arrays"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.mixed_enhanced_arrays (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                json_data JSON,
+                int_array INTEGER[],
+                text_array TEXT[],
+                timestamptz_col TIMESTAMPTZ,
+                inet_col INET
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "mixed_enhanced_arrays",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "json_data", type: "json", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "int_array", type: "integer[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "text_array", type: "text[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "timestamptz_col", type: "timestamptz", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "inet_col", type: "inet", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["mixed_enhanced_arrays": tableInfo]
+
+        and: "environment with mixed enhanced type and array data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Mixed Enhanced Record",
+                "json_data": '{"tags": ["json", "array"], "active": true}',
+                "int_array": [1, 2, 3, 4, 5],
+                "text_array": ["apple", "banana", "cherry"],
+                "timestamptz_col": "2023-01-15T10:30:00+00:00",
+                "inet_col": "192.168.1.1"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with mixed enhanced types and arrays"
+        def mutationResolver = mutator.createCreateMutationResolver("mixed_enhanced_arrays")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with all data types properly handled"
+        result != null
+        result.name == "Mixed Enhanced Record"
+        result.json_data != null
+        result.int_array != null
+        result.text_array != null
+        result.timestamptz_col != null
+        result.inet_col != null
+        result.id != null
+    }
+
+    def "should handle array mutation errors gracefully"() {
+        given: "a table with strongly typed array columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.array_errors (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                int_array INTEGER[]
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "array_errors",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "character varying(100)", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "int_array", type: "integer[]", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["array_errors": tableInfo]
+
+        and: "environment with invalid array data"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "name": "Invalid Array",
+                "int_array": ["not", "integers"]  // Invalid - strings in integer array
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating record with invalid array data"
+        def mutationResolver = mutator.createCreateMutationResolver("array_errors")
+        mutationResolver.get(environment)
+
+        then: "should throw DataMutationException for invalid array data"
+        thrown(DataMutationException)
+    }
+
+    def "should create customer record with all fields"() {
+        given: "a customer table like in e2e tests"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.customer (
+                customer_id SERIAL PRIMARY KEY,
+                first_name VARCHAR(45) NOT NULL,
+                last_name VARCHAR(45) NOT NULL,
+                email VARCHAR(50),
+                active BOOLEAN DEFAULT true,
+                create_date DATE NOT NULL DEFAULT CURRENT_DATE,
+                last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "customer",
+                columns: [
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "first_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "last_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "email", type: "varchar", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "active", type: "boolean", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "create_date", type: "date", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "last_update", type: "timestamp", primaryKey: false, nullable: false)
+                ],
+                foreignKeys: [],
+                view: false
+        )
+        schemaReflector.reflectSchema() >> ["customer": tableInfo]
+
+        when: "creating a customer record"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "first_name": "John",
+                "last_name": "Doe",
+                "email": "john.doe@example.com",
+                "active": true
+        ]
+        environment.getArgument("input") >> input
+        def createResolver = mutator.createCreateMutationResolver("customer")
+        def result = createResolver.get(environment)
+
+        then: "should return created customer with generated ID"
+        result != null
+        result.customer_id != null
+        result.first_name == "John"
+        result.last_name == "Doe"
+        result.email == "john.doe@example.com"
+        result.active == true
+        result.create_date != null
+        result.last_update != null
+    }
+    
+    def "should update customer record properly"() {
+        given: "a customer table with existing data"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.update_customer (
+                customer_id SERIAL PRIMARY KEY,
+                first_name VARCHAR(45) NOT NULL,
+                last_name VARCHAR(45) NOT NULL,
+                email VARCHAR(50),
+                active BOOLEAN DEFAULT true
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.update_customer (customer_id, first_name, last_name, email, active) 
+            VALUES (1, 'Jane', 'Smith', 'jane.smith@example.com', true)
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "update_customer",
+                columns: [
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "first_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "last_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "email", type: "varchar", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "active", type: "boolean", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: [],
+                view: false
+        )
+        schemaReflector.reflectSchema() >> ["update_customer": tableInfo]
+
+        when: "updating the customer record"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "customer_id": 1,
+                "first_name": "Jane",
+                "last_name": "Doe",
+                "email": "jane.doe@example.com",
+                "active": false
+        ]
+        environment.getArgument("input") >> input
+        def updateResolver = mutator.createUpdateMutationResolver("update_customer")
+        def result = updateResolver.get(environment)
+
+        then: "should return updated customer"
+        result != null
+        result.customer_id == 1
+        result.first_name == "Jane"
+        result.last_name == "Doe"
+        result.email == "jane.doe@example.com"
+        result.active == false
+    }
+    
+    def "should delete customer record properly"() {
+        given: "a customer table with existing data"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.delete_customer (
+                customer_id SERIAL PRIMARY KEY,
+                first_name VARCHAR(45) NOT NULL,
+                last_name VARCHAR(45) NOT NULL
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.delete_customer (customer_id, first_name, last_name) 
+            VALUES (1, 'ToDelete', 'User')
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "delete_customer",
+                columns: [
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "first_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "last_name", type: "varchar", primaryKey: false, nullable: false)
+                ],
+                foreignKeys: [],
+                view: false
+        )
+        schemaReflector.reflectSchema() >> ["delete_customer": tableInfo]
+
+        when: "deleting the customer record"
+        def environment = Mock(DataFetchingEnvironment)
+        environment.getArgument("id") >> "1"
+        def deleteResolver = mutator.createDeleteMutationResolver("delete_customer")
+        def result = deleteResolver.get(environment)
+
+        then: "should return true for successful deletion"
+        result == true
+        
+        and: "record should be deleted from database"
+        def count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM test_schema.delete_customer WHERE customer_id = 1", 
+            Integer.class
+        )
+        count == 0
+    }
+    
+    def "should create records with relationships"() {
+        given: "tables with foreign key relationships"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.rel_customers (
+                customer_id SERIAL PRIMARY KEY,
+                first_name VARCHAR(45) NOT NULL,
+                last_name VARCHAR(45) NOT NULL
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.rel_orders (
+                order_id SERIAL PRIMARY KEY,
+                customer_id INTEGER REFERENCES test_schema.rel_customers(customer_id),
+                total_amount NUMERIC(10,2) NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending'
+            )
+        """)
+        
+        // Insert existing customer
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.rel_customers (customer_id, first_name, last_name) 
+            VALUES (1, 'Existing', 'Customer')
+        """)
+
+        and: "mocked schema reflector with relationship info"
+        def customerTableInfo = new TableInfo(
+                name: "rel_customers",
+                columns: [
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "first_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "last_name", type: "varchar", primaryKey: false, nullable: false)
+                ],
+                foreignKeys: [],
+                view: false
+        )
+        
+        def orderTableInfo = new TableInfo(
+                name: "rel_orders",
+                columns: [
+                        new ColumnInfo(name: "order_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "total_amount", type: "numeric", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "status", type: "varchar", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: [
+                        new ForeignKeyInfo("customer_id", "rel_customers", "customer_id")
+                ],
+                view: false
+        )
+        
+        schemaReflector.reflectSchema() >> [
+            "rel_customers": customerTableInfo,
+            "rel_orders": orderTableInfo
+        ]
+
+        when: "creating order with relationship to existing customer"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "total_amount": 299.99,
+                "status": "pending",
+                "rel_customers_connect": ["id": 1]
+        ]
+        environment.getArgument("input") >> input
+        def createResolver = mutator.createCreateWithRelationshipsMutationResolver("rel_orders")
+        def result = createResolver.get(environment)
+
+        then: "should return created order with customer relationship"
+        result != null
+        result.order_id != null
+        result.customer_id == 1
+        result.total_amount == 299.99
+        result.status == "pending"
+    }
+    
+    def "should create bulk customer records"() {
+        given: "a customer table"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.bulk_customers (
+                customer_id SERIAL PRIMARY KEY,
+                first_name VARCHAR(45) NOT NULL,
+                last_name VARCHAR(45) NOT NULL,
+                email VARCHAR(50)
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "bulk_customers",
+                columns: [
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "first_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "last_name", type: "varchar", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "email", type: "varchar", primaryKey: false, nullable: true)
+                ],
+                foreignKeys: [],
+                view: false
+        )
+        schemaReflector.reflectSchema() >> ["bulk_customers": tableInfo]
+
+        when: "creating multiple customer records"
+        def environment = Mock(DataFetchingEnvironment)
+        def inputs = [
+                [
+                        "first_name": "John",
+                        "last_name": "Doe",
+                        "email": "john@example.com"
+                ],
+                [
+                        "first_name": "Jane",
+                        "last_name": "Smith",
+                        "email": "jane@example.com"
+                ],
+                [
+                        "first_name": "Bob",
+                        "last_name": "Johnson",
+                        "email": "bob@example.com"
+                ]
+        ]
+        environment.getArgument("inputs") >> inputs
+        def bulkCreateResolver = mutator.createBulkCreateMutationResolver("bulk_customers")
+        def results = bulkCreateResolver.get(environment)
+
+        then: "should return all created customer records"
+        results != null
+        results.size() == 3
+        results[0].customer_id != null
+        results[0].first_name == "John"
+        results[0].last_name == "Doe"
+        results[1].first_name == "Jane"
+        results[1].last_name == "Smith"
+        results[2].first_name == "Bob"
+        results[2].last_name == "Johnson"
+        
+        and: "all records should have unique IDs"
+        def ids = results.collect { it.customer_id }
+        ids.unique().size() == 3
+    }
 }
