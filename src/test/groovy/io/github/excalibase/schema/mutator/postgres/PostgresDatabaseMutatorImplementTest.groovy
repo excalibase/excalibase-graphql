@@ -1503,45 +1503,47 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         schemaReflector.reflectSchema() >> ["null_array_mutations": tableInfo]
 
         when: "creating record with empty arrays"
-        def environment = Mock(DataFetchingEnvironment)
-        environment.getArgument("input") >> [
+        def environment1 = Mock(DataFetchingEnvironment)
+        environment1.getArgument("input") >> [
                 "name": "Empty Arrays",
                 "int_array": [],
                 "text_array": []
         ]
         def mutationResolver = mutator.createCreateMutationResolver("null_array_mutations")
-        def result = mutationResolver.get(environment)
+        def result1 = mutationResolver.get(environment1)
 
         then: "should handle empty arrays correctly"
-        result != null
-        result.name == "Empty Arrays"
-        result.id != null
+        result1 != null
+        result1.name == "Empty Arrays"
+        result1.id != null
 
         when: "creating record with null arrays"
-        environment.getArgument("input") >> [
+        def environment2 = Mock(DataFetchingEnvironment)
+        environment2.getArgument("input") >> [
                 "name": "Null Arrays",
                 "int_array": null,
                 "text_array": null
         ]
-        result = mutationResolver.get(environment)
+        def result2 = mutationResolver.get(environment2)
 
         then: "should handle null arrays correctly"
-        result != null
-        result.name == "Null Arrays"
-        result.id != null
+        result2 != null
+        result2.name == "Null Arrays"
+        result2.id != null
 
         when: "creating record with single element arrays"
-        environment.getArgument("input") >> [
+        def environment3 = Mock(DataFetchingEnvironment)
+        environment3.getArgument("input") >> [
                 "name": "Single Element Arrays",
                 "int_array": [42],
                 "text_array": ["single"]
         ]
-        result = mutationResolver.get(environment)
+        def result3 = mutationResolver.get(environment3)
 
         then: "should handle single element arrays correctly"
-        result != null
-        result.name == "Single Element Arrays"
-        result.id != null
+        result3 != null
+        result3.name == "Single Element Arrays"
+        result3.id != null
     }
 
     def "should update records with array types"() {
@@ -2008,6 +2010,12 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
             "rel_customers": customerTableInfo,
             "rel_orders": orderTableInfo
         ]
+
+        and: "transaction template is configured to execute the callback"
+        transactionTemplate.execute(_) >> { args ->
+            def callback = args[0]
+            return callback.doInTransaction(null)
+        }
 
         when: "creating order with relationship to existing customer"
         def environment = Mock(DataFetchingEnvironment)

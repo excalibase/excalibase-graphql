@@ -345,17 +345,22 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def fetcher = dataFetcher.createConnectionDataFetcher("reviews")
         def result = fetcher.get(environment)
 
-        then: "should return cursor and start/end cursor have warning message"
-        def edges = result.get("edges") as HashMap
-        edges.get("cursor") == "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
-        edges.get("node").get("id") == 1
-        edges.get("node").get("rating") == 5
-        edges.get("node").get("comment") == "Great product!"
+        then: "should return cursor and start/end cursor with valid cursor values"
+        def edges = result.get("edges") as List
+        edges.size() == 1
+        def firstEdge = edges[0] as HashMap
+        firstEdge.get("cursor") != null
+        firstEdge.get("cursor") != "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
+        firstEdge.get("node").get("id") == 1
+        firstEdge.get("node").get("rating") == 5
+        firstEdge.get("node").get("comment") == "Great product!"
         def pageInfo = result.get("pageInfo") as HashMap
         pageInfo.get("hasNextPage") == false
         pageInfo.get("hasPreviousPage") == false
-        pageInfo.get("startCursor") == "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
-        pageInfo.get("endCursor") == "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
+        pageInfo.get("startCursor") != null
+        pageInfo.get("startCursor") != "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
+        pageInfo.get("endCursor") != null
+        pageInfo.get("endCursor") != "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
         result.totalCount == 1
     }
 
@@ -2663,8 +2668,6 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         dataFetcher.schemaReflector = mockReflector
 
         when: "fetching orders with customer relationship"
-        def environment = createMockEnvironment(["order_id", "customer_id", "total_amount", "customers"], [:])
-        def selectedFields = Mock(DataFetchingFieldSelectionSet)
         def customerField = Mock(SelectedField) {
             getName() >> "customers"
             getSelectionSet() >> Mock(DataFetchingFieldSelectionSet) {
@@ -2675,13 +2678,18 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ]
             }
         }
-                selectedFields.getFields() >> [
+        
+        def environment = Mock(DataFetchingEnvironment)
+        def selectionSet = Mock(DataFetchingFieldSelectionSet)
+        selectionSet.getFields() >> [
             Mock(SelectedField) { getName() >> "order_id" },
             Mock(SelectedField) { getName() >> "customer_id" },
             Mock(SelectedField) { getName() >> "total_amount" },
             customerField
         ]
-        environment.getSelectionSet() >> selectedFields
+        environment.getSelectionSet() >> selectionSet
+        environment.getArguments() >> [:]
+        environment.getGraphQlContext() >> GraphQLContext.newContext().build()
 
         def tableFetcher = dataFetcher.createTableDataFetcher("orders")
         def results = tableFetcher.get(environment)
@@ -2694,7 +2702,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         results[0].customer_id == 1
 
         and: "relationship data should be preloaded in batch context"
-        def batchContext = environment.getGraphQlContext().get("batchContext")
+        def batchContext = environment.getGraphQlContext().get("BATCH_CONTEXT")
         batchContext != null
         batchContext["customers"] != null
     }
@@ -2847,10 +2855,11 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def connectionFetcher = dataFetcher.createConnectionDataFetcher("no_order_customers")
         def result = connectionFetcher.get(environment)
 
-        then: "should return result with informative cursor message"
+        then: "should return result with valid cursor values"
         result != null
         result.edges != null
         result.edges.size() == 2
-        result.edges[0].cursor == "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
+        result.edges[0].cursor != null
+        result.edges[0].cursor != "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
     }
 }

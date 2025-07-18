@@ -208,8 +208,10 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
             Set<String> relationshipFields = environment.getSelectionSet().getFields().stream()
                     .filter(field -> field.getName().equals(FieldConstant.EDGES))
+                    .filter(field -> field.getSelectionSet() != null)
                     .flatMap(field -> field.getSelectionSet().getFields().stream())
                     .filter(field -> field.getName().equals(FieldConstant.NODE))
+                    .filter(field -> field.getSelectionSet() != null)
                     .flatMap(field -> field.getSelectionSet().getFields().stream())
                     .filter(field -> !availableColumns.contains(field.getName()))
                     .map(SelectedField::getName)
@@ -705,7 +707,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     List<SelectedField> selectedFields = environment.getSelectionSet().getFields().stream()
                             .filter(field -> field.getName().equals(relationshipField))
                             .findFirst()
-                            .map(field -> field.getSelectionSet().getFields())
+                            .map(field -> field.getSelectionSet() != null ? field.getSelectionSet().getFields() : List.<SelectedField>of())
                             .orElse(List.of());
 
                     // Get the table info for the referenced table to know which fields are actual columns
