@@ -17,7 +17,7 @@ This directory contains scripts and configuration files for end-to-end testing o
   - Validates basic GraphQL operations
   - Tests enhanced PostgreSQL types
   - Validates relationships and views
-  - Called by `make test-only` and `make start`
+  - Called by `make test-only` and `make e2e`
 
 ### 📖 Documentation
 - **`sample-queries.md`** - GraphQL query examples
@@ -36,7 +36,7 @@ This directory contains scripts and configuration files for end-to-end testing o
 ### Recommended (Make Commands)
 ```bash
 # Run complete E2E test suite
-make start
+make e2e
 
 # Start development environment
 make dev

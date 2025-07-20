@@ -25,14 +25,14 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
 	@echo "$(YELLOW)Examples:$(NC)"
-	@echo "  make start          # Complete e2e test (build + test + cleanup)"
+	@echo "  make e2e            # Complete e2e test (build + test + cleanup)"
 	@echo "  make dev            # Start services and keep running"
 	@echo "  make test-only      # Run tests against running services"
 	@echo "  make clean          # Stop services and cleanup"
 
 # Main targets
-.PHONY: start
-start: check-deps build up test clean ## Complete e2e test suite (build, test, cleanup)
+.PHONY: e2e
+e2e: check-deps build up test clean ## Complete e2e test suite (build, test, cleanup)
 	@echo "$(GREEN)🎉 E2E testing completed successfully!$(NC)"
 
 .PHONY: dev
@@ -170,7 +170,7 @@ wait-ready: ## Wait for services to be ready
 run-tests: ## Execute the actual test suite
 	@./scripts/e2e-test.sh || (echo "$(RED)❌ Tests failed$(NC)" && exit 1)
 
-# Database operations
+# Database operations (unified schema with demo + test data)
 .PHONY: db-shell
 db-shell: ## Connect to PostgreSQL shell
 	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) exec postgres psql -U excalibase_user -d excalibase_e2e
@@ -190,6 +190,20 @@ query-customers: ## Run sample customer query
 	@curl -s -X POST $(API_URL) \
 		-H "Content-Type: application/json" \
 		-d '{"query": "{ customer { customer_id first_name last_name email } }"}' | jq '.'
+
+.PHONY: query-users
+query-users: ## Run sample users query (demo data)
+	@echo "$(BLUE)🔍 Querying users...$(NC)"
+	@curl -s -X POST $(API_URL) \
+		-H "Content-Type: application/json" \
+		-d '{"query": "{ users { id username email first_name last_name } }"}' | jq '.'
+
+.PHONY: query-posts
+query-posts: ## Run sample posts query with author relationship
+	@echo "$(BLUE)🔍 Querying posts with authors...$(NC)"
+	@curl -s -X POST $(API_URL) \
+		-H "Content-Type: application/json" \
+		-d '{"query": "{ posts { id title published created_at author_id users { username first_name last_name } } }"}' | jq '.'
 
 .PHONY: query-enhanced-types
 query-enhanced-types: ## Run sample enhanced types query
@@ -240,8 +254,8 @@ rebuild: clean build up ## Full rebuild and restart
 	@echo "$(GREEN)✓ Full rebuild completed$(NC)"
 
 # Aliases for convenience
-.PHONY: e2e
-e2e: start ## Alias for 'make start'
+.PHONY: start
+start: e2e ## Alias for 'make e2e'
 
 .PHONY: stop
 stop: clean ## Alias for 'make clean'

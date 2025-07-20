@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   app:
     build: .
@@ -9,8 +7,8 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/excalibase_e2e
       - SPRING_DATASOURCE_USERNAME=excalibase_user
       - SPRING_DATASOURCE_PASSWORD=excalibase_pass
-      - SPRING_DATASOURCE_HIKARI_SCHEMA=public
-      - APP_ALLOWED_SCHEMA=public
+      - SPRING_DATASOURCE_HIKARI_SCHEMA=hana
+      - APP_ALLOWED_SCHEMA=hana
       - APP_DATABASE_TYPE=postgres
       - SERVER_PORT=10000
     depends_on:
