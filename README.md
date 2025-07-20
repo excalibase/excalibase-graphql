@@ -158,7 +158,7 @@ docker-compose down
 docker-compose -f docker-compose.test.yml up -d
 
 # Or use Makefile for complete testing workflow
-make start          # Complete e2e test (build + test + cleanup)
+make e2e           # Complete e2e test (build + test + cleanup)
 make dev           # Start services for development
 make test-only     # Run tests against running services
 make clean         # Stop and cleanup
@@ -183,15 +183,17 @@ docker-compose exec excalibase-app /bin/bash
 
 Configure the application using environment variables:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `DB_HOST` | Database host | `localhost` |
-| `DB_PORT` | Database port | `5432` |
-| `DB_NAME` | Database name | `postgres` |
-| `DB_USERNAME` | Database username | `postgres` |
-| `DB_PASSWORD` | Database password | `postgres` |
-| `DATABASE_SCHEMA` | Database schema | `public` |
-| `SERVER_PORT` | Application port | `10000` |
+| Variable | Description | Default | Example |
+|----------|-------------|---------|---------|
+| `SPRING_DATASOURCE_URL` | JDBC connection URL | `jdbc:postgresql://localhost:5432/hana` | `jdbc:postgresql://postgres:5432/hana` |
+| `SPRING_DATASOURCE_USERNAME` | Database username | `hana001` | `hana001` |
+| `SPRING_DATASOURCE_PASSWORD` | Database password | `password123` | `password123` |
+| `APP_ALLOWED_SCHEMA` | Database schema to introspect | `hana` | `hana` |
+| `APP_DATABASE_TYPE` | Database type | `postgres` | `postgres` |
+| `SERVER_PORT` | Application port | `10000` | `10000` |
+
+**Legacy Environment Variables (Docker Compose):**
+- `DB_HOST`, `DB_PORT`, `DB_NAME` - Still supported for backward compatibility
 
 ## 🧪 End-to-End Testing
 
@@ -201,7 +203,7 @@ Excalibase GraphQL includes a comprehensive E2E testing suite that validates the
 
 ```bash
 # Run complete E2E test suite (builds, starts services, runs tests, cleans up)
-make start
+make e2e
 
 # Start development environment (keeps services running)
 make dev
@@ -263,10 +265,19 @@ The test suite includes **25+ comprehensive tests** covering:
 - ✅ Error handling validation
 - ✅ Performance testing (< 1000ms response times)
 
-### Sample Test Data
+### Sample Data & Schema
 
-The E2E tests use rich sample data including:
+The application includes comprehensive sample data in the `hana` schema:
 
+#### **Demo Tables (Great for Documentation & Learning)**
+```sql
+-- Blog-style schema for demos and learning
+users: 3 sample users (john_doe, jane_smith, bob_wilson)
+posts: 4 sample blog posts with rich content
+comments: 4 sample comments showing relationships
+```
+
+#### **Test Tables (Comprehensive Testing Coverage)**
 ```sql
 -- Customer table (12 records)
 customer: MARY SMITH, PATRICIA JOHNSON, etc.
@@ -276,17 +287,21 @@ enhanced_types: JSON objects, arrays, network addresses, XML documents
 
 -- Orders table (5 records with foreign key relationships)
 orders: Realistic order data linking to customers
+```
 
--- Views (read-only testing)
+#### **Views & Advanced Features**
+```sql
+-- Read-only views
 active_customers: Filtered view of active customers
 enhanced_types_summary: Materialized view with JSON extraction
+posts_with_authors: Blog posts joined with author information
 ```
 
 ### Available Make Commands
 
 ```bash
 # Main commands
-make start          # Complete e2e test (build + test + cleanup)
+make e2e            # Complete e2e test (build + test + cleanup)
 make dev            # Start services for development (no cleanup)
 make test-only      # Run tests against running services
 make clean          # Stop services and cleanup
@@ -305,10 +320,12 @@ make status         # Show service status
 make db-shell       # Connect to PostgreSQL shell
 make db-reset       # Reset database with fresh data
 
-# Sample queries
-make query-customers        # Run sample customer query
-make query-enhanced-types   # Run enhanced types query
-make query-schema          # Query GraphQL schema
+# Sample queries (both demo and test data)
+make query-users           # Query demo users table
+make query-posts           # Query demo posts with relationships
+make query-customers       # Query test customer data
+make query-enhanced-types  # Query enhanced PostgreSQL types
+make query-schema          # Query GraphQL schema introspection
 ```
 
 ### Manual Testing After E2E
@@ -319,17 +336,108 @@ If you use `make dev`, you can manually explore the API:
 # Visit GraphQL endpoint in browser
 make open-api
 
-# Test with built-in queries
-make query-customers
-make query-enhanced-types
+# Test with built-in demo queries
+make query-users            # Simple user data
+make query-posts            # Blog posts with relationships
+
+# Test with comprehensive test data  
+make query-customers        # Customer data with advanced filtering
+make query-enhanced-types   # PostgreSQL advanced types (JSON, arrays, etc.)
 
 # Or test with curl directly
 curl -X POST http://localhost:10001/graphql \
   -H "Content-Type: application/json" \
-  -d '{"query": "{ customer { customer_id first_name last_name } }"}'
+  -d '{"query": "{ users { id username email first_name } }"}'
 
 # Cleanup when done
 make clean
+```
+
+### Sample GraphQL Queries
+
+**Demo Data Queries (Great for Learning):**
+```graphql
+# Query blog users
+{
+  users {
+    id
+    username
+    email
+    first_name
+    last_name
+  }
+}
+
+# Query posts with author relationships
+{
+  posts {
+    id
+    title
+    published
+    author_id
+    users {
+      username
+      first_name
+      last_name
+    }
+  }
+}
+
+# Query comments with nested relationships
+{
+  comments {
+    id
+    content
+    post_id
+    posts {
+      title
+      users {
+        username
+      }
+    }
+  }
+}
+```
+
+**Test Data Queries (Advanced Features):**
+```graphql
+# Query customers with filtering
+{
+  customer(where: { active: { eq: true } }) {
+    customer_id
+    first_name
+    last_name
+    email
+  }
+}
+
+# Query enhanced PostgreSQL types
+{
+  enhanced_types {
+    id
+    name
+    json_col
+    jsonb_col
+    int_array
+    text_array
+    timestamptz_col
+    inet_col
+  }
+}
+
+# Query with relationships
+{
+  orders {
+    order_id
+    total_amount
+    customer_id
+    customer {
+      first_name
+      last_name
+      email
+    }
+  }
+}
 ```
 
 ### Dependencies

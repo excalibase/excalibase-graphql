@@ -59,10 +59,10 @@ cd excalibase-graphql
 <p>Set your database connection details.</p>
 
 ```bash
-export DB_HOST=localhost
-export DB_NAME=your_database
-export DB_USERNAME=postgres
-export DB_PASSWORD=your_password
+export SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/hana
+export SPRING_DATASOURCE_USERNAME=hana001
+export SPRING_DATASOURCE_PASSWORD=password123
+export APP_ALLOWED_SCHEMA=hana
 ```
 </div>
 
@@ -109,7 +109,7 @@ http://localhost:10000/graphql
        password: your_password
    
    app:
-     allowed-schema: public  # Your database schema
+     allowed-schema: hana  # Your database schema
      database-type: postgres
    ```
 
@@ -126,104 +126,207 @@ http://localhost:10000/graphql
 
 ## Example Usage
 
-Given this database schema with enhanced PostgreSQL types:
+Excalibase GraphQL includes comprehensive sample data in the `hana` schema for both demos and testing:
 
+### **Demo Schema (Great for Learning)**
 ```sql
+-- Blog-style schema with relationships
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    email VARCHAR(255) UNIQUE,
-    profile JSONB,                    -- Enhanced: JSON support
-    tags TEXT[],                      -- Enhanced: Array support  
-    created_at TIMESTAMPTZ,           -- Enhanced: Timezone-aware timestamps
-    ip_address INET,                  -- Enhanced: Network types
-    last_login TIMESTAMPTZ
+    username VARCHAR(50) UNIQUE NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE posts (
     id SERIAL PRIMARY KEY,
     title VARCHAR(200) NOT NULL,
     content TEXT,
-    metadata JSONB,                   -- Enhanced: JSONB support
-    categories TEXT[],                -- Enhanced: Text arrays
     author_id INTEGER REFERENCES users(id),
-    created_at TIMESTAMPTZ
+    published BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE comments (
+    id SERIAL PRIMARY KEY,
+    content TEXT NOT NULL,
+    post_id INTEGER REFERENCES posts(id),
+    author_id INTEGER REFERENCES users(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-You can immediately query with enhanced type support:
+### **Test Schema (Advanced PostgreSQL Features)**
+```sql
+-- Comprehensive type testing
+CREATE TABLE enhanced_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    json_col JSON,                    -- JSON support
+    jsonb_col JSONB,                  -- JSONB support
+    int_array INTEGER[],              -- Array support  
+    text_array TEXT[],                -- Text arrays
+    timestamptz_col TIMESTAMPTZ,      -- Timezone-aware timestamps
+    inet_col INET,                    -- Network types
+    cidr_col CIDR,                    -- Network ranges
+    macaddr_col MACADDR,              -- MAC addresses
+    xml_col XML                       -- XML support
+);
+```
+
+You can immediately start querying both demo and advanced test data:
+
+### **Demo Queries (Perfect for Learning)**
 
 ```graphql
-# Query with enhanced types
+# Query blog users
 {
   users {
     id
-    name
+    username
     email
-    profile                    # JSON/JSONB field - returns as JSON
-    tags                       # Array field - returns as GraphQL list
-    created_at                 # TIMESTAMPTZ with timezone info
-    ip_address                 # Network type support
+    first_name
+    last_name
+    created_at
+  }
+}
+
+# Query posts with author relationships
+{
+  posts {
+    id
+    title
+    content
+    published
+    author_id
+    users {           # Automatic relationship resolution
+      username
+      first_name
+    }
+  }
+}
+
+# Query comments with nested relationships
+{
+  comments {
+    id
+    content
+    post_id
+    posts {
+      title
+      users {
+        username
+      }
+    }
+  }
+}
+```
+
+### **Advanced Queries (PostgreSQL Features)**
+
+```graphql
+# Query enhanced PostgreSQL types
+{
+  enhanced_types {
+    id
+    name
+    json_col                   # JSON field - returns as JSON
+    jsonb_col                  # JSONB field - returns as JSON  
+    int_array                  # Array field - returns as GraphQL list
+    text_array                 # Text array support
+    timestamptz_col            # Timezone-aware timestamps
+    inet_col                   # Network type support
+    cidr_col                   # Network ranges
+    macaddr_col                # MAC addresses
   }
 }
 
 # Advanced JSON filtering
 {
-  users(where: { 
-    profile: { 
-      hasKey: "preferences",
-      path: ["settings", "theme"],
-      contains: "{\"notifications\": true}"
+  enhanced_types(where: { 
+    jsonb_col: { 
+      hasKey: "settings",
+      path: ["preferences", "theme"],
+      contains: "{\"auto_save\": true}"
     }
   }) {
     name
-    profile
+    jsonb_col
   }
 }
 
 # Array operations
 {
-  posts(where: {
-    categories: { contains: "postgresql" }
-  }) {
-    title
-    categories
-    metadata
-  }
-}
-
-# Enhanced date/time filtering with timezone
-{
-  users(where: {
-    created_at: { 
-      gte: "2023-01-01T00:00:00Z",
-      lt: "2024-01-01T00:00:00Z"
-    }
+  enhanced_types(where: {
+    text_array: { contains: "postgresql" }
   }) {
     name
-    created_at
+    text_array
+    int_array
   }
 }
 ```
 
-And perform mutations with enhanced types:
+### **Mutations**
 
 ```graphql
-# Create with enhanced types
+# Create a new user
 mutation {
   createUsers(input: {
-    name: "Alice Johnson"
+    username: "alice_dev"
     email: "alice@example.com"
-    profile: "{\"theme\": \"dark\", \"notifications\": true}"
-    tags: ["developer", "postgresql", "graphql"]
-    ip_address: "192.168.1.100"
+    first_name: "Alice"
+    last_name: "Johnson"
+  }) {
+    id
+    username
+    email
+    first_name
+    last_name
+    created_at
+  }
+}
+
+# Create a post with relationship
+mutation {
+  createPosts(input: {
+    title: "Getting Started with Excalibase GraphQL"
+    content: "This post explains how to use Excalibase GraphQL..."
+    author_id: 1
+    published: true
+  }) {
+    id
+    title
+    published
+    author_id
+    users {
+      username
+      first_name
+    }
+  }
+}
+
+# Create with enhanced PostgreSQL types
+mutation {
+  createEnhanced_types(input: {
+    name: "New Record"
+    json_col: "{\"theme\": \"dark\", \"notifications\": true}"
+    jsonb_col: "{\"settings\": {\"auto_save\": true}}"
+    int_array: [1, 2, 3, 4, 5]
+    text_array: ["postgresql", "graphql", "spring-boot"]
+    inet_col: "192.168.1.100"
+    cidr_col: "192.168.0.0/24"
   }) {
     id
     name
-    profile
-    tags
-    ip_address
-    created_at
+    json_col
+    jsonb_col
+    int_array
+    text_array
+    inet_col
+    cidr_col
   }
 }
 ```
