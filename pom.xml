@@ -30,7 +30,7 @@
         </developer>
     </developers>
     <modules>
-        <module>modules/graphql</module>
+        <module>modules/excalibase-graphql-api</module>
     </modules>
 
     <scm>
