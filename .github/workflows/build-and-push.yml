@@ -44,7 +44,7 @@ jobs:
       if: github.event_name == 'pull_request'
       with:
         paths: |
-          ${{ github.workspace }}/target/site/jacoco/jacoco.xml
+          ${{ github.workspace }}/modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml
         token: ${{ secrets.GITHUB_TOKEN }}
         min-coverage-overall: 40
         min-coverage-changed-files: 60
@@ -53,7 +53,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: coverage-reports
-        path: target/site/jacoco/
+        path: modules/excalibase-graphql-api/target/site/jacoco/
         retention-days: 7
 
   package:
@@ -71,7 +71,7 @@ jobs:
         distribution: 'corretto'
         
     - name: Cache Maven dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.m2/repository
         key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
@@ -85,7 +85,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: jar-artifacts
-        path: target/*.jar
+        path: modules/excalibase-graphql-api/target/*.jar
         retention-days: 7
 
   build:
@@ -101,7 +101,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: jar-artifacts
-        path: target/
+        path: modules/excalibase-graphql-api/target/
         
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
