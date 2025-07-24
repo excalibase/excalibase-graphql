@@ -31,6 +31,8 @@
     </developers>
     <modules>
         <module>modules/excalibase-graphql-api</module>
+        <module>modules/excalibase-graphql-starter</module>
+        <module>modules/excalibase-graphql-postgres</module>
     </modules>
 
     <scm>
@@ -47,6 +49,9 @@
         <postgresql.version>42.7.4</postgresql.version>
         <!--java graphql-->
         <graphql.java.version>24.0</graphql.java.version>
+
+        <!--own module-->
+        <excalibase.version>0.0.1-SNAPSHOT</excalibase.version>
 
         <!--groovy & spock-->
         <groovy-all.version>4.0.24</groovy-all.version>
@@ -97,6 +102,18 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-starter-logging</artifactId>
                 <version>${springboot.version}</version>
+            </dependency>
+
+            <!--Own modules-->
+            <dependency>
+                <groupId>io.github.excalibase</groupId>
+                <artifactId>excalibase-graphql-starter</artifactId>
+                <version>${excalibase.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.excalibase</groupId>
+                <artifactId>excalibase-graphql-postgres</artifactId>
+                <version>${excalibase.version}</version>
             </dependency>
 
             <!--Graphql-->
@@ -197,10 +214,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
             <plugin>
                 <groupId>org.codehaus.gmavenplus</groupId>
