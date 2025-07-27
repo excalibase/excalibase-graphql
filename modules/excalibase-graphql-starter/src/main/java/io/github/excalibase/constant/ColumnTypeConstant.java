@@ -99,4 +99,12 @@ public class ColumnTypeConstant {
     
     /** XML type */
     public static final String XML = "xml";
+
+    // Custom PostgreSQL types
+    
+    /** Custom enum type category */
+    public static final String CUSTOM_ENUM = "custom_enum";
+    
+    /** Custom composite object type category */
+    public static final String CUSTOM_COMPOSITE = "custom_composite";
 } 

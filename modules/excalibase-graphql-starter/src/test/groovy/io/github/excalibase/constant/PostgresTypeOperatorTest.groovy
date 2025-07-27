@@ -105,7 +105,7 @@ class PostgresTypeOperatorTest extends Specification {
 
     def "should correctly identify binary/network types"() {
         expect:
-        PostgresTypeOperator.isBinaryOrNetworkType(type) == expected
+        PostgresTypeOperator.isNetworkType(type) == expected
 
         where:
         type        | expected
@@ -160,6 +160,98 @@ class PostgresTypeOperatorTest extends Specification {
         "text"        | false
         null          | false
         ""            | false
+    }
+
+    def "should correctly identify custom enum types"() {
+        expect:
+        PostgresTypeOperator.isCustomEnumType(type) == expected
+
+        where:
+        type            | expected
+        "order_status"  | true
+        "user_role"     | true
+        "priority_level"| true
+        "custom_type"   | true
+        "varchar"       | false
+        "text"          | false
+        "integer"       | false
+        "boolean"       | false
+        "json"          | false
+        "timestamp"     | false
+        "uuid"          | false
+        "inet"          | false
+        "xml"           | false
+        null            | false
+        ""              | false
+    }
+
+    def "should correctly identify custom composite types"() {
+        expect:
+        PostgresTypeOperator.isCustomCompositeType(type) == expected
+
+        where:
+        type                | expected
+        "address"           | true
+        "contact_info"      | true
+        "product_dimensions"| true
+        "custom_object"     | true
+        "varchar"           | false
+        "text"              | false
+        "integer"           | false
+        "boolean"           | false
+        "json"              | false
+        "timestamp"         | false
+        "uuid"              | false
+        "inet"              | false
+        "xml"               | false
+        null                | false
+        ""                  | false
+    }
+
+    def "should correctly identify custom enum array types"() {
+        expect:
+        PostgresTypeOperator.isCustomEnumType(type) == expected
+
+        where:
+        type                 | expected
+        "order_status[]"     | true
+        "user_role[]"        | true
+        "priority_level[]"   | true
+        "varchar[]"          | false
+        "integer[]"          | false
+        "boolean[]"          | false
+        null                 | false
+    }
+
+    def "should correctly identify custom composite array types"() {
+        expect:
+        PostgresTypeOperator.isCustomCompositeType(type) == expected
+
+        where:
+        type                     | expected
+        "address[]"              | true
+        "contact_info[]"         | true
+        "product_dimensions[]"   | true
+        "varchar[]"              | false
+        "integer[]"              | false
+        "boolean[]"              | false
+        null                     | false
+    }
+
+    def "should extract base type from array types"() {
+        expect:
+        PostgresTypeOperator.getBaseArrayType(type) == expected
+
+        where:
+        type                 | expected
+        "integer[]"          | "integer"
+        "varchar[]"          | "varchar"
+        "order_status[]"     | "order_status"
+        "address[]"          | "address"
+        "integer"            | "integer"
+        "varchar"            | "varchar"
+        "order_status"       | "order_status"
+        null                 | null
     }
 
     def "should handle case insensitivity correctly"() {

@@ -17,8 +17,11 @@
 package io.github.excalibase.schema.generator;
 
 import graphql.schema.GraphQLSchema;
+import io.github.excalibase.model.CustomCompositeTypeInfo;
+import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.TableInfo;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -62,4 +65,26 @@ public interface IGraphQLSchemaGenerator {
      *                         or unsupported database types
      */
     GraphQLSchema generateSchema(Map<String, TableInfo> tables);
+
+    /**
+     * Generates a complete GraphQL schema from database table metadata with custom types.
+     * 
+     * <p>This method extends the basic schema generation to include support for PostgreSQL
+     * custom enum and composite types. Custom enum types are converted to GraphQL enum types,
+     * and custom composite types are converted to GraphQL object types.</p>
+     * 
+     * @param tables a map where keys are table names and values are TableInfo objects
+     *               containing metadata about each table including columns and foreign keys
+     * @param customEnums list of custom PostgreSQL enum types to include in the schema
+     * @param customComposites list of custom PostgreSQL composite types to include in the schema
+     * @return a complete GraphQL schema ready for use with GraphQL execution engines
+     * @throws RuntimeException if schema generation fails due to invalid table metadata
+     *                         or unsupported database types
+     */
+    default GraphQLSchema generateSchema(Map<String, TableInfo> tables, 
+                                       List<CustomEnumInfo> customEnums,
+                                       List<CustomCompositeTypeInfo> customComposites) {
+        // Default implementation just calls the basic method for backward compatibility
+        return generateSchema(tables);
+    }
 }
