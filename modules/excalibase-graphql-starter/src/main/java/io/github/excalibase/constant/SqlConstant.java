@@ -90,4 +90,46 @@ public class SqlConstant {
               AND cl.relname = ?
               AND n.nspname = ?
             """;
+
+    // Custom PostgreSQL type queries
+    
+    public static final String GET_CUSTOM_ENUM_TYPES = """
+            SELECT t.typname as enum_name,
+                   n.nspname as schema_name,
+                   array_agg(e.enumlabel ORDER BY e.enumsortorder) as enum_values
+            FROM pg_catalog.pg_type t
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_catalog.pg_enum e ON e.enumtypid = t.oid
+            WHERE n.nspname = ?
+              AND t.typcategory = 'E'
+            GROUP BY t.typname, n.nspname
+            ORDER BY t.typname
+            """;
+    
+    public static final String GET_CUSTOM_COMPOSITE_TYPES = """
+            SELECT t.typname as type_name,
+                   n.nspname as schema_name,
+                   a.attname as attribute_name,
+                   pg_catalog.format_type(a.atttypid, a.atttypmod) as attribute_type,
+                   a.attnum as attribute_order,
+                   CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable
+            FROM pg_catalog.pg_type t
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_catalog.pg_attribute a ON a.attrelid = t.typrelid
+            WHERE n.nspname = ?
+              AND t.typtype = 'c'
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+            ORDER BY t.typname, a.attnum
+            """;
+    
+    public static final String GET_ENUM_VALUES_FOR_TYPE = """
+            SELECT e.enumlabel as value
+            FROM pg_catalog.pg_type t
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_catalog.pg_enum e ON e.enumtypid = t.oid
+            WHERE t.typname = ?
+              AND n.nspname = ?
+            ORDER BY e.enumsortorder
+            """;
 }
