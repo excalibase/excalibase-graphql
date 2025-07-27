@@ -14,6 +14,8 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 - **📊 Rich Querying**: Filtering, sorting, and pagination out of the box
 - **🗓️ Enhanced Date/Time Filtering**: Comprehensive date and timestamp operations with multiple format support
 - **🔍 Advanced Filter Types**: StringFilter, IntFilter, FloatFilter, BooleanFilter, DateTimeFilter with operators like eq, neq, gt, gte, lt, lte, in, notIn, isNull, isNotNull
+- **🎯 Custom PostgreSQL Types**: Full support for custom enum and composite types with automatic GraphQL mapping
+- **📄 Enhanced PostgreSQL Data Types**: JSON/JSONB, arrays, network types (INET, CIDR), enhanced datetime, binary, and XML support  
 - **🔗 Relationship Resolution**: Automatic foreign key relationship handling
 - **🛠️ CRUD Operations**: Full create, read, update, delete support
 - **📄 Cursor Pagination**: Relay-spec compatible connection queries
@@ -559,13 +561,24 @@ For detailed filtering documentation, examples, and migration guides, see:
 
 ## Example Usage
 
-Given this database table:
+Given this database table with custom PostgreSQL types:
 
 ```sql
+-- Custom PostgreSQL enum and composite types
+CREATE TYPE user_status AS ENUM ('active', 'inactive', 'suspended');
+CREATE TYPE address AS (
+    street TEXT,
+    city TEXT,
+    state TEXT,
+    zip_code TEXT
+);
+
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(255) UNIQUE,
+    status user_status DEFAULT 'active',
+    address address,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -581,12 +594,19 @@ CREATE TABLE posts (
 You can immediately query:
 
 ```graphql
-# Get all users
+# Get all users with custom types
 query {
   users {
     id
     name
     email
+    status          # PostgreSQL enum type
+    address {       # PostgreSQL composite type
+      street
+      city
+      state
+      zip_code
+    }
   }
 }
 
@@ -699,15 +719,28 @@ query {
 And perform mutations:
 
 ```graphql
-# Create a user
+# Create a user with custom types
 mutation {
   createUsers(input: {
     name: "Alice Johnson"
     email: "alice@example.com"
+    status: active
+    address: {
+      street: "123 Main St"
+      city: "New York"
+      state: "NY"
+      zip_code: "10001"
+    }
   }) {
     id
     name
     email
+    status
+    address {
+      street
+      city
+      state
+    }
     created_at
   }
 }
