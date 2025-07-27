@@ -46,6 +46,7 @@ import java.time.format.DateTimeParseException;
 import java.sql.Array;
 import java.sql.Date;
 import java.sql.Timestamp;
+// PGobject import removed - using alternative approach
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
@@ -176,9 +177,9 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             // After executing the query and getting results, we need to process PostgreSQL arrays
             List<Map<String, Object>> results = namedParameterJdbcTemplate.queryForList(sql.toString(), paramSource);
             
-            // Convert PostgreSQL arrays to Java Lists for GraphQL compatibility
+            // Convert PostgreSQL arrays and custom types for GraphQL compatibility
             if (tableInfo != null) {
-                results = convertPostgresArraysToLists(results, tableInfo);
+                results = convertPostgresTypesToGraphQLTypes(results, tableInfo);
             }
 
             if (!relationshipFields.isEmpty() && !results.isEmpty()) {
@@ -399,9 +400,9 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             }
             List<Map<String, Object>> nodes = namedParameterJdbcTemplate.queryForList(dataSql.toString(), paramSource);
             
-            // Convert PostgreSQL arrays to Java Lists for GraphQL compatibility
+            // Convert PostgreSQL arrays and custom types for GraphQL compatibility
             if (tableInfo != null) {
-                nodes = convertPostgresArraysToLists(nodes, tableInfo);
+                nodes = convertPostgresTypesToGraphQLTypes(nodes, tableInfo);
             }
 
             if (!relationshipFields.isEmpty() && !nodes.isEmpty()) {
@@ -605,7 +606,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 
                 // Convert PostgreSQL arrays to Java Lists for GraphQL compatibility
                 if (targetTableInfo != null) {
-                    results = convertPostgresArraysToLists(results, targetTableInfo);
+                    results = convertPostgresTypesToGraphQLTypes(results, targetTableInfo);
                 }
                 
                 return results;
@@ -1098,7 +1099,13 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         conditions.add(quotedKey + " = :" + key);
                         paramSource.addValue(key, value);
                     }
-                } else {
+                }
+                // Handle custom enum types with explicit casting
+                else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                    conditions.add(quotedKey + " = :" + key + "::" + columnType);
+                    paramSource.addValue(key, value.toString());
+                }
+                else {
                     conditions.add(quotedKey + " = :" + key);
                     paramSource.addValue(key, value);
                 }
@@ -1155,6 +1162,8 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                             conditions.add(quotedColumnName + " = :" + paramName + "::" + columnType);
                         } else if (columnType != null && columnType.contains("xml")) {
                             conditions.add(quotedColumnName + "::text = :" + paramName);
+                        } else if (columnType != null && PostgresTypeOperator.isCustomEnumType(columnType)) {
+                            conditions.add(quotedColumnName + " = :" + paramName + "::" + columnType);
                         } else {
                             conditions.add(quotedColumnName + " = :" + paramName);
                         }
@@ -1170,6 +1179,8 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                             conditions.add(quotedColumnName + " != :" + paramName + "::" + columnType);
                         } else if (columnType != null && columnType.contains("xml")) {
                             conditions.add(quotedColumnName + "::text != :" + paramName);
+                        } else if (columnType != null && PostgresTypeOperator.isCustomEnumType(columnType)) {
+                            conditions.add(quotedColumnName + " != :" + paramName + "::" + columnType);
                         } else {
                             conditions.add(quotedColumnName + " != :" + paramName);
                         }
@@ -1509,21 +1520,29 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     }
 
     /**
-     * Converts PostgreSQL array columns to Java Lists for GraphQL compatibility
+     * Converts PostgreSQL array columns and custom types to Java objects for GraphQL compatibility
      */
-    private List<Map<String, Object>> convertPostgresArraysToLists(List<Map<String, Object>> results, TableInfo tableInfo) {
+    private List<Map<String, Object>> convertPostgresTypesToGraphQLTypes(List<Map<String, Object>> results, TableInfo tableInfo) {
         // Get array column information
         Map<String, String> arrayColumns = tableInfo.getColumns().stream()
                 .filter(col -> PostgresTypeOperator.isArrayType(col.getType()))
                 .collect(Collectors.toMap(ColumnInfo::getName, ColumnInfo::getType));
         
-        if (arrayColumns.isEmpty()) {
-            return results; // No array columns, return as-is
+        // Get custom type columns (will determine enum vs composite based on actual data)
+        Map<String, String> customTypeColumns = tableInfo.getColumns().stream()
+                .filter(col -> PostgresTypeOperator.isCustomEnumType(col.getType()) || 
+                              PostgresTypeOperator.isCustomCompositeType(col.getType()))
+                .filter(col -> !PostgresTypeOperator.isArrayType(col.getType())) // Exclude arrays for now
+                .collect(Collectors.toMap(ColumnInfo::getName, ColumnInfo::getType));
+        
+        if (arrayColumns.isEmpty() && customTypeColumns.isEmpty()) {
+            return results; // No special columns, return as-is
         }
         
         return results.stream().map(row -> {
             Map<String, Object> convertedRow = new HashMap<>(row);
             
+            // Process array columns
             for (Map.Entry<String, String> arrayCol : arrayColumns.entrySet()) {
                 String columnName = arrayCol.getKey();
                 String columnType = arrayCol.getValue();
@@ -1532,6 +1551,27 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 if (value != null) {
                     List<Object> convertedArray = convertPostgresArrayToList(value, columnType);
                     convertedRow.put(columnName, convertedArray);
+                }
+            }
+            
+            // Process custom type columns (determine enum vs composite based on data format)
+            for (Map.Entry<String, String> customCol : customTypeColumns.entrySet()) {
+                String columnName = customCol.getKey();
+                String columnType = customCol.getValue();
+                Object value = row.get(columnName);
+                
+                if (value != null) {
+                    String valueStr = value.toString();
+                    
+                    // If value starts with '(' and ends with ')', it's likely a composite type
+                    if (valueStr.startsWith("(") && valueStr.endsWith(")")) {
+                        // Process as composite type
+                        Map<String, Object> convertedComposite = convertPostgresCompositeToMap(value, columnType);
+                        convertedRow.put(columnName, convertedComposite);
+                    } else {
+                        // Process as enum type (simple string value)
+                        convertedRow.put(columnName, valueStr);
+                    }
                 }
             }
             
@@ -1671,6 +1711,88 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         } catch (NumberFormatException e) {
             log.warn("Could not convert array element '{}' to type '{}', using string", elementStr, type);
             return elementStr;
+        }
+    }
+
+    /**
+     * Converts a PostgreSQL composite type to a Map for GraphQL compatibility
+     */
+    private Map<String, Object> convertPostgresCompositeToMap(Object compositeValue, String columnType) {
+        if (compositeValue == null) {
+            return null;
+        }
+
+        try {
+            // PostgreSQL composite types are typically returned as string representations
+            String compositeStr = compositeValue.toString();
+            
+            if (compositeStr == null || compositeStr.trim().isEmpty()) {
+                return Map.of();
+            }
+            
+            return parsePostgresCompositeString(compositeStr, columnType);
+            
+        } catch (Exception e) {
+            log.error("Error converting PostgreSQL composite to Map for column type: {}", columnType, e);
+            return Map.of(); // Return empty map on error
+        }
+    }
+
+    /**
+     * Parses PostgreSQL composite string representation like "(40.7589,-73.9851,New York)" into a Map
+     */
+    private Map<String, Object> parsePostgresCompositeString(String compositeStr, String columnType) {
+        if (compositeStr == null || compositeStr.trim().isEmpty()) {
+            return Map.of();
+        }
+
+        // Remove outer parentheses: "(40.7589,-73.9851,New York)" -> "40.7589,-73.9851,New York"
+        String content = compositeStr.trim();
+        if (content.startsWith("(") && content.endsWith(")")) {
+            content = content.substring(1, content.length() - 1);
+        }
+
+        // Split by commas - this is a simple implementation that may need enhancement for complex cases
+        String[] parts = content.split(",");
+        
+        // For now, create a generic map with indexed keys since we don't have type schema info
+        Map<String, Object> result = new HashMap<>();
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i].trim();
+            
+            // Remove quotes if present
+            if (part.startsWith("\"") && part.endsWith("\"")) {
+                part = part.substring(1, part.length() - 1);
+            }
+            
+            // Try to convert to appropriate type
+            Object value = convertCompositeAttributeValue(part);
+            result.put("attr_" + i, value); // Generic attribute names for now
+        }
+        
+        return result;
+    }
+
+    /**
+     * Converts a composite attribute value to the appropriate Java type
+     */
+    private Object convertCompositeAttributeValue(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+
+        value = value.trim();
+
+        // Try to parse as number first
+        try {
+            if (value.contains(".")) {
+                return Double.parseDouble(value);
+            } else {
+                return Integer.parseInt(value);
+            }
+        } catch (NumberFormatException e) {
+            // Not a number, return as string
+            return value;
         }
     }
 }

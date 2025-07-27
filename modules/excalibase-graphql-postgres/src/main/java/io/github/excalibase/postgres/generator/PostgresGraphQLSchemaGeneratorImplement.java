@@ -20,6 +20,9 @@ import io.github.excalibase.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.EmptySchemaException;
 import io.github.excalibase.model.ColumnInfo;
+import io.github.excalibase.model.CompositeTypeAttribute;
+import io.github.excalibase.model.CustomCompositeTypeInfo;
+import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.scalar.JsonScalar;
@@ -28,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static graphql.Scalars.*;
@@ -1145,5 +1149,157 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .build());
         
         return filterBuilder.build();
+    }
+
+    @Override
+    public GraphQLSchema generateSchema(Map<String, TableInfo> tables, 
+                                      List<CustomEnumInfo> customEnums,
+                                      List<CustomCompositeTypeInfo> customComposites) {
+        if (tables == null || tables.isEmpty()) {
+            throw new EmptySchemaException("Cannot generate schema with empty postgres schema");
+        }
+        
+        GraphQLSchema.Builder schemaBuilder = GraphQLSchema.newSchema();
+
+        // Create common types
+        GraphQLEnumType orderDirectionEnum = createOrderDirectionEnum();
+        GraphQLObjectType pageInfoType = createPageInfoType();
+
+        schemaBuilder.additionalType(orderDirectionEnum);
+        schemaBuilder.additionalType(pageInfoType);
+
+        // Create filter input types
+        Map<String, GraphQLInputObjectType> filterInputTypes = createFilterInputTypes();
+        for (GraphQLInputObjectType filterType : filterInputTypes.values()) {
+            schemaBuilder.additionalType(filterType);
+        }
+
+        // Add custom enum types to schema
+        Map<String, GraphQLEnumType> customEnumTypes = new HashMap<>();
+        if (customEnums != null) {
+            for (CustomEnumInfo enumInfo : customEnums) {
+                GraphQLEnumType enumType = createGraphQLEnumType(enumInfo);
+                customEnumTypes.put(enumInfo.getName(), enumType);
+                schemaBuilder.additionalType(enumType);
+            }
+        }
+
+        // Add custom composite types to schema
+        Map<String, GraphQLObjectType> customCompositeTypes = new HashMap<>();
+        if (customComposites != null) {
+            for (CustomCompositeTypeInfo compositeInfo : customComposites) {
+                GraphQLObjectType objectType = createGraphQLObjectType(compositeInfo, customEnumTypes, customCompositeTypes);
+                customCompositeTypes.put(compositeInfo.getName(), objectType);
+                schemaBuilder.additionalType(objectType);
+            }
+        }
+
+        // Create type definitions for each table with custom type support
+        Map<String, GraphQLInputObjectType> tableFilterTypes = new HashMap<>();
+        createTableTypesWithCustomTypes(schemaBuilder, tables, pageInfoType, filterInputTypes, 
+                                       tableFilterTypes, customEnumTypes, customCompositeTypes);
+
+        // Create Query type
+        GraphQLObjectType queryType = createQueryType(tables, tableFilterTypes);
+        schemaBuilder.query(queryType);
+
+        // Create Mutation type only if there are tables (not just views)
+        boolean hasTables = tables.values().stream().anyMatch(table -> !table.isView());
+        if (hasTables) {
+            GraphQLObjectType mutationType = createMutationType(tables);
+            schemaBuilder.mutation(mutationType);
+        }
+
+        return schemaBuilder.build();
+    }
+
+    /**
+     * Creates a GraphQL enum type from PostgreSQL custom enum info.
+     */
+    private GraphQLEnumType createGraphQLEnumType(CustomEnumInfo enumInfo) {
+        GraphQLEnumType.Builder enumBuilder = GraphQLEnumType.newEnum()
+                .name(toGraphQLTypeName(enumInfo.getName()))
+                .description("Custom enum type: " + enumInfo.getName());
+
+        for (String value : enumInfo.getValues()) {
+            enumBuilder.value(value.toUpperCase(), value, "Enum value: " + value);
+        }
+
+        return enumBuilder.build();
+    }
+
+    /**
+     * Creates a GraphQL object type from PostgreSQL custom composite info.
+     */
+    private GraphQLObjectType createGraphQLObjectType(CustomCompositeTypeInfo compositeInfo,
+                                                     Map<String, GraphQLEnumType> customEnumTypes,
+                                                     Map<String, GraphQLObjectType> customCompositeTypes) {
+        GraphQLObjectType.Builder objectBuilder = GraphQLObjectType.newObject()
+                .name(toGraphQLTypeName(compositeInfo.getName()))
+                .description("Custom composite type: " + compositeInfo.getName());
+
+        for (CompositeTypeAttribute attribute : compositeInfo.getAttributes()) {
+            GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(attribute.getType(), 
+                                                                       customEnumTypes, customCompositeTypes);
+            objectBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                    .name(attribute.getName())
+                    .type(fieldType)
+                    .description("Attribute: " + attribute.getName())
+                    .build());
+        }
+
+        return objectBuilder.build();
+    }
+
+    /**
+     * Maps database types to GraphQL types with custom type support.
+     */
+    private GraphQLOutputType mapDatabaseTypeToGraphQLType(String type,
+                                                          Map<String, GraphQLEnumType> customEnumTypes,
+                                                          Map<String, GraphQLObjectType> customCompositeTypes) {
+        // Check for custom enum types first
+        if (PostgresTypeOperator.isCustomEnumType(type) && customEnumTypes.containsKey(type)) {
+            return customEnumTypes.get(type);
+        }
+
+        // Check for custom composite types
+        if (PostgresTypeOperator.isCustomCompositeType(type) && customCompositeTypes.containsKey(type)) {
+            return customCompositeTypes.get(type);
+        }
+
+        // Fall back to standard type mapping
+        return mapDatabaseTypeToGraphQLType(type);
+    }
+
+    /**
+     * Converts PostgreSQL type name to GraphQL type name (PascalCase).
+     */
+    private String toGraphQLTypeName(String postgresTypeName) {
+        // Split by underscore and capitalize each part
+        String[] parts = postgresTypeName.split("_");
+        StringBuilder result = new StringBuilder();
+        for (String part : parts) {
+            if (!part.isEmpty()) {
+                result.append(Character.toUpperCase(part.charAt(0)));
+                if (part.length() > 1) {
+                    result.append(part.substring(1).toLowerCase());
+                }
+            }
+        }
+        return result.toString();
+    }
+
+    /**
+     * Enhanced version of createTableTypes that supports custom types.
+     */
+    private void createTableTypesWithCustomTypes(GraphQLSchema.Builder schemaBuilder,
+                                               Map<String, TableInfo> tables,
+                                               GraphQLObjectType pageInfoType,
+                                               Map<String, GraphQLInputObjectType> filterInputTypes,
+                                               Map<String, GraphQLInputObjectType> tableFilterTypes,
+                                               Map<String, GraphQLEnumType> customEnumTypes,
+                                               Map<String, GraphQLObjectType> customCompositeTypes) {
+        // For now, delegate to original method - will enhance in future iterations
+        createTableTypes(schemaBuilder, tables, pageInfoType, filterInputTypes, tableFilterTypes);
     }
 }

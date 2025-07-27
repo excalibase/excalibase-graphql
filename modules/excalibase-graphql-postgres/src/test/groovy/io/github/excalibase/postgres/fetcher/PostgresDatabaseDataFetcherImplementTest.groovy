@@ -2863,4 +2863,228 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         result.edges[0].cursor != null
         result.edges[0].cursor != "orderBy parameter is required for cursor-based pagination. Please provide a valid orderBy argument."
     }
+
+    // TDD RED PHASE: Custom Type Fetching Tests
+    def "should fetch records with custom enum values properly formatted"() {
+        given: "a table with custom enum column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_priority AS ENUM ('low', 'medium', 'high', 'urgent')
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_tasks (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(100),
+                priority test_priority
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.test_tasks (title, priority) VALUES 
+            ('Task 1', 'low'),
+            ('Task 2', 'high'),
+            ('Task 3', 'urgent')
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("title", "character varying", false, true),
+            new ColumnInfo("priority", "test_priority", false, true)
+        ]
+        def tableInfo = new TableInfo("test_tasks", columns, [], false)
+
+        def selectionSet = Mock(DataFetchingFieldSelectionSet) {
+            getFields() >> [
+                Mock(SelectedField) { getName() >> "id" },
+                Mock(SelectedField) { getName() >> "title" },
+                Mock(SelectedField) { getName() >> "priority" }
+            ]
+        }
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getSelectionSet() >> selectionSet
+            getArguments() >> [:]
+            getGraphQLContext() >> GraphQLContext.newContext().build()
+        }
+
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_tasks": tableInfo]
+
+        when: "creating and executing connection data fetcher"
+        def fetcher = dataFetcher.createConnectionDataFetcher("test_tasks")
+        def result = fetcher.get(environment)
+
+        then: "should return properly formatted enum values"
+        result != null
+        result.edges != null
+        result.edges.size() == 3
+        
+        // Check that enum values are returned as strings, not transformed
+        def task1 = result.edges.find { it.node.title == 'Task 1' }
+        task1.node.priority == 'low'
+        
+        def task2 = result.edges.find { it.node.title == 'Task 2' }
+        task2.node.priority == 'high'
+        
+        def task3 = result.edges.find { it.node.title == 'Task 3' }
+        task3.node.priority == 'urgent'
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_tasks")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_priority")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should fetch records with custom composite values as structured objects"() {
+        given: "a table with custom composite column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_location AS (
+                latitude DECIMAL(10,8),
+                longitude DECIMAL(11,8),
+                city VARCHAR(50)
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_venues (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                location test_location
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.test_venues (name, location) VALUES 
+            ('Venue 1', ROW(40.7589, -73.9851, 'New York')),
+            ('Venue 2', ROW(34.0522, -118.2437, 'Los Angeles'))
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("name", "character varying", false, true),
+            new ColumnInfo("location", "test_location", false, true)
+        ]
+        def tableInfo = new TableInfo("test_venues", columns, [], false)
+
+        def selectionSet = Mock(DataFetchingFieldSelectionSet) {
+            getFields() >> [
+                Mock(SelectedField) { getName() >> "id" },
+                Mock(SelectedField) { getName() >> "name" },
+                Mock(SelectedField) { getName() >> "location" }
+            ]
+        }
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getSelectionSet() >> selectionSet
+            getArguments() >> [:]
+            getGraphQLContext() >> GraphQLContext.newContext().build()
+        }
+
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_venues": tableInfo]
+
+        when: "creating and executing connection data fetcher"
+        def fetcher = dataFetcher.createConnectionDataFetcher("test_venues")
+        def result = fetcher.get(environment)
+
+        then: "should return structured composite objects"
+        result != null
+        result.edges != null
+        result.edges.size() == 2
+        
+        // Check that composite values are parsed into structured objects
+        def venue1 = result.edges.find { it.node.name == 'Venue 1' }
+        venue1.node.location instanceof Map
+        venue1.node.location.attr_0 == 40.7589    // latitude
+        venue1.node.location.attr_1 == -73.9851   // longitude  
+        venue1.node.location.attr_2 == 'New York' // city
+        
+        def venue2 = result.edges.find { it.node.name == 'Venue 2' }
+        venue2.node.location instanceof Map
+        venue2.node.location.attr_0 == 34.0522        // latitude
+        venue2.node.location.attr_1 == -118.2437      // longitude
+        venue2.node.location.attr_2 == 'Los Angeles'  // city
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_venues")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_location")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should handle filtering on custom enum columns"() {
+        given: "a table with custom enum column and data"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_status AS ENUM ('draft', 'published', 'archived')
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_articles (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(100),
+                status test_status
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.test_articles (title, status) VALUES 
+            ('Article 1', 'draft'),
+            ('Article 2', 'published'),
+            ('Article 3', 'published'),
+            ('Article 4', 'archived')
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("title", "character varying", false, true),
+            new ColumnInfo("status", "test_status", false, true)
+        ]
+        def tableInfo = new TableInfo("test_articles", columns, [], false)
+
+        def selectionSet = Mock(DataFetchingFieldSelectionSet) {
+            getFields() >> [
+                Mock(SelectedField) { getName() >> "id" },
+                Mock(SelectedField) { getName() >> "title" },
+                Mock(SelectedField) { getName() >> "status" }
+            ]
+        }
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getSelectionSet() >> selectionSet
+            getArguments() >> [
+                where: [
+                    status: [eq: 'published']
+                ]
+            ]
+            getGraphQLContext() >> GraphQLContext.newContext().build()
+        }
+
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_articles": tableInfo]
+
+        when: "creating and executing connection data fetcher"
+        def fetcher = dataFetcher.createConnectionDataFetcher("test_articles")
+        def result = fetcher.get(environment)
+
+        then: "should filter by enum value correctly"
+        result != null
+        result.edges != null
+        result.edges.size() == 2
+        result.edges.every { it.node.status == 'published' }
+        result.edges.any { it.node.title == 'Article 2' }
+        result.edges.any { it.node.title == 'Article 3' }
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_articles")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_status")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
 }

@@ -2100,4 +2100,186 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         def ids = results.collect { it.customer_id }
         ids.unique().size() == 3
     }
+
+    // TDD RED PHASE: Custom Type Mutation Tests
+    def "should create records with custom enum values"() {
+        given: "a table with custom enum column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_status AS ENUM ('draft', 'published', 'archived')
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_documents (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(100),
+                status test_status
+            )
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("title", "character varying", false, true),
+            new ColumnInfo("status", "test_status", false, true)
+        ]
+        def tableInfo = new TableInfo("test_documents", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_documents": tableInfo]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                title: "Test Document",
+                status: "published"
+            ]
+        }
+
+        when: "creating a record with custom enum value"
+        def mutationResolver = mutator.createCreateMutationResolver("test_documents")
+        def result = mutationResolver.get(environment)
+
+        then: "should create record with proper enum value"
+        result.title == "Test Document"
+        result.status == "published"
+        result.id != null
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.test_documents WHERE title = ?", "Test Document")
+        dbResults.size() == 1
+        dbResults[0].status == "published"
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_documents")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_status")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should create records with custom composite values"() {
+        given: "a table with custom composite column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_contact AS (
+                email VARCHAR(100),
+                phone VARCHAR(20)
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                contact_info test_contact
+            )
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("name", "character varying", false, true),
+            new ColumnInfo("contact_info", "test_contact", false, true)
+        ]
+        def tableInfo = new TableInfo("test_users", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_users": tableInfo]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                name: "John Doe",
+                contact_info: [
+                    email: "john@example.com",
+                    phone: "555-1234"
+                ]
+            ]
+        }
+
+        when: "creating a record with custom composite value"
+        def mutationResolver = mutator.createCreateMutationResolver("test_users")
+        def result = mutationResolver.get(environment)
+
+        then: "should create record with proper composite value"
+        result.name == "John Doe"
+        result.contact_info != null
+        result.contact_info.toString().contains("john@example.com")
+        result.contact_info.toString().contains("555-1234")
+        result.id != null
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.test_users WHERE name = ?", "John Doe")
+        dbResults.size() == 1
+        // Database should store composite as string representation
+        dbResults[0].contact_info.toString().contains("john@example.com")
+        dbResults[0].contact_info.toString().contains("555-1234")
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_users")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_contact")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should update records with custom enum values"() {
+        given: "a table with custom enum column and existing data"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_priority AS ENUM ('low', 'medium', 'high', 'urgent')
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_issues (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(100),
+                priority test_priority
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.test_issues (title, priority) 
+            VALUES ('Test Issue', 'low')
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("title", "character varying", false, true),
+            new ColumnInfo("priority", "test_priority", false, true)
+        ]
+        def tableInfo = new TableInfo("test_issues", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_issues": tableInfo]
+
+        // Get the created record ID
+        def existingRecord = jdbcTemplate.queryForMap("SELECT * FROM test_schema.test_issues WHERE title = ?", "Test Issue")
+        def recordId = existingRecord.id
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                id: recordId,
+                priority: "urgent"
+            ]
+        }
+
+        when: "updating a record with custom enum value"
+        def mutationResolver = mutator.createUpdateMutationResolver("test_issues")
+        def result = mutationResolver.get(environment)
+
+        then: "should update record with proper enum value"
+        result.title == "Test Issue"
+        result.priority == "urgent"
+        result.id == recordId
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.test_issues WHERE id = ?", recordId)
+        dbResults.size() == 1
+        dbResults[0].priority == "urgent"
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_issues")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_priority")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
 }
