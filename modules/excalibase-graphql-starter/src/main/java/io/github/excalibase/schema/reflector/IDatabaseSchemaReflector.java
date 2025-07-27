@@ -17,70 +17,78 @@
 package io.github.excalibase.schema.reflector;
 
 import io.github.excalibase.model.TableInfo;
+import io.github.excalibase.model.CustomEnumInfo;
+import io.github.excalibase.model.CustomCompositeTypeInfo;
 
 import java.util.Map;
+import java.util.List;
 
 /**
- * Interface for reflecting database schema metadata.
- * 
- * <p>This interface defines the contract for implementations that introspect
- * database schemas to extract table, column, and relationship information.
- * The reflected metadata is used by GraphQL schema generators to create
- * appropriate GraphQL types and resolvers.</p>
- * 
- * <p>Implementations are responsible for:</p>
- * <ul>
- *   <li>Discovering all tables in the configured schema</li>
- *   <li>Extracting column metadata including names, types, and constraints</li>
- *   <li>Identifying foreign key relationships between tables</li>
- *   <li>Filtering tables based on application configuration</li>
- * </ul>
- * 
- * <p>Implementations should be database-specific and annotated with
- * {@link io.github.excalibase.annotation.ExcalibaseService} for proper service lookup.</p>
- *
- * @see TableInfo
- * @see io.github.excalibase.model.ColumnInfo
- * @see io.github.excalibase.model.ForeignKeyInfo
- * @see io.github.excalibase.annotation.ExcalibaseService
+ * Interface for database schema reflection.
+ * Implementations should provide methods to extract table structure, relationships,
+ * and custom types from the database.
  */
 public interface IDatabaseSchemaReflector {
-    
+
     /**
-     * Reflects the database schema and returns table metadata.
-     * 
-     * <p>This method connects to the database and extracts comprehensive metadata
-     * about all tables within the configured schema. The returned map contains
-     * complete information about each table including its columns, data types,
-     * constraints, and foreign key relationships.</p>
-     * 
-     * @return a map where keys are table names and values are TableInfo objects
-     *         containing complete metadata for each table
-     * @throws RuntimeException if database connection fails or schema reflection
-     *                         encounters errors
-     * @throws io.github.excalibase.exception.EmptySchemaException if no tables
-     *                         are found in the configured schema
+     * Reflects the entire database schema and returns a map of table information.
+     * This method should cache results for performance.
+     *
+     * @return A map where keys are table names and values are TableInfo objects
      */
     Map<String, TableInfo> reflectSchema();
-    
+
     /**
-     * Clears the schema cache for all schemas.
-     * This method should be called when database schema changes are detected.
-     * 
-     * <p>Implementations should clear any cached schema metadata to ensure
-     * that subsequent calls to {@link #reflectSchema()} will fetch fresh
-     * data from the database.</p>
+     * Reflects and returns information about custom enum types in the schema.
+     * This includes user-defined enum types with their possible values.
+     *
+     * @return A list of CustomEnumInfo objects representing all custom enum types
+     */
+    List<CustomEnumInfo> getCustomEnumTypes();
+
+    /**
+     * Reflects and returns information about custom enum types in the specified schema.
+     * This includes user-defined enum types with their possible values.
+     *
+     * @param schema The schema name to search for custom enum types
+     * @return A list of CustomEnumInfo objects representing all custom enum types in the schema
+     */
+    List<CustomEnumInfo> getCustomEnumTypes(String schema);
+
+    /**
+     * Reflects and returns information about custom composite types in the schema.
+     * This includes user-defined composite (object) types with their attributes.
+     *
+     * @return A list of CustomCompositeTypeInfo objects representing all custom composite types
+     */
+    List<CustomCompositeTypeInfo> getCustomCompositeTypes();
+
+    /**
+     * Reflects and returns information about custom composite types in the specified schema.
+     * This includes user-defined composite (object) types with their attributes.
+     *
+     * @param schema The schema name to search for custom composite types
+     * @return A list of CustomCompositeTypeInfo objects representing all custom composite types in the schema
+     */
+    List<CustomCompositeTypeInfo> getCustomCompositeTypes(String schema);
+
+    /**
+     * Gets the values for a specific enum type.
+     *
+     * @param enumName The name of the enum type
+     * @param schema The schema name where the enum is defined
+     * @return A list of string values for the enum type
+     */
+    List<String> getEnumValues(String enumName, String schema);
+
+    /**
+     * Clears all cached schema information.
      */
     void clearCache();
-    
+
     /**
-     * Clears the schema cache for a specific schema.
-     * This method should be called when database schema changes are detected for a specific schema.
-     * 
-     * <p>Implementations should clear cached schema metadata for the specified schema
-     * to ensure that subsequent calls to {@link #reflectSchema()} will fetch fresh
-     * data from the database for that schema.</p>
-     * 
+     * Clears cached schema information for a specific schema.
+     *
      * @param schema The schema name to clear from cache
      */
     void clearCache(String schema);
