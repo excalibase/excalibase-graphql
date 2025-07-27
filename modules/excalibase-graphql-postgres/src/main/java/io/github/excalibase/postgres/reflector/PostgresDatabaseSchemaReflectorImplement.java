@@ -7,6 +7,9 @@ import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
+import io.github.excalibase.model.CustomEnumInfo;
+import io.github.excalibase.model.CustomCompositeTypeInfo;
+import io.github.excalibase.model.CompositeTypeAttribute;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -16,6 +19,8 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.ArrayList;
+import java.sql.Array;
 
 @ExcalibaseService(
         serviceName = SupportedDatabaseConstant.POSTGRES
@@ -23,6 +28,8 @@ import java.util.Map;
 public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchemaReflector {
     private final JdbcTemplate jdbcTemplate;
     private final TTLCache<String, Map<String, TableInfo>> schemaCache;
+    private final TTLCache<String, List<CustomEnumInfo>> enumCache;
+    private final TTLCache<String, List<CustomCompositeTypeInfo>> compositeCache;
 
     @Value("${app.allowed-schema}")
     private String allowedSchema;
@@ -35,6 +42,8 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         // Note: schemaTtlMinutes will be injected after construction, so we use default here
         // In a future enhancement, we could use constructor injection or @PostConstruct
         this.schemaCache = new TTLCache<>(Duration.ofMinutes(30)); // Default 30 minutes TTL
+        this.enumCache = new TTLCache<>(Duration.ofMinutes(30));
+        this.compositeCache = new TTLCache<>(Duration.ofMinutes(30));
     }
 
     @Override
@@ -71,6 +80,195 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
 
             return tables;
         });
+    }
+
+    @Override
+    public List<CustomEnumInfo> getCustomEnumTypes() {
+        return enumCache.computeIfAbsent(allowedSchema, schema -> {
+            List<CustomEnumInfo> enumTypes = new ArrayList<>();
+            
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(
+                    SqlConstant.GET_CUSTOM_ENUM_TYPES,
+                    schema
+            );
+            
+            for (Map<String, Object> result : results) {
+                CustomEnumInfo enumInfo = new CustomEnumInfo();
+                enumInfo.setName((String) result.get("enum_name"));
+                enumInfo.setSchema((String) result.get("schema_name"));
+                
+                // Handle PostgreSQL array result
+                Object enumValuesObj = result.get("enum_values");
+                List<String> enumValues = new ArrayList<>();
+                
+                if (enumValuesObj instanceof Array) {
+                    try {
+                        Array array = (Array) enumValuesObj;
+                        String[] values = (String[]) array.getArray();
+                        enumValues = List.of(values);
+                    } catch (Exception e) {
+                        // Log error and continue with empty list
+                        enumValues = new ArrayList<>();
+                    }
+                } else if (enumValuesObj instanceof String) {
+                    // Handle single string case
+                    String arrayString = (String) enumValuesObj;
+                    if (arrayString.startsWith("{") && arrayString.endsWith("}")) {
+                        String content = arrayString.substring(1, arrayString.length() - 1);
+                        if (!content.isEmpty()) {
+                            enumValues = List.of(content.split(","));
+                        }
+                    }
+                }
+                
+                enumInfo.setValues(enumValues);
+                enumTypes.add(enumInfo);
+            }
+            
+            return enumTypes;
+        });
+    }
+
+    @Override
+    public List<CustomEnumInfo> getCustomEnumTypes(String schema) {
+        return enumCache.computeIfAbsent(schema, schemaKey -> {
+            List<CustomEnumInfo> enumTypes = new ArrayList<>();
+            
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(
+                    SqlConstant.GET_CUSTOM_ENUM_TYPES,
+                    schemaKey
+            );
+            
+            for (Map<String, Object> result : results) {
+                CustomEnumInfo enumInfo = new CustomEnumInfo();
+                enumInfo.setName((String) result.get("enum_name"));
+                enumInfo.setSchema((String) result.get("schema_name"));
+                
+                // Handle PostgreSQL array result
+                Object enumValuesObj = result.get("enum_values");
+                List<String> enumValues = new ArrayList<>();
+                
+                if (enumValuesObj instanceof Array) {
+                    try {
+                        Array array = (Array) enumValuesObj;
+                        String[] values = (String[]) array.getArray();
+                        enumValues = List.of(values);
+                    } catch (Exception e) {
+                        // Log error and continue with empty list
+                        enumValues = new ArrayList<>();
+                    }
+                } else if (enumValuesObj instanceof String) {
+                    // Handle single string case
+                    String arrayString = (String) enumValuesObj;
+                    if (arrayString.startsWith("{") && arrayString.endsWith("}")) {
+                        String content = arrayString.substring(1, arrayString.length() - 1);
+                        if (!content.isEmpty()) {
+                            enumValues = List.of(content.split(","));
+                        }
+                    }
+                }
+                
+                enumInfo.setValues(enumValues);
+                enumTypes.add(enumInfo);
+            }
+            
+            return enumTypes;
+        });
+    }
+
+    @Override
+    public List<CustomCompositeTypeInfo> getCustomCompositeTypes() {
+        return compositeCache.computeIfAbsent(allowedSchema, schema -> {
+            List<CustomCompositeTypeInfo> compositeTypes = new ArrayList<>();
+            Map<String, CustomCompositeTypeInfo> typeMap = new HashMap<>();
+            
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(
+                    SqlConstant.GET_CUSTOM_COMPOSITE_TYPES,
+                    schema
+            );
+            
+            for (Map<String, Object> result : results) {
+                String typeName = (String) result.get("type_name");
+                String schemaName = (String) result.get("schema_name");
+                
+                // Get or create composite type info
+                CustomCompositeTypeInfo typeInfo = typeMap.get(typeName);
+                if (typeInfo == null) {
+                    typeInfo = new CustomCompositeTypeInfo();
+                    typeInfo.setName(typeName);
+                    typeInfo.setSchema(schemaName);
+                    typeMap.put(typeName, typeInfo);
+                    compositeTypes.add(typeInfo);
+                }
+                
+                // Add attribute
+                CompositeTypeAttribute attribute = new CompositeTypeAttribute();
+                attribute.setName((String) result.get("attribute_name"));
+                attribute.setType((String) result.get("attribute_type"));
+                attribute.setOrder((Integer) result.get("attribute_order"));
+                attribute.setNullable("YES".equals(result.get("is_nullable")));
+                
+                typeInfo.getAttributes().add(attribute);
+            }
+            
+            return compositeTypes;
+        });
+    }
+
+    @Override
+    public List<CustomCompositeTypeInfo> getCustomCompositeTypes(String schema) {
+        return compositeCache.computeIfAbsent(schema, schemaKey -> {
+            List<CustomCompositeTypeInfo> compositeTypes = new ArrayList<>();
+            Map<String, CustomCompositeTypeInfo> typeMap = new HashMap<>();
+            
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(
+                    SqlConstant.GET_CUSTOM_COMPOSITE_TYPES,
+                    schemaKey
+            );
+            
+            for (Map<String, Object> result : results) {
+                String typeName = (String) result.get("type_name");
+                String schemaName = (String) result.get("schema_name");
+                
+                // Get or create composite type info
+                CustomCompositeTypeInfo typeInfo = typeMap.get(typeName);
+                if (typeInfo == null) {
+                    typeInfo = new CustomCompositeTypeInfo();
+                    typeInfo.setName(typeName);
+                    typeInfo.setSchema(schemaName);
+                    typeMap.put(typeName, typeInfo);
+                    compositeTypes.add(typeInfo);
+                }
+                
+                // Add attribute
+                CompositeTypeAttribute attribute = new CompositeTypeAttribute();
+                attribute.setName((String) result.get("attribute_name"));
+                attribute.setType((String) result.get("attribute_type"));
+                attribute.setOrder((Integer) result.get("attribute_order"));
+                attribute.setNullable("YES".equals(result.get("is_nullable")));
+                
+                typeInfo.getAttributes().add(attribute);
+            }
+            
+            return compositeTypes;
+        });
+    }
+
+    @Override
+    public List<String> getEnumValues(String enumName, String schema) {
+        List<String> values = new ArrayList<>();
+        
+        List<Map<String, Object>> results = jdbcTemplate.queryForList(
+                SqlConstant.GET_ENUM_VALUES_FOR_TYPE,
+                enumName,
+                schema
+        );
+        
+        for (Map<String, Object> result : results) {
+            values.add((String) result.get("value"));
+        }
+        
+        return values;
     }
 
     /**
@@ -134,11 +332,15 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     @Override
     public void clearCache() {
         schemaCache.clear();
+        enumCache.clear();
+        compositeCache.clear();
     }
 
     @Override
     public void clearCache(String schema) {
         schemaCache.remove(schema);
+        enumCache.remove(schema);
+        compositeCache.remove(schema);
     }
     
     /**
@@ -147,7 +349,9 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
      * @return cache statistics as a string
      */
     public String getCacheStats() {
-        return schemaCache.getStats();
+        return "Schema: " + schemaCache.getStats() + 
+               ", Enum: " + enumCache.getStats() + 
+               ", Composite: " + compositeCache.getStats();
     }
     
     /**
@@ -157,5 +361,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     @PreDestroy
     public void destroy() {
         schemaCache.shutdown();
+        enumCache.shutdown();
+        compositeCache.shutdown();
     }
 }
