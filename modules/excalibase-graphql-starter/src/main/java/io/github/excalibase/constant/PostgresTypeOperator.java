@@ -48,7 +48,7 @@ public class PostgresTypeOperator {
     }
     
     /**
-     * Checks if the given type is a JSON type
+     * Checks if the given type is a JSON type (JSON or JSONB)
      * @param type the database type to check
      * @return true if it's a JSON type
      */
@@ -83,11 +83,11 @@ public class PostgresTypeOperator {
     }
     
     /**
-     * Checks if the given type is a binary/network type
+     * Checks if the given type is a network type (INET, CIDR, etc.)
      * @param type the database type to check
-     * @return true if it's a binary or network type
+     * @return true if it's a network type
      */
-    public static boolean isBinaryOrNetworkType(String type) {
+    public static boolean isNetworkType(String type) {
         if (type == null) return false;
         String lowerType = type.toLowerCase();
         return lowerType.contains(ColumnTypeConstant.BYTEA) || lowerType.contains(ColumnTypeConstant.INET) ||
@@ -125,5 +125,75 @@ public class PostgresTypeOperator {
     public static boolean isArrayType(String type) {
         if (type == null) return false;
         return type.contains(ColumnTypeConstant.ARRAY_SUFFIX);
+    }
+
+    /**
+     * Checks if the given type is a custom enum type
+     * Note: This is a heuristic check - may need to be enhanced with actual enum type lookup
+     * @param type the database type to check
+     * @return true if it appears to be a custom enum type
+     */
+    public static boolean isCustomEnumType(String type) {
+        if (type == null || type.trim().isEmpty()) return false;
+        String lowerType = type.toLowerCase();
+        
+        // If it's a known built-in type, it's not a custom enum
+        if (isIntegerType(type) || isFloatingPointType(type) || isBooleanType(type) ||
+            isJsonType(type) || isDateTimeType(type) || isUuidType(type) ||
+            isNetworkType(type) || isBitType(type) || isXmlType(type) ||
+            lowerType.contains("varchar") || lowerType.contains("text") ||
+            lowerType.contains("char")) {
+            return false;
+        }
+        
+        // If it's an array, check the base type
+        if (isArrayType(type)) {
+            String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
+            return isCustomEnumType(baseType);
+        }
+        
+        // If it doesn't match any built-in types, it might be custom
+        return true;
+    }
+
+    /**
+     * Checks if the given type is a custom composite type
+     * Note: This is a heuristic check - may need to be enhanced with actual composite type lookup
+     * @param type the database type to check
+     * @return true if it appears to be a custom composite type
+     */
+    public static boolean isCustomCompositeType(String type) {
+        if (type == null || type.trim().isEmpty()) return false;
+        String lowerType = type.toLowerCase();
+        
+        // If it's a known built-in type, it's not a custom composite
+        if (isIntegerType(type) || isFloatingPointType(type) || isBooleanType(type) ||
+            isJsonType(type) || isDateTimeType(type) || isUuidType(type) ||
+            isNetworkType(type) || isBitType(type) || isXmlType(type) ||
+            lowerType.contains("varchar") || lowerType.contains("text") ||
+            lowerType.contains("char")) {
+            return false;
+        }
+        
+        // If it's an array, check the base type
+        if (isArrayType(type)) {
+            String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
+            return isCustomCompositeType(baseType);
+        }
+        
+        // If it doesn't match any built-in types, it might be custom
+        return true;
+    }
+
+    /**
+     * Gets the base type from an array type
+     * @param arrayType the array type (e.g., "integer[]")
+     * @return the base type (e.g., "integer")
+     */
+    public static String getBaseArrayType(String arrayType) {
+        if (arrayType == null || !isArrayType(arrayType)) {
+            return arrayType;
+        }
+        return arrayType.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
     }
 } 

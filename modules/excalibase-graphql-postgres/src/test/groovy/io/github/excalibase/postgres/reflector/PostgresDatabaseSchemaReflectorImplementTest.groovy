@@ -524,4 +524,233 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
         monthlySalesView.columns.find { it.name == "product" }.type == "character varying(100)"
         monthlySalesView.columns.find { it.name == "total_amount" }.type == "numeric"
     }
+
+    def "should reflect custom enum types in schema"() {
+        given: "a table with custom enum columns"
+        def createCustomEnumTypes = """
+            CREATE TYPE test_status AS ENUM ('active', 'inactive', 'pending');
+            CREATE TYPE test_priority AS ENUM ('low', 'medium', 'high');
+        """
+        
+        def createTableWithEnums = """
+            CREATE TABLE test_enum_table (
+                id SERIAL PRIMARY KEY,
+                status test_status DEFAULT 'pending',
+                priority test_priority DEFAULT 'medium',
+                name VARCHAR(100)
+            )
+        """
+        
+        jdbcTemplate.execute(createCustomEnumTypes)
+        jdbcTemplate.execute(createTableWithEnums)
+        
+        // Set schema to public for this test since we create types in public schema
+        schemaReflector.allowedSchema = "public"
+        
+        when: "reflecting the schema"
+        def schema = schemaReflector.reflectSchema()
+        
+        then: "should detect custom enum types"
+        def enumTypes = schemaReflector.getCustomEnumTypes("public")
+        enumTypes.size() >= 2
+        
+        and: "should detect test_status enum"
+        def statusEnum = enumTypes.find { it.name == 'test_status' }
+        statusEnum != null
+        statusEnum.values == ['active', 'inactive', 'pending']
+        
+        and: "should detect test_priority enum"
+        def priorityEnum = enumTypes.find { it.name == 'test_priority' }  
+        priorityEnum != null
+        priorityEnum.values == ['low', 'medium', 'high']
+        
+        and: "table columns should reference enum types"
+        def tableInfo = schema['test_enum_table']
+        tableInfo != null
+        def statusColumn = tableInfo.columns.find { it.name == 'status' }
+        statusColumn != null
+        statusColumn.type == 'test_status'
+        def priorityColumn = tableInfo.columns.find { it.name == 'priority' }
+        priorityColumn != null
+        priorityColumn.type == 'test_priority'
+        
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_enum_table")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_status")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_priority")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should reflect custom composite object types in schema"() {
+        given: "custom composite types and table using them"
+        def createCompositeTypes = """
+            CREATE TYPE test_address AS (
+                street VARCHAR(100),
+                city VARCHAR(50), 
+                postal_code VARCHAR(20)
+            );
+            
+            CREATE TYPE test_contact AS (
+                email VARCHAR(100),
+                phone VARCHAR(20)
+            );
+        """
+        
+        def createTableWithComposites = """
+            CREATE TABLE test_composite_table (
+                id SERIAL PRIMARY KEY,
+                home_address test_address,
+                work_address test_address,
+                contact_info test_contact,
+                name VARCHAR(100)
+            )
+        """
+        
+        jdbcTemplate.execute(createCompositeTypes)
+        jdbcTemplate.execute(createTableWithComposites)
+        
+        // Set schema to public for this test since we create types in public schema
+        schemaReflector.allowedSchema = "public"
+        
+        when: "reflecting the schema"
+        def schema = schemaReflector.reflectSchema()
+        
+        then: "should detect custom composite types"
+        def compositeTypes = schemaReflector.getCustomCompositeTypes("public")
+        compositeTypes.size() >= 2
+        
+        and: "should detect test_address composite type"
+        def addressType = compositeTypes.find { it.name == 'test_address' }
+        addressType != null
+        addressType.attributes.size() == 3
+        addressType.attributes.find { it.name == 'street' && it.type.startsWith('character varying') }
+        addressType.attributes.find { it.name == 'city' && it.type.startsWith('character varying') }
+        addressType.attributes.find { it.name == 'postal_code' && it.type.startsWith('character varying') }
+        
+        and: "should detect test_contact composite type"
+        def contactType = compositeTypes.find { it.name == 'test_contact' }
+        contactType != null 
+        contactType.attributes.size() == 2
+        contactType.attributes.find { it.name == 'email' && it.type.startsWith('character varying') }
+        contactType.attributes.find { it.name == 'phone' && it.type.startsWith('character varying') }
+        
+        and: "table columns should reference composite types"
+        def tableInfo = schema['test_composite_table']
+        tableInfo != null
+        def homeAddressColumn = tableInfo.columns.find { it.name == 'home_address' }
+        homeAddressColumn.type == 'test_address'
+        def workAddressColumn = tableInfo.columns.find { it.name == 'work_address' }
+        workAddressColumn.type == 'test_address'
+        def contactColumn = tableInfo.columns.find { it.name == 'contact_info' }
+        contactColumn.type == 'test_contact'
+        
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_composite_table")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_address")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_contact")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    // TODO: Future enhancement - implement array support for custom types
+    /*
+    def "should handle arrays of custom enum types"() {
+        given: "a custom enum and table with enum array column"
+        def createEnumType = """
+            CREATE TYPE test_role AS ENUM ('admin', 'user', 'guest');
+        """
+        
+        def createTableWithEnumArray = """
+            CREATE TABLE test_enum_array_table (
+                id SERIAL PRIMARY KEY,
+                roles test_role[],
+                primary_role test_role DEFAULT 'user'
+            )
+        """
+        
+        jdbcTemplate.execute(createEnumType)
+        jdbcTemplate.execute(createTableWithEnumArray)
+        
+        when: "reflecting the schema"
+        def schema = schemaReflector.reflectSchema()
+        
+        then: "should detect enum array column"
+        def tableInfo = schema['test_enum_array_table']
+        tableInfo != null
+        def rolesColumn = tableInfo.columns.find { it.name == 'roles' }
+        rolesColumn.type == 'test_role[]'
+        def primaryRoleColumn = tableInfo.columns.find { it.name == 'primary_role' }
+        primaryRoleColumn.type == 'test_role'
+        
+        and: "enum types should be detected"
+        def enumTypes = schemaReflector.getCustomEnumTypes()
+        def roleEnum = enumTypes.find { it.name == 'test_role' }
+        roleEnum != null
+        roleEnum.values == ['admin', 'user', 'guest']
+        
+                cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_enum_array_table")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_role")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+    */
+
+    // TODO: Future enhancement - implement array support for custom types
+    /*
+    def "should handle arrays of custom composite types"() {
+        given: "a custom composite type and table with composite array column"
+        def createCompositeType = """
+            CREATE TYPE test_phone AS (
+                number VARCHAR(20),
+                type VARCHAR(10)
+            );
+        """
+        
+        def createTableWithCompositeArray = """
+            CREATE TABLE test_composite_array_table (
+                id SERIAL PRIMARY KEY,
+                phone_numbers test_phone[],
+                primary_phone test_phone
+            )
+        """
+        
+        jdbcTemplate.execute(createCompositeType)
+        jdbcTemplate.execute(createTableWithCompositeArray)
+        
+        when: "reflecting the schema"
+        def schema = schemaReflector.reflectSchema()
+        
+        then: "should detect composite array column"
+        def tableInfo = schema['test_composite_array_table']
+        tableInfo != null
+        def phonesColumn = tableInfo.columns.find { it.name == 'phone_numbers' }
+        phonesColumn.type == 'test_phone[]'
+        def primaryPhoneColumn = tableInfo.columns.find { it.name == 'primary_phone' }
+        primaryPhoneColumn.type == 'test_phone'
+        
+        and: "composite types should be detected"
+        def compositeTypes = schemaReflector.getCustomCompositeTypes()
+        def phoneType = compositeTypes.find { it.name == 'test_phone' }
+        phoneType != null
+        phoneType.attributes.size() == 2
+        phoneType.attributes.find { it.name == 'number' && it.type == 'varchar' }
+        phoneType.attributes.find { it.name == 'type' && it.type == 'varchar' }
+        
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_composite_array_table")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_phone")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+    */
 }

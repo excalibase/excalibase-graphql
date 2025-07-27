@@ -9,6 +9,38 @@ CREATE SCHEMA IF NOT EXISTS hana;
 SET search_path TO hana;
 
 -- ====================
+-- CUSTOM TYPES (ENUM AND COMPOSITE)
+-- ====================
+
+-- Custom enum types for testing
+CREATE TYPE IF NOT EXISTS order_status AS ENUM ('pending', 'processing', 'shipped', 'delivered', 'cancelled');
+CREATE TYPE IF NOT EXISTS user_role AS ENUM ('admin', 'moderator', 'user', 'guest');
+CREATE TYPE IF NOT EXISTS priority_level AS ENUM ('low', 'medium', 'high', 'critical');
+
+-- Custom composite object types for testing
+CREATE TYPE IF NOT EXISTS address AS (
+    street VARCHAR(100),
+    city VARCHAR(50),
+    state VARCHAR(50),
+    postal_code VARCHAR(20),
+    country VARCHAR(50)
+);
+
+CREATE TYPE IF NOT EXISTS contact_info AS (
+    email VARCHAR(100),
+    phone VARCHAR(20),
+    website VARCHAR(100)
+);
+
+CREATE TYPE IF NOT EXISTS product_dimensions AS (
+    length DECIMAL(10,2),
+    width DECIMAL(10,2),
+    height DECIMAL(10,2),
+    weight DECIMAL(10,2),
+    units VARCHAR(10)
+);
+
+-- ====================
 -- DEMO TABLES (Blog-style for demos and documentation)
 -- ====================
 
@@ -19,6 +51,9 @@ CREATE TABLE IF NOT EXISTS users (
     email VARCHAR(100) UNIQUE NOT NULL,
     first_name VARCHAR(50),
     last_name VARCHAR(50),
+    role user_role DEFAULT 'user',
+    shipping_address address,
+    contact contact_info,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -29,6 +64,7 @@ CREATE TABLE IF NOT EXISTS posts (
     title VARCHAR(200) NOT NULL,
     content TEXT,
     author_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    priority priority_level DEFAULT 'medium',
     published BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -43,18 +79,24 @@ CREATE TABLE IF NOT EXISTS comments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Insert demo data
-INSERT INTO users (username, email, first_name, last_name) VALUES
-    ('john_doe', 'john@example.com', 'John', 'Doe'),
-    ('jane_smith', 'jane@example.com', 'Jane', 'Smith'),
-    ('bob_wilson', 'bob@example.com', 'Bob', 'Wilson')
+-- Insert demo data with custom types
+INSERT INTO users (username, email, first_name, last_name, role, shipping_address, contact) VALUES
+    ('john_doe', 'john@example.com', 'John', 'Doe', 'user', 
+     ROW('123 Main St', 'New York', 'NY', '10001', 'USA')::address,
+     ROW('john@example.com', '+1-555-0123', 'https://johndoe.com')::contact_info),
+    ('jane_smith', 'jane@example.com', 'Jane', 'Smith', 'moderator',
+     ROW('456 Oak Ave', 'Los Angeles', 'CA', '90210', 'USA')::address,
+     ROW('jane@example.com', '+1-555-0456', 'https://janesmith.blog')::contact_info),
+    ('bob_wilson', 'bob@example.com', 'Bob', 'Wilson', 'admin',
+     ROW('789 Pine St', 'Seattle', 'WA', '98101', 'USA')::address,
+     ROW('bob@example.com', '+1-555-0789', null)::contact_info)
 ON CONFLICT (username) DO NOTHING;
 
-INSERT INTO posts (title, content, author_id, published) VALUES
-    ('Introduction to GraphQL', 'GraphQL is a query language for APIs that gives clients the power to ask for exactly what they need...', 1, true),
-    ('Getting Started with Docker', 'Docker is a containerization platform that makes it easy to package and deploy applications...', 2, true),
-    ('Spring Boot Best Practices', 'Here are some best practices for Spring Boot development: use profiles, externalize configuration...', 1, false),
-    ('Database Design Patterns', 'When designing databases, consider these patterns: normalization, indexing strategies, foreign keys...', 3, true)
+INSERT INTO posts (title, content, author_id, priority, published) VALUES
+    ('Introduction to GraphQL', 'GraphQL is a query language for APIs that gives clients the power to ask for exactly what they need...', 1, 'high', true),
+    ('Getting Started with Docker', 'Docker is a containerization platform that makes it easy to package and deploy applications...', 2, 'medium', true),
+    ('Spring Boot Best Practices', 'Here are some best practices for Spring Boot development: use profiles, externalize configuration...', 1, 'low', false),
+    ('Database Design Patterns', 'When designing databases, consider these patterns: normalization, indexing strategies, foreign keys...', 3, 'critical', true)
 ON CONFLICT DO NOTHING;
 
 INSERT INTO comments (content, post_id, author_id) VALUES
@@ -180,17 +222,121 @@ CREATE TABLE IF NOT EXISTS orders (
     customer_id INTEGER REFERENCES customer(customer_id),
     order_date DATE NOT NULL DEFAULT CURRENT_DATE,
     total_amount NUMERIC(10,2) NOT NULL,
-    status VARCHAR(20) DEFAULT 'pending'
+    status order_status DEFAULT 'pending',
+    shipping_address address,
+    billing_address address
 );
 
--- Insert sample orders
-INSERT INTO orders (order_id, customer_id, order_date, total_amount, status) VALUES
-(1, 1, '2023-01-15', 299.99, 'completed'),
-(2, 1, '2023-02-01', 149.50, 'completed'),
-(3, 2, '2023-01-20', 89.99, 'pending'),
-(4, 3, '2023-01-25', 199.99, 'shipped'),
-(5, 5, '2023-02-10', 349.99, 'completed')
+-- Insert sample orders with custom types
+INSERT INTO orders (order_id, customer_id, order_date, total_amount, status, shipping_address, billing_address) VALUES
+(1, 1, '2023-01-15', 299.99, 'delivered',
+ ROW('123 Delivery St', 'New York', 'NY', '10001', 'USA')::address,
+ ROW('123 Billing Ave', 'New York', 'NY', '10001', 'USA')::address),
+(2, 1, '2023-02-01', 149.50, 'shipped',
+ ROW('123 Delivery St', 'New York', 'NY', '10001', 'USA')::address,
+ ROW('123 Billing Ave', 'New York', 'NY', '10001', 'USA')::address),
+(3, 2, '2023-01-20', 89.99, 'processing',
+ ROW('456 Ship St', 'Los Angeles', 'CA', '90210', 'USA')::address,
+ ROW('456 Bill Ave', 'Los Angeles', 'CA', '90210', 'USA')::address),
+(4, 3, '2023-01-25', 199.99, 'pending',
+ ROW('789 Receive Rd', 'Seattle', 'WA', '98101', 'USA')::address,
+ ROW('789 Pay St', 'Seattle', 'WA', '98101', 'USA')::address),
+(5, 5, '2023-02-10', 349.99, 'cancelled',
+ ROW('555 Cancel St', 'Chicago', 'IL', '60601', 'USA')::address,
+ ROW('555 Refund Ave', 'Chicago', 'IL', '60601', 'USA')::address)
 ON CONFLICT (order_id) DO NOTHING;
+
+-- Products table demonstrating comprehensive custom type usage
+CREATE TABLE IF NOT EXISTS products (
+    product_id SERIAL PRIMARY KEY,
+    name VARCHAR(200) NOT NULL,
+    description TEXT,
+    price NUMERIC(10,2) NOT NULL,
+    category VARCHAR(50),
+    priority priority_level DEFAULT 'medium',
+    dimensions product_dimensions,
+    supplier_contact contact_info,
+    origin_address address,
+    status order_status DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert sample products with all custom types
+INSERT INTO products (product_id, name, description, price, category, priority, dimensions, supplier_contact, origin_address, status) VALUES
+(1, 'Premium Laptop', 'High-performance laptop for developers', 1299.99, 'Electronics', 'high',
+ ROW(35.56, 24.13, 2.03, 1.8, 'cm')::product_dimensions,
+ ROW('supplier@techcorp.com', '+1-800-TECH', 'https://techcorp.com')::contact_info,
+ ROW('100 Tech Park', 'Cupertino', 'CA', '95014', 'USA')::address,
+ 'delivered'),
+(2, 'Ergonomic Mouse', 'Wireless ergonomic mouse with precision tracking', 79.99, 'Electronics', 'medium',
+ ROW(12.7, 7.6, 4.1, 0.15, 'cm')::product_dimensions,
+ ROW('orders@peripherals.com', '+1-555-MOUSE', 'https://peripherals.com')::contact_info,
+ ROW('200 Device Blvd', 'Austin', 'TX', '73301', 'USA')::address,
+ 'shipped'),
+(3, 'Mechanical Keyboard', 'RGB backlit mechanical keyboard', 199.99, 'Electronics', 'low',
+ ROW(43.18, 13.97, 4.32, 1.2, 'cm')::product_dimensions,
+ ROW('support@keyboards.com', '+1-555-KEYS', null)::contact_info,
+ ROW('300 Key Street', 'Portland', 'OR', '97201', 'USA')::address,
+ 'processing'),
+(4, 'Desk Organizer', 'Bamboo desk organizer with multiple compartments', 45.50, 'Office', 'critical',
+ ROW(30.0, 20.0, 8.0, 0.8, 'cm')::product_dimensions,
+ ROW('sales@bamboo.com', '+1-555-WOOD', 'https://bamboo.com')::contact_info,
+ ROW('400 Green Way', 'Portland', 'OR', '97202', 'USA')::address,
+ 'pending')
+ON CONFLICT (product_id) DO NOTHING;
+
+-- Custom types test table for comprehensive enum and composite type testing
+CREATE TABLE IF NOT EXISTS custom_types_test (
+    id SERIAL PRIMARY KEY,
+    -- All enum types
+    status order_status DEFAULT 'pending',
+    role user_role DEFAULT 'user', 
+    priority priority_level DEFAULT 'medium',
+    -- All composite types
+    main_address address,
+    contact_details contact_info,
+    product_specs product_dimensions,
+    -- Mixed usage
+    backup_addresses address[],  -- Array of composite type
+    allowed_roles user_role[],   -- Array of enum type
+    -- Additional fields
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert comprehensive test data
+INSERT INTO custom_types_test (
+    id, status, role, priority, main_address, contact_details, product_specs,
+    backup_addresses, allowed_roles, name
+) VALUES
+(1, 'pending', 'admin', 'critical',
+ ROW('123 Test St', 'Test City', 'TS', '12345', 'TestLand')::address,
+ ROW('test@example.com', '+1-555-TEST', 'https://test.com')::contact_info,
+ ROW(10.5, 20.3, 5.1, 2.5, 'cm')::product_dimensions,
+ ARRAY[
+     ROW('456 Backup Ave', 'Backup City', 'BC', '67890', 'BackupLand')::address,
+     ROW('789 Fallback Rd', 'Fallback Town', 'FT', '54321', 'FallbackNation')::address
+ ],
+ ARRAY['admin', 'moderator']::user_role[],
+ 'Comprehensive Test Record 1'),
+(2, 'delivered', 'moderator', 'high',
+ ROW('999 Final St', 'Final City', 'FC', '99999', 'FinalCountry')::address,
+ ROW('final@test.com', '+1-999-FINAL', null)::contact_info,
+ ROW(50.0, 30.0, 15.0, 5.0, 'inches')::product_dimensions,
+ ARRAY[
+     ROW('111 Alt St', 'Alt City', 'AC', '11111', 'AltWorld')::address
+ ],
+ ARRAY['moderator', 'user', 'guest']::user_role[],
+ 'Advanced Test Record 2'),
+(3, 'shipped', 'user', 'low',
+ ROW('777 User Blvd', 'User Town', 'UT', '77777', 'UserNation')::address,
+ ROW('user@domain.com', '+1-777-USER', 'https://usersite.org')::contact_info,
+ ROW(100.0, 200.0, 300.0, 50.0, 'mm')::product_dimensions,
+ ARRAY[]::address[],  -- Empty array
+ ARRAY['user']::user_role[],
+ 'Basic Test Record 3')
+ON CONFLICT (id) DO NOTHING;
 
 -- ====================
 -- VIEWS AND MATERIALIZED VIEWS
@@ -240,6 +386,8 @@ SELECT setval('comments_id_seq', 4, true);
 SELECT setval('customer_customer_id_seq', 12, true);
 SELECT setval('enhanced_types_id_seq', 3, true);
 SELECT setval('orders_order_id_seq', 5, true);
+SELECT setval('products_product_id_seq', 4, true);
+SELECT setval('custom_types_test_id_seq', 3, true);
 
 -- ====================
 -- PERMISSIONS
@@ -283,6 +431,8 @@ CREATE INDEX IF NOT EXISTS idx_customer_email ON customer(email);
 CREATE INDEX IF NOT EXISTS idx_customer_active ON customer(active);
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_enhanced_types_jsonb ON enhanced_types USING GIN(jsonb_col);
+CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+CREATE INDEX IF NOT EXISTS idx_custom_types_test_name ON custom_types_test(name);
 
 -- ====================
 -- REFRESH MATERIALIZED VIEWS
@@ -298,6 +448,8 @@ ANALYZE comments;
 ANALYZE customer;
 ANALYZE enhanced_types;
 ANALYZE orders;
+ANALYZE products;
+ANALYZE custom_types_test;
 
 -- ====================
 -- INITIALIZATION SUMMARY
@@ -316,6 +468,8 @@ BEGIN
     RAISE NOTICE '  - customer: % rows', (SELECT count(*) FROM customer);
     RAISE NOTICE '  - enhanced_types: % rows', (SELECT count(*) FROM enhanced_types);
     RAISE NOTICE '  - orders: % rows', (SELECT count(*) FROM orders);
+    RAISE NOTICE '  - products: % rows', (SELECT count(*) FROM products);
+    RAISE NOTICE '  - custom_types_test: % rows', (SELECT count(*) FROM custom_types_test);
     RAISE NOTICE '';
     RAISE NOTICE 'VIEWS:';
     RAISE NOTICE '  - active_customers: % rows', (SELECT count(*) FROM active_customers);

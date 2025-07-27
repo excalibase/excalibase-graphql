@@ -508,6 +508,10 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return ":" + field + "::xml";
                    } else if (columnType.contains("bytea")) {
                        return ":" + field + "::bytea";
+                   } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                       return ":" + field + "::" + columnType;
+                   } else if (PostgresTypeOperator.isCustomCompositeType(columnType)) {
+                       return ":" + field + "::" + columnType;
                    } else {
                        return ":" + field;
                    }
@@ -535,6 +539,10 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return quoteIdentifier(field) + " = :" + field + "::xml";
                    } else if (columnType.contains("bytea")) {
                        return quoteIdentifier(field) + " = :" + field + "::bytea";
+                   } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (PostgresTypeOperator.isCustomCompositeType(columnType)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
                    } else {
                        return quoteIdentifier(field) + " = :" + field;
                    }
@@ -554,6 +562,8 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return quoteIdentifier(field) + " = :" + field + "::xml";
                    } else if (columnType.contains("bytea")) {
                        return quoteIdentifier(field) + " = :" + field + "::bytea";
+                   } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
                    } else {
                        return quoteIdentifier(field) + " = :" + field;
                    }
@@ -644,6 +654,13 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             // Handle array types
             if (PostgresTypeOperator.isArrayType(columnType)) {
                 handleArrayParameter(paramSource, paramName, value, columnType);
+                return;
+            }
+
+            // Handle custom composite types
+            if (PostgresTypeOperator.isCustomCompositeType(columnType) && value instanceof Map) {
+                String compositeValue = convertMapToPostgresComposite((Map<String, Object>) value);
+                paramSource.addValue(paramName, compositeValue);
                 return;
             }
 
@@ -884,5 +901,32 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         }
         
         return null;
+    }
+
+    /**
+     * Converts a Map to PostgreSQL composite type format
+     * E.g., {email: "john@example.com", phone: "555-1234"} -> "(john@example.com,555-1234)"
+     */
+    private String convertMapToPostgresComposite(Map<String, Object> compositeMap) {
+        if (compositeMap == null || compositeMap.isEmpty()) {
+            return null;
+        }
+
+        // Convert map values to a comma-separated string wrapped in parentheses
+        String values = compositeMap.values().stream()
+                .map(value -> {
+                    if (value == null) {
+                        return "";
+                    }
+                    String strValue = value.toString();
+                    // Escape quotes and wrap in quotes if needed
+                    if (strValue.contains(",") || strValue.contains("\"") || strValue.contains("(") || strValue.contains(")")) {
+                        return "\"" + strValue.replace("\"", "\\\"") + "\"";
+                    }
+                    return strValue;
+                })
+                .collect(Collectors.joining(","));
+
+        return "(" + values + ")";
     }
 } 
