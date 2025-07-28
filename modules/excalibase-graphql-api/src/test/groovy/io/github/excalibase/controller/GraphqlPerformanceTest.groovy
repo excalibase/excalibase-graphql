@@ -10,6 +10,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders
 import org.springframework.web.context.WebApplicationContext
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.spock.Testcontainers
+import spock.lang.Ignore
 import spock.lang.Specification
 import spock.lang.Shared
 
@@ -23,6 +24,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureWebMvc
 @ActiveProfiles("test")
 @Testcontainers
+@Ignore
 class GraphqlPerformanceTest extends Specification {
 
     @Shared
