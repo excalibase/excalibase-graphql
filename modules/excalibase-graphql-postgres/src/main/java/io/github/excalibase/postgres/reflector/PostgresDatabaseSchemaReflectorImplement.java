@@ -2,7 +2,7 @@ package io.github.excalibase.postgres.reflector;
 
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.cache.TTLCache;
-import io.github.excalibase.constant.SqlConstant;
+import io.github.excalibase.postgres.constant.PostgresSqlConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
@@ -54,7 +54,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
 
             // Get tables
             List<String> tableNames = jdbcTemplate.queryForList(
-                    SqlConstant.GET_TABLE_NAME,
+                    PostgresSqlConstant.GET_TABLE_NAME,
                     String.class,
                     schema
             );
@@ -67,7 +67,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
 
             // Get views (including materialized views)
             List<Map<String, Object>> viewResults = jdbcTemplate.queryForList(
-                    SqlConstant.GET_VIEW_NAME,
+                    PostgresSqlConstant.GET_VIEW_NAME,
                     schema, schema  // Pass schema twice for UNION query
             );
 
@@ -88,7 +88,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
             List<CustomEnumInfo> enumTypes = new ArrayList<>();
             
             List<Map<String, Object>> results = jdbcTemplate.queryForList(
-                    SqlConstant.GET_CUSTOM_ENUM_TYPES,
+                    PostgresSqlConstant.GET_CUSTOM_ENUM_TYPES,
                     schema
             );
             
@@ -135,7 +135,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
             List<CustomEnumInfo> enumTypes = new ArrayList<>();
             
             List<Map<String, Object>> results = jdbcTemplate.queryForList(
-                    SqlConstant.GET_CUSTOM_ENUM_TYPES,
+                    PostgresSqlConstant.GET_CUSTOM_ENUM_TYPES,
                     schemaKey
             );
             
@@ -183,7 +183,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
             Map<String, CustomCompositeTypeInfo> typeMap = new HashMap<>();
             
             List<Map<String, Object>> results = jdbcTemplate.queryForList(
-                    SqlConstant.GET_CUSTOM_COMPOSITE_TYPES,
+                    PostgresSqlConstant.GET_CUSTOM_COMPOSITE_TYPES,
                     schema
             );
             
@@ -222,7 +222,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
             Map<String, CustomCompositeTypeInfo> typeMap = new HashMap<>();
             
             List<Map<String, Object>> results = jdbcTemplate.queryForList(
-                    SqlConstant.GET_CUSTOM_COMPOSITE_TYPES,
+                    PostgresSqlConstant.GET_CUSTOM_COMPOSITE_TYPES,
                     schemaKey
             );
             
@@ -259,7 +259,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         List<String> values = new ArrayList<>();
         
         List<Map<String, Object>> results = jdbcTemplate.queryForList(
-                SqlConstant.GET_ENUM_VALUES_FOR_TYPE,
+                PostgresSqlConstant.GET_ENUM_VALUES_FOR_TYPE,
                 enumName,
                 schema
         );
@@ -286,7 +286,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
 
         // Get columns - use view-specific query for views, regular query for tables
         List<Map<String, Object>> columns = jdbcTemplate.queryForList(
-                isView ? SqlConstant.GET_VIEW_COLUMNS : SqlConstant.GET_COLUMNS,
+                isView ? PostgresSqlConstant.GET_VIEW_COLUMNS : PostgresSqlConstant.GET_COLUMNS,
                 name, schema
         );
 
@@ -302,7 +302,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         if (!isView) {
             // Get primary keys using pg_catalog
             List<String> primaryKeys = jdbcTemplate.queryForList(
-                    SqlConstant.GET_PRIMARY_KEYS,
+                    PostgresSqlConstant.GET_PRIMARY_KEYS,
                     String.class,
                     name, schema
             );
@@ -313,7 +313,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
 
             // Get foreign keys using pg_catalog
             List<Map<String, Object>> foreignKeys = jdbcTemplate.queryForList(
-                    SqlConstant.GET_FOREIGN_KEYS,
+                    PostgresSqlConstant.GET_FOREIGN_KEYS,
                     name, schema
             );
 

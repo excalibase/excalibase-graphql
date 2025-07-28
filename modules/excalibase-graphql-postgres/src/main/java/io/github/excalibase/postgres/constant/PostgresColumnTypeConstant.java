@@ -1,10 +1,10 @@
-package io.github.excalibase.constant;
+package io.github.excalibase.postgres.constant;
 
 /**
  * SQL syntax constants for query building.
  */
-public class SQLSyntax {
-    private SQLSyntax() {
+public class PostgresColumnTypeConstant {
+    private PostgresColumnTypeConstant() {
     }
 
     public static final String FROM_WITH_SPACE = " FROM ";

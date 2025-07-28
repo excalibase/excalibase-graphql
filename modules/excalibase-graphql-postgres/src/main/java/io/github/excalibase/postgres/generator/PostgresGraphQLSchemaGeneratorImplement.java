@@ -16,7 +16,7 @@ import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.constant.ColumnTypeConstant;
 import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.constant.GraphqlConstant;
-import io.github.excalibase.constant.PostgresTypeOperator;
+import io.github.excalibase.postgres.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.EmptySchemaException;
 import io.github.excalibase.model.ColumnInfo;

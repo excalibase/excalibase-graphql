@@ -59,7 +59,7 @@ public class GraphqlConfig {
         IDatabaseSchemaReflector schemaReflector = getDatabaseSchemaReflector();
         IGraphQLSchemaGenerator schemaGenerator = getGraphQLSchemaGenerator();
         
-        // Inject the reflector into the schema generator (for PostgreSQL implementation)
+        // Inject the reflector into the schema generator (for PostgresSQL implementation)
         if (schemaGenerator instanceof PostgresGraphQLSchemaGeneratorImplement) {
             ((PostgresGraphQLSchemaGeneratorImplement) schemaGenerator).setSchemaReflector(schemaReflector);
         }

@@ -14,12 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.github.excalibase.constant;
+package io.github.excalibase.postgres.constant;
 
 /**
  * SQL query constants for database schema reflection.
  */
-public class SqlConstant {
+public class PostgresSqlConstant {
     public static final String GET_TABLE_NAME = """
             SELECT tablename 
             FROM pg_catalog.pg_tables 

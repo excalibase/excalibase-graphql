@@ -1,4 +1,4 @@
-package io.github.excalibase.constant
+package io.github.excalibase.postgres.constant
 
 import spock.lang.Specification
 

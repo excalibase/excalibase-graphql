@@ -23,8 +23,8 @@ import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.constant.ColumnTypeConstant;
 import io.github.excalibase.constant.FieldConstant;
-import io.github.excalibase.constant.PostgresTypeOperator;
-import io.github.excalibase.constant.SQLSyntax;
+import io.github.excalibase.postgres.constant.PostgresTypeOperator;
+import io.github.excalibase.postgres.constant.PostgresColumnTypeConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.DataFetcherException;
 import io.github.excalibase.model.ColumnInfo;
@@ -40,7 +40,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -116,9 +115,9 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 requestedFields = new ArrayList<>(availableColumns);
             }
 
-            StringBuilder sql = new StringBuilder(SQLSyntax.SELECT_WITH_SPACE);
+            StringBuilder sql = new StringBuilder(PostgresColumnTypeConstant.SELECT_WITH_SPACE);
             sql.append(buildColumnList(requestedFields));
-            sql.append(SQLSyntax.FROM_WITH_SPACE).append(getQualifiedTableName(tableName));
+            sql.append(PostgresColumnTypeConstant.FROM_WITH_SPACE).append(getQualifiedTableName(tableName));
 
             Map<String, Object> arguments = new HashMap<>(environment.getArguments());
             MapSqlParameterSource paramSource = new MapSqlParameterSource();
@@ -149,12 +148,12 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 List<String> conditions = buildWhereConditions(arguments, paramSource, columnTypes);
 
                 if (!conditions.isEmpty()) {
-                    sql.append(SQLSyntax.WHERE_WITH_SPACE).append(String.join(SQLSyntax.AND_WITH_SPACE, conditions));
+                    sql.append(PostgresColumnTypeConstant.WHERE_WITH_SPACE).append(String.join(PostgresColumnTypeConstant.AND_WITH_SPACE, conditions));
                 }
             }
 
             if (!orderByFields.isEmpty()) {
-                sql.append(SQLSyntax.ORDER_BY_WITH_SPACE);
+                sql.append(PostgresColumnTypeConstant.ORDER_BY_WITH_SPACE);
                 List<String> orderClauses = new ArrayList<>();
 
                 for (Map.Entry<String, String> entry : orderByFields.entrySet()) {
@@ -168,12 +167,12 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
             // Add pagination if specified using LIMIT and OFFSET
             if (limit != null) {
-                sql.append(SQLSyntax.LIMIT_WITH_SPACE + " :limit");
+                sql.append(PostgresColumnTypeConstant.LIMIT_WITH_SPACE + " :limit");
                 paramSource.addValue(FieldConstant.LIMIT, limit);
             }
 
             if (offset != null) {
-                sql.append(SQLSyntax.OFFSET_WITH_SPACE + ":offset");
+                sql.append(PostgresColumnTypeConstant.OFFSET_WITH_SPACE + ":offset");
                 paramSource.addValue(FieldConstant.OFFSET, offset);
             }
 
@@ -275,22 +274,22 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             Map<String, String> columnTypes = getColumnTypes(tableName);
             MapSqlParameterSource paramSource = new MapSqlParameterSource();
 
-            StringBuilder countSql = new StringBuilder(SQLSyntax.SELECT_COUNT_FROM_WITH_SPACE)
+            StringBuilder countSql = new StringBuilder(PostgresColumnTypeConstant.SELECT_COUNT_FROM_WITH_SPACE)
                     .append(getQualifiedTableName(tableName));
 
             if (!arguments.isEmpty()) {
                 List<String> conditions = buildWhereConditions(arguments, paramSource, columnTypes);
 
                 if (!conditions.isEmpty()) {
-                    countSql.append(SQLSyntax.WHERE_WITH_SPACE).append(String.join(SQLSyntax.AND_WITH_SPACE, conditions));
+                    countSql.append(PostgresColumnTypeConstant.WHERE_WITH_SPACE).append(String.join(PostgresColumnTypeConstant.AND_WITH_SPACE, conditions));
                 }
             }
 
             Integer totalCount = namedParameterJdbcTemplate.queryForObject(countSql.toString(), paramSource, Integer.class);
 
-            StringBuilder dataSql = new StringBuilder(SQLSyntax.SELECT_WITH_SPACE);
+            StringBuilder dataSql = new StringBuilder(PostgresColumnTypeConstant.SELECT_WITH_SPACE);
             dataSql.append(buildColumnList(availableColumns));
-            dataSql.append(SQLSyntax.FROM_WITH_SPACE).append(getQualifiedTableName(tableName));
+            dataSql.append(PostgresColumnTypeConstant.FROM_WITH_SPACE).append(getQualifiedTableName(tableName));
 
             List<String> conditions = new ArrayList<>();
 
@@ -361,12 +360,12 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             }
 
             if (!conditions.isEmpty()) {
-                dataSql.append(SQLSyntax.WHERE_WITH_SPACE).append(String.join(SQLSyntax.AND_WITH_SPACE, conditions));
+                dataSql.append(PostgresColumnTypeConstant.WHERE_WITH_SPACE).append(String.join(PostgresColumnTypeConstant.AND_WITH_SPACE, conditions));
             }
 
             // Add ORDER BY based on orderBy parameter or default ordering
             if (!orderByFields.isEmpty()) {
-                dataSql.append(SQLSyntax.ORDER_BY_WITH_SPACE);
+                dataSql.append(PostgresColumnTypeConstant.ORDER_BY_WITH_SPACE);
                 List<String> orderClauses = new ArrayList<>();
 
                 for (Map.Entry<String, String> entry : orderByFields.entrySet()) {
@@ -387,18 +386,18 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     : "id";
                     
                 if (availableColumns.contains(primaryKeyColumn)) {
-                    dataSql.append(SQLSyntax.ORDER_BY_WITH_SPACE).append(quoteIdentifier(primaryKeyColumn)).append(" ASC");
+                    dataSql.append(PostgresColumnTypeConstant.ORDER_BY_WITH_SPACE).append(quoteIdentifier(primaryKeyColumn)).append(" ASC");
                     orderByFields.put(primaryKeyColumn, "ASC"); // Add to orderByFields for cursor generation
                 }
             }
 
             Integer limit = first != null ? first : (last != null ? last : 10); // Default to 10 if neither specified
-            dataSql.append(SQLSyntax.LIMIT_WITH_SPACE + ":limit");
+            dataSql.append(PostgresColumnTypeConstant.LIMIT_WITH_SPACE + ":limit");
             paramSource.addValue(FieldConstant.LIMIT, limit);
 
             // Add OFFSET for offset-based pagination
             if (useOffsetPagination) {
-                dataSql.append(SQLSyntax.OFFSET_WITH_SPACE + ":offset");
+                dataSql.append(PostgresColumnTypeConstant.OFFSET_WITH_SPACE + ":offset");
                 paramSource.addValue(FieldConstant.OFFSET, offset);
             }
             List<Map<String, Object>> nodes = namedParameterJdbcTemplate.queryForList(dataSql.toString(), paramSource);
@@ -456,7 +455,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         lastRecordCursor.put(orderField, nodes.getLast().get(orderField));
                     }
 
-                    StringBuilder checkNextSql = new StringBuilder(SQLSyntax.SELECT_COUNT_FROM_WITH_SPACE)
+                    StringBuilder checkNextSql = new StringBuilder(PostgresColumnTypeConstant.SELECT_COUNT_FROM_WITH_SPACE)
                             .append(getQualifiedTableName(tableName));
 
                     List<String> nextConditions = new ArrayList<>();
@@ -470,7 +469,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     nextConditions.addAll(cursorConditions);
 
                     if (!nextConditions.isEmpty()) {
-                        checkNextSql.append(SQLSyntax.WHERE_WITH_SPACE).append(String.join(SQLSyntax.AND_WITH_SPACE, nextConditions));
+                        checkNextSql.append(PostgresColumnTypeConstant.WHERE_WITH_SPACE).append(String.join(PostgresColumnTypeConstant.AND_WITH_SPACE, nextConditions));
                     }
 
                     Integer nextCount = namedParameterJdbcTemplate.queryForObject(checkNextSql.toString(), nextParams, Integer.class);
@@ -482,7 +481,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         firstRecordCursor.put(orderField, nodes.getFirst().get(orderField));
                     }
 
-                    StringBuilder checkPrevSql = new StringBuilder(SQLSyntax.SELECT_COUNT_FROM_WITH_SPACE)
+                    StringBuilder checkPrevSql = new StringBuilder(PostgresColumnTypeConstant.SELECT_COUNT_FROM_WITH_SPACE)
                             .append(getQualifiedTableName(tableName));
 
                     List<String> prevConditions = new ArrayList<>();
@@ -497,7 +496,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     prevConditions.addAll(cursorConditions2);
 
                     if (!prevConditions.isEmpty()) {
-                        checkPrevSql.append(SQLSyntax.WHERE_WITH_SPACE).append(String.join(SQLSyntax.AND_WITH_SPACE, prevConditions));
+                        checkPrevSql.append(PostgresColumnTypeConstant.WHERE_WITH_SPACE).append(String.join(PostgresColumnTypeConstant.AND_WITH_SPACE, prevConditions));
                     }
 
                     Integer prevCount = namedParameterJdbcTemplate.queryForObject(checkPrevSql.toString(), prevParams, Integer.class);
@@ -557,10 +556,10 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     requestedFields.add(referencedColumn);
                 }
 
-                StringBuilder sql = new StringBuilder(SQLSyntax.SELECT_WITH_SPACE);
+                StringBuilder sql = new StringBuilder(PostgresColumnTypeConstant.SELECT_WITH_SPACE);
                 sql.append(buildColumnList(requestedFields));
-                sql.append(SQLSyntax.FROM_WITH_SPACE).append(getQualifiedTableName(referencedTable));
-                sql.append(SQLSyntax.WHERE_WITH_SPACE).append(quoteIdentifier(referencedColumn)).append(" = ?");
+                sql.append(PostgresColumnTypeConstant.FROM_WITH_SPACE).append(getQualifiedTableName(referencedTable));
+                sql.append(PostgresColumnTypeConstant.WHERE_WITH_SPACE).append(quoteIdentifier(referencedColumn)).append(" = ?");
                 try {
                     return jdbcTemplate.queryForMap(sql.toString(), foreignKeyValue);
                 } catch (Exception e) {
@@ -599,10 +598,10 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 requestedFields = new ArrayList<>(availableColumns);
             }
 
-            StringBuilder sql = new StringBuilder(SQLSyntax.SELECT_WITH_SPACE);
+            StringBuilder sql = new StringBuilder(PostgresColumnTypeConstant.SELECT_WITH_SPACE);
             sql.append(buildColumnList(requestedFields));
-            sql.append(SQLSyntax.FROM_WITH_SPACE).append(getQualifiedTableName(targetTableName));
-            sql.append(SQLSyntax.WHERE_WITH_SPACE).append(quoteIdentifier(foreignKeyColumn)).append(" = ?");
+            sql.append(PostgresColumnTypeConstant.FROM_WITH_SPACE).append(getQualifiedTableName(targetTableName));
+            sql.append(PostgresColumnTypeConstant.WHERE_WITH_SPACE).append(quoteIdentifier(foreignKeyColumn)).append(" = ?");
             
             try {
                 List<Map<String, Object>> results = jdbcTemplate.queryForList(sql.toString(), referencedValue);
@@ -733,9 +732,9 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         requestedFields.add(referencedColumn);
 
                         // Build and execute batch query
-                        String sql = SQLSyntax.SELECT_WITH_SPACE + buildColumnList(new ArrayList<>(requestedFields)) +
-                                SQLSyntax.FROM_WITH_SPACE + getQualifiedTableName(referencedTable) +
-                                SQLSyntax.WHERE_WITH_SPACE + quoteIdentifier(referencedColumn) + SQLSyntax.IN_WITH_SPACE + "(:ids)";
+                        String sql = PostgresColumnTypeConstant.SELECT_WITH_SPACE + buildColumnList(new ArrayList<>(requestedFields)) +
+                                PostgresColumnTypeConstant.FROM_WITH_SPACE + getQualifiedTableName(referencedTable) +
+                                PostgresColumnTypeConstant.WHERE_WITH_SPACE + quoteIdentifier(referencedColumn) + PostgresColumnTypeConstant.IN_WITH_SPACE + "(:ids)";
 
                         MapSqlParameterSource params = new MapSqlParameterSource();
                         params.addValue("ids", new ArrayList<>(foreignKeyValues));
@@ -809,7 +808,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             if (andConditions.size() == 1) {
                 orConditions.add(andConditions.getFirst());
             } else {
-                orConditions.add("(" + String.join(SQLSyntax.AND_WITH_SPACE, andConditions) + ")");
+                orConditions.add("(" + String.join(PostgresColumnTypeConstant.AND_WITH_SPACE, andConditions) + ")");
             }
         }
 

@@ -1,4 +1,6 @@
-package io.github.excalibase.constant;
+package io.github.excalibase.postgres.constant;
+
+import io.github.excalibase.constant.ColumnTypeConstant;
 
 /**
  * Utility class for PostgreSQL type operations and checking.
@@ -18,7 +20,7 @@ public class PostgresTypeOperator {
     public static boolean isIntegerType(String type) {
         if (type == null) return false;
         String lowerType = type.toLowerCase();
-        return (lowerType.contains(ColumnTypeConstant.INT) || lowerType.contains(ColumnTypeConstant.SERIAL)) 
+        return (lowerType.contains(ColumnTypeConstant.INT) || lowerType.contains(ColumnTypeConstant.SERIAL))
                && !lowerType.equals(ColumnTypeConstant.INTERVAL);
     }
     

@@ -5,8 +5,8 @@ import graphql.schema.DataFetchingEnvironment;
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.constant.ColumnTypeConstant;
-import io.github.excalibase.constant.PostgresTypeOperator;
-import io.github.excalibase.constant.SQLSyntax;
+import io.github.excalibase.postgres.constant.PostgresTypeOperator;
+import io.github.excalibase.postgres.constant.PostgresColumnTypeConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.DataMutationException;
 import io.github.excalibase.exception.DataFetcherException;
@@ -200,7 +200,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                 .orElseThrow(() -> new DataFetcherException("No primary key found for table: " + tableName));
             
             // Build the SQL DELETE statement
-            String sql = SQLSyntax.DELETE_WITH_SPACE + getQualifiedTableName(tableName) + SQLSyntax.WHERE_WITH_SPACE +
+            String sql = PostgresColumnTypeConstant.DELETE_WITH_SPACE + getQualifiedTableName(tableName) + PostgresColumnTypeConstant.WHERE_WITH_SPACE +
                         quoteIdentifier(primaryKeyColumn) + " = :id";
             
             // Prepare parameters with type conversion
