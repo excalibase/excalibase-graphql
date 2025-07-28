@@ -22,6 +22,7 @@ import graphql.schema.GraphQLCodeRegistry;
 import graphql.schema.GraphQLSchema;
 import io.github.excalibase.constant.GraphqlConstant;
 import io.github.excalibase.model.TableInfo;
+import io.github.excalibase.postgres.generator.PostgresGraphQLSchemaGeneratorImplement;
 import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
 import io.github.excalibase.schema.mutator.IDatabaseMutator;
@@ -50,14 +51,25 @@ public class GraphqlConfig {
 
     /**
      * Creates GraphQL instance with schema and resolvers generated from database tables.
+     * Includes support for custom enum and composite types.
      */
     @Bean
     public GraphQL graphQL() {
         log.info("Loading GraphQL for database :{} ", appConfig.getDatabaseType().getName());
         IDatabaseSchemaReflector schemaReflector = getDatabaseSchemaReflector();
         IGraphQLSchemaGenerator schemaGenerator = getGraphQLSchemaGenerator();
+        
+        // Inject the reflector into the schema generator (for PostgreSQL implementation)
+        if (schemaGenerator instanceof PostgresGraphQLSchemaGeneratorImplement) {
+            ((PostgresGraphQLSchemaGeneratorImplement) schemaGenerator).setSchemaReflector(schemaReflector);
+        }
+        
+        // Reflect database schema - PostgreSQL implementation will handle custom types internally
         Map<String, TableInfo> tables = schemaReflector.reflectSchema();
+        
+        // Generate schema - PostgreSQL implementation automatically includes custom types
         GraphQLSchema schema = schemaGenerator.generateSchema(tables);
+        
         IDatabaseDataFetcher dataFetcher = getDatabaseDataFetcher();
         IDatabaseMutator mutationResolver = getDatabaseMutator();
 

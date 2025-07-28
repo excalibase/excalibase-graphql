@@ -1,0 +1,641 @@
+# Cursor AI IDE Rules for Excalibase GraphQL
+
+## Project Overview
+This is a Java-based GraphQL API generator for PostgreSQL databases. The project automatically generates GraphQL schemas and APIs from PostgreSQL database schemas with support for enhanced PostgreSQL types (JSON, arrays, network types, etc.).
+
+## Core Technologies & Frameworks
+- **Language**: Java 21+
+- **Framework**: Spring Boot
+- **Database**: PostgreSQL 15+
+- **GraphQL**: GraphQL Java library
+- **Testing**: Spock Framework (Groovy) + Testcontainers
+- **Build Tool**: Maven 3.8+
+- **Key Libraries**: Jackson (JSON), PostgreSQL JDBC
+
+## Code Style & Standards
+
+### Java Conventions
+- **NO LOMBOK**: This is a strict project rule. Use standard Java getters/setters
+- **Java 21+ features**: Use modern Java syntax (records, switch expressions, var keyword)
+- **Package structure**: Follow `io.github.excalibase.*` pattern
+- **Naming**: Use descriptive names, avoid abbreviations
+- **Constants**: Use `ColumnTypeConstant.java` for database type constants
+
+### Example Code Patterns
+```java
+// Correct: No Lombok, standard Java
+public class TableInfo {
+    private String tableName;
+    private List<ColumnInfo> columns;
+    
+    public String getTableName() {
+        return tableName;
+    }
+    
+    public void setTableName(String tableName) {
+        this.tableName = tableName;
+    }
+}
+
+// Enhanced type mapping pattern
+if (type.contains(ColumnTypeConstant.ARRAY_SUFFIX)) {
+    String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
+    GraphQLOutputType elementType = mapDatabaseTypeToGraphQLType(baseType);
+    return new GraphQLList(elementType);
+}
+```
+
+## Architecture Patterns
+
+### Service Layer Pattern
+- Use `@ExcalibaseService` annotation with `serviceName` for database-specific implementations
+- Implement interfaces like `IGraphQLSchemaGenerator`, `IDatabaseSchemaReflector`
+- Use `ServiceLookup` for dynamic service resolution
+
+### Database Type Support
+- PostgreSQL enhanced types: JSON/JSONB, arrays, network types (INET, CIDR), UUID, XML
+- Custom GraphQL scalars for PostgreSQL-specific types
+- Type mapping in `DatabaseTypeToGraphQLTypeMapper`
+
+### Testing Strategy
+- Use Spock Framework (Groovy) for tests
+- Use Testcontainers for database integration tests
+- Test naming: descriptive BDD-style names
+- Maintain 95%+ code coverage
+
+## File Organization
+
+### Key Directories
+```
+src/main/java/io/github/excalibase/
+├── annotation/          # Custom annotations (@ExcalibaseService)
+├── config/             # Spring configuration
+├── constant/           # Constants (ColumnTypeConstant, SqlConstant)
+├── exception/          # Custom exceptions
+├── model/              # Data models (TableInfo, ColumnInfo)
+├── service/            # Service interfaces and implementations
+├── util/               # Utility classes
+└── web/                # REST controllers
+
+src/test/groovy/        # Spock tests
+docs/                   # Documentation (MkDocs)
+```
+
+### Important Files
+- `ColumnTypeConstant.java`: Database type constants
+- `SqlConstant.java`: SQL query constants
+- `ServiceLookup.java`: Service resolution utility
+- `DatabaseTypeToGraphQLTypeMapper.java`: Type mapping logic
+
+## Development Guidelines
+
+### TDD (Test-Driven Development) - MANDATORY PRACTICE
+
+**ALWAYS follow the Red-Green-Refactor cycle:**
+
+1. **🔴 RED**: Write a failing test first
+2. **🟢 GREEN**: Write minimal code to make the test pass
+3. **🔵 REFACTOR**: Clean up code while keeping tests green
+
+### TDD Workflow for New Features
+
+#### Step 1: Write the Test First (RED)
+```groovy
+// Example: Adding UUID support
+def "should map UUID column type to GraphQL String"() {
+    given: "a UUID column type"
+    String columnType = "uuid"
+    
+    when: "mapping to GraphQL type"
+    GraphQLOutputType result = mapper.mapDatabaseTypeToGraphQLType(columnType)
+    
+    then: "should return GraphQL String type"
+    result == Scalars.GraphQLString
+    // This test MUST fail initially
+}
+```
+
+#### Step 2: Write Minimal Implementation (GREEN)
+```java
+// In DatabaseTypeToGraphQLTypeMapper.java
+public GraphQLOutputType mapDatabaseTypeToGraphQLType(String type) {
+    // Add minimal code to make test pass
+    if (ColumnTypeConstant.UUID.equals(type)) {
+        return Scalars.GraphQLString;
+    }
+    // existing code...
+}
+```
+
+#### Step 3: Refactor and Add More Tests
+```groovy
+// Add edge cases and comprehensive coverage
+def "should handle UUID array types"() {
+    given: "a UUID array column type"
+    String columnType = "uuid[]"
+    
+    when: "mapping to GraphQL type"
+    GraphQLOutputType result = mapper.mapDatabaseTypeToGraphQLType(columnType)
+    
+    then: "should return GraphQL List of String"
+    result instanceof GraphQLList
+    ((GraphQLList) result).wrappedType == Scalars.GraphQLString
+}
+```
+
+### TDD Rules - STRICTLY ENFORCED
+
+1. **🚫 NO CODE WITHOUT TESTS**: Never write production code without a failing test
+2. **📝 TEST NAMES MUST BE DESCRIPTIVE**: Use BDD-style naming
+3. **🔄 COMMIT AFTER EACH CYCLE**: Red commit → Green commit → Refactor commit
+4. **⚡ FAST FEEDBACK**: Tests must run quickly (< 30 seconds for unit tests)
+5. **📊 COVERAGE TRACKING**: Every line must be covered by tests
+
+### When Adding New Features (TDD Approach)
+1. **🔴 Write Failing Test**: Start with test that describes expected behavior
+2. **🟢 Minimal Implementation**: Just enough code to pass the test
+3. **🔵 Refactor**: Clean up code, add constants to `ColumnTypeConstant.java`
+4. **🔴 Add Edge Case Tests**: Test null values, invalid input, boundaries
+5. **🟢 Handle Edge Cases**: Update implementation
+6. **🔵 Final Refactor**: Update SQL queries in `SqlConstant.java`, documentation
+7. **✅ Integration Test**: Add Testcontainers test for end-to-end validation
+
+### Error Handling
+- Use specific exception types from `exception` package
+- Provide meaningful error messages
+- Log appropriate debug information
+- Handle SQL exceptions gracefully
+
+### Performance Considerations
+- Use TTL caching for schema reflection
+- Optimize SQL queries for large schemas
+- Efficient type conversion handling
+- Connection pooling for database operations
+
+## Testing Rules - TDD ENFORCED
+
+### Test Structure with TDD Mindset
+```groovy
+class NewFeatureTest extends Specification {
+    
+    @Shared
+    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
+    
+    def setupSpec() {
+        postgres.start()
+    }
+    
+    // RED: Start with failing test
+    def "should support new PostgreSQL data type - MONEY"() {
+        given: "a table with MONEY column"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_money (
+                id SERIAL PRIMARY KEY,
+                price MONEY NOT NULL
+            )
+        """)
+        
+        when: "reflecting schema"
+        def tableInfo = reflector.reflectTable("test_money")
+        
+        then: "should detect MONEY column correctly"  
+        def priceColumn = tableInfo.columns.find { it.columnName == "price" }
+        priceColumn != null
+        priceColumn.dataType == ColumnTypeConstant.MONEY
+        // This MUST fail first!
+    }
+    
+    // After GREEN implementation, add more comprehensive tests
+    def "should generate GraphQL schema for MONEY type"() {
+        // More detailed validation
+    }
+    
+    def "should handle MONEY filtering operations"() {
+        // Filter testing
+    }
+}
+```
+
+### TDD Test Categories - ALL REQUIRED
+
+#### 1. Unit Tests (RED → GREEN → REFACTOR)
+- **Type Mapping Tests**: Every new type must have mapping test
+- **Validation Tests**: Input validation and error handling
+- **Edge Case Tests**: Null, empty, invalid values
+- **Constants Tests**: Verify constants are used correctly
+
+#### 2. Integration Tests (After Unit Tests Pass)
+- **Schema Generation**: Full GraphQL schema creation
+- **Database Operations**: Real PostgreSQL interactions
+- **End-to-End**: Complete request-response cycle
+- **Performance Tests**: For complex operations
+
+#### 3. Controller Tests (Spring MockMvc)
+- **GraphqlControllerTest**: API endpoint validation
+- **GraphqlPerformanceTest**: Load testing (20+ concurrent, 1000+ records)
+- **GraphqlSecurityTest**: Security validation, SQL injection prevention
+
+#### 4. E2E Tests with Curl Scripts (MANDATORY FOR ALL NEW FEATURES)
+- **scripts/e2e-test.sh**: Main E2E test runner
+- **Real HTTP requests**: Test actual GraphQL endpoint
+- **Data validation**: Verify complete request-response cycle
+- **Performance validation**: Response time benchmarks
+
+### E2E Testing Requirements - TDD INTEGRATION
+
+#### E2E Test Structure (After GREEN phase)
+```bash
+#!/bin/bash
+# scripts/e2e-test.sh
+
+set -e
+
+BASE_URL="http://localhost:10000"
+GRAPHQL_ENDPOINT="$BASE_URL/graphql"
+
+echo "🧪 Starting E2E Tests for [NEW_FEATURE]"
+
+# Test 1: Basic functionality (after unit test passes)
+test_basic_functionality() {
+    echo "Testing basic [feature] functionality..."
+    
+    RESPONSE=$(curl -s -X POST "$GRAPHQL_ENDPOINT" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "query": "{ customer { customer_id first_name } }"
+        }')
+    
+    echo "Response: $RESPONSE"
+    
+    # Validate response contains expected data
+    if echo "$RESPONSE" | grep -q '"data"'; then
+        echo "✅ Basic query test passed"
+    else
+        echo "❌ Basic query test failed"
+        exit 1
+    fi
+}
+
+# Test 2: New feature validation (TDD GREEN phase validation)
+test_new_feature() {
+    echo "Testing new [feature] implementation..."
+    
+    # Add specific test for your new feature
+    RESPONSE=$(curl -s -X POST "$GRAPHQL_ENDPOINT" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "query": "{ enhanced_types { json_col jsonb_col } }"
+        }')
+    
+    # Validate new feature works
+    if echo "$RESPONSE" | grep -q '"json_col"'; then
+        echo "✅ New feature test passed"
+    else
+        echo "❌ New feature test failed"
+        exit 1
+    fi
+}
+
+# Performance validation
+test_performance() {
+    echo "Testing performance benchmarks..."
+    
+    START_TIME=$(date +%s%N)
+    RESPONSE=$(curl -s -X POST "$GRAPHQL_ENDPOINT" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "{ customer(limit: 100) { customer_id first_name } }"}')
+    END_TIME=$(date +%s%N)
+    
+    DURATION=$(( (END_TIME - START_TIME) / 1000000 )) # Convert to milliseconds
+    
+    if [ $DURATION -lt 1000 ]; then
+        echo "✅ Performance test passed: ${DURATION}ms"
+    else
+        echo "❌ Performance test failed: ${DURATION}ms (should be < 1000ms)"
+        exit 1
+    fi
+}
+
+# Run all tests
+test_basic_functionality
+test_new_feature
+test_performance
+
+echo "🎉 All E2E tests passed!"
+```
+
+#### E2E Test Integration with TDD Workflow
+
+**MANDATORY: Add E2E test for every new feature following TDD cycle:**
+
+1. **🔴 RED**: Write failing unit test
+2. **🟢 GREEN**: Implement minimal code to pass unit test
+3. **🔵 REFACTOR**: Clean up implementation
+4. **✅ E2E**: Add curl-based E2E test to validate end-to-end functionality
+5. **📝 UPDATE**: Update `scripts/e2e-test.sh` with new test case
+
+#### E2E Test Categories - MAINTAIN AND UPDATE
+
+##### scripts/e2e-basic.sh - Basic Functionality
+```bash
+#!/bin/bash
+# Test basic GraphQL operations
+# MAINTAIN: Update when adding new basic operations
+
+test_basic_schema_introspection() {
+    curl -s -X POST "$GRAPHQL_ENDPOINT" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "{ __schema { types { name } } }"}'
+}
+
+test_basic_table_queries() {
+    # Test each table has basic query capability
+    # UPDATE: Add new tables here
+}
+```
+
+##### scripts/e2e-enhanced-types.sh - Enhanced PostgreSQL Types
+```bash
+#!/bin/bash
+# Test enhanced PostgreSQL types (JSON, arrays, etc.)
+# UPDATE: Add new enhanced type tests
+
+test_json_operations() {
+    curl -s -X POST "$GRAPHQL_ENDPOINT" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "{ enhanced_types { json_col jsonb_col } }"}'
+}
+
+test_array_operations() {
+    curl -s -X POST "$GRAPHQL_ENDPOINT" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "{ enhanced_types { int_array text_array } }"}'
+}
+```
+
+##### scripts/e2e-performance.sh - Performance Benchmarks
+```bash
+#!/bin/bash
+# Performance testing with curl
+# MAINTAIN: Keep performance targets updated
+
+test_large_result_sets() {
+    # Test queries returning 500+ records in < 1000ms
+}
+
+test_complex_filtering() {
+    # Test complex OR/AND filtering in < 800ms
+}
+
+test_concurrent_requests() {
+    # Test 20 simultaneous requests
+}
+```
+
+##### scripts/e2e-security.sh - Security Validation
+```bash
+#!/bin/bash
+# Security testing with curl
+# UPDATE: Add security tests for new features
+
+test_sql_injection_prevention() {
+    # Test malicious GraphQL queries
+    curl -s -X POST "$GRAPHQL_ENDPOINT" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "{ customer(where: { first_name: { eq: \"\\"; DROP TABLE customer; --\" } }) { customer_id } }"}'
+}
+
+test_input_validation() {
+    # Test invalid input handling
+}
+```
+
+### E2E Test Maintenance Rules
+
+#### When Adding New Features:
+1. **🔴 Write failing unit test** (TDD RED)
+2. **🟢 Implement minimal code** (TDD GREEN) 
+3. **🔵 Refactor implementation** (TDD REFACTOR)
+4. **📝 Add E2E test case** to appropriate script:
+   - Basic functionality → `scripts/e2e-basic.sh`
+   - Enhanced types → `scripts/e2e-enhanced-types.sh`
+   - Performance sensitive → `scripts/e2e-performance.sh`
+   - Security related → `scripts/e2e-security.sh`
+
+#### When Modifying Existing Features:
+1. **🔄 Update existing E2E tests** to match new behavior
+2. **📊 Verify performance benchmarks** still pass
+3. **🔒 Update security tests** if needed
+4. **📝 Update test documentation** in scripts
+
+#### E2E Test Execution Order:
+```bash
+# Run in CI/CD pipeline after unit/integration tests pass
+./scripts/e2e-basic.sh          # Basic functionality first
+./scripts/e2e-enhanced-types.sh # Enhanced types validation  
+./scripts/e2e-performance.sh    # Performance benchmarks
+./scripts/e2e-security.sh       # Security validation last
+```
+
+### Test Requirements - NON-NEGOTIABLE
+- **✅ Test First**: No production code without failing test
+- **✅ Descriptive Names**: Use BDD-style test names (should_do_something_when_condition)
+- **✅ Real Database**: Use Testcontainers for PostgreSQL
+- **✅ Fast Execution**: Unit tests < 30 seconds
+- **✅ Independent Tests**: Each test must be isolated
+- **✅ Comprehensive Coverage**: Test happy path, edge cases, and errors
+
+### TDD Commit Pattern - INCLUDE E2E VALIDATION
+```bash
+# Red commit
+git add .
+git commit -m "test(postgres): add failing test for MONEY type support"
+
+# Green commit  
+git add .
+git commit -m "feat(postgres): add minimal MONEY type implementation"
+
+# Refactor commit
+git add .
+git commit -m "refactor(postgres): clean up MONEY type mapping code"
+
+# E2E commit (MANDATORY)
+git add scripts/e2e-enhanced-types.sh
+git commit -m "test(e2e): add MONEY type E2E validation"
+```
+
+### E2E Test Validation Requirements
+- **✅ All curl requests return 200 status**
+- **✅ Response time < performance targets**
+- **✅ Data validation passes**
+- **✅ Security tests prevent malicious input**
+- **✅ Error handling works correctly**
+- **✅ New features validated end-to-end**
+
+## Commit & PR Guidelines
+
+### Commit Message Format
+Use conventional commits:
+```
+<type>(scope): <description>
+
+feat(postgres): add support for UUID columns
+fix(mutation): handle null foreign key values correctly
+docs: update README with filtering examples
+test: add integration tests for relationship queries
+```
+
+### Pull Request Checklist - TDD + E2E VALIDATION
+- [ ] **RED**: All new tests initially failed ✅
+- [ ] **GREEN**: Tests now pass with minimal implementation ✅  
+- [ ] **REFACTOR**: Code cleaned up while maintaining green tests ✅
+- [ ] **COVERAGE**: New code has 100% test coverage ✅
+- [ ] **INTEGRATION**: End-to-end tests added with Testcontainers ✅
+- [ ] **E2E SCRIPTS**: Curl-based E2E tests added/updated ✅
+  - [ ] Basic functionality tested in `scripts/e2e-basic.sh` ✅
+  - [ ] Enhanced types tested in `scripts/e2e-enhanced-types.sh` ✅ 
+  - [ ] Performance benchmarks in `scripts/e2e-performance.sh` ✅
+  - [ ] Security validation in `scripts/e2e-security.sh` ✅
+- [ ] **E2E PERFORMANCE**: Response times meet targets (< 1000ms) ✅
+- [ ] **E2E SECURITY**: Malicious input properly handled ✅
+- [ ] **EDGE CASES**: Null, invalid, and boundary conditions tested ✅
+- [ ] **PERFORMANCE**: Complex operations have performance tests ✅
+- [ ] **SECURITY**: SQL injection and input validation tested ✅
+- [ ] Code follows project standards (no Lombok) ✅
+- [ ] Documentation updated if needed ✅
+- [ ] Commit messages follow TDD pattern ✅
+
+### TDD + E2E Code Review Checklist
+**Reviewers must verify:**
+- [ ] Test was written before implementation
+- [ ] Test initially failed (RED phase documented)
+- [ ] Implementation is minimal and focused
+- [ ] Refactoring improved code quality
+- [ ] All edge cases are covered
+- [ ] Tests are fast and reliable
+- [ ] Integration tests validate real behavior
+- [ ] **E2E scripts test actual HTTP endpoints** ✅
+- [ ] **E2E tests validate complete request-response cycle** ✅
+- [ ] **Performance benchmarks are maintained** ✅
+- [ ] **Security validations pass** ✅
+
+## Database-Specific Rules
+
+### PostgreSQL Focus
+- Support all PostgreSQL data types
+- Handle PostgreSQL-specific features (arrays, JSON, network types)
+- Use PostgreSQL-specific SQL where beneficial
+- Test with multiple PostgreSQL versions (15+)
+
+### Enhanced Type Support
+- JSON/JSONB with custom scalars and filters
+- Array types with element operations
+- Network types (INET, CIDR, MACADDR)
+- Date/time with timezone support
+- Binary data (BYTEA) handling
+
+## Current Sprint Focus - WITH E2E VALIDATION
+
+### Current Sprint Focus
+1. **Views Support**: Add read-only GraphQL types for database views
+   - Unit tests → Integration tests → E2E curl tests for view queries
+2. **Constraints Enhancement**: Reflect check and unique constraints  
+   - TDD approach with E2E validation of constraint behavior
+3. **Advanced Filtering**: Enhance filtering operations for complex types
+   - Performance testing with E2E benchmarks
+4. **Performance Optimization**: Query optimization and caching improvements
+   - E2E performance validation with response time targets
+
+### E2E Testing Integration Points
+- **Feature Development**: Every new feature requires E2E test
+- **Performance Monitoring**: Continuous E2E performance benchmarks
+- **Security Validation**: Regular E2E security testing
+- **Regression Prevention**: E2E tests prevent breaking changes
+
+### Testing Stack Overview
+```
+🔄 TDD Cycle:
+├── 🔴 Unit Tests (RED) - Spock Framework
+├── 🟢 Integration Tests (GREEN) - Testcontainers  
+├── 🔵 Controller Tests (REFACTOR) - MockMvc
+└── ✅ E2E Tests (VALIDATE) - Curl Scripts
+
+📊 Test Coverage:
+├── Unit: 95%+ coverage
+├── Integration: Real PostgreSQL  
+├── Controller: 42+ test methods
+└── E2E: HTTP endpoint validation
+```
+
+### Code Quality Standards
+- Maintain clean, readable code
+- Follow SOLID principles
+- Use dependency injection properly
+- Handle resources efficiently (connections, caches)
+- Write self-documenting code with clear intent
+
+## IDE-Specific Hints - TDD WORKFLOW
+
+### Cursor AI TDD Assistance
+When implementing new features, follow this pattern:
+
+#### 1. Test Creation Prompts
+```
+"Generate a failing Spock test for [feature] that validates [expected behavior]"
+"Create edge case tests for [type] handling null values and invalid input"
+"Write integration test using Testcontainers for [database operation]"
+```
+
+#### 2. Implementation Prompts  
+```
+"Write minimal Java code to make this test pass: [test code]"
+"Add constants to ColumnTypeConstant.java for [new type]"
+"Update type mapping in DatabaseTypeToGraphQLTypeMapper for [type]"
+```
+
+#### 3. Refactoring Prompts
+```
+"Refactor this code while keeping tests green: [code]"
+"Extract common patterns from [similar implementations]"
+"Optimize performance for [operation] without breaking tests"
+```
+
+### TDD Keyboard Shortcuts & Workflow
+1. **Write Test**: `Ctrl+Shift+T` → Create test class/method
+2. **Run Test**: `Ctrl+Shift+F10` → Verify it fails (RED)
+3. **Implement**: Write minimal code in production class
+4. **Run Test**: `Ctrl+Shift+F10` → Verify it passes (GREEN)
+5. **Refactor**: `Ctrl+Alt+Shift+T` → Refactor while tests stay green
+6. **Commit**: `Ctrl+K` → Commit with TDD message pattern
+
+### Testing Import Patterns
+```groovy
+// Standard Spock test imports
+import spock.lang.Specification
+import spock.lang.Shared
+import org.testcontainers.containers.PostgreSQLContainer
+import org.springframework.test.context.TestPropertySource
+import org.springframework.boot.test.context.SpringBootTest
+
+// Database testing imports
+import org.springframework.jdbc.core.JdbcTemplate
+import javax.sql.DataSource
+
+// GraphQL testing imports
+import graphql.schema.GraphQLSchema
+import graphql.ExecutionResult
+import graphql.GraphQL
+```
+
+### Debugging TDD Issues
+- **Test Won't Fail**: Check test logic and assertions
+- **Test Won't Pass**: Verify minimal implementation covers test case
+- **Refactor Breaks Tests**: Revert and make smaller changes
+- **Slow Tests**: Check for unnecessary database operations
+- **Flaky Tests**: Ensure proper test isolation and cleanup
+
+## Documentation Standards
+- Keep README.md and docs folder updated with new features
+- Update CONTRIBUTING.md for new development patterns
+- Document complex algorithms and type mappings
+- Include examples in code comments for non-obvious logic

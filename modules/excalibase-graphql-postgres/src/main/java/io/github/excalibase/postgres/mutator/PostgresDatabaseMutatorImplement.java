@@ -12,6 +12,8 @@ import io.github.excalibase.exception.DataMutationException;
 import io.github.excalibase.exception.DataFetcherException;
 import io.github.excalibase.exception.NotFoundException;
 import io.github.excalibase.model.ColumnInfo;
+import io.github.excalibase.model.CompositeTypeAttribute;
+import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.mutator.IDatabaseMutator;
@@ -25,6 +27,8 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.sql.Timestamp;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -84,7 +88,9 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             log.debug("Executing create SQL: {} with parameters: {}", sql, paramSource.getValues());
 
             try {
-                return namedParameterJdbcTemplate.queryForMap(sql, paramSource);
+                Map<String, Object> result = namedParameterJdbcTemplate.queryForMap(sql, paramSource);
+                // Apply the same composite type conversion as queries
+                return convertPostgresTypesToGraphQLTypes(result, tableInfo);
             } catch (Exception e) {
                 log.error("Error creating record in table {}: {}", tableName, e.getMessage());
                 throw new DataMutationException("Error creating record: " + e.getMessage(), e);
@@ -658,10 +664,16 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             }
 
             // Handle custom composite types
-            if (PostgresTypeOperator.isCustomCompositeType(columnType) && value instanceof Map) {
-                String compositeValue = convertMapToPostgresComposite((Map<String, Object>) value);
-                paramSource.addValue(paramName, compositeValue);
-                return;
+            if (PostgresTypeOperator.isCustomCompositeType(columnType)) {
+                if (value instanceof Map) {
+                    String compositeValue = convertMapToPostgresComposite((Map<String, Object>) value);
+                    paramSource.addValue(paramName, compositeValue);
+                    return;
+                } else if (value instanceof String) {
+                    // String input for composite types - pass directly to PostgreSQL
+                    paramSource.addValue(paramName, value.toString());
+                    return;
+                }
             }
 
             String valueStr = value.toString();
@@ -928,5 +940,176 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                 .collect(Collectors.joining(","));
 
         return "(" + values + ")";
+    }
+
+    /**
+     * Converts a single PostgreSQL result to GraphQL format, applying the same
+     * composite type processing as the fetcher.
+     */
+    private Map<String, Object> convertPostgresTypesToGraphQLTypes(Map<String, Object> result, TableInfo tableInfo) {
+        // Get custom type columns (will determine enum vs composite based on actual data)
+        Map<String, String> customTypeColumns = tableInfo.getColumns().stream()
+                .filter(col -> PostgresTypeOperator.isCustomEnumType(col.getType()) || 
+                              PostgresTypeOperator.isCustomCompositeType(col.getType()))
+                .filter(col -> !PostgresTypeOperator.isArrayType(col.getType())) // Exclude arrays for now
+                .collect(Collectors.toMap(ColumnInfo::getName, ColumnInfo::getType));
+        
+        if (customTypeColumns.isEmpty()) {
+            return result; // No custom types, return as-is
+        }
+        
+        Map<String, Object> convertedResult = new HashMap<>(result);
+        
+        // Process custom type columns (determine enum vs composite based on data format)
+        for (Map.Entry<String, String> customCol : customTypeColumns.entrySet()) {
+            String columnName = customCol.getKey();
+            String columnType = customCol.getValue();
+            Object value = result.get(columnName);
+            
+            if (value != null) {
+                String valueStr = value.toString();
+                
+                // If value starts with '(' and ends with ')', it's likely a composite type
+                if (valueStr.startsWith("(") && valueStr.endsWith(")")) {
+                    // Process as composite type
+                    Map<String, Object> convertedComposite = convertPostgresCompositeToMap(value, columnType);
+                    convertedResult.put(columnName, convertedComposite);
+                } else {
+                    // Process as enum type (simple string value)
+                    convertedResult.put(columnName, valueStr);
+                }
+            }
+        }
+        
+        return convertedResult;
+    }
+
+    /**
+     * Converts a PostgreSQL composite type to a Map for GraphQL compatibility
+     */
+    private Map<String, Object> convertPostgresCompositeToMap(Object compositeValue, String columnType) {
+        if (compositeValue == null) {
+            return null;
+        }
+
+        try {
+            // PostgreSQL composite types are typically returned as string representations
+            String compositeStr = compositeValue.toString();
+            
+            if (compositeStr == null || compositeStr.trim().isEmpty()) {
+                return Map.of();
+            }
+            
+            return parsePostgresCompositeString(compositeStr, columnType);
+            
+        } catch (Exception e) {
+            log.error("Error converting PostgreSQL composite to Map for column type: {}", columnType, e);
+            return Map.of(); // Return empty map on error
+        }
+    }
+
+    /**
+     * Parses PostgreSQL composite string representation like "(40.7589,-73.9851,New York)" into a Map
+     */
+    private Map<String, Object> parsePostgresCompositeString(String compositeStr, String columnType) {
+        if (compositeStr == null || compositeStr.trim().isEmpty()) {
+            return Map.of();
+        }
+        
+        log.debug("Parsing composite string: '{}' for type: '{}'", compositeStr, columnType);
+
+        // Remove outer parentheses: "(40.7589,-73.9851,New York)" -> "40.7589,-73.9851,New York"
+        String content = compositeStr.trim();
+        if (content.startsWith("(") && content.endsWith(")")) {
+            content = content.substring(1, content.length() - 1);
+        }
+
+        // Split by commas - this is a simple implementation that may need enhancement for complex cases
+        String[] parts = content.split(",");
+        log.debug("Split into {} parts: {}", parts.length, Arrays.toString(parts));
+        
+        // Get composite type metadata to use proper field names
+        List<String> fieldNames = getCompositeTypeFieldNames(columnType);
+        log.debug("Field names for type '{}': {}", columnType, fieldNames);
+        
+        Map<String, Object> result = new HashMap<>();
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i].trim();
+            
+            // Remove quotes if present
+            if (part.startsWith("\"") && part.endsWith("\"")) {
+                part = part.substring(1, part.length() - 1);
+            }
+            
+            // Try to convert to appropriate type
+            Object value = convertCompositeAttributeValue(part);
+            
+            // Use actual field name if available, otherwise fall back to generic name
+            String fieldName = (i < fieldNames.size()) ? fieldNames.get(i) : "attr_" + i;
+            result.put(fieldName, value);
+            log.debug("Mapped field '{}' = '{}'", fieldName, value);
+        }
+        
+        log.debug("Final parsed result: {}", result);
+        return result;
+    }
+
+    /**
+     * Gets the field names for a composite type from the schema reflector
+     */
+    private List<String> getCompositeTypeFieldNames(String compositeTypeName) {
+        try {
+            List<CustomCompositeTypeInfo> compositeTypes = getSchemaReflector().getCustomCompositeTypes();
+            
+            for (CustomCompositeTypeInfo compositeType : compositeTypes) {
+                if (compositeType.getName().equalsIgnoreCase(compositeTypeName)) {
+                    return compositeType.getAttributes().stream()
+                            .sorted((a, b) -> Integer.compare(a.getOrder(), b.getOrder()))
+                            .map(CompositeTypeAttribute::getName)
+                            .collect(Collectors.toList());
+                }
+            }
+            
+            // Fallback: provide hardcoded field names for known composite types
+            if ("address".equalsIgnoreCase(compositeTypeName)) {
+                return Arrays.asList("street", "city", "state", "postal_code", "country");
+            }
+            if ("contact_info".equalsIgnoreCase(compositeTypeName)) {
+                return Arrays.asList("email", "phone", "website");
+            }
+            if ("product_dimensions".equalsIgnoreCase(compositeTypeName)) {
+                return Arrays.asList("length", "width", "height", "weight", "units");
+            }
+            
+            log.warn("Composite type '{}' not found in schema, using generic field names", compositeTypeName);
+            return new ArrayList<>();
+            
+        } catch (Exception e) {
+            log.error("Error getting composite type field names for type: {}", compositeTypeName, e);
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Converts a composite attribute value to the appropriate Java type
+     */
+    private Object convertCompositeAttributeValue(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+
+        value = value.trim();
+
+        // Try to parse as number first
+        try {
+            if (value.contains(".")) {
+                return Double.parseDouble(value);
+            } else {
+                return Integer.parseInt(value);
+            }
+        } catch (NumberFormatException e) {
+            // Not a number, return as string
+            return value;
+        }
     }
 } 

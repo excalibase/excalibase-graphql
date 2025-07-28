@@ -13,12 +13,12 @@ SET search_path TO hana;
 -- ====================
 
 -- Custom enum types for testing
-CREATE TYPE IF NOT EXISTS order_status AS ENUM ('pending', 'processing', 'shipped', 'delivered', 'cancelled');
-CREATE TYPE IF NOT EXISTS user_role AS ENUM ('admin', 'moderator', 'user', 'guest');
-CREATE TYPE IF NOT EXISTS priority_level AS ENUM ('low', 'medium', 'high', 'critical');
+CREATE TYPE order_status AS ENUM ('pending', 'processing', 'shipped', 'delivered', 'cancelled');
+CREATE TYPE user_role AS ENUM ('admin', 'moderator', 'user', 'guest');
+CREATE TYPE priority_level AS ENUM ('low', 'medium', 'high', 'critical');
 
 -- Custom composite object types for testing
-CREATE TYPE IF NOT EXISTS address AS (
+CREATE TYPE address AS (
     street VARCHAR(100),
     city VARCHAR(50),
     state VARCHAR(50),
@@ -26,13 +26,13 @@ CREATE TYPE IF NOT EXISTS address AS (
     country VARCHAR(50)
 );
 
-CREATE TYPE IF NOT EXISTS contact_info AS (
+CREATE TYPE contact_info AS (
     email VARCHAR(100),
     phone VARCHAR(20),
     website VARCHAR(100)
 );
 
-CREATE TYPE IF NOT EXISTS product_dimensions AS (
+CREATE TYPE product_dimensions AS (
     length DECIMAL(10,2),
     width DECIMAL(10,2),
     height DECIMAL(10,2),
@@ -79,6 +79,18 @@ CREATE TABLE IF NOT EXISTS comments (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Sample tasks table for testing
+CREATE TABLE IF NOT EXISTS tasks (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    description TEXT,
+    priority priority_level DEFAULT 'medium',
+    assigned_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    completed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Insert demo data with custom types
 INSERT INTO users (username, email, first_name, last_name, role, shipping_address, contact) VALUES
     ('john_doe', 'john@example.com', 'John', 'Doe', 'user', 
@@ -104,6 +116,13 @@ INSERT INTO comments (content, post_id, author_id) VALUES
     ('Very helpful, thanks! Looking forward to more GraphQL content.', 1, 3),
     ('Looking forward to more posts like this. Docker has been a game changer.', 2, 1),
     ('Could you elaborate on the security aspects of these patterns?', 4, 2)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO tasks (title, description, priority, assigned_user_id, completed) VALUES
+    ('Setup GraphQL API', 'Configure and deploy the GraphQL API for the project', 'high', 1, true),
+    ('Write unit tests', 'Add comprehensive unit tests for all modules', 'medium', 2, false),
+    ('Documentation update', 'Update API documentation with new features', 'low', 1, false),
+    ('Performance optimization', 'Optimize database queries and API response times', 'critical', 3, false)
 ON CONFLICT DO NOTHING;
 
 -- ====================
@@ -383,6 +402,7 @@ JOIN users u ON p.author_id = u.id;
 SELECT setval('users_id_seq', 3, true);
 SELECT setval('posts_id_seq', 4, true);
 SELECT setval('comments_id_seq', 4, true);
+SELECT setval('tasks_id_seq', 4, true);
 SELECT setval('customer_customer_id_seq', 12, true);
 SELECT setval('enhanced_types_id_seq', 3, true);
 SELECT setval('orders_order_id_seq', 5, true);
@@ -423,6 +443,7 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_posts_author_id ON posts(author_id);
 CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_comments_author_id ON comments(author_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned_user_id ON tasks(assigned_user_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 
@@ -445,6 +466,7 @@ REFRESH MATERIALIZED VIEW enhanced_types_summary;
 ANALYZE users;
 ANALYZE posts;
 ANALYZE comments;
+ANALYZE tasks;
 ANALYZE customer;
 ANALYZE enhanced_types;
 ANALYZE orders;
@@ -463,6 +485,7 @@ BEGIN
     RAISE NOTICE '  - users: % rows', (SELECT count(*) FROM users);
     RAISE NOTICE '  - posts: % rows', (SELECT count(*) FROM posts);
     RAISE NOTICE '  - comments: % rows', (SELECT count(*) FROM comments);
+    RAISE NOTICE '  - tasks: % rows', (SELECT count(*) FROM tasks);
     RAISE NOTICE '';
     RAISE NOTICE 'TEST TABLES:';
     RAISE NOTICE '  - customer: % rows', (SELECT count(*) FROM customer);

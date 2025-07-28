@@ -27,9 +27,11 @@ import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.scalar.JsonScalar;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
+import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,12 +50,35 @@ import static graphql.Scalars.*;
 )
 public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGenerator {
     private static final Logger log = LoggerFactory.getLogger(PostgresGraphQLSchemaGeneratorImplement.class);
+    private IDatabaseSchemaReflector schemaReflector;
+
+    public void setSchemaReflector(IDatabaseSchemaReflector schemaReflector) {
+        this.schemaReflector = schemaReflector;
+    }
+
+    private IDatabaseSchemaReflector getSchemaReflector() {
+        return schemaReflector;
+    }
 
     @Override
     public GraphQLSchema generateSchema(Map<String, TableInfo> tables) {
         if (tables == null || tables.isEmpty()) {
             throw new EmptySchemaException("Cannot generate schema with empty postgres schema");
         }
+        
+        IDatabaseSchemaReflector reflector = getSchemaReflector();
+        List<CustomEnumInfo> customEnums = new ArrayList<>();
+        List<CustomCompositeTypeInfo> customComposites = new ArrayList<>();
+        
+        if (reflector != null) {
+            customEnums = reflector.getCustomEnumTypes();
+            customComposites = reflector.getCustomCompositeTypes();
+            log.info("PostgreSQL schema generation: found {} custom enum types and {} custom composite types", 
+                    customEnums.size(), customComposites.size());
+        } else {
+            log.debug("PostgreSQL schema generation: running in testing mode, skipping custom types");
+        }
+        
         GraphQLSchema.Builder schemaBuilder = GraphQLSchema.newSchema();
 
         // Create common types
@@ -69,9 +94,26 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             schemaBuilder.additionalType(filterType);
         }
 
-        // Create type definitions for each table and their filter input types
+        // Add custom enum types to schema
+        Map<String, GraphQLEnumType> customEnumTypes = new HashMap<>();
+        for (CustomEnumInfo enumInfo : customEnums) {
+            GraphQLEnumType enumType = createGraphQLEnumType(enumInfo);
+            customEnumTypes.put(enumInfo.getName(), enumType);
+            schemaBuilder.additionalType(enumType);
+        }
+
+        // Add custom composite types to schema
+        Map<String, GraphQLObjectType> customCompositeTypes = new HashMap<>();
+        for (CustomCompositeTypeInfo compositeInfo : customComposites) {
+            GraphQLObjectType objectType = createGraphQLObjectType(compositeInfo, customEnumTypes, customCompositeTypes);
+            customCompositeTypes.put(compositeInfo.getName(), objectType);
+            schemaBuilder.additionalType(objectType);
+        }
+
+        // Create type definitions for each table with custom types support
         Map<String, GraphQLInputObjectType> tableFilterTypes = new HashMap<>();
-        createTableTypes(schemaBuilder, tables, pageInfoType, filterInputTypes, tableFilterTypes);
+        createTableTypesWithCustomTypes(schemaBuilder, tables, pageInfoType, filterInputTypes, 
+                                       tableFilterTypes, customEnumTypes, customCompositeTypes);
 
         // Create Query type
         GraphQLObjectType queryType = createQueryType(tables, tableFilterTypes);
@@ -1151,67 +1193,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         return filterBuilder.build();
     }
 
-    @Override
-    public GraphQLSchema generateSchema(Map<String, TableInfo> tables, 
-                                      List<CustomEnumInfo> customEnums,
-                                      List<CustomCompositeTypeInfo> customComposites) {
-        if (tables == null || tables.isEmpty()) {
-            throw new EmptySchemaException("Cannot generate schema with empty postgres schema");
-        }
-        
-        GraphQLSchema.Builder schemaBuilder = GraphQLSchema.newSchema();
 
-        // Create common types
-        GraphQLEnumType orderDirectionEnum = createOrderDirectionEnum();
-        GraphQLObjectType pageInfoType = createPageInfoType();
-
-        schemaBuilder.additionalType(orderDirectionEnum);
-        schemaBuilder.additionalType(pageInfoType);
-
-        // Create filter input types
-        Map<String, GraphQLInputObjectType> filterInputTypes = createFilterInputTypes();
-        for (GraphQLInputObjectType filterType : filterInputTypes.values()) {
-            schemaBuilder.additionalType(filterType);
-        }
-
-        // Add custom enum types to schema
-        Map<String, GraphQLEnumType> customEnumTypes = new HashMap<>();
-        if (customEnums != null) {
-            for (CustomEnumInfo enumInfo : customEnums) {
-                GraphQLEnumType enumType = createGraphQLEnumType(enumInfo);
-                customEnumTypes.put(enumInfo.getName(), enumType);
-                schemaBuilder.additionalType(enumType);
-            }
-        }
-
-        // Add custom composite types to schema
-        Map<String, GraphQLObjectType> customCompositeTypes = new HashMap<>();
-        if (customComposites != null) {
-            for (CustomCompositeTypeInfo compositeInfo : customComposites) {
-                GraphQLObjectType objectType = createGraphQLObjectType(compositeInfo, customEnumTypes, customCompositeTypes);
-                customCompositeTypes.put(compositeInfo.getName(), objectType);
-                schemaBuilder.additionalType(objectType);
-            }
-        }
-
-        // Create type definitions for each table with custom type support
-        Map<String, GraphQLInputObjectType> tableFilterTypes = new HashMap<>();
-        createTableTypesWithCustomTypes(schemaBuilder, tables, pageInfoType, filterInputTypes, 
-                                       tableFilterTypes, customEnumTypes, customCompositeTypes);
-
-        // Create Query type
-        GraphQLObjectType queryType = createQueryType(tables, tableFilterTypes);
-        schemaBuilder.query(queryType);
-
-        // Create Mutation type only if there are tables (not just views)
-        boolean hasTables = tables.values().stream().anyMatch(table -> !table.isView());
-        if (hasTables) {
-            GraphQLObjectType mutationType = createMutationType(tables);
-            schemaBuilder.mutation(mutationType);
-        }
-
-        return schemaBuilder.build();
-    }
 
     /**
      * Creates a GraphQL enum type from PostgreSQL custom enum info.
@@ -1299,7 +1281,178 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                Map<String, GraphQLInputObjectType> tableFilterTypes,
                                                Map<String, GraphQLEnumType> customEnumTypes,
                                                Map<String, GraphQLObjectType> customCompositeTypes) {
-        // For now, delegate to original method - will enhance in future iterations
-        createTableTypes(schemaBuilder, tables, pageInfoType, filterInputTypes, tableFilterTypes);
+        
+        for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
+            String tableName = entry.getKey();
+            TableInfo tableInfo = entry.getValue();
+
+            // Create table type with custom type support
+            GraphQLObjectType tableType = createNodeTypeWithCustomTypes(tableName, tableInfo, tables, customEnumTypes, customCompositeTypes);
+            schemaBuilder.additionalType(tableType);
+
+            // Create edge type first (needs the node type)
+            GraphQLObjectType edgeType = createEdgeType(tableName, tableType);
+            schemaBuilder.additionalType(edgeType);
+
+            // Create connection type (needs the edge type)
+            GraphQLObjectType connectionType = createConnectionType(tableName, edgeType, pageInfoType);
+            schemaBuilder.additionalType(connectionType);
+
+            // Create filter input type for the table
+            GraphQLInputObjectType tableFilterType = createFilterInputTypeForTable(tableName, tableInfo, filterInputTypes);
+            tableFilterTypes.put(tableName, tableFilterType);
+            schemaBuilder.additionalType(tableFilterType);
+
+            // Create order by input type
+            GraphQLInputObjectType orderByType = createOrderByInput(tableName, tableInfo);
+            schemaBuilder.additionalType(orderByType);
+
+            // Note: Input types for mutations are created by createMutationType, not here
+            // This avoids duplicate input type creation
+        }
     }
+    
+    /**
+     * Creates a GraphQL object type for a table with custom type support.
+     */
+    private GraphQLObjectType createNodeTypeWithCustomTypes(String tableName, TableInfo tableInfo, Map<String, TableInfo> allTables,
+                                                           Map<String, GraphQLEnumType> customEnumTypes,
+                                                           Map<String, GraphQLObjectType> customCompositeTypes) {
+        GraphQLObjectType.Builder typeBuilder = GraphQLObjectType.newObject()
+                .name(tableName)
+                .description("Type for table " + tableName);
+
+        // Add fields for each column with custom type support
+        for (ColumnInfo column : tableInfo.getColumns()) {
+            GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(column.getType(), customEnumTypes, customCompositeTypes);
+            GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
+                    .name(column.getName())
+                    .type(column.isNullable() ? fieldType : new GraphQLNonNull(fieldType))
+                    .description("Column " + column.getName());
+
+            typeBuilder.field(fieldBuilder.build());
+        }
+
+        // Add fields for forward relationships (foreign keys from this table)
+        for (ForeignKeyInfo fk : tableInfo.getForeignKeys()) {
+            GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
+                    .name(fk.getReferencedTable().toLowerCase())
+                    .type(GraphQLTypeReference.typeRef(fk.getReferencedTable()))
+                    .description("Relationship to " + fk.getReferencedTable());
+
+            typeBuilder.field(fieldBuilder.build());
+        }
+        
+        // Add fields for reverse relationships (foreign keys from other tables pointing to this table)
+        for (Map.Entry<String, TableInfo> otherEntry : allTables.entrySet()) {
+            String otherTableName = otherEntry.getKey();
+            TableInfo otherTableInfo = otherEntry.getValue();
+
+            // Skip self-references and views
+            if (otherTableName.equals(tableName) || otherTableInfo.isView()) {
+                continue;
+            }
+
+            // Find foreign keys in other tables that reference this table
+            for (ForeignKeyInfo otherFk : otherTableInfo.getForeignKeys()) {
+                if (otherFk.getReferencedTable().equalsIgnoreCase(tableName)) {
+                    // Create reverse relationship field name (plural)
+                    String reverseFieldName = otherTableName.toLowerCase();
+                    if (!reverseFieldName.endsWith("s")) {
+                        reverseFieldName += "s";
+                    }
+
+                    log.info("Adding reverse relationship field '{}' to table '{}' referencing table '{}'", 
+                            reverseFieldName, tableName, otherTableName);
+
+                    GraphQLFieldDefinition.Builder reverseFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
+                            .name(reverseFieldName)
+                            .type(new GraphQLList(GraphQLTypeReference.typeRef(otherTableName)))
+                            .description("Reverse relationship to " + otherTableName);
+
+                    typeBuilder.field(reverseFieldBuilder.build());
+                    break; // Only add one reverse relationship per table
+                }
+            }
+        }
+
+        return typeBuilder.build();
+    }
+    
+    /**
+     * Creates create input type with custom type support.
+     */
+    private GraphQLInputObjectType createCreateInputType(String tableName, TableInfo tableInfo,
+                                                        Map<String, GraphQLEnumType> customEnumTypes,
+                                                        Map<String, GraphQLObjectType> customCompositeTypes) {
+        return createInputTypesWithCustomTypes(tableName, tableInfo, false, customEnumTypes, customCompositeTypes);
+    }
+    
+    /**
+     * Creates update input type with custom type support.
+     */
+    private GraphQLInputObjectType createUpdateInputType(String tableName, TableInfo tableInfo,
+                                                        Map<String, GraphQLEnumType> customEnumTypes,
+                                                        Map<String, GraphQLObjectType> customCompositeTypes) {
+        return createInputTypesWithCustomTypes(tableName, tableInfo, true, customEnumTypes, customCompositeTypes);
+    }
+    
+    /**
+     * Creates input types (create/update) with custom type support.
+     */
+    private GraphQLInputObjectType createInputTypesWithCustomTypes(String tableName, TableInfo tableInfo, boolean isUpdate,
+                                                                  Map<String, GraphQLEnumType> customEnumTypes,
+                                                                  Map<String, GraphQLObjectType> customCompositeTypes) {
+        String typeName = tableName + (isUpdate ? "UpdateInput" : "CreateInput");
+        GraphQLInputObjectType.Builder inputTypeBuilder = GraphQLInputObjectType.newInputObject()
+                .name(typeName)
+                .description((isUpdate ? "Update" : "Create") + " input for " + tableName);
+
+        for (ColumnInfo column : tableInfo.getColumns()) {
+            // Skip auto-generated columns for create operations
+            if (!isUpdate && column.isPrimaryKey()) {
+                continue;
+            }
+
+            GraphQLInputType fieldType = mapDatabaseTypeToGraphQLInputType(column.getType(), customEnumTypes, customCompositeTypes);
+            GraphQLInputObjectField.Builder fieldBuilder = GraphQLInputObjectField.newInputObjectField()
+                    .name(column.getName())
+                    .type(fieldType)
+                    .description("Field " + column.getName());
+
+            inputTypeBuilder.field(fieldBuilder.build());
+        }
+
+        return inputTypeBuilder.build();
+    }
+    
+    /**
+     * Maps database type to GraphQL input type with custom type support.
+     */
+    private GraphQLInputType mapDatabaseTypeToGraphQLInputType(String type,
+                                                              Map<String, GraphQLEnumType> customEnumTypes,
+                                                              Map<String, GraphQLObjectType> customCompositeTypes) {
+        // Check for custom enum types first
+        if (PostgresTypeOperator.isCustomEnumType(type) && customEnumTypes.containsKey(type)) {
+            return customEnumTypes.get(type);
+        }
+
+        // For custom composite types, we need to create input versions
+        if (PostgresTypeOperator.isCustomCompositeType(type) && customCompositeTypes.containsKey(type)) {
+            // For now, treat composite types as String in input (JSON representation)
+            // In future, we could create proper input object types for composites
+            return GraphQLString;
+        }
+
+        // Handle array types
+        if (type.contains(ColumnTypeConstant.ARRAY_SUFFIX)) {
+            String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
+            GraphQLInputType elementType = mapDatabaseTypeToGraphQLInputType(baseType, customEnumTypes, customCompositeTypes);
+            return new GraphQLList(elementType);
+        }
+
+        // Fall back to standard input type mapping
+        return mapDatabaseTypeToGraphQLInputType(type);
+    }
+
 }
