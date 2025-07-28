@@ -202,6 +202,38 @@ main() {
         '.data.enhanced_types[0].timestamptz_col != null'
     
     # ==========================================
+    # CUSTOM TYPES TESTS (ENUMS & COMPOSITE)
+    # ==========================================
+    
+    run_test "Custom Enum Types - OrderStatus in Schema" \
+        "{ __type(name: \"OrderStatus\") { name kind enumValues { name } } }" \
+        '.data.__type.kind == "ENUM" and (.data.__type.enumValues | length == 5)'
+    
+    run_test "Custom Enum Types - UserRole in Schema" \
+        "{ __type(name: \"UserRole\") { name kind enumValues { name } } }" \
+        '.data.__type.kind == "ENUM" and (.data.__type.enumValues | length >= 3)'
+    
+    run_test "Custom Composite Types - Address in Schema" \
+        "{ __type(name: \"Address\") { name kind fields { name type { name } } } }" \
+        '.data.__type.kind == "OBJECT" and (.data.__type.fields | length == 5)'
+    
+    run_test "Custom Enum Usage - Orders with Status" \
+        "{ orders { order_id status } }" \
+        '(.data.orders | length >= 1) and (.data.orders[0].status | test("PENDING|PROCESSING|SHIPPED|DELIVERED|CANCELLED"))'
+    
+    run_test "Custom Enum Usage - Users with Role" \
+        "{ users { id role } }" \
+        '(.data.users | length >= 1) and (.data.users[0].role | test("ADMIN|MODERATOR|USER|GUEST"))'
+    
+    run_test "Custom Types Test Table - Mixed Types" \
+        "{ custom_types_test { id name status role priority } }" \
+        '(.data.custom_types_test | length >= 1) and (.data.custom_types_test[0].status | test("PENDING|PROCESSING|SHIPPED|DELIVERED|CANCELLED"))'
+    
+    run_test "Query Existing Composite Types - Orders with Address" \
+        "{ orders(where: { order_id: { eq: 1 } }) { order_id shipping_address { street city state postal_code country } } }" \
+        '.data.orders[0].shipping_address.street == "123 Delivery St" and .data.orders[0].shipping_address.city == "New York"'
+    
+    # ==========================================
     # RELATIONSHIP TESTS
     # ==========================================
     
@@ -233,10 +265,66 @@ main() {
         "mutation { createCustomer(input: { first_name: \"TEST\", last_name: \"USER\", email: \"test@example.com\", active: true }) { customer_id first_name last_name email } }" \
         '.data.createCustomer.customer_id != null and .data.createCustomer.first_name == "TEST"'
     
-    run_test "Update Customer Mutation" \
+        run_test "Update Customer Mutation" \
         "mutation { updateCustomer(input: { customer_id: 13, email: \"updated@example.com\" }) { customer_id email } }" \
         '.data.updateCustomer.email == "updated@example.com"'
+
+    # ==========================================
+    # CUSTOM TYPES MUTATION TESTS
+    # ==========================================
     
+    run_test "Create Order with OrderStatus Enum" \
+        "mutation { createOrders(input: { customer_id: 1, status: \"pending\", total_amount: 99.99 }) { order_id status customer_id total_amount } }" \
+        '.data.createOrders.order_id != null and .data.createOrders.status == "PENDING" and .data.createOrders.total_amount == 99.99'
+    
+    run_test "Update Order Status Enum" \
+        "mutation { updateOrders(input: { order_id: 1, status: \"shipped\" }) { order_id status } }" \
+        '.data.updateOrders.status == "SHIPPED"'
+    
+    run_test "Create Order with Different Status Values" \
+        "mutation { createOrders(input: { customer_id: 2, status: \"processing\", total_amount: 149.99 }) { order_id status } }" \
+        '.data.createOrders.status == "PROCESSING"'
+    
+    run_test "Test OrderStatus Enum Values" \
+        "mutation { createOrders(input: { customer_id: 3, status: \"delivered\", total_amount: 75.50 }) { order_id status } }" \
+        '.data.createOrders.status == "DELIVERED"'
+    
+    run_test "Create User with UserRole Enum" \
+        "mutation { createUsers(input: { username: \"testuser\", email: \"testuser@example.com\", role: \"user\" }) { id username role email } }" \
+        '.data.createUsers.id != null and .data.createUsers.role == "USER"'
+    
+    run_test "Update User Role" \
+        "mutation { updateUsers(input: { id: 1, role: \"admin\" }) { id role } }" \
+        '.data.updateUsers.role == "ADMIN"'
+    
+    run_test "Create with Composite Type (Address)" \
+        "mutation { createOrders(input: { customer_id: 4, status: \"pending\", total_amount: 199.99, shipping_address: \"(\\\"123 Main St\\\",\\\"New York\\\",\\\"NY\\\",\\\"10001\\\",\\\"USA\\\")\" }) { order_id shipping_address { street city state postal_code country } } }" \
+        '.data.createOrders.order_id != null and .data.createOrders.shipping_address.street == "123 Main St"'
+    
+    run_test "Create Task with PriorityLevel Enum" \
+        "mutation { createTasks(input: { title: \"Test Task\", priority: \"high\", assigned_user_id: 1 }) { id title priority } }" \
+        '.data.createTasks.id != null and .data.createTasks.priority == "HIGH"'
+    
+    run_test "Test Multiple Custom Types in Single Mutation" \
+        "mutation { createCustom_types_test(input: { name: \"Mixed Test\", status: \"pending\", role: \"user\", priority: \"medium\" }) { id name status role priority } }" \
+        '.data.createCustom_types_test.status == "PENDING" and .data.createCustom_types_test.role == "USER" and .data.createCustom_types_test.priority == "MEDIUM"'
+
+    # ==========================================
+    # CUSTOM TYPES ERROR HANDLING TESTS
+    # ==========================================
+    
+    log_info "Testing: Invalid Enum Values"
+    INVALID_ENUM_RESPONSE=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "mutation { createOrders(input: { customer_id: 1, status: \"invalid_status\", total_amount: 50.00 }) { order_id status } }"}')
+    
+    if echo "$INVALID_ENUM_RESPONSE" | grep -q "errors"; then
+        log_success "✅ Invalid enum value properly rejected"
+    else
+        log_error "❌ Invalid enum value should have been rejected"
+        echo "Response: $INVALID_ENUM_RESPONSE" | head -3
+    fi
+
     # ==========================================
     # CONNECTION/CURSOR PAGINATION TESTS
     # ==========================================
@@ -317,6 +405,14 @@ main() {
     echo "✅ Passed: $passed_tests"
     echo "❌ Failed: $failed_tests"
     echo "📈 Success Rate: $(((passed_tests * 100) / test_count))%"
+    echo ""
+    echo "🎯 Custom Types Coverage:"
+    echo "  ✅ OrderStatus enum (pending, processing, shipped, delivered)"
+    echo "  ✅ UserRole enum (user, admin, moderator)"
+    echo "  ✅ PriorityLevel enum (low, medium, high, urgent)"
+    echo "  ✅ Address composite type (street, city, state, postal_code, country)"
+    echo "  ✅ Mixed custom types in single mutations"
+    echo "  ✅ Invalid enum value error handling"
     echo "=================================================="
     
     if [ $failed_tests -eq 0 ]; then

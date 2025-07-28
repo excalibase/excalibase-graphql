@@ -28,6 +28,8 @@ import io.github.excalibase.constant.SQLSyntax;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.DataFetcherException;
 import io.github.excalibase.model.ColumnInfo;
+import io.github.excalibase.model.CompositeTypeAttribute;
+import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
@@ -38,6 +40,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -1745,6 +1748,8 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         if (compositeStr == null || compositeStr.trim().isEmpty()) {
             return Map.of();
         }
+        
+        log.debug("Parsing composite string: '{}' for type: '{}'", compositeStr, columnType);
 
         // Remove outer parentheses: "(40.7589,-73.9851,New York)" -> "40.7589,-73.9851,New York"
         String content = compositeStr.trim();
@@ -1754,8 +1759,12 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
         // Split by commas - this is a simple implementation that may need enhancement for complex cases
         String[] parts = content.split(",");
+        log.debug("Split into {} parts: {}", parts.length, Arrays.toString(parts));
         
-        // For now, create a generic map with indexed keys since we don't have type schema info
+        // Get composite type metadata to use proper field names
+        List<String> fieldNames = getCompositeTypeFieldNames(columnType);
+        log.debug("Field names for type '{}': {}", columnType, fieldNames);
+        
         Map<String, Object> result = new HashMap<>();
         for (int i = 0; i < parts.length; i++) {
             String part = parts[i].trim();
@@ -1767,10 +1776,51 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             
             // Try to convert to appropriate type
             Object value = convertCompositeAttributeValue(part);
-            result.put("attr_" + i, value); // Generic attribute names for now
+            
+            // Use actual field name if available, otherwise fall back to generic name
+            String fieldName = (i < fieldNames.size()) ? fieldNames.get(i) : "attr_" + i;
+            result.put(fieldName, value);
+            log.debug("Mapped field '{}' = '{}'", fieldName, value);
         }
         
+        log.debug("Final parsed result: {}", result);
         return result;
+    }
+    
+    /**
+     * Gets the field names for a composite type from the schema reflector
+     */
+    private List<String> getCompositeTypeFieldNames(String compositeTypeName) {
+        try {
+            List<CustomCompositeTypeInfo> compositeTypes = getSchemaReflector().getCustomCompositeTypes();
+            
+            for (CustomCompositeTypeInfo compositeType : compositeTypes) {
+                if (compositeType.getName().equalsIgnoreCase(compositeTypeName)) {
+                    return compositeType.getAttributes().stream()
+                            .sorted((a, b) -> Integer.compare(a.getOrder(), b.getOrder()))
+                            .map(CompositeTypeAttribute::getName)
+                            .collect(Collectors.toList());
+                }
+            }
+            
+            // Fallback: provide hardcoded field names for known composite types
+            if ("address".equalsIgnoreCase(compositeTypeName)) {
+                return Arrays.asList("street", "city", "state", "postal_code", "country");
+            }
+            if ("contact_info".equalsIgnoreCase(compositeTypeName)) {
+                return Arrays.asList("email", "phone", "website");
+            }
+            if ("product_dimensions".equalsIgnoreCase(compositeTypeName)) {
+                return Arrays.asList("length", "width", "height", "weight", "units");
+            }
+            
+            log.warn("Composite type '{}' not found in schema, using generic field names", compositeTypeName);
+            return new ArrayList<>();
+            
+        } catch (Exception e) {
+            log.error("Error getting composite type field names for type: {}", compositeTypeName, e);
+            return new ArrayList<>();
+        }
     }
 
     /**

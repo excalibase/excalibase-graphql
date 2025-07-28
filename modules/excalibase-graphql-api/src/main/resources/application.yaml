@@ -14,7 +14,7 @@ spring:
     hikari:
       schema: hana
 app:
-  allowed-schema: public
+  allowed-schema: hana
   database-type: postgres
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
