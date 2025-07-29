@@ -18,7 +18,7 @@ import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.constant.GraphqlConstant;
 import io.github.excalibase.postgres.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
-import io.github.excalibase.exception.EmptySchemaException;
+
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.CompositeTypeAttribute;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
@@ -63,7 +63,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     @Override
     public GraphQLSchema generateSchema(Map<String, TableInfo> tables) {
         if (tables == null || tables.isEmpty()) {
-            throw new EmptySchemaException("Cannot generate schema with empty postgres schema");
+            log.info("No tables found, generating minimal schema with health check");
+            return createMinimalSchema();
         }
         
         IDatabaseSchemaReflector reflector = getSchemaReflector();
@@ -127,6 +128,23 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         }
 
         return schemaBuilder.build();
+    }
+
+    /**
+     * Creates a minimal GraphQL schema with just a health check query when no tables are found.
+     * This provides graceful degradation instead of throwing an exception.
+     */
+    private GraphQLSchema createMinimalSchema() {
+        return GraphQLSchema.newSchema()
+            .query(GraphQLObjectType.newObject()
+                .name("Query")
+                .field(GraphQLFieldDefinition.newFieldDefinition()
+                    .name("health")
+                    .type(GraphQLString)
+                    .staticValue("Schema is empty but service is running")
+                    .build())
+                .build())
+            .build();
     }
 
     private GraphQLEnumType createOrderDirectionEnum() {

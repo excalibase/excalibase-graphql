@@ -12,9 +12,9 @@ spring:
     username: hana001
     password: password123
     hikari:
-      schema: hana
+      schema: public
 app:
-  allowed-schema: hana
+  allowed-schema: public
   database-type: postgres
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)

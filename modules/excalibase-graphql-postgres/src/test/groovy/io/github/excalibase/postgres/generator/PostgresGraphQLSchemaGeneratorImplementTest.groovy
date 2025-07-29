@@ -3,7 +3,7 @@ package io.github.excalibase.postgres.generator
 import graphql.Scalars
 import graphql.schema.*
 import io.github.excalibase.constant.FieldConstant
-import io.github.excalibase.exception.EmptySchemaException
+
 import io.github.excalibase.model.ColumnInfo
 import io.github.excalibase.model.CompositeTypeAttribute
 import io.github.excalibase.model.CustomCompositeTypeInfo
@@ -22,28 +22,48 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         generator = new PostgresGraphQLSchemaGeneratorImplement()
     }
 
-    def "should throw exception for empty table map"() {
+
+
+    def "should generate minimal schema for empty table map"() {
         given: "an empty table map"
         Map<String, TableInfo> tables = [:]
 
-        when: "generating schema"
-        generator.generateSchema(tables)
+        when: "generating schema with empty tables"
+        GraphQLSchema schema = generator.generateSchema(tables)
 
-        then: "should throw EmptySchemaException"
-        def error = thrown(EmptySchemaException)
-        error.message == "Cannot generate schema with empty postgres schema"
+        then: "should return minimal schema with health query"
+        schema != null
+        schema.queryType != null
+        schema.queryType.name == "Query"
+        
+        and: "should have health field"
+        def healthField = schema.queryType.getFieldDefinition("health")
+        healthField != null
+        healthField.type.name == "String"
+        
+        and: "should not have mutation type"
+        schema.mutationType == null
     }
 
-    def "should throw exception for null table map"() {
-        given: "an empty table map"
+    def "should generate minimal schema for null table map"() {
+        given: "a null table map"
         Map<String, TableInfo> tables = null
 
-        when: "generating schema"
-        generator.generateSchema(tables)
+        when: "generating schema with null tables"
+        GraphQLSchema schema = generator.generateSchema(tables)
 
-        then: "should throw EmptySchemaException"
-        def error = thrown(EmptySchemaException)
-        error.message == "Cannot generate schema with empty postgres schema"
+        then: "should return minimal schema with health query"
+        schema != null
+        schema.queryType != null
+        schema.queryType.name == "Query"
+        
+        and: "should have health field"
+        def healthField = schema.queryType.getFieldDefinition("health")
+        healthField != null
+        healthField.type.name == "String"
+        
+        and: "should not have mutation type"
+        schema.mutationType == null
     }
 
 
