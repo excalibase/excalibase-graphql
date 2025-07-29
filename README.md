@@ -1063,21 +1063,16 @@ query {
 
 This is a solo project in early development, but contributions are welcome!
 
-📋 **Development Planning:**
-- **[ROADMAP.md](ROADMAP.md)** - Complete development roadmap (13-19 months)
-- **[docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md)** - Immediate PostgreSQL completion tasks
-
 🚀 **Getting Started:**
-1. Review the development plan for current priorities
-2. Fork the repository
-3. Create a feature branch: `git checkout -b feature/amazing-feature`
-4. Make your changes and add tests
-5. Ensure tests pass: `mvn test`
-6. Commit: `git commit -m 'Add amazing feature'`
-7. Push: `git push origin feature/amazing-feature`
-8. Open a Pull Request
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Make your changes and add tests
+4. Ensure tests pass: `mvn test`
+5. Commit: `git commit -m 'Add amazing feature'`
+6. Push: `git push origin feature/amazing-feature`
+7. Open a Pull Request
 
-**Current Priority**: Complete PostgreSQL support (~25% → 90%)
+**Current Priority**: Complete PostgreSQL support and enhance GraphQL API features
 
 ## Known Limitations
 
