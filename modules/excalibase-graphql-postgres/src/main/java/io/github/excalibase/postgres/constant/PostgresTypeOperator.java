@@ -143,8 +143,8 @@ public class PostgresTypeOperator {
         if (isIntegerType(type) || isFloatingPointType(type) || isBooleanType(type) ||
             isJsonType(type) || isDateTimeType(type) || isUuidType(type) ||
             isNetworkType(type) || isBitType(type) || isXmlType(type) ||
-            lowerType.contains("varchar") || lowerType.contains("text") ||
-            lowerType.contains("char")) {
+            lowerType.contains(ColumnTypeConstant.VARCHAR) || lowerType.contains(ColumnTypeConstant.TEXT) ||
+            lowerType.contains(ColumnTypeConstant.CHAR)) {
             return false;
         }
         
@@ -172,8 +172,8 @@ public class PostgresTypeOperator {
         if (isIntegerType(type) || isFloatingPointType(type) || isBooleanType(type) ||
             isJsonType(type) || isDateTimeType(type) || isUuidType(type) ||
             isNetworkType(type) || isBitType(type) || isXmlType(type) ||
-            lowerType.contains("varchar") || lowerType.contains("text") ||
-            lowerType.contains("char")) {
+            lowerType.contains(ColumnTypeConstant.VARCHAR) || lowerType.contains(ColumnTypeConstant.TEXT) ||
+            lowerType.contains(ColumnTypeConstant.CHAR)) {
             return false;
         }
         

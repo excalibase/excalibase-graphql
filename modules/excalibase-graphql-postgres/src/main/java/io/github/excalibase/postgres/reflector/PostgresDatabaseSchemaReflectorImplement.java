@@ -3,6 +3,7 @@ package io.github.excalibase.postgres.reflector;
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.postgres.constant.PostgresSqlConstant;
+import io.github.excalibase.constant.DatabaseColumnConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
@@ -79,8 +80,8 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
 
             // Process views
             for (Map<String, Object> viewResult : viewResults) {
-                String viewName = (String) viewResult.get("name");
-                TableInfo viewInfo = processTable(viewName, schema, true);
+                            String viewName = (String) viewResult.get(DatabaseColumnConstant.NAME);
+            TableInfo viewInfo = processTable(viewName, schema, true);
                 tables.put(viewName, viewInfo);
             }
 
@@ -89,10 +90,10 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     }
 
     @Override
-    public List<CustomEnumInfo> getCustomEnumTypes() {
+        public List<CustomEnumInfo> getCustomEnumTypes() {
         return enumCache.computeIfAbsent(allowedSchema, schema -> {
             List<CustomEnumInfo> enumTypes = new ArrayList<>();
-
+            
             List<Map<String, Object>> results = jdbcTemplate.queryForList(
                     PostgresSqlConstant.GET_CUSTOM_ENUM_TYPES,
                     schema
@@ -100,8 +101,8 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
 
             for (Map<String, Object> result : results) {
                 CustomEnumInfo enumInfo = new CustomEnumInfo();
-                enumInfo.setName((String) result.get("enum_name"));
-                enumInfo.setSchema((String) result.get("schema_name"));
+                enumInfo.setName((String) result.get(DatabaseColumnConstant.ENUM_NAME));
+                enumInfo.setSchema((String) result.get(DatabaseColumnConstant.SCHEMA_NAME));
 
                 // Handle PostgreSQL array result
                 Object enumValuesObj = result.get("enum_values");
@@ -353,7 +354,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                 columnInfo.setType(dataType);
             }
 
-            columnInfo.setNullable("YES".equals(column.get("is_nullable")));
+            columnInfo.setNullable(DatabaseColumnConstant.YES.equals(column.get(DatabaseColumnConstant.IS_NULLABLE)));
             tableInfo.getColumns().add(columnInfo);
         }
 

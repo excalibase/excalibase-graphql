@@ -35,4 +35,72 @@ public class GraphqlConstant {
      * @see <a href="https://relay.dev/graphql/connections.htm">Relay Connection Specification</a>
      */
     public static final String CONNECTION_SUFFIX = "Connection";
+    
+    // Common GraphQL field names
+    
+    /** Health check field name */
+    public static final String HEALTH = "health";
+    
+    /** Where clause field name */
+    public static final String WHERE = "where";
+    
+    /** OR clause field name */
+    public static final String OR = "or";
+    
+    /** Input field name for various operations */
+    public static final String INPUT = "input";
+    
+    /** Inputs field name for bulk operations */
+    public static final String INPUTS = "inputs";
+    
+    /** ID field name */
+    public static final String ID = "id";
+    
+    // GraphQL enum types
+    
+    /** OrderDirection enum type name */
+    public static final String ORDER_DIRECTION = "OrderDirection";
+    
+    /** Ascending order direction value */
+    public static final String ASC = "ASC";
+    
+    /** Descending order direction value */
+    public static final String DESC = "DESC";
+    
+    // GraphQL type suffixes
+    
+    /** Edge type suffix for Relay connections */
+    public static final String EDGE_SUFFIX = "Edge";
+    
+    /** OrderByInput type suffix */
+    public static final String ORDER_BY_INPUT_SUFFIX = "OrderByInput";
+    
+    /** CreateInput type suffix */
+    public static final String CREATE_INPUT_SUFFIX = "CreateInput";
+    
+    /** UpdateInput type suffix */
+    public static final String UPDATE_INPUT_SUFFIX = "UpdateInput";
+    
+    /** RelationshipInput type suffix */
+    public static final String RELATIONSHIP_INPUT_SUFFIX = "RelationshipInput";
+    
+    /** ConnectInput type suffix */
+    public static final String CONNECT_INPUT_SUFFIX = "ConnectInput";
+    
+    // Filter type names
+    
+    /** String filter type name */
+    public static final String STRING_FILTER = "StringFilter";
+    
+    /** Integer filter type name */
+    public static final String INT_FILTER = "IntFilter";
+    
+    /** Float filter type name */
+    public static final String FLOAT_FILTER = "FloatFilter";
+    
+    /** Boolean filter type name */
+    public static final String BOOLEAN_FILTER = "BooleanFilter";
+    
+    /** JSON filter type name */
+    public static final String JSON_FILTER = "JsonFilter";
 }

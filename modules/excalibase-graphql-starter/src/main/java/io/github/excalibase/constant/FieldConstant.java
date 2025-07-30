@@ -82,6 +82,12 @@ public class FieldConstant {
 
     // Query operators for filtering
     
+    /** Operator for equality comparison */
+    public static final String OPERATOR_EQ = "eq";
+    
+    /** Operator for inequality comparison */
+    public static final String OPERATOR_NEQ = "neq";
+    
     /** Operator for string containment filtering */
     public static final String OPERATOR_CONTAINS = "contains";
     
@@ -90,6 +96,12 @@ public class FieldConstant {
     
     /** Operator for string suffix filtering */
     public static final String OPERATOR_ENDS_WITH = "endsWith";
+    
+    /** Operator for SQL LIKE pattern matching */
+    public static final String OPERATOR_LIKE = "like";
+    
+    /** Operator for case-insensitive SQL LIKE pattern matching */
+    public static final String OPERATOR_ILIKE = "ilike";
     
     /** Operator for greater than comparison */
     public static final String OPERATOR_GT = "gt";
@@ -108,6 +120,12 @@ public class FieldConstant {
     
     /** Operator for non-null value checking */
     public static final String OPERATOR_IS_NOT_NULL = "isNotNull";
+    
+    /** Operator for checking if value is in a list */
+    public static final String OPERATOR_IN = "in";
+    
+    /** Operator for checking if value is not in a list */
+    public static final String OPERATOR_NOT_IN = "notIn";
 
     // Context keys
     

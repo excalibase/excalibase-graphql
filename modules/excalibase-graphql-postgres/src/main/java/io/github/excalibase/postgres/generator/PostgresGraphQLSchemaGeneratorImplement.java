@@ -16,6 +16,7 @@ import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.constant.ColumnTypeConstant;
 import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.constant.GraphqlConstant;
+import io.github.excalibase.constant.MutationConstant;
 import io.github.excalibase.postgres.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 
@@ -137,9 +138,9 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private GraphQLSchema createMinimalSchema() {
         return GraphQLSchema.newSchema()
             .query(GraphQLObjectType.newObject()
-                .name("Query")
+                .name(GraphqlConstant.QUERY)
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                    .name("health")
+                    .name(GraphqlConstant.HEALTH)
                     .type(GraphQLString)
                     .staticValue("Schema is empty but service is running")
                     .build())
@@ -149,10 +150,10 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLEnumType createOrderDirectionEnum() {
         return GraphQLEnumType.newEnum()
-                .name("OrderDirection")
+                .name(GraphqlConstant.ORDER_DIRECTION)
                 .description("Possible directions in which to order a list of items")
-                .value("ASC", "ASC", "Sort in ascending order")
-                .value("DESC", "DESC", "Sort in descending order")
+                .value(GraphqlConstant.ASC, GraphqlConstant.ASC, "Sort in ascending order")
+                .value(GraphqlConstant.DESC, GraphqlConstant.DESC, "Sort in descending order")
                 .build();
     }
 
@@ -363,14 +364,14 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // Add the where argument using the table's filter type
         fieldBuilder.argument(GraphQLArgument.newArgument()
-            .name("where")
+            .name(GraphqlConstant.WHERE)
             .type(filterType)
             .description("Filter conditions for " + tableName)
             .build());
         
         // Add OR filter argument
         fieldBuilder.argument(GraphQLArgument.newArgument()
-            .name("or")
+            .name(GraphqlConstant.OR)
             .type(new GraphQLList(filterType))
             .description("OR conditions for " + tableName)
             .build());
@@ -402,14 +403,14 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add the where argument using the table's filter type
         GraphQLInputObjectType tableFilterType = tableFilterTypes.get(tableName);
         connectionFieldBuilder.argument(GraphQLArgument.newArgument()
-            .name("where")
+            .name(GraphqlConstant.WHERE)
             .type(tableFilterType)
             .description("Filter conditions for " + tableName)
             .build());
         
         // Add OR filter argument
         connectionFieldBuilder.argument(GraphQLArgument.newArgument()
-            .name("or")
+            .name(GraphqlConstant.OR)
             .type(new GraphQLList(tableFilterType))
             .description("OR conditions for " + tableName)
             .build());
@@ -566,33 +567,33 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // 1. Create mutation
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                .name("create" + capitalize(tableName))
-                .description("Create a new " + tableName + " record")
+                .name(MutationConstant.CREATE_PREFIX + capitalize(tableName))
+                .description(String.format(MutationConstant.CREATE_DESCRIPTION_TEMPLATE, tableName))
                 .type(GraphQLTypeReference.typeRef(tableName))
                 .argument(GraphQLArgument.newArgument()
-                        .name("input")
+                        .name(GraphqlConstant.INPUT)
                         .type(new GraphQLNonNull(createInputType))
                         .build())
                 .build());
 
         // 2. Update mutation
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                .name("update" + capitalize(tableName))
-                .description("Update an existing " + tableName + " record")
+                .name(MutationConstant.UPDATE_PREFIX + capitalize(tableName))
+                .description(String.format(MutationConstant.UPDATE_DESCRIPTION_TEMPLATE, tableName))
                 .type(GraphQLTypeReference.typeRef(tableName))
                 .argument(GraphQLArgument.newArgument()
-                        .name("input")
+                        .name(GraphqlConstant.INPUT)
                         .type(new GraphQLNonNull(updateInputType))
                         .build())
                 .build());
 
         // 3. Delete mutation
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                .name("delete" + capitalize(tableName))
-                .description("Delete a " + tableName + " record")
+                .name(MutationConstant.DELETE_PREFIX + capitalize(tableName))
+                .description(String.format(MutationConstant.DELETE_DESCRIPTION_TEMPLATE, tableName))
                 .type(GraphQLBoolean)
                 .argument(GraphQLArgument.newArgument()
-                        .name("id")
+                        .name(GraphqlConstant.ID)
                         .type(new GraphQLNonNull(GraphQLID))
                         .description("Primary key of record to delete")
                         .build())
@@ -600,11 +601,11 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // 4. Bulk create mutation
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                .name("createMany" + capitalize(tableName) + "s")
-                .description("Create multiple " + tableName + " records in a single operation")
+                .name(MutationConstant.CREATE_MANY_PREFIX + capitalize(tableName) + MutationConstant.BULK_SUFFIX)
+                .description(String.format(MutationConstant.CREATE_MANY_DESCRIPTION_TEMPLATE, tableName))
                 .type(new GraphQLList(GraphQLTypeReference.typeRef(tableName)))
                 .argument(GraphQLArgument.newArgument()
-                        .name("inputs")
+                        .name(GraphqlConstant.INPUTS)
                         .type(new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(createInputType))))
                         .description("Array of " + tableName + " records to create")
                         .build())
@@ -613,11 +614,11 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // 5. Create with relationships mutation
         GraphQLInputObjectType relationshipInputType = createRelationshipInputType(tableName, tableInfo, tables);
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                .name("create" + capitalize(tableName) + "WithRelations")
-                .description("Create a " + tableName + " record with related records")
+                .name(MutationConstant.CREATE_PREFIX + capitalize(tableName) + MutationConstant.WITH_RELATIONS_SUFFIX)
+                .description(String.format(MutationConstant.CREATE_WITH_RELATIONS_DESCRIPTION_TEMPLATE, tableName))
                 .type(GraphQLTypeReference.typeRef(tableName))
                 .argument(GraphQLArgument.newArgument()
-                        .name("input")
+                        .name(GraphqlConstant.INPUT)
                         .type(new GraphQLNonNull(relationshipInputType))
                         .description("Input data with relationship fields")
                         .build())
@@ -809,60 +810,60 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         
         // String filter type
         GraphQLInputObjectType stringFilter = GraphQLInputObjectType.newInputObject()
-            .name("StringFilter")
+            .name(GraphqlConstant.STRING_FILTER)
             .description("String filter options")
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("eq")
+                .name(FieldConstant.OPERATOR_EQ)
                 .type(GraphQLString)
                 .description("Equals")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("neq")
+                .name(FieldConstant.OPERATOR_NEQ)
                 .type(GraphQLString)
                 .description("Not equals")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("contains")
+                .name(FieldConstant.OPERATOR_CONTAINS)
                 .type(GraphQLString)
                 .description("Contains text")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("startsWith")
+                .name(FieldConstant.OPERATOR_STARTS_WITH)
                 .type(GraphQLString)
                 .description("Starts with text")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("endsWith")
+                .name(FieldConstant.OPERATOR_ENDS_WITH)
                 .type(GraphQLString)
                 .description("Ends with text")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("like")
+                .name(FieldConstant.OPERATOR_LIKE)
                 .type(GraphQLString)
                 .description("Like pattern")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("ilike")
+                .name(FieldConstant.OPERATOR_ILIKE)
                 .type(GraphQLString)
                 .description("Case-insensitive like pattern")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNull")
+                .name(FieldConstant.OPERATOR_IS_NULL)
                 .type(GraphQLBoolean)
                 .description("Is null")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNotNull")
+                .name(FieldConstant.OPERATOR_IS_NOT_NULL)
                 .type(GraphQLBoolean)
                 .description("Is not null")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("in")
+                .name(FieldConstant.OPERATOR_IN)
                 .type(new GraphQLList(GraphQLString))
                 .description("In list of values")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("notIn")
+                .name(FieldConstant.OPERATOR_NOT_IN)
                 .type(new GraphQLList(GraphQLString))
                 .description("Not in list of values")
                 .build())

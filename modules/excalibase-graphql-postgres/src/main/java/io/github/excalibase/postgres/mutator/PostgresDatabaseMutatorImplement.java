@@ -495,7 +495,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     private String buildInsertSql(String tableName, Set<String> fieldNames) {
         Map<String, String> columnTypes = getColumnTypes(tableName);
         
-        return "INSERT INTO " + getQualifiedTableName(tableName) + " (" +
+        return PostgresColumnTypeConstant.INSERT_INTO_WITH_SPACE + getQualifiedTableName(tableName) + " (" +
                fieldNames.stream().map(this::quoteIdentifier).collect(Collectors.joining(", ")) +
                ") VALUES (" +
                fieldNames.stream().map(field -> {
@@ -504,16 +504,16 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return ":" + field + "::" + columnType;
                    } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
                        return ":" + field + "::interval";
-                   } else if (columnType.contains("json")) {
+                   } else if (columnType.contains(ColumnTypeConstant.JSON)) {
                        return ":" + field + "::" + columnType;
-                   } else if (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr")) {
+                   } else if (columnType.contains(ColumnTypeConstant.INET) || columnType.contains(ColumnTypeConstant.CIDR) || columnType.contains(ColumnTypeConstant.MACADDR)) {
                        return ":" + field + "::" + columnType;
-                   } else if (columnType.contains("timestamp") || columnType.contains("time")) {
+                   } else if (columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.TIME)) {
                        return ":" + field + "::" + columnType;
-                   } else if (columnType.contains("xml")) {
-                       return ":" + field + "::xml";
-                   } else if (columnType.contains("bytea")) {
-                       return ":" + field + "::bytea";
+                   } else if (columnType.contains(ColumnTypeConstant.XML)) {
+                       return ":" + field + "::" + ColumnTypeConstant.XML;
+                   } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
+                       return ":" + field + "::" + ColumnTypeConstant.BYTEA;
                    } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
                        return ":" + field + "::" + columnType;
                    } else if (PostgresTypeOperator.isCustomCompositeType(columnType)) {
@@ -522,29 +522,29 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return ":" + field;
                    }
                }).collect(Collectors.joining(", ")) +
-               ") RETURNING *";
+               ")" + PostgresColumnTypeConstant.RETURNING_ALL;
     }
 
     private String buildUpdateSql(String tableName, Set<String> updateFields, Set<String> whereFields) {
         Map<String, String> columnTypes = getColumnTypes(tableName);
         
-        return "UPDATE " + getQualifiedTableName(tableName) + " SET " +
+        return PostgresColumnTypeConstant.UPDATE_WITH_SPACE + getQualifiedTableName(tableName) + PostgresColumnTypeConstant.SET_WITH_SPACE +
                updateFields.stream().map(field -> {
                    String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
                    if (PostgresTypeOperator.isArrayType(columnType)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
                    } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
-                       return quoteIdentifier(field) + " = :" + field + "::interval";
-                   } else if (columnType.contains("json")) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.INTERVAL;
+                   } else if (columnType.contains(ColumnTypeConstant.JSON)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
-                   } else if (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr")) {
+                   } else if (columnType.contains(ColumnTypeConstant.INET) || columnType.contains(ColumnTypeConstant.CIDR) || columnType.contains(ColumnTypeConstant.MACADDR)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
-                   } else if (columnType.contains("timestamp") || columnType.contains("time")) {
+                   } else if (columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.TIME)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
-                   } else if (columnType.contains("xml")) {
-                       return quoteIdentifier(field) + " = :" + field + "::xml";
-                   } else if (columnType.contains("bytea")) {
-                       return quoteIdentifier(field) + " = :" + field + "::bytea";
+                   } else if (columnType.contains(ColumnTypeConstant.XML)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.XML;
+                   } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.BYTEA;
                    } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
                    } else if (PostgresTypeOperator.isCustomCompositeType(columnType)) {
@@ -553,34 +553,34 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return quoteIdentifier(field) + " = :" + field;
                    }
                }).collect(Collectors.joining(", ")) +
-               " WHERE " +
+               PostgresColumnTypeConstant.WHERE_WITH_SPACE +
                whereFields.stream().map(field -> {
                    String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
                    if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
-                       return quoteIdentifier(field) + " = :" + field + "::interval";
-                   } else if (columnType.contains("json")) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.INTERVAL;
+                   } else if (columnType.contains(ColumnTypeConstant.JSON)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
-                   } else if (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr")) {
+                   } else if (columnType.contains(ColumnTypeConstant.INET) || columnType.contains(ColumnTypeConstant.CIDR) || columnType.contains(ColumnTypeConstant.MACADDR)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
-                   } else if (columnType.contains("timestamp") || columnType.contains("time")) {
+                   } else if (columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.TIME)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
-                   } else if (columnType.contains("xml")) {
-                       return quoteIdentifier(field) + " = :" + field + "::xml";
-                   } else if (columnType.contains("bytea")) {
-                       return quoteIdentifier(field) + " = :" + field + "::bytea";
+                   } else if (columnType.contains(ColumnTypeConstant.XML)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.XML;
+                   } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.BYTEA;
                    } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
                    } else {
                        return quoteIdentifier(field) + " = :" + field;
                    }
-               }).collect(Collectors.joining(" AND ")) +
-               " RETURNING *";
+               }).collect(Collectors.joining(PostgresColumnTypeConstant.AND_WITH_SPACE.trim())) +
+               PostgresColumnTypeConstant.RETURNING_ALL;
     }
 
     private String buildBulkInsertSql(String tableName, Set<String> allFields, int recordCount) {
         Map<String, String> columnTypes = getColumnTypes(tableName);
         
-        StringBuilder sql = new StringBuilder("INSERT INTO ")
+        StringBuilder sql = new StringBuilder(PostgresColumnTypeConstant.INSERT_INTO_WITH_SPACE)
             .append(getQualifiedTableName(tableName))
             .append(" (")
             .append(allFields.stream().map(this::quoteIdentifier).collect(Collectors.joining(", ")))
@@ -595,17 +595,17 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                    if (PostgresTypeOperator.isArrayType(columnType)) {
                        return ":" + field + "_" + index + "::" + columnType;
                    } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
-                       return ":" + field + "_" + index + "::interval";
-                   } else if (columnType.contains("json")) {
+                       return ":" + field + "_" + index + "::" + ColumnTypeConstant.INTERVAL;
+                   } else if (columnType.contains(ColumnTypeConstant.JSON)) {
                        return ":" + field + "_" + index + "::" + columnType;
-                   } else if (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr")) {
+                   } else if (columnType.contains(ColumnTypeConstant.INET) || columnType.contains(ColumnTypeConstant.CIDR) || columnType.contains(ColumnTypeConstant.MACADDR)) {
                        return ":" + field + "_" + index + "::" + columnType;
-                   } else if (columnType.contains("timestamp") || columnType.contains("time")) {
+                   } else if (columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.TIME)) {
                        return ":" + field + "_" + index + "::" + columnType;
-                   } else if (columnType.contains("xml")) {
-                       return ":" + field + "_" + index + "::xml";
-                   } else if (columnType.contains("bytea")) {
-                       return ":" + field + "_" + index + "::bytea";
+                   } else if (columnType.contains(ColumnTypeConstant.XML)) {
+                       return ":" + field + "_" + index + "::" + ColumnTypeConstant.XML;
+                   } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
+                       return ":" + field + "_" + index + "::" + ColumnTypeConstant.BYTEA;
                    } else {
                        return ":" + field + "_" + index;
                    }
@@ -613,7 +613,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                .append(")");
         }
         
-        sql.append(" RETURNING *");
+        sql.append(PostgresColumnTypeConstant.RETURNING_ALL);
         return sql.toString();
     }
 
@@ -781,12 +781,12 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             }
         } else if (PostgresTypeOperator.isBooleanType(baseType)) {
             return "boolean";
-        } else if (baseType.contains("varchar") || baseType.contains("character varying")) {
-            return "text"; // Use text for varchar arrays for simplicity
+        } else if (baseType.contains(ColumnTypeConstant.VARCHAR) || baseType.contains(ColumnTypeConstant.CHARACTER_VARYING)) {
+            return ColumnTypeConstant.TEXT; // Use text for varchar arrays for simplicity
         } else if (baseType.contains("decimal") || baseType.contains("numeric")) {
             return "numeric";
         } else {
-            return "text"; // Default to text for other types
+            return ColumnTypeConstant.TEXT; // Default to text for other types
         }
     }
 
@@ -824,10 +824,10 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
      * Determines if array elements need quoting based on PostgreSQL type
      */
     private boolean needsQuoting(String pgTypeName) {
-        return "text".equals(pgTypeName) || 
-               pgTypeName.contains("varchar") || 
-               pgTypeName.contains("char") ||
-               pgTypeName.contains("uuid");
+        return ColumnTypeConstant.TEXT.equals(pgTypeName) || 
+               pgTypeName.contains(ColumnTypeConstant.VARCHAR) || 
+               pgTypeName.contains(ColumnTypeConstant.CHAR) ||
+               pgTypeName.contains(ColumnTypeConstant.UUID);
     }
 
     /**

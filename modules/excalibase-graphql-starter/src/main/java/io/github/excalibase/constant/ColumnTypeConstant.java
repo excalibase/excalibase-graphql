@@ -86,16 +86,28 @@ public class ColumnTypeConstant {
     public static final String INTERVAL = "interval";
 
     // Additional numeric types
-    
 
-    
     /** Bit string type */
     public static final String BIT = "bit";
     
     /** Variable bit string type */
     public static final String VARBIT = "varbit";
 
-    // Text and XML types
+    // Text and character types
+    
+    /** Variable character type */
+    public static final String VARCHAR = "varchar";
+    
+    /** Text type */
+    public static final String TEXT = "text";
+    
+    /** Character type */
+    public static final String CHAR = "char";
+    
+    /** Character varying type (PostgreSQL full form) */
+    public static final String CHARACTER_VARYING = "character varying";
+
+    // XML types
     
     /** XML type */
     public static final String XML = "xml";
