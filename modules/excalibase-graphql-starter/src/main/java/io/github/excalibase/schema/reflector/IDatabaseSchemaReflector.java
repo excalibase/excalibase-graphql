@@ -20,8 +20,8 @@ import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 
-import java.util.Map;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Interface for database schema reflection.
@@ -39,57 +39,47 @@ public interface IDatabaseSchemaReflector {
     Map<String, TableInfo> reflectSchema();
 
     /**
-     * Reflects and returns information about custom enum types in the schema.
-     * This includes user-defined enum types with their possible values.
-     *
-     * @return A list of CustomEnumInfo objects representing all custom enum types
+     * Get custom enum types for default schema
      */
     List<CustomEnumInfo> getCustomEnumTypes();
 
     /**
-     * Reflects and returns information about custom enum types in the specified schema.
-     * This includes user-defined enum types with their possible values.
-     *
-     * @param schema The schema name to search for custom enum types
-     * @return A list of CustomEnumInfo objects representing all custom enum types in the schema
+     * Get custom enum types for specific schema
      */
     List<CustomEnumInfo> getCustomEnumTypes(String schema);
 
     /**
-     * Reflects and returns information about custom composite types in the schema.
-     * This includes user-defined composite (object) types with their attributes.
-     *
-     * @return A list of CustomCompositeTypeInfo objects representing all custom composite types
+     * Get custom composite types for default schema
      */
     List<CustomCompositeTypeInfo> getCustomCompositeTypes();
 
     /**
-     * Reflects and returns information about custom composite types in the specified schema.
-     * This includes user-defined composite (object) types with their attributes.
-     *
-     * @param schema The schema name to search for custom composite types
-     * @return A list of CustomCompositeTypeInfo objects representing all custom composite types in the schema
+     * Get custom composite types for specific schema
      */
     List<CustomCompositeTypeInfo> getCustomCompositeTypes(String schema);
 
     /**
-     * Gets the values for a specific enum type.
-     *
-     * @param enumName The name of the enum type
-     * @param schema The schema name where the enum is defined
-     * @return A list of string values for the enum type
+     * Get domain types for default schema
+     */
+    Map<String, String> getDomainTypeToBaseTypeMap();
+
+    /**
+     * Get domain types for specific schema
+     */
+    Map<String, String> getDomainTypeToBaseTypeMap(String schema);
+
+    /**
+     * Get enum values for a specific enum type
      */
     List<String> getEnumValues(String enumName, String schema);
 
     /**
-     * Clears all cached schema information.
+     * Clear reflection cache
      */
     void clearCache();
 
     /**
-     * Clears cached schema information for a specific schema.
-     *
-     * @param schema The schema name to clear from cache
+     * Clear reflection cache for specific schema
      */
     void clearCache(String schema);
 }

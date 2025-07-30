@@ -217,6 +217,38 @@ main() {
         "{ __type(name: \"Address\") { name kind fields { name type { name } } } }" \
         '.data.__type.kind == "OBJECT" and (.data.__type.fields | length == 5)'
     
+    # ==========================================
+    # DOMAIN TYPES TESTS
+    # ==========================================
+    
+    run_test "Domain Types - Query Domain Types Test Table" \
+        "{ domain_types_test { id email quantity price username tags rating description is_active } }" \
+        '.data.domain_types_test | length >= 4'
+    
+    run_test "Domain Types - Email Domain Validation" \
+        "{ domain_types_test(where: { username: { eq: \"john_doe\" } }) { email username } }" \
+        '.data.domain_types_test[0].email == "john.doe@example.com"'
+    
+    run_test "Domain Types - Positive Integer Domain" \
+        "{ domain_types_test { quantity } }" \
+        '.data.domain_types_test | all(.quantity > 0)'
+    
+    run_test "Domain Types - Price Domain (Decimal)" \
+        "{ domain_types_test { price } }" \
+        '.data.domain_types_test | all(.price >= 0)'
+    
+    run_test "Domain Types - Text Array Domain" \
+        "{ domain_types_test(where: { username: { eq: \"jane_smith\" } }) { tags } }" \
+        '.data.domain_types_test[0].tags | length >= 2'
+    
+    run_test "Domain Types - Rating Domain with Constraints" \
+        "{ domain_types_test { rating } }" \
+        '.data.domain_types_test | map(.rating) | all(. >= 1 and . <= 5 and . != null)'
+    
+    run_test "Domain Types - Filtering by Domain Type Fields" \
+        "{ domain_types_test(where: { rating: { eq: 5 } }) { username rating } }" \
+        '.data.domain_types_test | length >= 1 and all(.rating == 5)'
+    
     run_test "Custom Enum Usage - Orders with Status" \
         "{ orders { order_id status } }" \
         '(.data.orders | length >= 1) and (.data.orders[0].status | test("PENDING|PROCESSING|SHIPPED|DELIVERED|CANCELLED"))'

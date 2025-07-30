@@ -11,10 +11,13 @@ import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.CompositeTypeAttribute;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import jakarta.annotation.PreDestroy;
+
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -26,14 +29,16 @@ import java.sql.Array;
         serviceName = SupportedDatabaseConstant.POSTGRES
 )
 public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchemaReflector {
+    private static final Logger log = LoggerFactory.getLogger(PostgresDatabaseSchemaReflectorImplement.class);
     private final JdbcTemplate jdbcTemplate;
     private final TTLCache<String, Map<String, TableInfo>> schemaCache;
     private final TTLCache<String, List<CustomEnumInfo>> enumCache;
     private final TTLCache<String, List<CustomCompositeTypeInfo>> compositeCache;
+    private final TTLCache<String, Map<String, String>> domainTypeToBaseTypeCache;
 
     @Value("${app.allowed-schema}")
     private String allowedSchema;
-    
+
     @Value("${app.cache.schema-ttl-minutes:30}")
     private int schemaTtlMinutes;
 
@@ -44,6 +49,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         this.schemaCache = new TTLCache<>(Duration.ofMinutes(30)); // Default 30 minutes TTL
         this.enumCache = new TTLCache<>(Duration.ofMinutes(30));
         this.compositeCache = new TTLCache<>(Duration.ofMinutes(30));
+        this.domainTypeToBaseTypeCache = new TTLCache<>(Duration.ofMinutes(30));
     }
 
     @Override
@@ -86,21 +92,21 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     public List<CustomEnumInfo> getCustomEnumTypes() {
         return enumCache.computeIfAbsent(allowedSchema, schema -> {
             List<CustomEnumInfo> enumTypes = new ArrayList<>();
-            
+
             List<Map<String, Object>> results = jdbcTemplate.queryForList(
                     PostgresSqlConstant.GET_CUSTOM_ENUM_TYPES,
                     schema
             );
-            
+
             for (Map<String, Object> result : results) {
                 CustomEnumInfo enumInfo = new CustomEnumInfo();
                 enumInfo.setName((String) result.get("enum_name"));
                 enumInfo.setSchema((String) result.get("schema_name"));
-                
+
                 // Handle PostgreSQL array result
                 Object enumValuesObj = result.get("enum_values");
                 List<String> enumValues = new ArrayList<>();
-                
+
                 if (enumValuesObj instanceof Array) {
                     try {
                         Array array = (Array) enumValuesObj;
@@ -120,11 +126,11 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                         }
                     }
                 }
-                
+
                 enumInfo.setValues(enumValues);
                 enumTypes.add(enumInfo);
             }
-            
+
             return enumTypes;
         });
     }
@@ -133,21 +139,21 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     public List<CustomEnumInfo> getCustomEnumTypes(String schema) {
         return enumCache.computeIfAbsent(schema, schemaKey -> {
             List<CustomEnumInfo> enumTypes = new ArrayList<>();
-            
+
             List<Map<String, Object>> results = jdbcTemplate.queryForList(
                     PostgresSqlConstant.GET_CUSTOM_ENUM_TYPES,
                     schemaKey
             );
-            
+
             for (Map<String, Object> result : results) {
                 CustomEnumInfo enumInfo = new CustomEnumInfo();
                 enumInfo.setName((String) result.get("enum_name"));
                 enumInfo.setSchema((String) result.get("schema_name"));
-                
+
                 // Handle PostgreSQL array result
                 Object enumValuesObj = result.get("enum_values");
                 List<String> enumValues = new ArrayList<>();
-                
+
                 if (enumValuesObj instanceof Array) {
                     try {
                         Array array = (Array) enumValuesObj;
@@ -167,11 +173,11 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                         }
                     }
                 }
-                
+
                 enumInfo.setValues(enumValues);
                 enumTypes.add(enumInfo);
             }
-            
+
             return enumTypes;
         });
     }
@@ -181,16 +187,16 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         return compositeCache.computeIfAbsent(allowedSchema, schema -> {
             List<CustomCompositeTypeInfo> compositeTypes = new ArrayList<>();
             Map<String, CustomCompositeTypeInfo> typeMap = new HashMap<>();
-            
+
             List<Map<String, Object>> results = jdbcTemplate.queryForList(
                     PostgresSqlConstant.GET_CUSTOM_COMPOSITE_TYPES,
                     schema
             );
-            
+
             for (Map<String, Object> result : results) {
                 String typeName = (String) result.get("type_name");
                 String schemaName = (String) result.get("schema_name");
-                
+
                 // Get or create composite type info
                 CustomCompositeTypeInfo typeInfo = typeMap.get(typeName);
                 if (typeInfo == null) {
@@ -200,17 +206,17 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                     typeMap.put(typeName, typeInfo);
                     compositeTypes.add(typeInfo);
                 }
-                
+
                 // Add attribute
                 CompositeTypeAttribute attribute = new CompositeTypeAttribute();
                 attribute.setName((String) result.get("attribute_name"));
                 attribute.setType((String) result.get("attribute_type"));
                 attribute.setOrder((Integer) result.get("attribute_order"));
                 attribute.setNullable("YES".equals(result.get("is_nullable")));
-                
+
                 typeInfo.getAttributes().add(attribute);
             }
-            
+
             return compositeTypes;
         });
     }
@@ -220,16 +226,16 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         return compositeCache.computeIfAbsent(schema, schemaKey -> {
             List<CustomCompositeTypeInfo> compositeTypes = new ArrayList<>();
             Map<String, CustomCompositeTypeInfo> typeMap = new HashMap<>();
-            
+
             List<Map<String, Object>> results = jdbcTemplate.queryForList(
                     PostgresSqlConstant.GET_CUSTOM_COMPOSITE_TYPES,
                     schemaKey
             );
-            
+
             for (Map<String, Object> result : results) {
                 String typeName = (String) result.get("type_name");
                 String schemaName = (String) result.get("schema_name");
-                
+
                 // Get or create composite type info
                 CustomCompositeTypeInfo typeInfo = typeMap.get(typeName);
                 if (typeInfo == null) {
@@ -239,17 +245,17 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                     typeMap.put(typeName, typeInfo);
                     compositeTypes.add(typeInfo);
                 }
-                
+
                 // Add attribute
                 CompositeTypeAttribute attribute = new CompositeTypeAttribute();
                 attribute.setName((String) result.get("attribute_name"));
                 attribute.setType((String) result.get("attribute_type"));
                 attribute.setOrder((Integer) result.get("attribute_order"));
                 attribute.setNullable("YES".equals(result.get("is_nullable")));
-                
+
                 typeInfo.getAttributes().add(attribute);
             }
-            
+
             return compositeTypes;
         });
     }
@@ -257,29 +263,70 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     @Override
     public List<String> getEnumValues(String enumName, String schema) {
         List<String> values = new ArrayList<>();
-        
+
         List<Map<String, Object>> results = jdbcTemplate.queryForList(
                 PostgresSqlConstant.GET_ENUM_VALUES_FOR_TYPE,
                 enumName,
                 schema
         );
-        
+
         for (Map<String, Object> result : results) {
             values.add((String) result.get("value"));
         }
-        
+
         return values;
+    }
+
+    @Override
+    public Map<String, String> getDomainTypeToBaseTypeMap() {
+        return domainTypeToBaseTypeCache.computeIfAbsent(allowedSchema, schema -> {
+            Map<String, String> domainTypeToBaseTypeMap = new HashMap<>();
+
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(
+                    PostgresSqlConstant.GET_DOMAIN_TYPES,
+                    schema
+            );
+
+            for (Map<String, Object> result : results) {
+                String domainName = (String) result.get("domain_name");
+                String baseType = (String) result.get("base_type");
+                domainTypeToBaseTypeMap.put(domainName, baseType);
+            }
+
+            return domainTypeToBaseTypeMap;
+        });
+    }
+
+    @Override
+    public Map<String, String> getDomainTypeToBaseTypeMap(String schema) {
+        return domainTypeToBaseTypeCache.computeIfAbsent(schema, schemaKey -> {
+            Map<String, String> domainTypeToBaseTypeMap = new HashMap<>();
+
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(
+                    PostgresSqlConstant.GET_DOMAIN_TYPES,
+                    schemaKey
+            );
+
+            for (Map<String, Object> result : results) {
+                String domainName = (String) result.get("domain_name");
+                String baseType = (String) result.get("base_type");
+                domainTypeToBaseTypeMap.put(domainName, baseType);
+            }
+
+            return domainTypeToBaseTypeMap;
+        });
     }
 
     /**
      * Processes a table or view and returns TableInfo with metadata.
-     * 
-     * @param name The name of the table or view
+     *
+     * @param name   The name of the table or view
      * @param schema The schema name
      * @param isView Whether this is a view (true) or table (false)
      * @return TableInfo with complete metadata
      */
     private TableInfo processTable(String name, String schema, boolean isView) {
+
         TableInfo tableInfo = new TableInfo();
         tableInfo.setName(name);
         tableInfo.setView(isView);
@@ -290,10 +337,22 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                 name, schema
         );
 
+        Map<String, String> domainTypeToBaseTypeMap = getDomainTypeToBaseTypeMap();
+
+        //to a map
         for (Map<String, Object> column : columns) {
             ColumnInfo columnInfo = new ColumnInfo();
             columnInfo.setName((String) column.get("column_name"));
-            columnInfo.setType((String) column.get("data_type"));
+            String dataType = (String) column.get("data_type");
+
+            // Check if domain type then set base type
+            if (domainTypeToBaseTypeMap.containsKey(dataType)) {
+                String baseType = domainTypeToBaseTypeMap.get(dataType);
+                columnInfo.setType(baseType);
+            } else {
+                columnInfo.setType(dataType);
+            }
+
             columnInfo.setNullable("YES".equals(column.get("is_nullable")));
             tableInfo.getColumns().add(columnInfo);
         }
@@ -334,6 +393,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         schemaCache.clear();
         enumCache.clear();
         compositeCache.clear();
+        domainTypeToBaseTypeCache.clear();
     }
 
     @Override
@@ -341,19 +401,21 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         schemaCache.remove(schema);
         enumCache.remove(schema);
         compositeCache.remove(schema);
+        domainTypeToBaseTypeCache.remove(schema);
     }
-    
+
     /**
      * Gets cache statistics for monitoring purposes.
-     * 
+     *
      * @return cache statistics as a string
      */
     public String getCacheStats() {
-        return "Schema: " + schemaCache.getStats() + 
-               ", Enum: " + enumCache.getStats() + 
-               ", Composite: " + compositeCache.getStats();
+        return "Schema: " + schemaCache.getStats() +
+                ", Enum: " + enumCache.getStats() +
+                ", Composite: " + compositeCache.getStats() +
+                ", Domain: " + domainTypeToBaseTypeCache.getStats();
     }
-    
+
     /**
      * Cleanup method called when the bean is destroyed.
      * Ensures proper shutdown of the cache's background threads.
@@ -363,5 +425,6 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         schemaCache.shutdown();
         enumCache.shutdown();
         compositeCache.shutdown();
+        domainTypeToBaseTypeCache.shutdown();
     }
 }

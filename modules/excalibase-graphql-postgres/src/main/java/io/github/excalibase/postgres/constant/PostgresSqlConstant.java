@@ -38,11 +38,15 @@ public class PostgresSqlConstant {
     
     public static final String GET_COLUMNS = """
             SELECT a.attname as column_name,
-                   pg_catalog.format_type(a.atttypid, a.atttypmod) as data_type,
+                   CASE 
+                       WHEN t.typtype = 'd' THEN t.typname
+                       ELSE pg_catalog.format_type(a.atttypid, a.atttypmod)
+                   END as data_type,
                    CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable,
                    pg_catalog.pg_get_expr(d.adbin, d.adrelid) as column_default
             FROM pg_catalog.pg_attribute a
             LEFT JOIN pg_catalog.pg_attrdef d ON (a.attrelid = d.adrelid AND a.attnum = d.adnum)
+            LEFT JOIN pg_catalog.pg_type t ON (a.atttypid = t.oid)
             JOIN pg_catalog.pg_class c ON (a.attrelid = c.oid)
             JOIN pg_catalog.pg_namespace n ON (c.relnamespace = n.oid)
             WHERE c.relname = ?
@@ -53,9 +57,13 @@ public class PostgresSqlConstant {
     
     public static final String GET_VIEW_COLUMNS = """
             SELECT a.attname as column_name,
-                   pg_catalog.format_type(a.atttypid, a.atttypmod) as data_type,
+                   CASE 
+                       WHEN t.typtype = 'd' THEN t.typname
+                       ELSE pg_catalog.format_type(a.atttypid, a.atttypmod)
+                   END as data_type,
                    CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable
             FROM pg_catalog.pg_attribute a
+            LEFT JOIN pg_catalog.pg_type t ON (a.atttypid = t.oid)
             JOIN pg_catalog.pg_class c ON (a.attrelid = c.oid)
             JOIN pg_catalog.pg_namespace n ON (c.relnamespace = n.oid)
             WHERE c.relname = ?
@@ -131,5 +139,22 @@ public class PostgresSqlConstant {
             WHERE t.typname = ?
               AND n.nspname = ?
             ORDER BY e.enumsortorder
+            """;
+    
+    public static final String GET_DOMAIN_TYPES = """
+            SELECT t.typname as domain_name,
+                   n.nspname as schema_name,
+                   pg_catalog.format_type(t.typbasetype, t.typtypmod) as base_type,
+                   t.typtypmod as type_modifier,
+                   t.typndims as array_dimensions,
+                   t.typnotnull as not_null,
+                   t.typdefault as default_value,
+                   c.collname as collation
+            FROM pg_catalog.pg_type t
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+            LEFT JOIN pg_catalog.pg_collation c ON c.oid = t.typcollation
+            WHERE n.nspname = ?
+              AND t.typtype = 'd'
+            ORDER BY t.typname
             """;
 }

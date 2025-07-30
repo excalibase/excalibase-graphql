@@ -40,6 +40,24 @@ CREATE TYPE product_dimensions AS (
     units VARCHAR(10)
 );
 
+-- Domain types for testing
+CREATE DOMAIN email_domain AS VARCHAR(100) 
+    CHECK (VALUE ~ '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+
+CREATE DOMAIN positive_integer AS INTEGER 
+    CHECK (VALUE > 0);
+
+CREATE DOMAIN price_domain AS DECIMAL(10,2) 
+    CHECK (VALUE >= 0.00);
+
+CREATE DOMAIN username_domain AS VARCHAR(50) 
+    CHECK (LENGTH(VALUE) >= 3 AND VALUE ~ '^[a-zA-Z0-9_-]+$');
+
+CREATE DOMAIN text_array_domain AS TEXT[];
+
+CREATE DOMAIN rating_domain AS INTEGER 
+    CHECK (VALUE >= 1 AND VALUE <= 5);
+
 -- ====================
 -- DEMO TABLES (Blog-style for demos and documentation)
 -- ====================
@@ -324,6 +342,22 @@ CREATE TABLE IF NOT EXISTS custom_types_test (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Domain types test table for comprehensive domain type testing
+CREATE TABLE IF NOT EXISTS domain_types_test (
+    id SERIAL PRIMARY KEY,
+    -- Domain types usage
+    email email_domain NOT NULL,
+    quantity positive_integer DEFAULT 1,
+    price price_domain DEFAULT 0.00,
+    username username_domain UNIQUE NOT NULL,
+    tags text_array_domain,
+    rating rating_domain,
+    -- Mixed with regular types
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Insert comprehensive test data
 INSERT INTO custom_types_test (
     id, status, role, priority, main_address, contact_details, product_specs,
@@ -355,6 +389,24 @@ INSERT INTO custom_types_test (
  ARRAY[]::address[],  -- Empty array
  ARRAY['user']::user_role[],
  'Basic Test Record 3')
+ON CONFLICT (id) DO NOTHING;
+
+-- Insert domain types test data
+INSERT INTO domain_types_test (
+    id, email, quantity, price, username, tags, rating, description, is_active
+) VALUES
+(1, 'john.doe@example.com', 5, 29.99, 'john_doe', 
+ ARRAY['tech', 'programming', 'java']::text_array_domain, 
+ 5, 'Expert Java developer', true),
+(2, 'jane.smith@company.org', 10, 45.50, 'jane_smith',
+ ARRAY['design', 'ui', 'ux']::text_array_domain,
+ 4, 'Senior UX designer', true),
+(3, 'bob.wilson@startup.io', 1, 15.00, 'bob_wilson',
+ ARRAY['startup', 'entrepreneur']::text_array_domain,
+ 3, 'Startup founder', false),
+(4, 'alice.brown@university.edu', 25, 199.99, 'alice_brown',
+ ARRAY['research', 'ai', 'machine-learning']::text_array_domain,
+ 5, 'AI researcher and professor', true)
 ON CONFLICT (id) DO NOTHING;
 
 -- ====================
