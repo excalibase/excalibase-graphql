@@ -1,0 +1,75 @@
+name: End-to-End Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_run:
+    workflows: ["Continuous Integration"]
+    types:
+      - completed
+    branches: [ main ]
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  e2e-tests:
+    name: End-to-End Testing
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'corretto'
+        
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+          
+    - name: Download JAR artifacts (if from workflow_run)
+      if: github.event_name == 'workflow_run'
+      uses: actions/download-artifact@v4
+      with:
+        name: jar-artifacts
+        path: modules/excalibase-graphql-api/target/
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        run-id: ${{ github.event.workflow_run.id }}
+        
+    - name: Install jq (required by make targets)
+      run: |
+        if ! command -v jq >/dev/null 2>&1; then
+          sudo apt-get update && sudo apt-get install -y jq
+        fi
+        
+    - name: Run complete E2E test suite
+      run: make ci
+      
+    - name: Upload application logs on failure
+      if: failure()
+      run: |
+        echo "📋 Collecting application logs..."
+        if docker-compose -f docker-compose.test.yml -p excalibase-e2e-ci logs app > app-logs.txt 2>&1; then
+          echo "✅ Logs collected"
+        else
+          echo "⚠️ No logs available or services not running"
+        fi
+        
+    - name: Upload logs as artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: e2e-logs
+        path: |
+          app-logs.txt
+        retention-days: 3
+        if-no-files-found: ignore 
