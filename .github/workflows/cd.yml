@@ -1,8 +1,6 @@
 name: Continuous Deployment
 
 on:
-  push:
-    branches: [ main ]
   workflow_run:
     workflows: ["Continuous Integration"]
     types:

@@ -127,7 +127,7 @@ check-deps: ## Check required dependencies
 check-deps-ci: ## Check dependencies for CI (no Maven required)
 	@echo "$(BLUE)🔍 Checking CI dependencies...$(NC)"
 	@command -v docker >/dev/null 2>&1 || (echo "$(RED)❌ Docker not found$(NC)" && exit 1)
-	@command -v docker-compose >/dev/null 2>&1 || (echo "$(RED)❌ Docker Compose not found$(NC)" && exit 1)
+	@(command -v docker-compose >/dev/null 2>&1 || docker compose version >/dev/null 2>&1) || (echo "$(RED)❌ Docker Compose not found$(NC)" && exit 1)
 	@command -v curl >/dev/null 2>&1 || (echo "$(RED)❌ curl not found$(NC)" && exit 1)
 	@command -v jq >/dev/null 2>&1 || (echo "$(RED)❌ jq not found$(NC)" && exit 1)
 	@echo "$(GREEN)✓ All CI dependencies available$(NC)"

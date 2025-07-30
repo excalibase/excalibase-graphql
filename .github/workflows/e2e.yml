@@ -45,10 +45,18 @@ jobs:
         github-token: ${{ secrets.GITHUB_TOKEN }}
         run-id: ${{ github.event.workflow_run.id }}
         
-    - name: Install jq (required by make targets)
+    - name: Install dependencies (required by make targets)
       run: |
+        # Install jq if missing
         if ! command -v jq >/dev/null 2>&1; then
           sudo apt-get update && sudo apt-get install -y jq
+        fi
+        
+        # Install docker-compose if missing (GitHub Actions has 'docker compose' but make uses 'docker-compose')
+        if ! command -v docker-compose >/dev/null 2>&1; then
+          sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+          docker-compose --version
         fi
         
     - name: Run complete E2E test suite
