@@ -15,6 +15,7 @@ on:
       - 'mkdocs.yml'
       - '.github/workflows/docs.yml'
       - 'requirements.txt'
+  workflow_dispatch:  # Allow manual triggering
 
 permissions:
   contents: read
