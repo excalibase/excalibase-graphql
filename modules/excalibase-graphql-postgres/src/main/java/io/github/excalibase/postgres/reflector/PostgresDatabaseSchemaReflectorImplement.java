@@ -57,37 +57,183 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     public Map<String, TableInfo> reflectSchema() {
         // Check if not exists in cache => query
         return schemaCache.computeIfAbsent(allowedSchema, schema -> {
-            Map<String, TableInfo> tables = new HashMap<>();
-
-            // Get tables
-            List<String> tableNames = jdbcTemplate.queryForList(
-                    PostgresSqlConstant.GET_TABLE_NAME,
-                    String.class,
-                    schema
-            );
-
-            // Process regular tables
-            for (String tableName : tableNames) {
-                TableInfo tableInfo = processTable(tableName, schema, false);
-                tables.put(tableName, tableInfo);
-            }
-
-            // Get views (including materialized views)
-            List<Map<String, Object>> viewResults = jdbcTemplate.queryForList(
-                    PostgresSqlConstant.GET_VIEW_NAME,
-                    schema, schema  // Pass schema twice for UNION query
-            );
-
-            // Process views
-            for (Map<String, Object> viewResult : viewResults) {
-                            String viewName = (String) viewResult.get(DatabaseColumnConstant.NAME);
-            TableInfo viewInfo = processTable(viewName, schema, true);
-                tables.put(viewName, viewInfo);
-            }
-
-            return tables;
+            return reflectSchemaOptimized(schema);
         });
     }
+
+    /**
+     * Optimized schema reflection that uses bulk queries instead of N+1 queries.
+     * This significantly improves performance when there are many tables.
+     */
+    private Map<String, TableInfo> reflectSchemaOptimized(String schema) {
+        Map<String, TableInfo> tables = new HashMap<>();
+
+        // Step 1: Get all table names
+        List<String> tableNames = jdbcTemplate.queryForList(
+                PostgresSqlConstant.GET_TABLE_NAME,
+                String.class,
+                schema
+        );
+
+        // Step 2: Get all view names (including materialized views)
+        List<Map<String, Object>> viewResults = jdbcTemplate.queryForList(
+                PostgresSqlConstant.GET_VIEW_NAME,
+                schema, schema  // Pass schema twice for UNION query
+        );
+        
+        List<String> viewNames = viewResults.stream()
+                .map(result -> (String) result.get(DatabaseColumnConstant.NAME))
+                .toList();
+
+        // Step 3: Initialize TableInfo objects for all tables and views
+        for (String tableName : tableNames) {
+            TableInfo tableInfo = new TableInfo();
+            tableInfo.setName(tableName);
+            tableInfo.setView(false);
+            tables.put(tableName, tableInfo);
+        }
+
+        for (String viewName : viewNames) {
+            TableInfo viewInfo = new TableInfo();
+            viewInfo.setName(viewName);
+            viewInfo.setView(true);
+            tables.put(viewName, viewInfo);
+        }
+
+        // Early return if no tables/views found
+        if (tables.isEmpty()) {
+            return tables;
+        }
+
+        // Step 4: Get domain type mapping (needed for column type resolution)
+        Map<String, String> domainTypeToBaseTypeMap = getDomainTypeToBaseTypeMap();
+
+        // Step 5: Bulk fetch all columns for regular tables
+        if (!tableNames.isEmpty()) {
+            String[] tableNamesArray = tableNames.toArray(new String[0]);
+            List<Map<String, Object>> allColumns = jdbcTemplate.queryForList(
+                    PostgresSqlConstant.GET_ALL_COLUMNS,
+                    schema, tableNamesArray
+            );
+            
+            processColumnsFromBulkResult(allColumns, tables, domainTypeToBaseTypeMap);
+        }
+
+        // Step 6: Bulk fetch all columns for views
+        if (!viewNames.isEmpty()) {
+            String[] viewNamesArray = viewNames.toArray(new String[0]);
+            List<Map<String, Object>> allViewColumns = jdbcTemplate.queryForList(
+                    PostgresSqlConstant.GET_ALL_VIEW_COLUMNS,
+                    schema, viewNamesArray
+            );
+            
+            processColumnsFromBulkResult(allViewColumns, tables, domainTypeToBaseTypeMap);
+        }
+
+        // Step 7: Bulk fetch primary keys for tables only (not views)
+        if (!tableNames.isEmpty()) {
+            String[] tableNamesArray = tableNames.toArray(new String[0]);
+            List<Map<String, Object>> allPrimaryKeys = jdbcTemplate.queryForList(
+                    PostgresSqlConstant.GET_ALL_PRIMARY_KEYS,
+                    schema, tableNamesArray
+            );
+            
+            processPrimaryKeysFromBulkResult(allPrimaryKeys, tables);
+        }
+
+        // Step 8: Bulk fetch foreign keys for tables only (not views)
+        if (!tableNames.isEmpty()) {
+            String[] tableNamesArray = tableNames.toArray(new String[0]);
+            List<Map<String, Object>> allForeignKeys = jdbcTemplate.queryForList(
+                    PostgresSqlConstant.GET_ALL_FOREIGN_KEYS,
+                    schema, tableNamesArray
+            );
+            
+            processForeignKeysFromBulkResult(allForeignKeys, tables);
+        }
+
+        return tables;
+    }
+
+    /**
+     * Processes column data from bulk query results and populates TableInfo objects.
+     */
+    private void processColumnsFromBulkResult(List<Map<String, Object>> columnResults, 
+                                             Map<String, TableInfo> tables, 
+                                             Map<String, String> domainTypeToBaseTypeMap) {
+        for (Map<String, Object> columnData : columnResults) {
+            String tableName = (String) columnData.get("table_name");
+            TableInfo tableInfo = tables.get(tableName);
+            
+            if (tableInfo != null) {
+                ColumnInfo columnInfo = new ColumnInfo();
+                columnInfo.setName((String) columnData.get("column_name"));
+                
+                String dataType = (String) columnData.get("data_type");
+                
+                // Check if domain type then set base type
+                if (domainTypeToBaseTypeMap.containsKey(dataType)) {
+                    String baseType = domainTypeToBaseTypeMap.get(dataType);
+                    columnInfo.setType(baseType);
+                } else {
+                    columnInfo.setType(dataType);
+                }
+                
+                columnInfo.setNullable(DatabaseColumnConstant.YES.equals(columnData.get(DatabaseColumnConstant.IS_NULLABLE)));
+                tableInfo.getColumns().add(columnInfo);
+            }
+        }
+    }
+
+    /**
+     * Processes primary key data from bulk query results and updates TableInfo objects.
+     */
+    private void processPrimaryKeysFromBulkResult(List<Map<String, Object>> primaryKeyResults, 
+                                                 Map<String, TableInfo> tables) {
+        // Group primary keys by table name
+        Map<String, List<String>> primaryKeysByTable = new HashMap<>();
+        
+        for (Map<String, Object> pkData : primaryKeyResults) {
+            String tableName = (String) pkData.get("table_name");
+            String columnName = (String) pkData.get("column_name");
+            
+            primaryKeysByTable.computeIfAbsent(tableName, k -> new ArrayList<>()).add(columnName);
+        }
+        
+        // Update columns with primary key information
+        for (Map.Entry<String, List<String>> entry : primaryKeysByTable.entrySet()) {
+            String tableName = entry.getKey();
+            List<String> primaryKeys = entry.getValue();
+            TableInfo tableInfo = tables.get(tableName);
+            
+            if (tableInfo != null) {
+                for (ColumnInfo column : tableInfo.getColumns()) {
+                    column.setPrimaryKey(primaryKeys.contains(column.getName()));
+                }
+            }
+        }
+    }
+
+    /**
+     * Processes foreign key data from bulk query results and populates TableInfo objects.
+     */
+    private void processForeignKeysFromBulkResult(List<Map<String, Object>> foreignKeyResults, 
+                                                 Map<String, TableInfo> tables) {
+        for (Map<String, Object> fkData : foreignKeyResults) {
+            String tableName = (String) fkData.get("table_name");
+            TableInfo tableInfo = tables.get(tableName);
+            
+            if (tableInfo != null) {
+                ForeignKeyInfo fkInfo = new ForeignKeyInfo();
+                fkInfo.setColumnName((String) fkData.get("column_name"));
+                fkInfo.setReferencedTable((String) fkData.get("foreign_table_name"));
+                fkInfo.setReferencedColumn((String) fkData.get("foreign_column_name"));
+                tableInfo.getForeignKeys().add(fkInfo);
+            }
+        }
+    }
+
+
 
     @Override
         public List<CustomEnumInfo> getCustomEnumTypes() {
@@ -318,76 +464,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         });
     }
 
-    /**
-     * Processes a table or view and returns TableInfo with metadata.
-     *
-     * @param name   The name of the table or view
-     * @param schema The schema name
-     * @param isView Whether this is a view (true) or table (false)
-     * @return TableInfo with complete metadata
-     */
-    private TableInfo processTable(String name, String schema, boolean isView) {
 
-        TableInfo tableInfo = new TableInfo();
-        tableInfo.setName(name);
-        tableInfo.setView(isView);
-
-        // Get columns - use view-specific query for views, regular query for tables
-        List<Map<String, Object>> columns = jdbcTemplate.queryForList(
-                isView ? PostgresSqlConstant.GET_VIEW_COLUMNS : PostgresSqlConstant.GET_COLUMNS,
-                name, schema
-        );
-
-        Map<String, String> domainTypeToBaseTypeMap = getDomainTypeToBaseTypeMap();
-
-        //to a map
-        for (Map<String, Object> column : columns) {
-            ColumnInfo columnInfo = new ColumnInfo();
-            columnInfo.setName((String) column.get("column_name"));
-            String dataType = (String) column.get("data_type");
-
-            // Check if domain type then set base type
-            if (domainTypeToBaseTypeMap.containsKey(dataType)) {
-                String baseType = domainTypeToBaseTypeMap.get(dataType);
-                columnInfo.setType(baseType);
-            } else {
-                columnInfo.setType(dataType);
-            }
-
-            columnInfo.setNullable(DatabaseColumnConstant.YES.equals(column.get(DatabaseColumnConstant.IS_NULLABLE)));
-            tableInfo.getColumns().add(columnInfo);
-        }
-
-        // Only process primary keys and foreign keys for tables, not views
-        if (!isView) {
-            // Get primary keys using pg_catalog
-            List<String> primaryKeys = jdbcTemplate.queryForList(
-                    PostgresSqlConstant.GET_PRIMARY_KEYS,
-                    String.class,
-                    name, schema
-            );
-
-            for (ColumnInfo column : tableInfo.getColumns()) {
-                column.setPrimaryKey(primaryKeys.contains(column.getName()));
-            }
-
-            // Get foreign keys using pg_catalog
-            List<Map<String, Object>> foreignKeys = jdbcTemplate.queryForList(
-                    PostgresSqlConstant.GET_FOREIGN_KEYS,
-                    name, schema
-            );
-
-            for (Map<String, Object> fk : foreignKeys) {
-                ForeignKeyInfo fkInfo = new ForeignKeyInfo();
-                fkInfo.setColumnName((String) fk.get("column_name"));
-                fkInfo.setReferencedTable((String) fk.get("foreign_table_name"));
-                fkInfo.setReferencedColumn((String) fk.get("foreign_column_name"));
-                tableInfo.getForeignKeys().add(fkInfo);
-            }
-        }
-
-        return tableInfo;
-    }
 
     @Override
     public void clearCache() {

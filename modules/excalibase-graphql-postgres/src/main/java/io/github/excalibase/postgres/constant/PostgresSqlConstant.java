@@ -36,68 +36,7 @@ public class PostgresSqlConstant {
             WHERE schemaname = ?
             """;
     
-    public static final String GET_COLUMNS = """
-            SELECT a.attname as column_name,
-                   CASE 
-                       WHEN t.typtype = 'd' THEN t.typname
-                       ELSE pg_catalog.format_type(a.atttypid, a.atttypmod)
-                   END as data_type,
-                   CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable,
-                   pg_catalog.pg_get_expr(d.adbin, d.adrelid) as column_default
-            FROM pg_catalog.pg_attribute a
-            LEFT JOIN pg_catalog.pg_attrdef d ON (a.attrelid = d.adrelid AND a.attnum = d.adnum)
-            LEFT JOIN pg_catalog.pg_type t ON (a.atttypid = t.oid)
-            JOIN pg_catalog.pg_class c ON (a.attrelid = c.oid)
-            JOIN pg_catalog.pg_namespace n ON (c.relnamespace = n.oid)
-            WHERE c.relname = ?
-              AND n.nspname = ?
-              AND a.attnum > 0
-              AND NOT a.attisdropped
-            """;
-    
-    public static final String GET_VIEW_COLUMNS = """
-            SELECT a.attname as column_name,
-                   CASE 
-                       WHEN t.typtype = 'd' THEN t.typname
-                       ELSE pg_catalog.format_type(a.atttypid, a.atttypmod)
-                   END as data_type,
-                   CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable
-            FROM pg_catalog.pg_attribute a
-            LEFT JOIN pg_catalog.pg_type t ON (a.atttypid = t.oid)
-            JOIN pg_catalog.pg_class c ON (a.attrelid = c.oid)
-            JOIN pg_catalog.pg_namespace n ON (c.relnamespace = n.oid)
-            WHERE c.relname = ?
-              AND n.nspname = ?
-              AND a.attnum > 0
-              AND NOT a.attisdropped
-              AND (c.relkind = 'v' OR c.relkind = 'm')
-            """;
-    
-    public static final String GET_PRIMARY_KEYS = """
-            SELECT a.attname as column_name
-            FROM pg_catalog.pg_constraint c
-            JOIN pg_catalog.pg_class rel ON rel.oid = c.conrelid
-            JOIN pg_catalog.pg_namespace n ON n.oid = rel.relnamespace
-            JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
-            WHERE c.contype = 'p'
-              AND rel.relname = ?
-              AND n.nspname = ?
-            """;
-    
-    public static final String GET_FOREIGN_KEYS = """
-            SELECT a.attname as column_name,
-                   cl2.relname as foreign_table_name,
-                   a2.attname as foreign_column_name
-            FROM pg_catalog.pg_constraint c
-            JOIN pg_catalog.pg_namespace n ON n.oid = c.connamespace
-            JOIN pg_catalog.pg_class cl ON cl.oid = c.conrelid
-            JOIN pg_catalog.pg_class cl2 ON cl2.oid = c.confrelid
-            JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-            JOIN pg_catalog.pg_attribute a2 ON a2.attrelid = c.confrelid AND a2.attnum = c.confkey[1]
-            WHERE c.contype = 'f'
-              AND cl.relname = ?
-              AND n.nspname = ?
-            """;
+
 
     // Custom PostgreSQL type queries
     
@@ -156,5 +95,76 @@ public class PostgresSqlConstant {
             WHERE n.nspname = ?
               AND t.typtype = 'd'
             ORDER BY t.typname
+            """;
+
+    public static final String GET_ALL_COLUMNS = """
+            SELECT c.relname as table_name,
+                   a.attname as column_name,
+                   CASE 
+                       WHEN t.typtype = 'd' THEN t.typname
+                       ELSE pg_catalog.format_type(a.atttypid, a.atttypmod)
+                   END as data_type,
+                   CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable,
+                   pg_catalog.pg_get_expr(d.adbin, d.adrelid) as column_default
+            FROM pg_catalog.pg_attribute a
+            LEFT JOIN pg_catalog.pg_attrdef d ON (a.attrelid = d.adrelid AND a.attnum = d.adnum)
+            LEFT JOIN pg_catalog.pg_type t ON (a.atttypid = t.oid)
+            JOIN pg_catalog.pg_class c ON (a.attrelid = c.oid)
+            JOIN pg_catalog.pg_namespace n ON (c.relnamespace = n.oid)
+            WHERE n.nspname = ?
+              AND c.relname = ANY(?)
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+            ORDER BY c.relname, a.attnum
+            """;
+    
+    public static final String GET_ALL_VIEW_COLUMNS = """
+            SELECT c.relname as table_name,
+                   a.attname as column_name,
+                   CASE 
+                       WHEN t.typtype = 'd' THEN t.typname
+                       ELSE pg_catalog.format_type(a.atttypid, a.atttypmod)
+                   END as data_type,
+                   CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable
+            FROM pg_catalog.pg_attribute a
+            LEFT JOIN pg_catalog.pg_type t ON (a.atttypid = t.oid)
+            JOIN pg_catalog.pg_class c ON (a.attrelid = c.oid)
+            JOIN pg_catalog.pg_namespace n ON (c.relnamespace = n.oid)
+            WHERE n.nspname = ?
+              AND c.relname = ANY(?)
+              AND a.attnum > 0
+              AND NOT a.attisdropped
+              AND (c.relkind = 'v' OR c.relkind = 'm')
+            ORDER BY c.relname, a.attnum
+            """;
+    
+    public static final String GET_ALL_PRIMARY_KEYS = """
+            SELECT rel.relname as table_name,
+                   a.attname as column_name
+            FROM pg_catalog.pg_constraint c
+            JOIN pg_catalog.pg_class rel ON rel.oid = c.conrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = rel.relnamespace
+            JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+            WHERE c.contype = 'p'
+              AND n.nspname = ?
+              AND rel.relname = ANY(?)
+            ORDER BY rel.relname, a.attname
+            """;
+    
+    public static final String GET_ALL_FOREIGN_KEYS = """
+            SELECT cl.relname as table_name,
+                   a.attname as column_name,
+                   cl2.relname as foreign_table_name,
+                   a2.attname as foreign_column_name
+            FROM pg_catalog.pg_constraint c
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.connamespace
+            JOIN pg_catalog.pg_class cl ON cl.oid = c.conrelid
+            JOIN pg_catalog.pg_class cl2 ON cl2.oid = c.confrelid
+            JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+            JOIN pg_catalog.pg_attribute a2 ON a2.attrelid = c.confrelid AND a2.attnum = c.confkey[1]
+            WHERE c.contype = 'f'
+              AND n.nspname = ?
+              AND cl.relname = ANY(?)
+            ORDER BY cl.relname, a.attname
             """;
 }

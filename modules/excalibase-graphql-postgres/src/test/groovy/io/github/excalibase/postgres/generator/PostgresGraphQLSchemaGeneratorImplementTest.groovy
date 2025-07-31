@@ -23,7 +23,6 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     }
 
 
-
     def "should generate minimal schema for empty table map"() {
         given: "an empty table map"
         Map<String, TableInfo> tables = [:]
@@ -35,12 +34,12 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         schema != null
         schema.queryType != null
         schema.queryType.name == "Query"
-        
+
         and: "should have health field"
         def healthField = schema.queryType.getFieldDefinition("health")
         healthField != null
         healthField.type.name == "String"
-        
+
         and: "should not have mutation type"
         schema.mutationType == null
     }
@@ -56,12 +55,12 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         schema != null
         schema.queryType != null
         schema.queryType.name == "Query"
-        
+
         and: "should have health field"
         def healthField = schema.queryType.getFieldDefinition("health")
         healthField != null
         healthField.type.name == "String"
-        
+
         and: "should not have mutation type"
         schema.mutationType == null
     }
@@ -70,11 +69,11 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should generate schema for simple table with basic columns"() {
         given: "a simple table with various column types"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("description", "text", false, true),
-            new ColumnInfo("is_active", "boolean", false, true),
-            new ColumnInfo("price", "decimal(10,2)", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("description", "text", false, true),
+                new ColumnInfo("is_active", "boolean", false, true),
+                new ColumnInfo("price", "decimal(10,2)", false, true)
         ]
         def tableInfo = new TableInfo("products", columns, [])
         Map<String, TableInfo> tables = ["products": tableInfo]
@@ -115,26 +114,26 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should generate schema with foreign key relationships"() {
         given: "tables with foreign key relationships"
         def customerColumns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("email", "character varying(255)", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("email", "character varying(255)", false, true)
         ]
         def customerTable = new TableInfo("customers", customerColumns, [])
 
         def orderColumns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("customer_id", "integer", false, false),
-            new ColumnInfo("order_date", "timestamp", false, true),
-            new ColumnInfo("total_amount", "decimal(10,2)", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("customer_id", "integer", false, false),
+                new ColumnInfo("order_date", "timestamp", false, true),
+                new ColumnInfo("total_amount", "decimal(10,2)", false, true)
         ]
         def orderForeignKeys = [
-            new ForeignKeyInfo("customer_id", "customers", "id")
+                new ForeignKeyInfo("customer_id", "customers", "id")
         ]
         def orderTable = new TableInfo("orders", orderColumns, orderForeignKeys)
 
         Map<String, TableInfo> tables = [
-            "customers": customerTable,
-            "orders": orderTable
+                "customers": customerTable,
+                "orders"   : orderTable
         ]
 
         when: "generating schema"
@@ -143,24 +142,24 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         then: "should create relationship fields"
         GraphQLObjectType ordersType = schema.getType("orders") as GraphQLObjectType
         ordersType != null
-        
+
         // Should have regular columns plus relationship field
         ordersType.fieldDefinitions.size() == 5 // 4 columns + 1 relationship
 
         GraphQLFieldDefinition customerRelation = ordersType.getFieldDefinition("customers")
         customerRelation != null
         customerRelation.getName() == "customers"
-        customerRelation.getType() instanceof  GraphQLObjectType
+        customerRelation.getType() instanceof GraphQLObjectType
 
     }
 
     def "should generate proper query fields with filtering arguments"() {
         given: "a table with different column types"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("price", "decimal(10,2)", false, true),
-            new ColumnInfo("created_at", "timestamp", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("price", "decimal(10,2)", false, true),
+                new ColumnInfo("created_at", "timestamp", false, true)
         ]
         def tableInfo = new TableInfo("products", columns, [])
         Map<String, TableInfo> tables = ["products": tableInfo]
@@ -202,8 +201,8 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should generate connection fields for cursor-based pagination"() {
         given: "a simple table"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false)
         ]
         def tableInfo = new TableInfo("products", columns, [])
         Map<String, TableInfo> tables = ["products": tableInfo]
@@ -238,9 +237,9 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should generate proper mutation fields"() {
         given: "a table with columns"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("description", "text", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("description", "text", false, true)
         ]
         def tableInfo = new TableInfo("products", columns, [])
         Map<String, TableInfo> tables = ["products": tableInfo]
@@ -273,9 +272,9 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should create proper input types for mutations"() {
         given: "a table with columns including primary key"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("description", "text", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("description", "text", false, true)
         ]
         def tableInfo = new TableInfo("products", columns, [])
         Map<String, TableInfo> tables = ["products": tableInfo]
@@ -311,24 +310,24 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should create relationship input types for complex mutations"() {
         given: "tables with relationships"
         def customerColumns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false)
         ]
         def customerTable = new TableInfo("customers", customerColumns, [])
 
         def orderColumns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("customer_id", "integer", false, false),
-            new ColumnInfo("total", "decimal(10,2)", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("customer_id", "integer", false, false),
+                new ColumnInfo("total", "decimal(10,2)", false, true)
         ]
         def orderForeignKeys = [
-            new ForeignKeyInfo("customer_id", "customers", "id")
+                new ForeignKeyInfo("customer_id", "customers", "id")
         ]
         def orderTable = new TableInfo("orders", orderColumns, orderForeignKeys)
 
         Map<String, TableInfo> tables = [
-            "customers": customerTable,
-            "orders": orderTable
+                "customers": customerTable,
+                "orders"   : orderTable
         ]
 
         when: "generating schema"
@@ -357,20 +356,20 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should handle various PostgreSQL data types correctly"() {
         given: "a table with various PostgreSQL data types"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("big_id", "bigint", false, true),
-            new ColumnInfo("small_id", "smallint", false, true),
-            new ColumnInfo("text_col", "text", false, true),
-            new ColumnInfo("varchar_col", "character varying(50)", false, true),
-            new ColumnInfo("decimal_col", "decimal(10,2)", false, true),
-            new ColumnInfo("numeric_col", "numeric(15,5)", false, true),
-            new ColumnInfo("real_col", "real", false, true),
-            new ColumnInfo("double_col", "double precision", false, true),
-            new ColumnInfo("boolean_col", "boolean", false, true),
-            new ColumnInfo("uuid_col", "uuid", false, true),
-            new ColumnInfo("timestamp_col", "timestamp", false, true),
-            new ColumnInfo("date_col", "date", false, true),
-            new ColumnInfo("time_col", "time", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("big_id", "bigint", false, true),
+                new ColumnInfo("small_id", "smallint", false, true),
+                new ColumnInfo("text_col", "text", false, true),
+                new ColumnInfo("varchar_col", "character varying(50)", false, true),
+                new ColumnInfo("decimal_col", "decimal(10,2)", false, true),
+                new ColumnInfo("numeric_col", "numeric(15,5)", false, true),
+                new ColumnInfo("real_col", "real", false, true),
+                new ColumnInfo("double_col", "double precision", false, true),
+                new ColumnInfo("boolean_col", "boolean", false, true),
+                new ColumnInfo("uuid_col", "uuid", false, true),
+                new ColumnInfo("timestamp_col", "timestamp", false, true),
+                new ColumnInfo("date_col", "date", false, true),
+                new ColumnInfo("time_col", "time", false, true)
         ]
         def tableInfo = new TableInfo("data_types_table", columns, [])
         Map<String, TableInfo> tables = ["data_types_table": tableInfo]
@@ -412,28 +411,28 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should handle enhanced PostgreSQL data types correctly"() {
         given: "a table with enhanced PostgreSQL data types"
         def columns = [
-            new ColumnInfo("id", "integer", false, true),
-            // JSON types
-            new ColumnInfo("json_col", "json", false, true),
-            new ColumnInfo("jsonb_col", "jsonb", false, true),
-            // Array types
-            new ColumnInfo("int_array", "integer[]", false, true),
-            new ColumnInfo("text_array", "text[]", false, true),
-            // Enhanced date/time types
-            new ColumnInfo("timestamptz_col", "timestamptz", false, true),
-            new ColumnInfo("timetz_col", "timetz", false, true),
-            new ColumnInfo("interval_col", "interval", false, true),
-            // Additional numeric types
-            new ColumnInfo("bit_col", "bit", false, true),
-            new ColumnInfo("varbit_col", "varbit", false, true),
-            // Binary and network types
-            new ColumnInfo("bytea_col", "bytea", false, true),
-            new ColumnInfo("inet_col", "inet", false, true),
-            new ColumnInfo("cidr_col", "cidr", false, true),
-            new ColumnInfo("macaddr_col", "macaddr", false, true),
-            new ColumnInfo("macaddr8_col", "macaddr8", false, true),
-            // XML type
-            new ColumnInfo("xml_col", "xml", false, true)
+                new ColumnInfo("id", "integer", false, true),
+                // JSON types
+                new ColumnInfo("json_col", "json", false, true),
+                new ColumnInfo("jsonb_col", "jsonb", false, true),
+                // Array types
+                new ColumnInfo("int_array", "integer[]", false, true),
+                new ColumnInfo("text_array", "text[]", false, true),
+                // Enhanced date/time types
+                new ColumnInfo("timestamptz_col", "timestamptz", false, true),
+                new ColumnInfo("timetz_col", "timetz", false, true),
+                new ColumnInfo("interval_col", "interval", false, true),
+                // Additional numeric types
+                new ColumnInfo("bit_col", "bit", false, true),
+                new ColumnInfo("varbit_col", "varbit", false, true),
+                // Binary and network types
+                new ColumnInfo("bytea_col", "bytea", false, true),
+                new ColumnInfo("inet_col", "inet", false, true),
+                new ColumnInfo("cidr_col", "cidr", false, true),
+                new ColumnInfo("macaddr_col", "macaddr", false, true),
+                new ColumnInfo("macaddr8_col", "macaddr8", false, true),
+                // XML type
+                new ColumnInfo("xml_col", "xml", false, true)
         ]
         def tableInfo = new TableInfo("enhanced_types_table", columns, [])
         Map<String, TableInfo> tables = ["enhanced_types_table": tableInfo]
@@ -452,11 +451,11 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         // Array types should map to GraphQLList
         enhancedTypesType.getFieldDefinition("int_array").type instanceof GraphQLList
         enhancedTypesType.getFieldDefinition("text_array").type instanceof GraphQLList
-        
+
         // Check that array element types are correct
         GraphQLList intArrayType = enhancedTypesType.getFieldDefinition("int_array").type as GraphQLList
         intArrayType.wrappedType == Scalars.GraphQLInt
-        
+
         GraphQLList textArrayType = enhancedTypesType.getFieldDefinition("text_array").type as GraphQLList
         textArrayType.wrappedType == Scalars.GraphQLString
 
@@ -483,11 +482,11 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should create appropriate filter types for enhanced PostgreSQL types"() {
         given: "a table with enhanced PostgreSQL data types"
         def columns = [
-            new ColumnInfo("json_col", "json", false, true),
-            new ColumnInfo("jsonb_col", "jsonb", false, true),
-            new ColumnInfo("int_array", "integer[]", false, true),
-            new ColumnInfo("timestamptz_col", "timestamptz", false, true),
-            new ColumnInfo("inet_col", "inet", false, true)
+                new ColumnInfo("json_col", "json", false, true),
+                new ColumnInfo("jsonb_col", "jsonb", false, true),
+                new ColumnInfo("int_array", "integer[]", false, true),
+                new ColumnInfo("timestamptz_col", "timestamptz", false, true),
+                new ColumnInfo("inet_col", "inet", false, true)
         ]
         def tableInfo = new TableInfo("filter_test_table", columns, [])
         Map<String, TableInfo> tables = ["filter_test_table": tableInfo]
@@ -508,17 +507,17 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         // Check that table filter type includes correct filter assignments
         GraphQLInputObjectType tableFilter = schema.getType("filter_test_tableFilter") as GraphQLInputObjectType
         tableFilter != null
-        
+
         // JSON columns should use JSONFilter
         tableFilter.getFieldDefinition("json_col").type.name == "JSONFilter"
         tableFilter.getFieldDefinition("jsonb_col").type.name == "JSONFilter"
-        
+
         // Array types should use the base type's filter
         tableFilter.getFieldDefinition("int_array").type.name == "IntFilter"
-        
+
         // Enhanced date/time should use DateTimeFilter
         tableFilter.getFieldDefinition("timestamptz_col").type.name == "DateTimeFilter"
-        
+
         // Network types should use StringFilter
         tableFilter.getFieldDefinition("inet_col").type.name == "StringFilter"
     }
@@ -551,9 +550,9 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should create OrderByInput type for each table"() {
         given: "a table with multiple columns"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("created_at", "timestamp", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("created_at", "timestamp", false, true)
         ]
         def tableInfo = new TableInfo("products", columns, [])
         Map<String, TableInfo> tables = ["products": tableInfo]
@@ -580,9 +579,9 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should handle table with composite primary key"() {
         given: "a table with composite primary key"
         def columns = [
-            new ColumnInfo("customer_id", "integer", true, false),
-            new ColumnInfo("product_id", "integer", true, false),
-            new ColumnInfo("quantity", "integer", false, false)
+                new ColumnInfo("customer_id", "integer", true, false),
+                new ColumnInfo("product_id", "integer", true, false),
+                new ColumnInfo("quantity", "integer", false, false)
         ]
         def tableInfo = new TableInfo("order_items", columns, [])
         Map<String, TableInfo> tables = ["order_items": tableInfo]
@@ -615,23 +614,23 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should handle reverse relationships in relationship input"() {
         given: "tables with reverse relationships"
         def customerColumns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false)
         ]
         def customerTable = new TableInfo("customers", customerColumns, [])
 
         def orderColumns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("customer_id", "integer", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("customer_id", "integer", false, false)
         ]
         def orderForeignKeys = [
-            new ForeignKeyInfo("customer_id", "customers", "id")
+                new ForeignKeyInfo("customer_id", "customers", "id")
         ]
         def orderTable = new TableInfo("orders", orderColumns, orderForeignKeys)
 
         Map<String, TableInfo> tables = [
-            "customers": customerTable,
-            "orders": orderTable
+                "customers": customerTable,
+                "orders"   : orderTable
         ]
 
         when: "generating schema"
@@ -650,8 +649,8 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should handle table with no foreign keys"() {
         given: "a table with no foreign keys"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false)
         ]
         def tableInfo = new TableInfo("standalone_table", columns, [])
         Map<String, TableInfo> tables = ["standalone_table": tableInfo]
@@ -673,23 +672,23 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should generate schema for views without mutations"() {
         given: "a table and a view"
         def tableColumns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("email", "character varying(200)", false, false),
-            new ColumnInfo("active", "boolean", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("email", "character varying(200)", false, false),
+                new ColumnInfo("active", "boolean", false, false)
         ]
         def viewColumns = [
-            new ColumnInfo("id", "integer", false, false), // Views don't have primary keys
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("email", "character varying(200)", false, false)
+                new ColumnInfo("id", "integer", false, false), // Views don't have primary keys
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("email", "character varying(200)", false, false)
         ]
 
         def tableInfo = new TableInfo("users", tableColumns, [], false) // false = not a view
         def viewInfo = new TableInfo("active_users", viewColumns, [], true) // true = is a view
 
         Map<String, TableInfo> tables = [
-            "users": tableInfo,
-            "active_users": viewInfo
+                "users"       : tableInfo,
+                "active_users": viewInfo
         ]
 
         when: "generating schema"
@@ -730,9 +729,9 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should handle schema with only views"() {
         given: "only views in the schema"
         def viewColumns = [
-            new ColumnInfo("id", "integer", false, false),
-            new ColumnInfo("total_amount", "numeric", false, false),
-            new ColumnInfo("month", "timestamp with time zone", false, false)
+                new ColumnInfo("id", "integer", false, false),
+                new ColumnInfo("total_amount", "numeric", false, false),
+                new ColumnInfo("month", "timestamp with time zone", false, false)
         ]
 
         def viewInfo = new TableInfo("monthly_sales", viewColumns, [], true)
@@ -759,18 +758,18 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should handle mixed tables and views with relationships"() {
         given: "tables and views with relationships"
         def userColumns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("department_id", "integer", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("department_id", "integer", false, false)
         ]
         def departmentColumns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying(100)", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying(100)", false, false)
         ]
         def employeeViewColumns = [
-            new ColumnInfo("id", "integer", false, false),
-            new ColumnInfo("employee_name", "character varying(100)", false, false),
-            new ColumnInfo("department_name", "character varying(100)", false, false)
+                new ColumnInfo("id", "integer", false, false),
+                new ColumnInfo("employee_name", "character varying(100)", false, false),
+                new ColumnInfo("department_name", "character varying(100)", false, false)
         ]
 
         def userForeignKeys = [new ForeignKeyInfo("department_id", "departments", "id")]
@@ -780,9 +779,9 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         def employeeView = new TableInfo("employee_details", employeeViewColumns, [], true)
 
         Map<String, TableInfo> tables = [
-            "users": usersTable,
-            "departments": departmentsTable,
-            "employee_details": employeeView
+                "users"           : usersTable,
+                "departments"     : departmentsTable,
+                "employee_details": employeeView
         ]
 
         when: "generating schema"
@@ -811,11 +810,11 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should create proper filter types for views"() {
         given: "a view with various column types"
         def viewColumns = [
-            new ColumnInfo("id", "integer", false, false),
-            new ColumnInfo("name", "character varying(100)", false, false),
-            new ColumnInfo("amount", "numeric(10,2)", false, false),
-            new ColumnInfo("is_active", "boolean", false, false),
-            new ColumnInfo("created_at", "timestamp", false, false)
+                new ColumnInfo("id", "integer", false, false),
+                new ColumnInfo("name", "character varying(100)", false, false),
+                new ColumnInfo("amount", "numeric(10,2)", false, false),
+                new ColumnInfo("is_active", "boolean", false, false),
+                new ColumnInfo("created_at", "timestamp", false, false)
         ]
 
         def viewInfo = new TableInfo("summary_view", viewColumns, [], true)
@@ -844,42 +843,42 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
     def "should generate GraphQL enum types from PostgreSQL custom enum types"() {
         given: "a table with custom enum column and custom enum info"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("status", "user_status", false, false),
-            new ColumnInfo("role", "user_role", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("status", "user_status", false, false),
+                new ColumnInfo("role", "user_role", false, false)
         ]
         def tableInfo = new TableInfo("users", columns, [], false)
         Map<String, TableInfo> tables = ["users": tableInfo]
-        
+
         // Custom enum types that the mocked reflector will return
         def customEnums = [
-            new CustomEnumInfo("user_status", "public", ["active", "inactive", "pending"]),
-            new CustomEnumInfo("user_role", "public", ["admin", "user", "moderator"])
+                new CustomEnumInfo("user_status", "public", ["active", "inactive", "pending"]),
+                new CustomEnumInfo("user_role", "public", ["admin", "user", "moderator"])
         ]
-        
+
         // Mock the reflector to return these custom types
         def mockReflector = Mock(IDatabaseSchemaReflector)
         mockReflector.getCustomEnumTypes() >> customEnums
         mockReflector.getCustomCompositeTypes() >> []
         generator.setSchemaReflector(mockReflector)
-        
+
         when: "generating schema with custom enum types"
         def schema = generator.generateSchema(tables)
-        
+
         then: "should create GraphQL enum types"
         def userStatusEnum = schema.getType("UserStatus")
         userStatusEnum != null
         userStatusEnum instanceof GraphQLEnumType
         userStatusEnum.values.collect { it.name } == ["ACTIVE", "INACTIVE", "PENDING"]
-        
-        def userRoleEnum = schema.getType("UserRole") 
+
+        def userRoleEnum = schema.getType("UserRole")
         userRoleEnum != null
         userRoleEnum instanceof GraphQLEnumType
         userRoleEnum.values.collect { it.name } == ["ADMIN", "USER", "MODERATOR"]
-        
+
         // Debug: check what types are available
         println "Available types: ${schema.typeMap.keySet()}"
-        
+
         // Should use enum types in table fields
         def usersType = schema.getType("users") as GraphQLObjectType
         usersType != null
@@ -888,40 +887,39 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         // TODO: Fix field type mapping to use custom enums
         // statusField.type == userStatusEnum
     }
-    
-    @Ignore("Custom types tests need schema reflector mocking - test real integration in E2E")
+
     def "should generate GraphQL object types from PostgreSQL custom composite types"() {
         given: "a table with custom composite column and composite type info"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("address", "user_address", false, false),
-            new ColumnInfo("contact", "contact_info", false, false)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("address", "user_address", false, false),
+                new ColumnInfo("contact", "contact_info", false, false)
         ]
         def tableInfo = new TableInfo("customers", columns, [], false)
         Map<String, TableInfo> tables = ["customers": tableInfo]
-        
+
         // Custom composite types that the mocked reflector will return
         def customComposites = [
-            new CustomCompositeTypeInfo("user_address", "public", [
-                new CompositeTypeAttribute("street", "character varying", 1, true),
-                new CompositeTypeAttribute("city", "character varying", 2, true),
-                new CompositeTypeAttribute("postal_code", "character varying", 3, true)
-            ]),
-            new CustomCompositeTypeInfo("contact_info", "public", [
-                new CompositeTypeAttribute("email", "character varying", 1, true),
-                new CompositeTypeAttribute("phone", "character varying", 2, true)
-            ])
+                new CustomCompositeTypeInfo("user_address", "public", [
+                        new CompositeTypeAttribute("street", "character varying", 1, true),
+                        new CompositeTypeAttribute("city", "character varying", 2, true),
+                        new CompositeTypeAttribute("postal_code", "character varying", 3, true)
+                ]),
+                new CustomCompositeTypeInfo("contact_info", "public", [
+                        new CompositeTypeAttribute("email", "character varying", 1, true),
+                        new CompositeTypeAttribute("phone", "character varying", 2, true)
+                ])
         ]
-        
+
         // Mock the reflector to return these custom types
         def mockReflector = Mock(IDatabaseSchemaReflector)
         mockReflector.getCustomEnumTypes() >> []
         mockReflector.getCustomCompositeTypes() >> customComposites
         generator.setSchemaReflector(mockReflector)
-        
+
         when: "generating schema with custom composite types"
         def schema = generator.generateSchema(tables)
-        
+
         then: "should create GraphQL object types"
         def addressType = schema.getType("UserAddress")
         addressType != null
@@ -929,60 +927,58 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         addressType.getFieldDefinition("street") != null
         addressType.getFieldDefinition("city") != null
         addressType.getFieldDefinition("postal_code") != null
-        
+
         def contactType = schema.getType("ContactInfo")
         contactType != null
         contactType instanceof GraphQLObjectType
         contactType.getFieldDefinition("email") != null
         contactType.getFieldDefinition("phone") != null
-        
-        // Should use object types in table fields
         def customersType = schema.getType("customers") as GraphQLObjectType
         customersType != null
         def addressField = customersType.getFieldDefinition("address")
         addressField != null
-        // TODO: Implement field type mapping to use custom types
-        // addressField.type == addressType
+        GraphQLNonNull addressFieldGraphqlType = addressField.type as GraphQLNonNull
+        addressFieldGraphqlType.originalWrappedType == addressType
     }
-    
-    @Ignore("Custom types integration temporarily disabled due to duplicate input type issue")
+
     def "should handle mixed custom enum and composite types in same table"() {
         given: "a table with both enum and composite custom columns"
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("status", "order_status", false, false),  // enum
-            new ColumnInfo("shipping_address", "address_type", false, false)  // composite
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("status", "order_status", false, false),  // enum
+                new ColumnInfo("shipping_address", "address_type", false, false)  // composite
         ]
         def tableInfo = new TableInfo("orders", columns, [], false)
         Map<String, TableInfo> tables = ["orders": tableInfo]
-        
+
         def customEnums = [new CustomEnumInfo("order_status", "public", ["pending", "shipped", "delivered"])]
         def customComposites = [
-            new CustomCompositeTypeInfo("address_type", "public", [
-                new CompositeTypeAttribute("street", "character varying", 1, true),
-                new CompositeTypeAttribute("city", "character varying", 2, true)
-            ])
+                new CustomCompositeTypeInfo("address_type", "public", [
+                        new CompositeTypeAttribute("street", "character varying", 1, true),
+                        new CompositeTypeAttribute("city", "character varying", 2, true)
+                ])
         ]
-        
+
         // Mock the reflector to return these custom types
         def mockReflector = Mock(IDatabaseSchemaReflector)
         mockReflector.getCustomEnumTypes() >> customEnums
         mockReflector.getCustomCompositeTypes() >> customComposites
         generator.setSchemaReflector(mockReflector)
-        
+
         when: "generating schema with mixed custom types"
         def schema = generator.generateSchema(tables)
-        
+
         then: "should create both enum and object types"
         schema.getType("OrderStatus") instanceof GraphQLEnumType
         schema.getType("AddressType") instanceof GraphQLObjectType
-        
+
         def ordersType = schema.getType("orders") as GraphQLObjectType
         ordersType != null
         ordersType.getFieldDefinition("status") != null
         ordersType.getFieldDefinition("shipping_address") != null
-        // TODO: Implement field type mapping to use custom types
-        // ordersType.getFieldDefinition("status").type instanceof GraphQLEnumType
-        // ordersType.getFieldDefinition("shipping_address").type instanceof GraphQLObjectType
+        GraphQLNonNull statusGraphqlType = ordersType.getFieldDefinition("status").type as GraphQLNonNull
+        statusGraphqlType.originalWrappedType instanceof GraphQLEnumType
+        def shippingAddressGraphqlType = ordersType.getFieldDefinition("shipping_address").type as GraphQLNonNull
+        shippingAddressGraphqlType.originalWrappedType instanceof GraphQLObjectType
     }
 }

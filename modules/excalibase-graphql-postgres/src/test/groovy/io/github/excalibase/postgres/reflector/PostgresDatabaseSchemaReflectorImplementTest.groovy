@@ -753,4 +753,43 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
         }
     }
     */
+
+    def "should use optimized bulk queries instead of N+1 pattern for multiple tables"() {
+        given: "multiple tables to trigger N+1 queries"
+        // Create 5 tables to demonstrate the N+1 problem
+        for (int i = 1; i <= 5; i++) {
+            jdbcTemplate.execute("""
+                CREATE TABLE test_schema.table_${i} (
+                    id SERIAL PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    value INTEGER
+                )
+            """)
+        }
+
+        and: "cache is cleared to ensure fresh queries after tables are created"
+        schemaReflector.clearCache()
+
+        and: "a spy on jdbcTemplate to count queries"
+        def queryCount = 0
+        def originalQueryForList = jdbcTemplate.&queryForList
+        jdbcTemplate.metaClass.queryForList = { String sql, Object... args ->
+            queryCount++
+            println "Query ${queryCount}: ${sql}"
+            return originalQueryForList(sql, args)
+        }
+
+        when: "reflecting the schema"
+        Map<String, TableInfo> tables = schemaReflector.reflectSchema()
+
+        then: "should return all tables"
+        tables.size() == 5
+        tables.keySet().containsAll(['table_1', 'table_2', 'table_3', 'table_4', 'table_5'])
+
+        and: "should demonstrate optimized bulk queries (much fewer than N+1)"
+        // Optimized implementation: 1 query for table names + 1 for views + 1 bulk columns + 1 bulk PKs + 1 bulk FKs = 5 queries
+        // Before optimization would have been: 1 + 1 + 5*3 = 17 queries
+        println "Total queries executed: ${queryCount}"
+        queryCount <= 6 // Should be much fewer queries due to bulk optimization
+    }
 }
