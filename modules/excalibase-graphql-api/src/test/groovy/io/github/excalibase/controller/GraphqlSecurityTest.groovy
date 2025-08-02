@@ -356,7 +356,7 @@ class GraphqlSecurityTest extends Specification {
 
         and: "should have either data or errors in response"
         def responseContent = result.andReturn().response.contentAsString
-        println("Unicode test response: ${responseContent}")
+                    // Unicode test response validated
         assert responseContent.contains('"data"') || responseContent.contains('"errors"')
     }
 
@@ -398,5 +398,54 @@ class GraphqlSecurityTest extends Specification {
 
         then: "should handle malformed JSON gracefully"
         result.andExpect(status().is4xxClientError())
+    }
+
+    def "should execute SET ROLE when X-Database-Role header is provided"() {
+        given: "a test role with permissions"
+        try (Connection connection = DriverManager.getConnection(
+                postgres.getJdbcUrl(),
+                postgres.getUsername(),
+                postgres.getPassword());
+             Statement statement = connection.createStatement()) {
+            
+            statement.execute("CREATE ROLE test_user_role")
+            statement.execute("GRANT SELECT ON customer TO test_user_role")
+        }
+        
+        and: "a GraphQL query"
+        def query = """
+            {
+                customer(limit: 1) {
+                    customer_id
+                    first_name
+                }
+            }
+        """
+        
+        when: "executing query with X-Database-Role header"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("X-Database-Role", "test_user_role")
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+                .andExpect(status().isOk())
+                .andReturn()
+                .response
+                .contentAsString
+        
+        then: "query should execute successfully with role context"
+        // Validate that the response is successful and contains data
+        result.contains('"data"')
+        result.contains('"customer"')
+        !result.contains('"errors"')
+        
+        cleanup:
+        try (Connection connection = DriverManager.getConnection(
+                postgres.getJdbcUrl(),
+                postgres.getUsername(),
+                postgres.getPassword());
+             Statement statement = connection.createStatement()) {
+            statement.execute("REVOKE ALL PRIVILEGES ON customer FROM test_user_role")
+            statement.execute("DROP ROLE IF EXISTS test_user_role")
+        }
     }
 }

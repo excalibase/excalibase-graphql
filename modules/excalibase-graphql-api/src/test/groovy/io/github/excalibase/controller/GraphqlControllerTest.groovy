@@ -219,7 +219,7 @@ class GraphqlControllerTest extends Specification {
                 );
             """)
 
-            System.out.println("Test data setup completed successfully")
+            // Test data setup completed
         } catch (Exception e) {
             System.err.println("Error setting up test data: " + e.getMessage())
             e.printStackTrace()

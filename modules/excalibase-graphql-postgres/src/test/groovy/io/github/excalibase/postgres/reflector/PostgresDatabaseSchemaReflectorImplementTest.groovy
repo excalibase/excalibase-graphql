@@ -775,7 +775,7 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
         def originalQueryForList = jdbcTemplate.&queryForList
         jdbcTemplate.metaClass.queryForList = { String sql, Object... args ->
             queryCount++
-            println "Query ${queryCount}: ${sql}"
+            // Query execution tracked
             return originalQueryForList(sql, args)
         }
 
@@ -789,7 +789,7 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
         and: "should demonstrate optimized bulk queries (much fewer than N+1)"
         // Optimized implementation: 1 query for table names + 1 for views + 1 bulk columns + 1 bulk PKs + 1 bulk FKs = 5 queries
         // Before optimization would have been: 1 + 1 + 5*3 = 17 queries
-        println "Total queries executed: ${queryCount}"
+        // Query optimization verified: ${queryCount} total queries
         queryCount <= 6 // Should be much fewer queries due to bulk optimization
     }
 }

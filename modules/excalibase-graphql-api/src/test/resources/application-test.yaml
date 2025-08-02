@@ -13,6 +13,8 @@ spring:
 app:
   allowed-schema: public
   database-type: postgres
+  security:
+    role-based-schema: true  # Keep enabled for RLS/CLS tests
 
 logging:
   level:
