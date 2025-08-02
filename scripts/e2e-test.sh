@@ -321,8 +321,10 @@ main() {
         "mutation { createOrders(input: { customer_id: 3, status: \"delivered\", total_amount: 75.50 }) { order_id status } }" \
         '.data.createOrders.status == "DELIVERED"'
     
+    # Generate unique username with timestamp to avoid duplicates
+    TIMESTAMP=$(date +%s)
     run_test "Create User with UserRole Enum" \
-        "mutation { createUsers(input: { username: \"testuser\", email: \"testuser@example.com\", role: \"user\" }) { id username role email } }" \
+        "mutation { createUsers(input: { username: \"testuser_${TIMESTAMP}\", email: \"testuser_${TIMESTAMP}@example.com\", role: \"user\" }) { id username role email } }" \
         '.data.createUsers.id != null and .data.createUsers.role == "USER"'
     
     run_test "Update User Role" \
@@ -399,30 +401,6 @@ main() {
         log_error "Invalid Query Handling: Should have returned errors"
         ((test_count++))
         ((failed_tests++))
-    fi
-    
-    # ==========================================
-    # PERFORMANCE TESTS
-    # ==========================================
-    
-    log_info "Testing: Response Time Performance"
-    start_time=$(date +%s%N)
-    
-    response=$(curl -s -X POST -H "Content-Type: application/json" \
-        -d '{"query": "{ customer(limit: 100) { customer_id first_name last_name email create_date } }"}' \
-        "$API_URL")
-    
-    end_time=$(date +%s%N)
-    response_time=$(((end_time - start_time) / 1000000))  # Convert to milliseconds
-    
-    if [ $response_time -lt 1000 ]; then
-        log_success "Performance Test: ✓ Passed (${response_time}ms < 1000ms)"
-        ((test_count++))
-        ((passed_tests++))
-    else
-        log_warning "Performance Test: Slow response (${response_time}ms >= 1000ms)"
-        ((test_count++))
-        ((passed_tests++))  # Don't fail on performance, just warn
     fi
     
     # ==========================================

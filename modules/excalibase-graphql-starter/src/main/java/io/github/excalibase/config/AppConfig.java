@@ -32,6 +32,9 @@ public class AppConfig {
     
     /** The type of database being used */
     private DatabaseType databaseType;
+    
+    /** Security configuration */
+    private SecurityConfig security = new SecurityConfig();
 
     public String getAllowedSchema() {
         return allowedSchema;
@@ -47,5 +50,30 @@ public class AppConfig {
 
     public void setDatabaseType(DatabaseType databaseType) {
         this.databaseType = databaseType;
+    }
+
+    public SecurityConfig getSecurity() {
+        return security;
+    }
+
+    public void setSecurity(SecurityConfig security) {
+        this.security = security;
+    }
+
+    /**
+     * Security configuration properties.
+     */
+    public static class SecurityConfig {
+        
+        /** Enable role-based schema filtering and RLS/CLS support */
+        private boolean roleBasedSchema = true;
+
+        public boolean isRoleBasedSchema() {
+            return roleBasedSchema;
+        }
+
+        public void setRoleBasedSchema(boolean roleBasedSchema) {
+            this.roleBasedSchema = roleBasedSchema;
+        }
     }
 }

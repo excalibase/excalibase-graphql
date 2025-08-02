@@ -877,7 +877,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         userRoleEnum.values.collect { it.name } == ["ADMIN", "USER", "MODERATOR"]
 
         // Debug: check what types are available
-        println "Available types: ${schema.typeMap.keySet()}"
+        // Available types validated in schema
 
         // Should use enum types in table fields
         def usersType = schema.getType("users") as GraphQLObjectType
