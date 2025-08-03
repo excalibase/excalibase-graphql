@@ -61,27 +61,6 @@ jobs:
         name: coverage-reports
         path: modules/excalibase-graphql-api/target/site/jacoco/
         retention-days: 7
-        
-    - name: Upload benchmark reports
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: benchmark-reports
-        path: modules/excalibase-graphql-api/target/enterprise-benchmark-reports/
-        retention-days: 7
-        
-    - name: Comment PR with benchmark reports
-      uses: actions/github-script@v7
-      if: github.event_name == 'pull_request'
-      with:
-        script: |
-          const runUrl = `${context.payload.repository.html_url}/actions/runs/${context.runId}`;
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: `📊 **Benchmark reports generated!** [Download benchmark-reports artifact](${runUrl}) to view detailed HTML performance analysis.`
-          })
 
   build:
     name: Build & Package
