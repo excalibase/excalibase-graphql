@@ -3,6 +3,7 @@
 
 # Configuration
 COMPOSE_PROJECT = excalibase-e2e
+COMPOSE_TEST_FILE = scripts/docker-compose.test.yml
 APP_PORT = 10001
 DB_PORT = 5433
 API_URL = http://localhost:$(APP_PORT)/graphql
@@ -65,38 +66,38 @@ build-skip: ## Skip Maven build (for rapid iteration)
 .PHONY: up
 up: check-ports ## Start Docker services
 	@echo "$(BLUE)🚀 Starting services...$(NC)"
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) up -d --build > /dev/null 2>&1
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) up -d --build > /dev/null 2>&1
 	@echo "$(GREEN)✓ Services started$(NC)"
 	@$(MAKE) --no-print-directory wait-ready
 
 .PHONY: down
 down: ## Stop Docker services
 	@echo "$(BLUE)🛑 Stopping services...$(NC)"
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) down > /dev/null 2>&1 || true
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) down > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Services stopped$(NC)"
 
 .PHONY: clean
 clean: ## Stop services and cleanup volumes
 	@echo "$(BLUE)🧹 Cleaning up...$(NC)"
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Cleanup completed$(NC)"
 
 .PHONY: logs
 logs: ## Show service logs
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) logs -f
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) logs -f
 
 .PHONY: logs-app
 logs-app: ## Show application logs only
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) logs -f app
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) logs -f app
 
 .PHONY: logs-db
 logs-db: ## Show database logs only
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) logs -f postgres
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) logs -f postgres
 
 .PHONY: status
 status: ## Show service status
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) ps
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) ps
 
 # Testing targets
 .PHONY: test
@@ -151,7 +152,7 @@ check-ports: ## Check if required ports are available
 wait-ready: ## Wait for services to be ready
 	@echo "$(BLUE)⏳ Waiting for services...$(NC)"
 	@for i in $$(seq 1 30); do \
-		if docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) exec -T postgres pg_isready -U excalibase_user -d excalibase_e2e > /dev/null 2>&1; then \
+		if docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) exec -T postgres pg_isready -U excalibase_user -d excalibase_e2e > /dev/null 2>&1; then \
 			echo "$(GREEN)✓ PostgreSQL ready$(NC)"; \
 			break; \
 		fi; \
@@ -173,51 +174,15 @@ run-tests: ## Execute the actual test suite
 # Database operations (unified schema with demo + test data)
 .PHONY: db-shell
 db-shell: ## Connect to PostgreSQL shell
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) exec postgres psql -U excalibase_user -d excalibase_e2e
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) exec postgres psql -U excalibase_user -d excalibase_e2e
 
 .PHONY: db-reset
 db-reset: ## Reset database (recreate with fresh data)
 	@echo "$(BLUE)🔄 Resetting database...$(NC)"
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) down -v > /dev/null 2>&1 || true
-	@docker-compose -f docker-compose.test.yml -p $(COMPOSE_PROJECT) up -d postgres > /dev/null 2>&1
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) down -v > /dev/null 2>&1 || true
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) up -d postgres > /dev/null 2>&1
 	@$(MAKE) --no-print-directory wait-ready
 	@echo "$(GREEN)✓ Database reset completed$(NC)"
-
-# Sample operations
-.PHONY: query-customers
-query-customers: ## Run sample customer query
-	@echo "$(BLUE)🔍 Querying customers...$(NC)"
-	@curl -s -X POST $(API_URL) \
-		-H "Content-Type: application/json" \
-		-d '{"query": "{ customer { customer_id first_name last_name email } }"}' | jq '.'
-
-.PHONY: query-users
-query-users: ## Run sample users query (demo data)
-	@echo "$(BLUE)🔍 Querying users...$(NC)"
-	@curl -s -X POST $(API_URL) \
-		-H "Content-Type: application/json" \
-		-d '{"query": "{ users { id username email first_name last_name } }"}' | jq '.'
-
-.PHONY: query-posts
-query-posts: ## Run sample posts query with author relationship
-	@echo "$(BLUE)🔍 Querying posts with authors...$(NC)"
-	@curl -s -X POST $(API_URL) \
-		-H "Content-Type: application/json" \
-		-d '{"query": "{ posts { id title published created_at author_id users { username first_name last_name } } }"}' | jq '.'
-
-.PHONY: query-enhanced-types
-query-enhanced-types: ## Run sample enhanced types query
-	@echo "$(BLUE)🔍 Querying enhanced types...$(NC)"
-	@curl -s -X POST $(API_URL) \
-		-H "Content-Type: application/json" \
-		-d '{"query": "{ enhanced_types { id name json_col int_array timestamptz_col } }"}' | jq '.'
-
-.PHONY: query-schema
-query-schema: ## Query GraphQL schema
-	@echo "$(BLUE)🔍 Querying schema...$(NC)"
-	@curl -s -X POST $(API_URL) \
-		-H "Content-Type: application/json" \
-		-d '{"query": "{ __schema { types { name kind } } }"}' | jq '.data.__schema.types[] | select(.name | test("^[A-Z]")) | {name, kind}'
 
 # Utility targets
 .PHONY: install-deps
@@ -232,18 +197,6 @@ install-deps: ## Install missing dependencies (macOS)
 	fi
 	@echo "$(GREEN)✓ Dependencies check completed$(NC)"
 
-.PHONY: open-api
-open-api: ## Open GraphQL API in browser
-	@echo "$(BLUE)🌐 Opening GraphQL API...$(NC)"
-	@open $(API_URL)
-
-.PHONY: performance-test
-performance-test: ## Run performance test
-	@echo "$(BLUE)⚡ Running performance test...$(NC)"
-	@time curl -s -X POST $(API_URL) \
-		-H "Content-Type: application/json" \
-		-d '{"query": "{ customer(limit: 100) { customer_id first_name last_name email create_date } }"}'
-
 # Development workflow targets
 .PHONY: restart
 restart: down up ## Restart services
@@ -253,15 +206,5 @@ restart: down up ## Restart services
 rebuild: clean build up ## Full rebuild and restart
 	@echo "$(GREEN)✓ Full rebuild completed$(NC)"
 
-# Aliases for convenience
-.PHONY: start
-start: e2e ## Alias for 'make e2e'
-
-.PHONY: stop
-stop: clean ## Alias for 'make clean'
-
-.PHONY: ps
-ps: status ## Alias for 'make status'
-
 # Force targets (ignore file existence)
-.PHONY: docker-compose.yml scripts/initdb.sql scripts/e2e-test.sh 
+.PHONY: docker-compose.yml $(COMPOSE_TEST_FILE) scripts/initdb.sql scripts/e2e-test.sh 
