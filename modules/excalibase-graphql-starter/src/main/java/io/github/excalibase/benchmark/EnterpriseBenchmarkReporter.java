@@ -20,16 +20,7 @@ public class EnterpriseBenchmarkReporter {
     private static final Logger logger = LoggerFactory.getLogger(EnterpriseBenchmarkReporter.class);
     private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    // Performance thresholds for color coding
-    private static final Map<String, Long> PERFORMANCE_THRESHOLDS = Map.of(
-            "schema_introspection", 5000L,
-            "simple_query", 500L,
-            "complex_query", 2000L,
-            "massive_join", 3000L,
-            "enhanced_types", 1500L,
-            "concurrent_requests", 10000L,
-            "memory_pressure", 5000L
-    );
+
 
     /**
      * Generate comprehensive enterprise benchmark report
@@ -89,7 +80,7 @@ public class EnterpriseBenchmarkReporter {
         try (FileWriter writer = new FileWriter(filename)) {
             writer.write(generateHTMLHeader("System Monitoring Report"));
             writer.write(generateSystemInfoSection());
-            writer.write(generateHTMLFooter());
+            writer.write(generateHTMLFooter(new HashMap<>())); // Empty results for system monitoring
         }
     }
 
@@ -196,12 +187,10 @@ public class EnterpriseBenchmarkReporter {
             writer.write(generateHTMLHeader("Enterprise-Scale GraphQL Benchmark Report"));
             writer.write(generateExecutiveDashboard(results));
             writer.write(generateScaleMetrics(results));
-            writer.write(generatePerformanceBreakdown(results));
-            writer.write(generateMemoryAnalysis(results));
             writer.write(generateConcurrencyResults(results));
             writer.write(generateRecommendations(results));
             writer.write(generateDetailedResults(results));
-            writer.write(generateHTMLFooter());
+            writer.write(generateHTMLFooter(results));
         }
     }
 
@@ -493,95 +482,12 @@ public class EnterpriseBenchmarkReporter {
             """;
     }
 
-    private static String generatePerformanceBreakdown(Map<String, List<BenchmarkUtils.BenchmarkResult>> results) {
-        StringBuilder html = new StringBuilder();
-        html.append("""
-            <div class="section">
-                <h2>⚡ Performance Breakdown</h2>
-                <div class="chart-container">
-                    <canvas id="performanceChart" width="400" height="200"></canvas>
-                </div>
-                <div class="performance-grid">
-            """);
 
-        // Generate performance items for each test category
-        for (Map.Entry<String, List<BenchmarkUtils.BenchmarkResult>> entry : results.entrySet()) {
-            String testName = entry.getKey();
-            List<BenchmarkUtils.BenchmarkResult> testResults = entry.getValue();
-
-            if (!testResults.isEmpty()) {
-                long avgDuration = testResults.stream().mapToLong(BenchmarkUtils.BenchmarkResult::getDurationMs).sum() / testResults.size();
-                long maxDuration = testResults.stream().mapToLong(BenchmarkUtils.BenchmarkResult::getDurationMs).max().orElse(0);
-                long successCount = testResults.stream().mapToLong(r -> r.isSuccess() ? 1 : 0).sum();
-                double successRate = (successCount * 100.0) / testResults.size();
-
-                String threshold = getThresholdForTest(testName);
-                long thresholdValue = PERFORMANCE_THRESHOLDS.getOrDefault(threshold, 2000L);
-                double progressPercentage = Math.min(100, (avgDuration * 100.0) / thresholdValue);
-                String progressClass = getProgressClass(progressPercentage);
-
-                html.append(String.format("""
-                    <div class="performance-item">
-                        <h4>%s</h4>
-                        <p><strong>Average:</strong> %,d ms</p>
-                        <p><strong>Peak:</strong> %,d ms</p>
-                        <p><strong>Success Rate:</strong> %.1f%%</p>
-                        <div class="progress-bar">
-                            <div class="progress-fill %s" style="width: %.1f%%"></div>
-                        </div>
-                        <small>Threshold: %,d ms</small>
-                    </div>
-                    """,
-                        formatTestName(testName), avgDuration, maxDuration, successRate,
-                        progressClass, progressPercentage, thresholdValue
-                ));
-            }
-        }
-
-        html.append("""
-                </div>
-            </div>
-            """);
-
-        return html.toString();
-    }
-
-    private static String generateMemoryAnalysis(Map<String, List<BenchmarkUtils.BenchmarkResult>> results) {
-        return """
-            <div class="section">
-                <h2>🧠 Memory Analysis</h2>
-                <div class="chart-container">
-                    <canvas id="memoryChart" width="400" height="200"></canvas>
-                </div>
-                <div class="performance-grid">
-                    <div class="performance-item">
-                        <h4>Memory Efficiency</h4>
-                        <p>Enterprise-scale operations staying within memory bounds</p>
-                        <div class="progress-bar">
-                            <div class="progress-fill status-excellent" style="width: 85%"></div>
-                        </div>
-                        <small>Target: < 1GB per operation</small>
-                    </div>
-                    <div class="performance-item">
-                        <h4>Garbage Collection</h4>
-                        <p>GC performance under high load conditions</p>
-                        <div class="progress-bar">
-                            <div class="progress-fill status-good" style="width: 78%"></div>
-                        </div>
-                        <small>G1GC optimized for large heaps</small>
-                    </div>
-                </div>
-            </div>
-            """;
-    }
 
     private static String generateConcurrencyResults(Map<String, List<BenchmarkUtils.BenchmarkResult>> results) {
         return """
             <div class="section">
                 <h2>⚡ Concurrency Results</h2>
-                <div class="chart-container">
-                    <canvas id="concurrencyChart" width="400" height="200"></canvas>
-                </div>
                 <div class="performance-grid">
                     <div class="performance-item">
                         <h4>Concurrent Load Testing</h4>
@@ -688,7 +594,9 @@ public class EnterpriseBenchmarkReporter {
         return html.toString();
     }
 
-    private static String generateHTMLFooter() {
+    private static String generateHTMLFooter(Map<String, List<BenchmarkUtils.BenchmarkResult>> results) {
+        ChartData chartData = extractChartData(results);
+        
         return String.format("""
                     <div class="footer">
                         <p>Generated by Excalibase GraphQL Enterprise Benchmark System</p>
@@ -698,15 +606,15 @@ public class EnterpriseBenchmarkReporter {
                 </div>
                 
                 <script>
-                    // Performance Chart
+                    // Performance Chart - Using Real Data
                     const ctx1 = document.getElementById('performanceChart').getContext('2d');
                     new Chart(ctx1, {
                         type: 'bar',
                         data: {
-                            labels: ['Schema Introspection', 'Million-Record Query', 'Massive JOINs', 'Enhanced Types', 'Concurrency'],
+                            labels: %s,
                             datasets: [{
                                 label: 'Response Time (ms)',
-                                data: [3200, 1800, 2500, 1200, 8500],
+                                data: %s,
                                 backgroundColor: ['#2196f3', '#4caf50', '#ff9800', '#9c27b0', '#f44336'],
                                 borderColor: '#fff',
                                 borderWidth: 2
@@ -715,7 +623,7 @@ public class EnterpriseBenchmarkReporter {
                         options: {
                             responsive: true,
                             plugins: {
-                                title: { display: true, text: 'Enterprise-Scale Performance Results' }
+                                title: { display: true, text: 'Enterprise-Scale Performance Results (Real Data)' }
                             },
                             scales: {
                                 y: { beginAtZero: true, title: { display: true, text: 'Milliseconds' } }
@@ -723,15 +631,15 @@ public class EnterpriseBenchmarkReporter {
                         }
                     });
                     
-                    // Memory Chart
+                    // Memory Chart - Using Real Data
                     const ctx2 = document.getElementById('memoryChart').getContext('2d');
                     new Chart(ctx2, {
                         type: 'line',
                         data: {
-                            labels: ['Startup', 'Schema Load', 'Query Execution', 'Peak Load', 'After GC'],
+                            labels: %s,
                             datasets: [{
                                 label: 'Memory Usage (MB)',
-                                data: [256, 512, 768, 892, 324],
+                                data: %s,
                                 borderColor: '#2196f3',
                                 backgroundColor: 'rgba(33, 150, 243, 0.1)',
                                 tension: 0.4,
@@ -741,42 +649,86 @@ public class EnterpriseBenchmarkReporter {
                         options: {
                             responsive: true,
                             plugins: {
-                                title: { display: true, text: 'Memory Usage During Enterprise Testing' }
+                                title: { display: true, text: 'Memory Usage During Enterprise Testing (Real Data)' }
                             },
                             scales: {
                                 y: { beginAtZero: true, title: { display: true, text: 'Memory (MB)' } }
                             }
                         }
                     });
-                    
-                    // Concurrency Chart
-                    const ctx3 = document.getElementById('concurrencyChart').getContext('2d');
-                    new Chart(ctx3, {
-                        type: 'radar',
-                        data: {
-                            labels: ['Throughput', 'Response Time', 'Error Rate', 'Resource Usage', 'Scalability'],
-                            datasets: [{
-                                label: 'Enterprise Performance',
-                                data: [95, 88, 98, 85, 92],
-                                borderColor: '#4caf50',
-                                backgroundColor: 'rgba(76, 175, 80, 0.2)',
-                                pointBackgroundColor: '#4caf50'
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            plugins: {
-                                title: { display: true, text: 'Concurrency Performance Radar' }
-                            },
-                            scales: {
-                                r: { beginAtZero: true, max: 100 }
-                            }
-                        }
-                    });
+
                 </script>
             </body>
             </html>
-            """, LocalDateTime.now().format(TIMESTAMP_FORMAT));
+            """, LocalDateTime.now().format(TIMESTAMP_FORMAT),
+            chartData.performanceLabels,
+            chartData.performanceData,
+            chartData.memoryLabels,
+            chartData.memoryData);
+    }
+    
+    /**
+     * Helper class to hold chart data
+     */
+    private static class ChartData {
+        String performanceLabels;
+        String performanceData;
+        String memoryLabels;
+        String memoryData;
+    }
+    
+    /**
+     * Extract real chart data from benchmark results
+     */
+    private static ChartData extractChartData(Map<String, List<BenchmarkUtils.BenchmarkResult>> results) {
+        ChartData chartData = new ChartData();
+        
+        // Performance Chart Data
+        List<String> perfLabels = new ArrayList<>();
+        List<Long> perfData = new ArrayList<>();
+        
+        // Memory Chart Data  
+        List<String> memLabels = new ArrayList<>();
+        List<Long> memData = new ArrayList<>();
+        
+        if (results.isEmpty()) {
+            // Fallback data if no results
+            chartData.performanceLabels = "['No Data Available']";
+            chartData.performanceData = "[0]";
+            chartData.memoryLabels = "['No Data Available']";
+            chartData.memoryData = "[0]";
+        } else {
+            // Extract real performance data
+            for (Map.Entry<String, List<BenchmarkUtils.BenchmarkResult>> entry : results.entrySet()) {
+                String testName = entry.getKey();
+                List<BenchmarkUtils.BenchmarkResult> testResults = entry.getValue();
+                
+                if (!testResults.isEmpty()) {
+                    // Get average duration for this test type
+                    long avgDuration = testResults.stream()
+                        .mapToLong(BenchmarkUtils.BenchmarkResult::getDurationMs)
+                        .sum() / testResults.size();
+                    
+                    // Get average memory for this test type
+                    long avgMemory = testResults.stream()
+                        .mapToLong(BenchmarkUtils.BenchmarkResult::getMemoryUsedMB)
+                        .sum() / testResults.size();
+                    
+                    perfLabels.add("'" + testName + "'");
+                    perfData.add(avgDuration);
+                    memLabels.add("'" + testName + "'");
+                    memData.add(avgMemory);
+                }
+            }
+            
+            // Build JSON arrays
+            chartData.performanceLabels = "[" + String.join(", ", perfLabels) + "]";
+            chartData.performanceData = "[" + perfData.stream().map(String::valueOf).collect(Collectors.joining(", ")) + "]";
+            chartData.memoryLabels = "[" + String.join(", ", memLabels) + "]";
+            chartData.memoryData = "[" + memData.stream().map(String::valueOf).collect(Collectors.joining(", ")) + "]";
+        }
+        
+        return chartData;
     }
 
     // Helper methods for report generation
@@ -911,7 +863,7 @@ public class EnterpriseBenchmarkReporter {
             writer.write(generatePerformanceTrends(results));
             writer.write(generateBottleneckAnalysis(results));
             writer.write(generateOptimizationSuggestions(results));
-            writer.write(generateHTMLFooter());
+            writer.write(generateHTMLFooter(results));
         }
     }
 
@@ -1067,7 +1019,7 @@ public class EnterpriseBenchmarkReporter {
                     getPerformanceGradeClass(stats.avgDuration),
                     getPerformanceGrade(stats.avgDuration)
             ));
-            writer.write(generateHTMLFooter());
+            writer.write(generateHTMLFooter(results));
         }
     }
 
@@ -1206,7 +1158,7 @@ public class EnterpriseBenchmarkReporter {
                     </div>
                 </div>
                 """);
-            writer.write(generateHTMLFooter());
+            writer.write(generateHTMLFooter(results));
         }
     }
 
