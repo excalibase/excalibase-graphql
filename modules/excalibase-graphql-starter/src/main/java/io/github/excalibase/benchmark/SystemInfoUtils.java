@@ -104,20 +104,19 @@ public class SystemInfoUtils {
      * Print comprehensive system information to console
      */
     public static void printSystemInfo() {
-        System.out.println("=== SYSTEM INFORMATION ===");
-        System.out.printf("OS: %s %s (%s)%n", 
-            osBean.getName(), osBean.getVersion(), osBean.getArch());
-        System.out.printf("Available Processors: %d%n", getAvailableProcessors());
+        System.out.println("=== APPLICATION INFORMATION ===");
+        System.out.printf("Application: Excalibase GraphQL API%n");
+        System.out.printf("Available CPU Cores: %d%n", getAvailableProcessors());
         System.out.println();
 
-        System.out.println("=== CPU INFORMATION ===");
-        System.out.printf("Process CPU Usage: %.2f%%%n", getCpuUsage());
-        System.out.printf("System CPU Usage: %.2f%%%n", getSystemCpuUsage());
+        System.out.println("=== APPLICATION CPU USAGE ===");
+        System.out.printf("Application CPU Usage: %.2f%%%n", getCpuUsage());
         System.out.println();
 
-        System.out.println("=== MEMORY INFORMATION ===");
-        System.out.printf("Total Physical Memory: %s%n", formatBytes(getTotalPhysicalMemory()));
-        System.out.printf("Free Physical Memory: %s%n", formatBytes(getFreePhysicalMemory()));
+        System.out.println("=== APPLICATION MEMORY USAGE ===");
+        System.out.printf("JVM Heap Used: %s%n", formatBytes(getHeapMemoryUsage().getUsed()));
+        System.out.printf("JVM Heap Max: %s%n", formatBytes(getHeapMemoryUsage().getMax()));
+        System.out.printf("JVM Non-Heap Used: %s%n", formatBytes(getNonHeapMemoryUsage().getUsed()));
         System.out.printf("Used Physical Memory: %s%n", formatBytes(getUsedPhysicalMemory()));
         System.out.printf("Memory Usage: %.2f%%%n", getMemoryUsagePercentage());
         System.out.println();
@@ -135,16 +134,19 @@ public class SystemInfoUtils {
     }
 
     /**
-     * Get system information as a formatted string
-     * @return Formatted system information string
+     * Get application-specific information as a formatted string
+     * @return Formatted application information string
      */
     public static String getSystemInfoAsString() {
         StringBuilder sb = new StringBuilder();
-        sb.append("CPU: ").append(String.format("%.2f%%", getCpuUsage()));
-        sb.append(" | RAM: ").append(String.format("%.2f%%", getMemoryUsagePercentage()));
-        sb.append(" (").append(formatBytes(getUsedPhysicalMemory())).append("/");
-        sb.append(formatBytes(getTotalPhysicalMemory())).append(")");
-        sb.append(" | Processors: ").append(getAvailableProcessors());
+        MemoryUsage heapUsage = getHeapMemoryUsage();
+        double heapPercent = heapUsage.getMax() > 0 ? (heapUsage.getUsed() * 100.0) / heapUsage.getMax() : 0.0;
+        
+        sb.append("Application CPU: ").append(String.format("%.2f%%", getCpuUsage()));
+        sb.append(" | JVM Heap: ").append(String.format("%.2f%%", heapPercent));
+        sb.append(" (").append(formatBytes(heapUsage.getUsed())).append("/");
+        sb.append(formatBytes(heapUsage.getMax())).append(")");
+        sb.append(" | Available Cores: ").append(getAvailableProcessors());
         return sb.toString();
     }
 
@@ -195,11 +197,14 @@ public class SystemInfoUtils {
     }
 
     /**
-     * Create a simple system info summary for logging
-     * @return Compact system info string
+     * Create a simple application info summary for logging
+     * @return Compact application info string
      */
     public static String getCompactSystemInfo() {
-        return String.format("CPU: %.1f%% | RAM: %.1f%% | Cores: %d", 
-            getCpuUsage(), getMemoryUsagePercentage(), getAvailableProcessors());
+        MemoryUsage heapUsage = getHeapMemoryUsage();
+        double heapPercent = heapUsage.getMax() > 0 ? (heapUsage.getUsed() * 100.0) / heapUsage.getMax() : 0.0;
+        return String.format("App CPU: %.1f%% | JVM Heap: %.1f%% (%s/%s) | Cores: %d", 
+            getCpuUsage(), heapPercent, formatBytes(heapUsage.getUsed()), 
+            formatBytes(heapUsage.getMax()), getAvailableProcessors());
     }
 }

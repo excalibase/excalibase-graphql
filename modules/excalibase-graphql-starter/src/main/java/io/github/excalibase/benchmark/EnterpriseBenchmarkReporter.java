@@ -99,20 +99,20 @@ public class EnterpriseBenchmarkReporter {
     private static String generateSystemInfoSection() {
         return String.format("""
             <div class="container">
-                <h2>🖥️ System Information</h2>
+                <h2>📱 Application Performance Metrics</h2>
                 <div class="system-info-grid">
                     <div class="metric-card">
-                        <h3>CPU Information</h3>
-                        <p><strong>Processors:</strong> %d cores</p>
-                        <p><strong>Process CPU Usage:</strong> %.2f%%</p>
-                        <p><strong>System CPU Usage:</strong> %.2f%%</p>
+                        <h3>Application CPU</h3>
+                        <p><strong>Available Cores:</strong> %d cores</p>
+                        <p><strong>Application CPU Usage:</strong> %.2f%%</p>
+                        <p><strong>CPU Efficiency:</strong> %s</p>
                     </div>
                     <div class="metric-card">
-                        <h3>Memory Information</h3>
-                        <p><strong>Total RAM:</strong> %s</p>
-                        <p><strong>Used RAM:</strong> %s</p>
-                        <p><strong>Free RAM:</strong> %s</p>
-                        <p><strong>Memory Usage:</strong> %.2f%%</p>
+                        <h3>Application Memory</h3>
+                        <p><strong>JVM Heap Used:</strong> %s</p>
+                        <p><strong>JVM Heap Max:</strong> %s</p>
+                        <p><strong>JVM Non-Heap:</strong> %s</p>
+                        <p><strong>Heap Usage:</strong> %.2f%%</p>
                     </div>
                     <div class="metric-card">
                         <h3>JVM Information</h3>
@@ -130,11 +130,12 @@ public class EnterpriseBenchmarkReporter {
             """,
             SystemInfoUtils.getAvailableProcessors(),
             SystemInfoUtils.getCpuUsage(),
-            SystemInfoUtils.getSystemCpuUsage(),
-            formatBytes(SystemInfoUtils.getTotalPhysicalMemory()),
-            formatBytes(SystemInfoUtils.getUsedPhysicalMemory()),
-            formatBytes(SystemInfoUtils.getFreePhysicalMemory()),
-            SystemInfoUtils.getMemoryUsagePercentage(),
+            SystemInfoUtils.getCpuUsage() < 50 ? "Excellent" : SystemInfoUtils.getCpuUsage() < 80 ? "Good" : "High",
+            formatBytes(SystemInfoUtils.getHeapMemoryUsage().getUsed()),
+            formatBytes(SystemInfoUtils.getHeapMemoryUsage().getMax()),
+            formatBytes(SystemInfoUtils.getNonHeapMemoryUsage().getUsed()),
+            SystemInfoUtils.getHeapMemoryUsage().getMax() > 0 ? 
+                (SystemInfoUtils.getHeapMemoryUsage().getUsed() * 100.0) / SystemInfoUtils.getHeapMemoryUsage().getMax() : 0.0,
             formatBytes(SystemInfoUtils.getHeapMemoryUsage().getUsed()),
             formatBytes(SystemInfoUtils.getHeapMemoryUsage().getMax()),
             formatDuration(SystemInfoUtils.getJvmUptime()),
