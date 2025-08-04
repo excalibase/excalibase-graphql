@@ -1,0 +1,88 @@
+# Docker Compose for Benchmark Testing with Large Dataset
+# Optimized for performance testing with substantial data volumes
+
+services:
+  app:
+    build: .
+    ports:
+      - "10002:10000"  # Unique external port 10002 for benchmark
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/excalibase_benchmark
+      - SPRING_DATASOURCE_USERNAME=excalibase_user
+      - SPRING_DATASOURCE_PASSWORD=excalibase_pass
+      - SPRING_DATASOURCE_SCHEMA=hana
+      - SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=20
+      - SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE=5
+      - SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT=30000
+      - SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT=600000
+      - SPRING_DATASOURCE_HIKARI_MAX_LIFETIME=1800000
+      - SPRING_DATASOURCE_HIKARI_LEAK_DETECTION_THRESHOLD=60000
+      - APP_ALLOWED_SCHEMA=hana
+      - APP_DATABASE_TYPE=postgres
+      - SERVER_PORT=10000
+      - JAVA_OPTS=-Xmx2g -Xms1g -XX:+UseG1GC
+      # Database wait configuration
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=excalibase_benchmark
+      - DB_USER=excalibase_user
+      - DB_PASSWORD=excalibase_pass
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - excalibase-benchmark-network
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 1G
+
+  postgres:
+    image: postgres:15-alpine
+    ports:
+      - "5434:5432"  # Unique external port 5434 for benchmark
+    environment:
+      - POSTGRES_DB=excalibase_benchmark
+      - POSTGRES_USER=excalibase_user
+      - POSTGRES_PASSWORD=excalibase_pass
+      # Performance optimizations for large dataset
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    volumes:
+      - ./scripts/benchmark-initdb.sql:/docker-entrypoint-initdb.d/01-benchmark-initdb.sql
+      - postgres_benchmark_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U excalibase_user -d excalibase_benchmark && psql -U excalibase_user -d excalibase_benchmark -c 'SELECT status FROM hana.initialization_complete;' | grep -q 'ENTERPRISE_READY'"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+    networks:
+      - excalibase-benchmark-network
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    command: |
+      postgres
+      -c shared_buffers=1GB
+      -c effective_cache_size=3GB
+      -c maintenance_work_mem=256MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+
+volumes:
+  postgres_benchmark_data:
+
+networks:
+  excalibase-benchmark-network:
+    driver: bridge
