@@ -40,6 +40,10 @@ help: ## Show this help message
 	@echo "  make benchmark-logs             # Show service logs"
 	@echo "  make benchmark-db-shell         # Connect to database"
 	@echo "  make benchmark-db-stats         # Show database statistics"
+	@echo ""
+	@echo "$(YELLOW)CI/CD Integration:$(NC)"
+	@echo "  make ci                         # Run complete CI pipeline"
+	@echo "  make ci-benchmark               # Run enterprise benchmarks for CI"
 
 # Main targets
 .PHONY: e2e
@@ -60,6 +64,10 @@ dev: check-deps build up ## Start services for development (no cleanup)
 
 .PHONY: ci
 ci: check-deps-ci build up test clean ## CI/CD pipeline (with dependency checks)
+
+.PHONY: ci-benchmark  
+ci-benchmark: check-deps-ci benchmark-build benchmark-up benchmark-test-only ## Enterprise benchmark for CI (without cleanup)
+	@echo "$(GREEN)🏢 Enterprise CI benchmark completed!$(NC)"
 
 # Build targets
 .PHONY: build
