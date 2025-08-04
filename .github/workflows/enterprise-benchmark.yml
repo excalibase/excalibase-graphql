@@ -78,6 +78,7 @@ jobs:
         
         # Run benchmark and capture output
         echo "🏃 Starting benchmark execution..."
+        set -o pipefail  # Fail if any command in pipeline fails
         if make ci-benchmark 2>&1 | tee "$BENCHMARK_OUTPUT"; then
           echo "✅ Enterprise benchmark tests completed successfully"
           echo "benchmark_success=true" >> $GITHUB_OUTPUT
@@ -92,6 +93,11 @@ jobs:
           # Debug: Show error output
           echo "📋 Error output (last 50 lines):"
           tail -50 "$BENCHMARK_OUTPUT"
+          
+          # Additional debug: Show docker-compose logs
+          echo "📋 Docker service logs:"
+          docker-compose -f docker-compose.benchmark.yml -p excalibase-benchmark logs --tail=100
+          
           exit 1
         fi
         
