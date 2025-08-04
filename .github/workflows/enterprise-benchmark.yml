@@ -101,16 +101,16 @@ jobs:
           exit 1
         fi
         
-        # Extract key metrics from output (matching actual benchmark script format with color codes)
-        # Format: ${GREEN}[SUCCESS]${NC} ✅ Test name: XXms (threshold: YYms) or XXms, additional info (threshold: YYms)
-        # Need to handle ANSI color codes in the output
-        SCHEMA_TIME=$(grep -o "SUCCESS.*✅ Schema introspection: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
-        MILLION_QUERY_TIME=$(grep -o "SUCCESS.*✅ Million-record query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
-        JOIN_TIME=$(grep -o "SUCCESS.*✅ Massive JOIN query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
-        ENHANCED_TIME=$(grep -o "SUCCESS.*✅ Enhanced types at scale: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
-        CONCURRENT_TIME=$(grep -o "SUCCESS.*✅ 50 concurrent requests: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
-        CONCURRENT_AVG=$(grep -o "SUCCESS.*✅ 50 concurrent requests: [0-9]*ms ([0-9]*ms avg)" "$BENCHMARK_OUTPUT" | grep -o "([0-9]*ms avg)" | grep -o "[0-9]*" | head -1 || echo "N/A")
-        LARGE_RESULT_TIME=$(grep -o "SUCCESS.*✅ Large result set query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
+        # Extract key metrics from output (matching actual benchmark script format)
+        # Format: [SUCCESS] ✅ Test name: XXms (threshold: YYms) or XXms, additional info (threshold: YYms)
+        # Use specific ': XXXms' pattern to avoid false matches
+        SCHEMA_TIME=$(grep -o "\[SUCCESS\].*✅ Schema introspection: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o ": [0-9]*ms" | grep -o "[0-9]*" || echo "N/A")
+        MILLION_QUERY_TIME=$(grep -o "\[SUCCESS\].*✅ Million-record query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o ": [0-9]*ms" | grep -o "[0-9]*" || echo "N/A")
+        JOIN_TIME=$(grep -o "\[SUCCESS\].*✅ Massive JOIN query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o ": [0-9]*ms" | grep -o "[0-9]*" || echo "N/A")
+        ENHANCED_TIME=$(grep -o "\[SUCCESS\].*✅ Enhanced types at scale: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o ": [0-9]*ms" | grep -o "[0-9]*" || echo "N/A")
+        CONCURRENT_TIME=$(grep -o "\[SUCCESS\].*✅ 50 concurrent requests: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o ": [0-9]*ms" | grep -o "[0-9]*" || echo "N/A")
+        CONCURRENT_AVG=$(grep -o "\[SUCCESS\].*✅ 50 concurrent requests: [0-9]*ms ([0-9]*ms avg)" "$BENCHMARK_OUTPUT" | grep -o "([0-9]*ms avg)" | grep -o "[0-9]*" || echo "N/A")
+        LARGE_RESULT_TIME=$(grep -o "\[SUCCESS\].*✅ Large result set query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o ": [0-9]*ms" | grep -o "[0-9]*" || echo "N/A")
         MEMORY_USAGE=$(grep -o "🐳 Container Memory Usage: [0-9]*MB" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
         
         # Debug: Show extracted metrics

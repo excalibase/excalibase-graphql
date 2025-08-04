@@ -212,12 +212,16 @@ wait_for_api() {
     log_info "Waiting for Enterprise-Scale GraphQL API to be ready..."
     
     for i in $(seq 1 $MAX_RETRIES); do
-        # Improved check: Send POST with simple introspection query
-        local response=$(curl -s --connect-timeout 5 -X POST "$API_URL" \
-            -H "Content-Type: application/json" \
-            -d '{"query": "{ __typename }"}' 2>/dev/null)
+        # Use Spring Boot Actuator health check (much more reliable)
+        local health_url="http://localhost:10002/actuator/health"
+        local response=$(curl -s --connect-timeout 5 "$health_url" 2>/dev/null)
         
-        if echo "$response" | grep -q '"__typename"'; then
+        # Debug: Show response for troubleshooting
+        if [ "$i" -le 3 ]; then
+            log_info "Debug attempt $i - Health response: $response"
+        fi
+        
+        if echo "$response" | grep -q '"status":"UP"'; then
             log_success "Enterprise GraphQL API is ready!"
             return 0
         fi
