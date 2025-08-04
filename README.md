@@ -158,7 +158,7 @@ docker-compose down
 **E2E Testing Setup:**
 ```bash
 # Use test environment (different ports to avoid conflicts)
-docker-compose -f docker-compose.test.yml up -d
+docker-compose -f scripts/docker-compose.test.yml up -d
 
 # Or use Makefile for complete testing workflow
 make e2e           # Complete e2e test (build + test + cleanup)
@@ -176,7 +176,7 @@ docker-compose up -d --build
 docker-compose exec excalibase-app mvn test
 
 # Run tests in container (test setup)
-docker-compose -f docker-compose.test.yml exec app mvn test
+docker-compose -f scripts/docker-compose.test.yml exec app mvn test
 
 # Access application shell
 docker-compose exec excalibase-app /bin/bash

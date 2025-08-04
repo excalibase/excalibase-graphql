@@ -11,8 +11,6 @@ spring:
     url: jdbc:postgresql://localhost:5432/hana
     username: hana001
     password: password123
-    hikari:
-      schema: hana
 app:
   allowed-schema: hana
   database-type: postgres

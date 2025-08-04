@@ -1,6 +1,6 @@
 services:
   app:
-    build: .
+    build: ..
     ports:
       - "10001:10000"  # Unique external port 10001 -> internal 10000
     environment:
@@ -26,7 +26,7 @@ services:
       - POSTGRES_USER=excalibase_user
       - POSTGRES_PASSWORD=excalibase_pass
     volumes:
-      - ./scripts/initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql
+      - ./initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql
       - postgres_test_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U excalibase_user -d excalibase_e2e"]
