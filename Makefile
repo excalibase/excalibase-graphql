@@ -216,6 +216,15 @@ restart: down up ## Restart services
 rebuild: clean build up ## Full rebuild and restart
 	@echo "$(GREEN)✓ Full rebuild completed$(NC)"
 
+# Aliases for convenience
+.PHONY: start
+start: e2e ## Alias for 'make e2e'
+
+.PHONY: stop
+stop: clean ## Alias for 'make clean'
+
+.PHONY: ps
+ps: status ## Alias for 'make status'
 
 # Enterprise benchmark targets
 .PHONY: benchmark
@@ -342,4 +351,4 @@ benchmark-db-stats: ## Show enterprise benchmark database statistics
 		ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
 
 # Force targets (ignore file existence)
-.PHONY: docker-compose.yml $(COMPOSE_TEST_FILE) scripts/initdb.sql scripts/e2e-test.sh
+.PHONY: docker-compose.yml $(COMPOSE_TEST_FILE) scripts/initdb.sql scripts/e2e-test.sh docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh
