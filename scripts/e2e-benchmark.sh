@@ -212,7 +212,12 @@ wait_for_api() {
     log_info "Waiting for Enterprise-Scale GraphQL API to be ready..."
     
     for i in $(seq 1 $MAX_RETRIES); do
-        if curl -s --connect-timeout 5 "$API_URL" > /dev/null 2>&1; then
+        # Improved check: Send POST with simple introspection query
+        local response=$(curl -s --connect-timeout 5 -X POST "$API_URL" \
+            -H "Content-Type: application/json" \
+            -d '{"query": "{ __typename }"}' 2>/dev/null)
+        
+        if echo "$response" | grep -q '"__typename"'; then
             log_success "Enterprise GraphQL API is ready!"
             return 0
         fi
