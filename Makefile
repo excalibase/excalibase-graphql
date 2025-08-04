@@ -85,7 +85,7 @@ build-skip: ## Skip Maven build (for rapid iteration)
 up: check-ports ## Start Docker services
 	@echo "$(BLUE)🚀 Starting services...$(NC)"
 	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) up -d --build > /dev/null 2>&1
+	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) up -d --build
 	@echo "$(GREEN)✓ Services started$(NC)"
 	@$(MAKE) --no-print-directory wait-ready
 
