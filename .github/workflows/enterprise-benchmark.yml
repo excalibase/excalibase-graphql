@@ -77,24 +77,55 @@ jobs:
         BENCHMARK_JSON="benchmark-results.json"
         
         # Run benchmark and capture output
+        echo "🏃 Starting benchmark execution..."
         if make ci-benchmark 2>&1 | tee "$BENCHMARK_OUTPUT"; then
           echo "✅ Enterprise benchmark tests completed successfully"
           echo "benchmark_success=true" >> $GITHUB_OUTPUT
+          
+          # Debug: Show captured output for troubleshooting
+          echo "📋 Captured benchmark output (last 20 lines):"
+          tail -20 "$BENCHMARK_OUTPUT"
         else
           echo "❌ Enterprise benchmark tests failed"
           echo "benchmark_success=false" >> $GITHUB_OUTPUT
+          
+          # Debug: Show error output
+          echo "📋 Error output (last 50 lines):"
+          tail -50 "$BENCHMARK_OUTPUT"
           exit 1
         fi
         
-        # Extract key metrics from output (matching actual benchmark script format)
-        # Format: [SUCCESS] ✅ Test name: XXms (threshold: YYms) or XXms, additional info (threshold: YYms)
-        SCHEMA_TIME=$(grep -o "\[SUCCESS\] ✅ Schema introspection: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        MILLION_QUERY_TIME=$(grep -o "\[SUCCESS\] ✅ Million-record query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        JOIN_TIME=$(grep -o "\[SUCCESS\] ✅ Massive JOIN query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        ENHANCED_TIME=$(grep -o "\[SUCCESS\] ✅ Enhanced types at scale: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        CONCURRENT_TIME=$(grep -o "\[SUCCESS\] ✅ 20 concurrent requests: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        LARGE_RESULT_TIME=$(grep -o "\[SUCCESS\] ✅ Large result set query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        MEMORY_USAGE=$(grep -o "Container Memory Usage: [0-9]*MB" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
+        # Extract key metrics from output (matching actual benchmark script format with color codes)
+        # Format: ${GREEN}[SUCCESS]${NC} ✅ Test name: XXms (threshold: YYms) or XXms, additional info (threshold: YYms)
+        # Need to handle ANSI color codes in the output
+        SCHEMA_TIME=$(grep -o "SUCCESS.*✅ Schema introspection: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
+        MILLION_QUERY_TIME=$(grep -o "SUCCESS.*✅ Million-record query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
+        JOIN_TIME=$(grep -o "SUCCESS.*✅ Massive JOIN query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
+        ENHANCED_TIME=$(grep -o "SUCCESS.*✅ Enhanced types at scale: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
+        CONCURRENT_TIME=$(grep -o "SUCCESS.*✅ 50 concurrent requests: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
+        CONCURRENT_AVG=$(grep -o "SUCCESS.*✅ 50 concurrent requests: [0-9]*ms ([0-9]*ms avg)" "$BENCHMARK_OUTPUT" | grep -o "([0-9]*ms avg)" | grep -o "[0-9]*" | head -1 || echo "N/A")
+        LARGE_RESULT_TIME=$(grep -o "SUCCESS.*✅ Large result set query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
+        MEMORY_USAGE=$(grep -o "🐳 Container Memory Usage: [0-9]*MB" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" | head -1 || echo "N/A")
+        
+        # Debug: Show extracted metrics
+        echo "📊 Extracted metrics:"
+        echo "  - Schema introspection: ${SCHEMA_TIME}ms"
+        echo "  - Million-record query: ${MILLION_QUERY_TIME}ms"
+        echo "  - Massive JOIN: ${JOIN_TIME}ms"
+        echo "  - Enhanced types: ${ENHANCED_TIME}ms"
+        echo "  - Concurrent requests: ${CONCURRENT_TIME}ms (${CONCURRENT_AVG}ms avg)"
+        echo "  - Large result set: ${LARGE_RESULT_TIME}ms"
+        echo "  - Memory usage: ${MEMORY_USAGE}MB"
+        
+        # Convert N/A to null for JSON
+        SCHEMA_TIME_JSON=$([ "$SCHEMA_TIME" = "N/A" ] && echo "null" || echo "$SCHEMA_TIME")
+        MILLION_QUERY_TIME_JSON=$([ "$MILLION_QUERY_TIME" = "N/A" ] && echo "null" || echo "$MILLION_QUERY_TIME")
+        JOIN_TIME_JSON=$([ "$JOIN_TIME" = "N/A" ] && echo "null" || echo "$JOIN_TIME")
+        ENHANCED_TIME_JSON=$([ "$ENHANCED_TIME" = "N/A" ] && echo "null" || echo "$ENHANCED_TIME")
+        CONCURRENT_TIME_JSON=$([ "$CONCURRENT_TIME" = "N/A" ] && echo "null" || echo "$CONCURRENT_TIME")
+        CONCURRENT_AVG_JSON=$([ "$CONCURRENT_AVG" = "N/A" ] && echo "null" || echo "$CONCURRENT_AVG")
+        LARGE_RESULT_TIME_JSON=$([ "$LARGE_RESULT_TIME" = "N/A" ] && echo "null" || echo "$LARGE_RESULT_TIME")
+        MEMORY_USAGE_JSON=$([ "$MEMORY_USAGE" = "N/A" ] && echo "null" || echo "$MEMORY_USAGE")
         
         # Create JSON output for comment
         cat > "$BENCHMARK_JSON" << EOF
@@ -102,13 +133,14 @@ jobs:
           "success": true,
           "timestamp": "$(date -u +"%Y-%m-%d %H:%M:%S UTC")",
           "metrics": {
-            "schema_introspection_ms": $SCHEMA_TIME,
-            "million_record_query_ms": $MILLION_QUERY_TIME,
-            "massive_join_ms": $JOIN_TIME,
-            "enhanced_types_ms": $ENHANCED_TIME,
-            "concurrent_requests_ms": $CONCURRENT_TIME,
-            "large_result_set_ms": $LARGE_RESULT_TIME,
-            "memory_usage_mb": $MEMORY_USAGE
+            "schema_introspection_ms": $SCHEMA_TIME_JSON,
+            "million_record_query_ms": $MILLION_QUERY_TIME_JSON,
+            "massive_join_ms": $JOIN_TIME_JSON,
+            "enhanced_types_ms": $ENHANCED_TIME_JSON,
+            "concurrent_requests_ms": $CONCURRENT_TIME_JSON,
+            "concurrent_requests_avg_ms": $CONCURRENT_AVG_JSON,
+            "large_result_set_ms": $LARGE_RESULT_TIME_JSON,
+            "memory_usage_mb": $MEMORY_USAGE_JSON
           },
           "dataset": {
             "companies": 10000,
@@ -128,6 +160,7 @@ jobs:
         echo "join_time=$JOIN_TIME" >> $GITHUB_OUTPUT
         echo "enhanced_time=$ENHANCED_TIME" >> $GITHUB_OUTPUT
         echo "concurrent_time=$CONCURRENT_TIME" >> $GITHUB_OUTPUT
+        echo "concurrent_avg=$CONCURRENT_AVG" >> $GITHUB_OUTPUT
         echo "large_result_time=$LARGE_RESULT_TIME" >> $GITHUB_OUTPUT
         echo "memory_usage=$MEMORY_USAGE" >> $GITHUB_OUTPUT
         
@@ -150,7 +183,7 @@ jobs:
         | ⚡ Million-Record Query | `${{ steps.benchmark.outputs.million_query_time || 'N/A' }}`ms | ${{ steps.benchmark.outputs.million_query_time && steps.benchmark.outputs.million_query_time < 100 && '🟢 Excellent' || '🟡 Good' }} |
         | 🔗 Massive JOINs (5M+ records) | `${{ steps.benchmark.outputs.join_time || 'N/A' }}`ms | ${{ steps.benchmark.outputs.join_time && steps.benchmark.outputs.join_time < 100 && '🟢 Excellent' || '🟡 Good' }} |
         | 🎯 Enhanced Types (JSON/Arrays) | `${{ steps.benchmark.outputs.enhanced_time || 'N/A' }}`ms | ${{ steps.benchmark.outputs.enhanced_time && steps.benchmark.outputs.enhanced_time < 100 && '🟢 Excellent' || '🟡 Good' }} |
-        | 🚀 20 Concurrent Requests | `${{ steps.benchmark.outputs.concurrent_time || 'N/A' }}`ms | ${{ steps.benchmark.outputs.concurrent_time && steps.benchmark.outputs.concurrent_time < 1000 && '🟢 Excellent' || '🟡 Good' }} |
+        | 🚀 50 Concurrent Requests | `${{ steps.benchmark.outputs.concurrent_time || 'N/A' }}`ms (`${{ steps.benchmark.outputs.concurrent_avg || 'N/A' }}`ms avg) | ${{ steps.benchmark.outputs.concurrent_time && steps.benchmark.outputs.concurrent_time < 2000 && '🟢 Excellent' || '🟡 Good' }} |
         | 📊 Large Result Sets (10M logs) | `${{ steps.benchmark.outputs.large_result_time || 'N/A' }}`ms | ${{ steps.benchmark.outputs.large_result_time && steps.benchmark.outputs.large_result_time < 200 && '🟢 Excellent' || '🟡 Good' }} |
         
         **💾 Resource Efficiency**
@@ -162,7 +195,7 @@ jobs:
         - ✅ **Scale**: Handles 16.7M+ records
         - ✅ **Speed**: Sub-100ms response times
         - ✅ **Memory**: Efficient resource utilization
-        - ✅ **Concurrency**: Multi-user support verified
+        - ✅ **Concurrency**: 50 simultaneous users supported
         - ✅ **Types**: Full PostgreSQL enhanced type support
         
         ---

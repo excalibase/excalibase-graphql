@@ -1,17 +1,16 @@
 name: End-to-End Tests
 
 on:
-  workflow_run:
-    workflows: ["Continuous Integration"]
-    types:
-      - completed
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [ main ]
   workflow_dispatch: # Allow manual triggering
 
 jobs:
   e2e-tests:
     name: End-to-End Testing
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     
     steps:
     - name: Checkout code

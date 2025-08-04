@@ -26,7 +26,7 @@ SCHEMA_INTROSPECTION_MAX_MS=5000     # 5 seconds max for 50+ table schema
 MILLION_RECORD_QUERY_MAX_MS=2000     # 2 seconds max for 1M record queries
 MASSIVE_JOIN_MAX_MS=3000             # 3 seconds max for 5M record JOINs
 ENHANCED_TYPES_MAX_MS=1500           # 1.5 seconds max for enhanced types
-CONCURRENT_MAX_MS=10000              # 10 seconds max for 20 concurrent requests
+CONCURRENT_MAX_MS=15000              # 15 seconds max for 50 concurrent requests
 LARGE_RESULT_SET_MAX_MS=5000         # 5 seconds max for large result sets
 
 # Logging functions
@@ -466,9 +466,9 @@ test_enhanced_types_enterprise_scale() {
     fi
 }
 
-# Test extreme concurrent load (20 simultaneous requests)
+# Test extreme concurrent load (50 simultaneous requests)
 test_extreme_concurrent_load() {
-    log_benchmark "Testing extreme concurrent load (20 simultaneous requests)..."
+    log_benchmark "Testing extreme concurrent load (50 simultaneous requests)..."
     
     local query="{\"query\": \"{ employees(where: { salary: { gte: 75000 } }, limit: 50) { id first_name last_name salary departments { name } companies { name } } }\"}"
     local pids=()
@@ -476,8 +476,8 @@ test_extreme_concurrent_load() {
     
     local start_time=$(date +%s%N)
     
-    # Launch 20 concurrent requests
-    for i in {1..20}; do
+    # Launch 50 concurrent requests
+    for i in {1..50}; do
         (
             local response=$(curl -s -X POST "$API_URL" \
                 -H "Content-Type: application/json" \
@@ -500,9 +500,12 @@ test_extreme_concurrent_load() {
     local end_time=$(date +%s%N)
     local duration=$(((end_time - start_time) / 1000000))
     
+    # Calculate average time per request
+    local avg_per_request=$((duration / 50))
+    
     # Check results
     local success_count=0
-    for i in {1..20}; do
+    for i in {1..50}; do
         if [[ -f "${temp_dir}/result_${i}" ]] && [[ $(cat "${temp_dir}/result_${i}") == "success" ]]; then
             ((success_count++))
         fi
@@ -511,11 +514,11 @@ test_extreme_concurrent_load() {
     # Cleanup
     rm -rf "$temp_dir"
     
-    if [[ $success_count -eq 20 ]] && [[ $duration -le $CONCURRENT_MAX_MS ]]; then
-        log_success "✅ 20 concurrent requests: ${duration}ms, ${success_count}/20 successful (threshold: ${CONCURRENT_MAX_MS}ms)"
+    if [[ $success_count -eq 50 ]] && [[ $duration -le $CONCURRENT_MAX_MS ]]; then
+        log_success "✅ 50 concurrent requests: ${duration}ms (${avg_per_request}ms avg), ${success_count}/50 successful (threshold: ${CONCURRENT_MAX_MS}ms)"
         return 0
     else
-        log_error "❌ Concurrent load test: ${duration}ms, ${success_count}/20 successful (threshold: ${CONCURRENT_MAX_MS}ms)"
+        log_error "❌ Concurrent load test: ${duration}ms (${avg_per_request}ms avg), ${success_count}/50 successful (threshold: ${CONCURRENT_MAX_MS}ms)"
         return 1
     fi
 }
