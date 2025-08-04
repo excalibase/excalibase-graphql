@@ -86,13 +86,13 @@ jobs:
           exit 1
         fi
         
-        # Extract key metrics from output
-        SCHEMA_TIME=$(grep -o "Schema introspection: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        MILLION_QUERY_TIME=$(grep -o "Million-record query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        JOIN_TIME=$(grep -o "Massive JOIN query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        ENHANCED_TIME=$(grep -o "Enhanced types at scale: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        CONCURRENT_TIME=$(grep -o "20 concurrent requests: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
-        LARGE_RESULT_TIME=$(grep -o "Large result set query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
+        # Extract key metrics from output (matching actual benchmark script format)
+        SCHEMA_TIME=$(grep -o "✅ Schema introspection: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
+        MILLION_QUERY_TIME=$(grep -o "✅ Million-record query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
+        JOIN_TIME=$(grep -o "✅ Massive JOIN query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
+        ENHANCED_TIME=$(grep -o "✅ Enhanced types at scale: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
+        CONCURRENT_TIME=$(grep -o "✅ 20 concurrent requests: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o ": [0-9]*ms" | grep -o "[0-9]*" || echo "N/A")
+        LARGE_RESULT_TIME=$(grep -o "✅ Large result set query: [0-9]*ms" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
         MEMORY_USAGE=$(grep -o "Container Memory Usage: [0-9]*MB" "$BENCHMARK_OUTPUT" | grep -o "[0-9]*" || echo "N/A")
         
         # Create JSON output for comment
