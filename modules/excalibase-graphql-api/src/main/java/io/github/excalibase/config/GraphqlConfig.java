@@ -17,9 +17,11 @@
 package io.github.excalibase.config;
 
 import graphql.GraphQL;
+import graphql.execution.instrumentation.Instrumentation;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLCodeRegistry;
 import graphql.schema.GraphQLSchema;
+import org.springframework.beans.factory.annotation.Qualifier;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.constant.GraphqlConstant;
 import io.github.excalibase.model.TableInfo;
@@ -54,17 +56,20 @@ public class GraphqlConfig {
     private final DatabaseRoleService databaseRoleService;
     private final FullSchemaService fullSchemaService;
     private final SchemaFilterService schemaFilterService;
+    private final Instrumentation securityInstrumentation;
     
     // Cache GraphQL instances per role for performance
     private final TTLCache<String, GraphQL> roleBasedGraphQLCache;
 
     public GraphqlConfig(AppConfig appConfig, ServiceLookup serviceLookup, DatabaseRoleService databaseRoleService,
-                        FullSchemaService fullSchemaService, SchemaFilterService schemaFilterService) {
+                        FullSchemaService fullSchemaService, SchemaFilterService schemaFilterService,
+                        @Qualifier("graphqlSecurityInstrumentation") Instrumentation securityInstrumentation) {
         this.appConfig = appConfig;
         this.serviceLookup = serviceLookup;
         this.databaseRoleService = databaseRoleService;
         this.fullSchemaService = fullSchemaService;
         this.schemaFilterService = schemaFilterService;
+        this.securityInstrumentation = securityInstrumentation;
         this.roleBasedGraphQLCache = new TTLCache<>(Duration.ofMinutes(30));
     }
 
@@ -232,7 +237,13 @@ public class GraphqlConfig {
         }
 
         schema = schema.transform(builder -> builder.codeRegistry(codeRegistry.build()));
-        return GraphQL.newGraphQL(schema).build();
+        
+        log.debug("Building GraphQL instance with security instrumentation for role: {}", 
+                databaseRole != null ? databaseRole : "default");
+        
+        return GraphQL.newGraphQL(schema)
+                .instrumentation(securityInstrumentation)
+                .build();
     }
 
     private IGraphQLSchemaGenerator getGraphQLSchemaGenerator() {

@@ -16,6 +16,16 @@ app:
   security:
     role-based-schema: true  # Keep enabled for RLS/CLS tests
 
+# GraphQL Security Configuration for Testing
+graphql:
+  security:
+    max-query-depth: 8        # Lower limit for testing deep queries
+    max-query-complexity: 500  # Lower limit for testing complexity
+    max-query-tokens: 2000    # Lower limit for testing token limits
+    max-query-characters: 10000  # 10KB limit for testing
+    max-whitespace-tokens: 5000
+    max-rule-depth: 30
+
 logging:
   level:
     root: info

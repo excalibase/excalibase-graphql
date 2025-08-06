@@ -17,6 +17,7 @@ import java.sql.*
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
+import static org.hamcrest.Matchers.*
 
 @SpringBootTest
 @AutoConfigureWebMvc
@@ -447,5 +448,148 @@ class GraphqlSecurityTest extends Specification {
             statement.execute("REVOKE ALL PRIVILEGES ON customer FROM test_user_role")
             statement.execute("DROP ROLE IF EXISTS test_user_role")
         }
+    }
+
+    // ===========================================
+    // GRAPHQL DOS PROTECTION TESTS  
+    // Tests for depth limiting, complexity analysis, and other security controls
+    // Based on GraphQL.org security recommendations
+    // ===========================================
+
+    def "should reject queries that exceed maximum depth limit"() {
+        given: "a deeply nested GraphQL query that exceeds depth limit (> 8 levels)"
+        // Create a query with 10+ levels of nesting to exceed our limit of 8
+        def deepQuery = '''
+        {
+            __schema {
+                types {
+                    name
+                    fields {
+                        name
+                        type {
+                            name
+                            fields {
+                                name
+                                type {
+                                    name
+                                    fields {
+                                        name
+                                        type {
+                                            name
+                                            fields {
+                                                name
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        '''
+
+        when: "sending deeply nested query"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${deepQuery.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should reject with depth limit error"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.errors').exists())
+                .andExpect(jsonPath('$.errors[0].message').value(containsString("maximum query depth exceeded")))
+                .andExpect(jsonPath('$.errors[0].extensions.classification').value("ExecutionAborted"))
+    }
+
+    def "should reject queries with excessive field aliases (breadth attack)"() {
+        given: "a GraphQL query with many field aliases"
+        // Create 200 aliases with limit parameters to exceed 500 complexity points
+        // Each alias with limit=100 costs: 3 (base) + 10 (limit/10) = 13 points  
+        // 200 aliases × 13 points = 2600 points (exceeds 500 limit)
+        def aliasQuery = '{ '
+        for (int i = 1; i <= 200; i++) {
+            aliasQuery += "c${i}: customer(limit: 100) { customer_id first_name last_name email } "
+        }
+        aliasQuery += ' }'
+
+        when: "sending query with many aliases"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${aliasQuery.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should reject with complexity/breadth limit error"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.errors').exists())
+                .andExpect(jsonPath('$.errors[0].message').value(containsString("complexity")))
+    }
+
+    def "should reject batched operations that exceed limit"() {
+        given: "multiple GraphQL operations in a single request"
+        def batchedQuery = """
+        [
+            {"query": "{ customer { customer_id first_name } }"},
+            {"query": "{ customer { customer_id last_name } }"},
+            {"query": "{ customer { customer_id email } }"}
+        ]
+        """
+
+        when: "sending batched operations"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(batchedQuery))
+
+        then: "should reject batched operations (GraphQL Java doesn't support batching by default)"
+        // Batched operations are rejected at the HTTP/JSON parsing level, not GraphQL level
+        result.andExpect(status().is4xxClientError())
+    }
+
+    def "should reject queries that exceed request size limit"() {
+        given: "a very large GraphQL query that exceeds complexity limit through sheer size"
+        // Create an extremely large query with 1000 aliases, each with large limits
+        // This will definitely exceed our 500 complexity limit and test size handling
+        def largeQuery = '{ '
+        for (int i = 1; i <= 1000; i++) {
+            largeQuery += "customer_${i}: customer(limit: 1000) { customer_id first_name last_name email } "
+        }
+        largeQuery += ' }'
+
+        when: "sending oversized query"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${largeQuery.replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should reject with complexity/size limit error"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.errors').exists())
+                .andExpect(jsonPath('$.errors[0].message').value(containsString("complexity")))
+    }
+
+    def "should allow reasonable queries within limits"() {
+        given: "a reasonable GraphQL query within limits"
+        def reasonableQuery = '''
+        {
+            customer(limit: 5) {
+                customer_id
+                first_name
+                last_name
+                email
+            }
+        }
+        '''
+
+        when: "sending reasonable query"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${reasonableQuery.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should allow and return data"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.data.customer').isArray())
+                .andExpect(jsonPath('$.errors').doesNotExist())
     }
 }
