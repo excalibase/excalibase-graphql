@@ -323,6 +323,74 @@ validate_graphql_response() {
     return 0
 }
 
+# Enhanced validation specifically for deep relationship queries
+validate_deep_relationship_response() {
+    local response="$1"
+    local expected_field="$2"
+    local relationship_path="$3"
+    local test_name="${4:-Unknown}"
+    local min_records="${5:-1}"
+    
+    # Basic validation first
+    if ! validate_graphql_response "$response" "$expected_field" "$min_records" "$test_name"; then
+        return 1
+    fi
+    
+    # Deep relationship validation - check if nested data actually exists
+    log_info "🔍 Deep Relationship Validation for $test_name:"
+    
+    # Count records with non-null relationships
+    local records_with_relationships=0
+    local total_records=$(echo "$response" | jq ".data.$expected_field | length" 2>/dev/null || echo "0")
+    
+    for ((i=0; i<total_records; i++)); do
+        local record=$(echo "$response" | jq ".data.$expected_field[$i]" 2>/dev/null)
+        local has_relationship=false
+        
+        # Check each level of the relationship path
+        IFS=' -> ' read -ra PATH_ARRAY <<< "$relationship_path"
+        local current_path=".data.$expected_field[$i]"
+        local depth=0
+        
+        for path_segment in "${PATH_ARRAY[@]}"; do
+            if [[ $depth -eq 0 ]]; then
+                # Skip the root table name
+                depth=$((depth + 1))
+                continue
+            fi
+            
+            current_path="$current_path.$path_segment"
+            local nested_data=$(echo "$response" | jq "$current_path" 2>/dev/null)
+            
+            if [[ "$nested_data" != "null" && "$nested_data" != "[]" ]]; then
+                has_relationship=true
+                break
+            fi
+            depth=$((depth + 1))
+        done
+        
+        if [[ "$has_relationship" == "true" ]]; then
+            records_with_relationships=$((records_with_relationships + 1))
+        fi
+    done
+    
+    local relationship_percentage=$((records_with_relationships * 100 / total_records))
+    
+    echo "  📊 Records with nested relationships: $records_with_relationships/$total_records (${relationship_percentage}%)"
+    
+    # Require at least 1 record with actual nested relationship data
+    if [[ $records_with_relationships -eq 0 ]]; then
+        log_error "❌ Deep relationship validation failed: No records contain nested relationship data"
+        log_error "   Expected path: $relationship_path"
+        echo "  📋 Sample record structure:"
+        echo "$response" | jq ".data.$expected_field[0]" 2>/dev/null
+        return 1
+    fi
+    
+    log_success "✅ Deep relationship validation passed: ${relationship_percentage}% of records have nested data"
+    return 0
+}
+
 # Verify database is populated with enterprise scale data
 verify_enterprise_data() {
     log_enterprise "Verifying enterprise-scale data population..."
@@ -413,7 +481,7 @@ test_million_record_query() {
     fi
 }
 
-# Test massive JOIN operations (5M+ records)
+# Test massive JOIN operations (5M+ records) - 3 levels deep
 test_massive_join_operations() {
     log_benchmark "Testing massive JOIN operations (5M+ time entries)..."
     
@@ -437,6 +505,111 @@ test_massive_join_operations() {
         return 0
     else
         log_error "❌ Massive JOIN query: ${duration}ms (exceeded threshold: ${MASSIVE_JOIN_MAX_MS}ms)"
+        return 1
+    fi
+}
+
+# Test deep relationship queries (5-6 levels) - ENTERPRISE DEEP TRAVERSAL
+test_deep_relationship_queries() {
+    log_benchmark "Testing 5-6 level deep relationship queries..."
+    
+    # 6-level deep query: audit_logs -> employees -> departments -> companies -> projects -> time_entries
+    log_benchmark "Testing 6-level deep query: audit_logs -> employees -> departments -> companies -> projects -> time_entries"
+    local deep_query1="{\"query\": \"{ audit_logs(where: { action: { eq: \\\"UPDATE\\\" } }, limit: 20) { id action table_name changed_by employees { first_name last_name department_id departments { name company_id companies { name industry projects { name status time_entries { hours_worked entry_date } } } } } } }\"}"
+    
+    local start_time=$(date +%s%N)
+    local response1=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d "$deep_query1")
+    local end_time=$(date +%s%N)
+    local duration1=$(((end_time - start_time) / 1000000))
+    
+    # Validate first deep query with deep relationship validation
+    if ! validate_deep_relationship_response "$response1" "audit_logs" "audit_logs -> employees -> departments -> companies -> projects -> time_entries" "6-Level Deep Query (audit path)" 5; then
+        log_error "❌ 6-level deep query (audit path): Deep relationship validation failed"
+        return 1
+    fi
+    
+    # 6-level deep query: time_entries -> projects -> companies -> departments -> employees -> project_assignments
+    log_benchmark "Testing 6-level deep query: time_entries -> projects -> companies -> departments -> employees -> project_assignments"
+    local deep_query2="{\"query\": \"{ time_entries(where: { hours_worked: { gte: 8 } }, limit: 25) { id hours_worked entry_date projects { name budget company_id companies { name revenue departments { name budget employees { first_name salary project_assignments { role allocation_percentage hourly_rate } } } } } } }\"}"
+    
+    local start_time=$(date +%s%N)
+    local response2=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d "$deep_query2")
+    local end_time=$(date +%s%N)
+    local duration2=$(((end_time - start_time) / 1000000))
+    
+    # Validate second deep query with deep relationship validation
+    if ! validate_deep_relationship_response "$response2" "time_entries" "time_entries -> projects -> companies -> departments -> employees -> project_assignments" "6-Level Deep Query (project path)" 5; then
+        log_error "❌ 6-level deep query (project path): Deep relationship validation failed"
+        return 1
+    fi
+    
+    # 5-level deep query: invoices -> projects -> employees -> departments -> companies
+    log_benchmark "Testing 5-level deep query: invoices -> projects -> employees -> departments -> companies"
+    local deep_query3="{\"query\": \"{ invoices(where: { status: { eq: \\\"PENDING\\\" } }, limit: 30) { id invoice_number total_amount projects { name project_manager_id employees { first_name last_name departments { name budget companies { name industry revenue } } } } } }\"}"
+    
+    local start_time=$(date +%s%N)
+    local response3=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d "$deep_query3")
+    local end_time=$(date +%s%N)
+    local duration3=$(((end_time - start_time) / 1000000))
+    
+    # Validate third deep query with deep relationship validation
+    if ! validate_deep_relationship_response "$response3" "invoices" "invoices -> projects -> employees -> departments -> companies" "5-Level Deep Query (financial path)" 5; then
+        log_error "❌ 5-level deep query (financial path): Deep relationship validation failed"
+        return 1
+    fi
+    
+    # Calculate average duration for all deep queries
+    local avg_duration=$(( (duration1 + duration2 + duration3) / 3 ))
+    local max_deep_query_ms=5000  # 5 seconds threshold for deep queries
+    
+    log_performance "🏗️  Deep Relationship Query Performance Summary:"
+    echo "  📊 6-Level Audit Path: ${duration1}ms"
+    echo "  📊 6-Level Project Path: ${duration2}ms"  
+    echo "  📊 5-Level Financial Path: ${duration3}ms"
+    echo "  📊 Average Deep Query Time: ${avg_duration}ms"
+    
+    if [[ $avg_duration -le $max_deep_query_ms ]]; then
+        log_success "✅ Deep relationship queries (5-6 levels): ${avg_duration}ms avg (threshold: ${max_deep_query_ms}ms)"
+        return 0
+    else
+        log_error "❌ Deep relationship queries (5-6 levels): ${avg_duration}ms avg (exceeded threshold: ${max_deep_query_ms}ms)"
+        return 1
+    fi
+}
+
+# Test extreme deep traversal with filtering at each level
+test_extreme_deep_traversal() {
+    log_benchmark "Testing extreme deep traversal with multi-level filtering..."
+    
+    # Ultra-deep query - 5 levels: companies -> departments -> employees -> projects -> time_entries  
+    local extreme_query="{\"query\": \"{ companies(where: { revenue: { gte: 1000000 } }, limit: 10) { name industry revenue departments { name budget employees { first_name salary projects { name budget time_entries { hours_worked entry_date } } } } } }\"}"
+    
+    local start_time=$(date +%s%N)
+    local response=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d "$extreme_query")
+    local end_time=$(date +%s%N)
+    local duration=$(((end_time - start_time) / 1000000))
+    
+    # Validate extreme deep query with deep relationship validation
+    if ! validate_deep_relationship_response "$response" "companies" "companies -> departments -> employees -> projects -> time_entries" "Extreme Deep Traversal" 2; then
+        log_error "❌ Extreme deep traversal: Deep relationship validation failed"
+        return 1
+    fi
+    
+    local max_extreme_ms=8000  # 8 seconds threshold for extreme queries
+    
+    if [[ $duration -le $max_extreme_ms ]]; then
+        log_success "✅ Extreme deep traversal (5 levels): ${duration}ms (threshold: ${max_extreme_ms}ms)"
+        return 0
+    else
+        log_error "❌ Extreme deep traversal (5 levels): ${duration}ms (exceeded threshold: ${max_extreme_ms}ms)"
         return 1
     fi
 }
@@ -720,6 +893,8 @@ main() {
         "test_massive_schema_introspection:Massive Schema Introspection"
         "test_million_record_query:Million-Record Query Performance"
         "test_massive_join_operations:Massive JOIN Operations"
+        "test_deep_relationship_queries:Deep Relationship Queries (5-6 Levels)"
+        "test_extreme_deep_traversal:Extreme Deep Traversal (5 Levels)"
         "test_enhanced_types_enterprise_scale:Enhanced Types at Enterprise Scale"
         "test_extreme_concurrent_load:Extreme Concurrent Load"
         "test_memory_pressure_large_result_sets:Memory Pressure with Large Result Sets"

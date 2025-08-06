@@ -18,6 +18,17 @@ app:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
   security:
     role-based-schema: true  # Enable role-based schema filtering and RLS/CLS support (default: true)
+
+# GraphQL Security Configuration - Production Defaults
+# Based on GraphQL.org security recommendations and OWASP guidelines
+graphql:
+  security:
+    max-query-depth: 10       # Prevent deeply nested queries (default: 10)
+    max-query-complexity: 1000 # Prevent expensive operations (default: 1000)
+    max-query-tokens: 5000    # Prevent parser DoS (default: 5000)
+    max-query-characters: 50000 # 50KB query size limit (default: 50KB)
+    max-whitespace-tokens: 10000
+    max-rule-depth: 50
 logging:
   level:
     root: ${log.level.root:info}

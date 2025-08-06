@@ -156,6 +156,129 @@ This file contains sample GraphQL queries that demonstrate the capabilities of E
 }
 ```
 
+## Deep Relationship Queries (5-6 Levels)
+
+### 6-Level Deep Query: Audit Trail to Time Entries
+```graphql
+{
+  audit_logs(where: { action: { eq: "UPDATE" } }, limit: 20) {
+    id
+    action
+    table_name
+    changed_by
+    employees {
+      first_name
+      last_name
+      department_id
+      departments {
+        name
+        company_id
+        companies {
+          name
+          industry
+          projects {
+            name
+            status
+            time_entries {
+              hours_worked
+              entry_date
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### 6-Level Deep Query: Time Entries to Project Assignments
+```graphql
+{
+  time_entries(where: { hours_worked: { gte: 8 } }, limit: 25) {
+    id
+    hours_worked
+    entry_date
+    projects {
+      name
+      budget
+      company_id
+      companies {
+        name
+        revenue
+        departments {
+          name
+          budget
+          employees {
+            first_name
+            salary
+            project_assignments {
+              role
+              allocation_percentage
+              hourly_rate
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### 5-Level Deep Query: Financial Chain
+```graphql
+{
+  invoices(where: { status: { eq: "PENDING" } }, limit: 30) {
+    id
+    invoice_number
+    total_amount
+    projects {
+      name
+      project_manager_id
+      employees {
+        first_name
+        last_name
+        departments {
+          name
+          budget
+          companies {
+            name
+            industry
+            revenue
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+### Extreme Deep Traversal (5 Levels)
+```graphql
+{
+  companies(where: { revenue: { gte: 1000000 } }, limit: 10) {
+    name
+    industry
+    revenue
+    departments {
+      name
+      budget
+      employees {
+        first_name
+        salary
+        projects {
+          name
+          budget
+          time_entries {
+            hours_worked
+            entry_date
+          }
+        }
+      }
+    }
+  }
+}
+```
+
 ## Views (Read-only)
 
 ### Active Customers View

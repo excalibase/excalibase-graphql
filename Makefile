@@ -260,21 +260,21 @@ benchmark-build: ## Build application for enterprise benchmarking
 .PHONY: benchmark-up
 benchmark-up: benchmark-check-ports ## Start enterprise benchmark Docker services
 	@echo "$(BLUE)🚀 Starting enterprise benchmark services...$(NC)"
-	@docker-compose -f docker-compose.benchmark.yml -p excalibase-benchmark down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker-compose -f docker-compose.benchmark.yml -p excalibase-benchmark up -d --build
+	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark up -d --build
 	@echo "$(GREEN)✓ Enterprise benchmark services started$(NC)"
 	@$(MAKE) --no-print-directory benchmark-wait-ready
 
 .PHONY: benchmark-down
 benchmark-down: ## Stop enterprise benchmark Docker services
 	@echo "$(BLUE)🛑 Stopping enterprise benchmark services...$(NC)"
-	@docker-compose -f docker-compose.benchmark.yml -p excalibase-benchmark down > /dev/null 2>&1 || true
+	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark down > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Enterprise benchmark services stopped$(NC)"
 
 .PHONY: benchmark-clean
 benchmark-clean: ## Stop enterprise benchmark services and cleanup volumes
 	@echo "$(BLUE)🧹 Cleaning up enterprise benchmark environment...$(NC)"
-	@docker-compose -f docker-compose.benchmark.yml -p excalibase-benchmark down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark down -v --remove-orphans > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Enterprise benchmark cleanup completed$(NC)"
 
 .PHONY: benchmark-test
@@ -335,16 +335,16 @@ benchmark-run-tests: ## Execute the enterprise benchmark test suite
 
 .PHONY: benchmark-logs
 benchmark-logs: ## Show enterprise benchmark service logs
-	@docker-compose -f docker-compose.benchmark.yml -p excalibase-benchmark logs -f
+	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark logs -f
 
 .PHONY: benchmark-db-shell
 benchmark-db-shell: ## Connect to enterprise benchmark PostgreSQL shell
-	@docker-compose -f docker-compose.benchmark.yml -p excalibase-benchmark exec postgres psql -U excalibase_user -d excalibase_benchmark
+	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark exec postgres psql -U excalibase_user -d excalibase_benchmark
 
 .PHONY: benchmark-db-stats
 benchmark-db-stats: ## Show enterprise benchmark database statistics
 	@echo "$(BLUE)📊 Enterprise Benchmark Database Statistics$(NC)"
-	@docker-compose -f docker-compose.benchmark.yml -p excalibase-benchmark exec postgres psql -U excalibase_user -d excalibase_benchmark -c "
+	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark exec postgres psql -U excalibase_user -d excalibase_benchmark -c "
 		SELECT
 			schemaname,
 			tablename,
@@ -359,4 +359,4 @@ benchmark-db-stats: ## Show enterprise benchmark database statistics
 		ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
 
 # Force targets (ignore file existence)
-.PHONY: docker-compose.yml $(COMPOSE_TEST_FILE) scripts/initdb.sql scripts/e2e-test.sh docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh
+.PHONY: docker-compose.yml $(COMPOSE_TEST_FILE) scripts/initdb.sql scripts/e2e-test.sh scripts/docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh

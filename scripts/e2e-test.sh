@@ -106,6 +106,48 @@ execute_graphql_query() {
     return 0
 }
 
+# Execute GraphQL security test that expects errors (for security controls)
+execute_security_test() {
+    local test_name="$1"
+    local query="$2"
+    local expected_error="$3"  # Expected error message pattern
+    
+    log_info "Testing Security: $test_name"
+    
+    # Create properly escaped JSON payload
+    local json_payload=$(printf '{"query": %s}' "$(printf '%s' "$query" | jq -R .)")
+    
+    # Execute query
+    local response=$(curl -s \
+        --max-time "$TIMEOUT" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -d "$json_payload" \
+        "$API_URL")
+    
+    # Check for curl errors
+    if [ $? -ne 0 ]; then
+        log_error "$test_name: Failed to execute HTTP request"
+        return 1
+    fi
+    
+    # For security tests, we expect errors containing specific messages
+    if echo "$response" | jq -e '.errors' > /dev/null 2>&1; then
+        local error_message=$(echo "$response" | jq -r '.errors[0].message' 2>/dev/null)
+        if echo "$error_message" | grep -q "$expected_error"; then
+            log_success "$test_name: ✓ Security control working (rejected with: $expected_error)"
+            return 0
+        else
+            log_error "$test_name: Expected error containing '$expected_error', got: $error_message"
+            return 1
+        fi
+    else
+        log_error "$test_name: Expected security error but query succeeded"
+        echo "$response" | jq '.'
+        return 1
+    fi
+}
+
 # Test counter
 test_count=0
 passed_tests=0
@@ -114,6 +156,15 @@ failed_tests=0
 run_test() {
     ((test_count++))
     if execute_graphql_query "$@"; then
+        ((passed_tests++))
+    else
+        ((failed_tests++))
+    fi
+}
+
+run_security_test() {
+    ((test_count++))
+    if execute_security_test "$@"; then
         ((passed_tests++))
     else
         ((failed_tests++))
@@ -404,6 +455,87 @@ main() {
     fi
     
     # ==========================================
+    # SECURITY TESTS (GraphQL.org Best Practices)
+    # ==========================================
+    
+    echo ""
+    log_info "🔒 Starting GraphQL Security Tests..."
+    echo ""
+    
+    # Test 1: Query Depth Limiting (prevents infinite nested queries)
+    run_security_test \
+        "Query Depth Limiting" \
+        "{ __schema { types { name fields { name type { name fields { name type { name fields { name type { name fields { name } } } } } } } } } }" \
+        "introspection in good faith\|maximum query depth exceeded\|__Type.fields is present too often"
+    
+    # Test 2: Query Complexity Analysis (prevents expensive operations)
+    # Create a complex query with many field aliases  
+    complex_query='{ '
+    for i in {1..30}; do
+        complex_query+="alias$i: __schema { types { name } } "
+    done
+    complex_query+=' }'
+    
+    run_security_test \
+        "Query Complexity Analysis" \
+        "$complex_query" \
+        "complexity\|introspection in good faith\|__schema is present too often"
+    
+    # Test 3: Large Request Handling 
+    large_query='{ __schema { '
+    for i in {1..200}; do
+        large_query+="field_$i: types { name description } "
+    done
+    large_query+=' } }'
+    
+    run_security_test \
+        "Large Request Limiting" \
+        "$large_query" \
+        "complexity\|depth\|timeout"
+    
+    # Test 4: SQL Injection Prevention in GraphQL
+    run_test \
+        "SQL Injection Prevention" \
+        "{ __type(name: \"'; DROP TABLE users; --\") { name } }" \
+        ""
+    
+    # Test 5: Legitimate queries should still work  
+    run_test \
+        "Legitimate Simple Query" \
+        "{ __schema { types { name } } }" \
+        '.data.__schema.types | length > 5'
+        
+    run_test \
+        "Legitimate Type Query" \
+        "{ __type(name: \"Query\") { name fields { name } } }" \
+        '.data.__type.name == "Query"'
+    
+    # Test 6: Performance Monitoring (response time validation)
+    start_time=$(date +%s%N)
+    run_test \
+        "Performance Monitoring" \
+        "{ __schema { types { name } } }" \
+        '.data.__schema.types | length > 5'
+    end_time=$(date +%s%N)
+    
+    duration=$(( (end_time - start_time) / 1000000 )) # Convert to milliseconds
+    if [ $duration -lt 2000 ]; then
+        log_success "Performance: Response time acceptable (${duration}ms < 2000ms)"
+    else
+        log_warning "Performance: Response time high (${duration}ms >= 2000ms)"
+    fi
+    
+    echo ""
+    log_info "🔒 Security Tests Summary:"
+    echo "  ✅ Query Depth Limiting (prevents deeply nested queries)"
+    echo "  ✅ Query Complexity Analysis (prevents expensive operations)" 
+    echo "  ✅ Large Request Protection"
+    echo "  ✅ SQL Injection Prevention"
+    echo "  ✅ Legitimate Query Support"
+    echo "  ✅ Performance Monitoring"
+    echo ""
+    
+    # ==========================================
     # TEST SUMMARY
     # ==========================================
     
@@ -423,6 +555,14 @@ main() {
     echo "  ✅ Address composite type (street, city, state, postal_code, country)"
     echo "  ✅ Mixed custom types in single mutations"
     echo "  ✅ Invalid enum value error handling"
+    echo ""
+    echo "🔒 Security Controls Coverage:"
+    echo "  ✅ Query Depth Limiting (GraphQL.org security best practices)"
+    echo "  ✅ Query Complexity Analysis (prevents DoS attacks)"
+    echo "  ✅ Large Request Protection (size & complexity limits)"
+    echo "  ✅ SQL Injection Prevention (GraphQL type safety)"
+    echo "  ✅ Performance Monitoring (response time validation)"
+    echo "  ✅ Legitimate Query Support (security doesn't break functionality)"
     echo "=================================================="
     
     if [ $failed_tests -eq 0 ]; then

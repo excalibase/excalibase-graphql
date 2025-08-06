@@ -3,7 +3,7 @@
 
 services:
   app:
-    build: .
+    build: ..
     ports:
       - "10002:10000"  # Unique external port 10002 for benchmark
     environment:
@@ -50,7 +50,7 @@ services:
       # Performance optimizations for large dataset
       - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
     volumes:
-      - ./scripts/benchmark-initdb.sql:/docker-entrypoint-initdb.d/01-benchmark-initdb.sql
+      - ./benchmark-initdb.sql:/docker-entrypoint-initdb.d/01-benchmark-initdb.sql
       - postgres_benchmark_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U excalibase_user -d excalibase_benchmark && psql -U excalibase_user -d excalibase_benchmark -c 'SELECT status FROM hana.initialization_complete;' | grep -q 'ENTERPRISE_READY'"]
