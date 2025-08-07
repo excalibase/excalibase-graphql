@@ -409,6 +409,53 @@ INSERT INTO domain_types_test (
  5, 'AI researcher and professor', true)
 ON CONFLICT (id) DO NOTHING;
 
+-- Table with composite primary key for testing
+CREATE TABLE IF NOT EXISTS order_items (
+    order_id INTEGER NOT NULL REFERENCES orders(order_id),
+    product_id INTEGER NOT NULL REFERENCES products(product_id),
+    quantity positive_integer NOT NULL,
+    price price_domain NOT NULL,
+    PRIMARY KEY (order_id, product_id)
+);
+
+-- Insert sample data for order_items
+INSERT INTO order_items (order_id, product_id, quantity, price) VALUES
+(1, 1, 2, 2599.98),
+(1, 2, 1, 79.99),
+(2, 3, 3, 599.97)
+ON CONFLICT DO NOTHING;
+
+-- Parent table with composite primary key
+CREATE TABLE IF NOT EXISTS parent_table (
+    parent_id1 INTEGER NOT NULL,
+    parent_id2 INTEGER NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    PRIMARY KEY (parent_id1, parent_id2)
+);
+
+-- Child table with composite foreign key referencing parent
+CREATE TABLE IF NOT EXISTS child_table (
+    child_id INTEGER PRIMARY KEY,
+    parent_id1 INTEGER NOT NULL,
+    parent_id2 INTEGER NOT NULL,
+    description TEXT,
+    FOREIGN KEY (parent_id1, parent_id2) REFERENCES parent_table(parent_id1, parent_id2)
+);
+
+-- Insert sample data for parent_table
+INSERT INTO parent_table (parent_id1, parent_id2, name) VALUES
+(1, 1, 'Parent 1-1'),
+(1, 2, 'Parent 1-2'),
+(2, 1, 'Parent 2-1')
+ON CONFLICT DO NOTHING;
+
+-- Insert sample data for child_table
+INSERT INTO child_table (child_id, parent_id1, parent_id2, description) VALUES
+(1, 1, 1, 'Child of 1-1'),
+(2, 1, 2, 'Child of 1-2'),
+(3, 2, 1, 'Child of 2-1')
+ON CONFLICT DO NOTHING;
+
 -- ====================
 -- VIEWS AND MATERIALIZED VIEWS
 -- ====================
@@ -460,6 +507,7 @@ SELECT setval('enhanced_types_id_seq', 3, true);
 SELECT setval('orders_order_id_seq', 5, true);
 SELECT setval('products_product_id_seq', 4, true);
 SELECT setval('custom_types_test_id_seq', 3, true);
+-- Note: child_table sequence handled automatically by PostgreSQL
 
 -- ====================
 -- PERMISSIONS
@@ -524,6 +572,9 @@ ANALYZE enhanced_types;
 ANALYZE orders;
 ANALYZE products;
 ANALYZE custom_types_test;
+ANALYZE order_items;
+ANALYZE parent_table;
+ANALYZE child_table;
 
 -- ====================
 -- INITIALIZATION SUMMARY
@@ -545,6 +596,9 @@ BEGIN
     RAISE NOTICE '  - orders: % rows', (SELECT count(*) FROM orders);
     RAISE NOTICE '  - products: % rows', (SELECT count(*) FROM products);
     RAISE NOTICE '  - custom_types_test: % rows', (SELECT count(*) FROM custom_types_test);
+    RAISE NOTICE '  - order_items: % rows', (SELECT count(*) FROM order_items);
+    RAISE NOTICE '  - parent_table: % rows', (SELECT count(*) FROM parent_table);
+    RAISE NOTICE '  - child_table: % rows', (SELECT count(*) FROM child_table);
     RAISE NOTICE '';
     RAISE NOTICE 'VIEWS:';
     RAISE NOTICE '  - active_customers: % rows', (SELECT count(*) FROM active_customers);

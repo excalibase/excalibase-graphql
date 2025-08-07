@@ -329,6 +329,34 @@ main() {
         '.data.customer[0].orders | length >= 1'
     
     # ==========================================
+    # COMPOSITE KEY TABLE TESTS
+    # ==========================================
+
+    run_test "Query Order Items with Composite Key" \
+        "{ order_items { order_id product_id quantity price } }" \
+        '.data.order_items | length >= 3'
+
+    run_test "Filter Order Items by One Part of Composite Key" \
+        "{ order_items(where: { order_id: { eq: 1 } }) { order_id product_id quantity price } }" \
+        '.data.order_items | length >= 2 and all(.order_id == 1)'
+
+    run_test "Filter Order Items by Full Composite Key" \
+        "{ order_items(where: { order_id: { eq: 1 }, product_id: { eq: 1 } }) { order_id product_id quantity price } }" \
+        '.data.order_items | length == 1 and .[0].order_id == 1 and .[0].product_id == 1'
+    
+    run_test "Query Parent Table with Composite Key" \
+        "{ parent_table { parent_id1 parent_id2 name } }" \
+        '.data.parent_table | length >= 3'
+
+    run_test "Query Child Table with Composite FK" \
+        "{ child_table { child_id parent_id1 parent_id2 description } }" \
+        '.data.child_table | length >= 3'
+
+    run_test "Query Child with Parent Relationship via Composite FK" \
+        "{ child_table { child_id description parent_table { parent_id1 parent_id2 name } } }" \
+        '.data.child_table | length >= 3 and all(has("parent_table"))'
+    
+    # ==========================================
     # VIEW TESTS (Read-only)
     # ==========================================
     

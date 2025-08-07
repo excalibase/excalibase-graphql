@@ -111,6 +111,58 @@ class GraphqlControllerTest extends Specification {
                 SELECT setval('customer_customer_id_seq', (SELECT MAX(customer_id) FROM customer));
             """)
 
+            // Create composite key tables for testing
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS order_items (
+                    order_id INTEGER NOT NULL,
+                    product_id INTEGER NOT NULL,
+                    quantity INTEGER NOT NULL,
+                    price DECIMAL(10,2) NOT NULL,
+                    PRIMARY KEY (order_id, product_id)
+                );
+            """)
+
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS parent_table (
+                    parent_id1 INTEGER NOT NULL,
+                    parent_id2 INTEGER NOT NULL,
+                    name VARCHAR(100) NOT NULL,
+                    PRIMARY KEY (parent_id1, parent_id2)
+                );
+            """)
+
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS child_table (
+                    child_id SERIAL PRIMARY KEY,
+                    parent_id1 INTEGER NOT NULL,
+                    parent_id2 INTEGER NOT NULL,
+                    description TEXT,
+                    FOREIGN KEY (parent_id1, parent_id2) REFERENCES parent_table(parent_id1, parent_id2)
+                );
+            """)
+
+            // Insert test data for composite key tables
+            statement.execute("""
+                INSERT INTO order_items (order_id, product_id, quantity, price) VALUES
+                (1, 1, 2, 299.98),
+                (1, 2, 1, 79.99),
+                (2, 1, 1, 149.99);
+            """)
+
+            statement.execute("""
+                INSERT INTO parent_table (parent_id1, parent_id2, name) VALUES
+                (1, 1, 'Parent 1-1'),
+                (1, 2, 'Parent 1-2'),
+                (2, 1, 'Parent 2-1');
+            """)
+
+            statement.execute("""
+                INSERT INTO child_table (child_id, parent_id1, parent_id2, description) VALUES
+                (1, 1, 1, 'Child of 1-1'),
+                (2, 1, 2, 'Child of 1-2'),
+                (3, 2, 1, 'Child of 2-1');
+            """)
+
             // Create orders table for testing relationships
             statement.execute("""
                 CREATE TABLE IF NOT EXISTS orders (
@@ -2108,5 +2160,44 @@ class GraphqlControllerTest extends Specification {
                 .andExpect(jsonPath('$.data.createManyCustomers[2].customer_id').isNumber())
     }
 
+    // ==========================================
+    // COMPOSITE KEY TABLE TESTS
+    // ==========================================
+
+    def "should query table with composite primary key"() {
+        when: "querying order_items table with composite key"
+        def result = mockMvc.perform(post("/graphql")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content('{"query": "{ order_items { order_id product_id quantity price } }"}'))
+
+        then: "should return order items data"
+        result.andExpect(status().isOk())
+            .andExpect(jsonPath('$.data.order_items').isArray())
+            .andExpect(jsonPath('$.data.order_items', hasSize(3)))
+    }
+
+    def "should filter table with composite key by one part"() {
+        when: "filtering order_items by order_id only"
+        def result = mockMvc.perform(post("/graphql")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content('{"query": "{ order_items(where: { order_id: { eq: 1 } }) { order_id product_id quantity price } }"}'))
+
+        then: "should return filtered results"
+        result.andExpect(status().isOk())
+            .andExpect(jsonPath('$.data.order_items').isArray())
+            .andExpect(jsonPath('$.data.order_items', hasSize(2)))
+    }
+
+    def "should query parent and child tables with composite foreign key"() {
+        when: "querying child_table that references parent via composite FK"
+        def result = mockMvc.perform(post("/graphql")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content('{"query": "{ child_table { child_id parent_id1 parent_id2 description } }"}'))
+
+        then: "should return child table data"
+        result.andExpect(status().isOk())
+            .andExpect(jsonPath('$.data.child_table').isArray())
+            .andExpect(jsonPath('$.data.child_table', hasSize(3)))
+    }
 
 }
