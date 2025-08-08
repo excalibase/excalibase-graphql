@@ -2,12 +2,12 @@
 
 # Excalibase GraphQL E2E Test Suite
 # Tests the complete GraphQL API using curl commands
-# Requires: docker-compose services running on ports 10001 (app) and 5433 (postgres)
+# Requires: docker-compose services running on ports 10000 (app) and 5432 (postgres)
 
 # set -e  # Exit on any error - keeping commented to show all results
 
 # Configuration
-API_URL="http://localhost:10001/graphql"
+API_URL="http://localhost:10000/graphql"
 TIMEOUT=30
 MAX_RETRIES=10
 RETRY_DELAY=5

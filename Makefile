@@ -3,9 +3,9 @@
 
 # Configuration
 COMPOSE_PROJECT = excalibase-e2e
-COMPOSE_TEST_FILE = scripts/docker-compose.test.yml
-APP_PORT = 10001
-DB_PORT = 5433
+COMPOSE_FILE = docker-compose.yml
+APP_PORT = 10000
+DB_PORT = 5432
 API_URL = http://localhost:$(APP_PORT)/graphql
 
 # Colors for output
@@ -47,11 +47,11 @@ help: ## Show this help message
 
 # Main targets
 .PHONY: e2e
-e2e: check-deps down build up test clean ## Complete e2e test suite (cleanup, build, test, cleanup)
+e2e: check-deps down build-image up test clean ## Complete e2e test suite (cleanup, build image, test, cleanup)
 	@echo "$(GREEN)🎉 E2E testing completed successfully!$(NC)"
 
 .PHONY: dev
-dev: check-deps build up ## Start services for development (no cleanup)
+dev: check-deps build-image up ## Start services for development (no cleanup)
 	@echo ""
 	@echo "$(GREEN)🚀 Development environment ready!$(NC)"
 	@echo ""
@@ -63,7 +63,7 @@ dev: check-deps build up ## Start services for development (no cleanup)
 	@echo ""
 
 .PHONY: ci
-ci: check-deps-ci build up test clean ## CI/CD pipeline (with dependency checks)
+ci: check-deps-ci build-image up test clean ## CI/CD pipeline (with dependency checks)
 
 .PHONY: ci-benchmark  
 ci-benchmark: check-deps-ci benchmark-build benchmark-up benchmark-test-only ## Enterprise benchmark for CI (without cleanup)
@@ -76,6 +76,12 @@ build: ## Build the application with Maven
 	@mvn clean package -DskipTests -q
 	@echo "$(GREEN)✓ Build completed$(NC)"
 
+.PHONY: build-image
+build-image: build ## Build Docker image locally for e2e testing
+	@echo "$(BLUE)🐳 Building Docker image...$(NC)"
+	@docker build -t excalibase/excalibase-graphql .
+	@echo "$(GREEN)✓ Docker image built$(NC)"
+
 .PHONY: build-skip
 build-skip: ## Skip Maven build (for rapid iteration)
 	@echo "$(YELLOW)⚠️  Skipping Maven build$(NC)"
@@ -84,38 +90,38 @@ build-skip: ## Skip Maven build (for rapid iteration)
 .PHONY: up
 up: check-ports ## Start Docker services
 	@echo "$(BLUE)🚀 Starting services...$(NC)"
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) up -d --build
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d
 	@echo "$(GREEN)✓ Services started$(NC)"
 	@$(MAKE) --no-print-directory wait-ready
 
 .PHONY: down
 down: ## Stop Docker services
 	@echo "$(BLUE)🛑 Stopping services...$(NC)"
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) down > /dev/null 2>&1 || true
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Services stopped$(NC)"
 
 .PHONY: clean
 clean: ## Stop services and cleanup volumes
 	@echo "$(BLUE)🧹 Cleaning up...$(NC)"
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Cleanup completed$(NC)"
 
 .PHONY: logs
 logs: ## Show service logs
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) logs -f
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) logs -f
 
 .PHONY: logs-app
 logs-app: ## Show application logs only
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) logs -f app
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) logs -f app
 
 .PHONY: logs-db
 logs-db: ## Show database logs only
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) logs -f postgres
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) logs -f postgres
 
 .PHONY: status
 status: ## Show service status
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) ps
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) ps
 
 # Testing targets
 .PHONY: test
@@ -170,7 +176,7 @@ check-ports: ## Check if required ports are available
 wait-ready: ## Wait for services to be ready
 	@echo "$(BLUE)⏳ Waiting for services...$(NC)"
 	@for i in $$(seq 1 30); do \
-		if docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) exec -T postgres pg_isready -U excalibase_user -d excalibase_e2e > /dev/null 2>&1; then \
+		if docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) exec -T postgres pg_isready -U hana001 -d hana > /dev/null 2>&1; then \
 			echo "$(GREEN)✓ PostgreSQL ready$(NC)"; \
 			break; \
 		fi; \
@@ -192,13 +198,13 @@ run-tests: ## Execute the actual test suite
 # Database operations (unified schema with demo + test data)
 .PHONY: db-shell
 db-shell: ## Connect to PostgreSQL shell
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) exec postgres psql -U excalibase_user -d excalibase_e2e
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) exec postgres psql -U hana001 -d hana
 
 .PHONY: db-reset
 db-reset: ## Reset database (recreate with fresh data)
 	@echo "$(BLUE)🔄 Resetting database...$(NC)"
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) down -v > /dev/null 2>&1 || true
-	@docker-compose -f $(COMPOSE_TEST_FILE) -p $(COMPOSE_PROJECT) up -d postgres > /dev/null 2>&1
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v > /dev/null 2>&1 || true
+	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d postgres > /dev/null 2>&1
 	@$(MAKE) --no-print-directory wait-ready
 	@echo "$(GREEN)✓ Database reset completed$(NC)"
 
@@ -359,4 +365,4 @@ benchmark-db-stats: ## Show enterprise benchmark database statistics
 		ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
 
 # Force targets (ignore file existence)
-.PHONY: docker-compose.yml $(COMPOSE_TEST_FILE) scripts/initdb.sql scripts/e2e-test.sh scripts/docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh
+.PHONY: docker-compose.yml scripts/initdb.sql scripts/e2e-test.sh scripts/docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh
