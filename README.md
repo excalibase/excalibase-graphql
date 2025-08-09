@@ -157,11 +157,8 @@ docker-compose down
 
 **E2E Testing Setup:**
 ```bash
-# Use test environment (different ports to avoid conflicts)
-docker-compose -f scripts/docker-compose.test.yml up -d
-
-# Or use Makefile for complete testing workflow
-make e2e           # Complete e2e test (build + test + cleanup)
+# Use Makefile for complete testing workflow
+make e2e           # Complete e2e test (build image + test + cleanup)
 make dev           # Start services for development
 make test-only     # Run tests against running services
 make clean         # Stop and cleanup
@@ -175,8 +172,8 @@ docker-compose up -d --build
 # Run tests in container (production setup)
 docker-compose exec excalibase-app mvn test
 
-# Run tests in container (test setup)
-docker-compose -f scripts/docker-compose.test.yml exec app mvn test
+# Run tests in container (using make command)
+make test-only
 
 # Access application shell
 docker-compose exec excalibase-app /bin/bash
@@ -877,17 +874,19 @@ logging:
 The project includes comprehensive tests using Spock, Spring Boot MockMvc, and Testcontainers:
 
 ```bash
-# Run all tests
+# Run all tests (all modules from project root)
 mvn test
 
-# Run specific test classes
-mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
-mvn test -Dtest=GraphqlControllerTest
+# Run tests for specific modules (change to module directory)
+cd modules/excalibase-graphql-api && mvn test
+cd modules/excalibase-graphql-postgres && mvn test
+cd modules/excalibase-graphql-starter && mvn test
 
-# Run enhanced filtering tests
-mvn test -Dtest=DateTimeFilteringIntegrationTest
+# Run specific test classes (from module directory)
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlControllerTest
+cd modules/excalibase-graphql-postgres && mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
 
-# Run with coverage
+# Run with coverage (from project root)
 mvn clean test jacoco:report
 ```
 

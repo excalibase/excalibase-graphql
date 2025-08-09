@@ -27,7 +27,16 @@ Thank you for your interest in contributing! This project is currently in early 
 
 3. **Run tests:**
    ```bash
-   docker-compose exec app mvn test
+   # Option 1: Using make (recommended)
+   make test-only
+   
+   # Option 2: Direct container access
+   docker-compose exec excalibase-app mvn test
+   
+   # Option 3: Local testing by changing to module directory
+   cd modules/excalibase-graphql-api && mvn test
+   cd modules/excalibase-graphql-postgres && mvn test
+   cd modules/excalibase-graphql-starter && mvn test
    ```
 
 #### Option 2: Local Development
@@ -163,13 +172,19 @@ class DatabaseReflectorTest extends Specification {
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run all tests (all modules from project root)
 mvn test
 
-# Run specific test
-mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
+# Run tests for specific modules (change to module directory)
+cd modules/excalibase-graphql-api && mvn test
+cd modules/excalibase-graphql-postgres && mvn test
+cd modules/excalibase-graphql-starter && mvn test
 
-# Run with coverage
+# Run specific test classes (from module directory)
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlControllerTest
+cd modules/excalibase-graphql-postgres && mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
+
+# Run with coverage (from project root)
 mvn clean test jacoco:report
 ```
 

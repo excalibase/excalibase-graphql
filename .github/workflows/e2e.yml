@@ -60,7 +60,7 @@ jobs:
       if: failure()
       run: |
         echo "📋 Collecting application logs..."
-        if docker-compose -f scripts/docker-compose.test.yml -p excalibase-e2e logs app > app-logs.txt 2>&1; then
+        if docker-compose -f docker-compose.yml -p excalibase-e2e logs excalibase-app > app-logs.txt 2>&1; then
           echo "✅ Logs collected"
         else
           echo "⚠️ No logs available or services not running"
