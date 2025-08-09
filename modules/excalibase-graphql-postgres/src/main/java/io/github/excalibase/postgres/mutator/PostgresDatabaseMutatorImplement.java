@@ -177,42 +177,69 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     }
 
     @Override
-    public DataFetcher<Boolean> createDeleteMutationResolver(String tableName) {
+    public DataFetcher<Map<String, Object>> createDeleteMutationResolver(String tableName) {
         return environment -> {
-            String id = environment.getArgument("id");
-            if (id == null) {
-                throw new IllegalArgumentException("ID is required for delete operation");
+            TableInfo tableInfo = getTableInfo(tableName);
+            
+            Map<String, Object> input = environment.getArgument("input");
+            if (input == null) {
+                throw new IllegalArgumentException("Input data is required for delete operation");
             }
             
-            // Get table info to find primary key column
-            Map<String, TableInfo> tables = getSchemaReflector().reflectSchema();
-            TableInfo tableInfo = tables.get(tableName);
-            
-            if (tableInfo == null) {
-                throw new NotFoundException(TABLE_NOT_FOUND + " " + tableName);
-            }
-            
-            // Find primary key column
-            String primaryKeyColumn = tableInfo.getColumns().stream()
+            // Find primary key column(s)
+            List<String> primaryKeyColumns = tableInfo.getColumns().stream()
                 .filter(ColumnInfo::isPrimaryKey)
-                .findFirst()
                 .map(ColumnInfo::getName)
-                .orElseThrow(() -> new DataFetcherException("No primary key found for table: " + tableName));
+                .toList();
+
+            Map<String, Object> whereClause = new HashMap<>();
             
-            // Build the SQL DELETE statement
-            String sql = PostgresColumnTypeConstant.DELETE_WITH_SPACE + getQualifiedTableName(tableName) + PostgresColumnTypeConstant.WHERE_WITH_SPACE +
-                        quoteIdentifier(primaryKeyColumn) + " = :id";
+            if (!primaryKeyColumns.isEmpty()) {
+                // Handle tables with explicit primary keys
+                for (Map.Entry<String, Object> entry : input.entrySet()) {
+                    String key = entry.getKey();
+                    Object value = entry.getValue();
+                    
+                    if (value != null && primaryKeyColumns.contains(key)) {
+                        whereClause.put(key, value);
+                    }
+                }
+
+                if (whereClause.isEmpty()) {
+                    throw new IllegalArgumentException("Primary key values must be provided for delete operation");
+                }
+                
+                // Validate that all primary key parts are provided
+                for (String primaryKeyColumn : primaryKeyColumns) {
+                    if (!whereClause.containsKey(primaryKeyColumn)) {
+                        throw new IllegalArgumentException("Missing required primary key field: " + primaryKeyColumn);
+                    }
+                }
+            } else {
+                // Handle tables without explicit primary keys - use 'id' as fallback
+                Object idValue = input.get("id");
+                if (idValue == null) {
+                    throw new IllegalArgumentException("ID is required for delete operation on table without primary key: " + tableName);
+                }
+                whereClause.put("id", idValue);
+            }
+
+            String sql = buildDeleteSql(tableName, whereClause.keySet());
             
-            // Prepare parameters with type conversion
-            MapSqlParameterSource paramSource = new MapSqlParameterSource();
-            addTypedParameter(paramSource, "id", id, getColumnType(tableName, primaryKeyColumn));
+            MapSqlParameterSource paramSource = createParameterSource(tableName, whereClause);
             
             log.debug("Executing delete SQL: {} with parameters: {}", sql, paramSource.getValues());
             
-            // Execute the delete
+            // Execute the delete and return the deleted record
             try {
-                int rowsAffected = namedParameterJdbcTemplate.update(sql, paramSource);
-                return rowsAffected > 0;
+                List<Map<String, Object>> results = namedParameterJdbcTemplate.queryForList(sql, paramSource);
+                if (results.isEmpty()) {
+                    throw new NotFoundException("No record found with the specified primary key");
+                }
+                return results.getFirst();
+            } catch (NotFoundException e) {
+                // Re-throw NotFoundException as-is
+                throw e;
             } catch (Exception e) {
                 log.error("Error deleting record from table {}: {}", tableName, e.getMessage());
                 throw new DataMutationException("Error deleting record: " + e.getMessage(), e);
@@ -573,7 +600,35 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                    } else {
                        return quoteIdentifier(field) + " = :" + field;
                    }
-               }).collect(Collectors.joining(PostgresColumnTypeConstant.AND_WITH_SPACE.trim())) +
+               }).collect(Collectors.joining(PostgresColumnTypeConstant.AND_WITH_SPACE)) +
+               PostgresColumnTypeConstant.RETURNING_ALL;
+    }
+
+    private String buildDeleteSql(String tableName, Set<String> whereFields) {
+        Map<String, String> columnTypes = getColumnTypes(tableName);
+        
+        return PostgresColumnTypeConstant.DELETE_WITH_SPACE + getQualifiedTableName(tableName) +
+               PostgresColumnTypeConstant.WHERE_WITH_SPACE +
+               whereFields.stream().map(field -> {
+                   String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
+                   if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.INTERVAL;
+                   } else if (columnType.contains(ColumnTypeConstant.JSON)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains(ColumnTypeConstant.INET) || columnType.contains(ColumnTypeConstant.CIDR) || columnType.contains(ColumnTypeConstant.MACADDR)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.TIME)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else if (columnType.contains(ColumnTypeConstant.XML)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.XML;
+                   } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.BYTEA;
+                   } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                       return quoteIdentifier(field) + " = :" + field + "::" + columnType;
+                   } else {
+                       return quoteIdentifier(field) + " = :" + field;
+                   }
+               }).collect(Collectors.joining(PostgresColumnTypeConstant.AND_WITH_SPACE)) +
                PostgresColumnTypeConstant.RETURNING_ALL;
     }
 
@@ -890,15 +945,29 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         return getColumnTypes(tableName).getOrDefault(columnName, "");
     }
 
-    private String getPrimaryKeyColumn(String tableName) {
+    private List<String> getPrimaryKeyColumns(String tableName) {
         Map<String, TableInfo> tables = getSchemaReflector().reflectSchema();
         TableInfo tableInfo = tables.get(tableName);
         
-        return tableInfo.getColumns().stream()
+        List<String> primaryKeys = tableInfo.getColumns().stream()
             .filter(ColumnInfo::isPrimaryKey)
-            .findFirst()
             .map(ColumnInfo::getName)
-            .orElseThrow(() -> new DataFetcherException("No primary key found for table: " + tableName));
+            .toList();
+            
+        if (primaryKeys.isEmpty()) {
+            throw new DataFetcherException("No primary key found for table: " + tableName);
+        }
+        
+        return primaryKeys;
+    }
+
+    /**
+     * @deprecated Use getPrimaryKeyColumns() instead to support composite keys
+     */
+    @Deprecated
+    private String getPrimaryKeyColumn(String tableName) {
+        List<String> primaryKeys = getPrimaryKeyColumns(tableName);
+        return primaryKeys.get(0); // Return first primary key for backward compatibility
     }
 
     private String findReverseForeignKey(String relationTableName, String parentTableName, Map<String, TableInfo> tables) {

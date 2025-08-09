@@ -314,14 +314,15 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
 
         and: "mocked DataFetchingEnvironment"
         def environment = Mock(DataFetchingEnvironment)
-        environment.getArgument("id") >> "1"
+        environment.getArgument("input") >> [id: "1"]
 
         when: "deleting the item"
         def mutationResolver = mutator.createDeleteMutationResolver("items")
         def result = mutationResolver.get(environment)
 
-        then: "should return true"
-        result == true
+        then: "should return deleted record"
+        result.id == 1
+        result.name == "Item to Delete"
     }
 
     def "should handle delete with null id"() {
@@ -363,14 +364,14 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
 
         and: "environment with non-existent id"
         def environment = Mock(DataFetchingEnvironment)
-        environment.getArgument("id") >> "999"
+        environment.getArgument("input") >> [id: "999"]
 
         when: "attempting to delete non-existent record"
         def mutationResolver = mutator.createDeleteMutationResolver("empty_items")
-        def result = mutationResolver.get(environment)
-
-        then: "should return false"
-        result == false
+        mutationResolver.get(environment)
+        
+        then: "should throw NotFoundException"
+        thrown(NotFoundException)
     }
 
     def "should handle table without primary key for delete"() {
@@ -1941,12 +1942,14 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
 
         when: "deleting the customer record"
         def environment = Mock(DataFetchingEnvironment)
-        environment.getArgument("id") >> "1"
+        environment.getArgument("input") >> [customer_id: "1"]
         def deleteResolver = mutator.createDeleteMutationResolver("delete_customer")
         def result = deleteResolver.get(environment)
 
-        then: "should return true for successful deletion"
-        result == true
+        then: "should return deleted record"
+        result.customer_id == 1
+        result.first_name == "ToDelete"
+        result.last_name == "User"
         
         and: "record should be deleted from database"
         def count = jdbcTemplate.queryForObject(
@@ -2278,6 +2281,498 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         try {
             jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_issues")
             jdbcTemplate.execute("DROP TYPE IF EXISTS test_priority")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    // ==========================================
+    // COMPOSITE KEY MUTATION TESTS - TDD APPROACH
+    // ==========================================
+
+    def "should create record with composite primary key"() {
+        given: "a table with composite primary key"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_key_table (
+                key1 INTEGER NOT NULL,
+                key2 INTEGER NOT NULL,
+                data VARCHAR(100),
+                PRIMARY KEY (key1, key2)
+            )
+        """)
+
+        def columns = [
+            new ColumnInfo("key1", "integer", true, false),
+            new ColumnInfo("key2", "integer", true, false),
+            new ColumnInfo("data", "character varying", false, true)
+        ]
+        def tableInfo = new TableInfo("composite_key_table", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["composite_key_table": tableInfo]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                key1: 1,
+                key2: 2,
+                data: "Test Data"
+            ]
+        }
+
+        when: "creating a record with composite primary key"
+        def mutationResolver = mutator.createCreateMutationResolver("composite_key_table")
+        def result = mutationResolver.get(environment)
+
+        then: "should create record with both primary key parts"
+        result.key1 == 1
+        result.key2 == 2
+        result.data == "Test Data"
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.composite_key_table WHERE key1 = ? AND key2 = ?", 1, 2)
+        dbResults.size() == 1
+        dbResults[0].key1 == 1
+        dbResults[0].key2 == 2
+        dbResults[0].data == "Test Data"
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_key_table")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should update record using composite primary key"() {
+        given: "a table with composite primary key and existing data"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_update_table (
+                order_id INTEGER NOT NULL,
+                product_id INTEGER NOT NULL,
+                quantity INTEGER,
+                price DECIMAL(10,2),
+                PRIMARY KEY (order_id, product_id)
+            )
+        """)
+
+        // Insert test data
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.composite_update_table (order_id, product_id, quantity, price) 
+            VALUES (1, 100, 5, 99.99)
+        """)
+
+        def columns = [
+            new ColumnInfo("order_id", "integer", true, false),
+            new ColumnInfo("product_id", "integer", true, false),
+            new ColumnInfo("quantity", "integer", false, true),
+            new ColumnInfo("price", "numeric", false, true)
+        ]
+        def tableInfo = new TableInfo("composite_update_table", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["composite_update_table": tableInfo]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                order_id: 1,      // Required for composite key identification
+                product_id: 100,  // Required for composite key identification
+                quantity: 10,     // Updated value
+                price: 149.99     // Updated value
+            ]
+        }
+
+        when: "updating record using composite primary key"
+        def mutationResolver = mutator.createUpdateMutationResolver("composite_update_table")
+        def result = mutationResolver.get(environment)
+
+        then: "should update record correctly"
+        result.order_id == 1
+        result.product_id == 100
+        result.quantity == 10
+        result.price == 149.99
+
+        and: "should be updated in database"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.composite_update_table WHERE order_id = ? AND product_id = ?", 1, 100)
+        dbResults.size() == 1
+        dbResults[0].quantity == 10
+        dbResults[0].price == 149.99
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_update_table")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should delete record using composite primary key"() {
+        given: "a table with composite primary key and existing data"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_delete_table (
+                customer_id INTEGER NOT NULL,
+                order_id INTEGER NOT NULL,
+                status VARCHAR(20),
+                PRIMARY KEY (customer_id, order_id)
+            )
+        """)
+
+        // Insert test data
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.composite_delete_table (customer_id, order_id, status) 
+            VALUES (1, 101, 'pending'), (1, 102, 'shipped'), (2, 101, 'delivered')
+        """)
+
+        def columns = [
+            new ColumnInfo("customer_id", "integer", true, false),
+            new ColumnInfo("order_id", "integer", true, false),
+            new ColumnInfo("status", "character varying", false, true)
+        ]
+        def tableInfo = new TableInfo("composite_delete_table", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["composite_delete_table": tableInfo]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                customer_id: 1,
+                order_id: 101
+            ]
+        }
+
+        when: "deleting record using composite primary key"
+        def mutationResolver = mutator.createDeleteMutationResolver("composite_delete_table")
+        def result = mutationResolver.get(environment)
+
+        then: "should return deleted record"
+        result.customer_id == 1
+        result.order_id == 101
+        result.status == "pending"
+
+        and: "should be deleted from database"
+        def remainingRecords = jdbcTemplate.queryForList("SELECT * FROM test_schema.composite_delete_table")
+        remainingRecords.size() == 2
+        !remainingRecords.any { it.customer_id == 1 && it.order_id == 101 }
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_delete_table")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should fail to create duplicate composite key record"() {
+        given: "a table with composite primary key and existing data"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_duplicate_table (
+                part1 INTEGER NOT NULL,
+                part2 VARCHAR(50) NOT NULL,
+                value TEXT,
+                PRIMARY KEY (part1, part2)
+            )
+        """)
+
+        // Insert existing record
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.composite_duplicate_table (part1, part2, value) 
+            VALUES (1, 'test', 'original value')
+        """)
+
+        def columns = [
+            new ColumnInfo("part1", "integer", true, false),
+            new ColumnInfo("part2", "character varying", true, false),
+            new ColumnInfo("value", "text", false, true)
+        ]
+        def tableInfo = new TableInfo("composite_duplicate_table", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["composite_duplicate_table": tableInfo]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                part1: 1,           // Same as existing
+                part2: "test",      // Same as existing
+                value: "new value"  // Different value
+            ]
+        }
+
+        when: "attempting to create duplicate composite key"
+        def mutationResolver = mutator.createCreateMutationResolver("composite_duplicate_table")
+        mutationResolver.get(environment)
+
+        then: "should throw exception for duplicate key"
+        thrown(DataMutationException)
+
+        and: "original record should remain unchanged"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.composite_duplicate_table WHERE part1 = ? AND part2 = ?", 1, "test")
+        dbResults.size() == 1
+        dbResults[0].value == "original value"
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_duplicate_table")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should reject incomplete composite key in update mutation"() {
+        given: "a table with composite primary key"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_incomplete_table (
+                id1 INTEGER NOT NULL,
+                id2 INTEGER NOT NULL,
+                description TEXT,
+                PRIMARY KEY (id1, id2)
+            )
+        """)
+
+        def columns = [
+            new ColumnInfo("id1", "integer", true, false),
+            new ColumnInfo("id2", "integer", true, false),
+            new ColumnInfo("description", "text", false, true)
+        ]
+        def tableInfo = new TableInfo("composite_incomplete_table", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["composite_incomplete_table": tableInfo]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                id1: 1,                           // Only one part of composite key
+                description: "Updated description" // Missing id2
+            ]
+        }
+
+        when: "attempting to update with incomplete composite key"
+        def mutationResolver = mutator.createUpdateMutationResolver("composite_incomplete_table")
+        mutationResolver.get(environment)
+
+        then: "should throw exception for missing primary key part"
+        thrown(DataMutationException)
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_incomplete_table")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should handle bulk create operations on composite key tables"() {
+        given: "a table with composite primary key"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_bulk_table (
+                region_id INTEGER NOT NULL,
+                product_code VARCHAR(20) NOT NULL,
+                stock_quantity INTEGER,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (region_id, product_code)
+            )
+        """)
+
+        def columns = [
+            new ColumnInfo("region_id", "integer", true, false),
+            new ColumnInfo("product_code", "character varying", true, false),
+            new ColumnInfo("stock_quantity", "integer", false, true),
+            new ColumnInfo("last_updated", "timestamp", false, true)
+        ]
+        def tableInfo = new TableInfo("composite_bulk_table", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["composite_bulk_table": tableInfo]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("inputs") >> [
+                [region_id: 1, product_code: "ABC123", stock_quantity: 100],
+                [region_id: 1, product_code: "DEF456", stock_quantity: 50],
+                [region_id: 2, product_code: "ABC123", stock_quantity: 75],
+                [region_id: 2, product_code: "GHI789", stock_quantity: 200]
+            ]
+        }
+
+        when: "performing bulk create on composite key table"
+        def bulkCreateResolver = mutator.createBulkCreateMutationResolver("composite_bulk_table")
+        def results = bulkCreateResolver.get(environment)
+
+        then: "should create all records successfully"
+        results.size() == 4
+        results.every { it.region_id != null && it.product_code != null }
+        
+        and: "should verify unique composite keys"
+        def uniqueKeys = results.collect { "${it.region_id}-${it.product_code}" }.unique()
+        uniqueKeys.size() == 4
+
+        and: "should be persisted in database"
+        def dbCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM test_schema.composite_bulk_table", Integer.class)
+        dbCount == 4
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_bulk_table")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should handle foreign key violations with composite keys"() {
+        given: "parent and child tables with composite foreign keys"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_parent (
+                parent_id1 INTEGER NOT NULL,
+                parent_id2 INTEGER NOT NULL,
+                name VARCHAR(100),
+                PRIMARY KEY (parent_id1, parent_id2)
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_child (
+                child_id SERIAL PRIMARY KEY,
+                parent_id1 INTEGER NOT NULL,
+                parent_id2 INTEGER NOT NULL,
+                description TEXT,
+                FOREIGN KEY (parent_id1, parent_id2) REFERENCES test_schema.composite_parent(parent_id1, parent_id2)
+            )
+        """)
+
+        // Insert valid parent record
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.composite_parent (parent_id1, parent_id2, name) 
+            VALUES (1, 1, 'Valid Parent')
+        """)
+
+        def columns = [
+            new ColumnInfo("child_id", "integer", true, false),
+            new ColumnInfo("parent_id1", "integer", false, false),
+            new ColumnInfo("parent_id2", "integer", false, false),
+            new ColumnInfo("description", "text", false, true)
+        ]
+        def tableInfo = new TableInfo("composite_child", columns, [
+            new ForeignKeyInfo("parent_id1,parent_id2", "composite_parent", "parent_id1,parent_id2")
+        ], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["composite_child": tableInfo]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                parent_id1: 1,
+                parent_id2: 999,  // Non-existent parent combination
+                description: "Orphaned child"
+            ]
+        }
+
+        when: "creating child with invalid composite foreign key"
+        def mutationResolver = mutator.createCreateMutationResolver("composite_child")
+        mutationResolver.get(environment)
+
+        then: "should throw exception for foreign key violation"
+        thrown(DataMutationException)
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_child")
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_parent")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should create nested relationships involving composite keys"() {
+        given: "complex table structure with composite keys and relationships"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_customers (
+                customer_id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.composite_orders (
+                customer_id INTEGER NOT NULL,
+                order_number INTEGER NOT NULL,
+                order_date DATE DEFAULT CURRENT_DATE,
+                total_amount DECIMAL(10,2),
+                PRIMARY KEY (customer_id, order_number),
+                FOREIGN KEY (customer_id) REFERENCES test_schema.composite_customers(customer_id)
+            )
+        """)
+
+        // Insert existing customer
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.composite_customers (customer_id, name) 
+            VALUES (1, 'Test Customer')
+        """)
+
+        def customerTableInfo = new TableInfo(
+            name: "composite_customers",
+            columns: [
+                new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                new ColumnInfo(name: "name", type: "character varying", primaryKey: false, nullable: false)
+            ],
+            foreignKeys: [],
+            view: false
+        )
+
+        def orderTableInfo = new TableInfo(
+            name: "composite_orders",
+            columns: [
+                new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                new ColumnInfo(name: "order_number", type: "integer", primaryKey: true, nullable: false),
+                new ColumnInfo(name: "order_date", type: "date", primaryKey: false, nullable: true),
+                new ColumnInfo(name: "total_amount", type: "numeric", primaryKey: false, nullable: true)
+            ],
+            foreignKeys: [
+                new ForeignKeyInfo("customer_id", "composite_customers", "customer_id")
+            ],
+            view: false
+        )
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> [
+            "composite_customers": customerTableInfo,
+            "composite_orders": orderTableInfo
+        ]
+
+        and: "transaction template is configured"
+        transactionTemplate.execute(_) >> { args ->
+            def callback = args[0]
+            return callback.doInTransaction(null)
+        }
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                customer_id: 1,
+                order_number: 1001,
+                total_amount: 299.99,
+                composite_customers_connect: [id: 1]
+            ]
+        }
+
+        when: "creating order with composite key and relationship"
+        def createResolver = mutator.createCreateWithRelationshipsMutationResolver("composite_orders")
+        def result = createResolver.get(environment)
+
+        then: "should create order with proper composite key and relationship"
+        result.customer_id == 1
+        result.order_number == 1001
+        result.total_amount == 299.99
+
+        and: "should be persisted with correct foreign key"
+        def dbResults = jdbcTemplate.queryForList("""
+            SELECT o.*, c.name as customer_name 
+            FROM test_schema.composite_orders o 
+            JOIN test_schema.composite_customers c ON o.customer_id = c.customer_id
+            WHERE o.customer_id = ? AND o.order_number = ?
+        """, 1, 1001)
+        dbResults.size() == 1
+        dbResults[0].customer_name == "Test Customer"
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_orders")
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.composite_customers")
         } catch (Exception e) {
             // Ignore cleanup errors
         }

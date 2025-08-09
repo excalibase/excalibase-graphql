@@ -376,18 +376,33 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
                 dataSql.append(String.join(", ", orderClauses));
             } else if (useCursorPagination) {
-                // For cursor pagination without explicit orderBy, default to primary key
-                String primaryKeyColumn = tableInfo != null ? 
-                    tableInfo.getColumns().stream()
+                // For cursor pagination without explicit orderBy, default to all primary key columns
+                if (tableInfo != null) {
+                    List<String> primaryKeyColumns = tableInfo.getColumns().stream()
                         .filter(ColumnInfo::isPrimaryKey)
                         .map(ColumnInfo::getName)
-                        .findFirst()
-                        .orElse("id") // fallback to 'id' if no primary key found
-                    : "id";
-                    
-                if (availableColumns.contains(primaryKeyColumn)) {
-                    dataSql.append(PostgresColumnTypeConstant.ORDER_BY_WITH_SPACE).append(quoteIdentifier(primaryKeyColumn)).append(" ASC");
-                    orderByFields.put(primaryKeyColumn, "ASC"); // Add to orderByFields for cursor generation
+                        .filter(availableColumns::contains)
+                        .toList();
+                        
+                    if (!primaryKeyColumns.isEmpty()) {
+                        List<String> orderClauses = primaryKeyColumns.stream()
+                            .map(col -> quoteIdentifier(col) + " ASC")
+                            .toList();
+                        dataSql.append(PostgresColumnTypeConstant.ORDER_BY_WITH_SPACE).append(String.join(", ", orderClauses));
+                        
+                        // Add all primary keys to orderByFields for cursor generation
+                        for (String pkCol : primaryKeyColumns) {
+                            orderByFields.put(pkCol, "ASC");
+                        }
+                    } else if (availableColumns.contains("id")) {
+                        // Fallback to 'id' if available
+                        dataSql.append(PostgresColumnTypeConstant.ORDER_BY_WITH_SPACE).append(quoteIdentifier("id")).append(" ASC");
+                        orderByFields.put("id", "ASC");
+                    }
+                } else if (availableColumns.contains("id")) {
+                    // Fallback when no table info
+                    dataSql.append(PostgresColumnTypeConstant.ORDER_BY_WITH_SPACE).append(quoteIdentifier("id")).append(" ASC");
+                    orderByFields.put("id", "ASC");
                 }
             }
 
