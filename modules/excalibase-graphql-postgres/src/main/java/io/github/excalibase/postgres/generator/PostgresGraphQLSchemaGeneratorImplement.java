@@ -587,15 +587,16 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                         .build())
                 .build());
 
-        // 3. Delete mutation
+        // 3. Delete mutation - supports composite keys via input object
+        GraphQLInputObjectType deleteInputType = createDeleteInputType(tableName, tableInfo);
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
                 .name(MutationConstant.DELETE_PREFIX + capitalize(tableName))
                 .description(String.format(MutationConstant.DELETE_DESCRIPTION_TEMPLATE, tableName))
-                .type(GraphQLBoolean)
+                .type(GraphQLTypeReference.typeRef(tableName))
                 .argument(GraphQLArgument.newArgument()
-                        .name(GraphqlConstant.ID)
-                        .type(new GraphQLNonNull(GraphQLID))
-                        .description("Primary key of record to delete")
+                        .name(GraphqlConstant.INPUT)
+                        .type(new GraphQLNonNull(deleteInputType))
+                        .description("Primary key values (including composite keys) of record to delete")
                         .build())
                 .build());
 
@@ -652,6 +653,40 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                         .description("Input for " + column.getName())
                         .build());
             }
+        }
+
+        return inputTypeBuilder.build();
+    }
+
+    private GraphQLInputObjectType createDeleteInputType(String tableName, TableInfo tableInfo) {
+        String typeName = tableName + "DeleteInput";
+        String description = "Input for deleting " + tableName + " records (supports composite primary keys)";
+
+        GraphQLInputObjectType.Builder inputTypeBuilder = GraphQLInputObjectType.newInputObject()
+                .name(typeName)
+                .description(description);
+
+        // Add only primary key fields (all required for delete operations)
+        boolean hasPrimaryKeys = false;
+        for (ColumnInfo column : tableInfo.getColumns()) {
+            if (column.isPrimaryKey()) {
+                hasPrimaryKeys = true;
+                GraphQLInputType inputType = mapDatabaseTypeToGraphQLInputType(column.getType());
+                inputTypeBuilder.field(GraphQLInputObjectField.newInputObjectField()
+                        .name(column.getName())
+                        .type(new GraphQLNonNull(inputType))
+                        .description("Primary key field: " + column.getName())
+                        .build());
+            }
+        }
+
+        // If no primary keys, add an id field as fallback (for tables without explicit PK)
+        if (!hasPrimaryKeys) {
+            inputTypeBuilder.field(GraphQLInputObjectField.newInputObjectField()
+                    .name("id")
+                    .type(new GraphQLNonNull(GraphQLID))
+                    .description("Record identifier for delete operation")
+                    .build());
         }
 
         return inputTypeBuilder.build();

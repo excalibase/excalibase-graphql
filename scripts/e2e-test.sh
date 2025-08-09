@@ -357,6 +357,114 @@ main() {
         '.data.child_table | length >= 3 and all(has("parent_table"))'
     
     # ==========================================
+    # COMPOSITE KEY MUTATION TESTS - TDD E2E VALIDATION
+    # ==========================================
+    
+    run_test "Create Order Item with Composite Key" \
+        "mutation { createOrder_items(input: { order_id: 4, product_id: 3, quantity: 5, price: 199.99 }) { order_id product_id quantity price } }" \
+        '.data.createOrder_items.order_id == 4 and .data.createOrder_items.product_id == 3 and .data.createOrder_items.quantity == 5'
+    
+    run_test "Update Order Item using Composite Key" \
+        "mutation { updateOrder_items(input: { order_id: 1, product_id: 1, quantity: 10, price: 349.98 }) { order_id product_id quantity price } }" \
+        '.data.updateOrder_items.order_id == 1 and .data.updateOrder_items.product_id == 1 and .data.updateOrder_items.quantity == 10'
+    
+    run_test "Delete Order Item using Composite Key" \
+        "mutation { deleteOrder_items(input: { order_id: 4, product_id: 3 }) { order_id product_id quantity price } }" \
+        '.data.deleteOrder_items.order_id == 4 and .data.deleteOrder_items.product_id == 3'
+    
+    run_test "Create Parent Record with Composite Key" \
+        "mutation { createParent_table(input: { parent_id1: 100, parent_id2: 100, name: \"New Parent 100-100\" }) { parent_id1 parent_id2 name } }" \
+        '.data.createParent_table.parent_id1 == 100 and .data.createParent_table.parent_id2 == 100 and .data.createParent_table.name == "New Parent 100-100"'
+    
+    run_test "Update Parent Record using Composite Key" \
+        "mutation { updateParent_table(input: { parent_id1: 1, parent_id2: 1, name: \"Updated Parent 1-1\" }) { parent_id1 parent_id2 name } }" \
+        '.data.updateParent_table.parent_id1 == 1 and .data.updateParent_table.parent_id2 == 1 and .data.updateParent_table.name == "Updated Parent 1-1"'
+    
+    run_test "Create Child Record with Composite Foreign Key" \
+        "mutation { createChild_table(input: { child_id: 200, parent_id1: 1, parent_id2: 2, description: \"New child for parent 1-2\" }) { child_id parent_id1 parent_id2 description } }" \
+        '.data.createChild_table.child_id == 200 and .data.createChild_table.parent_id1 == 1 and .data.createChild_table.parent_id2 == 2 and .data.createChild_table.description == "New child for parent 1-2"'
+    
+    run_test "Bulk Create Order Items with Composite Keys" \
+        "mutation { createManyOrder_itemss(inputs: [{ order_id: 2, product_id: 1, quantity: 2, price: 99.98 }, { order_id: 2, product_id: 2, quantity: 1, price: 79.99 }]) { order_id product_id quantity price } }" \
+        '.data.createManyOrder_itemss | length == 2 and .[0].order_id == 2 and .[1].order_id == 2'
+    
+    # ==========================================
+    # COMPOSITE KEY ERROR HANDLING E2E TESTS
+    # ==========================================
+    
+    echo "🧪 Testing Composite Key Error Handling..."
+    
+    # Test incomplete composite key (should fail)
+    echo "Testing incomplete composite key rejection..."
+    RESPONSE=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "mutation { updateOrder_items(input: { order_id: 1, quantity: 15 }) { order_id product_id quantity } }"}')
+    
+    if echo "$RESPONSE" | grep -q '"errors"'; then
+        echo "✅ Incomplete composite key properly rejected"
+    else
+        echo "❌ Incomplete composite key should have been rejected"
+        echo "Response: $RESPONSE"
+        exit 1
+    fi
+    
+    # Test duplicate composite key (should fail)
+    echo "Testing duplicate composite key rejection..."
+    RESPONSE=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "mutation { createOrder_items(input: { order_id: 1, product_id: 2, quantity: 999, price: 999.99 }) { order_id product_id quantity } }"}')
+    
+    if echo "$RESPONSE" | grep -q '"errors"'; then
+        echo "✅ Duplicate composite key properly rejected"
+    else
+        echo "❌ Duplicate composite key should have been rejected"
+        echo "Response: $RESPONSE"
+        exit 1
+    fi
+    
+    # Test foreign key violation with composite keys (should fail)
+    echo "Testing composite foreign key violation..."
+    RESPONSE=$(curl -s -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "mutation { createChild_table(input: { parent_id1: 999, parent_id2: 999, description: \"Orphaned child\" }) { child_id parent_id1 parent_id2 } }"}')
+    
+    if echo "$RESPONSE" | grep -q '"errors"'; then
+        echo "✅ Composite foreign key violation properly rejected"
+    else
+        echo "❌ Composite foreign key violation should have been rejected"
+        echo "Response: $RESPONSE"
+        exit 1
+    fi
+    
+    # ==========================================
+    # COMPOSITE KEY COMPLEX QUERY TESTS
+    # ==========================================
+    
+    run_test "Complex Composite Key Filtering with OR/AND" \
+        "{ order_items(where: { or: [{ order_id: { eq: 1 }, product_id: { eq: 1 } }, { order_id: { eq: 1 }, product_id: { eq: 2 } }] }) { order_id product_id quantity price } }" \
+        '.data.order_items | length >= 2 and (map(select(.order_id == 1)) | length >= 2)'
+    
+    run_test "Composite Key Ordering by Multiple Fields" \
+        "{ order_items(orderBy: { order_id: ASC }) { order_id product_id quantity } }" \
+        '.data.order_items | length >= 3'
+    
+    run_test "Composite Key Performance Test - Large Result Set" \
+        "{ order_items(limit: 50) { order_id product_id quantity price } }" \
+        '.data.order_items | length >= 3'
+    
+    # ==========================================
+    # COMPOSITE KEY RELATIONSHIP TESTS
+    # ==========================================
+    
+    run_test "Query Composite Key Table with Relationships" \
+        "{ child_table { child_id parent_id1 parent_id2 description parent_table { parent_id1 parent_id2 name } } }" \
+        '.data.child_table | length >= 3 and all(has("parent_table")) and all(.parent_table.name != null)'
+    
+    run_test "Create Record with Composite Key and Relationship" \
+        "mutation { createChild_table(input: { child_id: 300, parent_id1: 2, parent_id2: 1, description: \"Child with composite FK relationship\" }) { child_id parent_id1 parent_id2 description } }" \
+        '.data.createChild_table.child_id == 300 and .data.createChild_table.parent_id1 == 2 and .data.createChild_table.parent_id2 == 1'
+    
+    # ==========================================
     # VIEW TESTS (Read-only)
     # ==========================================
     
@@ -377,8 +485,8 @@ main() {
         '.data.createCustomer.customer_id != null and .data.createCustomer.first_name == "TEST"'
     
         run_test "Update Customer Mutation" \
-        "mutation { updateCustomer(input: { customer_id: 13, email: \"updated@example.com\" }) { customer_id email } }" \
-        '.data.updateCustomer.email == "updated@example.com"'
+        "mutation { updateCustomer(input: { customer_id: 1, email: \"updated@example.com\" }) { customer_id email } }" \
+        '.data.updateCustomer.customer_id == 1 and .data.updateCustomer.email == "updated@example.com"'
 
     # ==========================================
     # CUSTOM TYPES MUTATION TESTS

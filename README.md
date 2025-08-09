@@ -18,10 +18,13 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 - **🎯 Custom PostgreSQL Types**: Full support for custom enum and composite types with automatic GraphQL mapping
 - **📄 Enhanced PostgreSQL Data Types**: JSON/JSONB, arrays, network types (INET, CIDR), enhanced datetime, binary, and XML support  
 - **🔗 Relationship Resolution**: Automatic foreign key relationship handling
-- **🛠️ CRUD Operations**: Full create, read, update, delete support
+- **🛠️ CRUD Operations**: Full create, read, update, delete support with **composite key support**
+- **🔑 Composite Primary Keys**: Complete support for tables with multi-column primary keys
+- **🔄 Composite Foreign Keys**: Seamless handling of multi-column foreign key relationships
 - **📄 Cursor Pagination**: Relay-spec compatible connection queries
 - **⚡ N+1 Prevention**: Built-in query optimization
 - **🔧 OR Operations**: Complex logical conditions with nested filtering
+- **🛡️ GraphQL Security**: Query depth and complexity limiting following GraphQL.org best practices
 - **🐳 Docker Support**: Container images with Docker Compose setup
 - **🔄 CI/CD Pipeline**: GitHub Actions integration with automated testing
 
@@ -439,6 +442,239 @@ make clean
   }
 }
 ```
+
+## 🔑 Composite Key Support
+
+Excalibase GraphQL provides **complete support for composite primary keys** and **composite foreign keys**, following GraphQL industry best practices with input objects and structured returns.
+
+### 🎯 **Key Features**
+
+- **✅ Multi-Column Primary Keys**: Tables with composite primary keys fully supported
+- **✅ Multi-Column Foreign Keys**: Composite foreign key relationships automatically resolved
+- **✅ Industry Standard API**: Uses input objects for mutations (not individual parameters)
+- **✅ Rich Return Types**: Delete operations return the deleted object (following GraphQL.org recommendations)
+- **✅ Comprehensive CRUD**: Full Create, Read, Update, Delete support for composite keys
+- **✅ Relationship Navigation**: Automatic GraphQL relationship traversal
+
+### 📋 **Sample Database Schema**
+
+```sql
+-- Parent table with composite primary key
+CREATE TABLE parent_table (
+    parent_id1 INTEGER NOT NULL,
+    parent_id2 INTEGER NOT NULL,
+    name VARCHAR(255),
+    PRIMARY KEY (parent_id1, parent_id2)
+);
+
+-- Order items with composite primary key
+CREATE TABLE order_items (
+    order_id INTEGER NOT NULL REFERENCES orders(order_id),
+    product_id INTEGER NOT NULL REFERENCES products(product_id),
+    quantity INTEGER NOT NULL,
+    price DECIMAL(10,2),
+    PRIMARY KEY (order_id, product_id)
+);
+
+-- Child table with composite foreign key
+CREATE TABLE child_table (
+    child_id INTEGER PRIMARY KEY,
+    parent_id1 INTEGER NOT NULL,
+    parent_id2 INTEGER NOT NULL,
+    description TEXT,
+    FOREIGN KEY (parent_id1, parent_id2) REFERENCES parent_table(parent_id1, parent_id2)
+);
+```
+
+### 🚀 **GraphQL Operations**
+
+#### **Create with Composite Keys**
+```graphql
+# Create order item with composite primary key
+mutation {
+  createOrder_items(input: {
+    order_id: 3
+    product_id: 2
+    quantity: 5
+    price: 199.99
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+
+# Create child with composite foreign key
+mutation {
+  createChild_table(input: {
+    child_id: 10
+    parent_id1: 1
+    parent_id2: 2
+    description: "Child with composite FK"
+  }) {
+    child_id
+    parent_id1
+    parent_id2
+    description
+  }
+}
+```
+
+#### **Update with Composite Keys**
+```graphql
+# Update requires all primary key parts
+mutation {
+  updateOrder_items(input: {
+    order_id: 3          # Required: part of composite PK
+    product_id: 2        # Required: part of composite PK
+    quantity: 10         # Updated field
+    price: 299.99        # Updated field
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+#### **Delete with Composite Keys**
+```graphql
+# Delete returns the deleted object (GraphQL industry standard)
+mutation {
+  deleteOrder_items(input: {
+    order_id: 3
+    product_id: 2
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+
+# Response includes the deleted record
+{
+  "data": {
+    "deleteOrder_items": {
+      "order_id": 3,
+      "product_id": 2,
+      "quantity": 10,
+      "price": 299.99
+    }
+  }
+}
+```
+
+#### **Query with Composite Key Filtering**
+```graphql
+# Filter by specific composite key
+{
+  order_items(where: {
+    order_id: { eq: 3 }
+    product_id: { eq: 2 }
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+
+# Complex filtering with OR conditions
+{
+  order_items(where: {
+    or: [
+      { order_id: { eq: 1 }, product_id: { eq: 1 } },
+      { order_id: { eq: 2 }, product_id: { eq: 3 } }
+    ]
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+#### **Relationship Navigation**
+```graphql
+# Navigate relationships through composite foreign keys
+{
+  child_table {
+    child_id
+    parent_id1
+    parent_id2
+    description
+    parent_table {          # Automatic relationship resolution
+      parent_id1
+      parent_id2
+      name
+    }
+  }
+}
+```
+
+#### **Bulk Operations**
+```graphql
+# Bulk create with composite keys
+mutation {
+  createManyOrder_itemss(inputs: [
+    { order_id: 4, product_id: 1, quantity: 2, price: 99.98 },
+    { order_id: 4, product_id: 2, quantity: 1, price: 79.99 }
+  ]) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+### 📊 **Schema Generation**
+
+The GraphQL schema automatically generates appropriate input and output types:
+
+```graphql
+# Auto-generated input types for composite keys
+input Order_itemsCreateInput {
+  order_id: Int!        # Required: part of composite PK
+  product_id: Int!      # Required: part of composite PK
+  quantity: Int!
+  price: Float!
+}
+
+input Order_itemsUpdateInput {
+  order_id: Int!        # Required: part of composite PK
+  product_id: Int!      # Required: part of composite PK
+  quantity: Int
+  price: Float
+}
+
+input Order_itemsDeleteInput {
+  order_id: Int!        # Required: part of composite PK
+  product_id: Int!      # Required: part of composite PK
+}
+
+# Auto-generated mutation fields
+type Mutation {
+  createOrder_items(input: Order_itemsCreateInput!): Order_items
+  updateOrder_items(input: Order_itemsUpdateInput!): Order_items
+  deleteOrder_items(input: Order_itemsDeleteInput!): Order_items  # Returns deleted object
+  createManyOrder_itemss(inputs: [Order_itemsCreateInput!]!): [Order_items!]!
+}
+```
+
+### ✅ **Industry Best Practices**
+
+Our composite key implementation follows **GraphQL.org recommendations**:
+
+- **Input Objects**: All mutations use structured input objects (not individual parameters)
+- **Rich Returns**: Delete operations return the deleted object for UI updates and confirmation
+- **Type Safety**: Strongly typed GraphQL schema with proper validation
+- **Relationship Support**: Automatic foreign key relationship traversal
+- **Error Handling**: Comprehensive validation with clear error messages
 
 ### Dependencies
 

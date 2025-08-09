@@ -258,7 +258,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
 
         GraphQLFieldDefinition deleteField = schema.mutationType.getFieldDefinition("deleteProducts")
         deleteField != null
-        deleteField.type == Scalars.GraphQLBoolean
+        deleteField.type instanceof GraphQLObjectType  // Now returns the deleted record
 
         GraphQLFieldDefinition bulkCreateField = schema.mutationType.getFieldDefinition("createManyProductss")
         bulkCreateField != null

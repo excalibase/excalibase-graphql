@@ -76,15 +76,15 @@ public interface IDatabaseMutator {
      * Creates a DataFetcher for deleting a record from the specified table.
      * 
      * <p>This method creates a mutation resolver that handles record deletion.
-     * The resolver should locate the record by ID, delete it from the database,
-     * and return a boolean indicating the success of the operation.</p>
+     * The resolver should locate the record by primary key (including composite keys),
+     * delete it from the database, and return the deleted record data.</p>
      * 
      * @param tableName The name of the table to delete a record from
-     * @return A DataFetcher that deletes a record and returns a boolean indicating success
+     * @return A DataFetcher that deletes a record and returns the deleted record data
      * @throws io.github.excalibase.exception.NotFoundException if the record to delete is not found
      * @throws io.github.excalibase.exception.DataMutationException if the deletion fails
      */
-    DataFetcher<Boolean> createDeleteMutationResolver(String tableName);
+    DataFetcher<Map<String, Object>> createDeleteMutationResolver(String tableName);
 
     /**
      * Creates a DataFetcher for bulk creating multiple records in the specified table.

@@ -141,6 +141,86 @@ query {
 }
 ```
 
+### Composite Key Operations
+
+The sample database includes tables with composite keys. Try these queries:
+
+**Query order items with composite primary keys:**
+```graphql
+query {
+  order_items {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Create order item with composite key:**
+```graphql
+mutation {
+  createOrder_items(input: {
+    order_id: 3
+    product_id: 2
+    quantity: 5
+    price: 199.99
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Update order item using composite key:**
+```graphql
+mutation {
+  updateOrder_items(input: {
+    order_id: 3          # Required: part of composite PK
+    product_id: 2        # Required: part of composite PK
+    quantity: 10         # Updated field
+    price: 299.99        # Updated field
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Delete order item with composite key:**
+```graphql
+mutation {
+  deleteOrder_items(input: {
+    order_id: 3
+    product_id: 2
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Filter by composite key:**
+```graphql
+query {
+  order_items(where: {
+    order_id: { eq: 1 }
+    product_id: { eq: 2 }
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
 ## Troubleshooting
 
 ### Application won't start

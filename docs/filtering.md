@@ -879,6 +879,267 @@ Response:
 }
 ```
 
+## 🔑 Composite Key Filtering ✅ **NEW**
+
+Excalibase GraphQL provides comprehensive filtering support for tables with composite primary keys and composite foreign keys, allowing you to filter by multiple key components simultaneously.
+
+### Composite Primary Key Filtering
+
+**Filter by specific composite key:**
+```graphql
+{
+  order_items(where: {
+    order_id: { eq: 3 }
+    product_id: { eq: 2 }
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Filter by single component of composite key:**
+```graphql
+{
+  order_items(where: {
+    order_id: { eq: 1 }
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Filter with ranges on composite keys:**
+```graphql
+{
+  order_items(where: {
+    order_id: { gte: 1, lte: 3 }
+    product_id: { in: [1, 2, 3] }
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+### Composite Foreign Key Filtering
+
+**Filter child table by composite foreign key:**
+```graphql
+{
+  child_table(where: {
+    parent_id1: { eq: 1 }
+    parent_id2: { eq: 2 }
+  }) {
+    child_id
+    parent_id1
+    parent_id2
+    description
+    parent_table {        # Automatic relationship resolution
+      parent_id1
+      parent_id2
+      name
+    }
+  }
+}
+```
+
+### Complex OR Operations with Composite Keys
+
+**Multiple composite key combinations:**
+```graphql
+{
+  order_items(where: {
+    or: [
+      { order_id: { eq: 1 }, product_id: { eq: 1 } },
+      { order_id: { eq: 2 }, product_id: { eq: 3 } },
+      { order_id: { eq: 3 }, product_id: { eq: 2 } }
+    ]
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Mixed individual and composite conditions:**
+```graphql
+{
+  order_items(where: {
+    or: [
+      { order_id: { eq: 1 } },                    # All items for order 1
+      { product_id: { eq: 5 } },                  # All instances of product 5
+      { order_id: { eq: 3 }, product_id: { eq: 2 } }  # Specific composite key
+    ]
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+### Advanced Composite Key Filtering
+
+**Combine with other field filters:**
+```graphql
+{
+  order_items(where: {
+    order_id: { eq: 2 }
+    product_id: { gte: 1 }
+    quantity: { gt: 5 }
+    price: { lt: 200.00 }
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Relationship filtering through composite keys:**
+```graphql
+{
+  child_table(where: {
+    parent_table: {
+      name: { startsWith: "Parent" }
+    }
+  }) {
+    child_id
+    parent_id1
+    parent_id2
+    description
+    parent_table {
+      parent_id1
+      parent_id2
+      name
+    }
+  }
+}
+```
+
+### Composite Key Mutations with Filtering
+
+**Update specific composite key record:**
+```graphql
+mutation {
+  updateOrder_items(input: {
+    order_id: 3          # Required: part of composite PK
+    product_id: 2        # Required: part of composite PK
+    quantity: 10         # Updated field
+    price: 299.99        # Updated field
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Delete using composite key:**
+```graphql
+mutation {
+  deleteOrder_items(input: {
+    order_id: 3
+    product_id: 2
+  }) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+### Pagination with Composite Keys
+
+**Ordered by composite primary key:**
+```graphql
+{
+  order_items(
+    orderBy: { order_id: ASC, product_id: ASC }
+    limit: 10
+    offset: 20
+  ) {
+    order_id
+    product_id
+    quantity
+    price
+  }
+}
+```
+
+**Cursor-based pagination with composite keys:**
+```graphql
+{
+  order_itemsConnection(
+    first: 10
+    after: "cursor123"
+    orderBy: { order_id: ASC }
+  ) {
+    edges {
+      node {
+        order_id
+        product_id
+        quantity
+        price
+      }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+      startCursor
+      endCursor
+    }
+  }
+}
+```
+
+### Performance Considerations
+
+For optimal performance with composite key filtering:
+
+1. **Index Strategy**: Ensure composite indexes exist for your composite keys:
+   ```sql
+   CREATE INDEX idx_order_items_composite ON order_items (order_id, product_id);
+   ```
+
+2. **Query Optimization**: Filter by leading columns of composite indexes when possible:
+   ```graphql
+   # Optimal - uses composite index
+   where: { order_id: { eq: 1 }, product_id: { eq: 2 } }
+   
+   # Less optimal - may not use full index
+   where: { product_id: { eq: 2 } }
+   ```
+
+3. **Relationship Performance**: When filtering through relationships, include foreign key fields in your selection:
+   ```graphql
+   {
+     child_table {
+       child_id
+       parent_id1     # Include FK fields for performance
+       parent_id2     # Include FK fields for performance
+       parent_table {
+         name
+       }
+     }
+   }
+   ```
+
 ## Testing and Quality Assurance
 
 Our filtering system includes comprehensive testing with enhanced types support:
@@ -908,8 +1169,9 @@ For detailed testing documentation, see [Testing Documentation](testing.md).
 | **BYTEA** | `String` | `eq`, `neq`, `isNull`, `isNotNull` | ✅ Complete |
 | **XML** | `String` | `eq`, `neq`, `contains`, `like` | ✅ Complete |
 | **NUMERIC(p,s)** | `Float` | `eq`, `neq`, `gt`, `gte`, `lt`, `lte` | ✅ Complete |
+| **Composite Keys** | Multiple types | All operations + OR/AND logic | ✅ Complete |
 
 
 ---
 
-The new filtering syntax with enhanced PostgreSQL types support is more expressive, follows GraphQL best practices, and provides better tooling support in GraphQL IDEs while enabling powerful operations on JSON, arrays, network types, and more advanced PostgreSQL data structures. 
+The new filtering syntax with enhanced PostgreSQL types support and comprehensive composite key functionality is more expressive, follows GraphQL best practices, and provides better tooling support in GraphQL IDEs while enabling powerful operations on JSON, arrays, network types, composite keys, and more advanced PostgreSQL data structures. 
