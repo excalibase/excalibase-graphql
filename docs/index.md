@@ -494,21 +494,25 @@ graph TD
 Comprehensive test suite with enhanced type coverage (uses Testcontainers for real PostgreSQL testing):
 
 ```bash
-# Run all tests (42+ comprehensive test methods)
+# Run all tests (42+ comprehensive test methods across all modules)
 mvn test
 
-# Run with coverage report
+# Run tests for specific modules (change to module directory)
+cd modules/excalibase-graphql-api && mvn test
+cd modules/excalibase-graphql-postgres && mvn test
+
+# Run with coverage report (from project root)
 mvn test jacoco:report
 
-# Run specific enhanced type tests
-mvn test -Dtest=GraphqlControllerTest
-mvn test -Dtest=PostgresGraphQLSchemaGeneratorImplementTest
+# Run specific test classes (from module directory)
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlControllerTest
+cd modules/excalibase-graphql-postgres && mvn test -Dtest=PostgresGraphQLSchemaGeneratorImplementTest
 
 # Run performance tests with enhanced types
-mvn test -Dtest=GraphqlPerformanceTest
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlPerformanceTest
 
 # Run security tests
-mvn test -Dtest=GraphqlSecurityTest
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlSecurityTest
 ```
 
 ### Test Coverage Summary

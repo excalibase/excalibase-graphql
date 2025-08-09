@@ -205,33 +205,63 @@ CREATE TABLE enhanced_types (
 
 ## 🚀 Running the Tests
 
-### Run All Tests
+### Multi-Module Test Execution
+
+This project uses a multi-module Maven structure. Here are the correct commands:
+
 ```bash
+# Run all tests (all modules from project root)
 mvn test
+
+# Run tests for specific modules (change to module directory)
+cd modules/excalibase-graphql-api && mvn test          # API layer tests
+cd modules/excalibase-graphql-postgres && mvn test     # PostgreSQL implementation tests  
+cd modules/excalibase-graphql-starter && mvn test      # Core framework tests
 ```
 
 ### Run Specific Test Classes
 ```bash
 # Functional tests only (includes enhanced types)
-mvn test -Dtest=GraphqlControllerTest
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlControllerTest
 
 # Performance tests only  
-mvn test -Dtest=GraphqlPerformanceTest
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlPerformanceTest
 
 # Security tests only
-mvn test -Dtest=GraphqlSecurityTest
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlSecurityTest
+
+# PostgreSQL implementation tests
+cd modules/excalibase-graphql-postgres && mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
 ```
 
 ### Run Enhanced Types Tests Specifically ✅ **NEW**
 ```bash
-# Run only enhanced types API tests
-mvn test -Dtest=GraphqlControllerTest -Dtest.methods="*enhanced*"
+# Run only enhanced types API tests (from module directory)
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlControllerTest -Dtest.methods="*enhanced*"
 
 # Run schema generation tests with enhanced types
-mvn test -Dtest=PostgresGraphQLSchemaGeneratorImplementTest
+cd modules/excalibase-graphql-postgres && mvn test -Dtest=PostgresGraphQLSchemaGeneratorImplementTest
 
-# Run complete test suite
+# Run complete test suite (from project root)
 mvn clean test
+```
+
+### E2E Testing (Docker-based) ✅ **NEW**
+
+For end-to-end testing with real services:
+
+```bash
+# Complete E2E test suite (build image + test + cleanup)
+make e2e
+
+# Start services for development
+make dev
+
+# Run E2E tests against running services
+make test-only
+
+# Stop and cleanup
+make clean
 ```
 
 ### Run Tests with Coverage

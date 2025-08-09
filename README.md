@@ -874,17 +874,19 @@ logging:
 The project includes comprehensive tests using Spock, Spring Boot MockMvc, and Testcontainers:
 
 ```bash
-# Run all tests
+# Run all tests (all modules from project root)
 mvn test
 
-# Run specific test classes
-mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
-mvn test -Dtest=GraphqlControllerTest
+# Run tests for specific modules (change to module directory)
+cd modules/excalibase-graphql-api && mvn test
+cd modules/excalibase-graphql-postgres && mvn test
+cd modules/excalibase-graphql-starter && mvn test
 
-# Run enhanced filtering tests
-mvn test -Dtest=DateTimeFilteringIntegrationTest
+# Run specific test classes (from module directory)
+cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlControllerTest
+cd modules/excalibase-graphql-postgres && mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
 
-# Run with coverage
+# Run with coverage (from project root)
 mvn clean test jacoco:report
 ```
 
