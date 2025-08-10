@@ -44,12 +44,18 @@ services:
     networks:
       - excalibase-network
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:10000/actuator/health", "||", "exit", "1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+
+  graphiql:
+    container_name: graphiql
+    image: excalibase/graphiql
+    ports:
+      - 20000:80
+    environment:
+      API_ENDPOINT: http://localhost:10000/graphql
+    depends_on:
+      - excalibase-app
+    restart: unless-stopped
+
 
 volumes:
   postgres_data:

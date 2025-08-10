@@ -23,7 +23,7 @@ app:
 # Based on GraphQL.org security recommendations and OWASP guidelines
 graphql:
   security:
-    max-query-depth: 10       # Prevent deeply nested queries (default: 10)
+    max-query-depth: 20       # Prevent deeply nested queries (default: 20)
     max-query-complexity: 1000 # Prevent expensive operations (default: 1000)
     max-query-tokens: 5000    # Prevent parser DoS (default: 5000)
     max-query-characters: 50000 # 50KB query size limit (default: 50KB)
