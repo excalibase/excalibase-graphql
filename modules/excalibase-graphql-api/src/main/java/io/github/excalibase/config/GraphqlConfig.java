@@ -21,6 +21,9 @@ import graphql.execution.instrumentation.Instrumentation;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLCodeRegistry;
 import graphql.schema.GraphQLSchema;
+import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLFieldDefinition;
+import static graphql.Scalars.GraphQLString;
 import org.springframework.beans.factory.annotation.Qualifier;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.constant.GraphqlConstant;
@@ -43,6 +46,8 @@ import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
 import java.util.Map;
+import reactor.core.publisher.Flux;
+import graphql.schema.DataFetcher;
 
 /**
  * Configuration for dynamically generating GraphQL schema from database metadata.
@@ -136,6 +141,18 @@ public class GraphqlConfig {
         IDatabaseMutator mutationResolver = getDatabaseMutator();
 
         GraphQLCodeRegistry.Builder codeRegistry = GraphQLCodeRegistry.newCodeRegistry();
+
+        // Ensure Subscription type exists with a basic health field if missing
+        if (schema.getSubscriptionType() == null) {
+            GraphQLObjectType subscriptionType = GraphQLObjectType.newObject()
+                    .name(GraphqlConstant.SUBSCRIPTION)
+                    .field(GraphQLFieldDefinition.newFieldDefinition()
+                            .name(GraphqlConstant.HEALTH)
+                            .type(GraphQLString)
+                            .build())
+                    .build();
+            schema = schema.transform(builder -> builder.subscription(subscriptionType));
+        }
 
         for (var entry : tables.entrySet()) {
             String tableName = entry.getKey();
@@ -235,6 +252,13 @@ public class GraphqlConfig {
                 );
             }
         }
+
+        // Subscription: simple health heartbeat stream
+        codeRegistry.dataFetcher(
+                FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, GraphqlConstant.HEALTH),
+                (DataFetcher<Object>) environment -> Flux.interval(Duration.ofMillis(250))
+                        .map(i -> "OK - heartbeat " + java.time.Instant.now())
+        );
 
         schema = schema.transform(builder -> builder.codeRegistry(codeRegistry.build()));
         

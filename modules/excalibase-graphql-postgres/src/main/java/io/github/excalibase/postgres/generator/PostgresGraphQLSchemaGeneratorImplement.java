@@ -128,6 +128,10 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             schemaBuilder.mutation(mutationType);
         }
 
+        // Create Subscription type with simple health check
+        GraphQLObjectType subscriptionType = createSubscriptionType();
+        schemaBuilder.subscription(subscriptionType);
+
         return schemaBuilder.build();
     }
 
@@ -144,6 +148,19 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                     .type(GraphQLString)
                     .staticValue("Schema is empty but service is running")
                     .build())
+                .build())
+            .subscription(createSubscriptionType())
+            .build();
+    }
+
+    private GraphQLObjectType createSubscriptionType() {
+        return GraphQLObjectType.newObject()
+            .name(GraphqlConstant.SUBSCRIPTION)
+            .description("Root subscription type")
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name(GraphqlConstant.HEALTH)
+                .description("Simple health heartbeat subscription")
+                .type(GraphQLString)
                 .build())
             .build();
     }
