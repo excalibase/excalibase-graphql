@@ -34,6 +34,7 @@ import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
 import io.github.excalibase.schema.mutator.IDatabaseMutator;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
+import io.github.excalibase.schema.subscription.IDatabaseSubscription;
 import io.github.excalibase.service.DatabaseRoleService;
 import io.github.excalibase.service.FullSchemaService;
 import io.github.excalibase.service.IRolePrivilegeService;
@@ -46,8 +47,6 @@ import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
 import java.util.Map;
-import reactor.core.publisher.Flux;
-import graphql.schema.DataFetcher;
 
 /**
  * Configuration for dynamically generating GraphQL schema from database metadata.
@@ -139,6 +138,7 @@ public class GraphqlConfig {
         
         IDatabaseDataFetcher dataFetcher = getDatabaseDataFetcher();
         IDatabaseMutator mutationResolver = getDatabaseMutator();
+        IDatabaseSubscription subscriptionResolver = getDatabaseSubscription();
 
         GraphQLCodeRegistry.Builder codeRegistry = GraphQLCodeRegistry.newCodeRegistry();
 
@@ -251,13 +251,18 @@ public class GraphqlConfig {
                         mutationResolver.createCreateWithRelationshipsMutationResolver(tableName)
                 );
             }
+            
+            // Add subscription for each table
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, tableName.toLowerCase()),
+                    subscriptionResolver.createTableSubscriptionResolver(tableName)
+            );
         }
 
-        // Subscription: simple health heartbeat stream
+        // Subscription: health heartbeat stream using service
         codeRegistry.dataFetcher(
                 FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, GraphqlConstant.HEALTH),
-                (DataFetcher<Object>) environment -> Flux.interval(Duration.ofMillis(250))
-                        .map(i -> "OK - heartbeat " + java.time.Instant.now())
+                subscriptionResolver.createHealthSubscriptionResolver()
         );
 
         schema = schema.transform(builder -> builder.codeRegistry(codeRegistry.build()));
@@ -284,5 +289,9 @@ public class GraphqlConfig {
 
     private IDatabaseDataFetcher getDatabaseDataFetcher() {
         return serviceLookup.forBean(IDatabaseDataFetcher.class, appConfig.getDatabaseType().getName());
+    }
+
+    private IDatabaseSubscription getDatabaseSubscription() {
+        return serviceLookup.forBean(IDatabaseSubscription.class, appConfig.getDatabaseType().getName());
     }
 }
