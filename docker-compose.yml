@@ -51,7 +51,8 @@ services:
     ports:
       - 20000:80
     environment:
-      API_ENDPOINT: http://localhost:10000/graphql
+      GRAPHQL_ENDPOINT: http://localhost:10000/graphql
+      GRAPHQL_WS_ENDPOINT: http://localhost:10000/graphql
     depends_on:
       - excalibase-app
     restart: unless-stopped
