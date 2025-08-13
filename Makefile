@@ -2,7 +2,7 @@
 # Provides e2e testing and development commands
 
 # Configuration
-COMPOSE_PROJECT = excalibase-e2e
+COMPOSE_PROJECT = excalibase-app
 COMPOSE_FILE = docker-compose.yml
 APP_PORT = 10000
 DB_PORT = 5432
@@ -27,7 +27,8 @@ help: ## Show this help message
 	@echo ""
 	@echo "$(YELLOW)Examples:$(NC)"
 	@echo "  make e2e            # Complete e2e test (build + test + cleanup)"
-	@echo "  make dev            # Start services and keep running"
+	@echo "  make dev            # Build then start services and keep running"
+	@echo "  make up             # Pull and start service from docker hub "
 	@echo "  make test-only      # Run tests against running services"
 	@echo "  make clean          # Stop services and cleanup"
 	@echo ""
@@ -229,16 +230,6 @@ restart: down up ## Restart services
 .PHONY: rebuild
 rebuild: clean build up ## Full rebuild and restart
 	@echo "$(GREEN)✓ Full rebuild completed$(NC)"
-
-# Aliases for convenience
-.PHONY: start
-start: e2e ## Alias for 'make e2e'
-
-.PHONY: stop
-stop: clean ## Alias for 'make clean'
-
-.PHONY: ps
-ps: status ## Alias for 'make status'
 
 # Enterprise benchmark targets
 .PHONY: benchmark
