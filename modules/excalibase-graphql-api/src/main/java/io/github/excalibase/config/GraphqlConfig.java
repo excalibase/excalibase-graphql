@@ -21,6 +21,9 @@ import graphql.execution.instrumentation.Instrumentation;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLCodeRegistry;
 import graphql.schema.GraphQLSchema;
+import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLFieldDefinition;
+import static graphql.Scalars.GraphQLString;
 import org.springframework.beans.factory.annotation.Qualifier;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.constant.GraphqlConstant;
@@ -31,6 +34,7 @@ import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
 import io.github.excalibase.schema.mutator.IDatabaseMutator;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
+import io.github.excalibase.schema.subscription.IDatabaseSubscription;
 import io.github.excalibase.service.DatabaseRoleService;
 import io.github.excalibase.service.FullSchemaService;
 import io.github.excalibase.service.IRolePrivilegeService;
@@ -134,8 +138,21 @@ public class GraphqlConfig {
         
         IDatabaseDataFetcher dataFetcher = getDatabaseDataFetcher();
         IDatabaseMutator mutationResolver = getDatabaseMutator();
+        IDatabaseSubscription subscriptionResolver = getDatabaseSubscription();
 
         GraphQLCodeRegistry.Builder codeRegistry = GraphQLCodeRegistry.newCodeRegistry();
+
+        // Ensure Subscription type exists with a basic health field if missing
+        if (schema.getSubscriptionType() == null) {
+            GraphQLObjectType subscriptionType = GraphQLObjectType.newObject()
+                    .name(GraphqlConstant.SUBSCRIPTION)
+                    .field(GraphQLFieldDefinition.newFieldDefinition()
+                            .name(GraphqlConstant.HEALTH)
+                            .type(GraphQLString)
+                            .build())
+                    .build();
+            schema = schema.transform(builder -> builder.subscription(subscriptionType));
+        }
 
         for (var entry : tables.entrySet()) {
             String tableName = entry.getKey();
@@ -234,7 +251,19 @@ public class GraphqlConfig {
                         mutationResolver.createCreateWithRelationshipsMutationResolver(tableName)
                 );
             }
+            
+            // Add subscription for each table
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, tableName.toLowerCase()),
+                    subscriptionResolver.createTableSubscriptionResolver(tableName)
+            );
         }
+
+        // Subscription: health heartbeat stream using service
+        codeRegistry.dataFetcher(
+                FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, GraphqlConstant.HEALTH),
+                subscriptionResolver.createHealthSubscriptionResolver()
+        );
 
         schema = schema.transform(builder -> builder.codeRegistry(codeRegistry.build()));
         
@@ -260,5 +289,9 @@ public class GraphqlConfig {
 
     private IDatabaseDataFetcher getDatabaseDataFetcher() {
         return serviceLookup.forBean(IDatabaseDataFetcher.class, appConfig.getDatabaseType().getName());
+    }
+
+    private IDatabaseSubscription getDatabaseSubscription() {
+        return serviceLookup.forBean(IDatabaseSubscription.class, appConfig.getDatabaseType().getName());
     }
 }
