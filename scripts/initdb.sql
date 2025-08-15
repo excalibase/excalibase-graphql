@@ -555,6 +555,9 @@ CREATE INDEX IF NOT EXISTS idx_enhanced_types_jsonb ON enhanced_types USING GIN(
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
 CREATE INDEX IF NOT EXISTS idx_custom_types_test_name ON custom_types_test(name);
 
+CREATE PUBLICATION cdc_publication FOR ALL TABLES;
+SELECT pg_create_logical_replication_slot('cdc_slot', 'pgoutput');
+
 -- ====================
 -- REFRESH MATERIALIZED VIEWS
 -- ====================

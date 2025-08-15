@@ -12,6 +12,13 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql:ro
+    # Enable logical replication for CDC
+    command: >
+      postgres
+      -c wal_level=logical
+      -c max_replication_slots=10
+      -c max_wal_senders=10
+      -c shared_preload_libraries=''
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hana001 -d hana"]
       interval: 10s
