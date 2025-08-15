@@ -36,6 +36,6 @@ logging:
       springframework: ${log.level.spring:info}
     io:
       github:
-        excalibase: ${log.level.app:info}
+        excalibase: ${log.level.app:debug}
   pattern:
     console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1}): %msg%n%throwable"

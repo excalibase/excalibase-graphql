@@ -36,6 +36,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.HashSet;
 
 import static graphql.Scalars.*;
 
@@ -63,11 +65,6 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     @Override
     public GraphQLSchema generateSchema(Map<String, TableInfo> tables) {
-        if (tables == null || tables.isEmpty()) {
-            log.info("No tables found, generating minimal schema with health check");
-            return createMinimalSchema();
-        }
-        
         IDatabaseSchemaReflector reflector = getSchemaReflector();
         List<CustomEnumInfo> customEnums = new ArrayList<>();
         List<CustomCompositeTypeInfo> customComposites = new ArrayList<>();
@@ -75,11 +72,29 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         if (reflector != null) {
             customEnums = reflector.getCustomEnumTypes();
             customComposites = reflector.getCustomCompositeTypes();
-            log.info("PostgreSQL schema generation: found {} custom enum types and {} custom composite types", 
-                    customEnums.size(), customComposites.size());
-        } else {
-            log.debug("PostgreSQL schema generation: running in testing mode, skipping custom types");
         }
+        
+        // Delegate to the 3-parameter method
+        return generateSchema(tables, customEnums, customComposites);
+    }
+    
+    @Override
+    public GraphQLSchema generateSchema(Map<String, TableInfo> tables, 
+                                       List<CustomEnumInfo> customEnums,
+                                       List<CustomCompositeTypeInfo> customComposites) {
+        log.info("🔥 SCHEMA GENERATION CALLED: tables={}, customEnums={}, customComposites={}", 
+                 tables != null ? tables.size() : "null", customEnums.size(), customComposites.size());
+        if (tables != null && !tables.isEmpty()) {
+            log.info("🔥 TABLES FOUND: {}", String.join(", ", tables.keySet()));
+        }
+        
+        if (tables == null || tables.isEmpty()) {
+            log.info("No tables found, generating minimal schema with health check");
+            return createMinimalSchema();
+        }
+        
+        log.info("PostgreSQL schema generation: found {} custom enum types and {} custom composite types", 
+                customEnums.size(), customComposites.size());
         
         GraphQLSchema.Builder schemaBuilder = GraphQLSchema.newSchema();
 
@@ -128,9 +143,15 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             schemaBuilder.mutation(mutationType);
         }
 
-        // Create Subscription type with simple health check
-        GraphQLObjectType subscriptionType = createSubscriptionType();
+        // Add subscription-related types to schema first (before creating subscription type)
+        log.info("🔥 Adding subscription types to schema for {} tables", tables.size());
+        addSubscriptionTypesToSchema(schemaBuilder, tables, customEnumTypes, customCompositeTypes);
+        
+        // Create Subscription type with table subscriptions (after types are added)
+        log.info("🔥 Creating subscription type for {} tables", tables.size());
+        GraphQLObjectType subscriptionType = createSubscriptionType(tables, customEnumTypes, customCompositeTypes);
         schemaBuilder.subscription(subscriptionType);
+        log.info("🔥 Subscription type added to schema with {} fields", subscriptionType.getFieldDefinitions().size());
 
         return schemaBuilder.build();
     }
@@ -149,11 +170,136 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                     .staticValue("Schema is empty but service is running")
                     .build())
                 .build())
-            .subscription(createSubscriptionType())
+            .subscription(createMinimalSubscriptionType())
             .build();
     }
 
-    private GraphQLObjectType createSubscriptionType() {
+    private GraphQLObjectType createSubscriptionType(Map<String, TableInfo> tables, 
+                                                    Map<String, GraphQLEnumType> customEnumTypes,
+                                                    Map<String, GraphQLObjectType> customCompositeTypes) {
+        GraphQLObjectType.Builder subscriptionBuilder = GraphQLObjectType.newObject()
+            .name(GraphqlConstant.SUBSCRIPTION)
+            .description("Root subscription type")
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name(GraphqlConstant.HEALTH)
+                .description("Simple health heartbeat subscription")
+                .type(GraphQLString)
+                .build());
+
+        // Add subscription fields for each table
+        for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
+            String tableName = entry.getKey();
+            String fieldName = tableName.toLowerCase() + "_changes";
+            String typeName = tableName + "ChangeEvent";
+            
+            log.info("🔥 Adding subscription field: {} -> {} for table: {}", fieldName, typeName, tableName);
+            
+            // Add subscription field for this table using type reference
+            subscriptionBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                .name(fieldName)
+                .description("Subscribe to real-time changes for " + tableName + " table")
+                .type(GraphQLTypeReference.typeRef(typeName))
+                .build());
+        }
+        
+        log.info("🔥 Created subscription type with {} fields (including {} table subscriptions)", tables.size() + 1, tables.size()); // +1 for health field
+
+        return subscriptionBuilder.build();
+    }
+    
+    /**
+     * Creates a GraphQL object type for table change events.
+     * This type includes operation metadata and the actual table data.
+     */
+    private GraphQLObjectType createTableChangeEventType(String tableName, TableInfo tableInfo,
+                                                         Map<String, GraphQLEnumType> customEnumTypes,
+                                                         Map<String, GraphQLObjectType> customCompositeTypes) {
+        
+        return GraphQLObjectType.newObject()
+            .name(tableName + "ChangeEvent")
+            .description("Change event for " + tableName + " table")
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("operation")
+                .description("Type of change operation")
+                .type(new GraphQLNonNull(GraphQLTypeReference.typeRef(tableName + "ChangeOperation")))
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("table")
+                .description("Name of the table that changed")
+                .type(new GraphQLNonNull(GraphQLString))
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("schema")
+                .description("Database schema name")
+                .type(GraphQLString)
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("timestamp")
+                .description("Timestamp when the change occurred")
+                .type(new GraphQLNonNull(GraphQLString))
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("lsn")
+                .description("PostgreSQL Log Sequence Number")
+                .type(GraphQLString)
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("data")
+                .description("The actual table data that changed")
+                .type(GraphQLTypeReference.typeRef(tableName + "SubscriptionData"))
+                .build())
+            .field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("error")
+                .description("Error message if operation failed")
+                .type(GraphQLString)
+                .build())
+            .build();
+    }
+    
+    /**
+     * Creates a GraphQL object type representing the table data in subscription events.
+     * This is similar to the regular table type but optimized for subscription payloads.
+     */
+    private GraphQLObjectType createSubscriptionTableDataType(String tableName, TableInfo tableInfo,
+                                                              Map<String, GraphQLEnumType> customEnumTypes,
+                                                              Map<String, GraphQLObjectType> customCompositeTypes) {
+        GraphQLObjectType.Builder dataTypeBuilder = GraphQLObjectType.newObject()
+            .name(tableName + "SubscriptionData")
+            .description("Table data for " + tableName + " subscription events");
+
+        // Add all table columns as fields
+        for (ColumnInfo column : tableInfo.getColumns()) {
+            GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(column.getType(), customEnumTypes, customCompositeTypes);
+            
+            // All fields are nullable in subscription data since we might have partial updates or deletes
+            dataTypeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                .name(column.getName())
+                .description("Column " + column.getName() + " from " + tableName)
+                .type(fieldType)
+                .build());
+        }
+        
+        // For UPDATE operations, we might want to include old/new data
+        // Add special fields for UPDATE operations
+        dataTypeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+            .name("old")
+            .description("Previous values for UPDATE operations")
+            .type(GraphQLTypeReference.typeRef(tableName + "SubscriptionData"))
+            .build());
+            
+        dataTypeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+            .name("new")
+            .description("New values for UPDATE operations")
+            .type(GraphQLTypeReference.typeRef(tableName + "SubscriptionData"))
+            .build());
+
+        return dataTypeBuilder.build();
+    }
+    
+    /**
+     * Creates a minimal subscription type for empty schemas
+     */
+    private GraphQLObjectType createMinimalSubscriptionType() {
         return GraphQLObjectType.newObject()
             .name(GraphqlConstant.SUBSCRIPTION)
             .description("Root subscription type")
@@ -163,6 +309,63 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .type(GraphQLString)
                 .build())
             .build();
+    }
+    
+    /**
+     * Adds subscription-related types to the GraphQL schema
+     */
+    private void addSubscriptionTypesToSchema(GraphQLSchema.Builder schemaBuilder, 
+                                            Map<String, TableInfo> tables,
+                                            Map<String, GraphQLEnumType> customEnumTypes,
+                                            Map<String, GraphQLObjectType> customCompositeTypes) {
+        
+        log.debug("Adding subscription types for {} tables", tables.size());
+        
+        // Use a set to track added types and avoid duplicates
+        Set<String> addedTypeNames = new HashSet<>();
+        
+        for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
+            String tableName = entry.getKey();
+            TableInfo tableInfo = entry.getValue();
+            
+            log.debug("Creating subscription types for table: {}", tableName);
+            
+            // Create and add subscription data type
+            String subscriptionDataTypeName = tableName + "SubscriptionData";
+            if (!addedTypeNames.contains(subscriptionDataTypeName)) {
+                GraphQLObjectType subscriptionDataType = createSubscriptionTableDataType(tableName, tableInfo, customEnumTypes, customCompositeTypes);
+                schemaBuilder.additionalType(subscriptionDataType);
+                addedTypeNames.add(subscriptionDataTypeName);
+                log.debug("Added subscription data type: {}", subscriptionDataTypeName);
+            }
+            
+            // Create and add operation enum type
+            String operationTypeName = tableName + "ChangeOperation";
+            if (!addedTypeNames.contains(operationTypeName)) {
+                GraphQLEnumType operationType = GraphQLEnumType.newEnum()
+                    .name(operationTypeName)
+                    .description("Type of change operation for " + tableName)
+                    .value("INSERT", "INSERT", "Record was inserted")
+                    .value("UPDATE", "UPDATE", "Record was updated")  
+                    .value("DELETE", "DELETE", "Record was deleted")
+                    .value("ERROR", "ERROR", "Error occurred in subscription")
+                    .build();
+                schemaBuilder.additionalType(operationType);
+                addedTypeNames.add(operationTypeName);
+                log.debug("Added operation enum type: {}", operationTypeName);
+            }
+            
+            // Create and add change event type (this references the above types)
+            String changeEventTypeName = tableName + "ChangeEvent";
+            if (!addedTypeNames.contains(changeEventTypeName)) {
+                GraphQLObjectType changeEventType = createTableChangeEventType(tableName, tableInfo, customEnumTypes, customCompositeTypes);
+                schemaBuilder.additionalType(changeEventType);
+                addedTypeNames.add(changeEventTypeName);
+                log.debug("Added change event type: {}", changeEventTypeName);
+            }
+        }
+        
+        log.info("Completed adding subscription types. Added {} types total", addedTypeNames.size());
     }
 
     private GraphQLEnumType createOrderDirectionEnum() {

@@ -254,16 +254,10 @@ public class GraphqlConfig {
             
             // Add subscription for each table
             codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, tableName.toLowerCase()),
+                    FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, tableName.toLowerCase() + "_changes"),
                     subscriptionResolver.createTableSubscriptionResolver(tableName)
             );
         }
-
-        // Subscription: health heartbeat stream using service
-        codeRegistry.dataFetcher(
-                FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, GraphqlConstant.HEALTH),
-                subscriptionResolver.createHealthSubscriptionResolver()
-        );
 
         schema = schema.transform(builder -> builder.codeRegistry(codeRegistry.build()));
         

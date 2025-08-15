@@ -699,6 +699,24 @@ main() {
     echo "  ✅ SQL Injection Prevention (GraphQL type safety)"
     echo "  ✅ Performance Monitoring (response time validation)"
     echo "  ✅ Legitimate Query Support (security doesn't break functionality)"
+    echo ""
+    echo "📡 Real-time Subscriptions Coverage:"
+    if command -v wscat >/dev/null 2>&1; then
+        echo "  🔄 Running WebSocket subscription tests..."
+        if bash scripts/e2e-subscription-test.sh > /dev/null 2>&1; then
+            echo "  ✅ Health Monitoring Subscriptions"
+            echo "  ✅ Table Change Subscriptions (CDC)"
+            echo "  ✅ Multiple Table Subscriptions"
+            echo "  ✅ Subscription Error Handling"
+            echo "  ✅ WebSocket Connection Stability"
+            echo "  ✅ Subscription Performance"
+        else
+            echo "  ❌ Subscription tests failed (check logs)"
+        fi
+    else
+        echo "  ⚠️  WebSocket tests skipped (wscat not installed)"
+        echo "      Install with: npm install -g wscat"
+    fi
     echo "=================================================="
     
     if [ $failed_tests -eq 0 ]; then

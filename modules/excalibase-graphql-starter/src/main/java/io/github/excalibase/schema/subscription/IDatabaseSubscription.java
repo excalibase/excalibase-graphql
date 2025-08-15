@@ -55,15 +55,4 @@ public interface IDatabaseSubscription {
      * @return A DataFetcher that returns a Publisher stream of table data changes
      */
     DataFetcher<Publisher<Map<String, Object>>> createTableSubscriptionResolver(String tableName);
-
-    /**
-     * Creates a DataFetcher for health check subscriptions.
-     * 
-     * <p>This method creates a subscription resolver that provides periodic health
-     * status updates. The resolver should emit regular heartbeat messages to indicate
-     * system health and connectivity status.</p>
-     * 
-     * @return A DataFetcher that returns a Publisher stream of health status messages
-     */
-    DataFetcher<Publisher<String>> createHealthSubscriptionResolver();
 }
