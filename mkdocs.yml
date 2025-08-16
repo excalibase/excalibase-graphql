@@ -111,6 +111,7 @@ nav:
   - API Reference: api/index.md
   - Features:
     - Enhanced PostgreSQL Types: features/enhanced-postgresql-types.md
+    - Real-Time Subscriptions: features/subscriptions.md
   - Filtering: filtering.md
   - Testing: testing.md
   - Contributing: CONTRIBUTING.md 
