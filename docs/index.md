@@ -224,11 +224,34 @@ We've significantly enhanced PostgreSQL support from ~25% to ~70% with comprehen
 </div>
 </div>
 
+### <span class="status-available">✅ Real-Time Subscriptions</span>
+
+<div class="feature-grid">
+<div class="feature-card">
+<h3>🔄 GraphQL Subscriptions</h3>
+<p>Real-time data updates via WebSocket connections using standards-compliant <code>graphql-transport-ws</code> protocol.</p>
+</div>
+
+<div class="feature-card">
+<h3>⚡ Change Data Capture</h3>
+<p>PostgreSQL logical replication captures INSERT, UPDATE, DELETE operations without polling performance impact.</p>
+</div>
+
+<div class="feature-card">
+<h3>📡 Table-Level Streams</h3>
+<p>Subscribe to specific table changes with automatic data transformation and column mapping.</p>
+</div>
+
+<div class="feature-card">
+<h3>💓 Production Ready</h3>
+<p>Heartbeat monitoring, automatic reconnection, and graceful error handling for enterprise deployment.</p>
+</div>
+</div>
+
 ### <span class="status-development">🚧 In Development</span>
 
 - **Authentication & Authorization** - Role-based access control
 - **Multi-Database Support** - MySQL, Oracle, SQL Server
-- **GraphQL Subscriptions** - Real-time data updates
 - **PostGIS Spatial Support** - Geographic data types and operations
 - **Advanced Constraints** - Check, unique, and exclusion constraints
 

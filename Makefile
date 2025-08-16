@@ -161,15 +161,28 @@ check-deps-ci: ## Check dependencies for CI (no Maven required)
 .PHONY: check-ports
 check-ports: ## Check if required ports are available
 	@echo "$(BLUE)🔍 Checking ports...$(NC)"
-	@if lsof -i :$(APP_PORT) > /dev/null 2>&1; then \
-		echo "$(RED)❌ Port $(APP_PORT) is already in use$(NC)"; \
-		echo "$(YELLOW)💡 Stop the service using: lsof -ti:$(APP_PORT) | xargs kill$(NC)"; \
-		exit 1; \
-	fi
-	@if lsof -i :$(DB_PORT) > /dev/null 2>&1; then \
-		echo "$(RED)❌ Port $(DB_PORT) is already in use$(NC)"; \
-		echo "$(YELLOW)💡 Stop the service using: lsof -ti:$(DB_PORT) | xargs kill$(NC)"; \
-		exit 1; \
+	@if command -v lsof >/dev/null 2>&1; then \
+		if lsof -i :$(APP_PORT) > /dev/null 2>&1; then \
+			echo "$(RED)❌ Port $(APP_PORT) is already in use$(NC)"; \
+			echo "$(YELLOW)💡 Stop the service using: lsof -ti:$(APP_PORT) | xargs kill$(NC)"; \
+			exit 1; \
+		fi; \
+		if lsof -i :$(DB_PORT) > /dev/null 2>&1; then \
+			echo "$(RED)❌ Port $(DB_PORT) is already in use$(NC)"; \
+			echo "$(YELLOW)💡 Stop the service using: lsof -ti:$(DB_PORT) | xargs kill$(NC)"; \
+			exit 1; \
+		fi; \
+	else \
+		if netstat -tuln 2>/dev/null | grep -q ":$(APP_PORT) "; then \
+			echo "$(RED)❌ Port $(APP_PORT) is already in use$(NC)"; \
+			echo "$(YELLOW)💡 Stop the service manually or use: pkill -f $(APP_PORT)$(NC)"; \
+			exit 1; \
+		fi; \
+		if netstat -tuln 2>/dev/null | grep -q ":$(DB_PORT) "; then \
+			echo "$(RED)❌ Port $(DB_PORT) is already in use$(NC)"; \
+			echo "$(YELLOW)💡 Stop the service manually or use: pkill -f $(DB_PORT)$(NC)"; \
+			exit 1; \
+		fi; \
 	fi
 	@echo "$(GREEN)✓ Ports $(APP_PORT) and $(DB_PORT) are available$(NC)"
 
