@@ -52,6 +52,27 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 - Maven 3.8+
 - PostgreSQL 15+
 
+### Database Administrator Knowledge Required
+
+**Important**: Excalibase GraphQL focuses exclusively on GraphQL API generation and does not handle database administration tasks. Users must have knowledge of:
+
+- **Database Performance**: Index creation, query optimization, and performance tuning
+- **High Availability**: Database replica setup, failover configuration, and clustering  
+- **Security**: User permissions, access control, and database security best practices
+- **Monitoring**: Database monitoring, logging, and health checks
+- **Backup & Recovery**: Database backup strategies and disaster recovery procedures
+
+**For GraphQL Subscriptions**, additional PostgreSQL configuration is required:
+- **Logical Replication**: Configure `wal_level = logical` in postgresql.conf
+- **Replication Slots**: Create and manage replication slots for change data capture
+- **Replica Identity**: Set appropriate `REPLICA IDENTITY` on tables for subscription support
+- **Publication/Subscription Setup**: Configure logical replication publications and subscriptions
+- **Connection Limits**: Ensure adequate `max_replication_slots` and `max_wal_senders` settings
+
+These database administration features are intentionally **not included** in this repository as they are database-specific and outside the scope of GraphQL API generation. Users should consult their database documentation (PostgreSQL, MySQL, etc.) for proper database setup and administration.
+
+**Note for Testing**: The Docker Compose setup automatically configures PostgreSQL with logical replication support and sets `REPLICA IDENTITY FULL` on all tables for subscription testing. This is for development and testing purposes only - production environments require manual database administrator setup.
+
 ### Installation
 
 #### Option 1: Docker (Recommended)

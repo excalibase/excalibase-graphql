@@ -30,6 +30,25 @@ Before you begin, ensure you have:
 - **Docker** (for containerized setup)
 - **Maven 3.8+** (for local development)
 
+### Database Administrator Knowledge Required
+
+**Important**: Excalibase GraphQL focuses exclusively on GraphQL API generation. For production use, you need knowledge of:
+
+- **Database Performance**: Index creation, query optimization, and performance tuning
+- **High Availability**: Database replica setup, failover configuration, and clustering
+- **Security**: User permissions, access control, and database security best practices
+- **Monitoring**: Database monitoring, logging, and health checks
+- **Backup & Recovery**: Database backup strategies and disaster recovery procedures
+
+**For GraphQL Subscriptions** (when available), additional PostgreSQL configuration is required:
+- **Logical Replication**: Configure `wal_level = logical` in postgresql.conf
+- **Replication Slots**: Create and manage replication slots for change data capture
+- **Replica Identity**: Set appropriate `REPLICA IDENTITY` on tables for subscription support
+- **Publication/Subscription Setup**: Configure logical replication publications and subscriptions
+- **Connection Limits**: Ensure adequate `max_replication_slots` and `max_wal_senders` settings
+
+These database administration features are handled by database administrators independently of this GraphQL API project.
+
 ## Quick Overview
 
 Excalibase GraphQL automatically generates a complete GraphQL API from your PostgreSQL database schema. Simply point it at your database and get:

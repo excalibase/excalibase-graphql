@@ -564,6 +564,28 @@ SELECT pg_create_logical_replication_slot('cdc_slot', 'pgoutput');
 REFRESH MATERIALIZED VIEW enhanced_types_summary;
 
 -- ====================
+-- SUBSCRIPTION SUPPORT SETUP (FOR TESTING ONLY)
+-- ====================
+-- Note: This configuration is for testing and development purposes only.
+-- Production environments require proper database administrator setup.
+
+-- Set replica identity to FULL for all tables to support GraphQL subscriptions
+-- This enables change data capture for all columns in the table
+ALTER TABLE users REPLICA IDENTITY FULL;
+ALTER TABLE posts REPLICA IDENTITY FULL;
+ALTER TABLE comments REPLICA IDENTITY FULL;
+ALTER TABLE tasks REPLICA IDENTITY FULL;
+ALTER TABLE customer REPLICA IDENTITY FULL;
+ALTER TABLE enhanced_types REPLICA IDENTITY FULL;
+ALTER TABLE orders REPLICA IDENTITY FULL;
+ALTER TABLE products REPLICA IDENTITY FULL;
+ALTER TABLE custom_types_test REPLICA IDENTITY FULL;
+ALTER TABLE domain_types_test REPLICA IDENTITY FULL;
+ALTER TABLE order_items REPLICA IDENTITY FULL;
+ALTER TABLE parent_table REPLICA IDENTITY FULL;
+ALTER TABLE child_table REPLICA IDENTITY FULL;
+
+-- ====================
 -- ANALYZE TABLES FOR QUERY OPTIMIZATION
 -- ====================
 ANALYZE users;
