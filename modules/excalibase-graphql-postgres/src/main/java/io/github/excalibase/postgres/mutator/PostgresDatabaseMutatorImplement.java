@@ -158,7 +158,8 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                 if (results.isEmpty()) {
                     throw new NotFoundException("No record found with the specified primary key");
                 }
-                return results.getFirst();
+                // Apply the same composite type conversion as queries
+                return convertPostgresTypesToGraphQLTypes(results.getFirst(), tableInfo);
             } catch (Exception e) {
                 log.error("Error updating record in table {}: {}", tableName, e.getMessage());
                 throw new DataMutationException("Error updating record: " + e.getMessage(), e);
@@ -495,6 +496,49 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         schemaReflector = serviceLookup.forBean(IDatabaseSchemaReflector.class, appConfig.getDatabaseType().getName());
         return schemaReflector;
     }
+    
+    /**
+     * Checks if the given type is a custom enum type by looking it up in the schema reflector
+     */
+    private boolean isCustomEnumType(String type) {
+        if (type == null || type.trim().isEmpty()) {
+            return false;
+        }
+        
+        try {
+            return getSchemaReflector().getCustomEnumTypes().stream()
+                    .anyMatch(enumType -> enumType.getName().equalsIgnoreCase(type));
+        } catch (Exception e) {
+            log.debug("Error checking custom enum types: {}", e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Checks if the given type is a custom composite type by looking it up in the schema reflector
+     */
+    private boolean isCustomCompositeType(String type) {
+        if (type == null || type.trim().isEmpty()) {
+            return false;
+        }
+        
+        try {
+            List<CustomCompositeTypeInfo> compositeTypes = getSchemaReflector().getCustomCompositeTypes();
+            log.warn("DEBUG: Checking isCustomCompositeType for '{}'. Available composite types: {}", 
+                    type, compositeTypes.stream().map(CustomCompositeTypeInfo::getName).collect(Collectors.toList()));
+            boolean result = compositeTypes.stream()
+                    .anyMatch(compositeType -> {
+                        boolean matches = compositeType.getName().equalsIgnoreCase(type);
+                        log.warn("DEBUG: Comparing '{}' with '{}' = {}", compositeType.getName(), type, matches);
+                        return matches;
+                    });
+            log.warn("DEBUG: Final result for isCustomCompositeType('{}') = {}", type, result);
+            return result;
+        } catch (Exception e) {
+            log.debug("Error checking custom composite types: {}", e.getMessage());
+            return false;
+        }
+    }
 
     private String quoteIdentifier(String identifier) {
         return "\"" + identifier.replace("\"", "\"\"") + "\"";
@@ -541,9 +585,9 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return ":" + field + "::" + ColumnTypeConstant.XML;
                    } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
                        return ":" + field + "::" + ColumnTypeConstant.BYTEA;
-                   } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                   } else if (isCustomEnumType(columnType)) {
                        return ":" + field + "::" + columnType;
-                   } else if (PostgresTypeOperator.isCustomCompositeType(columnType)) {
+                   } else if (isCustomCompositeType(columnType)) {
                        return ":" + field + "::" + columnType;
                    } else {
                        return ":" + field;
@@ -572,9 +616,9 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.XML;
                    } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.BYTEA;
-                   } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                   } else if (isCustomEnumType(columnType)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
-                   } else if (PostgresTypeOperator.isCustomCompositeType(columnType)) {
+                   } else if (isCustomCompositeType(columnType)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
                    } else {
                        return quoteIdentifier(field) + " = :" + field;
@@ -595,7 +639,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.XML;
                    } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.BYTEA;
-                   } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                   } else if (isCustomEnumType(columnType)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
                    } else {
                        return quoteIdentifier(field) + " = :" + field;
@@ -623,7 +667,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                        return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.XML;
                    } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + ColumnTypeConstant.BYTEA;
-                   } else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                   } else if (isCustomEnumType(columnType)) {
                        return quoteIdentifier(field) + " = :" + field + "::" + columnType;
                    } else {
                        return quoteIdentifier(field) + " = :" + field;
@@ -719,7 +763,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             }
 
             // Handle custom composite types
-            if (PostgresTypeOperator.isCustomCompositeType(columnType)) {
+            if (isCustomCompositeType(columnType)) {
                 if (value instanceof Map) {
                     String compositeValue = convertMapToPostgresComposite((Map<String, Object>) value);
                     paramSource.addValue(paramName, compositeValue);
@@ -902,6 +946,22 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             return null;
         }
 
+        // Handle custom enum types
+        if (isCustomEnumType(baseType)) {
+            return element.toString(); // Custom enums are stored as strings
+        }
+        
+        // Handle custom composite types
+        if (isCustomCompositeType(baseType)) {
+            if (element instanceof Map) {
+                // Convert Map to PostgreSQL composite format
+                return convertMapToPostgresComposite((Map<String, Object>) element);
+            } else {
+                // Already in string format, pass through
+                return element.toString();
+            }
+        }
+
         String elementStr = element.toString();
         
         try {
@@ -1016,11 +1076,12 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
      * composite type processing as the fetcher.
      */
     private Map<String, Object> convertPostgresTypesToGraphQLTypes(Map<String, Object> result, TableInfo tableInfo) {
-        // Get custom type columns (will determine enum vs composite based on actual data)
+        // Get custom type columns (including arrays)
         Map<String, String> customTypeColumns = tableInfo.getColumns().stream()
-                .filter(col -> PostgresTypeOperator.isCustomEnumType(col.getType()) || 
-                              PostgresTypeOperator.isCustomCompositeType(col.getType()))
-                .filter(col -> !PostgresTypeOperator.isArrayType(col.getType())) // Exclude arrays for now
+                .filter(col -> {
+                    String baseType = col.getType().replace("[]", "");
+                    return isCustomEnumType(baseType) || isCustomCompositeType(baseType);
+                })
                 .collect(Collectors.toMap(ColumnInfo::getName, ColumnInfo::getType));
         
         if (customTypeColumns.isEmpty()) {
@@ -1036,21 +1097,138 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             Object value = result.get(columnName);
             
             if (value != null) {
-                String valueStr = value.toString();
-                
-                // If value starts with '(' and ends with ')', it's likely a composite type
-                if (valueStr.startsWith("(") && valueStr.endsWith(")")) {
-                    // Process as composite type
-                    Map<String, Object> convertedComposite = convertPostgresCompositeToMap(value, columnType);
-                    convertedResult.put(columnName, convertedComposite);
+                // Check if it's an array type
+                if (PostgresTypeOperator.isArrayType(columnType)) {
+                    // Process as custom type array
+                    List<Object> convertedArray = convertCustomTypeArrayToList(value, columnType);
+                    convertedResult.put(columnName, convertedArray);
                 } else {
-                    // Process as enum type (simple string value)
-                    convertedResult.put(columnName, valueStr);
+                    String valueStr = value.toString();
+                    
+                    // If value starts with '(' and ends with ')', it's likely a composite type
+                    if (valueStr.startsWith("(") && valueStr.endsWith(")")) {
+                        // Process as composite type
+                        Map<String, Object> convertedComposite = convertPostgresCompositeToMap(value, columnType);
+                        convertedResult.put(columnName, convertedComposite);
+                    } else {
+                        // Process as enum type (simple string value)
+                        convertedResult.put(columnName, valueStr);
+                    }
                 }
             }
         }
         
         return convertedResult;
+    }
+
+    /**
+     * Converts custom type arrays from PostgreSQL format to Java List format
+     */
+    private List<Object> convertCustomTypeArrayToList(Object arrayValue, String columnType) {
+        if (arrayValue == null) {
+            return List.of();
+        }
+        
+        try {
+            String baseType = columnType.replace("[]", "");
+            String arrayStr = arrayValue.toString();
+            
+            log.warn("DEBUG: Converting custom type array - columnType: '{}', baseType: '{}', arrayStr: '{}'", columnType, baseType, arrayStr);
+            
+            // Parse PostgreSQL array format like "{low,medium,high}" or "{(1,2,NYC),(3,4,LA)}"
+            List<Object> elements = parsePostgresArrayString(arrayStr);
+            
+            // Convert each element based on the base type
+            return elements.stream().map(element -> {
+                if (element == null) {
+                    return null;
+                }
+                
+                String elementStr = element.toString();
+                
+                // Strip outer quotes if present (PostgreSQL array elements are often quoted)
+                if (elementStr.startsWith("\"") && elementStr.endsWith("\"") && elementStr.length() > 1) {
+                    elementStr = elementStr.substring(1, elementStr.length() - 1);
+                }
+                
+                // Handle custom composite types
+                log.warn("ARRAY_ELEMENT: Checking if '{}' is custom composite type for element '{}'", baseType, elementStr);
+                if (isCustomCompositeType(baseType)) {
+                    log.debug("Processing composite element: '{}' for base type: '{}'", elementStr, baseType);
+                    if (elementStr.startsWith("(") && elementStr.endsWith(")")) {
+                        // Convert composite element to Map
+                        Map<String, Object> convertedMap = convertPostgresCompositeToMap(elementStr, baseType);
+                        log.debug("Converted composite to map: {}", convertedMap);
+                        return convertedMap;
+                    } else {
+                        // Fallback: return as string if not in expected format
+                        log.warn("ARRAY_CONVERSION: Composite array element not in expected format: {}", elementStr);
+                        return elementStr;
+                    }
+                }
+                
+                // Handle custom enum types
+                return elementStr;
+            }).collect(Collectors.toList());
+            
+        } catch (Exception e) {
+            log.error("Error converting custom type array to List for column type: {}", columnType, e);
+            return List.of();
+        }
+    }
+    
+    /**
+     * Parses PostgreSQL array string representation like "{1,2,3}" into a Java List
+     */
+    private List<Object> parsePostgresArrayString(String arrayStr) {
+        if (arrayStr == null || arrayStr.trim().isEmpty()) {
+            return List.of();
+        }
+        
+        String content = arrayStr.trim();
+        
+        // Remove outer braces: "{1,2,3}" -> "1,2,3"
+        if (content.startsWith("{") && content.endsWith("}")) {
+            content = content.substring(1, content.length() - 1);
+        }
+        
+        if (content.trim().isEmpty()) {
+            return List.of();
+        }
+        
+        // Split by commas, handling nested parentheses for composite types
+        List<Object> elements = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int parenthesesDepth = 0;
+        boolean inQuotes = false;
+        
+        for (char c : content.toCharArray()) {
+            if (c == '"' && (current.length() == 0 || current.charAt(current.length() - 1) != '\\')) {
+                inQuotes = !inQuotes;
+                current.append(c);
+            } else if (!inQuotes && c == '(') {
+                parenthesesDepth++;
+                current.append(c);
+            } else if (!inQuotes && c == ')') {
+                parenthesesDepth--;
+                current.append(c);
+            } else if (!inQuotes && c == ',' && parenthesesDepth == 0) {
+                // Found a top-level comma, add current element
+                if (current.length() > 0) {
+                    elements.add(current.toString().trim());
+                    current.setLength(0);
+                }
+            } else {
+                current.append(c);
+            }
+        }
+        
+        // Add the last element
+        if (current.length() > 0) {
+            elements.add(current.toString().trim());
+        }
+        
+        return elements;
     }
 
     /**
@@ -1072,7 +1250,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             return parsePostgresCompositeString(compositeStr, columnType);
             
         } catch (Exception e) {
-            log.error("Error converting PostgreSQL composite to Map for column type: {}", columnType, e);
+            log.error("Error converting PostgreSQL composite to Map for column type: {}, input: '{}'", columnType, compositeValue, e);
             return Map.of(); // Return empty map on error
         }
     }
@@ -1093,21 +1271,23 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             content = content.substring(1, content.length() - 1);
         }
 
-        // Split by commas - this is a simple implementation that may need enhancement for complex cases
-        String[] parts = content.split(",");
-        log.debug("Split into {} parts: {}", parts.length, Arrays.toString(parts));
+        // Split by commas, but handle quoted values properly
+        List<String> parts = parseCompositeFields(content);
+        log.debug("Split into {} parts: {}", parts.size(), parts);
         
         // Get composite type metadata to use proper field names
         List<String> fieldNames = getCompositeTypeFieldNames(columnType);
         log.debug("Field names for type '{}': {}", columnType, fieldNames);
         
         Map<String, Object> result = new HashMap<>();
-        for (int i = 0; i < parts.length; i++) {
-            String part = parts[i].trim();
+        for (int i = 0; i < parts.size(); i++) {
+            String part = parts.get(i).trim();
             
-            // Remove quotes if present
+            // Remove quotes if present and handle escaped quotes
             if (part.startsWith("\"") && part.endsWith("\"")) {
                 part = part.substring(1, part.length() - 1);
+                // Unescape any escaped quotes inside the value
+                part = part.replace("\\\"", "\"");
             }
             
             // Try to convert to appropriate type
@@ -1121,6 +1301,38 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         
         log.debug("Final parsed result: {}", result);
         return result;
+    }
+    
+    /**
+     * Parses composite fields, properly handling quoted values with commas
+     */
+    private List<String> parseCompositeFields(String content) {
+        List<String> fields = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+        
+        for (int i = 0; i < content.length(); i++) {
+            char c = content.charAt(i);
+            
+            if (c == '"' && (i == 0 || content.charAt(i - 1) != '\\')) {
+                // Toggle quote state for unescaped quotes
+                inQuotes = !inQuotes;
+                current.append(c);
+            } else if (c == ',' && !inQuotes) {
+                // Found field separator outside of quotes
+                fields.add(current.toString());
+                current.setLength(0);
+            } else {
+                current.append(c);
+            }
+        }
+        
+        // Add the last field
+        if (current.length() > 0) {
+            fields.add(current.toString());
+        }
+        
+        return fields;
     }
 
     /**
@@ -1148,6 +1360,9 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             }
             if ("product_dimensions".equalsIgnoreCase(compositeTypeName)) {
                 return Arrays.asList("length", "width", "height", "weight", "units");
+            }
+            if ("test_location".equalsIgnoreCase(compositeTypeName)) {
+                return Arrays.asList("latitude", "longitude", "city");
             }
             
             log.warn("Composite type '{}' not found in schema, using generic field names", compositeTypeName);

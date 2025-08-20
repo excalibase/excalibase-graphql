@@ -33,6 +33,8 @@ public class ColumnInfo {
     /** Whether this column allows null values */
     private boolean isNullable;
 
+    private String originalType;
+
     /**
      * Constructs a new ColumnInfo with all metadata properties.
      * 
@@ -82,4 +84,17 @@ public class ColumnInfo {
     public void setNullable(boolean nullable) {
         isNullable = nullable;
     }
+
+    public String getOriginalType() {
+        return originalType;
+    }
+
+    public void setOriginalType(String originalType) {
+        this.originalType = originalType;
+    }
+
+    public Boolean hasOriginalType() {
+        return this.originalType != null;
+    }
+
 }
