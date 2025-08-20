@@ -216,8 +216,8 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     .filter(field -> field.getName().equals(FieldConstant.NODE))
                     .filter(field -> field.getSelectionSet() != null)
                     .flatMap(field -> field.getSelectionSet().getFields().stream())
-                    .filter(field -> !availableColumns.contains(field.getName()))
                     .map(SelectedField::getName)
+                    .filter(name -> !availableColumns.contains(name))
                     .collect(Collectors.toSet());
 
             if (requestedFields.isEmpty() && !availableColumns.isEmpty()) {
@@ -646,6 +646,40 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         }
         schemaReflector = serviceLookup.forBean(IDatabaseSchemaReflector.class, appConfig.getDatabaseType().getName());
         return schemaReflector;
+    }
+    
+    /**
+     * Checks if the given type is a custom enum type by looking it up in the schema reflector
+     */
+    private boolean isCustomEnumType(String type) {
+        if (type == null || type.trim().isEmpty()) {
+            return false;
+        }
+        
+        try {
+            return getSchemaReflector().getCustomEnumTypes().stream()
+                    .anyMatch(enumType -> enumType.getName().equalsIgnoreCase(type));
+        } catch (Exception e) {
+            log.debug("Error checking custom enum types: {}", e.getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Checks if the given type is a custom composite type by looking it up in the schema reflector
+     */
+    private boolean isCustomCompositeType(String type) {
+        if (type == null || type.trim().isEmpty()) {
+            return false;
+        }
+        
+        try {
+            return getSchemaReflector().getCustomCompositeTypes().stream()
+                    .anyMatch(compositeType -> compositeType.getName().equalsIgnoreCase(type));
+        } catch (Exception e) {
+            log.debug("Error checking custom composite types: {}", e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -1118,7 +1152,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     }
                 }
                 // Handle custom enum types with explicit casting
-                else if (PostgresTypeOperator.isCustomEnumType(columnType)) {
+                else if (isCustomEnumType(columnType)) {
                     conditions.add(quotedKey + " = :" + key + "::" + columnType);
                     paramSource.addValue(key, value.toString());
                 }
@@ -1179,7 +1213,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                             conditions.add(quotedColumnName + " = :" + paramName + "::" + columnType);
                         } else if (columnType != null && columnType.contains("xml")) {
                             conditions.add(quotedColumnName + "::text = :" + paramName);
-                        } else if (columnType != null && PostgresTypeOperator.isCustomEnumType(columnType)) {
+                        } else if (columnType != null && isCustomEnumType(columnType)) {
                             conditions.add(quotedColumnName + " = :" + paramName + "::" + columnType);
                         } else {
                             conditions.add(quotedColumnName + " = :" + paramName);
@@ -1196,7 +1230,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                             conditions.add(quotedColumnName + " != :" + paramName + "::" + columnType);
                         } else if (columnType != null && columnType.contains("xml")) {
                             conditions.add(quotedColumnName + "::text != :" + paramName);
-                        } else if (columnType != null && PostgresTypeOperator.isCustomEnumType(columnType)) {
+                        } else if (columnType != null && isCustomEnumType(columnType)) {
                             conditions.add(quotedColumnName + " != :" + paramName + "::" + columnType);
                         } else {
                             conditions.add(quotedColumnName + " != :" + paramName);
@@ -1547,8 +1581,8 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         
         // Get custom type columns (will determine enum vs composite based on actual data)
         Map<String, String> customTypeColumns = tableInfo.getColumns().stream()
-                .filter(col -> PostgresTypeOperator.isCustomEnumType(col.getType()) || 
-                              PostgresTypeOperator.isCustomCompositeType(col.getType()))
+                .filter(col -> isCustomEnumType(col.getType()) || 
+                              isCustomCompositeType(col.getType()))
                 .filter(col -> !PostgresTypeOperator.isArrayType(col.getType())) // Exclude arrays for now
                 .collect(Collectors.toMap(ColumnInfo::getName, ColumnInfo::getType));
         
@@ -1604,10 +1638,16 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             // Handle java.sql.Array objects
             if (arrayValue instanceof Array) {
                 Array sqlArray = (Array) arrayValue;
-                Object[] elements = (Object[]) sqlArray.getArray();
-                return Arrays.stream(elements)
-                        .map(element -> convertArrayElement(element, columnType))
-                        .collect(Collectors.toList());
+                try {
+                    Object[] elements = (Object[]) sqlArray.getArray();
+                    return Arrays.stream(elements)
+                            .map(element -> convertArrayElement(element, columnType))
+                            .collect(Collectors.toList());
+                } catch (Exception e) {
+                    // If connection is closed, fall back to string representation
+                    log.debug("SQL Array access failed (likely connection closed), trying string representation: {}", e.getMessage());
+                    return parsePostgresArrayString(arrayValue.toString(), columnType);
+                }
             }
             
             // Handle PostgreSQL string representation like "{1,2,3}" or "{apple,banana,cherry}"
@@ -1616,17 +1656,58 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 return parsePostgresArrayString(arrayStr, columnType);
             }
             
-            // If already a List (shouldn't happen but just in case)
-            if (arrayValue instanceof List) {
-                return (List<Object>) arrayValue;
-            }
-            
             log.warn("Unexpected array value type: {} for column type: {}", arrayValue.getClass(), columnType);
             return List.of(); // Return empty list as fallback
             
         } catch (Exception e) {
             log.error("Error converting PostgreSQL array to List for column type: {}", columnType, e);
             return List.of(); // Return empty list on error
+        }
+    }
+    
+    /**
+     * Converts individual array elements, handling both custom and regular types appropriately
+     */
+    private Object convertArrayElement(Object element, String columnType) {
+        if (element == null) {
+            return null;
+        }
+        
+        // Extract base type from array type (e.g., "test_priority[]" -> "test_priority")
+        String baseType = columnType.replace("[]", "");
+        
+        // Check if it's a custom enum type
+        if (isCustomEnumType(baseType)) {
+            return element.toString(); // Custom enums are returned as strings
+        }
+        
+        // Check if it's a custom composite type
+        if (isCustomCompositeType(baseType)) {
+            String elementStr = element.toString();
+            if (elementStr.startsWith("(") && elementStr.endsWith(")")) {
+                return convertPostgresCompositeToMap(element, baseType);
+            }
+        }
+        
+        // Handle regular PostgreSQL types
+        String elementStr = element.toString();
+        String type = baseType.toLowerCase();
+        
+        try {
+            if (PostgresTypeOperator.isIntegerType(type)) {
+                return Integer.parseInt(elementStr);
+            } else if (PostgresTypeOperator.isFloatingPointType(type)) {
+                return Double.parseDouble(elementStr);
+            } else if (PostgresTypeOperator.isBooleanType(type)) {
+                return Boolean.parseBoolean(elementStr);
+            } else if (type.contains(ColumnTypeConstant.UUID)) {
+                return elementStr; // Keep UUIDs as strings in GraphQL
+            } else {
+                return elementStr; // Default to string
+            }
+        } catch (NumberFormatException e) {
+            log.warn("Could not convert array element '{}' to type '{}', using string", elementStr, type);
+            return elementStr;
         }
     }
     
@@ -1661,10 +1742,9 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     .collect(Collectors.toList());
         }
         
-        // Convert elements to appropriate types based on base column type
-        String baseType = columnType.replace(ColumnTypeConstant.ARRAY_SUFFIX, "").toLowerCase();
+        // Convert elements to appropriate types based on column type
         return elements.stream()
-                .map(element -> convertArrayElement(element, baseType))
+                .map(element -> convertArrayElement(element, columnType))
                 .collect(Collectors.toList());
     }
     
@@ -1702,35 +1782,6 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         return elements;
     }
     
-    /**
-     * Converts individual array elements to the appropriate Java type
-     */
-    private Object convertArrayElement(Object element, String baseType) {
-        if (element == null) {
-            return null;
-        }
-        
-        String elementStr = element.toString();
-        String type = baseType.toLowerCase();
-        
-        try {
-            if (PostgresTypeOperator.isIntegerType(type)) {
-                return Integer.parseInt(elementStr);
-            } else if (PostgresTypeOperator.isFloatingPointType(type)) {
-                return Double.parseDouble(elementStr);
-            } else if (PostgresTypeOperator.isBooleanType(type)) {
-                return Boolean.parseBoolean(elementStr);
-            } else if (type.contains(ColumnTypeConstant.UUID)) {
-                return elementStr; // Keep UUIDs as strings in GraphQL
-            } else {
-                return elementStr; // Default to string
-            }
-        } catch (NumberFormatException e) {
-            log.warn("Could not convert array element '{}' to type '{}', using string", elementStr, type);
-            return elementStr;
-        }
-    }
-
     /**
      * Converts a PostgreSQL composite type to a Map for GraphQL compatibility
      */

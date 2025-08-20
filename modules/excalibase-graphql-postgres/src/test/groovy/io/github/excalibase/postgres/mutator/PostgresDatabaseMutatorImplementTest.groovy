@@ -7,6 +7,9 @@ import io.github.excalibase.constant.SupportedDatabaseConstant
 import io.github.excalibase.exception.DataMutationException
 import io.github.excalibase.exception.NotFoundException
 import io.github.excalibase.model.ColumnInfo
+import io.github.excalibase.model.CompositeTypeAttribute
+import io.github.excalibase.model.CustomCompositeTypeInfo
+import io.github.excalibase.model.CustomEnumInfo
 import io.github.excalibase.model.ForeignKeyInfo
 import io.github.excalibase.model.TableInfo
 import io.github.excalibase.postgres.mutator.PostgresDatabaseMutatorImplement
@@ -2128,6 +2131,10 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         
         and: "mocked schema reflector"
         schemaReflector.reflectSchema() >> ["test_documents": tableInfo]
+        schemaReflector.getCustomEnumTypes() >> [
+            new CustomEnumInfo("test_status", "public", ["draft", "published", "archived"])
+        ]
+        schemaReflector.getCustomCompositeTypes() >> []
 
         def environment = Mock(DataFetchingEnvironment) {
             getArgument("input") >> [
@@ -2185,6 +2192,13 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         
         and: "mocked schema reflector"
         schemaReflector.reflectSchema() >> ["test_users": tableInfo]
+        schemaReflector.getCustomCompositeTypes() >> [
+            new CustomCompositeTypeInfo("test_contact", "public", [
+                new CompositeTypeAttribute("email", "varchar", 1, false),
+                new CompositeTypeAttribute("phone", "varchar", 2, false)
+            ])
+        ]
+        schemaReflector.getCustomEnumTypes() >> []
 
         def environment = Mock(DataFetchingEnvironment) {
             getArgument("input") >> [
@@ -2251,6 +2265,10 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         
         and: "mocked schema reflector"
         schemaReflector.reflectSchema() >> ["test_issues": tableInfo]
+        schemaReflector.getCustomEnumTypes() >> [
+            new CustomEnumInfo("test_priority", "public", ["low", "medium", "high", "urgent"])
+        ]
+        schemaReflector.getCustomCompositeTypes() >> []
 
         // Get the created record ID
         def existingRecord = jdbcTemplate.queryForMap("SELECT * FROM test_schema.test_issues WHERE title = ?", "Test Issue")
@@ -2281,6 +2299,224 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         try {
             jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_issues")
             jdbcTemplate.execute("DROP TYPE IF EXISTS test_priority")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    // ==========================================
+    // CUSTOM TYPE ARRAY MUTATION TESTS - TDD APPROACH
+    // ==========================================
+
+    def "should create records with custom enum array values"() {
+        given: "a table with custom enum array column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_priority AS ENUM ('low', 'medium', 'high', 'urgent')
+        """)
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_tasks (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                priorities test_priority[] NOT NULL
+            )
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("title", "character varying", false, true),
+            new ColumnInfo("priorities", "test_priority[]", false, true)
+        ]
+        def tableInfo = new TableInfo("test_tasks", columns, [], false)
+        
+        and: "mock schema reflector for custom enum type"
+        schemaReflector.reflectSchema() >> ["test_tasks": tableInfo]
+        schemaReflector.getCustomEnumTypes() >> [
+            new CustomEnumInfo("test_priority", "public", ["low", "medium", "high", "urgent"])
+        ]
+        schemaReflector.getCustomCompositeTypes() >> []
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                title: "Task with Multiple Priorities",
+                priorities: ["low", "medium", "high"]
+            ]
+        }
+
+        when: "creating record with custom enum array"
+        def mutationResolver = mutator.createCreateMutationResolver("test_tasks")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with enum array data"
+        result != null
+        result.title == "Task with Multiple Priorities"
+        result.priorities == ["low", "medium", "high"]
+        result.id != null
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.test_tasks WHERE id = ?", result.id)
+        dbResults.size() == 1
+        def priorities = dbResults[0].priorities
+        priorities.toString().contains("low")
+        priorities.toString().contains("medium")
+        priorities.toString().contains("high")
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_tasks")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_priority")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should create records with custom composite array values"() {
+        given: "a composite type and table with composite array column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_location AS (
+                latitude NUMERIC,
+                longitude NUMERIC,
+                city VARCHAR(100)
+            )
+        """)
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_routes (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                waypoints test_location[] NOT NULL
+            )
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("name", "character varying", false, true),
+            new ColumnInfo("waypoints", "test_location[]", false, true)
+        ]
+        def tableInfo = new TableInfo("test_routes", columns, [], false)
+        
+        and: "mock schema reflector for custom composite type"
+        schemaReflector.reflectSchema() >> ["test_routes": tableInfo]
+        schemaReflector.getCustomEnumTypes() >> []
+        schemaReflector.getCustomCompositeTypes() >> [
+            new CustomCompositeTypeInfo("test_location", "public", [
+                new CompositeTypeAttribute("latitude", "numeric", 1, false),
+                new CompositeTypeAttribute("longitude", "numeric", 2, false),
+                new CompositeTypeAttribute("city", "varchar", 3, false)
+            ])
+        ]
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                name: "Route with Multiple Waypoints",
+                waypoints: [
+                    [latitude: 40.7128, longitude: -74.0060, city: "New York"],
+                    [latitude: 34.0522, longitude: -118.2437, city: "Los Angeles"],
+                    [latitude: 41.8781, longitude: -87.6298, city: "Chicago"]
+                ]
+            ]
+        }
+
+        when: "creating record with custom composite array"
+        def mutationResolver = mutator.createCreateMutationResolver("test_routes")
+        def result = mutationResolver.get(environment)
+
+        then: "should return created record with composite array data"
+        result != null
+        result.name == "Route with Multiple Waypoints"
+        result.waypoints != null
+        result.waypoints.size() == 3
+        
+        // Verify first waypoint
+        def waypoint1 = result.waypoints[0]
+        waypoint1.latitude == 40.7128
+        waypoint1.longitude == -74.0060
+        waypoint1.city.contains("New York")
+        
+        // Verify second waypoint
+        def waypoint2 = result.waypoints[1]
+        waypoint2.latitude == 34.0522
+        waypoint2.longitude == -118.2437
+        waypoint2.city.contains("Los Angeles")
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.test_routes WHERE id = ?", result.id)
+        dbResults.size() == 1
+        def waypoints = dbResults[0].waypoints
+        waypoints.toString().contains("New York")
+        waypoints.toString().contains("Los Angeles")
+        waypoints.toString().contains("Chicago")
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_routes")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_location")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should update records with custom enum array values"() {
+        given: "a table with custom enum array column and existing record"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_status AS ENUM ('draft', 'review', 'approved', 'published')
+        """)
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_articles (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(255) NOT NULL,
+                statuses test_status[] NOT NULL
+            )
+        """)
+
+        // Insert initial record
+        def initialId = jdbcTemplate.queryForObject("""
+            INSERT INTO test_schema.test_articles (title, statuses) 
+            VALUES ('Article Title', ARRAY['draft']::test_status[]) 
+            RETURNING id
+        """, Integer.class)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("title", "character varying", false, true),
+            new ColumnInfo("statuses", "test_status[]", false, true)
+        ]
+        def tableInfo = new TableInfo("test_articles", columns, [], false)
+        
+        and: "mock schema reflector for custom enum type"
+        schemaReflector.reflectSchema() >> ["test_articles": tableInfo]
+        schemaReflector.getCustomEnumTypes() >> [
+            new CustomEnumInfo("test_status", "public", ["draft", "review", "approved", "published"])
+        ]
+        schemaReflector.getCustomCompositeTypes() >> []
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                id: initialId,
+                statuses: ["review", "approved", "published"]
+            ]
+        }
+
+        when: "updating record with custom enum array"
+        def mutationResolver = mutator.createUpdateMutationResolver("test_articles")
+        def result = mutationResolver.get(environment)
+
+        then: "should return updated record with new enum array data"
+        result != null
+        result.title == "Article Title"
+        result.statuses == ["review", "approved", "published"]
+        result.id == initialId
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.test_articles WHERE id = ?", initialId)
+        dbResults.size() == 1
+        def statuses = dbResults[0].statuses
+        statuses.toString().contains("review")
+        statuses.toString().contains("approved")
+        statuses.toString().contains("published")
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_articles")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_status")
         } catch (Exception e) {
             // Ignore cleanup errors
         }

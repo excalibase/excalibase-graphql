@@ -10,8 +10,12 @@ import io.github.excalibase.constant.DatabaseType
 import io.github.excalibase.constant.SupportedDatabaseConstant
 import io.github.excalibase.exception.DataFetcherException
 import io.github.excalibase.model.ColumnInfo
+import io.github.excalibase.model.CompositeTypeAttribute
+import io.github.excalibase.model.CustomCompositeTypeInfo
+import io.github.excalibase.model.CustomEnumInfo
 import io.github.excalibase.model.ForeignKeyInfo
 import io.github.excalibase.model.TableInfo
+import io.github.excalibase.postgres.constant.PostgresColumnTypeConstant
 import io.github.excalibase.postgres.fetcher.PostgresDatabaseDataFetcherImplement
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector
 import io.github.excalibase.service.ServiceLookup
@@ -227,8 +231,8 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def environment = createMockEnvironment(
                 ["id", "name"],
                 [
-                        "limit": 3,
-                        "offset": 2,
+                        "limit"  : 3,
+                        "offset" : 2,
                         "orderBy": ["id": "ASC"]
                 ]
         )
@@ -245,7 +249,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         environment = createMockEnvironment(
                 ["id", "name"],
                 [
-                        "limit": 2,
+                        "limit"  : 2,
                         "orderBy": ["id": "DESC"]
                 ]
         )
@@ -290,7 +294,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def environment = createMockConnectionEnvironment(
                 ["id", "title", "content"],
                 [
-                        "first": 2,
+                        "first"  : 2,
                         "orderBy": ["id": "ASC"]
                 ]
         )
@@ -705,7 +709,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def environment = createMockConnectionEnvironment(
                 ["id", "name"],
                 [
-                        "first": 2,
+                        "first"  : 2,
                         "orderBy": ["id": "ASC"]
                 ]
         )
@@ -717,8 +721,8 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         environment = createMockConnectionEnvironment(
                 ["id", "name"],
                 [
-                        "first": 2,
-                        "after": endCursor,
+                        "first"  : 2,
+                        "after"  : endCursor,
                         "orderBy": ["id": "ASC"]
                 ]
         )
@@ -765,8 +769,8 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def environment = createMockConnectionEnvironment(
                 ["id", "title"],
                 [
-                        "first": 2,
-                        "after": Base64.getEncoder().encodeToString("id:2".getBytes()),
+                        "first"  : 2,
+                        "after"  : Base64.getEncoder().encodeToString("id:2".getBytes()),
                         "orderBy": ["id": "ASC"]
                 ]
         )
@@ -778,8 +782,8 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         environment = createMockConnectionEnvironment(
                 ["id", "title"],
                 [
-                        "last": 2,
-                        "before": startCursor,
+                        "last"   : 2,
+                        "before" : startCursor,
                         "orderBy": ["id": "ASC"]
                 ]
         )
@@ -807,8 +811,8 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def environment = createMockConnectionEnvironment(
                 ["id", "message"],
                 [
-                        "first": 2,
-                        "after": "invalid-cursor",
+                        "first"  : 2,
+                        "after"  : "invalid-cursor",
                         "orderBy": ["id": "ASC"]
                 ]
         )
@@ -825,7 +829,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         when: "using malformed after cursor"
         def fetcher = dataFetcher.createConnectionDataFetcher("logs")
         fetcher.get(environment)
-        
+
         then: "should throw DataFetcherException"
         def e = thrown(DataFetcherException)
         e.getMessage() == "Invalid cursor format for 'after': invalid-cursor"
@@ -968,7 +972,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def environment = createMockConnectionEnvironment(
                 ["id", "score", "name"],
                 [
-                        "first": 2,
+                        "first"  : 2,
                         "orderBy": ["score": "DESC", "name": "ASC"]
                 ]
         )
@@ -1203,9 +1207,9 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def environment = createMockEnvironment(
                 ["id", "name", "age", "salary"],
                 [
-                        "age_gte": 28,
-                        "salary_gt": 50000.00,
-                        "is_active": true,
+                        "age_gte"      : 28,
+                        "salary_gt"    : 50000.00,
+                        "is_active"    : true,
                         "name_contains": "a"
                 ]
         )
@@ -1250,7 +1254,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def environment = createMockConnectionEnvironment(
                 ["id", "priority", "name"],
                 [
-                        "first": 2,
+                        "first"  : 2,
                         "orderBy": ["priority": "ASC"]
                 ]
         )
@@ -1850,7 +1854,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "event_time"],
                 [
                         "event_time_gte": "2023-01-01T00:00:00Z",
-                        "event_time_lt": "2023-02-01T00:00:00Z"
+                        "event_time_lt" : "2023-02-01T00:00:00Z"
                 ]
         )
         def fetcher = dataFetcher.createTableDataFetcher("datetime_table")
@@ -1876,7 +1880,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         given: "a table with numeric precision columns"
 
         jdbcTemplate.execute("SET lc_monetary = 'C'")
-        
+
         jdbcTemplate.execute("""
             CREATE TABLE test_schema.numeric_table (
                 id SERIAL PRIMARY KEY,
@@ -2039,8 +2043,8 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "json_metadata", "price"],
                 [
                         "json_metadata_contains": "electronics",
-                        "price_gte": 1000.00,
-                        "created_at_gte": "2023-01-01T00:00:00Z"
+                        "price_gte"             : 1000.00,
+                        "created_at_gte"        : "2023-01-01T00:00:00Z"
                 ]
         )
         def fetcher = dataFetcher.createTableDataFetcher("enhanced_mixed")
@@ -2054,7 +2058,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         environment = createMockEnvironment(
                 ["id", "name", "json_metadata", "ip_address"],
                 [
-                        "ip_address_startsWith": "192.168",
+                        "ip_address_startsWith" : "192.168",
                         "json_metadata_contains": "featured"
                 ]
         )
@@ -2108,13 +2112,13 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
         then: "should return arrays as Java Lists"
         result.size() == 3
-        
+
         result[0].int_array == [1, 2, 3, 4, 5]
         result[0].bigint_array == [100L, 200L, 300L]
-        
+
         result[1].int_array == [10, 20, 30]
         result[1].bigint_array == [1000L, 2000L, 3000L, 4000L]
-        
+
         result[2].int_array == null
         result[2].bigint_array == [999L]
 
@@ -2173,13 +2177,13 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
         then: "should return string arrays as Java Lists"
         result.size() == 3
-        
+
         result[0].text_array == ["apple", "banana", "cherry"]
         result[0].varchar_array == ["red", "green", "blue"]
-        
+
         result[1].text_array == ["hello", "world"]
         result[1].varchar_array == ["foo", "bar", "baz"]
-        
+
         result[2].text_array == []
         result[2].varchar_array == ["single"]
 
@@ -2233,15 +2237,15 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
         then: "should return properly typed arrays as Java Lists"
         result.size() == 3
-        
+
         result[0].bool_array == [true, false, true]
         result[0].decimal_array == [10.50, 20.75, 30.25]
         result[0].float_array == [1.1, 2.2, 3.3]
-        
+
         result[1].bool_array == [false, false]
         result[1].decimal_array == [99.99]
         result[1].float_array == [4.4, 5.5]
-        
+
         result[2].bool_array == [true]
         result[2].decimal_array == []
         result[2].float_array == [6.6]
@@ -2297,19 +2301,19 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
         then: "should handle null and empty arrays correctly"
         result.size() == 4
-        
+
         // Record with proper arrays
         result[0].mixed_int_array == [1, 2, 3]
         result[0].nullable_text_array == ["one", "two", "three"]
-        
+
         // Record with null arrays
         result[1].mixed_int_array == null
         result[1].nullable_text_array == null
-        
+
         // Record with empty arrays
         result[2].mixed_int_array == []
         result[2].nullable_text_array == []
-        
+
         // Record with single element arrays
         result[3].mixed_int_array == [42]
         result[3].nullable_text_array == ["single"]
@@ -2340,7 +2344,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         (1..5).each { i ->
             jdbcTemplate.execute("""
                 INSERT INTO test_schema.array_connections (title, tags, scores) VALUES 
-                ('Title ${i}', '{"tag${i}","common"}', '{${i},${i*10},${i*100}}')
+                ('Title ${i}', '{"tag${i}","common"}', '{${i},${i * 10},${i * 100}}')
             """)
         }
 
@@ -2361,7 +2365,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         def environment = createMockConnectionEnvironment(
                 ["id", "title", "tags", "scores"],
                 [
-                        "first": 3,
+                        "first"  : 3,
                         "orderBy": ["id": "ASC"]
                 ]
         )
@@ -2383,7 +2387,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         and: "arrays should be proper Java Lists"
         nodes.every { node ->
             node.tags instanceof List && node.tags.every { it instanceof String } &&
-            node.scores instanceof List && node.scores.every { it instanceof Integer }
+                    node.scores instanceof List && node.scores.every { it instanceof Integer }
         }
     }
 
@@ -2426,12 +2430,12 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
         then: "should properly handle special characters in array elements"
         result.size() == 3
-        
+
         // Arrays should be converted to proper Java Lists regardless of special characters
         result[0].special_text_array instanceof List
         result[1].special_text_array instanceof List
         result[2].special_text_array instanceof List
-        
+
         // All elements should be strings
         result.every { record ->
             record.special_text_array.every { it instanceof String }
@@ -2679,14 +2683,14 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ]
             }
         }
-        
+
         def environment = Mock(DataFetchingEnvironment)
         def selectionSet = Mock(DataFetchingFieldSelectionSet)
         selectionSet.getFields() >> [
-            Mock(SelectedField) { getName() >> "order_id" },
-            Mock(SelectedField) { getName() >> "customer_id" },
-            Mock(SelectedField) { getName() >> "total_amount" },
-            customerField
+                Mock(SelectedField) { getName() >> "order_id" },
+                Mock(SelectedField) { getName() >> "customer_id" },
+                Mock(SelectedField) { getName() >> "total_amount" },
+                customerField
         ]
         environment.getSelectionSet() >> selectionSet
         environment.getArguments() >> [:]
@@ -2870,7 +2874,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         jdbcTemplate.execute("""
             CREATE TYPE test_priority AS ENUM ('low', 'medium', 'high', 'urgent')
         """)
-        
+
         jdbcTemplate.execute("""
             CREATE TABLE test_schema.test_tasks (
                 id SERIAL PRIMARY KEY,
@@ -2878,7 +2882,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 priority test_priority
             )
         """)
-        
+
         jdbcTemplate.execute("""
             INSERT INTO test_schema.test_tasks (title, priority) VALUES 
             ('Task 1', 'low'),
@@ -2887,17 +2891,17 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         """)
 
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("title", "character varying", false, true),
-            new ColumnInfo("priority", "test_priority", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("title", "character varying", false, true),
+                new ColumnInfo("priority", "test_priority", false, true)
         ]
         def tableInfo = new TableInfo("test_tasks", columns, [], false)
 
         def selectionSet = Mock(DataFetchingFieldSelectionSet) {
             getFields() >> [
-                Mock(SelectedField) { getName() >> "id" },
-                Mock(SelectedField) { getName() >> "title" },
-                Mock(SelectedField) { getName() >> "priority" }
+                    Mock(SelectedField) { getName() >> "id" },
+                    Mock(SelectedField) { getName() >> "title" },
+                    Mock(SelectedField) { getName() >> "priority" }
             ]
         }
 
@@ -2918,14 +2922,14 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         result != null
         result.edges != null
         result.edges.size() == 3
-        
+
         // Check that enum values are returned as strings, not transformed
         def task1 = result.edges.find { it.node.title == 'Task 1' }
         task1.node.priority == 'low'
-        
+
         def task2 = result.edges.find { it.node.title == 'Task 2' }
         task2.node.priority == 'high'
-        
+
         def task3 = result.edges.find { it.node.title == 'Task 3' }
         task3.node.priority == 'urgent'
 
@@ -2947,7 +2951,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 city VARCHAR(50)
             )
         """)
-        
+
         jdbcTemplate.execute("""
             CREATE TABLE test_schema.test_venues (
                 id SERIAL PRIMARY KEY,
@@ -2955,7 +2959,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 location test_location
             )
         """)
-        
+
         jdbcTemplate.execute("""
             INSERT INTO test_schema.test_venues (name, location) VALUES 
             ('Venue 1', ROW(40.7589, -73.9851, 'New York')),
@@ -2963,17 +2967,17 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         """)
 
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("name", "character varying", false, true),
-            new ColumnInfo("location", "test_location", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying", false, true),
+                new ColumnInfo("location", "test_location", false, true)
         ]
         def tableInfo = new TableInfo("test_venues", columns, [], false)
 
         def selectionSet = Mock(DataFetchingFieldSelectionSet) {
             getFields() >> [
-                Mock(SelectedField) { getName() >> "id" },
-                Mock(SelectedField) { getName() >> "name" },
-                Mock(SelectedField) { getName() >> "location" }
+                    Mock(SelectedField) { getName() >> "id" },
+                    Mock(SelectedField) { getName() >> "name" },
+                    Mock(SelectedField) { getName() >> "location" }
             ]
         }
 
@@ -2985,6 +2989,14 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
         and: "mocked schema reflector"
         schemaReflector.reflectSchema() >> ["test_venues": tableInfo]
+        schemaReflector.getCustomCompositeTypes() >> [
+                new CustomCompositeTypeInfo("test_location", "public", [
+                        new CompositeTypeAttribute("latitude", "numeric", 1, false),
+                        new CompositeTypeAttribute("longitude", "numeric", 2, false),
+                        new CompositeTypeAttribute("city", "varchar", 3, false)
+                ])
+        ]
+        schemaReflector.getCustomEnumTypes() >> []
 
         when: "creating and executing connection data fetcher"
         def fetcher = dataFetcher.createConnectionDataFetcher("test_venues")
@@ -2994,19 +3006,19 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         result != null
         result.edges != null
         result.edges.size() == 2
-        
+
         // Check that composite values are parsed into structured objects
         def venue1 = result.edges.find { it.node.name == 'Venue 1' }
         venue1.node.location instanceof Map
-        venue1.node.location.attr_0 == 40.7589    // latitude
-        venue1.node.location.attr_1 == -73.9851   // longitude  
-        venue1.node.location.attr_2 == 'New York' // city
-        
+        venue1.node.location.latitude == 40.7589    // latitude
+        venue1.node.location.longitude == -73.9851   // longitude  
+        venue1.node.location.city == 'New York' // city
+
         def venue2 = result.edges.find { it.node.name == 'Venue 2' }
         venue2.node.location instanceof Map
-        venue2.node.location.attr_0 == 34.0522        // latitude
-        venue2.node.location.attr_1 == -118.2437      // longitude
-        venue2.node.location.attr_2 == 'Los Angeles'  // city
+        venue2.node.location.latitude == 34.0522        // latitude
+        venue2.node.location.longitude == -118.2437      // longitude
+        venue2.node.location.city == 'Los Angeles'  // city
 
         cleanup:
         try {
@@ -3022,7 +3034,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         jdbcTemplate.execute("""
             CREATE TYPE test_status AS ENUM ('draft', 'published', 'archived')
         """)
-        
+
         jdbcTemplate.execute("""
             CREATE TABLE test_schema.test_articles (
                 id SERIAL PRIMARY KEY,
@@ -3030,7 +3042,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 status test_status
             )
         """)
-        
+
         jdbcTemplate.execute("""
             INSERT INTO test_schema.test_articles (title, status) VALUES 
             ('Article 1', 'draft'),
@@ -3040,32 +3052,36 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         """)
 
         def columns = [
-            new ColumnInfo("id", "integer", true, false),
-            new ColumnInfo("title", "character varying", false, true),
-            new ColumnInfo("status", "test_status", false, true)
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("title", "character varying", false, true),
+                new ColumnInfo("status", "test_status", false, true)
         ]
         def tableInfo = new TableInfo("test_articles", columns, [], false)
 
         def selectionSet = Mock(DataFetchingFieldSelectionSet) {
             getFields() >> [
-                Mock(SelectedField) { getName() >> "id" },
-                Mock(SelectedField) { getName() >> "title" },
-                Mock(SelectedField) { getName() >> "status" }
+                    Mock(SelectedField) { getName() >> "id" },
+                    Mock(SelectedField) { getName() >> "title" },
+                    Mock(SelectedField) { getName() >> "status" }
             ]
         }
 
         def environment = Mock(DataFetchingEnvironment) {
             getSelectionSet() >> selectionSet
             getArguments() >> [
-                where: [
-                    status: [eq: 'published']
-                ]
+                    where: [
+                            status: [eq: 'published']
+                    ]
             ]
             getGraphQLContext() >> GraphQLContext.newContext().build()
         }
 
         and: "mocked schema reflector"
         schemaReflector.reflectSchema() >> ["test_articles": tableInfo]
+        schemaReflector.getCustomEnumTypes() >> [
+                new CustomEnumInfo("test_status", "public", ["draft", "published", "archived"])
+        ]
+        schemaReflector.getCustomCompositeTypes() >> []
 
         when: "creating and executing connection data fetcher"
         def fetcher = dataFetcher.createConnectionDataFetcher("test_articles")
@@ -3083,6 +3099,180 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         try {
             jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_articles")
             jdbcTemplate.execute("DROP TYPE IF EXISTS test_status")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should handle custom enum array types"() {
+        given: "a table with custom enum array column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_priority AS ENUM ('low', 'medium', 'high', 'urgent')
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_tasks (
+                id SERIAL PRIMARY KEY,
+                title VARCHAR(100),
+                priorities test_priority[]
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.test_tasks (title, priorities) VALUES 
+            ('Task 1', ARRAY['low', 'medium']::test_priority[]),
+            ('Task 2', ARRAY['high', 'urgent']::test_priority[])
+        """)
+
+        def columns = [
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("title", "character varying", false, true),
+                new ColumnInfo("priorities", "test_priority[]", false, true)
+        ]
+        def tableInfo = new TableInfo("test_tasks", columns, [], false)
+
+        def selectionSet = Mock(DataFetchingFieldSelectionSet) {
+            getFields() >> [
+                    Mock(SelectedField) { getName() >> "id" },
+                    Mock(SelectedField) { getName() >> "title" },
+                    Mock(SelectedField) { getName() >> "priorities" }
+            ]
+        }
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getSelectionSet() >> selectionSet
+            getArguments() >> [:]
+            getGraphQLContext() >> GraphQLContext.newContext().build()
+        }
+
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_tasks": tableInfo]
+        schemaReflector.getCustomEnumTypes() >> [
+                new CustomEnumInfo("test_priority", "public", ["low", "medium", "high", "urgent"])
+        ]
+        schemaReflector.getCustomCompositeTypes() >> []
+
+        when: "creating and executing connection data fetcher"
+        def fetcher = dataFetcher.createConnectionDataFetcher("test_tasks")
+        def result = fetcher.get(environment)
+
+        then: "should return enum array values"
+        result != null
+        result.edges != null
+        result.edges.size() == 2
+
+        // Check that enum arrays are returned properly
+        def task1 = result.edges.find { it.node.title == 'Task 1' }
+        task1.node.priorities instanceof List
+        task1.node.priorities == ['low', 'medium']
+
+        def task2 = result.edges.find { it.node.title == 'Task 2' }
+        task2.node.priorities instanceof List
+        task2.node.priorities == ['high', 'urgent']
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_tasks")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_priority")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should handle custom composite array types"() {
+        given: "a table with custom composite array column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_address AS (
+                street VARCHAR(100),
+                city VARCHAR(50),
+                zipcode VARCHAR(10)
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_companies (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                locations test_address[]
+            )
+        """)
+
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.test_companies (name, locations) VALUES 
+            ('Company A', ARRAY[ROW('123 Main St', 'New York', '10001'), ROW('456 Oak Ave', 'Boston', '02101')]::test_address[]),
+            ('Company B', ARRAY[ROW('789 Pine St', 'San Francisco', '94102')]::test_address[])
+        """)
+
+        def columns = [
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("name", "character varying", false, true),
+                new ColumnInfo("locations", "test_address[]", false, true)
+        ]
+        def tableInfo = new TableInfo("test_companies", columns, [], false)
+
+        def selectionSet = Mock(DataFetchingFieldSelectionSet) {
+            getFields() >> [
+                    Mock(SelectedField) { getName() >> "id" },
+                    Mock(SelectedField) { getName() >> "name" },
+                    Mock(SelectedField) { getName() >> "locations" }
+            ]
+        }
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getSelectionSet() >> selectionSet
+            getArguments() >> [:]
+            getGraphQLContext() >> GraphQLContext.newContext().build()
+        }
+
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_companies": tableInfo]
+        schemaReflector.getCustomCompositeTypes() >> [
+                new CustomCompositeTypeInfo("test_address", "public", [
+                        new CompositeTypeAttribute("street", "varchar", 1, false),
+                        new CompositeTypeAttribute("city", "varchar", 2, false),
+                        new CompositeTypeAttribute("zipcode", "varchar", 3, false)
+                ])
+        ]
+        schemaReflector.getCustomEnumTypes() >> []
+
+        when: "creating and executing connection data fetcher"
+        def fetcher = dataFetcher.createConnectionDataFetcher("test_companies")
+        def result = fetcher.get(environment)
+
+        then: "should return data with composite arrays parsed correctly"
+        result.edges.size() == 2
+
+        // Check that composite arrays are parsed into structured objects
+        def company1 = result.edges.find { it.node.name == 'Company A' }
+        company1.node.locations instanceof List
+        company1.node.locations.size() == 2
+
+        def location1 = company1.node.locations[0]
+        location1 instanceof Map
+        location1.street == '123 Main St'
+        location1.city == 'New York'
+        location1.zipcode == 10001  // PostgreSQL returns numeric zipcodes as integers
+
+        def location2 = company1.node.locations[1]
+        location2 instanceof Map
+        location2.street == '456 Oak Ave'
+        location2.city == 'Boston'
+        location2.zipcode == 2101   // Leading zero is removed for numeric values
+
+        def company2 = result.edges.find { it.node.name == 'Company B' }
+        company2.node.locations instanceof List
+        company2.node.locations.size() == 1
+
+        def location3 = company2.node.locations[0]
+        location3 instanceof Map
+        location3.street == '789 Pine St'
+        location3.city == 'San Francisco'
+        location3.zipcode == 94102
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_companies")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_address")
         } catch (Exception e) {
             // Ignore cleanup errors
         }

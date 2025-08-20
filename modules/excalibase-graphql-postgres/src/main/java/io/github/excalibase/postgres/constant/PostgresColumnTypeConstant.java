@@ -26,7 +26,10 @@ public class PostgresColumnTypeConstant {
 
     // SQL aggregate functions
     public static final String SELECT_COUNT_FROM_WITH_SPACE = "SELECT COUNT(*) FROM ";
-    
+
     // SQL wildcard for RETURNING clause
     public static final String RETURNING_ALL = " RETURNING *";
+
+    public static final String POSTGRES_ENUM = "postgres_enum";
+    public static final String POSTGRES_COMPOSITE = "postgres_composite";
 }
