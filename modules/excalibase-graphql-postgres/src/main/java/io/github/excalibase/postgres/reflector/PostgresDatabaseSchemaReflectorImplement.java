@@ -2,6 +2,7 @@ package io.github.excalibase.postgres.reflector;
 
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.cache.TTLCache;
+import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.postgres.constant.PostgresSqlConstant;
 import io.github.excalibase.constant.DatabaseColumnConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
@@ -36,21 +37,16 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     private final TTLCache<String, List<CustomEnumInfo>> enumCache;
     private final TTLCache<String, List<CustomCompositeTypeInfo>> compositeCache;
     private final TTLCache<String, Map<String, String>> domainTypeToBaseTypeCache;
+    private final String allowedSchema;
 
-    @Value("${app.allowed-schema}")
-    private String allowedSchema;
-
-    @Value("${app.cache.schema-ttl-minutes:30}")
-    private int schemaTtlMinutes;
-
-    public PostgresDatabaseSchemaReflectorImplement(JdbcTemplate jdbcTemplate) {
+    public PostgresDatabaseSchemaReflectorImplement(JdbcTemplate jdbcTemplate, AppConfig appConfig) {
         this.jdbcTemplate = jdbcTemplate;
-        // Note: schemaTtlMinutes will be injected after construction, so we use default here
-        // In a future enhancement, we could use constructor injection or @PostConstruct
-        this.schemaCache = new TTLCache<>(Duration.ofMinutes(30)); // Default 30 minutes TTL
-        this.enumCache = new TTLCache<>(Duration.ofMinutes(30));
-        this.compositeCache = new TTLCache<>(Duration.ofMinutes(30));
-        this.domainTypeToBaseTypeCache = new TTLCache<>(Duration.ofMinutes(30));
+        this.allowedSchema = appConfig.getAllowedSchema();
+        int schemaTtlMinutes = appConfig.getCache().getSchemaTtlMinutes();
+        this.schemaCache = new TTLCache<>(Duration.ofMinutes(schemaTtlMinutes));
+        this.enumCache = new TTLCache<>(Duration.ofMinutes(schemaTtlMinutes));
+        this.compositeCache = new TTLCache<>(Duration.ofMinutes(schemaTtlMinutes));
+        this.domainTypeToBaseTypeCache = new TTLCache<>(Duration.ofMinutes(schemaTtlMinutes));
     }
 
     @Override
@@ -170,7 +166,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                 columnInfo.setName((String) columnData.get("column_name"));
                 
                 String dataType = (String) columnData.get("data_type");
-                
+                log.info("Processing column: {}.{} with type: {}", tableName, columnInfo.getName(), dataType);
                 // Check if domain type then set base type
                 if (domainTypeToBaseTypeMap.containsKey(dataType)) {
                     String baseType = domainTypeToBaseTypeMap.get(dataType);

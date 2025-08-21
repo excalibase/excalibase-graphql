@@ -1,5 +1,6 @@
 package io.github.excalibase.postgres.reflector
 
+import io.github.excalibase.config.AppConfig
 import io.github.excalibase.model.ColumnInfo
 import io.github.excalibase.model.ForeignKeyInfo
 import io.github.excalibase.model.TableInfo
@@ -22,6 +23,7 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
 
     JdbcTemplate jdbcTemplate
     PostgresDatabaseSchemaReflectorImplement schemaReflector
+    AppConfig appConfig
 
     def setupSpec() {
         postgres.start()
@@ -34,15 +36,30 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
                 postgres.getPassword()
         )
         jdbcTemplate = new JdbcTemplate(dataSource)
-        schemaReflector = new PostgresDatabaseSchemaReflectorImplement(jdbcTemplate)
-        // Set the allowed schema using reflection to simulate @Value injection
-        schemaReflector.allowedSchema = "test_schema"
+        
+        // Create real AppConfig for testing
+        appConfig = new AppConfig()
+        appConfig.setAllowedSchema("test_schema")
+        
+        // Create the cache config - in Groovy we can instantiate inner classes like this
+        def cacheConfig = appConfig.cache // This uses the default instance created in AppConfig
+        cacheConfig.setSchemaTtlMinutes(30)
+        
+        schemaReflector = new PostgresDatabaseSchemaReflectorImplement(jdbcTemplate, appConfig)
         jdbcTemplate.execute("CREATE SCHEMA IF NOT EXISTS test_schema")
     }
 
     def cleanup() {
         // Clean up test data after each test
         jdbcTemplate.execute("DROP SCHEMA IF EXISTS test_schema CASCADE")
+    }
+    
+    // Helper method to create AppConfig with different schemas
+    private PostgresDatabaseSchemaReflectorImplement createSchemaReflector(String schemaName) {
+        def config = new AppConfig()
+        config.setAllowedSchema(schemaName)
+        config.cache.setSchemaTtlMinutes(30)
+        return new PostgresDatabaseSchemaReflectorImplement(jdbcTemplate, config)
     }
 
     def "should reflect simple table with basic columns"() {
@@ -336,8 +353,8 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
         """)
 
         when: "reflecting schema A"
-        schemaReflector.allowedSchema = "schema_a"
-        Map<String, TableInfo> tablesA = schemaReflector.reflectSchema()
+        def schemaReflectorA = createSchemaReflector("schema_a")
+        Map<String, TableInfo> tablesA = schemaReflectorA.reflectSchema()
 
         then: "should only contain tables from schema A"
         tablesA.size() == 1
@@ -345,8 +362,8 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
         !tablesA.containsKey("table_b")
 
         when: "changing to schema B"
-        schemaReflector.allowedSchema = "schema_b"
-        Map<String, TableInfo> tablesB = schemaReflector.reflectSchema()
+        def schemaReflectorB = createSchemaReflector("schema_b")
+        Map<String, TableInfo> tablesB = schemaReflectorB.reflectSchema()
 
         then: "should only contain tables from schema B"
         tablesB.size() == 1
@@ -545,13 +562,13 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
         jdbcTemplate.execute(createTableWithEnums)
         
         // Set schema to public for this test since we create types in public schema
-        schemaReflector.allowedSchema = "public"
+        def publicSchemaReflector = createSchemaReflector("public")
         
         when: "reflecting the schema"
-        def schema = schemaReflector.reflectSchema()
+        def schema = publicSchemaReflector.reflectSchema()
         
         then: "should detect custom enum types"
-        def enumTypes = schemaReflector.getCustomEnumTypes("public")
+        def enumTypes = publicSchemaReflector.getCustomEnumTypes("public")
         enumTypes.size() >= 2
         
         and: "should detect test_status enum"
@@ -613,13 +630,13 @@ class PostgresDatabaseSchemaReflectorImplementTest extends Specification {
         jdbcTemplate.execute(createTableWithComposites)
         
         // Set schema to public for this test since we create types in public schema
-        schemaReflector.allowedSchema = "public"
+        def publicSchemaReflector = createSchemaReflector("public")
         
         when: "reflecting the schema"
-        def schema = schemaReflector.reflectSchema()
+        def schema = publicSchemaReflector.reflectSchema()
         
         then: "should detect custom composite types"
-        def compositeTypes = schemaReflector.getCustomCompositeTypes("public")
+        def compositeTypes = publicSchemaReflector.getCustomCompositeTypes("public")
         compositeTypes.size() >= 2
         
         and: "should detect test_address composite type"

@@ -20,8 +20,13 @@ public class PostgresTypeOperator {
     public static boolean isIntegerType(String type) {
         if (type == null) return false;
         String lowerType = type.toLowerCase();
-        return (lowerType.contains(ColumnTypeConstant.INT) || lowerType.contains(ColumnTypeConstant.SERIAL))
-               && !lowerType.equals(ColumnTypeConstant.INTERVAL);
+        return (lowerType.equals(ColumnTypeConstant.INT) || lowerType.equals("int2") || 
+                lowerType.equals("int4") || lowerType.equals("int8") ||
+                lowerType.equals("integer") || lowerType.equals(ColumnTypeConstant.BIGINT) || 
+                lowerType.equals(ColumnTypeConstant.SMALLINT) || lowerType.equals(ColumnTypeConstant.SERIAL) ||
+                lowerType.equals("serial2") || lowerType.equals("serial4") ||
+                lowerType.equals("serial8") || lowerType.equals("smallserial") ||
+                lowerType.equals(ColumnTypeConstant.BIGSERIAL));
     }
     
     /**
@@ -140,5 +145,62 @@ public class PostgresTypeOperator {
             return arrayType;
         }
         return arrayType.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
+    }
+    
+    /**
+     * Checks if the given type is a built-in PostgreSQL type
+     * @param type the database type to check
+     * @return true if it's a built-in type
+     */
+    public static boolean isBuiltInType(String type) {
+        if (type == null) return false;
+        
+        // For array types, check if the base type is built-in
+        if (isArrayType(type)) {
+            String baseType = getBaseArrayType(type);
+            return isBuiltInType(baseType);
+        }
+        
+        return isIntegerType(type) || isFloatingPointType(type) || isBooleanType(type) ||
+               isJsonType(type) || isDateTimeType(type) || isUuidType(type) ||
+               isNetworkType(type) || isBitType(type) || isXmlType(type) ||
+               isTextType(type);
+    }
+    
+    /**
+     * Checks if the given type is a text type
+     * @param type the database type to check
+     * @return true if it's a text type
+     */
+    public static boolean isTextType(String type) {
+        if (type == null) return false;
+        String lowerType = type.toLowerCase();
+        return lowerType.contains(ColumnTypeConstant.VARCHAR) || lowerType.contains(ColumnTypeConstant.TEXT) ||
+               lowerType.contains(ColumnTypeConstant.CHAR);
+    }
+    
+    /**
+     * Gets the category of a PostgreSQL type
+     * @param type the database type to categorize
+     * @return the type category
+     */
+    public static String getTypeCategory(String type) {
+        if (type == null) return "unknown";
+        
+        // Check array type first since it takes precedence
+        if (isArrayType(type)) return "array";
+        
+        if (isIntegerType(type)) return "integer";
+        if (isFloatingPointType(type)) return "numeric";
+        if (isBooleanType(type)) return "boolean";
+        if (isTextType(type)) return "text";
+        if (isDateTimeType(type)) return "datetime";
+        if (isJsonType(type)) return "json";
+        if (isUuidType(type)) return "uuid";
+        if (isNetworkType(type)) return "network";
+        if (isBitType(type)) return "bit";
+        if (isXmlType(type)) return "xml";
+        
+        return "unknown";
     }
 } 

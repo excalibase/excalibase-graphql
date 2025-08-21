@@ -21,6 +21,7 @@ import graphql.schema.DataFetcher;
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.ColumnInfo;
+import io.github.excalibase.postgres.constant.PostgresErrorConstant;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.postgres.reflector.PostgresDatabaseSchemaReflectorImplement;
 import io.github.excalibase.postgres.service.CDCEvent;
@@ -65,9 +66,9 @@ public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscript
     @Override
     public DataFetcher<Publisher<Map<String, Object>>> createTableSubscriptionResolver(String tableName) {
         return (DataFetcher<Publisher<Map<String, Object>>>) environment -> {
-            log.info("🔥 TABLE SUBSCRIPTION RESOLVER CALLED for table: {}", tableName);
-            log.info("🔥 GraphQL Field: {}", environment.getField().getName());
-            log.info("🔥 Arguments: {}", environment.getArguments());
+            log.info(PostgresErrorConstant.TABLE_SUBSCRIPTION_RESOLVER_CALLED, tableName);
+            log.info(PostgresErrorConstant.GRAPHQL_FIELD_LOG, environment.getField().getName());
+            log.info(PostgresErrorConstant.ARGUMENTS_LOG, environment.getArguments());
             
             // Create a heartbeat stream to keep connection alive
             Flux<Map<String, Object>> heartbeatStream = Flux.interval(Duration.ofSeconds(30))
@@ -87,10 +88,10 @@ public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscript
             Flux<Map<String, Object>> cdcEventStream = cdcService.getTableEventStream(tableName)
                     .map(this::convertCDCEventToGraphQLEvent)
                     .doOnComplete(() -> {
-                        log.warn("🔥 Table subscription: CDC table stream completed unexpectedly for {}", tableName);
+                        log.warn(PostgresErrorConstant.CDC_STREAM_COMPLETED, tableName);
                     })
                     .doOnError(error -> {
-                        log.error("🔥 Table subscription: CDC stream error for {}: ", tableName, error);
+                        log.error(PostgresErrorConstant.CDC_STREAM_ERROR, tableName, error);
                     })
                     // Restart the stream if it completes or errors
                     .repeatWhen(flux -> flux.delayElements(Duration.ofSeconds(1)))
@@ -103,10 +104,10 @@ public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscript
                 log.error("Error in table subscription for {}: ", tableName, error);
                 return Flux.just(createErrorEvent(tableName, error.getMessage()));
             })
-            .doOnSubscribe(s -> log.info("Client subscribed to real-time changes for table: {}", tableName))
-            .doOnCancel(() -> log.info("Client unsubscribed from real-time changes for table: {}", tableName))
-            .doOnComplete(() -> log.debug("🔥 Table subscription: Combined stream completed for table: {}", tableName))
-            .doOnError(error -> log.error("Subscription error for table {}: ", tableName, error));
+            .doOnSubscribe(s -> log.info(PostgresErrorConstant.CLIENT_SUBSCRIBED, tableName))
+            .doOnCancel(() -> log.info(PostgresErrorConstant.CLIENT_UNSUBSCRIBED, tableName))
+            .doOnComplete(() -> log.debug(PostgresErrorConstant.COMBINED_STREAM_COMPLETED, tableName))
+            .doOnError(error -> log.error(PostgresErrorConstant.SUBSCRIPTION_ERROR, tableName, error));
         };
     }
 

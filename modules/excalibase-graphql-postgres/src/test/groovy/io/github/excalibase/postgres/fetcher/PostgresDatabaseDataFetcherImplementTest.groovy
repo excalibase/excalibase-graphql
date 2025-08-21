@@ -15,7 +15,7 @@ import io.github.excalibase.model.CustomCompositeTypeInfo
 import io.github.excalibase.model.CustomEnumInfo
 import io.github.excalibase.model.ForeignKeyInfo
 import io.github.excalibase.model.TableInfo
-import io.github.excalibase.postgres.constant.PostgresColumnTypeConstant
+import io.github.excalibase.postgres.constant.PostgresSqlSyntaxConstant
 import io.github.excalibase.postgres.fetcher.PostgresDatabaseDataFetcherImplement
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector
 import io.github.excalibase.service.ServiceLookup

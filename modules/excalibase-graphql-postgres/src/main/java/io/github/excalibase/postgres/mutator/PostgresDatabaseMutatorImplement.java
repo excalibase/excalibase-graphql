@@ -22,6 +22,7 @@ import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.DataMutationException;
+import io.github.excalibase.postgres.constant.PostgresErrorConstant;
 import io.github.excalibase.exception.NotFoundException;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
@@ -116,7 +117,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
 
             Map<String, Object> input = environment.getArgument("input");
             if (input == null) {
-                throw new IllegalArgumentException("Input data is required for create operation");
+                throw new IllegalArgumentException(String.format(PostgresErrorConstant.INPUT_REQUIRED_TEMPLATE, "create"));
             }
 
             Map<String, Object> nonNullInputs = input.entrySet().stream()
@@ -152,7 +153,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
 
             Map<String, Object> input = environment.getArgument("input");
             if (input == null) {
-                throw new NotFoundException("Input data is required for update operation");
+                throw new NotFoundException(String.format(PostgresErrorConstant.INPUT_REQUIRED_TEMPLATE, "update"));
             }
             
             // Find primary key column(s)
@@ -214,7 +215,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             
             Map<String, Object> input = environment.getArgument("input");
             if (input == null) {
-                throw new IllegalArgumentException("Input data is required for delete operation");
+                throw new IllegalArgumentException(String.format(PostgresErrorConstant.INPUT_REQUIRED_TEMPLATE, "delete"));
             }
             
             // Find primary key column(s)
@@ -348,7 +349,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
 
         Map<String, Object> input = environment.getArgument("input");
         if (input == null) {
-            throw new IllegalArgumentException("Input data is required for create with relationships operation");
+            throw new IllegalArgumentException(String.format(PostgresErrorConstant.INPUT_REQUIRED_TEMPLATE, "create with relationships"));
         }
 
         Map<String, Object> directFields = new HashMap<>();

@@ -74,7 +74,7 @@ public class GraphqlConfig {
         this.fullSchemaService = fullSchemaService;
         this.schemaFilterService = schemaFilterService;
         this.securityInstrumentation = securityInstrumentation;
-        this.roleBasedGraphQLCache = new TTLCache<>(Duration.ofMinutes(30));
+        this.roleBasedGraphQLCache = new TTLCache<>(Duration.ofMinutes(appConfig.getCache().getGraphqlTtlMinutes()));
     }
 
     /**

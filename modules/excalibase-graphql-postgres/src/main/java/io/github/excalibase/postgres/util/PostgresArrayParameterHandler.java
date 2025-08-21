@@ -159,7 +159,7 @@ public class PostgresArrayParameterHandler {
             }
         } else if (PostgresTypeOperator.isBooleanType(baseType)) {
             return "boolean";
-        } else if (baseType.contains(ColumnTypeConstant.VARCHAR) || baseType.contains(ColumnTypeConstant.CHARACTER_VARYING)) {
+        } else if (baseType.contains(ColumnTypeConstant.VARCHAR) || baseType.contains("character varying")) {
             return ColumnTypeConstant.TEXT; // Use text for varchar arrays for simplicity
         } else if (baseType.contains("decimal") || baseType.contains("numeric")) {
             return "numeric";
