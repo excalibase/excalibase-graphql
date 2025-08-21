@@ -16,6 +16,13 @@ class PostgresTypeOperatorTest extends Specification {
         "smallint"    | true
         "serial"      | true
         "bigserial"   | true
+        "int2"        | true
+        "int4"        | true
+        "int8"        | true
+        "serial2"     | true
+        "serial4"     | true
+        "serial8"     | true
+        "smallserial" | true
         "interval"    | false  // This is the key test case - interval should NOT be integer
         "text"        | false
         "varchar"     | false
@@ -36,6 +43,8 @@ class PostgresTypeOperatorTest extends Specification {
         "float"             | true
         "double"            | true
         "numeric(10,2)"     | true
+        "float4"            | true
+        "float8"            | true
         "int"               | false
         "text"              | false
         null                | false
@@ -195,25 +204,96 @@ class PostgresTypeOperatorTest extends Specification {
         PostgresTypeOperator.isJsonType("JSONB") == true
     }
 
-    def "should handle the int/interval collision correctly"() {
-        given: "types that contain 'int' substring"
-        def intTypes = ["int", "integer", "bigint", "smallint", "serial", "bigserial"]
-        def nonIntTypes = ["interval", "varchar", "text"]  // Changed to types that don't contain "int"
+    def "should handle exact type matching correctly (no false positives)"() {
+        given: "types that contain 'int' substring but are NOT integer types"
+        def actualIntTypes = ["int", "integer", "bigint", "smallint", "serial", "bigserial", "int2", "int4", "int8"]
+        def typesContainingInt = ["interval", "point", "maintenance", "print", "tint", "hint"]
 
-        expect: "int-containing types are identified as integers"
-        intTypes.every { PostgresTypeOperator.isIntegerType(it) }
+        expect: "actual integer types are correctly identified"
+        actualIntTypes.every { PostgresTypeOperator.isIntegerType(it) }
 
-        and: "interval and other types NOT containing 'int' are NOT identified as integers"
-        nonIntTypes.every { !PostgresTypeOperator.isIntegerType(it) }
+        and: "types containing 'int' substring but NOT integer types are correctly rejected"
+        typesContainingInt.every { !PostgresTypeOperator.isIntegerType(it) }
 
-        and: "interval is correctly identified as datetime type"
+        and: "interval is correctly identified as datetime type, not integer"
         PostgresTypeOperator.isDateTimeType("interval") == true
-        
-        and: "types containing 'int' but excluded should not be integers"
         PostgresTypeOperator.isIntegerType("interval") == false
         
-        and: "other random types containing 'int' substring are incorrectly identified as integers (showing the limitation)"
-        PostgresTypeOperator.isIntegerType("point") == true  // "point" contains "int" - shows limitation
-        PostgresTypeOperator.isIntegerType("maintenance") == true  // "maintenance" contains "int" - shows limitation
+        and: "point type is correctly NOT identified as integer (fixes old bug)"
+        PostgresTypeOperator.isIntegerType("point") == false  // FIXED: no longer false positive
+        PostgresTypeOperator.isIntegerType("maintenance") == false  // FIXED: no longer false positive
+    }
+
+    def "should handle type specifications with precision/scale"() {
+        expect: "types with precision/scale are correctly normalized"
+        PostgresTypeOperator.isFloatingPointType("numeric(10,2)") == true
+        PostgresTypeOperator.isFloatingPointType("decimal(5,2)") == true
+        PostgresTypeOperator.isTextType("varchar(255)") == true
+        PostgresTypeOperator.isTextType("char(10)") == true
+        PostgresTypeOperator.isBitType("bit(8)") == true
+        PostgresTypeOperator.isBitType("varbit(64)") == true
+    }
+
+    def "should correctly identify text types"() {
+        expect:
+        PostgresTypeOperator.isTextType(type) == expected
+
+        where:
+        type                  | expected
+        "text"                | true
+        "varchar"             | true
+        "varchar(255)"        | true
+        "character varying"   | true
+        "char"                | true
+        "char(10)"            | true
+        "character"           | true
+        "bpchar"              | true
+        "int"                 | false
+        "json"                | false
+        null                  | false
+        ""                    | false
+    }
+
+    def "should categorize types correctly"() {
+        expect:
+        PostgresTypeOperator.getTypeCategory(type) == expected
+
+        where:
+        type                  | expected
+        "int"                 | "integer"
+        "bigint"              | "integer"
+        "numeric"             | "numeric"
+        "double precision"    | "numeric"
+        "boolean"             | "boolean"
+        "text"                | "text"
+        "varchar(255)"        | "text"
+        "timestamp"           | "datetime"
+        "date"                | "datetime"
+        "json"                | "json"
+        "jsonb"               | "json"
+        "uuid"                | "uuid"
+        "inet"                | "network"
+        "bit"                 | "bit"
+        "xml"                 | "xml"
+        "int[]"               | "array"
+        "unknown_type"        | "unknown"
+        null                  | "unknown"
+    }
+
+    def "should identify built-in types correctly"() {
+        expect:
+        PostgresTypeOperator.isBuiltInType(type) == expected
+
+        where:
+        type                  | expected
+        "int"                 | true
+        "text"                | true
+        "timestamp"           | true
+        "json"                | true
+        "uuid"                | true
+        "int[]"               | true
+        "custom_enum_type"    | false
+        "unknown_type"        | false
+        null                  | false
     }
 } 

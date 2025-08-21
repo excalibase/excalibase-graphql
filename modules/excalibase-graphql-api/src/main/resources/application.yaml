@@ -16,6 +16,8 @@ app:
   database-type: postgres
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
+    role-privileges-ttl-minutes: 30  # Role privileges cache TTL in minutes (default: 30 minutes)
+    graphql-ttl-minutes: 30  # GraphQL cache TTL in minutes (default: 30 minutes)
   security:
     role-based-schema: true  # Enable role-based schema filtering and RLS/CLS support (default: true)
 

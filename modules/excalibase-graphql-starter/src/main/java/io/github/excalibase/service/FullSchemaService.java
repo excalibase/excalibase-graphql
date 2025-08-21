@@ -1,6 +1,7 @@
 package io.github.excalibase.service;
 
 import io.github.excalibase.cache.TTLCache;
+import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import org.slf4j.Logger;
@@ -24,16 +25,16 @@ public class FullSchemaService {
     private final IDatabaseSchemaReflector schemaReflector;
     private final TTLCache<String, Map<String, TableInfo>> schemaCache;
     
-    public FullSchemaService(IDatabaseSchemaReflector schemaReflector) {
+    public FullSchemaService(IDatabaseSchemaReflector schemaReflector, AppConfig appConfig) {
         this.schemaReflector = schemaReflector;
-        this.schemaCache = new TTLCache<>(Duration.ofHours(2)); // Cache for 2 hours
+        this.schemaCache = new TTLCache<>(Duration.ofMinutes(appConfig.getCache().getSchemaTtlMinutes()));
     }
 
     /**
      * Gets the complete database schema using superuser privileges.
      * This is cached and used as the "source of truth" for filtering.
      * 
-     * Cost: ~300ms once per 2 hours vs ~300ms per role per request.
+     * Cost: ~300ms once per TTL duration vs ~300ms per role per request.
      */
     public Map<String, TableInfo> getFullSchema() {
         return schemaCache.computeIfAbsent("full_schema", key -> {

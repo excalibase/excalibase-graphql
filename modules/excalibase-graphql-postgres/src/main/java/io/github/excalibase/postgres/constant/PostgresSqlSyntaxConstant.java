@@ -3,8 +3,8 @@ package io.github.excalibase.postgres.constant;
 /**
  * SQL syntax constants for query building.
  */
-public class PostgresColumnTypeConstant {
-    private PostgresColumnTypeConstant() {
+public class PostgresSqlSyntaxConstant {
+    private PostgresSqlSyntaxConstant() {
     }
 
     // SQL keywords with spaces
@@ -30,6 +30,24 @@ public class PostgresColumnTypeConstant {
     // SQL wildcard for RETURNING clause
     public static final String RETURNING_ALL = " RETURNING *";
 
-    public static final String POSTGRES_ENUM = "postgres_enum";
-    public static final String POSTGRES_COMPOSITE = "postgres_composite";
+
+    // SQL casting and parameter operators
+    public static final String CAST_OPERATOR = "::";
+    public static final String EQUALS_PARAM = " = :";
+    public static final String NOT_EQUALS_PARAM = " != :";
+    public static final String GREATER_THAN = " > :";
+    public static final String GREATER_THAN_EQUALS = " >= :";
+    public static final String LESS_THAN = " < :";
+    public static final String LESS_THAN_EQUALS = " <= :";
+    
+    // SQL NULL checks
+    public static final String IS_NULL = " IS NULL";
+    public static final String IS_NOT_NULL = " IS NOT NULL";
+    
+    // SQL text casting for special types
+    public static final String CAST_TO_TEXT = "::text";
+    
+    // Order direction
+    public static final String ASC_ORDER = "ASC";
+    public static final String DESC_ORDER = "DESC";
 }

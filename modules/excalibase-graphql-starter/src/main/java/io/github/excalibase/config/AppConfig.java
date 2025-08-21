@@ -35,6 +35,9 @@ public class AppConfig {
     
     /** Security configuration */
     private SecurityConfig security = new SecurityConfig();
+    
+    /** Cache configuration */
+    private CacheConfig cache = new CacheConfig();
 
     public String getAllowedSchema() {
         return allowedSchema;
@@ -60,6 +63,14 @@ public class AppConfig {
         this.security = security;
     }
 
+    public CacheConfig getCache() {
+        return cache;
+    }
+
+    public void setCache(CacheConfig cache) {
+        this.cache = cache;
+    }
+
     /**
      * Security configuration properties.
      */
@@ -74,6 +85,45 @@ public class AppConfig {
 
         public void setRoleBasedSchema(boolean roleBasedSchema) {
             this.roleBasedSchema = roleBasedSchema;
+        }
+    }
+    
+    /**
+     * Cache configuration properties.
+     */
+    public static class CacheConfig {
+        
+        /** Schema cache TTL in minutes */
+        private int schemaTtlMinutes = 30;
+        
+        /** Role privileges cache TTL in minutes */
+        private int rolePrivilegesTtlMinutes = 30;
+        
+        /** GraphQL cache TTL in minutes */
+        private int graphqlTtlMinutes = 30;
+
+        public int getSchemaTtlMinutes() {
+            return schemaTtlMinutes;
+        }
+
+        public void setSchemaTtlMinutes(int schemaTtlMinutes) {
+            this.schemaTtlMinutes = schemaTtlMinutes;
+        }
+
+        public int getRolePrivilegesTtlMinutes() {
+            return rolePrivilegesTtlMinutes;
+        }
+
+        public void setRolePrivilegesTtlMinutes(int rolePrivilegesTtlMinutes) {
+            this.rolePrivilegesTtlMinutes = rolePrivilegesTtlMinutes;
+        }
+
+        public int getGraphqlTtlMinutes() {
+            return graphqlTtlMinutes;
+        }
+
+        public void setGraphqlTtlMinutes(int graphqlTtlMinutes) {
+            this.graphqlTtlMinutes = graphqlTtlMinutes;
         }
     }
 }

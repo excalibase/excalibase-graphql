@@ -204,7 +204,7 @@ public class PostgresTypeConverter {
                         convertedList.add(null);
                     } else {
                         String itemStr = item.toString();
-                        if (type.contains(ColumnTypeConstant.UUID)) {
+                        if (PostgresTypeOperator.isUuidType(type)) {
                             convertedList.add(UUID.fromString(itemStr));
                         } else if (PostgresTypeOperator.isIntegerType(type)) {
                             convertedList.add(Integer.parseInt(itemStr));
@@ -212,10 +212,10 @@ public class PostgresTypeConverter {
                             convertedList.add(Double.parseDouble(itemStr));
                         } else if (PostgresTypeOperator.isBooleanType(type)) {
                             convertedList.add(Boolean.parseBoolean(itemStr));
-                        } else if (type.contains(ColumnTypeConstant.INTERVAL)) {
+                        } else if (type.equals(ColumnTypeConstant.INTERVAL)) {
                             // Intervals should be passed as strings - PostgreSQL will handle the conversion
                             convertedList.add(itemStr);
-                        } else if (PostgresTypeOperator.isDateTimeType(type) && !type.contains(ColumnTypeConstant.INTERVAL)) {
+                        } else if (PostgresTypeOperator.isDateTimeType(type) && !type.equals(ColumnTypeConstant.INTERVAL)) {
                             // Handle date/timestamp conversion for arrays (excluding intervals)
                             Object convertedDate = convertToDateTime(itemStr, type);
                             convertedList.add(convertedDate);
@@ -231,7 +231,7 @@ public class PostgresTypeConverter {
             // Handle single values
             String valueStr = value.toString();
             
-            if (type.contains(ColumnTypeConstant.UUID)) {
+            if (PostgresTypeOperator.isUuidType(type)) {
                 paramSource.addValue(paramName, UUID.fromString(valueStr));
             } else if (PostgresTypeOperator.isIntegerType(type)) {
                 paramSource.addValue(paramName, Integer.parseInt(valueStr));
@@ -239,10 +239,10 @@ public class PostgresTypeConverter {
                 paramSource.addValue(paramName, Double.parseDouble(valueStr));
             } else if (PostgresTypeOperator.isBooleanType(type)) {
                 paramSource.addValue(paramName, Boolean.parseBoolean(valueStr));
-            } else if (type.contains(ColumnTypeConstant.INTERVAL)) {
+            } else if (type.equals(ColumnTypeConstant.INTERVAL)) {
                 // Intervals are durations, not timestamps - pass as string for PostgreSQL to handle
                 paramSource.addValue(paramName, valueStr);
-            } else if (PostgresTypeOperator.isDateTimeType(type) && !type.contains(ColumnTypeConstant.INTERVAL)) {
+            } else if (PostgresTypeOperator.isDateTimeType(type) && !type.equals(ColumnTypeConstant.INTERVAL)) {
                 // Handle date/timestamp conversion with multiple formats (excluding intervals)
                 Object convertedDate = convertToDateTime(valueStr, type);
                 paramSource.addValue(paramName, convertedDate);
@@ -271,7 +271,7 @@ public class PostgresTypeConverter {
         String type = columnType.toLowerCase();
         
         // For date columns, try to parse as LocalDate first
-        if (type.contains(ColumnTypeConstant.DATE) && !type.contains(ColumnTypeConstant.TIMESTAMP)) {
+        if (type.equals(ColumnTypeConstant.DATE)) {
             try {
                 LocalDate localDate = LocalDate.parse(valueStr, DateTimeFormatter.ISO_DATE);
                 return Date.valueOf(localDate);
@@ -297,7 +297,7 @@ public class PostgresTypeConverter {
         }
         
         // For timestamp columns, try to parse as LocalDateTime
-        if (type.contains(ColumnTypeConstant.TIMESTAMP)) {
+        if (PostgresTypeOperator.isDateTimeType(type) && type.contains("timestamp")) {
             // Try parsing with different formats
             for (String format : dateFormats) {
                 try {
@@ -399,7 +399,7 @@ public class PostgresTypeConverter {
                 return Double.parseDouble(elementStr);
             } else if (PostgresTypeOperator.isBooleanType(type)) {
                 return Boolean.parseBoolean(elementStr);
-            } else if (type.contains(ColumnTypeConstant.UUID)) {
+            } else if (PostgresTypeOperator.isUuidType(type)) {
                 return elementStr; // Keep UUIDs as strings in GraphQL
             } else {
                 return elementStr; // Default to string

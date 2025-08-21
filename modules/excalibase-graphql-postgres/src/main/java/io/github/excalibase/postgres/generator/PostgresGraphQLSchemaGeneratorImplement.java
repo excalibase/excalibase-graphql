@@ -18,7 +18,6 @@ import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.constant.GraphqlConstant;
 import io.github.excalibase.constant.MutationConstant;
 import io.github.excalibase.postgres.constant.PostgresTypeOperator;
-import io.github.excalibase.postgres.constant.PostgresColumnTypeConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 
 import io.github.excalibase.model.ColumnInfo;
@@ -1497,7 +1496,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         for (CompositeTypeAttribute attribute : compositeInfo.getAttributes()) {
             GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(attribute.getType(),
-                    PostgresColumnTypeConstant.POSTGRES_COMPOSITE, // indicating it's a composite type
+                    ColumnTypeConstant.POSTGRES_COMPOSITE, // indicating it's a composite type
                     customEnumTypes, customCompositeTypes);
             objectBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
                     .name(attribute.getName())
@@ -1517,12 +1516,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                            Map<String, GraphQLEnumType> customEnumTypes,
                                                            Map<String, GraphQLObjectType> customCompositeTypes) {
         // Check for custom enum types first
-        if (PostgresColumnTypeConstant.POSTGRES_ENUM.equals(originalType) && customEnumTypes.containsKey(type)) {
+        if (ColumnTypeConstant.POSTGRES_ENUM.equals(originalType) && customEnumTypes.containsKey(type)) {
             return customEnumTypes.get(type);
         }
 
         // Check for custom composite types
-        if (PostgresColumnTypeConstant.POSTGRES_COMPOSITE.equals(originalType) && customCompositeTypes.containsKey(type)) {
+        if (ColumnTypeConstant.POSTGRES_COMPOSITE.equals(originalType) && customCompositeTypes.containsKey(type)) {
             return customCompositeTypes.get(type);
         }
 
@@ -1726,12 +1725,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                                Map<String, GraphQLEnumType> customEnumTypes,
                                                                Map<String, GraphQLObjectType> customCompositeTypes) {
         // Check for custom enum types first
-        if (PostgresColumnTypeConstant.POSTGRES_ENUM.equals(originalType) && customEnumTypes.containsKey(type)) {
+        if (ColumnTypeConstant.POSTGRES_ENUM.equals(originalType) && customEnumTypes.containsKey(type)) {
             return customEnumTypes.get(type);
         }
 
         // For custom composite types, we need to create input versions
-        if (PostgresColumnTypeConstant.POSTGRES_COMPOSITE.equals(originalType) && customCompositeTypes.containsKey(type)) {
+        if (ColumnTypeConstant.POSTGRES_COMPOSITE.equals(originalType) && customCompositeTypes.containsKey(type)) {
             // For now, treat composite types as String in input (JSON representation)
             // In the future, we could create proper input object types for composites
             return GraphQLString;

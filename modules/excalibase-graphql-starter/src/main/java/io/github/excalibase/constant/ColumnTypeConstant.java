@@ -12,9 +12,17 @@ public class ColumnTypeConstant {
 
     // Integer types
     public static final String INT = "int";
+    public static final String INT2 = "int2";
+    public static final String INT4 = "int4"; 
+    public static final String INT8 = "int8";
+    public static final String INTEGER = "integer";
     public static final String BIGINT = "bigint";
     public static final String SMALLINT = "smallint";
     public static final String SERIAL = "serial";
+    public static final String SERIAL2 = "serial2";
+    public static final String SERIAL4 = "serial4";
+    public static final String SERIAL8 = "serial8";
+    public static final String SMALLSERIAL = "smallserial";
     public static final String BIGSERIAL = "bigserial";
 
     // Decimal and floating-point types
@@ -22,6 +30,8 @@ public class ColumnTypeConstant {
     public static final String NUMERIC = "numeric";
     public static final String DOUBLE = "double";
     public static final String FLOAT = "float";
+    public static final String FLOAT4 = "float4";
+    public static final String FLOAT8 = "float8";
     public static final String REAL = "real";
     public static final String DOUBLE_PRECISION = "double precision";
 
@@ -38,11 +48,23 @@ public class ColumnTypeConstant {
     /** Timestamp column type */
     public static final String TIMESTAMP = "timestamp";
     
+    /** Timestamp with time zone (full form) */
+    public static final String TIMESTAMP_WITH_TIME_ZONE = "timestamp with time zone";
+    
+    /** Timestamp without time zone (full form) */
+    public static final String TIMESTAMP_WITHOUT_TIME_ZONE = "timestamp without time zone";
+    
     /** Date column type */
     public static final String DATE = "date";
     
     /** Time column type */
     public static final String TIME = "time";
+    
+    /** Time with time zone (full form) */
+    public static final String TIME_WITH_TIME_ZONE = "time with time zone";
+    
+    /** Time without time zone (full form) */
+    public static final String TIME_WITHOUT_TIME_ZONE = "time without time zone";
 
     // JSON types
     
@@ -92,6 +114,9 @@ public class ColumnTypeConstant {
     
     /** Variable bit string type */
     public static final String VARBIT = "varbit";
+    
+    /** Bit varying type (full form) */
+    public static final String BIT_VARYING = "bit varying";
 
     // Text and character types
     
@@ -104,11 +129,58 @@ public class ColumnTypeConstant {
     /** Character type */
     public static final String CHAR = "char";
     
+    /** Character type (full form) */
+    public static final String CHARACTER = "character";
+    
     /** Character varying type (PostgreSQL full form) */
     public static final String CHARACTER_VARYING = "character varying";
+    
+    /** Blank-padded character type */
+    public static final String BPCHAR = "bpchar";
 
     // XML types
     
     /** XML type */
     public static final String XML = "xml";
+    
+    // Type categories for getTypeCategory() method
+    
+    /** Integer type category */
+    public static final String CATEGORY_INTEGER = "integer";
+    
+    /** Numeric type category */
+    public static final String CATEGORY_NUMERIC = "numeric";
+    
+    /** Boolean type category */
+    public static final String CATEGORY_BOOLEAN = "boolean";
+    
+    /** Text type category */
+    public static final String CATEGORY_TEXT = "text";
+    
+    /** DateTime type category */
+    public static final String CATEGORY_DATETIME = "datetime";
+    
+    /** JSON type category */
+    public static final String CATEGORY_JSON = "json";
+    
+    /** UUID type category */
+    public static final String CATEGORY_UUID = "uuid";
+    
+    /** Network type category */
+    public static final String CATEGORY_NETWORK = "network";
+    
+    /** Bit type category */
+    public static final String CATEGORY_BIT = "bit";
+    
+    /** XML type category */
+    public static final String CATEGORY_XML = "xml";
+    
+    /** Array type category */
+    public static final String CATEGORY_ARRAY = "array";
+    
+    /** Unknown type category */
+    public static final String CATEGORY_UNKNOWN = "unknown";
+
+    public static final String POSTGRES_ENUM = "postgres_enum";
+    public static final String POSTGRES_COMPOSITE = "postgres_composite";
 } 

@@ -2,9 +2,12 @@ package io.github.excalibase.postgres.service;
 
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.cache.TTLCache;
+import io.github.excalibase.config.AppConfig;
+import io.github.excalibase.constant.DatabaseColumnConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.RlsPolicy;
 import io.github.excalibase.model.RolePrivileges;
+import io.github.excalibase.postgres.constant.PostgresErrorConstant;
 import io.github.excalibase.service.IRolePrivilegeService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,9 +35,9 @@ public class RolePrivilegeService implements IRolePrivilegeService {
     private final JdbcTemplate jdbcTemplate;
     private final TTLCache<String, RolePrivileges> privilegeCache;
     
-    public RolePrivilegeService(JdbcTemplate jdbcTemplate) {
+    public RolePrivilegeService(JdbcTemplate jdbcTemplate, AppConfig appConfig) {
         this.jdbcTemplate = jdbcTemplate;
-        this.privilegeCache = new TTLCache<>(Duration.ofMinutes(30)); // Cache for 30 minutes
+        this.privilegeCache = new TTLCache<>(Duration.ofMinutes(appConfig.getCache().getRolePrivilegesTtlMinutes()));
     }
 
     /**
@@ -48,11 +51,11 @@ public class RolePrivilegeService implements IRolePrivilegeService {
         }
         
         return privilegeCache.computeIfAbsent(roleName, role -> {
-            log.debug("Querying PostgreSQL privileges for role: {}", role);
+            log.debug("Querying {} privileges for {}: {}", PostgresErrorConstant.POSTGRESQL, PostgresErrorConstant.ROLE, role);
             try {
                 return queryRolePrivileges(role);
             } catch (Exception e) {
-                log.warn("Failed to query PostgreSQL privileges for role '{}': {}", role, e.getMessage());
+                log.warn("Failed to query {} {} for {}: {}", PostgresErrorConstant.POSTGRESQL, PostgresErrorConstant.PRIVILEGES, PostgresErrorConstant.ROLE, e.getMessage());
                 return createEmptyPrivileges(role);
             }
         });
@@ -67,7 +70,7 @@ public class RolePrivilegeService implements IRolePrivilegeService {
         // Check if role is superuser
         boolean isSuperuser = checkIfSuperuser(roleName);
         if (isSuperuser) {
-            log.debug("PostgreSQL role '{}' is superuser - has all privileges", roleName);
+            log.debug("{} {} '{}' is {} - has all {}", PostgresErrorConstant.POSTGRESQL, PostgresErrorConstant.ROLE, roleName, PostgresErrorConstant.SUPERUSER, PostgresErrorConstant.PRIVILEGES);
             return createSuperuserPrivileges(roleName);
         }
         
@@ -76,7 +79,7 @@ public class RolePrivilegeService implements IRolePrivilegeService {
         queryColumnPrivileges(roleName, privileges);
         queryRlsPolicies(roleName, privileges);
         
-        log.debug("Loaded PostgreSQL privileges for role '{}': {}", roleName, privileges);
+        log.debug("Loaded {} {} for {} '{}': {}", PostgresErrorConstant.POSTGRESQL, PostgresErrorConstant.PRIVILEGES, PostgresErrorConstant.ROLE, roleName, privileges);
         return privileges;
     }
 
@@ -93,7 +96,7 @@ public class RolePrivilegeService implements IRolePrivilegeService {
             Boolean isSuperuser = jdbcTemplate.queryForObject(sql, Boolean.class, roleName);
             return Boolean.TRUE.equals(isSuperuser);
         } catch (Exception e) {
-            log.debug("PostgreSQL role '{}' not found or error checking superuser status: {}", roleName, e.getMessage());
+            log.debug("{} {} '{}' not found or error checking {} status: {}", PostgresErrorConstant.POSTGRESQL, PostgresErrorConstant.ROLE, roleName, PostgresErrorConstant.SUPERUSER, e.getMessage());
             return false;
         }
     }
@@ -116,7 +119,7 @@ public class RolePrivilegeService implements IRolePrivilegeService {
                 privileges.addTablePrivilege(tableName, privilegeType);
             }, roleName);
         } catch (Exception e) {
-            log.warn("Failed to query PostgreSQL table privileges for role '{}': {}", roleName, e.getMessage());
+            log.warn("Failed to query {} table {} for {} '{}': {}", PostgresErrorConstant.POSTGRESQL, PostgresErrorConstant.PRIVILEGES, PostgresErrorConstant.ROLE, roleName, e.getMessage());
         }
     }
 
@@ -139,7 +142,7 @@ public class RolePrivilegeService implements IRolePrivilegeService {
                 privileges.addColumnPrivilege(privilegeType, tableName, columnName);
             }, roleName);
         } catch (Exception e) {
-            log.warn("Failed to query PostgreSQL column privileges for role '{}': {}", roleName, e.getMessage());
+            log.warn("Failed to query {} column {} for {} '{}': {}", PostgresErrorConstant.POSTGRESQL, PostgresErrorConstant.PRIVILEGES, PostgresErrorConstant.ROLE, roleName, e.getMessage());
         }
     }
 
@@ -224,7 +227,7 @@ public class RolePrivilegeService implements IRolePrivilegeService {
      */
     public void clearCache() {
         privilegeCache.clear();
-        log.info("PostgreSQL role privilege cache cleared");
+        log.info("{} {} privilege cache cleared", PostgresErrorConstant.POSTGRESQL, PostgresErrorConstant.ROLE);
     }
 
     /**
@@ -232,7 +235,7 @@ public class RolePrivilegeService implements IRolePrivilegeService {
      */
     public void clearCacheForRole(String roleName) {
         privilegeCache.remove(roleName);
-        log.debug("Cleared PostgreSQL privilege cache for role: {}", roleName);
+        log.debug("Cleared {} privilege cache for {}: {}", PostgresErrorConstant.POSTGRESQL, PostgresErrorConstant.ROLE, roleName);
     }
 
     /**
@@ -241,7 +244,7 @@ public class RolePrivilegeService implements IRolePrivilegeService {
     public Map<String, Object> getCacheStats() {
         Map<String, Object> stats = new HashMap<>();
         stats.put("cacheSize", privilegeCache.size());
-        stats.put("cacheInfo", "PostgreSQL role privilege cache");
+        stats.put("cacheInfo", PostgresErrorConstant.POSTGRESQL + " " + PostgresErrorConstant.ROLE + " privilege cache");
         return stats;
     }
 
@@ -253,7 +256,7 @@ public class RolePrivilegeService implements IRolePrivilegeService {
         RolePrivileges privileges = getRolePrivileges(roleName);
         
         Map<String, Object> testResults = new HashMap<>();
-        testResults.put("database", "PostgreSQL");
+        testResults.put(PostgresErrorConstant.DATABASE, PostgresErrorConstant.POSTGRESQL);
         testResults.put("roleName", roleName);
         testResults.put("isSuperuser", privileges.isSuperuser());
         testResults.put("selectableTables", privileges.getSelectableTables());

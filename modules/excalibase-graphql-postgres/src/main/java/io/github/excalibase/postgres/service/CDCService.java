@@ -1,6 +1,7 @@
 
 package io.github.excalibase.postgres.service;
 
+import io.github.excalibase.postgres.constant.PostgresErrorConstant;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -52,10 +53,10 @@ public class CDCService {
 
         try {
             cdcListener.start();
-            log.info("CDC Service started successfully");
+            log.info(PostgresErrorConstant.CDC_SERVICE_STARTED);
 
         } catch (Exception e) {
-            log.error("Failed to start CDC Service", e);
+            log.error(PostgresErrorConstant.CDC_SERVICE_FAILED, e);
         }
     }
 
@@ -72,7 +73,7 @@ public class CDCService {
         // Clean up subscriber counts
         tableSubscriberCounts.clear();
 
-        log.info("CDC Service stopped");
+        log.info(PostgresErrorConstant.CDC_SERVICE_STOPPED);
     }
 
     /**
@@ -82,17 +83,17 @@ public class CDCService {
         return getOrCreateTableSink(tableName).asFlux()
                 .doOnSubscribe(s -> {
                     tableSubscriberCounts.computeIfAbsent(tableName, k -> new AtomicInteger(0)).incrementAndGet();
-                    log.info("📡 Table stream: Client subscribed to table events: {} (count: {})", 
+                    log.info(PostgresErrorConstant.TABLE_STREAM_CLIENT_SUBSCRIBED, 
                              tableName, tableSubscriberCounts.get(tableName).get());
                 })
                 .doOnCancel(() -> {
                     int currentCount = tableSubscriberCounts.get(tableName).decrementAndGet();
-                    log.info("📡 Table stream: Client unsubscribed from table events: {} (count: {})", 
+                    log.info(PostgresErrorConstant.TABLE_STREAM_CLIENT_UNSUBSCRIBED, 
                              tableName, currentCount);
                     cleanupTableSinkIfNoSubscribers(tableName);
                 })
-                .doOnComplete(() -> log.warn("📡 Table stream: Stream completed unexpectedly for table: {}", tableName))
-                .doOnError(t -> log.error("📡 Table stream: Error occurred while streaming table events for {}", tableName, t));
+                .doOnComplete(() -> log.warn(PostgresErrorConstant.TABLE_STREAM_COMPLETED, tableName))
+                .doOnError(t -> log.error(PostgresErrorConstant.TABLE_STREAM_ERROR, tableName, t));
     }
 
     /**
@@ -101,7 +102,7 @@ public class CDCService {
      */
     void handleCDCEvent(CDCEvent event) {
         try {
-            log.debug("Processing CDC event: type={}, table={}, data={}",
+            log.debug(PostgresErrorConstant.PROCESSING_CDC_EVENT,
                     event.getType(), event.getTable(),
                     event.getData() != null ? event.getData().substring(0, Math.min(100, event.getData().length())) : "null");
 
@@ -118,37 +119,37 @@ public class CDCService {
                     try {
                         // Quick JSON validation
                         if (!event.getData().startsWith("{") || !event.getData().endsWith("}")) {
-                            log.warn("Invalid JSON format for CDC event, table {}: {}", tableName, event.getData());
+                            log.warn(PostgresErrorConstant.INVALID_JSON_CDC, tableName, event.getData());
                             return;
                         }
                     } catch (Exception e) {
-                        log.warn("Error validating CDC event data for table {}: {}", tableName, e.getMessage());
+                        log.warn(PostgresErrorConstant.ERROR_VALIDATING_CDC, tableName, e.getMessage());
                         return;
                     }
                 }
 
                 Sinks.EmitResult result = sink.tryEmitNext(event);
                 if (result.isFailure()) {
-                    log.warn("Failed to emit CDC event for table {}: {}", tableName, result);
+                    log.warn(PostgresErrorConstant.FAILED_EMIT_CDC, tableName, result);
 
                     // If sink failed due to termination, recreate it
                     if (result == Sinks.EmitResult.FAIL_TERMINATED) {
-                        log.info("Recreating terminated sink for table: {}", tableName);
+                        log.info(PostgresErrorConstant.RECREATING_SINK, tableName);
                         sink = getOrCreateTableSink(tableName);
                         // Retry emission once
                         result = sink.tryEmitNext(event);
                         if (result.isFailure()) {
-                            log.error("Failed to emit CDC event after sink recreation for table {}: {}", tableName, result);
+                            log.error(PostgresErrorConstant.FAILED_EMIT_AFTER_RECREATION, tableName, result);
                         } else {
-                            log.info("Successfully emitted CDC event after sink recreation for table: {}", tableName);
+                            log.info(PostgresErrorConstant.SUCCESS_EMIT_AFTER_RECREATION, tableName);
                         }
                     }
                 } else {
-                    log.debug("Successfully emitted CDC event for table: {}", tableName);
+                    log.debug(PostgresErrorConstant.SUCCESS_EMIT_CDC, tableName);
                 }
             }
         } catch (Exception e) {
-            log.error("Unexpected error handling CDC event: ", e);
+            log.error(PostgresErrorConstant.UNEXPECTED_ERROR_CDC, e);
         }
     }
 
@@ -161,18 +162,18 @@ public class CDCService {
         
         if (subscriberCount != null && sink != null) {
             int currentCount = subscriberCount.get();
-            log.debug("📡 Table stream: Cleanup check for table {}, current subscribers: {}", tableName, currentCount);
+            log.debug(PostgresErrorConstant.CLEANUP_CHECK, tableName, currentCount);
             
             if (currentCount <= 0) {
-                log.info("📡 Table stream: No more subscribers for table {}, removing sink", tableName);
+                log.info(PostgresErrorConstant.NO_MORE_SUBSCRIBERS, tableName);
                 sink.tryEmitComplete();
                 tableSinks.remove(tableName);
                 tableSubscriberCounts.remove(tableName);
             } else {
-                log.debug("📡 Table stream: Table {} still has {} subscribers, keeping sink", tableName, currentCount);
+                log.debug(PostgresErrorConstant.STILL_HAS_SUBSCRIBERS, tableName, currentCount);
             }
         } else {
-            log.debug("📡 Table stream: No sink or subscriber count found for table {} during cleanup", tableName);
+            log.debug(PostgresErrorConstant.NO_SINK_FOUND, tableName);
         }
     }
 
@@ -186,17 +187,17 @@ public class CDCService {
             // Create new sink for this table
             sink = Sinks.many().multicast().onBackpressureBuffer();
             tableSinks.put(tableName, sink);
-            log.debug("Created new CDC sink for table: {}", tableName);
+            log.debug(PostgresErrorConstant.CREATED_NEW_SINK, tableName);
         } else {
             // Check if existing sink is terminated and recreate if needed
             Boolean isTerminated = sink.scan(reactor.core.Scannable.Attr.TERMINATED);
             if (isTerminated == Boolean.TRUE) {
-                log.warn("Table sink for {} is terminated, recreating it", tableName);
+                log.warn(PostgresErrorConstant.SINK_TERMINATED_RECREATING, tableName);
                 sink = Sinks.many().multicast().onBackpressureBuffer();
                 tableSinks.put(tableName, sink);
-                log.info("Successfully recreated table sink for: {}", tableName);
+                log.info(PostgresErrorConstant.SUCCESS_RECREATED_SINK, tableName);
             } else {
-                log.debug("Table sink for {} is active, current subscriber count: {}", tableName, sink.currentSubscriberCount());
+                log.debug(PostgresErrorConstant.SINK_ACTIVE, tableName, sink.currentSubscriberCount());
             }
         }
 
