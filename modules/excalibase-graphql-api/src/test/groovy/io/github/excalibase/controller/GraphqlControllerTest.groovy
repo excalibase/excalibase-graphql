@@ -58,6 +58,73 @@ class GraphqlControllerTest extends Specification {
     def setup() {
         mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build()
     }
+    
+    def cleanup() {
+        // Clean slate approach: drop and recreate schema between tests
+        resetSchema()
+    }
+    
+    private static void cleanupTestData() {
+        try (Connection connection = DriverManager.getConnection(
+                postgres.getJdbcUrl(),
+                postgres.getUsername(),
+                postgres.getPassword());
+             Statement statement = connection.createStatement()) {
+
+            // Only delete data that was explicitly created during mutation tests
+            // Keep all original setup data intact
+            
+            // Delete enhanced_types created by JSON/array tests
+            statement.execute("DELETE FROM enhanced_types WHERE name IN ('JSON Direct Object Test', 'JSON Backward Compatibility Test', 'Array Test', 'Test Record')")
+            
+            // Delete child_table records with high child_id (created in tests)
+            statement.execute("DELETE FROM child_table WHERE child_id >= 100")
+            
+            // Delete parent_table with high parent_id (created in tests)
+            statement.execute("DELETE FROM parent_table WHERE parent_id1 >= 3 AND parent_id2 >= 3")
+            
+            // Delete order_items with unusual quantity/price patterns from tests
+            statement.execute("DELETE FROM order_items WHERE quantity = 999 OR price = 999.99 OR order_id >= 100")
+            
+            // Delete orders created in tests (order_id >= 100)
+            statement.execute("DELETE FROM orders WHERE order_id >= 100")
+            
+            // Only delete customers that were created in mutation tests
+            // Keep original 4 customers (customer_id 1-4) from setup
+            statement.execute("""
+                DELETE FROM customer 
+                WHERE email IN ('john.doe@example.com', 'jane.smith@example.com', 'delete@example.com')
+                   OR first_name LIKE 'Customer%'
+                   OR first_name LIKE 'Bulk%'
+                   OR first_name = 'ToDelete'
+                   OR customer_id > 1000
+            """)
+            
+        } catch (SQLException e) {
+            System.err.println("Error during test cleanup: " + e.getMessage())
+            // Don't fail the test, just log the error
+        }
+    }
+    
+    private static void resetSchema() {
+        try (Connection connection = DriverManager.getConnection(
+                postgres.getJdbcUrl(),
+                postgres.getUsername(),
+                postgres.getPassword());
+             Statement statement = connection.createStatement()) {
+
+            // Drop and recreate schema for clean slate
+            statement.execute("DROP SCHEMA IF EXISTS public CASCADE")
+            statement.execute("CREATE SCHEMA public")
+            
+            // Recreate all test data from scratch
+            setupTestData()
+            
+        } catch (SQLException e) {
+            System.err.println("Error during schema reset: " + e.getMessage())
+            // Don't fail the test, just log the error
+        }
+    }
 
     private static void setupTestData() {
         try (Connection connection = DriverManager.getConnection(
@@ -1079,6 +1146,99 @@ class GraphqlControllerTest extends Specification {
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath('$.data.enhanced_types').isArray())
+    }
+
+    // ========== Enhanced JSON Scalar Tests (Direct Object Input) ==========
+
+    def "should create enhanced_types with direct JSON objects"() {
+        given: "a GraphQL mutation with direct JSON object inputs"
+        def mutation = '''
+        mutation {
+            createEnhanced_types(input: {
+                name: "JSON Direct Object Test"
+                json_col: {
+                    user: {
+                        name: "Alice Johnson"
+                        age: 28
+                        active: true
+                    }
+                    settings: {
+                        theme: "dark"
+                        notifications: true
+                        language: "en"
+                    }
+                    tags: ["premium", "developer", "verified"]
+                    score: 95.5
+                }
+                jsonb_col: {
+                    profile: {
+                        id: 12345
+                        email: "alice@example.com"
+                        verified: true
+                    }
+                    preferences: {
+                        newsletter: false
+                        marketing: true
+                    }
+                }
+                numeric_col: 1234.56
+            }) {
+                id
+                name
+                json_col
+                jsonb_col
+                numeric_col
+            }
+        }
+        '''
+
+        when: "executing mutation with direct JSON objects"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${mutation.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should successfully create record with JSON data"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("JSON Direct Object Test"))
+                .andExpect(jsonPath('$.data.createEnhanced_types.json_col').exists())
+                .andExpect(jsonPath('$.data.createEnhanced_types.jsonb_col').exists())
+                .andExpect(jsonPath('$.data.createEnhanced_types.numeric_col').value(1234.56))
+    }
+
+    def "should create enhanced_types with array inputs separately"() {
+        given: "a GraphQL mutation with array inputs only (testing array type handling)"
+        def mutation = '''
+        mutation {
+            createEnhanced_types(input: {
+                name: "Array Test Only"
+                int_array: [1, 2, 3, 4, 5]
+                text_array: ["spring", "graphql", "postgresql"]
+                numeric_col: 999.99
+            }) {
+                id
+                name
+                int_array
+                text_array
+                numeric_col
+            }
+        }
+        '''
+
+        when: "executing mutation with array inputs"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${mutation.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should successfully create record with array data"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("Array Test Only"))
+                .andExpect(jsonPath('$.data.createEnhanced_types.int_array').isArray())
+                .andExpect(jsonPath('$.data.createEnhanced_types.text_array').isArray())
+                .andExpect(jsonPath('$.data.createEnhanced_types.numeric_col').value(999.99))
     }
 
     def "should query array columns with proper GraphQL List types"() {

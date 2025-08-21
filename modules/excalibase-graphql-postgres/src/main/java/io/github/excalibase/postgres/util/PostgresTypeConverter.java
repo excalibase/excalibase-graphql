@@ -136,45 +136,29 @@ public class PostgresTypeConverter {
     }
 
     public Map<String, Object> convertPostgresTypesToGraphQLTypes(Map<String, Object> result, TableInfo tableInfo) {
-        // Get custom type columns (including arrays)
-        Map<String, String> customTypeColumns = tableInfo.getColumns().stream()
-                .filter(col -> {
-                    String baseType = col.getType().replace("[]", "");
-                    return isCustomEnumType(baseType) || isCustomCompositeType(baseType);
-                })
-                .collect(Collectors.toMap(io.github.excalibase.model.ColumnInfo::getName, io.github.excalibase.model.ColumnInfo::getType));
-        
-        if (customTypeColumns.isEmpty()) {
-            return result; // No custom types, return as-is
-        }
-        
         Map<String, Object> convertedResult = new HashMap<>(result);
         
-        // Process custom type columns (determine enum vs composite based on data format)
-        for (Map.Entry<String, String> customCol : customTypeColumns.entrySet()) {
-            String columnName = customCol.getKey();
-            String columnType = customCol.getValue();
+        // Process ALL columns to handle both custom types and regular array types
+        for (io.github.excalibase.model.ColumnInfo column : tableInfo.getColumns()) {
+            String columnName = column.getName();
+            String columnType = column.getType();
             Object value = result.get(columnName);
             
             if (value != null) {
-                // Check if it's an array type
+                // Handle ALL array types (both custom and regular)
                 if (PostgresTypeOperator.isArrayType(columnType)) {
-                    // Process as custom type array
-                    List<Object> convertedArray = convertCustomTypeArrayToList(value, columnType);
+                    List<Object> convertedArray = convertArrayToList(value, columnType);
                     convertedResult.put(columnName, convertedArray);
-                } else {
+                } 
+                // Handle custom composite types (non-array)
+                else if (isCustomCompositeType(columnType)) {
                     String valueStr = value.toString();
-                    
-                    // If value starts with '(' and ends with ')', it's likely a composite type
                     if (valueStr.startsWith("(") && valueStr.endsWith(")")) {
-                        // Process as composite type
                         Map<String, Object> convertedComposite = convertPostgresCompositeToMap(value, columnType);
                         convertedResult.put(columnName, convertedComposite);
-                    } else {
-                        // Process as enum type (simple string value)
-                        convertedResult.put(columnName, valueStr);
                     }
                 }
+                // Custom enum types are returned as-is (simple strings)
             }
         }
         
@@ -593,6 +577,57 @@ public class PostgresTypeConverter {
             // Not a number, return as string
             return value;
         }
+    }
+
+    /**
+     * Converts PostgreSQL arrays (both regular and custom types) to Java Lists for GraphQL
+     */
+    private List<Object> convertArrayToList(Object arrayValue, String columnType) {
+        if (arrayValue == null) {
+            return List.of();
+        }
+        
+        // Handle PGArray objects (from PostgreSQL JDBC driver)
+        if (arrayValue instanceof java.sql.Array) {
+            try {
+                java.sql.Array sqlArray = (java.sql.Array) arrayValue;
+                Object[] elements = (Object[]) sqlArray.getArray();
+                
+                String baseType = columnType.replace("[]", "");
+                
+                // Convert each element based on type
+                List<Object> convertedList = new ArrayList<>();
+                for (Object element : elements) {
+                    if (element == null) {
+                        convertedList.add(null);
+                    } else if (isCustomCompositeType(baseType)) {
+                        // Handle custom composite types
+                        String elementStr = element.toString();
+                        if (elementStr.startsWith("(") && elementStr.endsWith(")")) {
+                            Map<String, Object> convertedMap = convertPostgresCompositeToMap(elementStr, baseType);
+                            convertedList.add(convertedMap);
+                        } else {
+                            convertedList.add(elementStr);
+                        }
+                    } else if (isCustomEnumType(baseType)) {
+                        // Handle custom enum types
+                        convertedList.add(element.toString());
+                    } else {
+                        // Handle regular PostgreSQL types (integer, text, etc.)
+                        convertedList.add(element);
+                    }
+                }
+                
+                return convertedList;
+                
+            } catch (Exception e) {
+                log.error("Error converting PGArray to List for column type: {}", columnType, e);
+                return List.of();
+            }
+        }
+        
+        // Fallback: handle string representation of arrays (legacy)
+        return convertCustomTypeArrayToList(arrayValue, columnType);
     }
 
     private List<Object> convertCustomTypeArrayToList(Object arrayValue, String columnType) {

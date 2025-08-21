@@ -239,6 +239,51 @@ main() {
     run_test "Enhanced Types - JSON Filtering" \
         "{ enhanced_types(where: { name: { eq: \"Test Record 1\" } }) { id name json_col } }" \
         '.data.enhanced_types[0].json_col != null'
+
+    # ==========================================
+    # ENHANCED JSON SCALAR TESTS (Direct Objects)
+    # ==========================================
+
+    # Test JSON creation with direct objects
+    local create_json_result=$(curl -s --connect-timeout $TIMEOUT -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "query": "mutation { createEnhanced_types(input: { name: \"E2E JSON Direct Object Test\", json_col: { user: { name: \"Alice\", age: 28, active: true }, settings: { theme: \"dark\", notifications: true }, tags: [\"premium\", \"verified\"], score: 95.5 }, jsonb_col: { profile: { id: 12345, email: \"alice@e2e.com\" }, preferences: { newsletter: false } }, numeric_col: 1234.56 }) { id name json_col jsonb_col numeric_col } }"
+        }')
+    
+    if echo "$create_json_result" | jq -e '.data.createEnhanced_types.name == "E2E JSON Direct Object Test"' > /dev/null; then
+        log_success "Enhanced JSON Scalar - Create with Direct Objects: ✓ Passed"
+        ((test_count++))
+        ((passed_tests++))
+    else
+        log_error "Enhanced JSON Scalar - Create with Direct Objects: Failed"
+        echo "$create_json_result" | jq '.errors // .'
+        ((test_count++))
+        ((failed_tests++))
+    fi
+
+    # Test JSON creation with backward compatibility (JSON strings)
+    local create_json_string_result=$(curl -s --connect-timeout $TIMEOUT -X POST "$API_URL" \
+        -H "Content-Type: application/json" \
+        -d '{
+            "query": "mutation { createEnhanced_types(input: { name: \"E2E JSON String Test\", json_col: \"{\\\"legacy\\\": \\\"support\\\", \\\"version\\\": 1}\", jsonb_col: \"{\\\"old_format\\\": true, \\\"status\\\": \\\"working\\\"}\", numeric_col: 999.99 }) { id name json_col jsonb_col numeric_col } }"
+        }')
+    
+    if echo "$create_json_string_result" | jq -e '.data.createEnhanced_types.name == "E2E JSON String Test"' > /dev/null; then
+        log_success "Enhanced JSON Scalar - Backward Compatibility: ✓ Passed"
+        ((test_count++))
+        ((passed_tests++))
+    else
+        log_error "Enhanced JSON Scalar - Backward Compatibility: Failed"
+        echo "$create_json_string_result" | jq '.errors // .'
+        ((test_count++))
+        ((failed_tests++))
+    fi
+
+    # Test querying created JSON data
+    run_test "Enhanced JSON Scalar - Query Created Records" \
+        "{ enhanced_types(where: { name: { contains: \"E2E JSON\" } }) { id name json_col jsonb_col numeric_col } }" \
+        '.data.enhanced_types | length >= 2'
     
     run_test "Enhanced Types - Array Fields" \
         "{ enhanced_types { id name int_array text_array } }" \

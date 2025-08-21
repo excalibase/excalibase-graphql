@@ -24,6 +24,9 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
 import java.util.List;
 import java.util.UUID;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class PostgresArrayParameterHandler {
     private static final Logger log = LoggerFactory.getLogger(PostgresArrayParameterHandler.class);
@@ -47,6 +50,12 @@ public class PostgresArrayParameterHandler {
                 return;
             }
 
+            // Handle JSON/JSONB types - MUST come before composite types
+            if (PostgresTypeOperator.isJsonType(columnType)) {
+                handleJsonParameter(paramSource, paramName, value);
+                return;
+            }
+            
             // Handle custom composite types
             if (typeConverter.isCustomCompositeType(columnType)) {
                 if (value instanceof java.util.Map) {
@@ -89,6 +98,56 @@ public class PostgresArrayParameterHandler {
             }
         } catch (Exception e) {
             log.warn("Error converting value for parameter {}: {}, using as string", paramName, e.getMessage());
+            paramSource.addValue(paramName, value.toString());
+        }
+    }
+    
+    /**
+     * Handles JSON/JSONB parameter conversion.
+     * Converts JsonNode objects to JSON strings for PostgreSQL.
+     */
+    private void handleJsonParameter(MapSqlParameterSource paramSource, String paramName, Object value) {
+        if (value == null) {
+            paramSource.addValue(paramName, null);
+            return;
+        }
+        
+        try {
+            String jsonString;
+            
+            // If it's a JsonNode (from our enhanced JsonScalar), convert to string
+            if (value instanceof JsonNode) {
+                ObjectMapper mapper = new ObjectMapper();
+                jsonString = mapper.writeValueAsString(value);
+            }
+            // If it's already a JSON string, validate and use it
+            else if (value instanceof String) {
+                String stringValue = (String) value;
+                // Validate it's valid JSON
+                ObjectMapper mapper = new ObjectMapper();
+                mapper.readTree(stringValue); // This will throw if invalid
+                jsonString = stringValue;
+            }
+            // If it's a Map or List, convert to JSON string
+            else if (value instanceof java.util.Map || value instanceof java.util.List) {
+                ObjectMapper mapper = new ObjectMapper();
+                jsonString = mapper.writeValueAsString(value);
+            }
+            // For other types, try to convert to JSON
+            else {
+                ObjectMapper mapper = new ObjectMapper();
+                jsonString = mapper.writeValueAsString(value);
+            }
+            
+            // PostgreSQL JSONB columns need the value as a String
+            paramSource.addValue(paramName, jsonString);
+            
+        } catch (JsonProcessingException e) {
+            log.error("Error converting JSON parameter {}: {}", paramName, e.getMessage());
+            // Fallback: use toString() and let PostgreSQL handle it
+            paramSource.addValue(paramName, value.toString());
+        } catch (Exception e) {
+            log.error("Unexpected error handling JSON parameter {}: {}", paramName, e.getMessage());
             paramSource.addValue(paramName, value.toString());
         }
     }
@@ -213,6 +272,24 @@ public class PostgresArrayParameterHandler {
             return null;
         }
 
+        // Handle JSON types - convert JsonNode to string
+        if (PostgresTypeOperator.isJsonType(baseType)) {
+            try {
+                if (element instanceof JsonNode) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    return mapper.writeValueAsString(element);
+                } else if (element instanceof java.util.Map || element instanceof java.util.List) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    return mapper.writeValueAsString(element);
+                } else {
+                    return element.toString();
+                }
+            } catch (JsonProcessingException e) {
+                log.warn("Error converting JSON array element: {}", e.getMessage());
+                return element.toString();
+            }
+        }
+        
         // Handle custom enum types
         if (typeConverter.isCustomEnumType(baseType)) {
             return element.toString(); // Custom enums are stored as strings
