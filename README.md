@@ -16,7 +16,7 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 - **🗓️ Enhanced Date/Time Filtering**: Comprehensive date and timestamp operations with multiple format support
 - **🔍 Advanced Filter Types**: StringFilter, IntFilter, FloatFilter, BooleanFilter, DateTimeFilter with operators like eq, neq, gt, gte, lt, lte, in, notIn, isNull, isNotNull
 - **🎯 Custom PostgreSQL Types**: Full support for custom enum and composite types with automatic GraphQL mapping
-- **📄 Enhanced PostgreSQL Data Types**: JSON/JSONB, arrays, network types (INET, CIDR), enhanced datetime, binary, and XML support  
+- **📄 Enhanced PostgreSQL Data Types**: JSON/JSONB with **direct GraphQL object support** 🆕, arrays with **proper PGArray mapping** 🆕, network types (INET, CIDR), enhanced datetime, binary, and XML support  
 - **🔗 Relationship Resolution**: Automatic foreign key relationship handling
 - **🛠️ CRUD Operations**: Full create, read, update, delete support with **composite key support**
 - **🔑 Composite Primary Keys**: Complete support for tables with multi-column primary keys
