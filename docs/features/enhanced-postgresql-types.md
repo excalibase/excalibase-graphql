@@ -151,11 +151,11 @@ mutation {
 }
 ```
 
-### JSON and JSONB Types ✅
+### JSON and JSONB Types ✅ 🆕
 
 **PostgreSQL Types**: `JSON`, `JSONB`  
-**GraphQL Mapping**: Custom `JSON` scalar  
-**Status**: ✅ Complete with advanced filtering
+**GraphQL Mapping**: Enhanced `JSON` scalar with **direct object support**  
+**Status**: ✅ Complete with advanced filtering and natural GraphQL syntax
 
 ```sql
 -- Database Schema
@@ -190,19 +190,81 @@ input JSONFilter {
 }
 ```
 
-**Key Features:**
-- ✅ Custom JSON scalar with validation
+**🆕 Enhanced Key Features:**
+- ✅ **Direct GraphQL object input** - Use natural object syntax instead of JSON strings
+- ✅ **Array and primitive support** - Accepts arrays `[1,2,3]` and primitives `42`, `true`
+- ✅ **Backward compatibility** - JSON strings continue to work as before
+- ✅ **Real-time validation** - JSON syntax validated during parsing
+- ✅ **Type-safe operations** - Full GraphQL type safety for JSON data
 - ✅ JSON path operations (`hasKey`, `path`, `pathText`)
 - ✅ Containment operations (`contains`, `containedBy`)
 - ✅ Multiple key checking (`hasKeys`)
 - ✅ Safe JSON parsing and validation
 - ✅ Comprehensive error handling
 
-### Array Types ✅
+**🆕 Enhanced Usage Examples:**
+
+```graphql
+# NEW: Direct GraphQL object syntax (recommended)
+mutation {
+  createUsers(input: {
+    name: "Alice Johnson"
+    profile: {
+      age: 28
+      location: "New York"
+      preferences: {
+        theme: "dark"
+        notifications: true
+      }
+      skills: ["GraphQL", "PostgreSQL", "Java"]
+      score: 95.5
+      verified: true
+    }
+    metadata: {
+      source: "registration"
+      campaign: "spring2024"
+      features: ["premium", "beta"]
+    }
+  }) {
+    id
+    profile
+    metadata
+  }
+}
+
+# Backward compatible: JSON string input (still works)
+mutation {
+  createUsers(input: {
+    name: "Bob Smith"
+    profile: "{\"age\": 35, \"city\": \"Boston\"}"
+    metadata: "{\"plan\": \"basic\"}"
+  }) {
+    id
+    profile
+  }
+}
+
+# Mixed usage: Objects, arrays, and primitives
+mutation {
+  createUsers(input: {
+    profile: {
+      settings: { notifications: false }
+      tags: ["developer", "senior"]
+      rating: 4.8
+      active: true
+    }
+  }) {
+    id
+    profile
+  }
+}
+```
+
+### Array Types ✅ 🆕
 
 **PostgreSQL Types**: `INTEGER[]`, `TEXT[]`, `BOOLEAN[]`, etc.  
 **GraphQL Mapping**: GraphQL List types `[Int]`, `[String]`, `[Boolean]`  
-**Status**: ✅ Complete with array-specific filtering
+**Status**: ✅ Complete with **proper PGArray to List mapping** and array-specific filtering
 
 ```sql
 -- Database Schema
@@ -210,7 +272,8 @@ CREATE TABLE posts (
     id SERIAL PRIMARY KEY,
     categories TEXT[],
     tag_ids INTEGER[],
-    flags BOOLEAN[]
+    flags BOOLEAN[],
+    json_array JSON[]    -- Arrays of JSON objects also supported
 );
 ```
 
@@ -221,6 +284,7 @@ type posts {
   categories: [String]
   tag_ids: [Int]
   flags: [Boolean]
+  json_array: [JSON]   # Arrays work with enhanced JSON scalar
 }
 
 # Array filtering uses base type filters
@@ -228,15 +292,80 @@ input posts_Filter {
   categories: StringFilter  # Array of strings uses StringFilter
   tag_ids: IntFilter       # Array of integers uses IntFilter
   flags: BooleanFilter     # Array of booleans uses BooleanFilter
+  json_array: JSONFilter   # Array of JSON uses JSONFilter
 }
 ```
 
-**Key Features:**
+**🆕 Enhanced Key Features:**
+- ✅ **Fixed PGArray Mapping** - PostgreSQL PGArray objects now properly convert to GraphQL Lists
+- ✅ **All Array Types Supported** - Regular arrays (`int[]`, `text[]`) and custom type arrays
+- ✅ **Natural Array Input** - Use GraphQL array syntax `[1, 2, 3]` directly
+- ✅ **Type-Safe Element Conversion** - Each array element properly typed
 - ✅ Automatic array detection (looks for `[]` suffix)
 - ✅ GraphQL List type generation
 - ✅ Element-type specific filtering
 - ✅ Array containment operations
 - ✅ Proper array serialization/deserialization
+
+**🆕 Enhanced Usage Examples:**
+
+```graphql
+# Direct array input syntax (natural GraphQL)
+mutation {
+  createPosts(input: {
+    title: "GraphQL Arrays"
+    categories: ["technology", "databases", "graphql"]
+    tag_ids: [1, 5, 12, 23]
+    flags: [true, false, true]
+    json_array: [
+      { type: "metadata", value: "production" },
+      { type: "priority", value: "high" }
+    ]
+  }) {
+    id
+    categories
+    tag_ids
+    flags
+    json_array
+  }
+}
+
+# Query with array filtering
+{
+  posts(where: {
+    categories: { contains: "graphql" }
+    tag_ids: { in: [1, 2, 3] }
+    flags: { eq: true }
+  }) {
+    title
+    categories
+    tag_ids
+    flags
+  }
+}
+
+# Arrays work with custom types too
+mutation {
+  createCustomData(input: {
+    enum_array: [active, pending, completed]      # Array of custom enums
+    composite_array: [                            # Array of custom composite types
+      { name: "Item 1", value: 100 },
+      { name: "Item 2", value: 200 }
+    ]
+  }) {
+    id
+    enum_array
+    composite_array
+  }
+}
+```
+
+**🔧 Technical Implementation:**
+The array mapping enhancement specifically addresses the PostgreSQL JDBC driver returning `PGArray` objects, which are now automatically converted to Java `List` objects that GraphQL expects. This works for:
+- Regular PostgreSQL arrays (`integer[]`, `text[]`, `boolean[]`, etc.)
+- Custom type arrays (`my_enum[]`, `my_composite[]`)
+- JSON arrays (`json[]`, `jsonb[]`)
+- All array types in query results and mutations
 
 ### Enhanced DateTime Types ✅
 
@@ -481,46 +610,84 @@ public class PostgresGraphQLSchemaGeneratorImplement {
 }
 ```
 
-### Custom JSON Scalar
+### Enhanced JSON Scalar 🆕
 
 ```java
 public class JsonScalar {
     public static final GraphQLScalarType JSON = GraphQLScalarType.newScalar()
         .name("JSON")
-        .description("A JSON scalar type that represents JSON values as strings")
-        .coercing(new Coercing<JsonNode, String>() {
+        .description("A JSON scalar type that accepts JSON strings, objects, arrays, and primitives")
+        .coercing(new Coercing<Object, String>() {
             @Override
             public String serialize(Object dataFetcherResult) {
-                // Serialize JsonNode to JSON string
-                // Validate JSON syntax
-                // Return formatted JSON
+                // Enhanced: Handle JsonNode, Maps, Lists, primitives
+                if (dataFetcherResult instanceof JsonNode) {
+                    return objectMapper.writeValueAsString(dataFetcherResult);
+                }
+                if (dataFetcherResult instanceof Map || 
+                    dataFetcherResult instanceof List ||
+                    dataFetcherResult instanceof Number ||
+                    dataFetcherResult instanceof Boolean) {
+                    return objectMapper.writeValueAsString(dataFetcherResult);
+                }
+                // Backward compatible string handling
+                return objectMapper.writeValueAsString(dataFetcherResult);
             }
             
             @Override
             public JsonNode parseValue(Object input) {
-                // Parse JSON string to JsonNode
-                // Validate JSON structure
-                // Return parsed object
+                // 🆕 Enhanced: Accept direct Maps (GraphQL objects)
+                if (input instanceof Map) {
+                    return objectMapper.convertValue(input, JsonNode.class);
+                }
+                // 🆕 Enhanced: Accept direct Lists (GraphQL arrays)
+                if (input instanceof List) {
+                    return objectMapper.convertValue(input, JsonNode.class);
+                }
+                // 🆕 Enhanced: Accept primitives (Numbers, Booleans)
+                if (input instanceof Number || input instanceof Boolean) {
+                    return objectMapper.valueToTree(input);
+                }
+                // Backward compatible JSON string parsing
+                if (input instanceof String) {
+                    return objectMapper.readTree((String) input);
+                }
             }
             
             @Override
             public JsonNode parseLiteral(Object input) {
-                // Parse GraphQL literal to JsonNode
-                // Handle StringValue input
-                // Validate and return
+                // 🆕 Enhanced: Handle ObjectValue literals (GraphQL objects)
+                if (input instanceof ObjectValue) {
+                    return convertObjectLiteralToJsonNode((ObjectValue) input);
+                }
+                // 🆕 Enhanced: Handle ArrayValue literals (GraphQL arrays)
+                if (input instanceof ArrayValue) {
+                    return convertArrayLiteralToJsonNode((ArrayValue) input);
+                }
+                // 🆕 Enhanced: Handle primitive literals
+                if (input instanceof IntValue || input instanceof FloatValue || 
+                    input instanceof BooleanValue) {
+                    return convertPrimitiveLiteralToJsonNode(input);
+                }
+                // Backward compatible StringValue handling
+                if (input instanceof StringValue) {
+                    String jsonString = ((StringValue) input).getValue();
+                    return objectMapper.readTree(jsonString);
+                }
             }
         })
         .build();
 }
 ```
 
-### Array Type Detection
+### Enhanced Array Type Processing 🆕
 
 ```java
+// Enhanced schema generation for arrays
 private GraphQLOutputType mapDatabaseTypeToGraphQLType(String dbType) {
     String type = dbType.toLowerCase();
     
-    // Handle array types
+    // Handle array types (enhanced to support all PostgreSQL arrays)
     if (type.contains(ColumnTypeConstant.ARRAY_SUFFIX)) {
         String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
         GraphQLOutputType elementType = mapDatabaseTypeToGraphQLType(baseType);
@@ -528,6 +695,97 @@ private GraphQLOutputType mapDatabaseTypeToGraphQLType(String dbType) {
     }
     
     // Handle other enhanced types...
+}
+
+// 🆕 Enhanced PGArray to List conversion for query results
+public Map<String, Object> convertPostgresTypesToGraphQLTypes(Map<String, Object> result, TableInfo tableInfo) {
+    Map<String, Object> convertedResult = new HashMap<>(result);
+    
+    // Process ALL columns to handle both custom types and regular array types
+    for (io.github.excalibase.model.ColumnInfo column : tableInfo.getColumns()) {
+        String columnName = column.getName();
+        String columnType = column.getType();
+        Object value = result.get(columnName);
+        
+        if (value != null) {
+            // 🆕 Handle ALL array types (both custom and regular)
+            if (PostgresTypeOperator.isArrayType(columnType)) {
+                List<Object> convertedArray = convertArrayToList(value, columnType);
+                convertedResult.put(columnName, convertedArray);
+            }
+            // Handle custom composite and enum types...
+        }
+    }
+    
+    return convertedResult;
+}
+
+// 🆕 New method: Convert PostgreSQL PGArray to Java List
+private List<Object> convertArrayToList(Object arrayValue, String columnType) {
+    if (arrayValue == null) {
+        return List.of();
+    }
+    
+    // 🆕 Handle PGArray objects (from PostgreSQL JDBC driver)
+    if (arrayValue instanceof java.sql.Array) {
+        try {
+            java.sql.Array sqlArray = (java.sql.Array) arrayValue;
+            Object[] elements = (Object[]) sqlArray.getArray();
+            
+            String baseType = columnType.replace("[]", "");
+            
+            // Convert each element based on type
+            List<Object> convertedList = new ArrayList<>();
+            for (Object element : elements) {
+                if (element == null) {
+                    convertedList.add(null);
+                } else if (isCustomCompositeType(baseType)) {
+                    // Handle custom composite types in arrays
+                    convertedList.add(convertCompositeElement(element, baseType));
+                } else if (isCustomEnumType(baseType)) {
+                    // Handle custom enum types in arrays
+                    convertedList.add(element.toString());
+                } else {
+                    // Handle regular PostgreSQL types (integer, text, etc.)
+                    convertedList.add(element);
+                }
+            }
+            
+            return convertedList;
+            
+        } catch (Exception e) {
+            log.error("Error converting PGArray to List for column type: {}", columnType, e);
+            return List.of();
+        }
+    }
+    
+    // Fallback: handle string representation of arrays (legacy)
+    return convertCustomTypeArrayToList(arrayValue, columnType);
+}
+
+// 🆕 Enhanced parameter handling for JSON types in arrays
+public void handleArrayParameter(MapSqlParameterSource paramSource, String paramName, Object value, String columnType) {
+    if (value instanceof List<?>) {
+        List<?> listValue = (List<?>) value;
+        String baseType = columnType.replace("[]", "");
+        
+        // Convert List elements to appropriate types
+        Object[] convertedArray = convertListToTypedArray(listValue, baseType);
+        
+        // 🆕 Enhanced: Handle JSON types in array elements
+        if (PostgresTypeOperator.isJsonType(baseType)) {
+            for (int i = 0; i < convertedArray.length; i++) {
+                if (convertedArray[i] instanceof JsonNode) {
+                    ObjectMapper mapper = new ObjectMapper();
+                    convertedArray[i] = mapper.writeValueAsString(convertedArray[i]);
+                }
+            }
+        }
+        
+        // Format array for PostgreSQL
+        String arrayString = formatArrayForPostgreSQL(convertedArray, baseType);
+        paramSource.addValue(paramName, arrayString);
+    }
 }
 ```
 

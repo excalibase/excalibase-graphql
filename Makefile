@@ -89,7 +89,7 @@ build-skip: ## Skip Maven build (for rapid iteration)
 
 # Service management
 .PHONY: up
-up: check-ports ## Start Docker services
+up: ## Start Docker services
 	@echo "$(BLUE)🚀 Starting services...$(NC)"
 	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d
