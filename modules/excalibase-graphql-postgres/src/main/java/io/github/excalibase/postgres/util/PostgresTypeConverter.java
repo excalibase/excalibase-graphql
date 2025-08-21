@@ -138,27 +138,54 @@ public class PostgresTypeConverter {
     public Map<String, Object> convertPostgresTypesToGraphQLTypes(Map<String, Object> result, TableInfo tableInfo) {
         Map<String, Object> convertedResult = new HashMap<>(result);
         
-        // Process ALL columns to handle both custom types and regular array types
+        Map<String, String> customTypeColumns = tableInfo.getColumns().stream()
+                .filter(col -> {
+                    String baseType = col.getType().replace("[]", "");
+                    return isCustomEnumType(baseType) || isCustomCompositeType(baseType);
+                })
+                .collect(Collectors.toMap(io.github.excalibase.model.ColumnInfo::getName, io.github.excalibase.model.ColumnInfo::getType));
+        
+        for (Map.Entry<String, String> customCol : customTypeColumns.entrySet()) {
+            String columnName = customCol.getKey();
+            String columnType = customCol.getValue();
+            Object value = result.get(columnName);
+            
+            if (value != null) {
+                if (PostgresTypeOperator.isArrayType(columnType)) {
+                    List<Object> convertedArray = convertCustomTypeArrayToList(value, columnType);
+                    convertedResult.put(columnName, convertedArray);
+                } else {
+                    String valueStr = value.toString();
+                    
+                    // If value starts with '(' and ends with ')', it's likely a composite type
+                    if (valueStr.startsWith("(") && valueStr.endsWith(")")) {
+                        // Process as composite type
+                        Map<String, Object> convertedComposite = convertPostgresCompositeToMap(value, columnType);
+                        convertedResult.put(columnName, convertedComposite);
+                    } else {
+                        // Process as enum type (simple string value)
+                        convertedResult.put(columnName, valueStr);
+                    }
+                }
+            }
+        }
+        
         for (io.github.excalibase.model.ColumnInfo column : tableInfo.getColumns()) {
             String columnName = column.getName();
             String columnType = column.getType();
             Object value = result.get(columnName);
             
-            if (value != null) {
-                // Handle ALL array types (both custom and regular)
-                if (PostgresTypeOperator.isArrayType(columnType)) {
-                    List<Object> convertedArray = convertArrayToList(value, columnType);
-                    convertedResult.put(columnName, convertedArray);
-                } 
-                // Handle custom composite types (non-array)
-                else if (isCustomCompositeType(columnType)) {
-                    String valueStr = value.toString();
-                    if (valueStr.startsWith("(") && valueStr.endsWith(")")) {
-                        Map<String, Object> convertedComposite = convertPostgresCompositeToMap(value, columnType);
-                        convertedResult.put(columnName, convertedComposite);
+            if (value != null && PostgresTypeOperator.isArrayType(columnType)) {
+                String baseType = columnType.replace("[]", "");
+                
+                // Only process if it's NOT a custom type (custom types handled above)
+                if (!isCustomEnumType(baseType) && !isCustomCompositeType(baseType)) {
+                    // Handle regular array types (int[], text[], etc.) - convert PGArray to List
+                    if (value instanceof java.sql.Array) {
+                        List<Object> convertedArray = convertRegularArrayToList(value, columnType);
+                        convertedResult.put(columnName, convertedArray);
                     }
                 }
-                // Custom enum types are returned as-is (simple strings)
             }
         }
         
@@ -628,6 +655,38 @@ public class PostgresTypeConverter {
         
         // Fallback: handle string representation of arrays (legacy)
         return convertCustomTypeArrayToList(arrayValue, columnType);
+    }
+
+    /**
+     * Converts regular PostgreSQL arrays (non-custom types) from PGArray to Java Lists
+     */
+    private List<Object> convertRegularArrayToList(Object arrayValue, String columnType) {
+        if (arrayValue == null) {
+            return List.of();
+        }
+        
+        // Handle PGArray objects (from PostgreSQL JDBC driver)
+        if (arrayValue instanceof java.sql.Array) {
+            try {
+                java.sql.Array sqlArray = (java.sql.Array) arrayValue;
+                Object[] elements = (Object[]) sqlArray.getArray();
+                
+                // For regular arrays, just convert directly to List
+                List<Object> convertedList = new ArrayList<>();
+                for (Object element : elements) {
+                    convertedList.add(element);
+                }
+                
+                return convertedList;
+                
+            } catch (Exception e) {
+                log.error("Error converting regular PGArray to List for column type: {}", columnType, e);
+                return List.of();
+            }
+        }
+        
+        // For non-PGArray values, return as single-element list
+        return List.of(arrayValue);
     }
 
     private List<Object> convertCustomTypeArrayToList(Object arrayValue, String columnType) {
