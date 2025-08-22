@@ -981,4 +981,228 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         def shippingAddressGraphqlType = ordersType.getFieldDefinition("shipping_address").type as GraphQLNonNull
         shippingAddressGraphqlType.originalWrappedType instanceof GraphQLObjectType
     }
+
+    // TDD RED PHASE: Enhanced Custom Type Tests
+    def "should properly map custom enum types in table field definitions"() {
+        given: "a table with custom enum column"
+        def columns = [
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("priority", "task_priority", false, false)
+        ]
+        def tableInfo = new TableInfo("tasks", columns, [], false)
+        Map<String, TableInfo> tables = ["tasks": tableInfo]
+
+        def customEnums = [new CustomEnumInfo("task_priority", "public", ["low", "medium", "high", "urgent"])]
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.getCustomEnumTypes() >> customEnums
+        mockReflector.getCustomCompositeTypes() >> []
+        generator.setSchemaReflector(mockReflector)
+
+        when: "generating schema"
+        def schema = generator.generateSchema(tables)
+
+        then: "enum type should be created and used in table field"
+        def priorityEnum = schema.getType("TaskPriority") as GraphQLEnumType
+        priorityEnum != null
+        priorityEnum.values.collect { it.name } == ["LOW", "MEDIUM", "HIGH", "URGENT"]
+
+        def tasksType = schema.getType("tasks") as GraphQLObjectType
+        def priorityField = tasksType.getFieldDefinition("priority")
+        priorityField != null
+        
+        // This should pass - field should use the custom enum type
+        def fieldType = priorityField.type as GraphQLNonNull
+        fieldType.originalWrappedType == priorityEnum
+    }
+
+    def "should properly map custom composite types in table field definitions"() {
+        given: "a table with custom composite column"
+        def columns = [
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("location", "geo_point", false, false)
+        ]
+        def tableInfo = new TableInfo("locations", columns, [], false)
+        Map<String, TableInfo> tables = ["locations": tableInfo]
+
+        def customComposites = [
+                new CustomCompositeTypeInfo("geo_point", "public", [
+                        new CompositeTypeAttribute("latitude", "double precision", 1, true),
+                        new CompositeTypeAttribute("longitude", "double precision", 2, true)
+                ])
+        ]
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.getCustomEnumTypes() >> []
+        mockReflector.getCustomCompositeTypes() >> customComposites
+        generator.setSchemaReflector(mockReflector)
+
+        when: "generating schema"
+        def schema = generator.generateSchema(tables)
+
+        then: "composite type should be created and used in table field"
+        def geoPointType = schema.getType("GeoPoint") as GraphQLObjectType
+        geoPointType != null
+        geoPointType.getFieldDefinition("latitude") != null
+        geoPointType.getFieldDefinition("longitude") != null
+
+        def locationsType = schema.getType("locations") as GraphQLObjectType
+        def locationField = locationsType.getFieldDefinition("location")
+        locationField != null
+        
+        // This should pass - field should use the custom composite type
+        def fieldType = locationField.type as GraphQLNonNull
+        fieldType.originalWrappedType == geoPointType
+    }
+
+    def "should handle custom enum arrays properly"() {
+        given: "a table with custom enum array column"
+        def columns = [
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("tags", "content_tag[]", false, false)
+        ]
+        def tableInfo = new TableInfo("articles", columns, [], false)
+        Map<String, TableInfo> tables = ["articles": tableInfo]
+
+        def customEnums = [new CustomEnumInfo("content_tag", "public", ["news", "tech", "sports", "entertainment"])]
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.getCustomEnumTypes() >> customEnums
+        mockReflector.getCustomCompositeTypes() >> []
+        generator.setSchemaReflector(mockReflector)
+
+        when: "generating schema"
+        def schema = generator.generateSchema(tables)
+
+        then: "should create enum type and use it in array field"
+        def contentTagEnum = schema.getType("ContentTag") as GraphQLEnumType
+        contentTagEnum != null
+        contentTagEnum.values.collect { it.name } == ["NEWS", "TECH", "SPORTS", "ENTERTAINMENT"]
+
+        def articlesType = schema.getType("articles") as GraphQLObjectType
+        def tagsField = articlesType.getFieldDefinition("tags")
+        tagsField != null
+        
+        // This should pass - field should be a list of custom enum type
+        def fieldType = tagsField.type as GraphQLNonNull
+        def listType = fieldType.originalWrappedType as GraphQLList
+        listType.originalWrappedType == contentTagEnum
+    }
+
+    def "should handle custom composite arrays properly"() {
+        given: "a table with custom composite array column"
+        def columns = [
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("addresses", "address_info[]", false, false)
+        ]
+        def tableInfo = new TableInfo("users", columns, [], false)
+        Map<String, TableInfo> tables = ["users": tableInfo]
+
+        def customComposites = [
+                new CustomCompositeTypeInfo("address_info", "public", [
+                        new CompositeTypeAttribute("street", "character varying", 1, true),
+                        new CompositeTypeAttribute("city", "character varying", 2, true),
+                        new CompositeTypeAttribute("zip_code", "character varying", 3, true)
+                ])
+        ]
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.getCustomEnumTypes() >> []
+        mockReflector.getCustomCompositeTypes() >> customComposites
+        generator.setSchemaReflector(mockReflector)
+
+        when: "generating schema"
+        def schema = generator.generateSchema(tables)
+
+        then: "should create composite type and use it in array field"
+        def addressInfoType = schema.getType("AddressInfo") as GraphQLObjectType
+        addressInfoType != null
+        addressInfoType.getFieldDefinition("street") != null
+        addressInfoType.getFieldDefinition("city") != null
+        addressInfoType.getFieldDefinition("zip_code") != null
+
+        def usersType = schema.getType("users") as GraphQLObjectType
+        def addressesField = usersType.getFieldDefinition("addresses")
+        addressesField != null
+        
+        // This should pass - field should be a list of custom composite type
+        def fieldType = addressesField.type as GraphQLNonNull
+        def listType = fieldType.originalWrappedType as GraphQLList
+        listType.originalWrappedType == addressInfoType
+    }
+
+    def "should generate proper input types for custom enum mutations"() {
+        given: "a table with custom enum column"
+        def columns = [
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("status", "order_status", false, false)
+        ]
+        def tableInfo = new TableInfo("orders", columns, [], false)
+        Map<String, TableInfo> tables = ["orders": tableInfo]
+
+        def customEnums = [new CustomEnumInfo("order_status", "public", ["pending", "processing", "shipped", "delivered"])]
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.getCustomEnumTypes() >> customEnums
+        mockReflector.getCustomCompositeTypes() >> []
+        generator.setSchemaReflector(mockReflector)
+
+        when: "generating schema"
+        def schema = generator.generateSchema(tables)
+
+        then: "should create input types that use custom enum"
+        def createInputType = schema.getType("ordersCreateInput") as GraphQLInputObjectType
+        createInputType != null
+        
+        def statusInputField = createInputType.getFieldDefinition("status")
+        statusInputField != null
+        statusInputField.type == schema.getType("OrderStatus")
+
+        def updateInputType = schema.getType("ordersUpdateInput") as GraphQLInputObjectType
+        updateInputType != null
+        
+        def updateStatusField = updateInputType.getFieldDefinition("status")
+        updateStatusField != null
+        updateStatusField.type == schema.getType("OrderStatus")
+    }
+
+    def "should generate proper input types for custom composite mutations"() {
+        given: "a table with custom composite column"
+        def columns = [
+                new ColumnInfo("id", "integer", true, false),
+                new ColumnInfo("contact", "contact_details", false, false)
+        ]
+        def tableInfo = new TableInfo("customers", columns, [], false)
+        Map<String, TableInfo> tables = ["customers": tableInfo]
+
+        def customComposites = [
+                new CustomCompositeTypeInfo("contact_details", "public", [
+                        new CompositeTypeAttribute("email", "character varying", 1, true),
+                        new CompositeTypeAttribute("phone", "character varying", 2, true),
+                        new CompositeTypeAttribute("website", "character varying", 3, false)
+                ])
+        ]
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.getCustomEnumTypes() >> []
+        mockReflector.getCustomCompositeTypes() >> customComposites
+        generator.setSchemaReflector(mockReflector)
+
+        when: "generating schema"
+        def schema = generator.generateSchema(tables)
+
+        then: "should create input types for composite type"
+        def contactDetailsInputType = schema.getType("ContactDetailsInput") as GraphQLInputObjectType
+        contactDetailsInputType != null
+        contactDetailsInputType.getFieldDefinition("email") != null
+        contactDetailsInputType.getFieldDefinition("phone") != null
+        contactDetailsInputType.getFieldDefinition("website") != null
+
+        def createInputType = schema.getType("customersCreateInput") as GraphQLInputObjectType
+        createInputType != null
+        
+        def contactInputField = createInputType.getFieldDefinition("contact")
+        contactInputField != null
+        contactInputField.type == contactDetailsInputType
+    }
 }

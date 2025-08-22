@@ -57,7 +57,14 @@ public class PostgresTypeConverter {
         
         try {
             return schemaReflector.getCustomEnumTypes().stream()
-                    .anyMatch(enumType -> enumType.getName().equalsIgnoreCase(type));
+                    .anyMatch(enumType -> {
+                        // Check both unqualified name and schema-qualified name
+                        String unqualifiedName = enumType.getName();
+                        String qualifiedName = enumType.getSchema() + "." + enumType.getName();
+                        
+                        return unqualifiedName.equalsIgnoreCase(type) || 
+                               qualifiedName.equalsIgnoreCase(type);
+                    });
         } catch (Exception e) {
             log.debug("Error checking custom enum types: {}", e.getMessage());
             return false;
@@ -71,7 +78,14 @@ public class PostgresTypeConverter {
         
         try {
             return schemaReflector.getCustomCompositeTypes().stream()
-                    .anyMatch(compositeType -> compositeType.getName().equalsIgnoreCase(type));
+                    .anyMatch(compositeType -> {
+                        // Check both unqualified name and schema-qualified name
+                        String unqualifiedName = compositeType.getName();
+                        String qualifiedName = compositeType.getSchema() + "." + compositeType.getName();
+                        
+                        return unqualifiedName.equalsIgnoreCase(type) || 
+                               qualifiedName.equalsIgnoreCase(type);
+                    });
         } catch (Exception e) {
             log.debug("Error checking custom composite types: {}", e.getMessage());
             return false;
@@ -520,24 +534,19 @@ public class PostgresTypeConverter {
             content = content.substring(1, content.length() - 1);
         }
 
-        // Split by commas - this is a simple implementation that may need enhancement for complex cases
-        String[] parts = content.split(",");
-        log.debug("Split into {} parts: {}", parts.length, Arrays.toString(parts));
+        // Parse CSV-style content with proper quote handling
+        List<String> parts = parseCompositeCSV(content);
+        log.debug("Split into {} parts: {}", parts.size(), parts);
         
         // Get composite type metadata to use proper field names
         List<String> fieldNames = getCompositeTypeFieldNames(columnType);
         log.debug("Field names for type '{}': {}", columnType, fieldNames);
         
         Map<String, Object> result = new HashMap<>();
-        for (int i = 0; i < parts.length; i++) {
-            String part = parts[i].trim();
+        for (int i = 0; i < parts.size(); i++) {
+            String part = parts.get(i);
             
-            // Remove quotes if present
-            if (part.startsWith("\"") && part.endsWith("\"")) {
-                part = part.substring(1, part.length() - 1);
-            }
-            
-            // Try to convert to appropriate type
+            // Try to convert to appropriate type (quotes already handled in parseCompositeCSV)
             Object value = convertCompositeAttributeValue(part);
             
             // Use actual field name if available, otherwise fall back to generic name
@@ -550,12 +559,61 @@ public class PostgresTypeConverter {
         return result;
     }
 
+    /**
+     * Parse CSV-style composite content with proper quote handling
+     * Handles cases like: 40.7589,-73.9851,"New York"
+     */
+    private List<String> parseCompositeCSV(String content) {
+        List<String> parts = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        boolean inQuotes = false;
+        boolean escaped = false;
+        
+        for (int i = 0; i < content.length(); i++) {
+            char c = content.charAt(i);
+            
+            if (escaped) {
+                current.append(c);
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == '"') {
+                inQuotes = !inQuotes;
+                // Don't include the quotes in the final value
+            } else if (c == ',' && !inQuotes) {
+                // End of current field
+                parts.add(current.toString().trim());
+                current = new StringBuilder();
+            } else {
+                current.append(c);
+            }
+        }
+        
+        // Add the last part
+        if (current.length() > 0 || content.endsWith(",")) {
+            parts.add(current.toString().trim());
+        }
+        
+        return parts;
+    }
+
     private List<String> getCompositeTypeFieldNames(String compositeTypeName) {
         try {
             List<CustomCompositeTypeInfo> compositeTypes = schemaReflector.getCustomCompositeTypes();
             
+            // Handle schema-qualified names (e.g., "hana.address" -> "address")
+            final String unqualifiedTypeName = compositeTypeName.contains(".") 
+                    ? compositeTypeName.substring(compositeTypeName.lastIndexOf(".") + 1)
+                    : compositeTypeName;
+            
             for (CustomCompositeTypeInfo compositeType : compositeTypes) {
-                if (compositeType.getName().equalsIgnoreCase(compositeTypeName)) {
+                // Check both qualified and unqualified names
+                String typeName = compositeType.getName();
+                String qualifiedTypeName = compositeType.getSchema() + "." + compositeType.getName();
+                
+                if (typeName.equalsIgnoreCase(compositeTypeName) || 
+                    typeName.equalsIgnoreCase(unqualifiedTypeName) ||
+                    qualifiedTypeName.equalsIgnoreCase(compositeTypeName)) {
                     return compositeType.getAttributes().stream()
                             .sorted((a, b) -> Integer.compare(a.getOrder(), b.getOrder()))
                             .map(CompositeTypeAttribute::getName)
@@ -592,6 +650,11 @@ public class PostgresTypeConverter {
         }
 
         value = value.trim();
+        
+        // Remove quotes if present (from CSV parsing)
+        if (value.startsWith("\"") && value.endsWith("\"")) {
+            value = value.substring(1, value.length() - 1);
+        }
 
         // Try to parse as number first
         try {
@@ -811,5 +874,51 @@ public class PostgresTypeConverter {
                 .collect(Collectors.joining(","));
 
         return "(" + values + ")";
+    }
+
+    public String convertMapToPostgresComposite(Map<String, Object> compositeMap, String compositeTypeName) {
+        if (compositeMap == null || compositeMap.isEmpty()) {
+            return null;
+        }
+
+        try {
+            // Find the composite type definition
+            final String unqualifiedTypeName = compositeTypeName.contains(".") 
+                    ? compositeTypeName.substring(compositeTypeName.lastIndexOf(".") + 1)
+                    : compositeTypeName;
+
+            CustomCompositeTypeInfo compositeTypeInfo = schemaReflector.getCustomCompositeTypes().stream()
+                    .filter(type -> type.getName().equalsIgnoreCase(unqualifiedTypeName))
+                    .findFirst()
+                    .orElse(null);
+
+            if (compositeTypeInfo == null) {
+                log.warn("Composite type definition not found for: {}, falling back to simple conversion", compositeTypeName);
+                return convertMapToPostgresComposite(compositeMap);
+            }
+
+            // Build values in the correct order based on composite type definition
+            List<String> orderedValues = new ArrayList<>();
+            for (CompositeTypeAttribute attribute : compositeTypeInfo.getAttributes()) {
+                Object value = compositeMap.get(attribute.getName());
+                if (value == null) {
+                    orderedValues.add(""); // NULL value
+                } else {
+                    String strValue = value.toString();
+                    // Escape quotes and wrap in quotes if needed
+                    if (strValue.contains(",") || strValue.contains("\"") || strValue.contains("(") || strValue.contains(")")) {
+                        orderedValues.add("\"" + strValue.replace("\"", "\\\"") + "\"");
+                    } else {
+                        orderedValues.add(strValue);
+                    }
+                }
+            }
+
+            return "(" + String.join(",", orderedValues) + ")";
+        } catch (Exception e) {
+            log.warn("Error converting map to PostgreSQL composite for type {}: {}, falling back to simple conversion", 
+                    compositeTypeName, e.getMessage());
+            return convertMapToPostgresComposite(compositeMap);
+        }
     }
 }

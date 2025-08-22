@@ -2237,6 +2237,260 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
     }
 
+    // TDD RED PHASE: Enhanced Object-Based Composite Type Tests
+    def "should create records with composite type as GraphQL object (not string)"() {
+        given: "a table with custom composite column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_address AS (
+                street VARCHAR(100),
+                city VARCHAR(50),
+                state VARCHAR(2),
+                postal_code VARCHAR(10),
+                country VARCHAR(50)
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_companies (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                headquarters test_address
+            )
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("name", "character varying", false, true),
+            new ColumnInfo("headquarters", "test_address", false, true)
+        ]
+        def tableInfo = new TableInfo("test_companies", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_companies": tableInfo]
+        schemaReflector.getCustomCompositeTypes() >> [
+            new CustomCompositeTypeInfo("test_address", "public", [
+                new CompositeTypeAttribute("street", "varchar", 1, false),
+                new CompositeTypeAttribute("city", "varchar", 2, false),
+                new CompositeTypeAttribute("state", "varchar", 3, false),
+                new CompositeTypeAttribute("postal_code", "varchar", 4, false),
+                new CompositeTypeAttribute("country", "varchar", 5, false)
+            ])
+        ]
+        schemaReflector.getCustomEnumTypes() >> []
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                name: "Tech Corp",
+                headquarters: [
+                    street: "123 Innovation Drive",
+                    city: "San Francisco", 
+                    state: "CA",
+                    postal_code: "94105",
+                    country: "USA"
+                ]
+            ]
+        }
+
+        when: "creating a record with composite type as GraphQL object"
+        def mutationResolver = mutator.createCreateMutationResolver("test_companies")
+        def result = mutationResolver.get(environment)
+
+        then: "should create record with proper composite value"
+        result.name == "Tech Corp"
+        result.headquarters != null
+        result.headquarters instanceof Map
+        result.headquarters.street == "123 Innovation Drive"
+        result.headquarters.city == "San Francisco"
+        result.headquarters.state == "CA"
+        result.headquarters.postal_code.toString() == "94105"  // Handle type conversion
+        result.headquarters.country == "USA"
+        result.id != null
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.test_companies WHERE name = ?", "Tech Corp")
+        dbResults.size() == 1
+        // Database should store composite as PostgreSQL composite format
+        def hqValue = dbResults[0].headquarters.toString()
+        hqValue.contains("123 Innovation Drive")
+        hqValue.contains("San Francisco")
+        hqValue.contains("CA")
+        hqValue.contains("94105")
+        hqValue.contains("USA")
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_companies")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_address")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should update records with composite type as GraphQL object"() {
+        given: "a table with custom composite column and existing data"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_location AS (
+                latitude DECIMAL(10,7),
+                longitude DECIMAL(10,7),
+                city VARCHAR(100)
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_venues (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                location test_location
+            )
+        """)
+        
+        // Insert initial record
+        def initialId = jdbcTemplate.queryForObject("""
+            INSERT INTO test_schema.test_venues (name, location) 
+            VALUES ('Old Venue', '(40.7589000,-73.9851000,"New York")') 
+            RETURNING id
+        """, Integer.class)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("name", "character varying", false, true),
+            new ColumnInfo("location", "test_location", false, true)
+        ]
+        def tableInfo = new TableInfo("test_venues", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_venues": tableInfo]
+        schemaReflector.getCustomCompositeTypes() >> [
+            new CustomCompositeTypeInfo("test_location", "public", [
+                new CompositeTypeAttribute("latitude", "numeric", 1, false),
+                new CompositeTypeAttribute("longitude", "numeric", 2, false),
+                new CompositeTypeAttribute("city", "varchar", 3, false)
+            ])
+        ]
+        schemaReflector.getCustomEnumTypes() >> []
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                id: initialId,
+                name: "Updated Venue",
+                location: [
+                    latitude: 34.0522,
+                    longitude: -118.2437,
+                    city: "Los Angeles"
+                ]
+            ]
+        }
+
+        when: "updating record with composite type as GraphQL object"
+        def mutationResolver = mutator.createUpdateMutationResolver("test_venues")
+        def result = mutationResolver.get(environment)
+
+        then: "should update record with new composite value"
+        result.name == "Updated Venue"
+        result.location != null
+        result.location instanceof Map
+        result.location.latitude.toString() == "34.0522"  // Handle type conversion
+        result.location.longitude.toString() == "-118.2437"  // Handle type conversion
+        result.location.city == "Los Angeles"
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.test_venues WHERE id = ?", initialId)
+        dbResults.size() == 1
+        dbResults[0].name == "Updated Venue"
+        def locationValue = dbResults[0].location.toString()
+        locationValue.contains("34.0522")
+        locationValue.contains("-118.2437")
+        locationValue.contains("Los Angeles")
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_venues")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_location")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should handle composite type arrays as GraphQL object arrays"() {
+        given: "a table with custom composite array column"
+        jdbcTemplate.execute("""
+            CREATE TYPE test_contact AS (
+                type VARCHAR(20),
+                value VARCHAR(100)
+            )
+        """)
+        
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.test_customers (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100),
+                contacts test_contact[]
+            )
+        """)
+
+        def columns = [
+            new ColumnInfo("id", "integer", true, false),
+            new ColumnInfo("name", "character varying", false, true),
+            new ColumnInfo("contacts", "test_contact[]", false, true)
+        ]
+        def tableInfo = new TableInfo("test_customers", columns, [], false)
+        
+        and: "mocked schema reflector"
+        schemaReflector.reflectSchema() >> ["test_customers": tableInfo]
+        schemaReflector.getCustomCompositeTypes() >> [
+            new CustomCompositeTypeInfo("test_contact", "public", [
+                new CompositeTypeAttribute("type", "varchar", 1, false),
+                new CompositeTypeAttribute("value", "varchar", 2, false)
+            ])
+        ]
+        schemaReflector.getCustomEnumTypes() >> []
+
+        def environment = Mock(DataFetchingEnvironment) {
+            getArgument("input") >> [
+                name: "Multi-Contact Customer",
+                contacts: [
+                    [type: "email", value: "customer@example.com"],
+                    [type: "phone", value: "555-0123"],
+                    [type: "fax", value: "555-0124"]
+                ]
+            ]
+        }
+
+        when: "creating record with composite array as GraphQL object array"
+        def mutationResolver = mutator.createCreateMutationResolver("test_customers")
+        def result = mutationResolver.get(environment)
+
+        then: "should create record with proper composite array"
+        result.name == "Multi-Contact Customer"
+        result.contacts != null
+        result.contacts instanceof List
+        result.contacts.size() == 3
+        result.contacts[0] instanceof Map
+        result.contacts[0].type == "email"
+        result.contacts[0].value == "customer@example.com"
+        result.contacts[1].type == "phone"
+        result.contacts[1].value == "555-0123"
+        result.contacts[2].type == "fax"
+        result.contacts[2].value == "555-0124"
+
+        and: "should be persisted in database correctly"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.test_customers WHERE name = ?", "Multi-Contact Customer")
+        dbResults.size() == 1
+        def contactsValue = dbResults[0].contacts.toString()
+        contactsValue.contains("email")
+        contactsValue.contains("customer@example.com")
+        contactsValue.contains("phone")
+        contactsValue.contains("555-0123")
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.test_customers")
+            jdbcTemplate.execute("DROP TYPE IF EXISTS test_contact")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
     def "should update records with custom enum values"() {
         given: "a table with custom enum column and existing data"
         jdbcTemplate.execute("""

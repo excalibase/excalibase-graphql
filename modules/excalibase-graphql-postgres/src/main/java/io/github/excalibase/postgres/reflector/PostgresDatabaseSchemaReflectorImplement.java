@@ -25,7 +25,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
+import java.util.Set;
 import java.sql.Array;
+import io.github.excalibase.constant.ColumnTypeConstant;
 
 @ExcalibaseService(
         serviceName = SupportedDatabaseConstant.POSTGRES
@@ -157,6 +159,28 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     private void processColumnsFromBulkResult(List<Map<String, Object>> columnResults, 
                                              Map<String, TableInfo> tables, 
                                              Map<String, String> domainTypeToBaseTypeMap) {
+        // Get custom composite types to identify them
+        List<CustomCompositeTypeInfo> customCompositeTypes = getCustomCompositeTypes();
+        Set<String> compositeTypeNames = customCompositeTypes.stream()
+                .map(CustomCompositeTypeInfo::getName)
+                .collect(java.util.stream.Collectors.toSet());
+        
+        // Also create schema-qualified names for multi-schema support
+        Set<String> qualifiedCompositeTypeNames = customCompositeTypes.stream()
+                .map(type -> type.getSchema() + "." + type.getName())
+                .collect(java.util.stream.Collectors.toSet());
+        
+        // Get custom enum types to identify them
+        List<CustomEnumInfo> customEnumTypes = getCustomEnumTypes();
+        Set<String> enumTypeNames = customEnumTypes.stream()
+                .map(CustomEnumInfo::getName)
+                .collect(java.util.stream.Collectors.toSet());
+        
+        // Also create schema-qualified names for multi-schema support
+        Set<String> qualifiedEnumTypeNames = customEnumTypes.stream()
+                .map(type -> type.getSchema() + "." + type.getName())
+                .collect(java.util.stream.Collectors.toSet());
+        
         for (Map<String, Object> columnData : columnResults) {
             String tableName = (String) columnData.get("table_name");
             TableInfo tableInfo = tables.get(tableName);
@@ -166,13 +190,68 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                 columnInfo.setName((String) columnData.get("column_name"));
                 
                 String dataType = (String) columnData.get("data_type");
-                log.info("Processing column: {}.{} with type: {}", tableName, columnInfo.getName(), dataType);
+                String typeCategory = (String) columnData.get("type_category");
+                String baseTypeName = (String) columnData.get("base_type_name");
+                
+                log.info("Processing column: {}.{} with type: {}, category: {}, base: {}", 
+                        tableName, columnInfo.getName(), dataType, typeCategory, baseTypeName);
+                
                 // Check if domain type then set base type
                 if (domainTypeToBaseTypeMap.containsKey(dataType)) {
                     String baseType = domainTypeToBaseTypeMap.get(dataType);
                     columnInfo.setType(baseType);
                 } else {
                     columnInfo.setType(dataType);
+                }
+                
+                // Set originalType for custom types using type category
+                String baseType = dataType;
+                if (dataType.endsWith("[]")) {
+                    baseType = dataType.substring(0, dataType.length() - 2);
+                }
+                
+                // Use type category to detect custom types more reliably
+                if ("c".equals(typeCategory)) {
+                    // Composite type
+                    columnInfo.setOriginalType(ColumnTypeConstant.POSTGRES_COMPOSITE);
+                    log.info("🔥 DETECTED COMPOSITE TYPE: {}.{} -> {} (category: {})", 
+                            tableName, columnInfo.getName(), baseTypeName, typeCategory);
+                } else if ("e".equals(typeCategory)) {
+                    // Enum type
+                    columnInfo.setOriginalType(ColumnTypeConstant.POSTGRES_ENUM);
+                    log.info("🔥 DETECTED ENUM TYPE: {}.{} -> {} (category: {})", 
+                            tableName, columnInfo.getName(), baseTypeName, typeCategory);
+                } else {
+                    // Check for schema-qualified names first, then unqualified names
+                    if (qualifiedCompositeTypeNames.contains(baseType) || compositeTypeNames.contains(baseType)) {
+                        // Schema-qualified or unqualified composite type
+                        columnInfo.setOriginalType(ColumnTypeConstant.POSTGRES_COMPOSITE);
+                        log.info("🔥 DETECTED COMPOSITE TYPE (name match): {}.{} -> {}", 
+                                tableName, columnInfo.getName(), baseType);
+                    } else if (qualifiedEnumTypeNames.contains(baseType) || enumTypeNames.contains(baseType)) {
+                        // Schema-qualified or unqualified enum type
+                        columnInfo.setOriginalType(ColumnTypeConstant.POSTGRES_ENUM);
+                        log.info("🔥 DETECTED ENUM TYPE (name match): {}.{} -> {}", 
+                                tableName, columnInfo.getName(), baseType);
+                    } else {
+                        // Handle array types - strip [] and check again
+                        String unqualifiedType = baseType;
+                        if (baseType.contains(".")) {
+                            unqualifiedType = baseType.substring(baseType.lastIndexOf(".") + 1);
+                        }
+                        
+                        if (compositeTypeNames.contains(unqualifiedType)) {
+                            // Fallback: check by unqualified name for array types
+                            columnInfo.setOriginalType(ColumnTypeConstant.POSTGRES_COMPOSITE);
+                            log.info("🔥 DETECTED COMPOSITE TYPE (unqualified fallback): {}.{} -> {} (unqualified: {})", 
+                                    tableName, columnInfo.getName(), baseType, unqualifiedType);
+                        } else if (enumTypeNames.contains(unqualifiedType)) {
+                            // Fallback: check by unqualified name for array types
+                            columnInfo.setOriginalType(ColumnTypeConstant.POSTGRES_ENUM);
+                            log.info("🔥 DETECTED ENUM TYPE (unqualified fallback): {}.{} -> {} (unqualified: {})", 
+                                    tableName, columnInfo.getName(), baseType, unqualifiedType);
+                        }
+                    }
                 }
                 
                 columnInfo.setNullable(DatabaseColumnConstant.YES.equals(columnData.get(DatabaseColumnConstant.IS_NULLABLE)));
