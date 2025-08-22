@@ -60,50 +60,7 @@ class GraphqlControllerTest extends Specification {
     }
     
     def cleanup() {
-        // Clean slate approach: drop and recreate schema between tests
         resetSchema()
-    }
-    
-    private static void cleanupTestData() {
-        try (Connection connection = DriverManager.getConnection(
-                postgres.getJdbcUrl(),
-                postgres.getUsername(),
-                postgres.getPassword());
-             Statement statement = connection.createStatement()) {
-
-            // Only delete data that was explicitly created during mutation tests
-            // Keep all original setup data intact
-            
-            // Delete enhanced_types created by JSON/array tests
-            statement.execute("DELETE FROM enhanced_types WHERE name IN ('JSON Direct Object Test', 'JSON Backward Compatibility Test', 'Array Test', 'Test Record')")
-            
-            // Delete child_table records with high child_id (created in tests)
-            statement.execute("DELETE FROM child_table WHERE child_id >= 100")
-            
-            // Delete parent_table with high parent_id (created in tests)
-            statement.execute("DELETE FROM parent_table WHERE parent_id1 >= 3 AND parent_id2 >= 3")
-            
-            // Delete order_items with unusual quantity/price patterns from tests
-            statement.execute("DELETE FROM order_items WHERE quantity = 999 OR price = 999.99 OR order_id >= 100")
-            
-            // Delete orders created in tests (order_id >= 100)
-            statement.execute("DELETE FROM orders WHERE order_id >= 100")
-            
-            // Only delete customers that were created in mutation tests
-            // Keep original 4 customers (customer_id 1-4) from setup
-            statement.execute("""
-                DELETE FROM customer 
-                WHERE email IN ('john.doe@example.com', 'jane.smith@example.com', 'delete@example.com')
-                   OR first_name LIKE 'Customer%'
-                   OR first_name LIKE 'Bulk%'
-                   OR first_name = 'ToDelete'
-                   OR customer_id > 1000
-            """)
-            
-        } catch (SQLException e) {
-            System.err.println("Error during test cleanup: " + e.getMessage())
-            // Don't fail the test, just log the error
-        }
     }
     
     private static void resetSchema() {
@@ -2619,7 +2576,7 @@ class GraphqlControllerTest extends Specification {
         when: "updating record with new custom enum array via GraphQL mutation"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"query\": \"mutation { updateEnhanced_types(input: { id: ${existingId}, statuses: [\\\"review\\\", \\\"approved\\\", \\\"published\\\"] }) { id name statuses } }\"}"))
+                .content("{\"query\": \"mutation { updateEnhanced_types(input: { id: ${existingId}, statuses: [DRAFT, REVIEW, APPROVED] }) { id name statuses } }\"}"))
 
         then: "should update record successfully with new enum array"
         result.andExpect(status().isOk())
@@ -2627,9 +2584,9 @@ class GraphqlControllerTest extends Specification {
                 .andExpect(jsonPath('$.data.updateEnhanced_types.name').exists())
                 .andExpect(jsonPath('$.data.updateEnhanced_types.statuses').isArray())
                 .andExpect(jsonPath('$.data.updateEnhanced_types.statuses', hasSize(3)))
-                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses[0]').value("review"))
-                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses[1]').value("approved"))
-                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses[2]').value("published"))
+                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses[0]').value("DRAFT"))
+                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses[1]').value("REVIEW"))
+                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses[2]').value("APPROVED"))
     }
 
     def "should query records with custom enum array filtering"() {
@@ -2642,5 +2599,47 @@ class GraphqlControllerTest extends Specification {
         result.andExpect(status().isOk())
                 .andExpect(jsonPath('$.data.enhanced_types').isArray())
                 .andExpect(jsonPath('$.data.enhanced_types', hasSize(greaterThan(0))))
+    }
+
+    // ==========================================
+    // OBJECT-BASED COMPOSITE TYPE TESTS
+    // ==========================================
+
+    def "should create record with composite type as GraphQL object (E2E)"() {
+        when: "creating record with composite type as GraphQL object via HTTP"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query": "mutation { createEnhanced_types(input: { name: \\"Object Test\\", locations: [{ latitude: 40.7589, longitude: -73.9851, city: \\"New York\\" }] }) { id name locations { latitude longitude city } } }"}'))
+
+        then: "should create record successfully with object-based composite"
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath('$.data.createEnhanced_types.id').exists())
+                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("Object Test"))
+                .andExpect(jsonPath('$.data.createEnhanced_types.locations').isArray())
+                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].latitude').value(40.7589))
+                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].longitude').value(-73.9851))
+                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].city').value("New York"))
+    }
+
+    def "should demonstrate object vs string composite type support"() {
+        when: "creating record with composite type as object (new way)"
+        def objectResult = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query": "mutation { createEnhanced_types(input: { name: \\"Object Way\\", locations: [{ latitude: 34.0522, longitude: -118.2437, city: \\"Los Angeles\\" }] }) { id name locations { latitude longitude city } } }"}'))
+
+        then: "should work with object format"
+        objectResult.andExpect(status().isOk())
+                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("Object Way"))
+                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].city').value("Los Angeles"))
+
+        when: "creating record with composite type as object (another test)"
+        def stringResult = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query": "mutation { createEnhanced_types(input: { name: \\"String Way\\", locations: [{ latitude: 41.8781, longitude: -87.6298, city: \\"Chicago\\" }] }) { id name locations { latitude longitude city } } }"}'))
+
+        then: "should also work with object format"
+        stringResult.andExpect(status().isOk())
+                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("String Way"))
+                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].city').value("Chicago"))
     }
 }

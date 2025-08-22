@@ -59,7 +59,7 @@ public class PostgresArrayParameterHandler {
             // Handle custom composite types
             if (typeConverter.isCustomCompositeType(columnType)) {
                 if (value instanceof java.util.Map) {
-                    String compositeValue = typeConverter.convertMapToPostgresComposite((java.util.Map<String, Object>) value);
+                    String compositeValue = typeConverter.convertMapToPostgresComposite((java.util.Map<String, Object>) value, columnType);
                     paramSource.addValue(paramName, compositeValue);
                     return;
                 } else if (value instanceof String) {
@@ -299,7 +299,7 @@ public class PostgresArrayParameterHandler {
         if (typeConverter.isCustomCompositeType(baseType)) {
             if (element instanceof java.util.Map) {
                 // Convert Map to PostgreSQL composite format
-                return typeConverter.convertMapToPostgresComposite((java.util.Map<String, Object>) element);
+                return typeConverter.convertMapToPostgresComposite((java.util.Map<String, Object>) element, baseType);
             } else {
                 // Already in string format, pass through
                 return element.toString();

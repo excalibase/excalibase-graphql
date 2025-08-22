@@ -538,41 +538,41 @@ main() {
     # ==========================================
     
     run_test "Create Order with OrderStatus Enum" \
-        "mutation { createOrders(input: { customer_id: 1, status: \"pending\", total_amount: 99.99 }) { order_id status customer_id total_amount } }" \
+        "mutation { createOrders(input: { customer_id: 1, status: PENDING, total_amount: 99.99 }) { order_id status customer_id total_amount } }" \
         '.data.createOrders.order_id != null and .data.createOrders.status == "PENDING" and .data.createOrders.total_amount == 99.99'
     
     run_test "Update Order Status Enum" \
-        "mutation { updateOrders(input: { order_id: 1, status: \"shipped\" }) { order_id status } }" \
+        "mutation { updateOrders(input: { order_id: 1, status: SHIPPED }) { order_id status } }" \
         '.data.updateOrders.status == "SHIPPED"'
     
     run_test "Create Order with Different Status Values" \
-        "mutation { createOrders(input: { customer_id: 2, status: \"processing\", total_amount: 149.99 }) { order_id status } }" \
+        "mutation { createOrders(input: { customer_id: 2, status: PROCESSING, total_amount: 149.99 }) { order_id status } }" \
         '.data.createOrders.status == "PROCESSING"'
     
     run_test "Test OrderStatus Enum Values" \
-        "mutation { createOrders(input: { customer_id: 3, status: \"delivered\", total_amount: 75.50 }) { order_id status } }" \
+        "mutation { createOrders(input: { customer_id: 3, status: DELIVERED, total_amount: 75.50 }) { order_id status } }" \
         '.data.createOrders.status == "DELIVERED"'
     
     # Generate unique username with timestamp to avoid duplicates
     TIMESTAMP=$(date +%s)
     run_test "Create User with UserRole Enum" \
-        "mutation { createUsers(input: { username: \"testuser_${TIMESTAMP}\", email: \"testuser_${TIMESTAMP}@example.com\", role: \"user\" }) { id username role email } }" \
+        "mutation { createUsers(input: { username: \"testuser_${TIMESTAMP}\", email: \"testuser_${TIMESTAMP}@example.com\", role: USER }) { id username role email } }" \
         '.data.createUsers.id != null and .data.createUsers.role == "USER"'
     
     run_test "Update User Role" \
-        "mutation { updateUsers(input: { id: 1, role: \"admin\" }) { id role } }" \
+        "mutation { updateUsers(input: { id: 1, role: ADMIN }) { id role } }" \
         '.data.updateUsers.role == "ADMIN"'
     
     run_test "Create with Composite Type (Address)" \
-        "mutation { createOrders(input: { customer_id: 4, status: \"pending\", total_amount: 199.99, shipping_address: \"(\\\"123 Main St\\\",\\\"New York\\\",\\\"NY\\\",\\\"10001\\\",\\\"USA\\\")\" }) { order_id shipping_address { street city state postal_code country } } }" \
+        "mutation { createOrders(input: { customer_id: 4, status: PENDING, total_amount: 199.99, shipping_address: { street: \"123 Main St\", city: \"New York\", state: \"NY\", postal_code: \"10001\", country: \"USA\" } }) { order_id shipping_address { street city state postal_code country } } }" \
         '.data.createOrders.order_id != null and .data.createOrders.shipping_address.street == "123 Main St"'
     
     run_test "Create Task with PriorityLevel Enum" \
-        "mutation { createTasks(input: { title: \"Test Task\", priority: \"high\", assigned_user_id: 1 }) { id title priority } }" \
+        "mutation { createTasks(input: { title: \"Test Task\", priority: HIGH, assigned_user_id: 1 }) { id title priority } }" \
         '.data.createTasks.id != null and .data.createTasks.priority == "HIGH"'
     
     run_test "Test Multiple Custom Types in Single Mutation" \
-        "mutation { createCustom_types_test(input: { name: \"Mixed Test\", status: \"pending\", role: \"user\", priority: \"medium\" }) { id name status role priority } }" \
+        "mutation { createCustom_types_test(input: { name: \"Mixed Test\", status: PENDING, role: USER, priority: MEDIUM }) { id name status role priority } }" \
         '.data.createCustom_types_test.status == "PENDING" and .data.createCustom_types_test.role == "USER" and .data.createCustom_types_test.priority == "MEDIUM"'
 
     # ==========================================
@@ -582,7 +582,7 @@ main() {
     log_info "Testing: Invalid Enum Values"
     INVALID_ENUM_RESPONSE=$(curl -s -X POST "$API_URL" \
         -H "Content-Type: application/json" \
-        -d '{"query": "mutation { createOrders(input: { customer_id: 1, status: \"invalid_status\", total_amount: 50.00 }) { order_id status } }"}')
+        -d '{"query": "mutation { createOrders(input: { customer_id: 1, status: INVALID_STATUS, total_amount: 50.00 }) { order_id status } }"}')
     
     if echo "$INVALID_ENUM_RESPONSE" | grep -q "errors"; then
         log_success "✅ Invalid enum value properly rejected"

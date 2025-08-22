@@ -105,7 +105,9 @@ public class PostgresSqlConstant {
                        ELSE pg_catalog.format_type(a.atttypid, a.atttypmod)
                    END as data_type,
                    CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable,
-                   pg_catalog.pg_get_expr(d.adbin, d.adrelid) as column_default
+                   pg_catalog.pg_get_expr(d.adbin, d.adrelid) as column_default,
+                   t.typtype as type_category,
+                   t.typname as base_type_name
             FROM pg_catalog.pg_attribute a
             LEFT JOIN pg_catalog.pg_attrdef d ON (a.attrelid = d.adrelid AND a.attnum = d.adnum)
             LEFT JOIN pg_catalog.pg_type t ON (a.atttypid = t.oid)
