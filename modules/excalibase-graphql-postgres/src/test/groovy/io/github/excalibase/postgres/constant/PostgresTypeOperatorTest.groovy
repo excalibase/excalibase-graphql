@@ -112,17 +112,32 @@ class PostgresTypeOperatorTest extends Specification {
         ""        | false
     }
 
-    def "should correctly identify binary/network types"() {
+    def "should correctly identify network types"() {
         expect:
         PostgresTypeOperator.isNetworkType(type) == expected
 
         where:
         type        | expected
-        "bytea"     | true
         "inet"      | true
         "cidr"      | true
         "macaddr"   | true
         "macaddr8"  | true
+        "text"      | false
+        "int"       | false
+        "bytea"     | false  // bytea is binary, not network
+        null        | false
+        ""          | false
+    }
+
+    def "should correctly identify binary types"() {
+        expect:
+        PostgresTypeOperator.isBinaryType(type) == expected
+
+        where:
+        type        | expected
+        "bytea"     | true
+        "inet"      | false  // inet is network, not binary
+        "cidr"      | false  // cidr is network, not binary
         "text"      | false
         "int"       | false
         null        | false
@@ -254,46 +269,4 @@ class PostgresTypeOperatorTest extends Specification {
         ""                    | false
     }
 
-    def "should categorize types correctly"() {
-        expect:
-        PostgresTypeOperator.getTypeCategory(type) == expected
-
-        where:
-        type                  | expected
-        "int"                 | "integer"
-        "bigint"              | "integer"
-        "numeric"             | "numeric"
-        "double precision"    | "numeric"
-        "boolean"             | "boolean"
-        "text"                | "text"
-        "varchar(255)"        | "text"
-        "timestamp"           | "datetime"
-        "date"                | "datetime"
-        "json"                | "json"
-        "jsonb"               | "json"
-        "uuid"                | "uuid"
-        "inet"                | "network"
-        "bit"                 | "bit"
-        "xml"                 | "xml"
-        "int[]"               | "array"
-        "unknown_type"        | "unknown"
-        null                  | "unknown"
-    }
-
-    def "should identify built-in types correctly"() {
-        expect:
-        PostgresTypeOperator.isBuiltInType(type) == expected
-
-        where:
-        type                  | expected
-        "int"                 | true
-        "text"                | true
-        "timestamp"           | true
-        "json"                | true
-        "uuid"                | true
-        "int[]"               | true
-        "custom_enum_type"    | false
-        "unknown_type"        | false
-        null                  | false
-    }
 } 

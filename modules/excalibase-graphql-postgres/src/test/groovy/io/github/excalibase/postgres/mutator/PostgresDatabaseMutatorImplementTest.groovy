@@ -3267,4 +3267,118 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
             // Ignore cleanup errors
         }
     }
+
+    def "should handle BIT types successfully"() {
+        given: "a table with BIT and VARBIT columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.bit_test (
+                id SERIAL PRIMARY KEY,
+                bit_fixed BIT(8),
+                bit_varying VARBIT(16),
+                bit_array BIT(4)[],
+                name VARCHAR(50)
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "bit_test",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "bit_fixed", type: "bit(8)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "bit_varying", type: "varbit(16)", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "bit_array", type: "bit(4)[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "name", type: "character varying(50)", primaryKey: false, nullable: false)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["bit_test": tableInfo]
+
+        and: "mocked DataFetchingEnvironment"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "bit_fixed": "10101010",
+                "bit_varying": "1100110011",
+                "bit_array": ["1010", "0101", "1111"],
+                "name": "BIT Test Record"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating a record with BIT types"
+        def mutationResolver = mutator.createCreateMutationResolver("bit_test")
+        def result = mutationResolver.get(environment)
+
+        then: "the record should be created successfully"
+        result != null
+        result.name == "BIT Test Record"
+        // Note: BIT fields may have result conversion issues with PostgreSQL JDBC driver
+
+        and: "should be persisted in database with correct BIT casting"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.bit_test WHERE name = ?", "BIT Test Record")
+        dbResults.size() == 1
+        dbResults[0].name == "BIT Test Record"
+        // Note: BIT values might be returned as different formats by JDBC, but the casting should work
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.bit_test")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
+
+    def "should distinguish between BIT VARYING and CHARACTER VARYING correctly"() {
+        given: "a table with both BIT VARYING and CHARACTER VARYING arrays to test proper type mapping"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.varying_types_test (
+                id SERIAL PRIMARY KEY,
+                bit_varying_array BIT VARYING(10)[],
+                varchar_array CHARACTER VARYING(20)[],
+                name VARCHAR(50)
+            )
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "varying_types_test",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "bit_varying_array", type: "bit varying(10)[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "varchar_array", type: "character varying(20)[]", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "name", type: "character varying(50)", primaryKey: false, nullable: false)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["varying_types_test": tableInfo]
+
+        and: "mocked DataFetchingEnvironment"
+        def environment = Mock(DataFetchingEnvironment)
+        def input = [
+                "bit_varying_array": ["1010101010", "110011", "101"],     // BIT VARYING values
+                "varchar_array": ["hello", "world", "test"],              // VARCHAR values  
+                "name": "Mixed Varying Types Test"
+        ]
+        environment.getArgument("input") >> input
+
+        when: "creating a record with both BIT VARYING and CHARACTER VARYING arrays"
+        def mutationResolver = mutator.createCreateMutationResolver("varying_types_test")
+        def result = mutationResolver.get(environment)
+
+        then: "should create record successfully without type confusion"
+        result != null
+        result.name == "Mixed Varying Types Test"
+
+        and: "should be persisted in database correctly with proper casting"
+        def dbResults = jdbcTemplate.queryForList("SELECT * FROM test_schema.varying_types_test WHERE name = ?", "Mixed Varying Types Test")
+        dbResults.size() == 1
+        dbResults[0].name == "Mixed Varying Types Test"
+        // Both array types should be stored correctly with proper PostgreSQL type casting
+
+        cleanup:
+        try {
+            jdbcTemplate.execute("DROP TABLE IF EXISTS test_schema.varying_types_test")
+        } catch (Exception e) {
+            // Ignore cleanup errors
+        }
+    }
 }

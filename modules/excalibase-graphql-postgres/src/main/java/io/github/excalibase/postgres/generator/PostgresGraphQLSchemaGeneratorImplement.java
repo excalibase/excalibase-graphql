@@ -1035,8 +1035,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         log.debug("Request db type: {}", type);
 
         // Handle array types
-        if (type.contains(ColumnTypeConstant.ARRAY_SUFFIX)) {
-            String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
+        if (PostgresTypeOperator.isArrayType(type)) {
+            String baseType = PostgresTypeOperator.getBaseArrayType(type);
             GraphQLOutputType elementType = mapDatabaseTypeToGraphQLType(baseType);
             return new GraphQLList(elementType);
         }
@@ -1062,7 +1062,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         }
 
         // UUID types
-        else if (type.contains(ColumnTypeConstant.UUID)) {
+        else if (PostgresTypeOperator.isUuidType(type)) {
             return GraphQLID;
         }
 
@@ -1072,19 +1072,17 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         }
 
         // Binary and network types
-        else if (type.contains(ColumnTypeConstant.BYTEA) || type.contains(ColumnTypeConstant.INET) ||
-                type.contains(ColumnTypeConstant.CIDR) || type.contains(ColumnTypeConstant.MACADDR) ||
-                type.contains(ColumnTypeConstant.MACADDR8)) {
+        else if (PostgresTypeOperator.isBinaryType(type) || PostgresTypeOperator.isNetworkType(type)) {
             return GraphQLString;
         }
 
         // Bit types
-        else if (type.contains(ColumnTypeConstant.BIT) || type.contains(ColumnTypeConstant.VARBIT)) {
+        else if (PostgresTypeOperator.isBitType(type)) {
             return GraphQLString;
         }
 
         // XML type
-        else if (type.contains(ColumnTypeConstant.XML)) {
+        else if (PostgresTypeOperator.isXmlType(type)) {
             return GraphQLString;
         }
 
@@ -1437,20 +1435,18 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         String type = dbType.toLowerCase();
 
         // Handle array types - use the base type's filter
-        if (type.contains(ColumnTypeConstant.ARRAY_SUFFIX)) {
-            String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
+        if (PostgresTypeOperator.isArrayType(type)) {
+            String baseType = PostgresTypeOperator.getBaseArrayType(type);
             return getFilterTypeNameForColumn(baseType);
         }
 
         // JSON/JSONB types
-        if (type.contains(ColumnTypeConstant.JSON) || type.contains(ColumnTypeConstant.JSONB)) {
+        if (PostgresTypeOperator.isJsonType(type)) {
             return "JSONFilter";
         }
 
         // Date/Time types (including enhanced ones)
-        else if (type.contains(ColumnTypeConstant.TIMESTAMP) || type.contains(ColumnTypeConstant.TIMESTAMPTZ) ||
-                type.contains(ColumnTypeConstant.DATE) || type.contains(ColumnTypeConstant.TIME) ||
-                type.contains(ColumnTypeConstant.TIMETZ) || type.contains(ColumnTypeConstant.INTERVAL)) {
+        else if (PostgresTypeOperator.isDateTimeType(type)) {
             return "DateTimeFilter";
         }
 
@@ -1558,9 +1554,9 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                            Map<String, GraphQLEnumType> customEnumTypes,
                                                            Map<String, GraphQLObjectType> customCompositeTypes) {
         // Handle array types first
-        if (type.contains(ColumnTypeConstant.ARRAY_SUFFIX)) {
-            String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
-            String baseOriginalType = originalType != null ? originalType.replace(ColumnTypeConstant.ARRAY_SUFFIX, "") : null;
+        if (PostgresTypeOperator.isArrayType(type)) {
+            String baseType = PostgresTypeOperator.getBaseArrayType(type);
+            String baseOriginalType = originalType != null ? PostgresTypeOperator.getBaseArrayType(originalType) : null;
             GraphQLOutputType elementType = mapDatabaseTypeToGraphQLType(baseType, baseOriginalType, customEnumTypes, customCompositeTypes);
             return new GraphQLList(elementType);
         }
@@ -1622,9 +1618,9 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                               Map<String, GraphQLEnumType> customEnumTypes,
                                                               Map<String, GraphQLObjectType> customCompositeTypes) {
         // Handle array types first
-        if (type.contains(ColumnTypeConstant.ARRAY_SUFFIX)) {
-            String baseType = type.replace(ColumnTypeConstant.ARRAY_SUFFIX, "");
-            String baseOriginalType = originalType != null ? originalType.replace(ColumnTypeConstant.ARRAY_SUFFIX, "") : null;
+        if (PostgresTypeOperator.isArrayType(type)) {
+            String baseType = PostgresTypeOperator.getBaseArrayType(type);
+            String baseOriginalType = originalType != null ? PostgresTypeOperator.getBaseArrayType(originalType) : null;
             GraphQLInputType elementType = mapDatabaseTypeToGraphQLInputType(baseType, baseOriginalType, customEnumTypes, customCompositeTypes);
             return new GraphQLList(elementType);
         }

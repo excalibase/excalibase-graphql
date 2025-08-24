@@ -297,6 +297,48 @@ main() {
         "{ enhanced_types { id timestamptz_col timetz_col interval_col } }" \
         '.data.enhanced_types[0].timestamptz_col != null'
     
+    run_test "Enhanced Types - BIT Fields Query" \
+        "{ enhanced_types { id name bit_col varbit_col } }" \
+        '.data.enhanced_types[0].bit_col != null and .data.enhanced_types[0].varbit_col != null'
+    
+    # ==========================================
+    # BIT/VARBIT TYPES E2E TESTS (Production Validation)
+    # ==========================================
+    
+    echo ""
+    log_info "🔧 Starting BIT/VARBIT Type E2E Tests..."
+    echo ""
+    
+    # Test BIT type creation mutation
+    run_test "Create Enhanced Types with BIT values" \
+        "mutation { createEnhanced_types(input: { name: \"E2E BIT Test\", bit_col: \"10101010\", varbit_col: \"1100110011\", bit_array_col: [\"1010\", \"0101\", \"1111\"] }) { id name bit_col varbit_col } }" \
+        '.data.createEnhanced_types.name == "E2E BIT Test" and .data.createEnhanced_types.bit_col != null and .data.createEnhanced_types.varbit_col != null'
+    
+    # Test BIT type query and filtering
+    run_test "Query BIT Types with Filtering" \
+        "{ enhanced_types(where: { name: { eq: \"Test Record 1\" } }) { id name bit_col varbit_col } }" \
+        '.data.enhanced_types | length >= 1 and .[0].bit_col != null and .[0].varbit_col != null'
+    
+    # Test BIT type update mutation
+    run_test "Update BIT Type Fields" \
+        "mutation { updateEnhanced_types(input: { id: 1, bit_col: \"11110000\", varbit_col: \"0011001100\" }) { id bit_col varbit_col } }" \
+        '.data.updateEnhanced_types.id == 1 and .data.updateEnhanced_types.bit_col != null and .data.updateEnhanced_types.varbit_col != null'
+    
+    # Test BIT array operations (if arrays work properly)
+    run_test "Query BIT Array Fields" \
+        "{ enhanced_types(where: { name: { contains: \"BIT\" } }) { id name bit_array_col } }" \
+        '.data.enhanced_types | length >= 1'
+    
+    echo ""
+    log_info "✅ BIT/VARBIT Types E2E Testing Complete"
+    echo "  ✅ BIT(8) and VARBIT(16) field support"
+    echo "  ✅ BIT array field support (BIT(4)[])"  
+    echo "  ✅ Create mutations with BIT values"
+    echo "  ✅ Update mutations for BIT fields"
+    echo "  ✅ Query operations with BIT data"
+    echo "  ✅ Filtering by records containing BIT data"
+    echo ""
+    
     # ==========================================
     # CUSTOM TYPES TESTS (ENUMS & COMPOSITE)
     # ==========================================
@@ -736,6 +778,16 @@ main() {
     echo "  ✅ Address composite type (street, city, state, postal_code, country)"
     echo "  ✅ Mixed custom types in single mutations"
     echo "  ✅ Invalid enum value error handling"
+    echo ""
+    echo "🔧 PostgreSQL Advanced Types Coverage:"
+    echo "  ✅ JSON/JSONB types (direct objects and strings)"
+    echo "  ✅ Array types (integer[], text[], custom type arrays)"
+    echo "  ✅ Network types (inet, cidr, macaddr, macaddr8)"
+    echo "  ✅ Binary types (bytea)"
+    echo "  ✅ BIT/VARBIT types (bit(8), varbit(16), bit(4)[])"
+    echo "  ✅ Datetime types (timestamptz, timetz, interval)"
+    echo "  ✅ XML type"
+    echo "  ✅ UUID type"
     echo ""
     echo "🔒 Security Controls Coverage:"
     echo "  ✅ Query Depth Limiting (GraphQL.org security best practices)"
