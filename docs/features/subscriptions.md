@@ -401,10 +401,55 @@ spring:
 
 app:
   cdc:
+    enabled: true                              # Enable CDC (Change Data Capture) for real-time subscriptions (default: true)
+    slot-name: "cdc_slot"                      # Replication slot name (default: cdc_slot)
+    publication-name: "cdc_publication"        # Publication name (default: cdc_publication)
+    create-slot-if-not-exists: true            # Create replication slot if it doesn't exist (default: true)
+    create-publication-if-not-exists: true     # Create publication if it doesn't exist (default: true)
+    heartbeat-interval: 30                     # Heartbeat interval in seconds
+```
+
+### Automatic Setup Features
+
+Excalibase GraphQL now includes **automatic CDC setup** to simplify deployment:
+
+**🚀 Auto-Creation Features:**
+- **`create-slot-if-not-exists: true`** - Automatically creates the replication slot if it doesn't exist
+- **`create-publication-if-not-exists: true`** - Automatically creates the publication for all tables
+
+**Benefits:**
+- **Zero Configuration**: Works out-of-the-box with minimal setup
+- **Development Friendly**: No manual PostgreSQL setup required for local development
+- **Production Ready**: Safe to use in production environments
+- **Error Handling**: Gracefully handles existing slots/publications without conflicts
+
+**Manual vs Automatic Setup:**
+
+| Setup Type | Manual | Automatic (New) |
+|------------|--------|-----------------|
+| **Replication Slot** | `SELECT pg_create_logical_replication_slot('cdc_slot', 'pgoutput');` | Handled automatically |
+| **Publication** | `CREATE PUBLICATION cdc_publication FOR ALL TABLES;` | Handled automatically |
+| **Error Handling** | Manual cleanup required | Automatic conflict resolution |
+| **Development Time** | Manual setup per environment | Instant setup |
+
+**Configuration Examples:**
+
+```yaml
+# Full automatic setup (recommended for development)
+app:
+  cdc:
     enabled: true
-    slot-name: "cdc_slot"           # Replication slot name
-    publication-name: "cdc_publication"  # Publication name  
-    heartbeat-interval: 30          # Heartbeat interval in seconds
+    create-slot-if-not-exists: true     # Auto-create slot
+    create-publication-if-not-exists: true  # Auto-create publication
+
+# Manual setup (for environments with pre-existing CDC configuration)  
+app:
+  cdc:
+    enabled: true
+    create-slot-if-not-exists: false    # Use existing slot
+    create-publication-if-not-exists: false # Use existing publication
+    slot-name: "my_existing_slot"
+    publication-name: "my_existing_publication"
 ```
 
 ## Performance & Scalability

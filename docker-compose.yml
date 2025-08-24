@@ -43,6 +43,12 @@ services:
       SPRING_DATASOURCE_HIKARI_SCHEMA: hana
       APP_ALLOWED_SCHEMA: hana
       APP_DATABASE_TYPE: postgres
+      # CDC configuration for real-time subscriptions
+      APP_CDC_ENABLED: true
+      APP_CDC_SLOT_NAME: cdc_slot
+      APP_CDC_PUBLICATION_NAME: cdc_publication
+      APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
+      APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
     ports:
       - "10000:10000"
     depends_on:

@@ -29,6 +29,21 @@ public class CDCService {
 
     @Value("${spring.datasource.password}")
     private String password;
+    
+    @Value("${app.cdc.enabled:true}")
+    private boolean cdcEnabled;
+    
+    @Value("${app.cdc.slot-name:cdc_slot}")
+    private String slotName;
+    
+    @Value("${app.cdc.publication-name:cdc_publication}")
+    private String publicationName;
+    
+    @Value("${app.cdc.create-slot-if-not-exists:true}")
+    private boolean createSlotIfNotExists;
+    
+    @Value("${app.cdc.create-publication-if-not-exists:true}")
+    private boolean createPublicationIfNotExists;
 
     private PostgresCDCListener cdcListener;
 
@@ -43,11 +58,18 @@ public class CDCService {
 
     @PostConstruct
     public void startCDC() {
+        if (!cdcEnabled) {
+            log.info("CDC is disabled in configuration. Skipping CDC initialization.");
+            return;
+        }
+        
         cdcListener = new PostgresCDCListener.Builder()
                 .jdbcUrl(jdbcUrl)
                 .credentials(username, password)
-                .slotName("cdc_slot")
-                .publicationName("cdc_publication")
+                .slotName(slotName)
+                .publicationName(publicationName)
+                .createSlotIfNotExists(createSlotIfNotExists)
+                .createPublicationIfNotExists(createPublicationIfNotExists)
                 .eventHandler(this::handleCDCEvent)
                 .build();
 
@@ -208,7 +230,14 @@ public class CDCService {
      * Get current CDC listener status
      */
     public boolean isRunning() {
-        return cdcListener != null;
+        return cdcEnabled && cdcListener != null;
+    }
+    
+    /**
+     * Check if CDC is enabled in configuration
+     */
+    public boolean isCdcEnabled() {
+        return cdcEnabled;
     }
 
     /**
