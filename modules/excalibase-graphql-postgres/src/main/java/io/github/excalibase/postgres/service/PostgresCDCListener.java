@@ -33,6 +33,8 @@ public class PostgresCDCListener {
     private final String slotName;
     private final String publicationName;
     private final Consumer<CDCEvent> eventHandler;
+    private final boolean createSlotIfNotExists;
+    private final boolean createPublicationIfNotExists;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     private Connection connection;
@@ -43,13 +45,16 @@ public class PostgresCDCListener {
 
     public PostgresCDCListener(String jdbcUrl, String username, String password,
                                String slotName, String publicationName,
-                               Consumer<CDCEvent> eventHandler) {
+                               Consumer<CDCEvent> eventHandler, 
+                               boolean createSlotIfNotExists, boolean createPublicationIfNotExists) {
         this.jdbcUrl = jdbcUrl;
         this.username = username;
         this.password = password;
         this.slotName = slotName;
         this.publicationName = publicationName;
         this.eventHandler = eventHandler;
+        this.createSlotIfNotExists = createSlotIfNotExists;
+        this.createPublicationIfNotExists = createPublicationIfNotExists;
     }
 
     /**
@@ -69,8 +74,14 @@ public class PostgresCDCListener {
         props.setProperty("preferQueryMode", "simple");
 
         connection = DriverManager.getConnection(jdbcUrl, props);
-        createPublicationIfNotExists();
-        createReplicationSlotIfNotExists();
+        
+        if (createPublicationIfNotExists) {
+            createPublicationIfNotExists();
+        }
+        
+        if (createSlotIfNotExists) {
+            createReplicationSlotIfNotExists();
+        }
 
         // Start replication stream
         PGConnection pgConnection = connection.unwrap(PGConnection.class);
@@ -426,6 +437,8 @@ public class PostgresCDCListener {
         private String password;
         private String slotName = "cdc_slot";
         private String publicationName = "cdc_publication";
+        private boolean createSlotIfNotExists = true;
+        private boolean createPublicationIfNotExists = true;
         private Consumer<CDCEvent> eventHandler;
 
         public Builder jdbcUrl(String jdbcUrl) {
@@ -453,12 +466,23 @@ public class PostgresCDCListener {
             this.eventHandler = eventHandler;
             return this;
         }
+        
+        public Builder createSlotIfNotExists(boolean createSlotIfNotExists) {
+            this.createSlotIfNotExists = createSlotIfNotExists;
+            return this;
+        }
+        
+        public Builder createPublicationIfNotExists(boolean createPublicationIfNotExists) {
+            this.createPublicationIfNotExists = createPublicationIfNotExists;
+            return this;
+        }
 
         public PostgresCDCListener build() {
             if (jdbcUrl == null || username == null || password == null || eventHandler == null) {
                 throw new IllegalArgumentException("Missing required configuration");
             }
-            return new PostgresCDCListener(jdbcUrl, username, password, slotName, publicationName, eventHandler);
+            return new PostgresCDCListener(jdbcUrl, username, password, slotName, publicationName, 
+                    eventHandler, createSlotIfNotExists, createPublicationIfNotExists);
         }
     }
 }

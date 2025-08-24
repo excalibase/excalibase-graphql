@@ -20,6 +20,12 @@ app:
     graphql-ttl-minutes: 30  # GraphQL cache TTL in minutes (default: 30 minutes)
   security:
     role-based-schema: true  # Enable role-based schema filtering and RLS/CLS support (default: true)
+  cdc:
+    enabled: true  # Enable CDC (Change Data Capture) for real-time subscriptions (default: true)
+    slot-name: cdc_slot  # Replication slot name (default: cdc_slot)
+    publication-name: cdc_publication  # Publication name (default: cdc_publication)
+    create-slot-if-not-exists: true  # Create replication slot if it doesn't exist (default: true)
+    create-publication-if-not-exists: true  # Create publication if it doesn't exist (default: true)
 
 # GraphQL Security Configuration - Production Defaults
 # Based on GraphQL.org security recommendations and OWASP guidelines
@@ -38,6 +44,6 @@ logging:
       springframework: ${log.level.spring:info}
     io:
       github:
-        excalibase: ${log.level.app:debug}
+        excalibase: ${log.level.app:info}
   pattern:
     console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1}): %msg%n%throwable"
