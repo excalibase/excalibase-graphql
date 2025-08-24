@@ -142,44 +142,6 @@ public class ColumnTypeConstant {
     
     /** XML type */
     public static final String XML = "xml";
-    
-    // Type categories for getTypeCategory() method
-    
-    /** Integer type category */
-    public static final String CATEGORY_INTEGER = "integer";
-    
-    /** Numeric type category */
-    public static final String CATEGORY_NUMERIC = "numeric";
-    
-    /** Boolean type category */
-    public static final String CATEGORY_BOOLEAN = "boolean";
-    
-    /** Text type category */
-    public static final String CATEGORY_TEXT = "text";
-    
-    /** DateTime type category */
-    public static final String CATEGORY_DATETIME = "datetime";
-    
-    /** JSON type category */
-    public static final String CATEGORY_JSON = "json";
-    
-    /** UUID type category */
-    public static final String CATEGORY_UUID = "uuid";
-    
-    /** Network type category */
-    public static final String CATEGORY_NETWORK = "network";
-    
-    /** Bit type category */
-    public static final String CATEGORY_BIT = "bit";
-    
-    /** XML type category */
-    public static final String CATEGORY_XML = "xml";
-    
-    /** Array type category */
-    public static final String CATEGORY_ARRAY = "array";
-    
-    /** Unknown type category */
-    public static final String CATEGORY_UNKNOWN = "unknown";
 
     public static final String POSTGRES_ENUM = "postgres_enum";
     public static final String POSTGRES_COMPOSITE = "postgres_composite";

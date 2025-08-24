@@ -22,6 +22,7 @@ import io.github.excalibase.exception.NotFoundException;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
+import io.github.excalibase.postgres.constant.PostgresTypeOperator;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -100,8 +101,7 @@ public class PostgresSchemaHelper {
     public void addRequiredTimestampFields(TableInfo tableInfo, Map<String, Object> fields) {
         Set<String> requiredTimestampFields = tableInfo.getColumns().stream()
             .filter(col -> !col.isNullable() && 
-                          (col.getType().toLowerCase().contains(ColumnTypeConstant.TIMESTAMP) || 
-                           col.getType().toLowerCase().contains(ColumnTypeConstant.DATE)))
+                          PostgresTypeOperator.isDateTimeType(col.getType().toLowerCase()))
             .map(ColumnInfo::getName)
             .collect(Collectors.toSet());
         

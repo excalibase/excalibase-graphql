@@ -71,21 +71,21 @@ public class PostgresArrayParameterHandler {
 
             String valueStr = value.toString();
             
-            if (columnType.contains(ColumnTypeConstant.UUID)) {
+            if (PostgresTypeOperator.isUuidType(columnType)) {
                 paramSource.addValue(paramName, UUID.fromString(valueStr));
             } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
                 // For interval types, pass as string - PostgreSQL will handle the conversion
                 paramSource.addValue(paramName, valueStr);
-            } else if (columnType.contains(ColumnTypeConstant.INT) && !columnType.contains(ColumnTypeConstant.BIGINT)
+            } else if (PostgresTypeOperator.isIntegerType(columnType) && !columnType.contains(ColumnTypeConstant.BIGINT)
                        && !columnType.equals(ColumnTypeConstant.INTERVAL)) {
                 paramSource.addValue(paramName, Integer.parseInt(valueStr));
-            } else if (columnType.contains(ColumnTypeConstant.BIGINT)) {
+            } else if (PostgresTypeOperator.isIntegerType(columnType) && columnType.contains(ColumnTypeConstant.BIGINT)) {
                 paramSource.addValue(paramName, Long.parseLong(valueStr));
             } else if (PostgresTypeOperator.isFloatingPointType(columnType)) {
                 paramSource.addValue(paramName, Double.parseDouble(valueStr));
             } else if (PostgresTypeOperator.isBooleanType(columnType)) {
                 paramSource.addValue(paramName, Boolean.parseBoolean(valueStr));
-            } else if ((columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.DATE)) && value instanceof String) {
+            } else if (PostgresTypeOperator.isDateTimeType(columnType) && value instanceof String) {
                 try {
                     java.sql.Timestamp timestamp = java.sql.Timestamp.valueOf(((String) value).replace('T', ' ').replace('Z', ' ').trim());
                     paramSource.addValue(paramName, timestamp);
@@ -206,22 +206,30 @@ public class PostgresArrayParameterHandler {
     public String mapToPGArrayTypeName(String baseType) {
         if (PostgresTypeOperator.isIntegerType(baseType)) {
             if (baseType.contains(ColumnTypeConstant.BIGINT)) {
-                return "bigint";
+                return ColumnTypeConstant.BIGINT;
             } else {
-                return "integer";
+                return ColumnTypeConstant.INTEGER;
             }
         } else if (PostgresTypeOperator.isFloatingPointType(baseType)) {
-            if (baseType.contains("double") || baseType.contains("precision")) {
-                return "double precision";
+            if (baseType.contains(ColumnTypeConstant.DOUBLE) || baseType.contains(ColumnTypeConstant.DOUBLE_PRECISION)) {
+                return ColumnTypeConstant.DOUBLE_PRECISION;
             } else {
-                return "real";
+                return ColumnTypeConstant.REAL;
             }
         } else if (PostgresTypeOperator.isBooleanType(baseType)) {
-            return "boolean";
-        } else if (baseType.contains(ColumnTypeConstant.VARCHAR) || baseType.contains("character varying")) {
+            return ColumnTypeConstant.BOOLEAN;
+        } else if (PostgresTypeOperator.isTextType(baseType)) {
             return ColumnTypeConstant.TEXT; // Use text for varchar arrays for simplicity
-        } else if (baseType.contains("decimal") || baseType.contains("numeric")) {
-            return "numeric";
+        } else if (PostgresTypeOperator.isBitType(baseType)) {
+            // For BIT arrays, PostgreSQL expects simple type names without length specifiers
+            String lowerBaseType = baseType.toLowerCase();
+            if (lowerBaseType.contains(ColumnTypeConstant.VARBIT) || lowerBaseType.contains(ColumnTypeConstant.BIT_VARYING)) {
+                return ColumnTypeConstant.VARBIT;
+            } else {
+                return ColumnTypeConstant.BIT;
+            }
+        } else if (baseType.contains(ColumnTypeConstant.DECIMAL) || baseType.contains(ColumnTypeConstant.NUMERIC)) {
+            return ColumnTypeConstant.NUMERIC;
         } else {
             return ColumnTypeConstant.TEXT; // Default to text for other types
         }
@@ -256,9 +264,8 @@ public class PostgresArrayParameterHandler {
 
     public boolean needsQuoting(String pgTypeName) {
         return ColumnTypeConstant.TEXT.equals(pgTypeName) || 
-               pgTypeName.contains(ColumnTypeConstant.VARCHAR) || 
-               pgTypeName.contains(ColumnTypeConstant.CHAR) ||
-               pgTypeName.contains(ColumnTypeConstant.UUID);
+               PostgresTypeOperator.isTextType(pgTypeName) ||
+               PostgresTypeOperator.isUuidType(pgTypeName);
     }
 
     public Object[] convertListToTypedArray(List<?> listValue, String baseType) {
@@ -310,7 +317,7 @@ public class PostgresArrayParameterHandler {
         
         try {
             if (PostgresTypeOperator.isIntegerType(baseType)) {
-                if (baseType.contains(ColumnTypeConstant.BIGINT)) {
+                if (PostgresTypeOperator.isIntegerType(baseType) && baseType.contains(ColumnTypeConstant.BIGINT)) {
                     return Long.parseLong(elementStr);
                 } else {
                     return Integer.parseInt(elementStr);
@@ -319,7 +326,9 @@ public class PostgresArrayParameterHandler {
                 return Double.parseDouble(elementStr);
             } else if (PostgresTypeOperator.isBooleanType(baseType)) {
                 return Boolean.parseBoolean(elementStr);
-            } else if (baseType.contains(ColumnTypeConstant.UUID)) {
+            } else if (PostgresTypeOperator.isBitType(baseType)) {
+                return elementStr; // Keep BIT values as strings (e.g., '101010' for PostgreSQL)
+            } else if (PostgresTypeOperator.isUuidType(baseType)) {
                 return elementStr; // Keep UUIDs as strings for PostgreSQL
             } else {
                 return elementStr; // Default to string

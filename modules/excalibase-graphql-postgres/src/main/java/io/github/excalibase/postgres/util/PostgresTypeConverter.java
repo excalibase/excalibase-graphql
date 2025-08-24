@@ -105,7 +105,13 @@ public class PostgresTypeConverter {
                 .filter(col -> !PostgresTypeOperator.isArrayType(col.getType())) // Exclude arrays for now
                 .collect(Collectors.toMap(io.github.excalibase.model.ColumnInfo::getName, io.github.excalibase.model.ColumnInfo::getType));
         
-        if (arrayColumns.isEmpty() && customTypeColumns.isEmpty()) {
+        // Get BIT type columns that need special handling (exclude arrays)
+        Map<String, String> bitColumns = tableInfo.getColumns().stream()
+                .filter(col -> PostgresTypeOperator.isBitType(col.getType()))
+                .filter(col -> !PostgresTypeOperator.isArrayType(col.getType())) // Exclude BIT arrays
+                .collect(Collectors.toMap(io.github.excalibase.model.ColumnInfo::getName, io.github.excalibase.model.ColumnInfo::getType));
+        
+        if (arrayColumns.isEmpty() && customTypeColumns.isEmpty() && bitColumns.isEmpty()) {
             return results; // No special columns, return as-is
         }
         
@@ -145,6 +151,22 @@ public class PostgresTypeConverter {
                 }
             }
             
+            // Process BIT type columns - convert PGobject to string
+            for (Map.Entry<String, String> bitCol : bitColumns.entrySet()) {
+                String columnName = bitCol.getKey();
+                Object value = row.get(columnName);
+                
+                if (value != null) {
+                    // PostgreSQL JDBC returns BIT types as PGobject - convert to string
+                    if (value.getClass().getName().equals("org.postgresql.util.PGobject")) {
+                        convertedRow.put(columnName, value.toString());
+                    } else {
+                        // Fallback to string conversion
+                        convertedRow.put(columnName, value.toString());
+                    }
+                }
+            }
+            
             return convertedRow;
         }).collect(Collectors.toList());
     }
@@ -158,6 +180,23 @@ public class PostgresTypeConverter {
                     return isCustomEnumType(baseType) || isCustomCompositeType(baseType);
                 })
                 .collect(Collectors.toMap(io.github.excalibase.model.ColumnInfo::getName, io.github.excalibase.model.ColumnInfo::getType));
+        
+        // Process BIT types that need special handling
+        for (io.github.excalibase.model.ColumnInfo column : tableInfo.getColumns()) {
+            String columnName = column.getName();
+            String columnType = column.getType();
+            Object value = result.get(columnName);
+            
+            if (value != null && PostgresTypeOperator.isBitType(columnType)) {
+                // PostgreSQL JDBC returns BIT types as PGobject - convert to string
+                if (value.getClass().getName().equals("org.postgresql.util.PGobject")) {
+                    convertedResult.put(columnName, value.toString());
+                } else {
+                    // Fallback to string conversion
+                    convertedResult.put(columnName, value.toString());
+                }
+            }
+        }
         
         for (Map.Entry<String, String> customCol : customTypeColumns.entrySet()) {
             String columnName = customCol.getKey();
@@ -237,6 +276,9 @@ public class PostgresTypeConverter {
                             convertedList.add(Double.parseDouble(itemStr));
                         } else if (PostgresTypeOperator.isBooleanType(type)) {
                             convertedList.add(Boolean.parseBoolean(itemStr));
+                        } else if (PostgresTypeOperator.isBitType(type)) {
+                            // BIT values should be passed as strings (e.g., '101010' for bit(6))
+                            convertedList.add(itemStr);
                         } else if (type.equals(ColumnTypeConstant.INTERVAL)) {
                             // Intervals should be passed as strings - PostgreSQL will handle the conversion
                             convertedList.add(itemStr);

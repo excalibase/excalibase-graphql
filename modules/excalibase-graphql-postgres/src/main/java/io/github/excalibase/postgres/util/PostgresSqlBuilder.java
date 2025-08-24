@@ -248,16 +248,18 @@ public class PostgresSqlBuilder {
             return ":" + field + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
         } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
             return ":" + field + PostgresSqlSyntaxConstant.CAST_OPERATOR + ColumnTypeConstant.INTERVAL;
-        } else if (columnType.contains(ColumnTypeConstant.JSON)) {
+        } else if (PostgresTypeOperator.isJsonType(columnType)) {
             return ":" + field + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
-        } else if (columnType.contains(ColumnTypeConstant.INET) || columnType.contains(ColumnTypeConstant.CIDR) || columnType.contains(ColumnTypeConstant.MACADDR)) {
+        } else if (PostgresTypeOperator.isNetworkType(columnType)) {
             return ":" + field + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
-        } else if (columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.TIME)) {
+        } else if (PostgresTypeOperator.isDateTimeType(columnType)) {
             return ":" + field + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
-        } else if (columnType.contains(ColumnTypeConstant.XML)) {
+        } else if (PostgresTypeOperator.isXmlType(columnType)) {
             return ":" + field + PostgresSqlSyntaxConstant.CAST_OPERATOR + ColumnTypeConstant.XML;
-        } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
+        } else if (PostgresTypeOperator.isBinaryType(columnType)) {
             return ":" + field + PostgresSqlSyntaxConstant.CAST_OPERATOR + ColumnTypeConstant.BYTEA;
+        } else if (PostgresTypeOperator.isBitType(columnType)) {
+            return ":" + field + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
         } else if (typeConverter.isCustomEnumType(columnType)) {
             return ":" + field + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
         } else if (typeConverter.isCustomCompositeType(columnType)) {
@@ -275,16 +277,18 @@ public class PostgresSqlBuilder {
             return ":" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
         } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
             return ":" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + ColumnTypeConstant.INTERVAL;
-        } else if (columnType.contains(ColumnTypeConstant.JSON)) {
+        } else if (PostgresTypeOperator.isJsonType(columnType)) {
             return ":" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
-        } else if (columnType.contains(ColumnTypeConstant.INET) || columnType.contains(ColumnTypeConstant.CIDR) || columnType.contains(ColumnTypeConstant.MACADDR)) {
+        } else if (PostgresTypeOperator.isNetworkType(columnType)) {
             return ":" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
-        } else if (columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.TIME)) {
+        } else if (PostgresTypeOperator.isDateTimeType(columnType)) {
             return ":" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
-        } else if (columnType.contains(ColumnTypeConstant.XML)) {
+        } else if (PostgresTypeOperator.isXmlType(columnType)) {
             return ":" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + ColumnTypeConstant.XML;
-        } else if (columnType.contains(ColumnTypeConstant.BYTEA)) {
+        } else if (PostgresTypeOperator.isBinaryType(columnType)) {
             return ":" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + ColumnTypeConstant.BYTEA;
+        } else if (PostgresTypeOperator.isBitType(columnType)) {
+            return ":" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
         } else {
             return ":" + paramName;
         }
@@ -430,7 +434,7 @@ public class PostgresSqlBuilder {
         if (isInterval) {
             typeConverter.addTypedParameter(paramSource, paramName, value, columnType);
             return quotedColumnName + " " + operator + " :" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + ColumnTypeConstant.INTERVAL;
-        } else if (columnType != null && (columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.TIME))) {
+        } else if (columnType != null && PostgresTypeOperator.isDateTimeType(columnType)) {
             typeConverter.addTypedParameter(paramSource, paramName, value, columnType);
             return quotedColumnName + " " + operator + " :" + paramName + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
         } else {
@@ -441,13 +445,13 @@ public class PostgresSqlBuilder {
 
     private String buildContainsCondition(String quotedColumnName, String paramName, Object value, String columnType, 
                                         MapSqlParameterSource paramSource) {
-        if (columnType != null && (columnType.toLowerCase().contains(ColumnTypeConstant.JSON))) {
+        if (columnType != null && PostgresTypeOperator.isJsonType(columnType)) {
             paramSource.addValue(paramName, "%" + value + "%");
             return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " LIKE :" + paramName;
-        } else if (columnType != null && columnType.toLowerCase().contains(ColumnTypeConstant.XML)) {
+        } else if (columnType != null && PostgresTypeOperator.isXmlType(columnType)) {
             paramSource.addValue(paramName, "%" + value + "%");
             return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " LIKE :" + paramName;
-        } else if (columnType != null && (columnType.contains(ColumnTypeConstant.INET) || columnType.contains(ColumnTypeConstant.CIDR) || columnType.contains(ColumnTypeConstant.MACADDR))) {
+        } else if (columnType != null && PostgresTypeOperator.isNetworkType(columnType)) {
             paramSource.addValue(paramName, "%" + value + "%");
             return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + paramName;
         } else {
@@ -458,7 +462,7 @@ public class PostgresSqlBuilder {
 
     private String buildStartsWithCondition(String quotedColumnName, String paramName, Object value, String columnType, 
                                           MapSqlParameterSource paramSource) {
-        if (columnType != null && (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr"))) {
+        if (columnType != null && PostgresTypeOperator.isNetworkType(columnType)) {
             paramSource.addValue(paramName, value + "%");
             return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + paramName;
         } else {
@@ -469,7 +473,7 @@ public class PostgresSqlBuilder {
 
     private String buildEndsWithCondition(String quotedColumnName, String paramName, Object value, String columnType, 
                                         MapSqlParameterSource paramSource) {
-        if (columnType != null && (columnType.contains("inet") || columnType.contains("cidr") || columnType.contains("macaddr"))) {
+        if (columnType != null && PostgresTypeOperator.isNetworkType(columnType)) {
             paramSource.addValue(paramName, "%" + value);
             return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + paramName;
         } else {
@@ -562,13 +566,13 @@ public class PostgresSqlBuilder {
 
     private String buildLegacyContainsCondition(String quotedFieldName, String key, Object value, String fieldColumnType, 
                                               MapSqlParameterSource paramSource) {
-        if (fieldColumnType.contains("json")) {
+        if (PostgresTypeOperator.isJsonType(fieldColumnType)) {
             paramSource.addValue(key, "%" + value + "%");
             return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " LIKE :" + key;
-        } else if (fieldColumnType.contains("xml")) {
+        } else if (PostgresTypeOperator.isXmlType(fieldColumnType)) {
             paramSource.addValue(key, "%" + value + "%");
             return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " LIKE :" + key;
-        } else if (fieldColumnType.contains("inet") || fieldColumnType.contains("cidr") || fieldColumnType.contains("macaddr")) {
+        } else if (PostgresTypeOperator.isNetworkType(fieldColumnType)) {
             paramSource.addValue(key, "%" + value + "%");
             return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + key;
         } else {
@@ -579,7 +583,7 @@ public class PostgresSqlBuilder {
 
     private String buildLegacyStartsWithCondition(String quotedFieldName, String key, Object value, String fieldColumnType, 
                                                 MapSqlParameterSource paramSource) {
-        if (fieldColumnType.contains("inet") || fieldColumnType.contains("cidr") || fieldColumnType.contains("macaddr") || fieldColumnType.contains("xml")) {
+        if (PostgresTypeOperator.isNetworkType(fieldColumnType) || PostgresTypeOperator.isXmlType(fieldColumnType)) {
             paramSource.addValue(key, value + "%");
             return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + key;
         } else {
@@ -590,7 +594,7 @@ public class PostgresSqlBuilder {
 
     private String buildLegacyEndsWithCondition(String quotedFieldName, String key, Object value, String fieldColumnType, 
                                               MapSqlParameterSource paramSource) {
-        if (fieldColumnType.contains("inet") || fieldColumnType.contains("cidr") || fieldColumnType.contains("macaddr") || fieldColumnType.contains("xml")) {
+        if (PostgresTypeOperator.isNetworkType(fieldColumnType) || PostgresTypeOperator.isXmlType(fieldColumnType)) {
             paramSource.addValue(key, "%" + value);
             return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + key;
         } else {
@@ -604,7 +608,7 @@ public class PostgresSqlBuilder {
         if (fieldColumnType.contains(ColumnTypeConstant.INTERVAL)) {
             paramSource.addValue(key, value.toString());
             return quotedFieldName + " " + operator + " :" + key + PostgresSqlSyntaxConstant.CAST_OPERATOR + ColumnTypeConstant.INTERVAL;
-        } else if (fieldColumnType.contains(ColumnTypeConstant.TIMESTAMP) || fieldColumnType.contains(ColumnTypeConstant.TIME)) {
+        } else if (PostgresTypeOperator.isDateTimeType(fieldColumnType)) {
             paramSource.addValue(key, value.toString());
             return quotedFieldName + " " + operator + " :" + key + PostgresSqlSyntaxConstant.CAST_OPERATOR + fieldColumnType;
         } else {
@@ -615,7 +619,7 @@ public class PostgresSqlBuilder {
 
     private String buildBasicEqualityCondition(String quotedKey, String key, Object value, String columnType, 
                                              MapSqlParameterSource paramSource) {
-        if (columnType.contains(ColumnTypeConstant.UUID) && value instanceof String) {
+        if (PostgresTypeOperator.isUuidType(columnType) && value instanceof String) {
             try {
                 java.util.UUID uuid = java.util.UUID.fromString((String) value);
                 paramSource.addValue(key, uuid);
@@ -627,10 +631,10 @@ public class PostgresSqlBuilder {
         } else if (columnType.contains(ColumnTypeConstant.INTERVAL)) {
             paramSource.addValue(key, value.toString());
             return quotedKey + PostgresSqlSyntaxConstant.EQUALS_PARAM + key + PostgresSqlSyntaxConstant.CAST_OPERATOR + ColumnTypeConstant.INTERVAL;
-        } else if (columnType.contains(ColumnTypeConstant.INET) || columnType.contains(ColumnTypeConstant.CIDR) || columnType.contains(ColumnTypeConstant.MACADDR)) {
+        } else if (PostgresTypeOperator.isNetworkType(columnType)) {
             paramSource.addValue(key, value.toString());
             return quotedKey + PostgresSqlSyntaxConstant.EQUALS_PARAM + key + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
-        } else if (columnType.contains(ColumnTypeConstant.TIMESTAMP) || columnType.contains(ColumnTypeConstant.TIME)) {
+        } else if (PostgresTypeOperator.isDateTimeType(columnType)) {
             paramSource.addValue(key, value.toString());
             return quotedKey + PostgresSqlSyntaxConstant.EQUALS_PARAM + key + PostgresSqlSyntaxConstant.CAST_OPERATOR + columnType;
         } else if (PostgresTypeOperator.isIntegerType(columnType) || PostgresTypeOperator.isFloatingPointType(columnType)) {
@@ -651,7 +655,7 @@ public class PostgresSqlBuilder {
                 if (PostgresTypeOperator.isIntegerType(columnType)) {
                     int numericValue = Integer.parseInt((String) value);
                     paramSource.addValue(key, numericValue);
-                } else if (columnType.contains(ColumnTypeConstant.BIGINT)) {
+                } else if (PostgresTypeOperator.isIntegerType(columnType) && columnType.contains(ColumnTypeConstant.BIGINT)) {
                     long numericValue = Long.parseLong((String) value);
                     paramSource.addValue(key, numericValue);
                 } else {

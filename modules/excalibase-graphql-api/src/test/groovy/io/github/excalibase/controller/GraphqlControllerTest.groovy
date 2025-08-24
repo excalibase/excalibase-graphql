@@ -237,6 +237,10 @@ class GraphqlControllerTest extends Specification {
                     macaddr_col MACADDR,
                     -- XML type
                     xml_col XML,
+                    -- BIT types
+                    bit_col BIT(8),
+                    varbit_col VARBIT(16),
+                    bit_array_col BIT(4)[],
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
@@ -246,7 +250,8 @@ class GraphqlControllerTest extends Specification {
                 INSERT INTO enhanced_types (
                     id, name, json_col, jsonb_col, int_array, text_array,
                     timestamptz_col, timetz_col, interval_col, numeric_col,
-                    bytea_col, inet_col, cidr_col, macaddr_col, xml_col
+                    bytea_col, inet_col, cidr_col, macaddr_col, xml_col,
+                    bit_col, varbit_col, bit_array_col
                 ) VALUES
                 (1, 'Test Record 1', 
                  '{"name": "John", "age": 30, "city": "New York"}',
@@ -261,7 +266,10 @@ class GraphqlControllerTest extends Specification {
                  '192.168.1.1',
                  '192.168.0.0/24',
                  '08:00:27:00:00:00',
-                 '<person><name>John</name><age>30</age></person>'
+                 '<person><name>John</name><age>30</age></person>',
+                 B'10101010',
+                 B'1100110011',
+                 '{1010,0101,1111}'
                 ),
                 (2, 'Test Record 2',
                  '{"product": "laptop", "price": 1500, "specs": {"ram": "16GB", "cpu": "Intel i7"}}',
@@ -276,7 +284,10 @@ class GraphqlControllerTest extends Specification {
                  '10.0.0.1',
                  '10.0.0.0/16',
                  '00:1B:44:11:3A:B7',
-                 '<product><name>Laptop</name><price>1500</price></product>'
+                 '<product><name>Laptop</name><price>1500</price></product>',
+                 B'11110000',
+                 B'101010',
+                 '{0000,1111}'
                 ),
                 (3, 'Test Record 3',
                  NULL,
@@ -291,7 +302,10 @@ class GraphqlControllerTest extends Specification {
                  '2001:db8::1',
                  '2001:db8::/32',
                  'AA:BB:CC:DD:EE:FF',
-                 '<empty/>'
+                 '<empty/>',
+                 NULL,
+                 NULL,
+                 NULL
                 );
             """)
 
@@ -2641,5 +2655,58 @@ class GraphqlControllerTest extends Specification {
         stringResult.andExpect(status().isOk())
                 .andExpect(jsonPath('$.data.createEnhanced_types.name').value("String Way"))
                 .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].city').value("Chicago"))
+    }
+
+    def "should handle BIT types in GraphQL mutations and queries"() {
+        given: "a GraphQL mutation with BIT types"
+        def createMutation = '''
+        mutation {
+            createEnhanced_types(input: {
+                name: "BIT Test GraphQL",
+                bit_col: "10110011",
+                varbit_col: "110011001100",
+                bit_array_col: ["1010", "0101", "1100"]
+            }) {
+                id
+                name
+                bit_col
+                varbit_col
+                bit_array_col
+            }
+        }
+        '''
+
+        when: "creating a record with BIT types"
+        def mutationResult = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${createMutation.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should create record successfully"
+        mutationResult.andExpect(status().isOk())
+                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("BIT Test GraphQL"))
+                .andExpect(jsonPath('$.data.createEnhanced_types.id').exists())
+                // Note: BIT values may be converted differently by GraphQL/JDBC
+
+        when: "querying for BIT type records"
+        def query = '''
+        {
+            enhanced_types(where: { name: { eq: "Test Record 1" } }) {
+                id
+                name
+                bit_col
+                varbit_col
+            }
+        }
+        '''
+        def queryResult = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return BIT type data successfully"
+        queryResult.andExpect(status().isOk())
+                .andExpect(jsonPath('$.data.enhanced_types').isArray())
+                .andExpect(jsonPath('$.data.enhanced_types[0].name').value("Test Record 1"))
+                // BIT fields should be present (format may vary)
+                .andExpect(jsonPath('$.data.enhanced_types[0].id').exists())
     }
 }

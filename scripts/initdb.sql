@@ -197,6 +197,10 @@ CREATE TABLE IF NOT EXISTS enhanced_types (
     macaddr_col MACADDR,
     -- XML type
     xml_col XML,
+    -- BIT types
+    bit_col BIT(8),
+    varbit_col VARBIT(16),
+    bit_array_col BIT(4)[],
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -204,7 +208,8 @@ CREATE TABLE IF NOT EXISTS enhanced_types (
 INSERT INTO enhanced_types (
     id, name, json_col, jsonb_col, int_array, text_array,
     timestamptz_col, timetz_col, interval_col, numeric_col,
-    bytea_col, inet_col, cidr_col, macaddr_col, xml_col
+    bytea_col, inet_col, cidr_col, macaddr_col, xml_col,
+    bit_col, varbit_col, bit_array_col
 ) VALUES
 (1, 'Test Record 1', 
  '{"name": "John", "age": 30, "city": "New York"}',
@@ -219,7 +224,10 @@ INSERT INTO enhanced_types (
  '192.168.1.1',
  '192.168.0.0/24',
  '08:00:27:00:00:00',
- '<person><name>John</name><age>30</age></person>'
+ '<person><name>John</name><age>30</age></person>',
+ B'10101010',
+ B'1100110011',
+ '{1010,0101,1111}'
 ),
 (2, 'Test Record 2',
  '{"product": "laptop", "price": 1500, "specs": {"ram": "16GB", "cpu": "Intel i7"}}',
@@ -234,7 +242,10 @@ INSERT INTO enhanced_types (
  '10.0.0.1',
  '10.0.0.0/16',
  '00:1B:44:11:3A:B7',
- '<product><name>Laptop</name><price>1500</price></product>'
+ '<product><name>Laptop</name><price>1500</price></product>',
+ B'11110000',
+ B'101010',
+ '{0000,1111}'
 ),
 (3, 'Test Record 3',
  '{"company": "TechCorp", "employees": 500, "founded": 2010}',
@@ -249,7 +260,10 @@ INSERT INTO enhanced_types (
  '172.16.254.1',
  '172.16.0.0/12',
  '00:50:56:C0:00:01',
- '<company><name>TechCorp</name><industry>Software</industry></company>'
+ '<company><name>TechCorp</name><industry>Software</industry></company>',
+ NULL,
+ NULL,
+ NULL
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -607,6 +621,15 @@ BEGIN
     RAISE NOTICE '  - active_customers: % rows', (SELECT count(*) FROM active_customers);
     RAISE NOTICE '  - enhanced_types_summary: % rows', (SELECT count(*) FROM enhanced_types_summary);
     RAISE NOTICE '  - posts_with_authors: % rows', (SELECT count(*) FROM posts_with_authors);
+    RAISE NOTICE '';
+    RAISE NOTICE 'POSTGRESQL ADVANCED TYPES:';
+    RAISE NOTICE '  - JSON/JSONB: Full object support with enhanced scalar';
+    RAISE NOTICE '  - Arrays: INTEGER[], TEXT[], custom type arrays';
+    RAISE NOTICE '  - Network: INET, CIDR, MACADDR types';
+    RAISE NOTICE '  - Binary: BYTEA type';
+    RAISE NOTICE '  - BIT: BIT(8), VARBIT(16), BIT(4)[] arrays';
+    RAISE NOTICE '  - DateTime: TIMESTAMPTZ, TIMETZ, INTERVAL';
+    RAISE NOTICE '  - XML: Full XML data support';
     RAISE NOTICE '';
     RAISE NOTICE 'Schema: hana';
     RAISE NOTICE 'Ready for GraphQL API at port 10000';
