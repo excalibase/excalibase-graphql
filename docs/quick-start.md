@@ -261,5 +261,11 @@ The application uses these default settings:
 - Application port: 10000
 - Database port: 5432
 - Default credentials: hana001/password123
+- CDC enabled by default for real-time subscriptions
 
-To customize these settings, edit the environment variables in `docker-compose.yml`. 
+To customize these settings, edit the environment variables in `docker-compose.yml`:
+
+**Key CDC Configuration Options:**
+- `APP_CDC_ENABLED=true` - Enable/disable real-time subscriptions
+- `APP_CDC_CREATE_SLOT_IF_NOT_EXISTS=true` - Auto-create PostgreSQL replication slot
+- `APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS=true` - Auto-create publication 

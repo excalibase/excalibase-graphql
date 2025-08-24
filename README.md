@@ -73,6 +73,10 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
      - DB_USERNAME=your_username
      - DB_PASSWORD=your_password
      - DATABASE_SCHEMA=your_schema
+     # Optional CDC configuration (defaults shown)
+     - APP_CDC_ENABLED=true
+     - APP_CDC_CREATE_SLOT_IF_NOT_EXISTS=true
+     - APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS=true
    ```
 
 3. **Run with Docker Compose**
@@ -137,6 +141,12 @@ services:
       - DB_USERNAME=your_username
       - DB_PASSWORD=your_password
       - DATABASE_SCHEMA=your_schema
+      # CDC Configuration (optional - defaults shown)
+      - APP_CDC_ENABLED=true
+      - APP_CDC_SLOT_NAME=cdc_slot
+      - APP_CDC_PUBLICATION_NAME=cdc_publication
+      - APP_CDC_CREATE_SLOT_IF_NOT_EXISTS=true
+      - APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS=true
     depends_on:
       - postgres
   
@@ -200,6 +210,11 @@ Configure the application using environment variables:
 | `APP_ALLOWED_SCHEMA` | Database schema to introspect | `hana` | `hana` |
 | `APP_DATABASE_TYPE` | Database type | `postgres` | `postgres` |
 | `SERVER_PORT` | Application port | `10000` | `10000` |
+| `APP_CDC_ENABLED` | Enable CDC for real-time subscriptions | `true` | `true` |
+| `APP_CDC_SLOT_NAME` | Replication slot name | `cdc_slot` | `cdc_slot` |
+| `APP_CDC_PUBLICATION_NAME` | Publication name | `cdc_publication` | `cdc_publication` |
+| `APP_CDC_CREATE_SLOT_IF_NOT_EXISTS` | Auto-create replication slot | `true` | `true` |
+| `APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS` | Auto-create publication | `true` | `true` |
 
 **Legacy Environment Variables (Docker Compose):**
 - `DB_HOST`, `DB_PORT`, `DB_NAME` - Still supported for backward compatibility
@@ -890,11 +905,29 @@ spring:
 # CDC configuration
 app:
   cdc:
-    enabled: true
-    slot-name: "cdc_slot"
-    publication-name: "cdc_publication"
-    heartbeat-interval: 30
+    enabled: true                              # Enable CDC (Change Data Capture) for real-time subscriptions (default: true)
+    slot-name: "cdc_slot"                      # Replication slot name (default: cdc_slot)
+    publication-name: "cdc_publication"        # Publication name (default: cdc_publication)
+    create-slot-if-not-exists: true            # Create replication slot if it doesn't exist (default: true)
+    create-publication-if-not-exists: true     # Create publication if it doesn't exist (default: true)
+    heartbeat-interval: 30                     # Heartbeat interval in seconds
 ```
+
+### 🚀 Automatic CDC Setup
+
+Excalibase GraphQL now features **automatic CDC setup** for seamless deployment:
+
+**New Auto-Configuration Features:**
+- **`create-slot-if-not-exists: true`** - Automatically creates PostgreSQL replication slots
+- **`create-publication-if-not-exists: true`** - Automatically creates publications for all tables
+- **Zero-configuration deployment** - Works out-of-the-box for development environments
+- **Production-safe** - Handles existing configurations gracefully without conflicts
+
+**Benefits:**
+- ✅ **No Manual Setup Required** - Skip complex PostgreSQL CDC configuration
+- ✅ **Development Friendly** - Instant setup for local development  
+- ✅ **Error Resilient** - Graceful handling of existing slots/publications
+- ✅ **Multi-Environment** - Same configuration works across dev/staging/prod
 
 ### 📈 Performance & Scalability
 
@@ -1336,6 +1369,18 @@ spring:
 app:
   allowed-schema: ${DATABASE_SCHEMA:public}
   database-type: postgres
+```
+
+### CDC Configuration
+```yaml
+app:
+  cdc:
+    enabled: true                              # Enable CDC (Change Data Capture) for real-time subscriptions (default: true)
+    slot-name: cdc_slot                        # Replication slot name (default: cdc_slot)
+    publication-name: cdc_publication          # Publication name (default: cdc_publication)
+    create-slot-if-not-exists: true            # Create replication slot if it doesn't exist (default: true)
+    create-publication-if-not-exists: true     # Create publication if it doesn't exist (default: true)
+    heartbeat-interval: 30                     # Heartbeat interval in seconds (default: 30)
 ```
 
 ### Server Configuration
