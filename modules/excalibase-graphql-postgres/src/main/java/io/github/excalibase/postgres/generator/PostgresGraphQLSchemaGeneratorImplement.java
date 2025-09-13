@@ -627,11 +627,6 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .description("OR conditions for " + tableName)
             .build());
 
-        // Add filtering arguments (keep legacy for backward compatibility)
-        for (ColumnInfo column : tableInfo.getColumns()) {
-            addFilteringArguments(fieldBuilder, column, filterType);
-        }
-
         // Add pagination arguments
         addPaginationArguments(fieldBuilder);
 
@@ -689,62 +684,6 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .description("Filter by " + column.getName())
                 .build());
 
-        // For string columns, add additional filtering options
-        if (argType == GraphQLString) {
-            fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_" + FieldConstant.OPERATOR_CONTAINS)
-                    .type(GraphQLString)
-                    .description("Filter where " + column.getName() + " contains text")
-                    .build());
-
-            fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_" + FieldConstant.OPERATOR_STARTS_WITH)
-                    .type(GraphQLString)
-                    .description("Filter where " + column.getName() + " starts with text")
-                    .build());
-
-            fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_" + FieldConstant.OPERATOR_ENDS_WITH)
-                    .type(GraphQLString)
-                    .description("Filter where " + column.getName() + " ends with text")
-                    .build());
-        }
-
-        // For numeric columns, add comparison operators
-        if (argType == GraphQLInt || argType == GraphQLFloat) {
-            fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_" + FieldConstant.OPERATOR_GT)
-                    .type(argType)
-                    .description("Filter where " + column.getName() + " is greater than")
-                    .build());
-
-            fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_" + FieldConstant.OPERATOR_GTE)
-                    .type(argType)
-                    .description("Filter where " + column.getName() + " is greater than or equal")
-                    .build());
-
-            fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_" + FieldConstant.OPERATOR_LT)
-                    .type(argType)
-                    .description("Filter where " + column.getName() + " is less than")
-                    .build());
-
-            fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_" + FieldConstant.OPERATOR_LTE)
-                    .type(argType)
-                    .description("Filter where " + column.getName() + " is less than or equal")
-                    .build());
-        }
-
-        // Add filter arguments
-        if (filterType != null) {
-            fieldBuilder.argument(GraphQLArgument.newArgument()
-                    .name(column.getName() + "_filter")
-                    .type(filterType)
-                    .description("Filter by " + column.getName())
-                    .build());
-        }
     }
 
     private void addPaginationArguments(GraphQLFieldDefinition.Builder fieldBuilder) {
