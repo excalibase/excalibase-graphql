@@ -105,13 +105,19 @@ public class PostgresTypeConverter {
                 .filter(col -> !PostgresTypeOperator.isArrayType(col.getType())) // Exclude arrays for now
                 .collect(Collectors.toMap(io.github.excalibase.model.ColumnInfo::getName, io.github.excalibase.model.ColumnInfo::getType));
         
-        // Get BIT type columns that need special handling (exclude arrays)
+        // Get BIT type columns that need special handling (non-array bit types)
         Map<String, String> bitColumns = tableInfo.getColumns().stream()
                 .filter(col -> PostgresTypeOperator.isBitType(col.getType()))
-                .filter(col -> !PostgresTypeOperator.isArrayType(col.getType())) // Exclude BIT arrays
+                .filter(col -> !PostgresTypeOperator.isArrayType(col.getType())) // Non-array BIT types only
+                .collect(Collectors.toMap(io.github.excalibase.model.ColumnInfo::getName, io.github.excalibase.model.ColumnInfo::getType));
+
+        // Get BIT array columns that need special handling
+        Map<String, String> bitArrayColumns = tableInfo.getColumns().stream()
+                .filter(col -> PostgresTypeOperator.isBitType(col.getType()))
+                .filter(col -> PostgresTypeOperator.isArrayType(col.getType())) // BIT array types only
                 .collect(Collectors.toMap(io.github.excalibase.model.ColumnInfo::getName, io.github.excalibase.model.ColumnInfo::getType));
         
-        if (arrayColumns.isEmpty() && customTypeColumns.isEmpty() && bitColumns.isEmpty()) {
+        if (arrayColumns.isEmpty() && customTypeColumns.isEmpty() && bitColumns.isEmpty() && bitArrayColumns.isEmpty()) {
             return results; // No special columns, return as-is
         }
         
@@ -155,7 +161,7 @@ public class PostgresTypeConverter {
             for (Map.Entry<String, String> bitCol : bitColumns.entrySet()) {
                 String columnName = bitCol.getKey();
                 Object value = row.get(columnName);
-                
+
                 if (value != null) {
                     // PostgreSQL JDBC returns BIT types as PGobject - convert to string
                     if (value.getClass().getName().equals("org.postgresql.util.PGobject")) {
@@ -166,7 +172,21 @@ public class PostgresTypeConverter {
                     }
                 }
             }
-            
+
+            // Process BIT array columns - convert using string representation to avoid boolean cast error
+            for (Map.Entry<String, String> bitArrayCol : bitArrayColumns.entrySet()) {
+                String columnName = bitArrayCol.getKey();
+                String columnType = bitArrayCol.getValue();
+                Object value = row.get(columnName);
+
+                if (value != null) {
+                    // For BIT arrays, use string representation to avoid PostgreSQL JDBC driver's
+                    // incorrect attempt to cast bit strings like "1010" to boolean
+                    List<Object> convertedArray = convertBitArrayToList(value, columnType);
+                    convertedRow.put(columnName, convertedArray);
+                }
+            }
+
             return convertedRow;
         }).collect(Collectors.toList());
     }
@@ -227,12 +247,17 @@ public class PostgresTypeConverter {
             String columnName = column.getName();
             String columnType = column.getType();
             Object value = result.get(columnName);
-            
+
             if (value != null && PostgresTypeOperator.isArrayType(columnType)) {
                 String baseType = columnType.replace("[]", "");
-                
+
+                // Handle BIT arrays specially to avoid boolean cast error
+                if (PostgresTypeOperator.isBitType(baseType)) {
+                    List<Object> convertedArray = convertBitArrayToList(value, columnType);
+                    convertedResult.put(columnName, convertedArray);
+                }
                 // Only process if it's NOT a custom type (custom types handled above)
-                if (!isCustomEnumType(baseType) && !isCustomCompositeType(baseType)) {
+                else if (!isCustomEnumType(baseType) && !isCustomCompositeType(baseType)) {
                     // Handle regular array types (int[], text[], etc.) - convert PGArray to List
                     if (value instanceof java.sql.Array) {
                         List<Object> convertedArray = convertRegularArrayToList(value, columnType);
@@ -958,9 +983,46 @@ public class PostgresTypeConverter {
 
             return "(" + String.join(",", orderedValues) + ")";
         } catch (Exception e) {
-            log.warn("Error converting map to PostgreSQL composite for type {}: {}, falling back to simple conversion", 
+            log.warn("Error converting map to PostgreSQL composite for type {}: {}, falling back to simple conversion",
                     compositeTypeName, e.getMessage());
             return convertMapToPostgresComposite(compositeMap);
+        }
+    }
+
+    /**
+     * Converts BIT array to List by using string representation to avoid
+     * PostgreSQL JDBC driver's incorrect boolean casting
+     */
+    private List<Object> convertBitArrayToList(Object arrayValue, String columnType) {
+        if (arrayValue == null) {
+            return List.of();
+        }
+
+        try {
+            // For BIT arrays, always use string representation
+            // The PostgreSQL JDBC driver incorrectly tries to cast bit strings like "1010" to boolean
+            // when calling sqlArray.getArray(), so we parse the string representation instead
+            String arrayStr = arrayValue.toString();
+
+            // Remove outer braces: "{1010,0101}" -> "1010,0101"
+            String trimmed = arrayStr.trim();
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                trimmed = trimmed.substring(1, trimmed.length() - 1);
+            }
+
+            if (trimmed.isEmpty()) {
+                return List.of(); // Empty array
+            }
+
+            // Split by comma and return as string list
+            return Arrays.stream(trimmed.split(","))
+                    .map(String::trim)
+                    .filter(s -> !s.isEmpty())
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("Error converting BIT array to List for column type: {}", columnType, e);
+            return List.of();
         }
     }
 }

@@ -107,4 +107,29 @@ public interface IDatabaseDataFetcher {
             String targetTableName,
             String foreignKeyColumn,
             String referencedColumn);
+
+    /**
+     * Creates an aggregate data fetcher for computing aggregates over table data.
+     *
+     * <p>This method creates a data fetcher that computes aggregate functions
+     * like count, sum, avg, min, and max over the specified table. The fetcher
+     * should support filtering via WHERE conditions.</p>
+     *
+     * @param tableName the name of the database table to aggregate
+     * @return a data fetcher that returns aggregate results
+     */
+    DataFetcher<Map<String, Object>> createAggregateDataFetcher(String tableName);
+
+    /**
+     * Creates a computed field data fetcher that calls a PostgreSQL function.
+     *
+     * <p>This method creates a data fetcher that executes a PostgreSQL function
+     * to compute a field value based on the parent row data.</p>
+     *
+     * @param tableName the name of the table this computed field belongs to
+     * @param functionName the name of the PostgreSQL function to call
+     * @param fieldName the name of the computed field in GraphQL
+     * @return a data fetcher that returns the computed field value
+     */
+    DataFetcher<Object> createComputedFieldDataFetcher(String tableName, String functionName, String fieldName);
 }

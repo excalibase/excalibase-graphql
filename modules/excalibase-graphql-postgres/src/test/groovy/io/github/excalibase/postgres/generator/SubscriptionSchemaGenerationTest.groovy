@@ -3,6 +3,7 @@ package io.github.excalibase.postgres.generator
 import graphql.schema.GraphQLSchema
 import io.github.excalibase.model.ColumnInfo
 import io.github.excalibase.model.TableInfo
+import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector
 import spock.lang.Specification
 import spock.lang.Subject
 
@@ -10,9 +11,25 @@ import spock.lang.Subject
  * Test to debug subscription schema generation issues
  */
 class SubscriptionSchemaGenerationTest extends Specification {
-    
+
     @Subject
-    PostgresGraphQLSchemaGeneratorImplement generator = new PostgresGraphQLSchemaGeneratorImplement()
+    PostgresGraphQLSchemaGeneratorImplement generator
+    IDatabaseSchemaReflector mockSchemaReflector
+
+    def setup() {
+        def mockServiceLookup = Mock(io.github.excalibase.service.ServiceLookup)
+        def mockAppConfig = Mock(io.github.excalibase.config.AppConfig)
+
+        mockSchemaReflector = Mock(IDatabaseSchemaReflector)
+        mockSchemaReflector.discoverComputedFields() >> [:]
+        mockSchemaReflector.getCustomEnumTypes() >> []
+        mockSchemaReflector.getCustomCompositeTypes() >> []
+
+        mockServiceLookup.forBean(IDatabaseSchemaReflector.class, _) >> mockSchemaReflector
+
+        generator = new PostgresGraphQLSchemaGeneratorImplement(mockServiceLookup, mockAppConfig)
+        generator.setSchemaReflector(mockSchemaReflector)
+    }
     
     def "should generate subscription types for simple table"() {
         given: "a simple table"

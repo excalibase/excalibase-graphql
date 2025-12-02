@@ -25,6 +25,7 @@ import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.postgres.constant.PostgresSqlSyntaxConstant;
 import io.github.excalibase.postgres.constant.PostgresErrorConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
+import io.github.excalibase.dataloader.ExcalibaseBatchLoader;
 import io.github.excalibase.exception.DataFetcherException;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
@@ -73,7 +74,9 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     private PostgresTypeConverter typeConverter;
 
     private static final String BATCH_CONTEXT = "BATCH_CONTEXT";
+    private static final String BATCH_LOADER = "BATCH_LOADER";
     private static final String CURSOR_ERROR = PostgresErrorConstant.CURSOR_REQUIRED_ERROR;
+    private static final int MAX_RELATIONSHIP_DEPTH = 5; // Prevent infinite recursion
 
     public PostgresDatabaseDataFetcherImplement(JdbcTemplate jdbcTemplate, 
                                                          NamedParameterJdbcTemplate namedParameterJdbcTemplate, 
@@ -123,8 +126,8 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     .collect(Collectors.toList());
 
             Set<String> relationshipFields = environment.getSelectionSet().getFields().stream()
-                    .filter(field -> !availableColumns.contains(field.getName()))
                     .map(SelectedField::getName)
+                    .filter(name -> !availableColumns.contains(name))
                     .collect(Collectors.toSet());
 
             if (requestedFields.isEmpty() && !availableColumns.isEmpty()) {
@@ -662,22 +665,205 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
         return schemaReflector;
     }
 
+    @Override
+    public DataFetcher<Map<String, Object>> createAggregateDataFetcher(String tableName) {
+        return environment -> {
+            Map<String, TableInfo> tables = getSchemaHelper().getAllTables();
+            TableInfo tableInfo = tables.get(tableName);
+
+            if (tableInfo == null) {
+                throw new DataFetcherException("Table not found: " + tableName);
+            }
+
+            // Get filter arguments
+            Map<String, Object> arguments = new HashMap<>(environment.getArguments());
+            MapSqlParameterSource paramSource = new MapSqlParameterSource();
+            Map<String, String> columnTypes = getSchemaHelper().getColumnTypes(tableName);
+
+            // Build WHERE clause
+            StringBuilder whereClause = new StringBuilder();
+            if (!arguments.isEmpty()) {
+                List<String> conditions = getSqlBuilder().buildWhereConditions(arguments, paramSource, columnTypes);
+                if (!conditions.isEmpty()) {
+                    whereClause.append(PostgresSqlSyntaxConstant.WHERE_WITH_SPACE)
+                              .append(String.join(PostgresSqlSyntaxConstant.AND_WITH_SPACE, conditions));
+                }
+            }
+
+            String qualifiedTableName = getSqlBuilder().getQualifiedTableName(tableName, appConfig.getAllowedSchema());
+            Map<String, Object> result = new HashMap<>();
+
+            // Get requested fields
+            List<SelectedField> selectedFields = environment.getSelectionSet().getFields();
+
+            for (SelectedField field : selectedFields) {
+                String aggregateFunction = field.getName();
+
+                switch (aggregateFunction) {
+                    case "count":
+                        String countSql = "SELECT COUNT(*) as count FROM " + qualifiedTableName + whereClause;
+                        Integer count = namedParameterJdbcTemplate.queryForObject(countSql, paramSource, Integer.class);
+                        result.put("count", count != null ? count : 0);
+                        break;
+
+                    case "sum":
+                    case "avg":
+                    case "min":
+                    case "max":
+                        result.put(aggregateFunction, computeFieldAggregates(tableName, tableInfo, field, aggregateFunction, whereClause.toString(), paramSource));
+                        break;
+                }
+            }
+
+            return result;
+        };
+    }
+
+    private Map<String, Object> computeFieldAggregates(String tableName, TableInfo tableInfo, SelectedField aggregateField,
+                                                       String aggFunction, String whereClause, MapSqlParameterSource paramSource) {
+        Map<String, Object> aggregates = new HashMap<>();
+        String qualifiedTableName = getSqlBuilder().getQualifiedTableName(tableName, appConfig.getAllowedSchema());
+
+        // Get the specific columns requested
+        List<SelectedField> columnFields = aggregateField.getSelectionSet() != null ?
+                aggregateField.getSelectionSet().getFields() : List.of();
+
+        for (SelectedField columnField : columnFields) {
+            String columnName = columnField.getName();
+
+            // Find column info
+            ColumnInfo columnInfo = tableInfo.getColumns().stream()
+                    .filter(col -> col.getName().equals(columnName))
+                    .findFirst()
+                    .orElse(null);
+
+            if (columnInfo != null) {
+                String sql = "SELECT " + aggFunction.toUpperCase() + "(" + getSqlBuilder().quoteIdentifier(columnName) + ") as result " +
+                            "FROM " + qualifiedTableName + whereClause;
+
+                try {
+                    Object value = namedParameterJdbcTemplate.queryForObject(sql, paramSource, Object.class);
+                    aggregates.put(columnName, value);
+                } catch (Exception e) {
+                    log.error("Error computing {} for column {}: {}", aggFunction, columnName, e.getMessage());
+                    aggregates.put(columnName, null);
+                }
+            }
+        }
+
+        return aggregates;
+    }
+
+    @Override
+    public DataFetcher<Object> createComputedFieldDataFetcher(String tableName, String functionName, String fieldName) {
+        return environment -> {
+            // Get the parent row data
+            Map<String, Object> source = environment.getSource();
+            if (source == null) {
+                return null;
+            }
+
+            // Get primary key column for this table
+            Map<String, TableInfo> tables = getSchemaHelper().getAllTables();
+            TableInfo tableInfo = tables.get(tableName);
+            if (tableInfo == null) {
+                throw new DataFetcherException("Table not found: " + tableName);
+            }
+
+            // Find primary key value
+            ColumnInfo pkColumn = tableInfo.getColumns().stream()
+                    .filter(ColumnInfo::isPrimaryKey)
+                    .findFirst()
+                    .orElse(null);
+
+            if (pkColumn == null) {
+                log.warn("No primary key found for table: {}", tableName);
+                return null;
+            }
+
+            Object pkValue = source.get(pkColumn.getName());
+            if (pkValue == null) {
+                return null;
+            }
+
+            // Call the PostgreSQL function with the primary key
+            String qualifiedFunctionName = getSqlBuilder().quoteIdentifier(appConfig.getAllowedSchema()) +
+                    "." + getSqlBuilder().quoteIdentifier(functionName);
+
+            // Construct a row parameter by selecting the entire row
+            String qualifiedTableName = getSqlBuilder().getQualifiedTableName(tableName, appConfig.getAllowedSchema());
+            String sql = "SELECT " + qualifiedFunctionName + "(row_data.*) as result " +
+                        "FROM (SELECT * FROM " + qualifiedTableName + " WHERE " +
+                        getSqlBuilder().quoteIdentifier(pkColumn.getName()) + " = :pk) row_data";
+
+            MapSqlParameterSource paramSource = new MapSqlParameterSource();
+            paramSource.addValue("pk", pkValue);
+
+            try {
+                Object result = namedParameterJdbcTemplate.queryForObject(sql, paramSource, Object.class);
+                log.debug("Computed field '{}' for {}.{} = {}", fieldName, tableName, pkValue, result);
+                return result;
+            } catch (Exception e) {
+                log.error("Error computing field '{}' using function '{}': {}", fieldName, functionName, e.getMessage());
+                return null;
+            }
+        };
+    }
+
+    /**
+     * Gets or creates the batch loader for the current request.
+     */
+    private ExcalibaseBatchLoader getBatchLoader(DataFetchingEnvironment environment) {
+        ExcalibaseBatchLoader loader = environment.getGraphQlContext().get(BATCH_LOADER);
+        if (loader == null) {
+            loader = new ExcalibaseBatchLoader();
+            environment.getGraphQlContext().put(BATCH_LOADER, loader);
+        }
+        return loader;
+    }
+
+    /**
+     * Preloads relationships recursively using DataLoader pattern.
+     * This prevents N+1 query problems across multiple levels of relationships.
+     */
     private void preloadRelationships(
             DataFetchingEnvironment environment,
             String tableName,
             Set<String> relationshipFields,
             List<Map<String, Object>> results) {
+        preloadRelationshipsRecursive(environment, tableName, relationshipFields, results, 0);
+    }
+
+    /**
+     * Recursive relationship preloading with depth tracking.
+     */
+    private void preloadRelationshipsRecursive(
+            DataFetchingEnvironment environment,
+            String tableName,
+            Set<String> relationshipFields,
+            List<Map<String, Object>> results,
+            int currentDepth) {
+
+        // Prevent infinite recursion
+        if (currentDepth >= MAX_RELATIONSHIP_DEPTH) {
+            log.warn("Maximum relationship depth ({}) reached for table: {}. Stopping recursion.",
+                MAX_RELATIONSHIP_DEPTH, tableName);
+            return;
+        }
+
+        if (relationshipFields.isEmpty() || results.isEmpty()) {
+            return;
+        }
 
         Map<String, TableInfo> tables = getSchemaHelper().getAllTables();
         TableInfo tableInfo = tables.get(tableName);
 
-        // If table info is null, we can't preload relationships
         if (tableInfo == null) {
             log.warn("Table info not found for table: {}. Cannot preload relationships.", tableName);
             return;
         }
 
-        // Get batch context or create it
+        ExcalibaseBatchLoader batchLoader = getBatchLoader(environment);
         Map<String, Object> batchContext = environment.getGraphQlContext().get(BATCH_CONTEXT);
         if (batchContext == null) {
             batchContext = new HashMap<>();
@@ -686,7 +872,6 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
         // Process each relationship field
         for (String relationshipField : relationshipFields) {
-            // Find foreign key info for this relationship
             Optional<ForeignKeyInfo> fkInfo = tableInfo.getForeignKeys().stream()
                     .filter(fk -> fk.getReferencedTable().equalsIgnoreCase(relationshipField))
                     .findFirst();
@@ -696,54 +881,87 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 String referencedTable = fkInfo.get().getReferencedTable();
                 String referencedColumn = fkInfo.get().getReferencedColumn();
 
-                // Collect all foreign key values
+                // Collect all foreign key values and queue them for batching
                 Set<Object> foreignKeyValues = results.stream()
                         .map(row -> row.get(foreignKeyColumn))
                         .filter(Objects::nonNull)
                         .collect(Collectors.toSet());
 
-                if (!foreignKeyValues.isEmpty()) {
-                    List<SelectedField> selectedFields = environment.getSelectionSet().getFields().stream()
-                            .filter(field -> field.getName().equals(relationshipField))
-                            .findFirst()
-                            .map(field -> field.getSelectionSet() != null ? field.getSelectionSet().getFields() : List.<SelectedField>of())
-                            .orElse(List.of());
+                if (foreignKeyValues.isEmpty()) {
+                    continue;
+                }
 
-                    Set<String> availableColumns = getSchemaHelper().getAvailableColumnsAsSet(referencedTable);
+                // Queue these IDs for batch loading
+                batchLoader.queueLoads(referencedTable, referencedColumn, foreignKeyValues);
 
-                    // If referenced table doesn't exist, skip this relationship
-                    if (availableColumns == null || availableColumns.isEmpty()) {
-                        log.warn("Referenced table '{}' not found or has no columns. Skipping relationship preload.", referencedTable);
-                        continue;
-                    }
+                // Get the selected fields for this relationship
+                List<SelectedField> selectedFields = environment.getSelectionSet().getFields().stream()
+                        .filter(field -> field.getName().equals(relationshipField))
+                        .findFirst()
+                        .map(field -> field.getSelectionSet() != null ?
+                            field.getSelectionSet().getFields() : List.<SelectedField>of())
+                        .orElse(List.of());
 
-                    // Filter requested fields to only include actual database columns (not nested relationships)
-                    Set<String> requestedFields = selectedFields.stream()
-                            .map(SelectedField::getName)
-                            .filter(availableColumns::contains) // Only include fields that exist as columns
-                            .collect(Collectors.toSet());
+                Set<String> availableColumns = getSchemaHelper().getAvailableColumnsAsSet(referencedTable);
+                if (availableColumns == null || availableColumns.isEmpty()) {
+                    log.warn("Referenced table '{}' not found. Skipping relationship preload.", referencedTable);
+                    continue;
+                }
 
-                    if (!requestedFields.isEmpty()) {
-                        // Always include the reference column for proper mapping
-                        requestedFields.add(referencedColumn);
+                // Separate column fields from nested relationship fields
+                Set<String> requestedColumns = selectedFields.stream()
+                        .map(SelectedField::getName)
+                        .filter(availableColumns::contains)
+                        .collect(Collectors.toSet());
 
-                        // Build and execute batch query
-                        String sql = PostgresSqlSyntaxConstant.SELECT_WITH_SPACE + getSqlBuilder().buildColumnList(new ArrayList<>(requestedFields)) +
-                                PostgresSqlSyntaxConstant.FROM_WITH_SPACE + getSqlBuilder().getQualifiedTableName(referencedTable, appConfig.getAllowedSchema()) +
-                                PostgresSqlSyntaxConstant.WHERE_WITH_SPACE + getSqlBuilder().quoteIdentifier(referencedColumn) + PostgresSqlSyntaxConstant.IN_WITH_SPACE + "(:ids)";
+                Set<String> nestedRelationships = selectedFields.stream()
+                        .map(SelectedField::getName)
+                        .filter(name -> !availableColumns.contains(name))
+                        .collect(Collectors.toSet());
+
+                if (!requestedColumns.isEmpty()) {
+                    requestedColumns.add(referencedColumn); // Include key column for mapping
+
+                    // Get queued IDs to fetch (excludes already cached)
+                    Set<Object> idsToFetch = batchLoader.getQueuedIds(referencedTable, referencedColumn);
+
+                    List<Map<String, Object>> relatedRecords = new ArrayList<>();
+
+                    // Fetch uncached records
+                    if (!idsToFetch.isEmpty()) {
+                        String sql = PostgresSqlSyntaxConstant.SELECT_WITH_SPACE +
+                            getSqlBuilder().buildColumnList(new ArrayList<>(requestedColumns)) +
+                            PostgresSqlSyntaxConstant.FROM_WITH_SPACE +
+                            getSqlBuilder().getQualifiedTableName(referencedTable, appConfig.getAllowedSchema()) +
+                            PostgresSqlSyntaxConstant.WHERE_WITH_SPACE +
+                            getSqlBuilder().quoteIdentifier(referencedColumn) +
+                            PostgresSqlSyntaxConstant.IN_WITH_SPACE + "(:ids)";
 
                         MapSqlParameterSource params = new MapSqlParameterSource();
-                        params.addValue("ids", new ArrayList<>(foreignKeyValues));
+                        params.addValue("ids", new ArrayList<>(idsToFetch));
 
-                        List<Map<String, Object>> relatedRecords = namedParameterJdbcTemplate.queryForList(
-                                sql, params);
+                        relatedRecords = namedParameterJdbcTemplate.queryForList(sql, params);
 
-                        // cache the related records in the batch context so we don't have to query again
-                        Map<Object, Map<String, Object>> relatedRecordsMap = new HashMap<>();
-                        for (Map<String, Object> record : relatedRecords) {
-                            relatedRecordsMap.put(record.get(referencedColumn), record);
-                        }
-                        batchContext.put(referencedTable, relatedRecordsMap);
+                        // Cache the newly fetched records
+                        batchLoader.cacheResults(referencedTable, referencedColumn, relatedRecords);
+                    }
+
+                    // Update batchContext for backwards compatibility
+                    Map<Object, Map<String, Object>> allCached = batchLoader.getAllCached(referencedTable, referencedColumn);
+                    batchContext.put(referencedTable, allCached);
+
+                    // Recursively preload nested relationships
+                    if (!nestedRelationships.isEmpty() && !relatedRecords.isEmpty()) {
+                        log.debug("Recursively preloading nested relationships for {}: {} at depth {}",
+                            referencedTable, nestedRelationships, currentDepth + 1);
+
+                        preloadRelationshipsRecursive(
+                            environment,
+                            referencedTable,
+                            nestedRelationships,
+                            relatedRecords,
+                            currentDepth + 1
+                        );
                     }
                 }
             }

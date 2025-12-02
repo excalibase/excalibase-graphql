@@ -17,9 +17,21 @@ import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector
 class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
 
     PostgresGraphQLSchemaGeneratorImplement generator
+    IDatabaseSchemaReflector mockSchemaReflector
 
     def setup() {
-        generator = new PostgresGraphQLSchemaGeneratorImplement()
+        def mockServiceLookup = Mock(io.github.excalibase.service.ServiceLookup)
+        def mockAppConfig = Mock(io.github.excalibase.config.AppConfig)
+
+        mockSchemaReflector = Mock(IDatabaseSchemaReflector)
+        mockSchemaReflector.discoverComputedFields() >> [:]
+        mockSchemaReflector.getCustomEnumTypes() >> []
+        mockSchemaReflector.getCustomCompositeTypes() >> []
+
+        mockServiceLookup.forBean(IDatabaseSchemaReflector.class, _) >> mockSchemaReflector
+
+        generator = new PostgresGraphQLSchemaGeneratorImplement(mockServiceLookup, mockAppConfig)
+        generator.setSchemaReflector(mockSchemaReflector)
     }
 
 
@@ -859,6 +871,8 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
 
         // Mock the reflector to return these custom types
         def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
+        mockReflector.discoverComputedFields() >> [:]
         mockReflector.getCustomEnumTypes() >> customEnums
         mockReflector.getCustomCompositeTypes() >> []
         generator.setSchemaReflector(mockReflector)
@@ -914,6 +928,8 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
 
         // Mock the reflector to return these custom types
         def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
+        mockReflector.discoverComputedFields() >> [:]
         mockReflector.getCustomEnumTypes() >> []
         mockReflector.getCustomCompositeTypes() >> customComposites
         generator.setSchemaReflector(mockReflector)
@@ -962,6 +978,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
 
         // Mock the reflector to return these custom types
         def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
         mockReflector.getCustomEnumTypes() >> customEnums
         mockReflector.getCustomCompositeTypes() >> customComposites
         generator.setSchemaReflector(mockReflector)
@@ -996,6 +1013,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         def customEnums = [new CustomEnumInfo("task_priority", "public", ["low", "medium", "high", "urgent"])]
 
         def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
         mockReflector.getCustomEnumTypes() >> customEnums
         mockReflector.getCustomCompositeTypes() >> []
         generator.setSchemaReflector(mockReflector)
@@ -1034,6 +1052,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         ]
 
         def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
         mockReflector.getCustomEnumTypes() >> []
         mockReflector.getCustomCompositeTypes() >> customComposites
         generator.setSchemaReflector(mockReflector)
@@ -1068,6 +1087,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         def customEnums = [new CustomEnumInfo("content_tag", "public", ["news", "tech", "sports", "entertainment"])]
 
         def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
         mockReflector.getCustomEnumTypes() >> customEnums
         mockReflector.getCustomCompositeTypes() >> []
         generator.setSchemaReflector(mockReflector)
@@ -1108,6 +1128,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         ]
 
         def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
         mockReflector.getCustomEnumTypes() >> []
         mockReflector.getCustomCompositeTypes() >> customComposites
         generator.setSchemaReflector(mockReflector)
@@ -1144,6 +1165,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         def customEnums = [new CustomEnumInfo("order_status", "public", ["pending", "processing", "shipped", "delivered"])]
 
         def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
         mockReflector.getCustomEnumTypes() >> customEnums
         mockReflector.getCustomCompositeTypes() >> []
         generator.setSchemaReflector(mockReflector)
@@ -1185,6 +1207,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         ]
 
         def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
         mockReflector.getCustomEnumTypes() >> []
         mockReflector.getCustomCompositeTypes() >> customComposites
         generator.setSchemaReflector(mockReflector)

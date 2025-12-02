@@ -6,18 +6,35 @@ import io.github.excalibase.model.CompositeTypeAttribute
 import io.github.excalibase.model.CustomCompositeTypeInfo
 import io.github.excalibase.model.CustomEnumInfo
 import io.github.excalibase.model.TableInfo
+import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector
 import spock.lang.Specification
 import spock.lang.Subject
 
 /**
  * Test suite for PostgreSQL subscription schema generation
- * 
+ *
  * Tests that subscription types are properly generated with table columns
  */
 class PostgresSubscriptionSchemaTest extends Specification {
-    
+
     @Subject
-    PostgresGraphQLSchemaGeneratorImplement generator = new PostgresGraphQLSchemaGeneratorImplement()
+    PostgresGraphQLSchemaGeneratorImplement generator
+    IDatabaseSchemaReflector mockSchemaReflector
+
+    def setup() {
+        def mockServiceLookup = Mock(io.github.excalibase.service.ServiceLookup)
+        def mockAppConfig = Mock(io.github.excalibase.config.AppConfig)
+
+        mockSchemaReflector = Mock(IDatabaseSchemaReflector)
+        mockSchemaReflector.discoverComputedFields() >> [:]
+        mockSchemaReflector.getCustomEnumTypes() >> []
+        mockSchemaReflector.getCustomCompositeTypes() >> []
+
+        mockServiceLookup.forBean(IDatabaseSchemaReflector.class, _) >> mockSchemaReflector
+
+        generator = new PostgresGraphQLSchemaGeneratorImplement(mockServiceLookup, mockAppConfig)
+        generator.setSchemaReflector(mockSchemaReflector)
+    }
     
     def "should generate subscription schema with table change events"() {
         given: "a table with columns"

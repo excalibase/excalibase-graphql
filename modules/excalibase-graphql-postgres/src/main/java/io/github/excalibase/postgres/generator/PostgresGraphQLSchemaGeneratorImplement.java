@@ -16,15 +16,18 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeReference;
 import io.github.excalibase.annotation.ExcalibaseService;
+import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.constant.ColumnTypeConstant;
 import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.constant.GraphqlConstant;
 import io.github.excalibase.constant.MutationConstant;
 import io.github.excalibase.postgres.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
+import io.github.excalibase.service.ServiceLookup;
 
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.CompositeTypeAttribute;
+import io.github.excalibase.model.ComputedFieldFunction;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
@@ -57,12 +60,23 @@ import static graphql.Scalars.*;
 public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGenerator {
     private static final Logger log = LoggerFactory.getLogger(PostgresGraphQLSchemaGeneratorImplement.class);
     private IDatabaseSchemaReflector schemaReflector;
+    private final ServiceLookup serviceLookup;
+    private final AppConfig appConfig;
+
+    public PostgresGraphQLSchemaGeneratorImplement(ServiceLookup serviceLookup, AppConfig appConfig) {
+        this.serviceLookup = serviceLookup;
+        this.appConfig = appConfig;
+    }
 
     public void setSchemaReflector(IDatabaseSchemaReflector schemaReflector) {
         this.schemaReflector = schemaReflector;
     }
 
     private IDatabaseSchemaReflector getSchemaReflector() {
+        if (schemaReflector != null) {
+            return schemaReflector;
+        }
+        schemaReflector = serviceLookup.forBean(IDatabaseSchemaReflector.class, appConfig.getDatabaseType().getName());
         return schemaReflector;
     }
 
@@ -602,6 +616,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             TableInfo tableInfo = tables.get(tableName);
             addQueryFields(queryBuilder, tableName, tableInfo, tableFilterTypes.get(tableName));
             addConnectionFields(queryBuilder, tableName, tableInfo, tableFilterTypes);
+            addAggregateQueryField(queryBuilder, tableName, tableInfo, tableFilterTypes.get(tableName));
         }
 
         return queryBuilder.build();
@@ -672,6 +687,29 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         addCursorPaginationArguments(connectionFieldBuilder);
 
         queryBuilder.field(connectionFieldBuilder.build());
+    }
+
+    private void addAggregateQueryField(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo, GraphQLInputObjectType filterType) {
+        GraphQLFieldDefinition.Builder aggregateFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
+                .name(tableName.toLowerCase() + "_aggregate")
+                .type(GraphQLTypeReference.typeRef(tableName + "Aggregate"))
+                .description("Aggregate functions for " + tableName + " table");
+
+        // Add WHERE filter argument
+        aggregateFieldBuilder.argument(GraphQLArgument.newArgument()
+            .name(GraphqlConstant.WHERE)
+            .type(filterType)
+            .description("Filter conditions for aggregation")
+            .build());
+
+        // Add OR filter argument
+        aggregateFieldBuilder.argument(GraphQLArgument.newArgument()
+            .name(GraphqlConstant.OR)
+            .type(new GraphQLList(filterType))
+            .description("OR conditions for aggregation")
+            .build());
+
+        queryBuilder.field(aggregateFieldBuilder.build());
     }
 
     private void addFilteringArguments(GraphQLFieldDefinition.Builder fieldBuilder, ColumnInfo column, GraphQLInputObjectType filterType) {
@@ -1709,12 +1747,21 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                  Map<String, GraphQLEnumType> customEnumTypes,
                                                  Map<String, GraphQLObjectType> customCompositeTypes) {
 
+        // Discover computed fields from PostgreSQL functions
+        Map<String, List<ComputedFieldFunction>> computedFields = schemaReflector.discoverComputedFields();
+        log.info("Discovered {} computed field functions across {} tables",
+                computedFields.values().stream().mapToInt(List::size).sum(), computedFields.size());
+
         for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
             String tableName = entry.getKey();
             TableInfo tableInfo = entry.getValue();
 
-            // Create table type with custom type support
-            GraphQLObjectType tableType = createNodeTypeWithCustomTypes(tableName, tableInfo, tables, customEnumTypes, customCompositeTypes);
+            // Get computed fields for this table
+            List<ComputedFieldFunction> tableComputedFields = computedFields.getOrDefault(tableName, new ArrayList<>());
+
+            // Create table type with custom type support and computed fields
+            GraphQLObjectType tableType = createNodeTypeWithCustomTypes(tableName, tableInfo, tables,
+                    customEnumTypes, customCompositeTypes, tableComputedFields);
             schemaBuilder.additionalType(tableType);
 
             // Create edge type first (needs the node type)
@@ -1733,7 +1780,130 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             // Create order by input type
             GraphQLInputObjectType orderByType = createOrderByInput(tableName, tableInfo);
             schemaBuilder.additionalType(orderByType);
+
+            // Create aggregate types
+            List<GraphQLObjectType> aggregateTypes = createAggregateTypes(tableName, tableInfo);
+            for (GraphQLObjectType type : aggregateTypes) {
+                schemaBuilder.additionalType(type);
+            }
         }
+    }
+
+    /**
+     * Creates aggregate types for a table (count, sum, avg, min, max).
+     * Returns a list containing the main aggregate type and nested types.
+     */
+    private List<GraphQLObjectType> createAggregateTypes(String tableName, TableInfo tableInfo) {
+        List<GraphQLObjectType> types = new ArrayList<>();
+        GraphQLObjectType.Builder aggregateBuilder = GraphQLObjectType.newObject()
+                .name(tableName + "Aggregate")
+                .description("Aggregate functions for " + tableName);
+
+        // Always add count
+        aggregateBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                .name("count")
+                .type(GraphQLInt)
+                .description("Count of rows")
+                .build());
+
+        // Create numeric aggregate fields type (sum, avg)
+        GraphQLObjectType.Builder numericAggsBuilder = GraphQLObjectType.newObject()
+                .name(tableName + "NumericAggregates")
+                .description("Numeric aggregate functions for " + tableName);
+
+        // Create comparable aggregate fields type (min, max)
+        GraphQLObjectType.Builder comparableAggsBuilder = GraphQLObjectType.newObject()
+                .name(tableName + "ComparableAggregates")
+                .description("Min/Max aggregate functions for " + tableName);
+
+        boolean hasNumericFields = false;
+        boolean hasComparableFields = false;
+
+        for (ColumnInfo column : tableInfo.getColumns()) {
+            String colType = column.getType().toLowerCase();
+
+            // Numeric aggregates (sum, avg) - only for numeric types
+            if (isNumericType(colType)) {
+                hasNumericFields = true;
+                GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(column.getType());
+
+                numericAggsBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                        .name(column.getName())
+                        .type(fieldType)
+                        .description("Sum/Avg for " + column.getName())
+                        .build());
+            }
+
+            // Comparable aggregates (min, max) - for numeric, date, and string types
+            if (isComparableType(colType)) {
+                hasComparableFields = true;
+                GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(column.getType());
+
+                comparableAggsBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                        .name(column.getName())
+                        .type(fieldType)
+                        .description("Min/Max for " + column.getName())
+                        .build());
+            }
+        }
+
+        // Add numeric aggregate functions if there are numeric fields
+        if (hasNumericFields) {
+            GraphQLObjectType numericAggsType = numericAggsBuilder.build();
+            types.add(numericAggsType);
+
+            aggregateBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                    .name("sum")
+                    .type(numericAggsType)
+                    .description("Sum of numeric fields")
+                    .build());
+
+            aggregateBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                    .name("avg")
+                    .type(numericAggsType)
+                    .description("Average of numeric fields")
+                    .build());
+        }
+
+        // Add comparable aggregate functions if there are comparable fields
+        if (hasComparableFields) {
+            GraphQLObjectType comparableAggsType = comparableAggsBuilder.build();
+            types.add(comparableAggsType);
+
+            aggregateBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                    .name("min")
+                    .type(comparableAggsType)
+                    .description("Minimum values")
+                    .build());
+
+            aggregateBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                    .name("max")
+                    .type(comparableAggsType)
+                    .description("Maximum values")
+                    .build());
+        }
+
+        // Add the main aggregate type
+        types.add(aggregateBuilder.build());
+
+        return types;
+    }
+
+    /**
+     * Checks if a database type is numeric (supports sum, avg).
+     */
+    private boolean isNumericType(String dbType) {
+        return PostgresTypeOperator.isIntegerType(dbType) ||
+               PostgresTypeOperator.isFloatingPointType(dbType);
+    }
+
+    /**
+     * Checks if a database type is comparable (supports min, max).
+     */
+    private boolean isComparableType(String dbType) {
+        return isNumericType(dbType) ||
+               PostgresTypeOperator.isDateTimeType(dbType) ||
+               dbType.equals("text") || dbType.equals("varchar") || dbType.equals("char");
     }
 
     /**
@@ -1741,7 +1911,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
      */
     private GraphQLObjectType createNodeTypeWithCustomTypes(String tableName, TableInfo tableInfo, Map<String, TableInfo> allTables,
                                                             Map<String, GraphQLEnumType> customEnumTypes,
-                                                            Map<String, GraphQLObjectType> customCompositeTypes) {
+                                                            Map<String, GraphQLObjectType> customCompositeTypes,
+                                                            List<ComputedFieldFunction> computedFields) {
         GraphQLObjectType.Builder typeBuilder = GraphQLObjectType.newObject()
                 .name(tableName)
                 .description("Type for table " + tableName);
@@ -1798,6 +1969,23 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                     typeBuilder.field(reverseFieldBuilder.build());
                     break; // Only add one reverse relationship per table
                 }
+            }
+        }
+
+        // Add computed fields from PostgreSQL functions
+        if (computedFields != null && !computedFields.isEmpty()) {
+            for (ComputedFieldFunction computedField : computedFields) {
+                GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(computedField.getReturnType(), null, customEnumTypes, customCompositeTypes);
+
+                GraphQLFieldDefinition.Builder computedFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
+                        .name(computedField.getFieldName())
+                        .type(fieldType)
+                        .description("Computed field from function " + computedField.getFunctionName());
+
+                typeBuilder.field(computedFieldBuilder.build());
+
+                log.debug("Added computed field '{}' to table '{}' (function: {})",
+                        computedField.getFieldName(), tableName, computedField.getFunctionName());
             }
         }
 

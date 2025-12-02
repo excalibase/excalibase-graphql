@@ -2709,4 +2709,216 @@ class GraphqlControllerTest extends Specification {
                 // BIT fields should be present (format may vary)
                 .andExpect(jsonPath('$.data.enhanced_types[0].id').exists())
     }
+
+    // ==================== AGGREGATE TESTS ====================
+
+    def "should count all records without filters"() {
+        given: "a GraphQL aggregate query without filters"
+        def query = '''
+        {
+            customer_aggregate {
+                count
+            }
+        }
+        '''
+
+        when: "sending count aggregate query"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return total count of customers"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.data.customer_aggregate.count').value(12))
+    }
+
+    def "should count records with WHERE filter"() {
+        given: "a GraphQL aggregate query with filters"
+        def query = '''
+        {
+            customer_aggregate(where: { create_date: { eq: "2006-02-14" } }) {
+                count
+            }
+        }
+        '''
+
+        when: "sending count aggregate query with filter"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return count of filtered customers"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.data.customer_aggregate.count').value(5))
+    }
+
+    def "should compute sum aggregates on numeric columns"() {
+        given: "a GraphQL aggregate query with sum"
+        def query = '''
+        {
+            orders_aggregate {
+                count
+                sum {
+                    total_amount
+                }
+            }
+        }
+        '''
+
+        when: "sending sum aggregate query"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return sum of all order amounts"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.data.orders_aggregate.count').value(5))
+                .andExpect(jsonPath('$.data.orders_aggregate.sum.total_amount').value(1344.74))
+    }
+
+    def "should compute avg aggregates on numeric columns"() {
+        given: "a GraphQL aggregate query with avg"
+        def query = '''
+        {
+            orders_aggregate {
+                avg {
+                    total_amount
+                }
+            }
+        }
+        '''
+
+        when: "sending avg aggregate query"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return average of order amounts"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.data.orders_aggregate.avg.total_amount').value(closeTo(268.948, 0.01)))
+    }
+
+    def "should compute min and max aggregates"() {
+        given: "a GraphQL aggregate query with min and max"
+        def query = '''
+        {
+            orders_aggregate {
+                min {
+                    total_amount
+                    order_date
+                }
+                max {
+                    total_amount
+                    order_date
+                }
+            }
+        }
+        '''
+
+        when: "sending min/max aggregate query"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return min and max values"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.data.orders_aggregate.min.total_amount').value(75.25))
+                .andExpect(jsonPath('$.data.orders_aggregate.max.total_amount').value(450.00))
+                .andExpect(jsonPath('$.data.orders_aggregate.min.order_date').exists())
+                .andExpect(jsonPath('$.data.orders_aggregate.max.order_date').exists())
+    }
+
+    def "should compute multiple aggregates together with filters"() {
+        given: "a GraphQL aggregate query with multiple functions and filter"
+        def query = '''
+        {
+            orders_aggregate(where: { status: { eq: "completed" } }) {
+                count
+                sum {
+                    total_amount
+                }
+                avg {
+                    total_amount
+                }
+                min {
+                    total_amount
+                }
+                max {
+                    total_amount
+                }
+            }
+        }
+        '''
+
+        when: "sending complex aggregate query with filter"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return all aggregate results for completed orders only"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.data.orders_aggregate.count').value(2))
+                .andExpect(jsonPath('$.data.orders_aggregate.sum.total_amount').value(749.99))
+                .andExpect(jsonPath('$.data.orders_aggregate.avg.total_amount').value(closeTo(374.995, 0.01)))
+                .andExpect(jsonPath('$.data.orders_aggregate.min.total_amount').value(299.99))
+                .andExpect(jsonPath('$.data.orders_aggregate.max.total_amount').value(450.00))
+    }
+
+    def "should handle aggregate on empty result set"() {
+        given: "a GraphQL aggregate query with filter that matches no records"
+        def query = '''
+        {
+            orders_aggregate(where: { status: { eq: "non_existent_status" } }) {
+                count
+                sum {
+                    total_amount
+                }
+            }
+        }
+        '''
+
+        when: "sending aggregate query with no matching records"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return count 0 and null for other aggregates"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.data.orders_aggregate.count').value(0))
+    }
+
+    def "should compute aggregates with OR filter"() {
+        given: "a GraphQL aggregate query with OR condition"
+        def query = '''
+        {
+            orders_aggregate(or: [
+                { status: { eq: "completed" } },
+                { status: { eq: "pending" } }
+            ]) {
+                count
+                sum {
+                    total_amount
+                }
+            }
+        }
+        '''
+
+        when: "sending aggregate query with OR filter"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return aggregates for records matching OR conditions"
+        result.andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath('$.data.orders_aggregate.count').value(4))
+                .andExpect(jsonPath('$.data.orders_aggregate.sum.total_amount').value(1269.49))
+    }
 }

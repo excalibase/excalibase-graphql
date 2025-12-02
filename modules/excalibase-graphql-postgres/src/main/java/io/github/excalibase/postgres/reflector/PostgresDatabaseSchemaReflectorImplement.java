@@ -12,6 +12,7 @@ import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.CompositeTypeAttribute;
+import io.github.excalibase.model.ComputedFieldFunction;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -567,6 +568,74 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                 ", Enum: " + enumCache.getStats() +
                 ", Composite: " + compositeCache.getStats() +
                 ", Domain: " + domainTypeToBaseTypeCache.getStats();
+    }
+
+    @Override
+    public Map<String, List<ComputedFieldFunction>> discoverComputedFields() {
+        return discoverComputedFields(allowedSchema);
+    }
+
+    @Override
+    public Map<String, List<ComputedFieldFunction>> discoverComputedFields(String schema) {
+        Map<String, List<ComputedFieldFunction>> computedFields = new HashMap<>();
+
+        // Query to discover functions that follow the computed field pattern:
+        // function_name(table_row table_name) RETURNS return_type
+        String sql = """
+            SELECT
+                p.proname AS function_name,
+                t1.typname AS first_param_type,
+                t2.typname AS return_type,
+                n.nspname AS schema_name
+            FROM pg_proc p
+            JOIN pg_namespace n ON p.pronamespace = n.oid
+            JOIN pg_type t1 ON p.proargtypes[0] = t1.oid  -- First parameter type
+            JOIN pg_type t2 ON p.prorettype = t2.oid      -- Return type
+            WHERE n.nspname = ?
+              AND p.pronargs = 1  -- Only functions with exactly 1 parameter
+              AND t1.typtype = 'c' -- First parameter must be a composite type (table row type)
+              AND p.proname LIKE t1.typname || '_%'  -- Function name starts with table name
+            ORDER BY t1.typname, p.proname
+            """;
+
+        try {
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(sql, schema);
+
+            for (Map<String, Object> row : results) {
+                String functionName = (String) row.get("function_name");
+                String tableName = (String) row.get("first_param_type");
+                String returnType = (String) row.get("return_type");
+                String schemaName = (String) row.get("schema_name");
+
+                // Extract field name from function name
+                // Example: customer_full_name -> full_name
+                String fieldName = functionName;
+                if (functionName.startsWith(tableName + "_")) {
+                    fieldName = functionName.substring(tableName.length() + 1);
+                }
+
+                ComputedFieldFunction function = new ComputedFieldFunction(
+                        functionName,
+                        tableName,
+                        fieldName,
+                        returnType,
+                        schemaName
+                );
+
+                computedFields.computeIfAbsent(tableName, k -> new ArrayList<>()).add(function);
+
+                log.debug("Discovered computed field: {}.{} -> {} (function: {})",
+                        tableName, fieldName, returnType, functionName);
+            }
+
+            log.info("Discovered {} computed field functions across {} tables in schema '{}'",
+                    results.size(), computedFields.size(), schema);
+
+        } catch (Exception e) {
+            log.error("Error discovering computed fields in schema '{}': {}", schema, e.getMessage());
+        }
+
+        return computedFields;
     }
 
     /**

@@ -46,6 +46,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -142,6 +143,10 @@ public class GraphqlConfig {
 
         GraphQLCodeRegistry.Builder codeRegistry = GraphQLCodeRegistry.newCodeRegistry();
 
+        // Discover computed fields from PostgreSQL functions
+        Map<String, List<io.github.excalibase.model.ComputedFieldFunction>> computedFields =
+                schemaReflector.discoverComputedFields();
+
         // Ensure Subscription type exists with a basic health field if missing
         if (schema.getSubscriptionType() == null) {
             GraphQLObjectType subscriptionType = GraphQLObjectType.newObject()
@@ -170,6 +175,26 @@ public class GraphqlConfig {
                     FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase() + GraphqlConstant.CONNECTION_SUFFIX),
                     dataFetcher.createConnectionDataFetcher(tableName)
             );
+
+            // Add data fetcher for aggregates
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase() + "_aggregate"),
+                    dataFetcher.createAggregateDataFetcher(tableName)
+            );
+
+            // Add data fetchers for computed fields
+            List<io.github.excalibase.model.ComputedFieldFunction> tableComputedFields =
+                    computedFields.getOrDefault(tableName, List.of());
+            for (var computedField : tableComputedFields) {
+                codeRegistry.dataFetcher(
+                        FieldCoordinates.coordinates(tableName, computedField.getFieldName()),
+                        dataFetcher.createComputedFieldDataFetcher(
+                                tableName,
+                                computedField.getFunctionName(),
+                                computedField.getFieldName()
+                        )
+                );
+            }
 
             // Add data fetchers for forward relationships
             for (var fk : tableInfo.getForeignKeys()) {

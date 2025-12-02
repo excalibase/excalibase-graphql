@@ -19,6 +19,7 @@ package io.github.excalibase.schema.reflector;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
+import io.github.excalibase.model.ComputedFieldFunction;
 
 import java.util.List;
 import java.util.Map;
@@ -82,4 +83,33 @@ public interface IDatabaseSchemaReflector {
      * Clear reflection cache for specific schema
      */
     void clearCache(String schema);
+
+    /**
+     * Discovers PostgreSQL functions that can be used as computed fields.
+     *
+     * <p>A function is recognized as a computed field if it follows the pattern:
+     * <pre>
+     * CREATE FUNCTION table_fieldname(table_row table_name) RETURNS return_type
+     * </pre>
+     *
+     * <p>Example:
+     * <pre>
+     * CREATE FUNCTION customer_full_name(customer_row customer) RETURNS TEXT AS $$
+     *   SELECT customer_row.first_name || ' ' || customer_row.last_name
+     * $$ LANGUAGE sql STABLE;
+     * </pre>
+     *
+     * <p>This function would be discovered as a computed field "full_name" on the "customer" table.
+     *
+     * @return A map where keys are table names and values are lists of computed field functions
+     */
+    Map<String, List<ComputedFieldFunction>> discoverComputedFields();
+
+    /**
+     * Discovers computed fields for a specific schema.
+     *
+     * @param schema the schema to discover functions in
+     * @return A map where keys are table names and values are lists of computed field functions
+     */
+    Map<String, List<ComputedFieldFunction>> discoverComputedFields(String schema);
 }
