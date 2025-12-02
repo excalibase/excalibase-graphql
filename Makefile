@@ -33,9 +33,14 @@ help: ## Show this help message
 	@echo "  make clean          # Stop services and cleanup"
 	@echo ""
 	@echo "$(YELLOW)Enterprise Benchmarking:$(NC)"
-	@echo "  make benchmark      # Complete enterprise benchmark (16.7M+ records)"
-	@echo "  make benchmark-dev  # Start enterprise benchmark environment"
-	@echo "  make benchmark-test # Run enterprise benchmark tests only"
+	@echo "  make benchmark              # Complete enterprise benchmark (16.7M+ records)"
+	@echo "  make benchmark-dev          # Start enterprise benchmark environment"
+	@echo "  make benchmark-test         # Run enterprise benchmark tests only"
+	@echo ""
+	@echo "$(YELLOW)K6 Load Testing:$(NC)"
+	@echo "  make benchmark-k6-spring    # Run K6 benchmark against Spring Boot"
+	@echo "  ./scripts/run-k6-benchmark.sh quick   # Quick 30s test"
+	@echo "  ./scripts/run-k6-benchmark.sh full    # Full benchmark (~15min)"
 	@echo ""
 	@echo "$(YELLOW)Enterprise Debugging:$(NC)"
 	@echo "  make benchmark-logs             # Show service logs"
@@ -260,6 +265,12 @@ benchmark-dev: check-deps benchmark-build benchmark-up ## Start enterprise bench
 	@echo "$(YELLOW)To run benchmark tests:$(NC) make benchmark-test-only"
 	@echo "$(YELLOW)To cleanup:$(NC)         make benchmark-clean"
 	@echo ""
+
+
+.PHONY: benchmark-k6-spring
+benchmark-k6-spring: ## Run K6 benchmark against Spring Boot
+	@echo "$(BLUE)📊 Running K6 benchmark for Spring Boot...$(NC)"
+	@./scripts/run-k6-benchmark.sh full
 
 .PHONY: benchmark-build
 benchmark-build: ## Build application for enterprise benchmarking

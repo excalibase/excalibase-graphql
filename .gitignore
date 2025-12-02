@@ -42,3 +42,4 @@ build/
 
 ### MkDocs ###
 site/
+/scripts/results/**

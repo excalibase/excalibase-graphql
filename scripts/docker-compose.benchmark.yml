@@ -7,20 +7,37 @@ services:
     ports:
       - "10002:10000"  # Unique external port 10002 for benchmark
     environment:
+      # Database connection
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/excalibase_benchmark
       - SPRING_DATASOURCE_USERNAME=excalibase_user
       - SPRING_DATASOURCE_PASSWORD=excalibase_pass
       - SPRING_DATASOURCE_SCHEMA=hana
-      - SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=20
+
+      # HikariCP Connection Pool Configuration for Benchmark
+      # Experiment: Try 20 (default), 30, 50, 100 for high-load testing
+      - SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE=50
       - SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE=5
       - SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT=30000
       - SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT=600000
       - SPRING_DATASOURCE_HIKARI_MAX_LIFETIME=1800000
       - SPRING_DATASOURCE_HIKARI_LEAK_DETECTION_THRESHOLD=60000
+
+      # Tomcat Configuration for Benchmark
+      # Experiment: Try 200, 300, 500, 1000 for max threads
+      - SERVER_TOMCAT_THREADS_MAX=500
+      - SERVER_TOMCAT_THREADS_MIN_SPARE=50
+      - SERVER_TOMCAT_MAX_CONNECTIONS=10000
+
+      # Virtual Threads (enabled by default, set to false to test without)
+      - SPRING_THREADS_VIRTUAL_ENABLED=true
+
+      # Application configuration
       - APP_ALLOWED_SCHEMA=hana
       - APP_DATABASE_TYPE=postgres
       - SERVER_PORT=10000
-      - JAVA_OPTS=-Xmx2g -Xms1g -XX:+UseG1GC
+
+      # JVM configuration for benchmark with percentage-based memory allocation
+      - JAVA_OPTS=-XX:InitialRAMPercentage=50.0 -XX:MaxRAMPercentage=75.0 -XX:MinRAMPercentage=50.0 -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:MaxMetaspaceSize=512m -XX:+UseStringDeduplication -XX:+UseContainerSupport
       # Database wait configuration
       - DB_HOST=postgres
       - DB_PORT=5432

@@ -33,16 +33,38 @@ services:
     image: excalibase/excalibase-graphql
     container_name: excalibase-graphql
     environment:
+
       # Database connection
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hana
       SPRING_DATASOURCE_USERNAME: hana001
       SPRING_DATASOURCE_PASSWORD: password123
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+
+      # HikariCP Connection Pool Configuration
+      # Experiment: Try 10 (default), 20, 30, 50 to see performance impact
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 50
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 2
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 30000
+      SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT: 600000
+      SPRING_DATASOURCE_HIKARI_MAX_LIFETIME: 1800000
+
+      # Tomcat Configuration (with Virtual Threads)
+      # Experiment: Try 200 (default), 300, 500, 1000 for max threads
+      SERVER_TOMCAT_THREADS_MAX: 500
+      SERVER_TOMCAT_THREADS_MIN_SPARE: 50
+      SERVER_TOMCAT_MAX_CONNECTIONS: 10000
+      SERVER_TOMCAT_ACCEPT_COUNT: 100
+      SERVER_TOMCAT_CONNECTION_TIMEOUT: 20000
+
+      # Virtual Threads (enabled by default in application.yaml)
+      # Set to false to test without virtual threads
+      SPRING_THREADS_VIRTUAL_ENABLED: true
+
       # Application settings
       SERVER_PORT: 10000
-      SPRING_DATASOURCE_HIKARI_SCHEMA: hana
       APP_ALLOWED_SCHEMA: hana
       APP_DATABASE_TYPE: postgres
+
       # CDC configuration for real-time subscriptions
       APP_CDC_ENABLED: true
       APP_CDC_SLOT_NAME: cdc_slot
@@ -57,6 +79,15 @@ services:
     networks:
       - excalibase-network
     restart: unless-stopped
+    # Resource limits - 1GB RAM, 0.5 CPU (to match 1 CPU AWS m6)
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '0.5'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
 
   graphiql:
     container_name: graphiql

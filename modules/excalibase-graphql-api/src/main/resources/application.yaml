@@ -1,5 +1,12 @@
 server:
   port: 10000
+  tomcat:
+    threads:
+      max: 200  # Limit max threads (virtual threads handle concurrency)
+      min-spare: 10
+    max-connections: 10000
+    accept-count: 100
+    connection-timeout: 20000
 spring:
   application:
     name: Excalibase graphql
@@ -11,6 +18,35 @@ spring:
     url: jdbc:postgresql://localhost:5432/hana
     username: hana001
     password: password123
+    hikari:
+      maximum-pool-size: 50  # Limit connection pool
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jackson:
+    default-property-inclusion: non_null  # Reduce JSON serialization overhead
+  jmx:
+    enabled: false  # Disable JMX to save memory
+
+# Actuator optimization - expose only essential endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    enable:
+      jvm: true
+      process: true
+      system: true
+    distribution:
+      percentiles-histogram:
+        http.server.requests: false  # Disable histogram to save memory
+
 app:
   allowed-schema: hana
   database-type: postgres

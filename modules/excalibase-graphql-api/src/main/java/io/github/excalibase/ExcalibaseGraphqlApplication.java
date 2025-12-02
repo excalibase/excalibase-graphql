@@ -18,8 +18,21 @@ package io.github.excalibase;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.admin.SpringApplicationAdminJmxAutoConfiguration;
+import org.springframework.boot.autoconfigure.jmx.JmxAutoConfiguration;
+import org.springframework.boot.autoconfigure.ssl.SslAutoConfiguration;
+import org.springframework.boot.autoconfigure.info.ProjectInfoAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.ssl.SslHealthContributorAutoConfiguration;
+import org.springframework.boot.actuate.autoconfigure.endpoint.jmx.JmxEndpointAutoConfiguration;
 
-@SpringBootApplication
+@SpringBootApplication(exclude = {
+        JmxAutoConfiguration.class,
+        SpringApplicationAdminJmxAutoConfiguration.class,
+        JmxEndpointAutoConfiguration.class,
+        SslAutoConfiguration.class,
+        SslHealthContributorAutoConfiguration.class,
+        ProjectInfoAutoConfiguration.class
+})
 public class ExcalibaseGraphqlApplication {
     public static void main(String[] args) {
         SpringApplication.run(ExcalibaseGraphqlApplication.class, args);
