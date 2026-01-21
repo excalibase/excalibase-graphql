@@ -2799,7 +2799,7 @@ class GraphqlControllerTest extends Specification {
         then: "should return average of order amounts"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.orders_aggregate.avg.total_amount').value(closeTo(268.948, 0.01)))
+                .andExpect(jsonPath('$.data.orders_aggregate.avg.total_amount').value(closeTo(268.948d, 0.01d)))
     }
 
     def "should compute min and max aggregates"() {
@@ -2828,7 +2828,7 @@ class GraphqlControllerTest extends Specification {
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath('$.data.orders_aggregate.min.total_amount').value(75.25))
-                .andExpect(jsonPath('$.data.orders_aggregate.max.total_amount').value(450.00))
+                .andExpect(jsonPath('$.data.orders_aggregate.max.total_amount').value(450.0))
                 .andExpect(jsonPath('$.data.orders_aggregate.min.order_date').exists())
                 .andExpect(jsonPath('$.data.orders_aggregate.max.order_date').exists())
     }
@@ -2865,9 +2865,9 @@ class GraphqlControllerTest extends Specification {
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath('$.data.orders_aggregate.count').value(2))
                 .andExpect(jsonPath('$.data.orders_aggregate.sum.total_amount').value(749.99))
-                .andExpect(jsonPath('$.data.orders_aggregate.avg.total_amount').value(closeTo(374.995, 0.01)))
+                .andExpect(jsonPath('$.data.orders_aggregate.avg.total_amount').value(closeTo(374.995d, 0.01d)))
                 .andExpect(jsonPath('$.data.orders_aggregate.min.total_amount').value(299.99))
-                .andExpect(jsonPath('$.data.orders_aggregate.max.total_amount').value(450.00))
+                .andExpect(jsonPath('$.data.orders_aggregate.max.total_amount').value(450.0))
     }
 
     def "should handle aggregate on empty result set"() {

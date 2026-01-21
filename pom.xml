@@ -59,7 +59,7 @@
         <groovy-json.version>4.0.24</groovy-json.version>
 
         <!--testing-->
-        <testcontainers.version>1.21.0</testcontainers.version>
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencyManagement>
