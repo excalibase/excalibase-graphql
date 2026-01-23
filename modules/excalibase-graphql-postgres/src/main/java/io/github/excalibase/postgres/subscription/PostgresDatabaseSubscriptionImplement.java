@@ -64,7 +64,7 @@ public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscript
     }
 
     @Override
-    public DataFetcher<Publisher<Map<String, Object>>> createTableSubscriptionResolver(String tableName) {
+    public DataFetcher<Publisher<Map<String, Object>>> buildTableSubscriptionResolver(String tableName) {
         return (DataFetcher<Publisher<Map<String, Object>>>) environment -> {
             log.info(PostgresErrorConstant.TABLE_SUBSCRIPTION_RESOLVER_CALLED, tableName);
             log.info(PostgresErrorConstant.GRAPHQL_FIELD_LOG, environment.getField().getName());

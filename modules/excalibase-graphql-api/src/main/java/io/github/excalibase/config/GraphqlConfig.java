@@ -166,20 +166,20 @@ public class GraphqlConfig {
             // Add data fetcher for the table query with offset-based pagination
             codeRegistry.dataFetcher(
                     FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase()),
-                    dataFetcher.createTableDataFetcher(tableName)
+                    dataFetcher.buildTableDataFetcher(tableName)
             );
 
             // Add data fetcher for the connection (cursor-based pagination && offset-based pagination)
             // This follows the Relay Connection Specification
             codeRegistry.dataFetcher(
                     FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase() + GraphqlConstant.CONNECTION_SUFFIX),
-                    dataFetcher.createConnectionDataFetcher(tableName)
+                    dataFetcher.buildConnectionDataFetcher(tableName)
             );
 
             // Add data fetcher for aggregates
             codeRegistry.dataFetcher(
                     FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase() + "_aggregate"),
-                    dataFetcher.createAggregateDataFetcher(tableName)
+                    dataFetcher.buildAggregateDataFetcher(tableName)
             );
 
             // Add data fetchers for computed fields
@@ -188,7 +188,7 @@ public class GraphqlConfig {
             for (var computedField : tableComputedFields) {
                 codeRegistry.dataFetcher(
                         FieldCoordinates.coordinates(tableName, computedField.getFieldName()),
-                        dataFetcher.createComputedFieldDataFetcher(
+                        dataFetcher.buildComputedFieldDataFetcher(
                                 tableName,
                                 computedField.getFunctionName(),
                                 computedField.getFieldName()
@@ -200,7 +200,7 @@ public class GraphqlConfig {
             for (var fk : tableInfo.getForeignKeys()) {
                 codeRegistry.dataFetcher(
                         FieldCoordinates.coordinates(tableName, fk.getReferencedTable().toLowerCase()),
-                        dataFetcher.createRelationshipDataFetcher(
+                        dataFetcher.buildRelationshipDataFetcher(
                                 tableName,
                                 fk.getColumnName(),
                                 fk.getReferencedTable(),
@@ -231,7 +231,7 @@ public class GraphqlConfig {
                         // Add reverse relationship data fetcher that returns a list
                         codeRegistry.dataFetcher(
                                 FieldCoordinates.coordinates(tableName, reverseFieldName),
-                                dataFetcher.createReverseRelationshipDataFetcher(
+                                dataFetcher.buildReverseRelationshipDataFetcher(
                                         tableName,
                                         otherTableName,
                                         otherFk.getColumnName(),
@@ -249,38 +249,38 @@ public class GraphqlConfig {
                 // Create mutation
                 codeRegistry.dataFetcher(
                         FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName),
-                        mutationResolver.createCreateMutationResolver(tableName)
+                        mutationResolver.buildCreateMutationResolver(tableName)
                 );
 
                 // Update mutation
                 codeRegistry.dataFetcher(
                         FieldCoordinates.coordinates("Mutation", "update" + capitalizedTableName),
-                        mutationResolver.createUpdateMutationResolver(tableName)
+                        mutationResolver.buildUpdateMutationResolver(tableName)
                 );
 
                 // Delete mutation
                 codeRegistry.dataFetcher(
                         FieldCoordinates.coordinates("Mutation", "delete" + capitalizedTableName),
-                        mutationResolver.createDeleteMutationResolver(tableName)
+                        mutationResolver.buildDeleteMutationResolver(tableName)
                 );
 
                 // Bulk create mutation
                 codeRegistry.dataFetcher(
                         FieldCoordinates.coordinates("Mutation", "createMany" + capitalizedTableName + "s"),
-                        mutationResolver.createBulkCreateMutationResolver(tableName)
+                        mutationResolver.buildBulkCreateMutationResolver(tableName)
                 );
 
                 // Create with relationships mutation
                 codeRegistry.dataFetcher(
                         FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName + "WithRelations"),
-                        mutationResolver.createCreateWithRelationshipsMutationResolver(tableName)
+                        mutationResolver.buildCreateWithRelationshipsMutationResolver(tableName)
                 );
             }
             
             // Add subscription for each table
             codeRegistry.dataFetcher(
                     FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, tableName.toLowerCase() + "_changes"),
-                    subscriptionResolver.createTableSubscriptionResolver(tableName)
+                    subscriptionResolver.buildTableSubscriptionResolver(tableName)
             );
         }
 

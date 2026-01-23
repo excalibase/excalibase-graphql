@@ -115,7 +115,7 @@ class PostgresAggregateDataFetcherTest extends Specification {
         def environment = createMockAggregateEnvironment(["count"], [:])
 
         when: "executing aggregate data fetcher"
-        def fetcher = dataFetcher.createAggregateDataFetcher("orders")
+        def fetcher = dataFetcher.buildAggregateDataFetcher("orders")
         def result = fetcher.get(environment)
 
         then: "should return count of all orders"
@@ -159,7 +159,7 @@ class PostgresAggregateDataFetcherTest extends Specification {
         def environment = createMockAggregateEnvironment(["count"], ["in_stock": true])
 
         when: "executing aggregate data fetcher with filter"
-        def fetcher = dataFetcher.createAggregateDataFetcher("products")
+        def fetcher = dataFetcher.buildAggregateDataFetcher("products")
         def result = fetcher.get(environment)
 
         then: "should return count of only in-stock products"
@@ -207,7 +207,7 @@ class PostgresAggregateDataFetcherTest extends Specification {
         )
 
         when: "executing sum aggregate"
-        def fetcher = dataFetcher.createAggregateDataFetcher("sales")
+        def fetcher = dataFetcher.buildAggregateDataFetcher("sales")
         def result = fetcher.get(environment)
 
         then: "should return sum of specified columns"
@@ -255,7 +255,7 @@ class PostgresAggregateDataFetcherTest extends Specification {
         )
 
         when: "executing avg aggregate"
-        def fetcher = dataFetcher.createAggregateDataFetcher("student_scores")
+        def fetcher = dataFetcher.buildAggregateDataFetcher("student_scores")
         def result = fetcher.get(environment)
 
         then: "should return average of specified columns"
@@ -306,7 +306,7 @@ class PostgresAggregateDataFetcherTest extends Specification {
         )
 
         when: "executing min/max aggregates"
-        def fetcher = dataFetcher.createAggregateDataFetcher("temperature_readings")
+        def fetcher = dataFetcher.buildAggregateDataFetcher("temperature_readings")
         def result = fetcher.get(environment)
 
         then: "should return min and max values"
@@ -362,7 +362,7 @@ class PostgresAggregateDataFetcherTest extends Specification {
         )
 
         when: "executing multiple aggregates with filter"
-        def fetcher = dataFetcher.createAggregateDataFetcher("transactions")
+        def fetcher = dataFetcher.buildAggregateDataFetcher("transactions")
         def result = fetcher.get(environment)
 
         then: "should return all requested aggregates"
@@ -398,7 +398,7 @@ class PostgresAggregateDataFetcherTest extends Specification {
         def environment = createMockAggregateEnvironment(["count"], [:])
 
         when: "executing aggregate on empty table"
-        def fetcher = dataFetcher.createAggregateDataFetcher("empty_orders")
+        def fetcher = dataFetcher.buildAggregateDataFetcher("empty_orders")
         def result = fetcher.get(environment)
 
         then: "should return count as 0"

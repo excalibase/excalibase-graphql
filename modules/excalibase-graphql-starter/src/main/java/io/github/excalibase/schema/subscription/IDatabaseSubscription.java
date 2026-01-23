@@ -54,5 +54,5 @@ public interface IDatabaseSubscription {
      * @param tableName The name of the table to subscribe to changes for
      * @return A DataFetcher that returns a Publisher stream of table data changes
      */
-    DataFetcher<Publisher<Map<String, Object>>> createTableSubscriptionResolver(String tableName);
+    DataFetcher<Publisher<Map<String, Object>>> buildTableSubscriptionResolver(String tableName);
 }

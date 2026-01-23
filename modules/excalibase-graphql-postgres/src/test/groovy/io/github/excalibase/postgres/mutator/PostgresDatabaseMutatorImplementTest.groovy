@@ -12,7 +12,6 @@ import io.github.excalibase.model.CustomCompositeTypeInfo
 import io.github.excalibase.model.CustomEnumInfo
 import io.github.excalibase.model.ForeignKeyInfo
 import io.github.excalibase.model.TableInfo
-import io.github.excalibase.postgres.mutator.PostgresDatabaseMutatorImplement
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector
 import io.github.excalibase.service.ServiceLookup
 import org.springframework.jdbc.core.JdbcTemplate
@@ -117,7 +116,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating a new user"
-        def mutationResolver = mutator.createCreateMutationResolver("users")
+        def mutationResolver = mutator.buildCreateMutationResolver("users")
         def result = mutationResolver.get(environment)
 
         then: "should return the created user with generated id"
@@ -139,7 +138,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> null
 
         when: "attempting to create with null input"
-        def mutationResolver = mutator.createCreateMutationResolver("users")
+        def mutationResolver = mutator.buildCreateMutationResolver("users")
         mutationResolver.get(environment)
 
         then: "should throw IllegalArgumentException"
@@ -156,7 +155,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> ["name": null, "email": null]
 
         when: "attempting to create with all null values"
-        def mutationResolver = mutator.createCreateMutationResolver("users")
+        def mutationResolver = mutator.buildCreateMutationResolver("users")
         mutationResolver.get(environment)
 
         then: "should throw IllegalArgumentException"
@@ -201,7 +200,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "updating the product"
-        def mutationResolver = mutator.createUpdateMutationResolver("products")
+        def mutationResolver = mutator.buildUpdateMutationResolver("products")
         def result = mutationResolver.get(environment)
 
         then: "should return the updated product"
@@ -228,7 +227,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> ["name": "Updated Product"]
 
         when: "attempting to update without primary key"
-        def mutationResolver = mutator.createUpdateMutationResolver("products")
+        def mutationResolver = mutator.buildUpdateMutationResolver("products")
         mutationResolver.get(environment)
 
         then: "should throw IllegalArgumentException"
@@ -251,7 +250,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> ["id": 1]
 
         when: "attempting to update with no update values"
-        def mutationResolver = mutator.createUpdateMutationResolver("products")
+        def mutationResolver = mutator.buildUpdateMutationResolver("products")
         mutationResolver.get(environment)
 
         then: "should throw IllegalArgumentException"
@@ -283,7 +282,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> ["id": 999, "name": "Non-existent"]
 
         when: "attempting to update non-existent record"
-        def mutationResolver = mutator.createUpdateMutationResolver("empty_products")
+        def mutationResolver = mutator.buildUpdateMutationResolver("empty_products")
         mutationResolver.get(environment)
 
         then: "should throw DataMutationException"
@@ -320,7 +319,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> [id: "1"]
 
         when: "deleting the item"
-        def mutationResolver = mutator.createDeleteMutationResolver("items")
+        def mutationResolver = mutator.buildDeleteMutationResolver("items")
         def result = mutationResolver.get(environment)
 
         then: "should return deleted record"
@@ -338,7 +337,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("id") >> null
 
         when: "attempting to delete with null id"
-        def mutationResolver = mutator.createDeleteMutationResolver("items")
+        def mutationResolver = mutator.buildDeleteMutationResolver("items")
         mutationResolver.get(environment)
 
         then: "should throw IllegalArgumentException"
@@ -370,7 +369,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> [id: "999"]
 
         when: "attempting to delete non-existent record"
-        def mutationResolver = mutator.createDeleteMutationResolver("empty_items")
+        def mutationResolver = mutator.buildDeleteMutationResolver("empty_items")
         mutationResolver.get(environment)
         
         then: "should throw NotFoundException"
@@ -393,7 +392,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("id") >> "1"
 
         when: "attempting to delete from table without primary key"
-        def mutationResolver = mutator.createDeleteMutationResolver("no_pk_table")
+        def mutationResolver = mutator.buildDeleteMutationResolver("no_pk_table")
         mutationResolver.get(environment)
 
         then: "should throw exception"
@@ -432,7 +431,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("inputs") >> inputs
 
         when: "performing bulk create"
-        def mutationResolver = mutator.createBulkCreateMutationResolver("bulk_users")
+        def mutationResolver = mutator.buildBulkCreateMutationResolver("bulk_users")
         def result = mutationResolver.get(environment)
 
         then: "should return all created users"
@@ -453,7 +452,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("inputs") >> []
 
         when: "attempting bulk create with empty inputs"
-        def mutationResolver = mutator.createBulkCreateMutationResolver("bulk_users")
+        def mutationResolver = mutator.buildBulkCreateMutationResolver("bulk_users")
         mutationResolver.get(environment)
 
         then: "should throw IllegalArgumentException"
@@ -470,7 +469,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("inputs") >> null
 
         when: "attempting bulk create with null inputs"
-        def mutationResolver = mutator.createBulkCreateMutationResolver("bulk_users")
+        def mutationResolver = mutator.buildBulkCreateMutationResolver("bulk_users")
         mutationResolver.get(environment)
 
         then: "should throw IllegalArgumentException"
@@ -503,7 +502,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> ["id": uuid.toString(), "name": "Test"]
 
         when: "creating record with UUID"
-        def mutationResolver = mutator.createCreateMutationResolver("uuid_table")
+        def mutationResolver = mutator.buildCreateMutationResolver("uuid_table")
         def result = mutationResolver.get(environment)
 
         then: "should handle UUID conversion correctly"
@@ -548,7 +547,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         ]
 
         when: "creating record with type conversions"
-        def mutationResolver = mutator.createCreateMutationResolver("mixed_types_table")
+        def mutationResolver = mutator.buildCreateMutationResolver("mixed_types_table")
         def result = mutationResolver.get(environment)
 
         then: "should handle all type conversions correctly"
@@ -588,7 +587,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> ["name": "Test Record"]
 
         when: "creating record without required timestamps"
-        def mutationResolver = mutator.createCreateMutationResolver("timestamp_table")
+        def mutationResolver = mutator.buildCreateMutationResolver("timestamp_table")
         def result = mutationResolver.get(environment)
 
         then: "should automatically add required timestamp fields"
@@ -607,7 +606,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> ["name": "Test"]
 
         when: "attempting to create in non-existent table"
-        def mutationResolver = mutator.createCreateMutationResolver("non_existent_table")
+        def mutationResolver = mutator.buildCreateMutationResolver("non_existent_table")
         mutationResolver.get(environment)
 
         then: "should throw NotFoundException"
@@ -631,7 +630,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> ["name": "Updated", "value": 42]
 
         when: "attempting to update table without primary key"
-        def mutationResolver = mutator.createUpdateMutationResolver("no_pk_update_table")
+        def mutationResolver = mutator.buildUpdateMutationResolver("no_pk_update_table")
         mutationResolver.get(environment)
 
         then: "should throw NotFoundException"
@@ -710,7 +709,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         initialPostCount == 0
 
         when: "creating post with relationship connect"
-        def mutationResolver = mutator.createCreateWithRelationshipsMutationResolver("posts")
+        def mutationResolver = mutator.buildCreateWithRelationshipsMutationResolver("posts")
         def result = mutationResolver.get(environment)
 
         then: "should create post with connected category"
@@ -805,7 +804,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         initialPostCount == 0
 
         when: "creating with relationships that will fail due to constraint violation"
-        def mutationResolver = mutator.createCreateWithRelationshipsMutationResolver("posts_real")
+        def mutationResolver = mutator.buildCreateWithRelationshipsMutationResolver("posts_real")
         mutationResolver.get(environment)
 
         then: "should throw DataMutationException and rollback transaction"
@@ -855,7 +854,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with JSON/JSONB data"
-        def mutationResolver = mutator.createCreateMutationResolver("json_records")
+        def mutationResolver = mutator.buildCreateMutationResolver("json_records")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with JSON data"
@@ -900,7 +899,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with interval data"
-        def mutationResolver = mutator.createCreateMutationResolver("interval_records")
+        def mutationResolver = mutator.buildCreateMutationResolver("interval_records")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with interval data"
@@ -948,7 +947,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with network data"
-        def mutationResolver = mutator.createCreateMutationResolver("network_records")
+        def mutationResolver = mutator.buildCreateMutationResolver("network_records")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with network data"
@@ -994,7 +993,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with enhanced datetime data"
-        def mutationResolver = mutator.createCreateMutationResolver("datetime_records")
+        def mutationResolver = mutator.buildCreateMutationResolver("datetime_records")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with datetime data"
@@ -1039,7 +1038,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with numeric data"
-        def mutationResolver = mutator.createCreateMutationResolver("numeric_records")
+        def mutationResolver = mutator.buildCreateMutationResolver("numeric_records")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with numeric data"
@@ -1084,7 +1083,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with binary and XML data"
-        def mutationResolver = mutator.createCreateMutationResolver("binary_xml_records")
+        def mutationResolver = mutator.buildCreateMutationResolver("binary_xml_records")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with binary and XML data"
@@ -1141,7 +1140,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "updating record with enhanced types"
-        def mutationResolver = mutator.createUpdateMutationResolver("enhanced_updates")
+        def mutationResolver = mutator.buildUpdateMutationResolver("enhanced_updates")
         def result = mutationResolver.get(environment)
 
         then: "should return updated record with enhanced type data"
@@ -1200,7 +1199,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("inputs") >> inputs
 
         when: "performing bulk create with enhanced types"
-        def mutationResolver = mutator.createBulkCreateMutationResolver("enhanced_bulk")
+        def mutationResolver = mutator.buildBulkCreateMutationResolver("enhanced_bulk")
         def result = mutationResolver.get(environment)
 
         then: "should return all created records with enhanced type data"
@@ -1273,7 +1272,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with all enhanced types"
-        def mutationResolver = mutator.createCreateMutationResolver("complex_enhanced")
+        def mutationResolver = mutator.buildCreateMutationResolver("complex_enhanced")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with all enhanced type data properly handled"
@@ -1327,7 +1326,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with invalid enhanced type data"
-        def mutationResolver = mutator.createCreateMutationResolver("enhanced_errors")
+        def mutationResolver = mutator.buildCreateMutationResolver("enhanced_errors")
         mutationResolver.get(environment)
 
         then: "should throw DataMutationException for invalid data"
@@ -1370,7 +1369,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with integer arrays"
-        def mutationResolver = mutator.createCreateMutationResolver("integer_array_mutations")
+        def mutationResolver = mutator.buildCreateMutationResolver("integer_array_mutations")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with array data"
@@ -1419,7 +1418,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with text arrays"
-        def mutationResolver = mutator.createCreateMutationResolver("text_array_mutations")
+        def mutationResolver = mutator.buildCreateMutationResolver("text_array_mutations")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with text array data"
@@ -1471,7 +1470,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with mixed arrays"
-        def mutationResolver = mutator.createCreateMutationResolver("mixed_array_mutations")
+        def mutationResolver = mutator.buildCreateMutationResolver("mixed_array_mutations")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with mixed array data"
@@ -1514,7 +1513,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
                 "int_array": [],
                 "text_array": []
         ]
-        def mutationResolver = mutator.createCreateMutationResolver("null_array_mutations")
+        def mutationResolver = mutator.buildCreateMutationResolver("null_array_mutations")
         def result1 = mutationResolver.get(environment1)
 
         then: "should handle empty arrays correctly"
@@ -1591,7 +1590,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "updating record with array data"
-        def mutationResolver = mutator.createUpdateMutationResolver("array_updates")
+        def mutationResolver = mutator.buildUpdateMutationResolver("array_updates")
         def result = mutationResolver.get(environment)
 
         then: "should return updated record with new array data"
@@ -1652,7 +1651,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("inputs") >> inputs
 
         when: "performing bulk create with arrays"
-        def mutationResolver = mutator.createBulkCreateMutationResolver("bulk_array_mutations")
+        def mutationResolver = mutator.buildBulkCreateMutationResolver("bulk_array_mutations")
         def result = mutationResolver.get(environment)
 
         then: "should return all created records with array data"
@@ -1698,7 +1697,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with special character arrays"
-        def mutationResolver = mutator.createCreateMutationResolver("special_char_arrays")
+        def mutationResolver = mutator.buildCreateMutationResolver("special_char_arrays")
         def result = mutationResolver.get(environment)
 
         then: "should handle special characters correctly"
@@ -1755,7 +1754,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with mixed enhanced types and arrays"
-        def mutationResolver = mutator.createCreateMutationResolver("mixed_enhanced_arrays")
+        def mutationResolver = mutator.buildCreateMutationResolver("mixed_enhanced_arrays")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with all data types properly handled"
@@ -1800,7 +1799,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating record with invalid array data"
-        def mutationResolver = mutator.createCreateMutationResolver("array_errors")
+        def mutationResolver = mutator.buildCreateMutationResolver("array_errors")
         mutationResolver.get(environment)
 
         then: "should throw DataMutationException for invalid array data"
@@ -1847,7 +1846,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
                 "active": true
         ]
         environment.getArgument("input") >> input
-        def createResolver = mutator.createCreateMutationResolver("customer")
+        def createResolver = mutator.buildCreateMutationResolver("customer")
         def result = createResolver.get(environment)
 
         then: "should return created customer with generated ID"
@@ -1903,7 +1902,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
                 "active": false
         ]
         environment.getArgument("input") >> input
-        def updateResolver = mutator.createUpdateMutationResolver("update_customer")
+        def updateResolver = mutator.buildUpdateMutationResolver("update_customer")
         def result = updateResolver.get(environment)
 
         then: "should return updated customer"
@@ -1946,7 +1945,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         when: "deleting the customer record"
         def environment = Mock(DataFetchingEnvironment)
         environment.getArgument("input") >> [customer_id: "1"]
-        def deleteResolver = mutator.createDeleteMutationResolver("delete_customer")
+        def deleteResolver = mutator.buildDeleteMutationResolver("delete_customer")
         def result = deleteResolver.get(environment)
 
         then: "should return deleted record"
@@ -2032,7 +2031,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
                 "rel_customers_connect": ["id": 1]
         ]
         environment.getArgument("input") >> input
-        def createResolver = mutator.createCreateWithRelationshipsMutationResolver("rel_orders")
+        def createResolver = mutator.buildCreateWithRelationshipsMutationResolver("rel_orders")
         def result = createResolver.get(environment)
 
         then: "should return created order with customer relationship"
@@ -2088,7 +2087,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
                 ]
         ]
         environment.getArgument("inputs") >> inputs
-        def bulkCreateResolver = mutator.createBulkCreateMutationResolver("bulk_customers")
+        def bulkCreateResolver = mutator.buildBulkCreateMutationResolver("bulk_customers")
         def results = bulkCreateResolver.get(environment)
 
         then: "should return all created customer records"
@@ -2144,7 +2143,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "creating a record with custom enum value"
-        def mutationResolver = mutator.createCreateMutationResolver("test_documents")
+        def mutationResolver = mutator.buildCreateMutationResolver("test_documents")
         def result = mutationResolver.get(environment)
 
         then: "should create record with proper enum value"
@@ -2211,7 +2210,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "creating a record with custom composite value"
-        def mutationResolver = mutator.createCreateMutationResolver("test_users")
+        def mutationResolver = mutator.buildCreateMutationResolver("test_users")
         def result = mutationResolver.get(environment)
 
         then: "should create record with proper composite value"
@@ -2292,7 +2291,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "creating a record with composite type as GraphQL object"
-        def mutationResolver = mutator.createCreateMutationResolver("test_companies")
+        def mutationResolver = mutator.buildCreateMutationResolver("test_companies")
         def result = mutationResolver.get(environment)
 
         then: "should create record with proper composite value"
@@ -2382,7 +2381,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "updating record with composite type as GraphQL object"
-        def mutationResolver = mutator.createUpdateMutationResolver("test_venues")
+        def mutationResolver = mutator.buildUpdateMutationResolver("test_venues")
         def result = mutationResolver.get(environment)
 
         then: "should update record with new composite value"
@@ -2457,7 +2456,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "creating record with composite array as GraphQL object array"
-        def mutationResolver = mutator.createCreateMutationResolver("test_customers")
+        def mutationResolver = mutator.buildCreateMutationResolver("test_customers")
         def result = mutationResolver.get(environment)
 
         then: "should create record with proper composite array"
@@ -2536,7 +2535,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "updating a record with custom enum value"
-        def mutationResolver = mutator.createUpdateMutationResolver("test_issues")
+        def mutationResolver = mutator.buildUpdateMutationResolver("test_issues")
         def result = mutationResolver.get(environment)
 
         then: "should update record with proper enum value"
@@ -2597,7 +2596,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "creating record with custom enum array"
-        def mutationResolver = mutator.createCreateMutationResolver("test_tasks")
+        def mutationResolver = mutator.buildCreateMutationResolver("test_tasks")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with enum array data"
@@ -2670,7 +2669,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "creating record with custom composite array"
-        def mutationResolver = mutator.createCreateMutationResolver("test_routes")
+        def mutationResolver = mutator.buildCreateMutationResolver("test_routes")
         def result = mutationResolver.get(environment)
 
         then: "should return created record with composite array data"
@@ -2750,7 +2749,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "updating record with custom enum array"
-        def mutationResolver = mutator.createUpdateMutationResolver("test_articles")
+        def mutationResolver = mutator.buildUpdateMutationResolver("test_articles")
         def result = mutationResolver.get(environment)
 
         then: "should return updated record with new enum array data"
@@ -2810,7 +2809,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "creating a record with composite primary key"
-        def mutationResolver = mutator.createCreateMutationResolver("composite_key_table")
+        def mutationResolver = mutator.buildCreateMutationResolver("composite_key_table")
         def result = mutationResolver.get(environment)
 
         then: "should create record with both primary key parts"
@@ -2872,7 +2871,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "updating record using composite primary key"
-        def mutationResolver = mutator.createUpdateMutationResolver("composite_update_table")
+        def mutationResolver = mutator.buildUpdateMutationResolver("composite_update_table")
         def result = mutationResolver.get(environment)
 
         then: "should update record correctly"
@@ -2930,7 +2929,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "deleting record using composite primary key"
-        def mutationResolver = mutator.createDeleteMutationResolver("composite_delete_table")
+        def mutationResolver = mutator.buildDeleteMutationResolver("composite_delete_table")
         def result = mutationResolver.get(environment)
 
         then: "should return deleted record"
@@ -2987,7 +2986,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "attempting to create duplicate composite key"
-        def mutationResolver = mutator.createCreateMutationResolver("composite_duplicate_table")
+        def mutationResolver = mutator.buildCreateMutationResolver("composite_duplicate_table")
         mutationResolver.get(environment)
 
         then: "should throw exception for duplicate key"
@@ -3035,7 +3034,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "attempting to update with incomplete composite key"
-        def mutationResolver = mutator.createUpdateMutationResolver("composite_incomplete_table")
+        def mutationResolver = mutator.buildUpdateMutationResolver("composite_incomplete_table")
         mutationResolver.get(environment)
 
         then: "should throw exception for missing primary key part"
@@ -3082,7 +3081,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "performing bulk create on composite key table"
-        def bulkCreateResolver = mutator.createBulkCreateMutationResolver("composite_bulk_table")
+        def bulkCreateResolver = mutator.buildBulkCreateMutationResolver("composite_bulk_table")
         def results = bulkCreateResolver.get(environment)
 
         then: "should create all records successfully"
@@ -3154,7 +3153,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "creating child with invalid composite foreign key"
-        def mutationResolver = mutator.createCreateMutationResolver("composite_child")
+        def mutationResolver = mutator.buildCreateMutationResolver("composite_child")
         mutationResolver.get(environment)
 
         then: "should throw exception for foreign key violation"
@@ -3241,7 +3240,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         }
 
         when: "creating order with composite key and relationship"
-        def createResolver = mutator.createCreateWithRelationshipsMutationResolver("composite_orders")
+        def createResolver = mutator.buildCreateWithRelationshipsMutationResolver("composite_orders")
         def result = createResolver.get(environment)
 
         then: "should create order with proper composite key and relationship"
@@ -3305,7 +3304,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating a record with BIT types"
-        def mutationResolver = mutator.createCreateMutationResolver("bit_test")
+        def mutationResolver = mutator.buildCreateMutationResolver("bit_test")
         def result = mutationResolver.get(environment)
 
         then: "the record should be created successfully"
@@ -3361,7 +3360,7 @@ class PostgresDatabaseMutatorImplementTest extends Specification {
         environment.getArgument("input") >> input
 
         when: "creating a record with both BIT VARYING and CHARACTER VARYING arrays"
-        def mutationResolver = mutator.createCreateMutationResolver("varying_types_test")
+        def mutationResolver = mutator.buildCreateMutationResolver("varying_types_test")
         def result = mutationResolver.get(environment)
 
         then: "should create record successfully without type confusion"

@@ -54,7 +54,7 @@ public interface IDatabaseDataFetcher {
      * @param tableName the name of the database table to query
      * @return a data fetcher that returns a list of records from the specified table
      */
-    DataFetcher<List<Map<String, Object>>> createTableDataFetcher(String tableName);
+    DataFetcher<List<Map<String, Object>>> buildTableDataFetcher(String tableName);
 
     /**
      * Creates a connection data fetcher for cursor-based pagination.
@@ -68,7 +68,7 @@ public interface IDatabaseDataFetcher {
      * @return a data fetcher that returns a connection object with edges and pageInfo
      * @see <a href="https://relay.dev/graphql/connections.htm">Relay Connection Specification</a>
      */
-    DataFetcher<Map<String, Object>> createConnectionDataFetcher(String tableName);
+    DataFetcher<Map<String, Object>> buildConnectionDataFetcher(String tableName);
 
     /**
      * Creates a relationship data fetcher for resolving foreign key associations.
@@ -83,7 +83,7 @@ public interface IDatabaseDataFetcher {
      * @param referencedColumn the name of the column in the target table being referenced
      * @return a data fetcher that resolves the relationship and returns related records
      */
-    DataFetcher<Map<String, Object>> createRelationshipDataFetcher(
+    DataFetcher<Map<String, Object>> buildRelationshipDataFetcher(
             String tableName,
             String foreignKeyColumn,
             String referencedTable,
@@ -102,7 +102,7 @@ public interface IDatabaseDataFetcher {
      * @param referencedColumn the name of the column in the source table being referenced
      * @return a data fetcher that resolves the reverse relationship and returns a list of related records
      */
-    DataFetcher<List<Map<String, Object>>> createReverseRelationshipDataFetcher(
+    DataFetcher<List<Map<String, Object>>> buildReverseRelationshipDataFetcher(
             String sourcetableName,
             String targetTableName,
             String foreignKeyColumn,
@@ -118,7 +118,7 @@ public interface IDatabaseDataFetcher {
      * @param tableName the name of the database table to aggregate
      * @return a data fetcher that returns aggregate results
      */
-    DataFetcher<Map<String, Object>> createAggregateDataFetcher(String tableName);
+    DataFetcher<Map<String, Object>> buildAggregateDataFetcher(String tableName);
 
     /**
      * Creates a computed field data fetcher that calls a PostgreSQL function.
@@ -131,5 +131,5 @@ public interface IDatabaseDataFetcher {
      * @param fieldName the name of the computed field in GraphQL
      * @return a data fetcher that returns the computed field value
      */
-    DataFetcher<Object> createComputedFieldDataFetcher(String tableName, String functionName, String fieldName);
+    DataFetcher<Object> buildComputedFieldDataFetcher(String tableName, String functionName, String fieldName);
 }

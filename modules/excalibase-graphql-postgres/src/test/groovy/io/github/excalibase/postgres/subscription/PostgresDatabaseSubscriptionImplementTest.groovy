@@ -240,7 +240,7 @@ class PostgresDatabaseSubscriptionImplementTest extends Specification {
         
         when: "creating table subscription resolver"
         DataFetcher<Publisher<Map<String, Object>>> resolver = 
-                subscriptionImplement.createTableSubscriptionResolver(tableName)
+                subscriptionImplement.buildTableSubscriptionResolver(tableName)
         
         then: "should return DataFetcher instance"
         resolver != null
@@ -273,7 +273,7 @@ class PostgresDatabaseSubscriptionImplementTest extends Specification {
         
         when: "creating and executing resolver"
         DataFetcher<Publisher<Map<String, Object>>> resolver = 
-                subscriptionImplement.createTableSubscriptionResolver(tableName)
+                subscriptionImplement.buildTableSubscriptionResolver(tableName)
         Publisher<Map<String, Object>> publisher = resolver.get(mockEnvironment)
         
         then: "should produce publisher that emits events"
@@ -311,7 +311,7 @@ class PostgresDatabaseSubscriptionImplementTest extends Specification {
         
         when: "creating and executing resolver"
         DataFetcher<Publisher<Map<String, Object>>> resolver = 
-                subscriptionImplement.createTableSubscriptionResolver(tableName)
+                subscriptionImplement.buildTableSubscriptionResolver(tableName)
         Publisher<Map<String, Object>> publisher = resolver.get(mockEnvironment)
         
         then: "should handle error gracefully"

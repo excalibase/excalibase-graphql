@@ -15,8 +15,6 @@ import io.github.excalibase.model.CustomCompositeTypeInfo
 import io.github.excalibase.model.CustomEnumInfo
 import io.github.excalibase.model.ForeignKeyInfo
 import io.github.excalibase.model.TableInfo
-import io.github.excalibase.postgres.constant.PostgresSqlSyntaxConstant
-import io.github.excalibase.postgres.fetcher.PostgresDatabaseDataFetcherImplement
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector
 import io.github.excalibase.service.ServiceLookup
 import org.springframework.jdbc.core.JdbcTemplate
@@ -120,7 +118,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         )
 
         when: "creating and executing table data fetcher"
-        def fetcher = dataFetcher.createTableDataFetcher("users")
+        def fetcher = dataFetcher.buildTableDataFetcher("users")
         def result = fetcher.get(environment)
 
         then: "should return all users"
@@ -169,7 +167,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "price"],
                 ["price_gt": 50.0]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("products")
+        def fetcher = dataFetcher.buildTableDataFetcher("products")
         def result = fetcher.get(environment)
 
         then: "should return products with price > 50"
@@ -236,7 +234,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "orderBy": ["id": "ASC"]
                 ]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("items")
+        def fetcher = dataFetcher.buildTableDataFetcher("items")
         def result = fetcher.get(environment)
 
         then: "should return correct page of results"
@@ -298,7 +296,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "orderBy": ["id": "ASC"]
                 ]
         )
-        def fetcher = dataFetcher.createConnectionDataFetcher("posts")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("posts")
         def result = fetcher.get(environment)
 
         then: "should return connection with edges and pageInfo"
@@ -347,7 +345,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "rating", "comment"],
                 ["first": 10]
         )
-        def fetcher = dataFetcher.createConnectionDataFetcher("reviews")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("reviews")
         def result = fetcher.get(environment)
 
         then: "should return cursor and start/end cursor with valid cursor values"
@@ -409,7 +407,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         schemaReflector.reflectSchema() >> ["categories": tableInfo]
 
         when: "creating relationship data fetcher"
-        def fetcher = dataFetcher.createRelationshipDataFetcher(
+        def fetcher = dataFetcher.buildRelationshipDataFetcher(
                 "articles", "category_id", "categories", "id"
         )
 
@@ -428,7 +426,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
     def "should handle relationship data fetcher with null foreign key"() {
         given: "relationship data fetcher"
-        def fetcher = dataFetcher.createRelationshipDataFetcher(
+        def fetcher = dataFetcher.buildRelationshipDataFetcher(
                 "articles", "category_id", "categories", "id"
         )
 
@@ -476,7 +474,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "user_id", "token"],
                 ["id": uuid.toString()]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("sessions")
+        def fetcher = dataFetcher.buildTableDataFetcher("sessions")
         def result = fetcher.get(environment)
 
         then: "should return matching session"
@@ -522,7 +520,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "title", "author"],
                 ["title_startsWith": "Web"]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("articles")
+        def fetcher = dataFetcher.buildTableDataFetcher("articles")
         def result = fetcher.get(environment)
 
         then: "should return articles starting with 'Web'"
@@ -589,7 +587,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "username", "email"],
                 ["email_isNull": true]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("profiles")
+        def fetcher = dataFetcher.buildTableDataFetcher("profiles")
         def result = fetcher.get(environment)
 
         then: "should return profiles with null email"
@@ -647,7 +645,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "player_name", "score"],
                 ["score_gte": 90]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("scores")
+        def fetcher = dataFetcher.buildTableDataFetcher("scores")
         def result = fetcher.get(environment)
 
         then: "should return scores >= 90"
@@ -713,7 +711,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "orderBy": ["id": "ASC"]
                 ]
         )
-        def fetcher = dataFetcher.createConnectionDataFetcher("events")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("events")
         def firstPageResult = fetcher.get(environment)
         def endCursor = firstPageResult.pageInfo.endCursor
 
@@ -774,7 +772,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "orderBy": ["id": "ASC"]
                 ]
         )
-        def fetcher = dataFetcher.createConnectionDataFetcher("tasks")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("tasks")
         def middlePageResult = fetcher.get(environment)
         def startCursor = middlePageResult.pageInfo.startCursor
 
@@ -827,7 +825,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         schemaReflector.reflectSchema() >> ["logs": tableInfo]
 
         when: "using malformed after cursor"
-        def fetcher = dataFetcher.createConnectionDataFetcher("logs")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("logs")
         fetcher.get(environment)
 
         then: "should throw DataFetcherException"
@@ -845,7 +843,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         ]
 
         when: "creating relationship data fetcher"
-        def fetcher = dataFetcher.createRelationshipDataFetcher(
+        def fetcher = dataFetcher.buildRelationshipDataFetcher(
                 "books", "author_id", "authors", "id"
         )
 
@@ -907,7 +905,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "count", "name"],
                 ["count": "10"]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("mixed_types")
+        def fetcher = dataFetcher.buildTableDataFetcher("mixed_types")
         def result = fetcher.get(environment)
 
         then: "should handle type conversion correctly"
@@ -976,7 +974,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "orderBy": ["score": "DESC", "name": "ASC"]
                 ]
         )
-        def fetcher = dataFetcher.createConnectionDataFetcher("rankings")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("rankings")
         def result = fetcher.get(environment)
 
         then: "should handle complex cursor pagination correctly"
@@ -1016,7 +1014,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "value"],
                 ["id": "not-a-valid-uuid"]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("tokens")
+        def fetcher = dataFetcher.buildTableDataFetcher("tokens")
         fetcher.get(environment)
 
         then: "should throw DataFetcherException for invalid UUID"
@@ -1045,7 +1043,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
         when: "fetching data from empty table"
         def environment = createMockEnvironment(["id", "name"], [:])
-        def fetcher = dataFetcher.createTableDataFetcher("empty_table")
+        def fetcher = dataFetcher.buildTableDataFetcher("empty_table")
         def result = fetcher.get(environment)
 
         then: "should return empty list"
@@ -1078,7 +1076,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "value"],
                 ["first": 10, "orderBy": ["id": "ASC"]]
         )
-        def fetcher = dataFetcher.createConnectionDataFetcher("empty_connections")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("empty_connections")
         def result = fetcher.get(environment)
 
         then: "should return empty connection structure"
@@ -1119,7 +1117,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name"],
                 ["offset": 3, "first": 2]
         )
-        def fetcher = dataFetcher.createConnectionDataFetcher("offset_test")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("offset_test")
         def result = fetcher.get(environment)
 
         then: "should return correct offset-based results"
@@ -1161,7 +1159,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "sequence_num", "name"],
                 ["sequence_num": "1"]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("serial_test")
+        def fetcher = dataFetcher.buildTableDataFetcher("serial_test")
         def result = fetcher.get(environment)
 
         then: "should handle serial type correctly"
@@ -1213,7 +1211,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "name_contains": "a"
                 ]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("complex_filter")
+        def fetcher = dataFetcher.buildTableDataFetcher("complex_filter")
         def result = fetcher.get(environment)
 
         then: "should apply all filters correctly"
@@ -1258,7 +1256,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "orderBy": ["priority": "ASC"]
                 ]
         )
-        def fetcher = dataFetcher.createConnectionDataFetcher("nullable_order")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("nullable_order")
         def result = fetcher.get(environment)
 
         then: "should handle null values in cursors gracefully"
@@ -1292,7 +1290,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
 
         when: "fetching from table without primary key"
         def environment = createMockEnvironment(["name", "value"], [:])
-        def fetcher = dataFetcher.createTableDataFetcher("no_pk_table")
+        def fetcher = dataFetcher.buildTableDataFetcher("no_pk_table")
         def result = fetcher.get(environment)
 
         then: "should work correctly"
@@ -1333,7 +1331,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["nonexistent_relationship"],
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("orphan_table")
+        def fetcher = dataFetcher.buildTableDataFetcher("orphan_table")
         def result = fetcher.get(environment)
 
         then: "should handle gracefully without errors"
@@ -1387,7 +1385,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["posts"], // relationship field
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("comments")
+        def fetcher = dataFetcher.buildTableDataFetcher("comments")
         def result = fetcher.get(environment)
 
         then: "should handle gracefully without attempting to query related records"
@@ -1435,7 +1433,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["customers"], // relationship field
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("orders")
+        def fetcher = dataFetcher.buildTableDataFetcher("orders")
         def result = fetcher.get(environment)
 
         then: "should handle gracefully when referenced table info is null"
@@ -1487,7 +1485,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["clients"], // relationship field but with no sub-fields
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("invoices")
+        def fetcher = dataFetcher.buildTableDataFetcher("invoices")
         def result = fetcher.get(environment)
 
         then: "should handle gracefully when no fields are requested for the relationship"
@@ -1530,7 +1528,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["departments"], // This doesn't match any foreign key referenced table
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("tickets")
+        def fetcher = dataFetcher.buildTableDataFetcher("tickets")
         def result = fetcher.get(environment)
 
         then: "should handle gracefully when relationship field doesn't match foreign keys"
@@ -1598,7 +1596,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name"], // fields requested for the relationship
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("employees")
+        def fetcher = dataFetcher.buildTableDataFetcher("employees")
         def result = fetcher.get(environment)
 
         then: "should create new batch context and populate it correctly"
@@ -1654,7 +1652,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "json_data"],
                 ["json_data_contains": "John"]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("json_table")
+        def fetcher = dataFetcher.buildTableDataFetcher("json_table")
         def result = fetcher.get(environment)
 
         then: "should return records with JSON containing 'John'"
@@ -1720,7 +1718,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "duration"],
                 ["duration": "2 days 3 hours"]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("interval_table")
+        def fetcher = dataFetcher.buildTableDataFetcher("interval_table")
         def result = fetcher.get(environment)
 
         then: "should return record with matching interval"
@@ -1788,7 +1786,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "ip_address"],
                 ["ip_address": "192.168.1.1"]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("network_table")
+        def fetcher = dataFetcher.buildTableDataFetcher("network_table")
         def result = fetcher.get(environment)
 
         then: "should return record with matching IP"
@@ -1857,7 +1855,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "event_time_lt" : "2023-02-01T00:00:00Z"
                 ]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("datetime_table")
+        def fetcher = dataFetcher.buildTableDataFetcher("datetime_table")
         def result = fetcher.get(environment)
 
         then: "should return events in the date range"
@@ -1918,7 +1916,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "price_lte": 2000.00
                 ]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("numeric_table")
+        def fetcher = dataFetcher.buildTableDataFetcher("numeric_table")
         def result = fetcher.get(environment)
 
         then: "should return products in price range"
@@ -1973,7 +1971,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "binary_data"],
                 ["binary_data_isNotNull": true]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("binary_xml_table")
+        def fetcher = dataFetcher.buildTableDataFetcher("binary_xml_table")
         def result = fetcher.get(environment)
 
         then: "should return records with binary data"
@@ -2047,7 +2045,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "created_at_gte"        : "2023-01-01T00:00:00Z"
                 ]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("enhanced_mixed")
+        def fetcher = dataFetcher.buildTableDataFetcher("enhanced_mixed")
         def result = fetcher.get(environment)
 
         then: "should return items matching all enhanced type conditions"
@@ -2107,7 +2105,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "int_array", "bigint_array"],
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("integer_arrays")
+        def fetcher = dataFetcher.buildTableDataFetcher("integer_arrays")
         def result = fetcher.get(environment)
 
         then: "should return arrays as Java Lists"
@@ -2172,7 +2170,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "text_array", "varchar_array"],
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("text_arrays")
+        def fetcher = dataFetcher.buildTableDataFetcher("text_arrays")
         def result = fetcher.get(environment)
 
         then: "should return string arrays as Java Lists"
@@ -2232,7 +2230,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "bool_array", "decimal_array", "float_array"],
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("mixed_arrays")
+        def fetcher = dataFetcher.buildTableDataFetcher("mixed_arrays")
         def result = fetcher.get(environment)
 
         then: "should return properly typed arrays as Java Lists"
@@ -2296,7 +2294,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "mixed_int_array", "nullable_text_array"],
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("null_arrays")
+        def fetcher = dataFetcher.buildTableDataFetcher("null_arrays")
         def result = fetcher.get(environment)
 
         then: "should handle null and empty arrays correctly"
@@ -2369,7 +2367,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                         "orderBy": ["id": "ASC"]
                 ]
         )
-        def fetcher = dataFetcher.createConnectionDataFetcher("array_connections")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("array_connections")
         def result = fetcher.get(environment)
 
         then: "should return connection with properly converted arrays"
@@ -2425,7 +2423,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "special_text_array"],
                 [:]
         )
-        def fetcher = dataFetcher.createTableDataFetcher("special_arrays")
+        def fetcher = dataFetcher.buildTableDataFetcher("special_arrays")
         def result = fetcher.get(environment)
 
         then: "should properly handle special characters in array elements"
@@ -2696,7 +2694,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         environment.getArguments() >> [:]
         environment.getGraphQlContext() >> GraphQLContext.newContext().build()
 
-        def tableFetcher = dataFetcher.createTableDataFetcher("orders")
+        def tableFetcher = dataFetcher.buildTableDataFetcher("orders")
         def results = tableFetcher.get(environment)
 
         then: "should return orders data"
@@ -2748,7 +2746,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         dataFetcher.schemaReflector = mockReflector
 
         when: "using relationship data fetcher"
-        def relationshipFetcher = dataFetcher.createRelationshipDataFetcher(
+        def relationshipFetcher = dataFetcher.buildRelationshipDataFetcher(
                 "test_orders", "customer_id", "test_customers", "customer_id"
         )
 
@@ -2807,7 +2805,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name", "email"],
                 ["first": 3, "orderBy": ["id": "ASC"]]
         )
-        def connectionFetcher = dataFetcher.createConnectionDataFetcher("paginated_customers")
+        def connectionFetcher = dataFetcher.buildConnectionDataFetcher("paginated_customers")
         def result = connectionFetcher.get(environment)
 
         then: "should return properly structured connection result"
@@ -2857,7 +2855,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
                 ["id", "name"],
                 ["first": 2]
         )
-        def connectionFetcher = dataFetcher.createConnectionDataFetcher("no_order_customers")
+        def connectionFetcher = dataFetcher.buildConnectionDataFetcher("no_order_customers")
         def result = connectionFetcher.get(environment)
 
         then: "should return result with valid cursor values"
@@ -2915,7 +2913,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         schemaReflector.reflectSchema() >> ["test_tasks": tableInfo]
 
         when: "creating and executing connection data fetcher"
-        def fetcher = dataFetcher.createConnectionDataFetcher("test_tasks")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("test_tasks")
         def result = fetcher.get(environment)
 
         then: "should return properly formatted enum values"
@@ -2999,7 +2997,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         schemaReflector.getCustomEnumTypes() >> []
 
         when: "creating and executing connection data fetcher"
-        def fetcher = dataFetcher.createConnectionDataFetcher("test_venues")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("test_venues")
         def result = fetcher.get(environment)
 
         then: "should return structured composite objects"
@@ -3084,7 +3082,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         schemaReflector.getCustomCompositeTypes() >> []
 
         when: "creating and executing connection data fetcher"
-        def fetcher = dataFetcher.createConnectionDataFetcher("test_articles")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("test_articles")
         def result = fetcher.get(environment)
 
         then: "should filter by enum value correctly"
@@ -3153,7 +3151,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         schemaReflector.getCustomCompositeTypes() >> []
 
         when: "creating and executing connection data fetcher"
-        def fetcher = dataFetcher.createConnectionDataFetcher("test_tasks")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("test_tasks")
         def result = fetcher.get(environment)
 
         then: "should return enum array values"
@@ -3236,7 +3234,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         schemaReflector.getCustomEnumTypes() >> []
 
         when: "creating and executing connection data fetcher"
-        def fetcher = dataFetcher.createConnectionDataFetcher("test_companies")
+        def fetcher = dataFetcher.buildConnectionDataFetcher("test_companies")
         def result = fetcher.get(environment)
 
         then: "should return data with composite arrays parsed correctly"
@@ -3318,7 +3316,7 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
         )
 
         when: "fetching BIT type data"
-        def fetcher = dataFetcher.createTableDataFetcher("bit_data")
+        def fetcher = dataFetcher.buildTableDataFetcher("bit_data")
         def result = fetcher.get(environment)
 
         then: "should return BIT data successfully"

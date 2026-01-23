@@ -110,7 +110,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     }
 
     @Override
-    public DataFetcher<List<Map<String, Object>>> createTableDataFetcher(String tableName) {
+    public DataFetcher<List<Map<String, Object>>> buildTableDataFetcher(String tableName) {
         return environment -> {
             // Get table info
             Map<String, TableInfo> tables = getSchemaHelper().getAllTables();
@@ -215,7 +215,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     }
 
     @Override
-    public DataFetcher<Map<String, Object>> createConnectionDataFetcher(String tableName) {
+    public DataFetcher<Map<String, Object>> buildConnectionDataFetcher(String tableName) {
         return environment -> {
             Map<String, TableInfo> tables = getSchemaHelper().getAllTables();
             TableInfo tableInfo = tables.get(tableName);
@@ -559,7 +559,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     }
 
     @Override
-    public DataFetcher<Map<String, Object>> createRelationshipDataFetcher(String tableName, String foreignKeyColumn, String referencedTable, String referencedColumn) {
+    public DataFetcher<Map<String, Object>> buildRelationshipDataFetcher(String tableName, String foreignKeyColumn, String referencedTable, String referencedColumn) {
         return environment -> {
             Map<String, Object> source = environment.getSource();
             Object foreignKeyValue = source.get(foreignKeyColumn);
@@ -611,7 +611,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     }
     
     @Override
-    public DataFetcher<List<Map<String, Object>>> createReverseRelationshipDataFetcher(
+    public DataFetcher<List<Map<String, Object>>> buildReverseRelationshipDataFetcher(
             String sourceTableName, String targetTableName, String foreignKeyColumn, String referencedColumn) {
         return environment -> {
             Map<String, Object> source = environment.getSource();
@@ -666,7 +666,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     }
 
     @Override
-    public DataFetcher<Map<String, Object>> createAggregateDataFetcher(String tableName) {
+    public DataFetcher<Map<String, Object>> buildAggregateDataFetcher(String tableName) {
         return environment -> {
             Map<String, TableInfo> tables = getSchemaHelper().getAllTables();
             TableInfo tableInfo = tables.get(tableName);
@@ -755,7 +755,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     }
 
     @Override
-    public DataFetcher<Object> createComputedFieldDataFetcher(String tableName, String functionName, String fieldName) {
+    public DataFetcher<Object> buildComputedFieldDataFetcher(String tableName, String functionName, String fieldName) {
         return environment -> {
             // Get the parent row data
             Map<String, Object> source = environment.getSource();

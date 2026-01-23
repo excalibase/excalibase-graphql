@@ -111,7 +111,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     }
 
     @Override
-    public DataFetcher<Map<String, Object>> createCreateMutationResolver(String tableName) {
+    public DataFetcher<Map<String, Object>> buildCreateMutationResolver(String tableName) {
         return environment -> {
             TableInfo tableInfo = getTableInfo(tableName);
 
@@ -147,7 +147,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     }
 
     @Override
-    public DataFetcher<Map<String, Object>> createUpdateMutationResolver(String tableName) {
+    public DataFetcher<Map<String, Object>> buildUpdateMutationResolver(String tableName) {
         return environment -> {
             TableInfo tableInfo = getTableInfo(tableName);
 
@@ -209,7 +209,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     }
 
     @Override
-    public DataFetcher<Map<String, Object>> createDeleteMutationResolver(String tableName) {
+    public DataFetcher<Map<String, Object>> buildDeleteMutationResolver(String tableName) {
         return environment -> {
             TableInfo tableInfo = getTableInfo(tableName);
             
@@ -283,7 +283,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     }
 
     @Override
-    public DataFetcher<List<Map<String, Object>>> createBulkCreateMutationResolver(String tableName) {
+    public DataFetcher<List<Map<String, Object>>> buildBulkCreateMutationResolver(String tableName) {
         return environment -> {
             // Get table info
             TableInfo tableInfo = getTableInfo(tableName);
@@ -329,7 +329,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     }
 
     @Override
-    public DataFetcher<Map<String, Object>> createCreateWithRelationshipsMutationResolver(String tableName) {
+    public DataFetcher<Map<String, Object>> buildCreateWithRelationshipsMutationResolver(String tableName) {
         return environment -> {
             return transactionTemplate.execute(status -> {
                 try {

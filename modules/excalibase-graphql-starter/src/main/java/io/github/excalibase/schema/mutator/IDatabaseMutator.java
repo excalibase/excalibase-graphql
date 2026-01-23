@@ -56,7 +56,7 @@ public interface IDatabaseMutator {
      * @return A DataFetcher that creates a record and returns the created record
      * @throws io.github.excalibase.exception.DataMutationException if the creation fails
      */
-    DataFetcher<Map<String, Object>> createCreateMutationResolver(String tableName);
+    DataFetcher<Map<String, Object>> buildCreateMutationResolver(String tableName);
 
     /**
      * Creates a DataFetcher for updating a record in the specified table.
@@ -70,7 +70,7 @@ public interface IDatabaseMutator {
      * @throws io.github.excalibase.exception.NotFoundException if the record to update is not found
      * @throws io.github.excalibase.exception.DataMutationException if the update fails
      */
-    DataFetcher<Map<String, Object>> createUpdateMutationResolver(String tableName);
+    DataFetcher<Map<String, Object>> buildUpdateMutationResolver(String tableName);
 
     /**
      * Creates a DataFetcher for deleting a record from the specified table.
@@ -84,7 +84,7 @@ public interface IDatabaseMutator {
      * @throws io.github.excalibase.exception.NotFoundException if the record to delete is not found
      * @throws io.github.excalibase.exception.DataMutationException if the deletion fails
      */
-    DataFetcher<Map<String, Object>> createDeleteMutationResolver(String tableName);
+    DataFetcher<Map<String, Object>> buildDeleteMutationResolver(String tableName);
 
     /**
      * Creates a DataFetcher for bulk creating multiple records in the specified table.
@@ -97,7 +97,7 @@ public interface IDatabaseMutator {
      * @return A DataFetcher that creates multiple records and returns the created records
      * @throws io.github.excalibase.exception.DataMutationException if the bulk creation fails
      */
-    DataFetcher<List<Map<String, Object>>> createBulkCreateMutationResolver(String tableName);
+    DataFetcher<List<Map<String, Object>>> buildBulkCreateMutationResolver(String tableName);
 
     /**
      * Creates a DataFetcher for creating a record with relationships in the specified table.
@@ -111,5 +111,5 @@ public interface IDatabaseMutator {
      * @return A DataFetcher that creates a record with relationships and returns the created record
      * @throws io.github.excalibase.exception.DataMutationException if the creation with relationships fails
      */
-    DataFetcher<Map<String, Object>> createCreateWithRelationshipsMutationResolver(String tableName);
+    DataFetcher<Map<String, Object>> buildCreateWithRelationshipsMutationResolver(String tableName);
 } 
