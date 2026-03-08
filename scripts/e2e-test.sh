@@ -759,6 +759,128 @@ main() {
     echo ""
     
     # ==========================================
+    # RLS (ROW LEVEL SECURITY) TESTS
+    # ==========================================
+    # These tests verify that PostgreSQL RLS policies are enforced via
+    # session variables set by the UserContextFilter.
+    #
+    # Prerequisites (set up in initdb.sql or manually):
+    #   - rls_orders table with RLS enabled
+    #   - Policy: user_id = current_setting('request.user_id', true)
+    #   - App must connect as a non-superuser (superusers bypass RLS)
+    #   - rls_context view: SELECT current_setting('request.user_id', true) as user_id
+    #
+    # If rls_orders is not in the schema, RLS tests are skipped gracefully.
+
+    echo ""
+    log_info "🔐 Starting RLS (Row Level Security) Tests..."
+    echo ""
+
+    RLS_TABLE_EXISTS=$(curl -s "$API_URL" \
+        -X POST -H "Content-Type: application/json" \
+        -d '{"query":"{ __type(name: \"Query\") { fields { name } } }"}' \
+        | jq -r '[.data.__type.fields[].name] | map(select(. == "rls_orders")) | length')
+
+    if [ "$RLS_TABLE_EXISTS" = "1" ]; then
+
+        # Test 1: No header — RLS should block all rows
+        ((test_count++))
+        log_info "Testing: RLS - No user context blocks all rows"
+        RESPONSE=$(curl -s "$API_URL" -X POST -H "Content-Type: application/json" \
+            -d '{"query":"{ rls_orders { id user_id product } }"}')
+        ROW_COUNT=$(echo "$RESPONSE" | jq '.data.rls_orders | length')
+        if [ "$ROW_COUNT" = "0" ]; then
+            log_success "RLS - No user context blocks all rows: ✓ Passed (0 rows)"
+            ((passed_tests++))
+        else
+            log_error "RLS - No user context blocks all rows: Failed (got $ROW_COUNT rows, expected 0)"
+            ((failed_tests++))
+        fi
+
+        # Test 2: X-User-Id: alice — only alice's rows
+        ((test_count++))
+        log_info "Testing: RLS - X-User-Id: alice sees only her rows"
+        RESPONSE=$(curl -s "$API_URL" -X POST -H "Content-Type: application/json" \
+            -H "X-User-Id: alice" \
+            -d '{"query":"{ rls_orders { id user_id product } }"}')
+        ALICE_COUNT=$(echo "$RESPONSE" | jq '.data.rls_orders | length')
+        ALICE_ONLY=$(echo "$RESPONSE" | jq '[.data.rls_orders[].user_id] | all(. == "alice")')
+        if [ "$ALICE_COUNT" -gt "0" ] && [ "$ALICE_ONLY" = "true" ]; then
+            log_success "RLS - alice sees only her rows: ✓ Passed ($ALICE_COUNT rows)"
+            ((passed_tests++))
+        else
+            log_error "RLS - alice sees only her rows: Failed (count=$ALICE_COUNT, all_alice=$ALICE_ONLY)"
+            echo "$RESPONSE"
+            ((failed_tests++))
+        fi
+
+        # Test 3: X-User-Id: bob — only bob's rows
+        ((test_count++))
+        log_info "Testing: RLS - X-User-Id: bob sees only his rows"
+        RESPONSE=$(curl -s "$API_URL" -X POST -H "Content-Type: application/json" \
+            -H "X-User-Id: bob" \
+            -d '{"query":"{ rls_orders { id user_id product } }"}')
+        BOB_COUNT=$(echo "$RESPONSE" | jq '.data.rls_orders | length')
+        BOB_ONLY=$(echo "$RESPONSE" | jq '[.data.rls_orders[].user_id] | all(. == "bob")')
+        if [ "$BOB_COUNT" -gt "0" ] && [ "$BOB_ONLY" = "true" ]; then
+            log_success "RLS - bob sees only his rows: ✓ Passed ($BOB_COUNT rows)"
+            ((passed_tests++))
+        else
+            log_error "RLS - bob sees only his rows: Failed (count=$BOB_COUNT, all_bob=$BOB_ONLY)"
+            echo "$RESPONSE"
+            ((failed_tests++))
+        fi
+
+        # Test 4: alice and bob see different rows (isolation)
+        ((test_count++))
+        log_info "Testing: RLS - alice and bob are fully isolated"
+        ALICE_IDS=$(curl -s "$API_URL" -X POST -H "Content-Type: application/json" \
+            -H "X-User-Id: alice" \
+            -d '{"query":"{ rls_orders { id } }"}' \
+            | jq '[.data.rls_orders[].id] | sort')
+        BOB_IDS=$(curl -s "$API_URL" -X POST -H "Content-Type: application/json" \
+            -H "X-User-Id: bob" \
+            -d '{"query":"{ rls_orders { id } }"}' \
+            | jq '[.data.rls_orders[].id] | sort')
+        if [ "$ALICE_IDS" != "$BOB_IDS" ] && [ "$ALICE_IDS" != "[]" ] && [ "$BOB_IDS" != "[]" ]; then
+            log_success "RLS - alice and bob are fully isolated: ✓ Passed"
+            ((passed_tests++))
+        else
+            log_error "RLS - alice and bob are fully isolated: Failed"
+            ((failed_tests++))
+        fi
+
+        # Test 5: JWT extractor (if rls_context view exists)
+        RLS_CONTEXT_EXISTS=$(curl -s "$API_URL" -X POST -H "Content-Type: application/json" \
+            -d '{"query":"{ __type(name: \"Query\") { fields { name } } }"}' \
+            | jq -r '[.data.__type.fields[].name] | map(select(. == "rls_context")) | length')
+
+        if [ "$RLS_CONTEXT_EXISTS" = "1" ]; then
+            ((test_count++))
+            log_info "Testing: RLS - Header extractor sets request.user_id session variable"
+            RESPONSE=$(curl -s "$API_URL" -X POST -H "Content-Type: application/json" \
+                -H "X-User-Id: test-user-99" \
+                -d '{"query":"{ rls_context { user_id } }"}')
+            SESSION_USER=$(echo "$RESPONSE" | jq -r '.data.rls_context[0].user_id // empty')
+            if [ "$SESSION_USER" = "test-user-99" ]; then
+                log_success "RLS - Header extractor sets session variable: ✓ Passed"
+                ((passed_tests++))
+            else
+                log_error "RLS - Header extractor sets session variable: Failed (got '$SESSION_USER')"
+                ((failed_tests++))
+            fi
+        fi
+
+    else
+        log_warning "RLS tests skipped: rls_orders table not found in schema"
+        log_warning "To enable RLS tests, set up rls_orders with RLS and run as non-superuser"
+    fi
+
+    echo ""
+    log_info "🔐 RLS Tests Complete"
+    echo ""
+
+    # ==========================================
     # TEST SUMMARY
     # ==========================================
     
@@ -788,6 +910,12 @@ main() {
     echo "  ✅ Datetime types (timestamptz, timetz, interval)"
     echo "  ✅ XML type"
     echo "  ✅ UUID type"
+    echo ""
+    echo "🔐 RLS (Row Level Security) Coverage:"
+    echo "  ✅ No user context blocks all rows"
+    echo "  ✅ Header extractor (X-User-Id) filters rows per user"
+    echo "  ✅ Full user isolation (alice and bob see different rows)"
+    echo "  ✅ Session variable set correctly in request pipeline"
     echo ""
     echo "🔒 Security Controls Coverage:"
     echo "  ✅ Query Depth Limiting (GraphQL.org security best practices)"

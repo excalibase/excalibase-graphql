@@ -4,7 +4,6 @@ import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import io.github.excalibase.config.GraphqlConfig;
-import io.github.excalibase.service.DatabaseRoleService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -16,52 +15,76 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * REST controller that provides GraphQL endpoint with PostgreSQL role-based security support.
+ * REST controller that provides GraphQL endpoint with security support.
+ *
+ * Supports two security models:
+ *
+ * 1. User Context RLS (Row-Level Security) - Supabase style:
+ *    - UserContextFilter extracts X-User-Id header
+ *    - Sets PostgreSQL session variable: SET LOCAL request.user_id = 'user-123'
+ *    - RLS policies reference: USING (user_id = current_setting('request.user_id'))
+ *    - Scales to millions of users without creating database roles
+ *
+ * 2. Role-Based CLS (Column-Level Security) - Legacy:
+ *    - X-Database-Role header specifies PostgreSQL role
+ *    - GraphQL schema filtered based on role privileges
+ *    - Useful for role-based column visibility
+ *
+ * Example requests:
+ *
+ * RLS (User Context):
+ * POST /graphql
+ * X-User-Id: user-123
+ * X-Claim-tenant_id: acme
+ * { "query": "{ orders { id total } }" }
+ *
+ * CLS (Role-Based):
+ * POST /graphql
+ * X-Database-Role: hr_manager
+ * { "query": "{ sensitive_customer { id salary } }" }
+ *
+ * Configuration:
+ * app.security.user-context-enabled: true/false
+ * app.security.role-based-schema: true/false
  */
 @RestController
 @RequestMapping("/graphql")
 public class GraphqlController {
     private final GraphqlConfig graphqlConfig;
-    private final DatabaseRoleService databaseRoleService;
 
-    public GraphqlController(GraphqlConfig graphqlConfig, DatabaseRoleService databaseRoleService) {
+    public GraphqlController(GraphqlConfig graphqlConfig) {
         this.graphqlConfig = graphqlConfig;
-        this.databaseRoleService = databaseRoleService;
     }
 
     /**
-     * Executes GraphQL queries and mutations with optional PostgreSQL role-based security.
-     * 
+     * Executes GraphQL queries and mutations with optional role-based schema filtering.
+     * User context for RLS is automatically set by UserContextFilter.
+     *
      * @param request contains 'query' and optional 'variables'
-     * @param databaseRole optional X-Database-Role header for PostgreSQL SET ROLE (RLS/CLS)
+     * @param databaseRole optional X-Database-Role header for CLS (schema filtering by role)
      * @return GraphQL execution result
      */
     @PostMapping()
     public ResponseEntity<Map<String, Object>> graphql(
             @RequestBody Map<String, Object> request,
             @RequestHeader(value = "X-Database-Role", required = false) String databaseRole) {
-        
+
         String query = (String) request.get("query");
         @SuppressWarnings("unchecked")
         Map<String, Object> variables = request.get("variables") != null
                 ? (Map<String, Object>) request.get("variables")
                 : Collections.emptyMap();
 
-        try {
-            GraphQL roleAwareGraphQL = graphqlConfig.getGraphQLForRole(databaseRole);
-            databaseRoleService.setRole(databaseRole);
+        // Get GraphQL instance with optional role-based schema filtering (CLS)
+        // User context (RLS) is already set by UserContextFilter before this point
+        GraphQL graphQL = graphqlConfig.getGraphQLForRole(databaseRole);
 
-            // Execute GraphQL - all database operations automatically use the set role
-            ExecutionResult result = roleAwareGraphQL.execute(ExecutionInput.newExecutionInput()
+        // Execute GraphQL query
+        ExecutionResult result = graphQL.execute(ExecutionInput.newExecutionInput()
                 .query(query)
                 .variables(variables)
                 .build());
 
         return ResponseEntity.ok(result.toSpecification());
-            
-        } finally {
-            // Always reset role after request to prevent role leakage in connection pools
-            databaseRoleService.resetRole();
-        }
     }
 }

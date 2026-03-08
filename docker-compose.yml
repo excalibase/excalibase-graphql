@@ -35,8 +35,9 @@ services:
     environment:
 
       # Database connection
+      # app_user is a non-superuser — required for PostgreSQL RLS to be enforced
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hana
-      SPRING_DATASOURCE_USERNAME: hana001
+      SPRING_DATASOURCE_USERNAME: app_user
       SPRING_DATASOURCE_PASSWORD: password123
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
 
@@ -64,6 +65,11 @@ services:
       SERVER_PORT: 10000
       APP_ALLOWED_SCHEMA: hana
       APP_DATABASE_TYPE: postgres
+
+      # User context for RLS (Row Level Security)
+      APP_SECURITY_USER_CONTEXT_ENABLED: true
+      APP_SECURITY_USER_ID_EXTRACTOR_TYPE: header
+      APP_SECURITY_USER_ID_HEADER: X-User-Id
 
       # CDC configuration for real-time subscriptions
       APP_CDC_ENABLED: true

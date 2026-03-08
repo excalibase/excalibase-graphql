@@ -75,9 +75,24 @@ public class AppConfig {
      * Security configuration properties.
      */
     public static class SecurityConfig {
-        
+
         /** Enable role-based schema filtering and RLS/CLS support */
         private boolean roleBasedSchema = true;
+
+        /** Enable user context for RLS (Row Level Security) policies */
+        private boolean userContextEnabled = true;
+
+        /**
+         * User ID extractor type: "header" (default) or "jwt"
+         *
+         * header: reads X-User-Id header (and X-Claim-* for extra claims)
+         * jwt:    decodes Authorization: Bearer <token>, uses "sub" as user_id
+         *         and all other claims as request.jwt.<claim>
+         */
+        private String userIdExtractorType = "header";
+
+        /** Header name for user ID when using "header" extractor (default: X-User-Id) */
+        private String userIdHeader = "X-User-Id";
 
         public boolean isRoleBasedSchema() {
             return roleBasedSchema;
@@ -85,6 +100,30 @@ public class AppConfig {
 
         public void setRoleBasedSchema(boolean roleBasedSchema) {
             this.roleBasedSchema = roleBasedSchema;
+        }
+
+        public boolean isUserContextEnabled() {
+            return userContextEnabled;
+        }
+
+        public void setUserContextEnabled(boolean userContextEnabled) {
+            this.userContextEnabled = userContextEnabled;
+        }
+
+        public String getUserIdExtractorType() {
+            return userIdExtractorType;
+        }
+
+        public void setUserIdExtractorType(String userIdExtractorType) {
+            this.userIdExtractorType = userIdExtractorType;
+        }
+
+        public String getUserIdHeader() {
+            return userIdHeader;
+        }
+
+        public void setUserIdHeader(String userIdHeader) {
+            this.userIdHeader = userIdHeader;
         }
     }
     

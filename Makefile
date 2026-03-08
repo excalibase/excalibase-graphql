@@ -48,16 +48,16 @@ help: ## Show this help message
 	@echo "  make benchmark-db-stats         # Show database statistics"
 	@echo ""
 	@echo "$(YELLOW)CI/CD Integration:$(NC)"
-	@echo "  make ci                         # Run complete CI pipeline"
-	@echo "  make ci-benchmark               # Run enterprise benchmarks for CI"
+	@echo "  make ci              # Run complete CI pipeline"
+	@echo "  make ci-benchmark    # Run enterprise benchmarks for CI"
 
 # Main targets
 .PHONY: e2e
-e2e: check-deps down build-image up test clean ## Complete e2e test suite (cleanup, build image, test, cleanup)
+e2e: down build-image up test clean ## Complete e2e test suite (cleanup, build image, test, cleanup)
 	@echo "$(GREEN)🎉 E2E testing completed successfully!$(NC)"
 
 .PHONY: dev
-dev: check-deps build-image up ## Start services for development (no cleanup)
+dev: build-image up ## Start services for development (no cleanup)
 	@echo ""
 	@echo "$(GREEN)🚀 Development environment ready!$(NC)"
 	@echo ""
@@ -69,10 +69,10 @@ dev: check-deps build-image up ## Start services for development (no cleanup)
 	@echo ""
 
 .PHONY: ci
-ci: check-deps-ci build-image up test clean ## CI/CD pipeline (with dependency checks)
+ci: build-image up test clean ## CI/CD pipeline
 
-.PHONY: ci-benchmark  
-ci-benchmark: check-deps-ci benchmark-build benchmark-up benchmark-test-only ## Enterprise benchmark for CI (without cleanup)
+.PHONY: ci-benchmark
+ci-benchmark: benchmark-build benchmark-up benchmark-test-only ## Enterprise benchmark for CI (without cleanup)
 	@echo "$(GREEN)🏢 Enterprise CI benchmark completed!$(NC)"
 
 # Build targets
@@ -96,38 +96,38 @@ build-skip: ## Skip Maven build (for rapid iteration)
 .PHONY: up
 up: ## Start Docker services
 	@echo "$(BLUE)🚀 Starting services...$(NC)"
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d
 	@echo "$(GREEN)✓ Services started$(NC)"
 	@$(MAKE) --no-print-directory wait-ready
 
 .PHONY: down
 down: ## Stop Docker services
 	@echo "$(BLUE)🛑 Stopping services...$(NC)"
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down > /dev/null 2>&1 || true
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Services stopped$(NC)"
 
 .PHONY: clean
 clean: ## Stop services and cleanup volumes
 	@echo "$(BLUE)🧹 Cleaning up...$(NC)"
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Cleanup completed$(NC)"
 
 .PHONY: logs
 logs: ## Show service logs
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) logs -f
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) logs -f
 
 .PHONY: logs-app
 logs-app: ## Show application logs only
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) logs -f app
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) logs -f app
 
 .PHONY: logs-db
 logs-db: ## Show database logs only
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) logs -f postgres
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) logs -f postgres
 
 .PHONY: status
 status: ## Show service status
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) ps
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) ps
 
 # Testing targets
 .PHONY: test
@@ -144,58 +144,12 @@ test-quick: build-skip up test-only ## Quick test (skip build)
 	@echo "$(GREEN)✓ Quick tests completed$(NC)"
 
 # Internal targets
-.PHONY: check-deps
-check-deps: ## Check required dependencies
-	@echo "$(BLUE)🔍 Checking dependencies...$(NC)"
-	@command -v docker >/dev/null 2>&1 || (echo "$(RED)❌ Docker not found$(NC)" && exit 1)
-	@command -v docker-compose >/dev/null 2>&1 || (echo "$(RED)❌ Docker Compose not found$(NC)" && exit 1)
-	@command -v mvn >/dev/null 2>&1 || (echo "$(RED)❌ Maven not found$(NC)" && exit 1)
-	@command -v curl >/dev/null 2>&1 || (echo "$(RED)❌ curl not found$(NC)" && exit 1)
-	@command -v jq >/dev/null 2>&1 || (echo "$(RED)❌ jq not found$(NC)" && exit 1)
-	@echo "$(GREEN)✓ All dependencies available$(NC)"
-
-.PHONY: check-deps-ci
-check-deps-ci: ## Check dependencies for CI (no Maven required)
-	@echo "$(BLUE)🔍 Checking CI dependencies...$(NC)"
-	@command -v docker >/dev/null 2>&1 || (echo "$(RED)❌ Docker not found$(NC)" && exit 1)
-	@(command -v docker-compose >/dev/null 2>&1 || docker compose version >/dev/null 2>&1) || (echo "$(RED)❌ Docker Compose not found$(NC)" && exit 1)
-	@command -v curl >/dev/null 2>&1 || (echo "$(RED)❌ curl not found$(NC)" && exit 1)
-	@command -v jq >/dev/null 2>&1 || (echo "$(RED)❌ jq not found$(NC)" && exit 1)
-	@echo "$(GREEN)✓ All CI dependencies available$(NC)"
-
-.PHONY: check-ports
-check-ports: ## Check if required ports are available
-	@echo "$(BLUE)🔍 Checking ports...$(NC)"
-	@if command -v lsof >/dev/null 2>&1; then \
-		if lsof -i :$(APP_PORT) > /dev/null 2>&1; then \
-			echo "$(RED)❌ Port $(APP_PORT) is already in use$(NC)"; \
-			echo "$(YELLOW)💡 Stop the service using: lsof -ti:$(APP_PORT) | xargs kill$(NC)"; \
-			exit 1; \
-		fi; \
-		if lsof -i :$(DB_PORT) > /dev/null 2>&1; then \
-			echo "$(RED)❌ Port $(DB_PORT) is already in use$(NC)"; \
-			echo "$(YELLOW)💡 Stop the service using: lsof -ti:$(DB_PORT) | xargs kill$(NC)"; \
-			exit 1; \
-		fi; \
-	else \
-		if netstat -tuln 2>/dev/null | grep -q ":$(APP_PORT) "; then \
-			echo "$(RED)❌ Port $(APP_PORT) is already in use$(NC)"; \
-			echo "$(YELLOW)💡 Stop the service manually or use: pkill -f $(APP_PORT)$(NC)"; \
-			exit 1; \
-		fi; \
-		if netstat -tuln 2>/dev/null | grep -q ":$(DB_PORT) "; then \
-			echo "$(RED)❌ Port $(DB_PORT) is already in use$(NC)"; \
-			echo "$(YELLOW)💡 Stop the service manually or use: pkill -f $(DB_PORT)$(NC)"; \
-			exit 1; \
-		fi; \
-	fi
-	@echo "$(GREEN)✓ Ports $(APP_PORT) and $(DB_PORT) are available$(NC)"
 
 .PHONY: wait-ready
 wait-ready: ## Wait for services to be ready
 	@echo "$(BLUE)⏳ Waiting for services...$(NC)"
 	@for i in $$(seq 1 30); do \
-		if docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) exec -T postgres pg_isready -U hana001 -d hana > /dev/null 2>&1; then \
+		if docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) exec -T postgres pg_isready -U hana001 -d hana > /dev/null 2>&1; then \
 			echo "$(GREEN)✓ PostgreSQL ready$(NC)"; \
 			break; \
 		fi; \
@@ -217,28 +171,15 @@ run-tests: ## Execute the actual test suite
 # Database operations (unified schema with demo + test data)
 .PHONY: db-shell
 db-shell: ## Connect to PostgreSQL shell
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) exec postgres psql -U hana001 -d hana
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) exec postgres psql -U hana001 -d hana
 
 .PHONY: db-reset
 db-reset: ## Reset database (recreate with fresh data)
 	@echo "$(BLUE)🔄 Resetting database...$(NC)"
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v > /dev/null 2>&1 || true
-	@docker-compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d postgres > /dev/null 2>&1
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v > /dev/null 2>&1 || true
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d postgres > /dev/null 2>&1
 	@$(MAKE) --no-print-directory wait-ready
 	@echo "$(GREEN)✓ Database reset completed$(NC)"
-
-# Utility targets
-.PHONY: install-deps
-install-deps: ## Install missing dependencies (macOS)
-	@echo "$(BLUE)📦 Installing dependencies...$(NC)"
-	@if ! command -v jq >/dev/null 2>&1; then \
-		echo "$(YELLOW)Installing jq...$(NC)"; \
-		brew install jq; \
-	fi
-	@if ! command -v docker >/dev/null 2>&1; then \
-		echo "$(YELLOW)Please install Docker Desktop from: https://docker.com/products/docker-desktop$(NC)"; \
-	fi
-	@echo "$(GREEN)✓ Dependencies check completed$(NC)"
 
 # Development workflow targets
 .PHONY: restart
@@ -251,11 +192,11 @@ rebuild: clean build up ## Full rebuild and restart
 
 # Enterprise benchmark targets
 .PHONY: benchmark
-benchmark: check-deps benchmark-build benchmark-up benchmark-test benchmark-clean ## Complete enterprise benchmark test suite
+benchmark: benchmark-build benchmark-up benchmark-test benchmark-clean ## Complete enterprise benchmark test suite
 	@echo "$(GREEN)🎉 Enterprise benchmark testing completed successfully!$(NC)"
 
 .PHONY: benchmark-dev
-benchmark-dev: check-deps benchmark-build benchmark-up ## Start enterprise benchmark services for development
+benchmark-dev: benchmark-build benchmark-up ## Start enterprise benchmark services for development
 	@echo ""
 	@echo "$(GREEN)🚀 Enterprise benchmark environment ready!$(NC)"
 	@echo ""
@@ -279,23 +220,23 @@ benchmark-build: ## Build application for enterprise benchmarking
 	@echo "$(GREEN)✓ Enterprise benchmark build completed$(NC)"
 
 .PHONY: benchmark-up
-benchmark-up: benchmark-check-ports ## Start enterprise benchmark Docker services
+benchmark-up: ## Start enterprise benchmark Docker services
 	@echo "$(BLUE)🚀 Starting enterprise benchmark services...$(NC)"
-	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark up -d --build
+	@docker compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark up -d --build
 	@echo "$(GREEN)✓ Enterprise benchmark services started$(NC)"
 	@$(MAKE) --no-print-directory benchmark-wait-ready
 
 .PHONY: benchmark-down
 benchmark-down: ## Stop enterprise benchmark Docker services
 	@echo "$(BLUE)🛑 Stopping enterprise benchmark services...$(NC)"
-	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark down > /dev/null 2>&1 || true
+	@docker compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark down > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Enterprise benchmark services stopped$(NC)"
 
 .PHONY: benchmark-clean
 benchmark-clean: ## Stop enterprise benchmark services and cleanup volumes
 	@echo "$(BLUE)🧹 Cleaning up enterprise benchmark environment...$(NC)"
-	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark down -v --remove-orphans > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Enterprise benchmark cleanup completed$(NC)"
 
 .PHONY: benchmark-test
@@ -307,20 +248,6 @@ benchmark-test-only: ## Run enterprise benchmark tests (requires services to be 
 	@echo "$(BLUE)🏢 Running Enterprise-Scale Benchmark Tests...$(NC)"
 	@$(MAKE) --no-print-directory benchmark-run-tests
 
-.PHONY: benchmark-check-ports
-benchmark-check-ports: ## Check if enterprise benchmark ports are available
-	@echo "$(BLUE)🔍 Checking enterprise benchmark ports...$(NC)"
-	@if lsof -i :10002 > /dev/null 2>&1; then \
-		echo "$(RED)❌ Port 10002 is already in use$(NC)"; \
-		echo "$(YELLOW)💡 Stop the service using: lsof -ti:10002 | xargs kill$(NC)"; \
-		exit 1; \
-	fi
-	@if lsof -i :5434 > /dev/null 2>&1; then \
-		echo "$(RED)❌ Port 5434 is already in use$(NC)"; \
-		echo "$(YELLOW)💡 Stop the service using: lsof -ti:5434 | xargs kill$(NC)"; \
-		exit 1; \
-	fi
-	@echo "$(GREEN)✓ Ports 10002 and 5434 are available for enterprise benchmarking$(NC)"
 
 .PHONY: benchmark-wait-ready
 benchmark-wait-ready: ## Wait for enterprise benchmark services to be ready
@@ -356,16 +283,16 @@ benchmark-run-tests: ## Execute the enterprise benchmark test suite
 
 .PHONY: benchmark-logs
 benchmark-logs: ## Show enterprise benchmark service logs
-	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark logs -f
+	@docker compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark logs -f
 
 .PHONY: benchmark-db-shell
 benchmark-db-shell: ## Connect to enterprise benchmark PostgreSQL shell
-	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark exec postgres psql -U excalibase_user -d excalibase_benchmark
+	@docker compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark exec postgres psql -U excalibase_user -d excalibase_benchmark
 
 .PHONY: benchmark-db-stats
 benchmark-db-stats: ## Show enterprise benchmark database statistics
 	@echo "$(BLUE)📊 Enterprise Benchmark Database Statistics$(NC)"
-	@docker-compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark exec postgres psql -U excalibase_user -d excalibase_benchmark -c "
+	@docker compose -f scripts/docker-compose.benchmark.yml -p excalibase-benchmark exec postgres psql -U excalibase_user -d excalibase_benchmark -c "
 		SELECT
 			schemaname,
 			tablename,

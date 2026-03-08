@@ -55,7 +55,10 @@ app:
     role-privileges-ttl-minutes: 30  # Role privileges cache TTL in minutes (default: 30 minutes)
     graphql-ttl-minutes: 30  # GraphQL cache TTL in minutes (default: 30 minutes)
   security:
-    role-based-schema: true  # Enable role-based schema filtering and RLS/CLS support (default: true)
+    role-based-schema: true
+    user-context-enabled: true
+    user-id-extractor-type: header
+    user-id-header: X-User-Id
   cdc:
     enabled: true  # Enable CDC (Change Data Capture) for real-time subscriptions (default: true)
     slot-name: cdc_slot  # Replication slot name (default: cdc_slot)
