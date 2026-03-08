@@ -35,7 +35,6 @@ import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
 import io.github.excalibase.schema.mutator.IDatabaseMutator;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import io.github.excalibase.schema.subscription.IDatabaseSubscription;
-import io.github.excalibase.service.DatabaseRoleService;
 import io.github.excalibase.service.FullSchemaService;
 import io.github.excalibase.service.IRolePrivilegeService;
 import io.github.excalibase.service.SchemaFilterService;
@@ -58,20 +57,18 @@ public class GraphqlConfig {
     private static final Logger log = LoggerFactory.getLogger(GraphqlConfig.class);
     private final AppConfig appConfig;
     private final ServiceLookup serviceLookup;
-    private final DatabaseRoleService databaseRoleService;
     private final FullSchemaService fullSchemaService;
     private final SchemaFilterService schemaFilterService;
     private final Instrumentation securityInstrumentation;
-    
+
     // Cache GraphQL instances per role for performance
     private final TTLCache<String, GraphQL> roleBasedGraphQLCache;
 
-    public GraphqlConfig(AppConfig appConfig, ServiceLookup serviceLookup, DatabaseRoleService databaseRoleService,
+    public GraphqlConfig(AppConfig appConfig, ServiceLookup serviceLookup,
                         FullSchemaService fullSchemaService, SchemaFilterService schemaFilterService,
                         @Qualifier("graphqlSecurityInstrumentation") Instrumentation securityInstrumentation) {
         this.appConfig = appConfig;
         this.serviceLookup = serviceLookup;
-        this.databaseRoleService = databaseRoleService;
         this.fullSchemaService = fullSchemaService;
         this.schemaFilterService = schemaFilterService;
         this.securityInstrumentation = securityInstrumentation;

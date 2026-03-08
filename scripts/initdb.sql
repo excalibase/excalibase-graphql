@@ -578,6 +578,43 @@ SELECT pg_create_logical_replication_slot('cdc_slot', 'pgoutput');
 REFRESH MATERIALIZED VIEW enhanced_types_summary;
 
 -- ====================
+-- RLS (ROW LEVEL SECURITY) TEST SETUP
+-- ====================
+-- Create non-superuser for app connections (required for RLS to be enforced)
+CREATE USER app_user WITH PASSWORD 'password123';
+GRANT CONNECT ON DATABASE hana TO app_user;
+GRANT USAGE ON SCHEMA hana TO app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA hana TO app_user;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA hana TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA hana GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA hana GRANT USAGE, SELECT ON SEQUENCES TO app_user;
+
+-- Table with RLS enabled for testing user-context-based isolation
+CREATE TABLE rls_orders (
+    id        SERIAL PRIMARY KEY,
+    user_id   TEXT NOT NULL,
+    product   TEXT NOT NULL,
+    amount    NUMERIC(10, 2) NOT NULL
+);
+
+-- Enable RLS — non-superusers will be filtered by the policy
+ALTER TABLE rls_orders ENABLE ROW LEVEL SECURITY;
+
+-- Policy: each user only sees their own rows (set via request.user_id session variable)
+CREATE POLICY rls_user_isolation ON rls_orders
+    FOR ALL
+    USING (user_id = current_setting('request.user_id', true));
+
+INSERT INTO rls_orders (user_id, product, amount) VALUES
+    ('alice', 'Widget A', 29.99),
+    ('alice', 'Widget B', 49.99),
+    ('bob',   'Gadget X', 99.99),
+    ('bob',   'Gadget Y', 149.99);
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON rls_orders TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE rls_orders_id_seq TO app_user;
+
+-- ====================
 -- ANALYZE TABLES FOR QUERY OPTIMIZATION
 -- ====================
 ANALYZE users;

@@ -908,13 +908,13 @@ main() {
     
     for test_entry in "${tests[@]}"; do
         IFS=':' read -r test_function test_name <<< "$test_entry"
-        ((total_tests++))
+        total_tests=$((total_tests + 1))
         
         log_benchmark "Running: $test_name"
         
         if $test_function; then
             test_results+=("✅ $test_name")
-            ((passed_tests++))
+            passed_tests=$((passed_tests + 1))
         else
             test_results+=("❌ $test_name")
         fi
