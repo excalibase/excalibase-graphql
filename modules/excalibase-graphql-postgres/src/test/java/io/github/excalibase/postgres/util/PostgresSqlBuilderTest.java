@@ -1,0 +1,166 @@
+package io.github.excalibase.postgres.util;
+
+import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+class PostgresSqlBuilderTest {
+
+    private PostgresSqlBuilder builder;
+
+    @BeforeEach
+    void setUp() {
+        IDatabaseSchemaReflector reflector = mock(IDatabaseSchemaReflector.class);
+        when(reflector.getCustomEnumTypes()).thenReturn(List.of());
+        when(reflector.getCustomCompositeTypes()).thenReturn(List.of());
+        builder = new PostgresSqlBuilder(new PostgresTypeConverter(reflector));
+    }
+
+    // ── OR inside where ──────────────────────────────────────────────────────
+
+    @Test
+    void buildWhereConditions_orInsideWhere_generatesSingleOrClause() {
+        Map<String, Object> where = Map.of(
+            "or", List.of(
+                Map.of("status", Map.of("eq", "PENDING")),
+                Map.of("status", Map.of("eq", "PROCESSING"))
+            )
+        );
+
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        List<String> conditions = builder.buildWhereConditions(
+            Map.of("where", where), params, Map.of("status", "character varying")
+        );
+
+        assertThat(conditions).hasSize(1);
+        assertThat(conditions.get(0)).startsWith("(");
+        assertThat(conditions.get(0)).contains(" OR ");
+        assertThat(conditions.get(0)).contains("\"status\"");
+    }
+
+    @Test
+    void buildWhereConditions_orInsideWhere_bothBranchesPresent() {
+        Map<String, Object> where = Map.of(
+            "or", List.of(
+                Map.of("status", Map.of("eq", "PENDING")),
+                Map.of("status", Map.of("eq", "PROCESSING"))
+            )
+        );
+
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        List<String> conditions = builder.buildWhereConditions(
+            Map.of("where", where), params, Map.of("status", "character varying")
+        );
+
+        // Both PENDING and PROCESSING param values should be bound
+        assertThat(params.getValues()).hasSize(2);
+    }
+
+    @Test
+    void buildWhereConditions_orInsideWhere_withMultipleColumns() {
+        Map<String, Object> where = Map.of(
+            "or", List.of(
+                Map.of("status", Map.of("eq", "PENDING")),
+                Map.of("total_amount", Map.of("gt", 100))
+            )
+        );
+
+        MapSqlParameterSource params = new MapSqlParameterSource();
+        List<String> conditions = builder.buildWhereConditions(
+            Map.of("where", where), params, Map.of("status", "character varying", "total_amount", "numeric")
+        );
+
+        assertThat(conditions).hasSize(1);
+        String clause = conditions.get(0);
+        assertThat(clause).contains(" OR ");
+        assertThat(clause).contains("\"status\"");
+        assertThat(clause).contains("\"total_amount\"");
+    }
+
+    @Test
+    void buildWhereConditions_orInsideWhere_combinedWithOtherFilters() {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+
+        // where: { customer_id: { eq: 1 }, or: [{ status: { eq: PENDING } }, { status: { eq: PROCESSING } }] }
+        Map<String, Object> where = new java.util.HashMap<>();
+        where.put("customer_id", Map.of("eq", 1));
+        where.put("or", List.of(
+            Map.of("status", Map.of("eq", "PENDING")),
+            Map.of("status", Map.of("eq", "PROCESSING"))
+        ));
+
+        List<String> conditions = builder.buildWhereConditions(
+            Map.of("where", where), params,
+            Map.of("customer_id", "integer", "status", "character varying")
+        );
+
+        // One condition for customer_id eq, one for the OR clause
+        assertThat(conditions).hasSize(2);
+        boolean hasOr = conditions.stream().anyMatch(c -> c.contains(" OR "));
+        assertThat(hasOr).isTrue();
+    }
+
+    @Test
+    void buildWhereConditions_emptyOrList_producesNoCondition() {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+
+        List<String> conditions = builder.buildWhereConditions(
+            Map.of("where", Map.of("or", List.of())),
+            params,
+            Map.of("status", "character varying")
+        );
+
+        assertThat(conditions).isEmpty();
+    }
+
+    @Test
+    void buildWhereConditions_topLevelOr_generatesOrClause() {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+
+        List<String> conditions = builder.buildWhereConditions(
+            Map.of("or", List.of(
+                Map.of("status", Map.of("eq", "DELIVERED")),
+                Map.of("status", Map.of("eq", "SHIPPED"))
+            )),
+            params,
+            Map.of("status", "character varying")
+        );
+
+        assertThat(conditions).hasSize(1);
+        assertThat(conditions.get(0)).contains(" OR ");
+    }
+
+    // ── Basic where (regression guard) ──────────────────────────────────────
+
+    @Test
+    void buildWhereConditions_simpleEq_generatesEqualityCondition() {
+        MapSqlParameterSource params = new MapSqlParameterSource();
+
+        List<String> conditions = builder.buildWhereConditions(
+            Map.of("where", Map.of("customer_id", Map.of("eq", 1))),
+            params,
+            Map.of("customer_id", "integer")
+        );
+
+        assertThat(conditions).hasSize(1);
+        assertThat(conditions.get(0)).contains("\"customer_id\"");
+        assertThat(params.getValues()).containsKey("where_customer_id_eq");
+    }
+
+    @Test
+    void buildWhereConditions_noArguments_returnsEmptyList() {
+        List<String> conditions = builder.buildWhereConditions(
+            Map.of(), new MapSqlParameterSource(), Map.of()
+        );
+
+        assertThat(conditions).isEmpty();
+    }
+}

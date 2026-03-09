@@ -305,7 +305,28 @@ public class PostgresSqlBuilder {
             if (filterValue == null) {
                 continue;
             }
-            
+
+            // Handle OR conditions nested inside a where clause: or: [{...}, {...}]
+            if (columnName.equals("or") && filterValue instanceof List) {
+                List<Map<String, Object>> orConditions = (List<Map<String, Object>>) filterValue;
+                if (!orConditions.isEmpty()) {
+                    List<String> orParts = new ArrayList<>();
+                    for (int i = 0; i < orConditions.size(); i++) {
+                        Map<String, Object> orCondition = orConditions.get(i);
+                        List<String> orSubConditions = buildFilterConditions(orCondition, paramSource, columnTypes, paramPrefix + "_or_" + i);
+                        if (!orSubConditions.isEmpty()) {
+                            orParts.add(orSubConditions.size() == 1
+                                ? orSubConditions.get(0)
+                                : "(" + String.join(" AND ", orSubConditions) + ")");
+                        }
+                    }
+                    if (!orParts.isEmpty()) {
+                        conditions.add("(" + String.join(" OR ", orParts) + ")");
+                    }
+                }
+                continue;
+            }
+
             if (!(filterValue instanceof Map)) {
                 continue;
             }

@@ -471,7 +471,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             schemaBuilder.additionalType(orderByInputType);
 
             // Create filter input type for the table
-            GraphQLInputObjectType filterType = createFilterInputTypeForTable(tableName, tableInfo, filterInputTypes);
+            GraphQLInputObjectType filterType = createFilterInputTypeForTable(tableName, tableInfo, filterInputTypes, new java.util.HashMap<>());
             tableFilterTypes.put(tableName, filterType);
             schemaBuilder.additionalType(filterType);
         }
@@ -1449,16 +1449,45 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     }
 
     /**
+     * Builds a filter input type for a custom PostgreSQL enum type.
+     */
+    private GraphQLInputObjectType buildEnumFilterType(String filterTypeName, GraphQLEnumType enumType) {
+        return GraphQLInputObjectType.newInputObject()
+            .name(filterTypeName)
+            .description("Filter for enum " + enumType.getName())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("eq").type(enumType).description("Equal to").build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("neq").type(enumType).description("Not equal to").build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("in").type(new GraphQLList(enumType)).description("In list").build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("notIn").type(new GraphQLList(enumType)).description("Not in list").build())
+            .field(GraphQLInputObjectField.newInputObjectField()
+                .name("isNull").type(GraphQLBoolean).description("Is null").build())
+            .build();
+    }
+
+    /**
      * Creates a filter input type for a specific table
      */
-    private GraphQLInputObjectType createFilterInputTypeForTable(String tableName, TableInfo tableInfo, Map<String, GraphQLInputObjectType> filterInputTypes) {
+    private GraphQLInputObjectType createFilterInputTypeForTable(String tableName, TableInfo tableInfo,
+            Map<String, GraphQLInputObjectType> filterInputTypes, Map<String, GraphQLEnumType> customEnumTypes) {
         GraphQLInputObjectType.Builder filterBuilder = GraphQLInputObjectType.newInputObject()
             .name(tableName + "Filter")
             .description("Filter input for " + tableName);
 
         // Add filter fields for each column
         for (ColumnInfo column : tableInfo.getColumns()) {
-            String filterTypeName = getFilterTypeNameForColumn(column.getType());
+            String filterTypeName;
+            if (column.hasOriginalType() && ColumnTypeConstant.POSTGRES_ENUM.equals(column.getOriginalType())) {
+                // Strip schema prefix (e.g., "hana.order_status" -> "order_status") before mapping to filter name
+                String rawType = column.getType();
+                String unqualifiedType = rawType.contains(".") ? rawType.substring(rawType.lastIndexOf('.') + 1) : rawType;
+                filterTypeName = toGraphQLTypeName(unqualifiedType) + "Filter";
+            } else {
+                filterTypeName = getFilterTypeNameForColumn(column.getType());
+            }
 
             if (filterInputTypes.containsKey(filterTypeName)) {
                 filterBuilder.field(GraphQLInputObjectField.newInputObjectField()
@@ -1752,6 +1781,19 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         log.info("Discovered {} computed field functions across {} tables",
                 computedFields.values().stream().mapToInt(List::size).sum(), computedFields.size());
 
+        // Build enum-specific filter types so columns with custom enum types get proper GraphQL filter fields
+        Map<String, GraphQLInputObjectType> allFilterTypes = new HashMap<>(filterInputTypes);
+        for (Map.Entry<String, GraphQLEnumType> enumEntry : customEnumTypes.entrySet()) {
+            String enumName = enumEntry.getKey();
+            GraphQLEnumType enumType = enumEntry.getValue();
+            String filterTypeName = toGraphQLTypeName(enumName) + "Filter";
+            if (!allFilterTypes.containsKey(filterTypeName)) {
+                GraphQLInputObjectType enumFilter = buildEnumFilterType(filterTypeName, enumType);
+                allFilterTypes.put(filterTypeName, enumFilter);
+                schemaBuilder.additionalType(enumFilter);
+            }
+        }
+
         for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
             String tableName = entry.getKey();
             TableInfo tableInfo = entry.getValue();
@@ -1772,8 +1814,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             GraphQLObjectType connectionType = createConnectionType(tableName, edgeType, pageInfoType);
             schemaBuilder.additionalType(connectionType);
 
-            // Create filter input type for the table
-            GraphQLInputObjectType tableFilterType = createFilterInputTypeForTable(tableName, tableInfo, filterInputTypes);
+            // Create filter input type for the table (with enum filter support)
+            GraphQLInputObjectType tableFilterType = createFilterInputTypeForTable(tableName, tableInfo, allFilterTypes, customEnumTypes);
             tableFilterTypes.put(tableName, tableFilterType);
             schemaBuilder.additionalType(tableFilterType);
 

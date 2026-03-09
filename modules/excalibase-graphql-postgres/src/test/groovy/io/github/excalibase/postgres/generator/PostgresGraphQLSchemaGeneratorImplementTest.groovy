@@ -1229,4 +1229,96 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         contactInputField != null
         contactInputField.type == contactDetailsInputType
     }
+
+    // ── Enum filter type tests (schema-qualified name fix) ───────────────────
+
+    def "should generate enum filter type for schema-qualified enum column"() {
+        given: "a table with a schema-qualified enum column (e.g., hana.order_status)"
+        def column = new ColumnInfo("status", "hana.order_status", false, false)
+        column.setOriginalType("postgres_enum")
+        def tableInfo = new TableInfo("orders", [
+                new ColumnInfo("id", "integer", true, false),
+                column
+        ], [], false)
+        def customEnums = [new CustomEnumInfo("order_status", "hana", ["PENDING", "PROCESSING", "DELIVERED"])]
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
+        mockReflector.getCustomEnumTypes() >> customEnums
+        mockReflector.getCustomCompositeTypes() >> []
+        generator.setSchemaReflector(mockReflector)
+
+        when: "generating schema"
+        def schema = generator.generateSchema(["orders": tableInfo])
+
+        then: "should create OrderStatusFilter (not Hana.orderStatusFilter)"
+        def filterType = schema.getType("OrderStatusFilter") as GraphQLInputObjectType
+        filterType != null
+
+        and: "filter fields use the actual enum type"
+        def enumType = schema.getType("OrderStatus") as GraphQLEnumType
+        enumType != null
+        filterType.getFieldDefinition("eq").type == enumType
+        filterType.getFieldDefinition("neq").type == enumType
+        filterType.getFieldDefinition("in") != null
+        filterType.getFieldDefinition("notIn") != null
+        filterType.getFieldDefinition("isNull") != null
+    }
+
+    def "should generate enum filter type for unqualified enum column"() {
+        given: "a table with an unqualified enum column"
+        def column = new ColumnInfo("priority", "task_priority", false, false)
+        column.setOriginalType("postgres_enum")
+        def tableInfo = new TableInfo("tasks", [
+                new ColumnInfo("id", "integer", true, false),
+                column
+        ], [], false)
+        def customEnums = [new CustomEnumInfo("task_priority", "public", ["LOW", "MEDIUM", "HIGH"])]
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
+        mockReflector.getCustomEnumTypes() >> customEnums
+        mockReflector.getCustomCompositeTypes() >> []
+        generator.setSchemaReflector(mockReflector)
+
+        when: "generating schema"
+        def schema = generator.generateSchema(["tasks": tableInfo])
+
+        then: "TaskPriorityFilter is created"
+        def filterType = schema.getType("TaskPriorityFilter") as GraphQLInputObjectType
+        filterType != null
+
+        and: "eq field uses the actual enum type"
+        def enumType = schema.getType("TaskPriority") as GraphQLEnumType
+        enumType != null
+        filterType.getFieldDefinition("eq").type == enumType
+    }
+
+    def "should use enum filter type for the status column in table filter input"() {
+        given: "a table with schema-qualified enum column"
+        def column = new ColumnInfo("status", "hana.order_status", false, false)
+        column.setOriginalType("postgres_enum")
+        def tableInfo = new TableInfo("orders", [
+                new ColumnInfo("id", "integer", true, false),
+                column
+        ], [], false)
+        def customEnums = [new CustomEnumInfo("order_status", "hana", ["PENDING", "DELIVERED"])]
+
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.discoverComputedFields() >> [:]
+        mockReflector.getCustomEnumTypes() >> customEnums
+        mockReflector.getCustomCompositeTypes() >> []
+        generator.setSchemaReflector(mockReflector)
+
+        when: "generating schema"
+        def schema = generator.generateSchema(["orders": tableInfo])
+
+        then: "the ordersFilter type has a status field typed as OrderStatusFilter"
+        def tableFilter = schema.getType("ordersFilter") as GraphQLInputObjectType
+        tableFilter != null
+        def statusFilterField = tableFilter.getFieldDefinition("status")
+        statusFilterField != null
+        statusFilterField.type instanceof GraphQLInputObjectType
+        (statusFilterField.type as GraphQLInputObjectType).name == "OrderStatusFilter"
+    }
 }

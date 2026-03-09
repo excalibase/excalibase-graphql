@@ -375,6 +375,24 @@ class GraphqlControllerTest extends Specification {
                 WHERE id = 3;
             """)
 
+            // Create a table with a scalar PostgreSQL enum column for enum filter tests
+            statement.execute("""
+                CREATE TABLE IF NOT EXISTS enum_orders (
+                    id SERIAL PRIMARY KEY,
+                    description VARCHAR(100),
+                    status test_status NOT NULL
+                );
+            """)
+            statement.execute("""
+                INSERT INTO enum_orders (description, status) VALUES
+                ('Draft order 1',    'draft'),
+                ('Review order',     'review'),
+                ('Approved order',   'approved'),
+                ('Published order',  'published'),
+                ('Draft order 2',    'draft')
+                ON CONFLICT DO NOTHING;
+            """)
+
             // Test data setup completed
         } catch (Exception e) {
             System.err.println("Error setting up test data: " + e.getMessage())
@@ -2920,5 +2938,110 @@ class GraphqlControllerTest extends Specification {
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath('$.data.orders_aggregate.count').value(4))
                 .andExpect(jsonPath('$.data.orders_aggregate.sum.total_amount').value(1269.49))
+    }
+
+    // ── OR inside where clause (bug fix) ────────────────────────────────────
+
+    def "should handle OR conditions nested inside where clause"() {
+        given: "a GraphQL query with OR nested inside where"
+        def query = '''
+        {
+            orders(where: { or: [
+                { status: { eq: "completed" } },
+                { status: { eq: "pending" } }
+            ] }) {
+                order_id status
+            }
+        }
+        '''
+
+        when: "sending where-or query"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return only orders with completed or pending status"
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath('$.data.orders').isArray())
+                .andExpect(jsonPath('$.data.orders.length()').value(4))
+                .andExpect(jsonPath('$.errors').doesNotExist())
+    }
+
+    def "should handle OR inside where combined with other filter"() {
+        given: "a GraphQL query with AND + OR: customer_id=1 AND (status=completed OR status=pending)"
+        def query = '''
+        {
+            orders(where: {
+                customer_id: { eq: 1 },
+                or: [
+                    { status: { eq: "completed" } },
+                    { status: { eq: "pending" } }
+                ]
+            }) {
+                order_id customer_id status
+            }
+        }
+        '''
+
+        when: "sending combined query"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return only orders for customer 1 matching either status"
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath('$.data.orders').isArray())
+                .andExpect(jsonPath('$.data.orders.length()').value(2))
+                .andExpect(jsonPath('$.errors').doesNotExist())
+    }
+
+    // ── Enum filter tests ────────────────────────────────────────────────────
+
+    def "should filter by exact enum value using eq"() {
+        given: "a GraphQL query filtering a PostgreSQL enum column by exact value (enum values are UPPERCASE in GraphQL schema)"
+        def query = '''
+        {
+            enum_orders(where: { status: { eq: APPROVED } }) {
+                id status
+            }
+        }
+        '''
+
+        when: "sending enum eq filter"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return only approved records"
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.enum_orders').isArray())
+                .andExpect(jsonPath('$.data.enum_orders.length()').value(1))
+                .andExpect(jsonPath('$.data.enum_orders[0].status').value('APPROVED'))
+    }
+
+    def "should filter enum column with OR inside where"() {
+        given: "a GraphQL query with enum OR filter nested inside where"
+        def query = '''
+        {
+            enum_orders(where: { or: [
+                { status: { eq: DRAFT } },
+                { status: { eq: PUBLISHED } }
+            ] }) {
+                id status
+            }
+        }
+        '''
+
+        when: "sending enum OR filter"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query.replaceAll('\n', '\\\\n').replaceAll('"', '\\\\"')}"}"""))
+
+        then: "should return only draft and published records"
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.enum_orders').isArray())
+                .andExpect(jsonPath('$.data.enum_orders.length()').value(3))
     }
 }
