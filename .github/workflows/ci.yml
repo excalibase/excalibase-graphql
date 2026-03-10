@@ -110,7 +110,7 @@ jobs:
       uses: actions/setup-java@v4
       with:
         java-version: '21'
-        distribution: 'graalvm-community'
+        distribution: 'graalvm'
 
     - name: Cache Maven dependencies
       uses: actions/cache@v4
