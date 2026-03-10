@@ -16,6 +16,8 @@
  */
 package io.github.excalibase;
 
+import io.github.excalibase.config.ExcalibaseRuntimeHints;
+import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.admin.SpringApplicationAdminJmxAutoConfiguration;
@@ -25,6 +27,7 @@ import org.springframework.boot.autoconfigure.info.ProjectInfoAutoConfiguration;
 import org.springframework.boot.actuate.autoconfigure.ssl.SslHealthContributorAutoConfiguration;
 import org.springframework.boot.actuate.autoconfigure.endpoint.jmx.JmxEndpointAutoConfiguration;
 
+@ImportRuntimeHints(ExcalibaseRuntimeHints.class)
 @SpringBootApplication(exclude = {
         JmxAutoConfiguration.class,
         SpringApplicationAdminJmxAutoConfiguration.class,

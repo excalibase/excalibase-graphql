@@ -1,0 +1,15 @@
+{
+  "resources": {
+    "includes": [
+      { "pattern": "application\\.yaml" },
+      { "pattern": "application-.*\\.yaml" },
+      { "pattern": "application\\.properties" },
+      { "pattern": "application-.*\\.properties" },
+      { "pattern": ".*\\.sql" },
+      { "pattern": "graphql/.*\\.graphqls" },
+      { "pattern": "graphql/.*\\.graphql" },
+      { "pattern": "META-INF/spring\\.factories" },
+      { "pattern": "META-INF/spring/.*" }
+    ]
+  }
+}
