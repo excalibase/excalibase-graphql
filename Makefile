@@ -82,6 +82,18 @@ build: ## Build the application with Maven
 	@mvn clean package -DskipTests -q
 	@echo "$(GREEN)✓ Build completed$(NC)"
 
+.PHONY: build-native
+build-native: ## Build native image (requires GraalVM JDK 21, ~10 min)
+	@echo "$(BLUE)🔨 Building native image...$(NC)"
+	@mvn -pl modules/excalibase-graphql-api -Pnative native:compile -DskipTests -q
+	@echo "$(GREEN)✓ Native image built: modules/excalibase-graphql-api/target/excalibase-graphql-api$(NC)"
+
+.PHONY: build-native-image
+build-native-image: build-native ## Build native Docker image
+	@echo "$(BLUE)🐳 Building native Docker image...$(NC)"
+	@docker build -f Dockerfile.native -t excalibase/excalibase-graphql:native .
+	@echo "$(GREEN)✓ Native Docker image built$(NC)"
+
 .PHONY: build-image
 build-image: build ## Build Docker image locally for e2e testing
 	@echo "$(BLUE)🐳 Building Docker image...$(NC)"

@@ -45,6 +45,7 @@
     <properties>
         <java.version>21</java.version>
         <springboot.version>3.5.0</springboot.version>
+        <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
         <!-- databases -->
         <postgresql.version>42.7.4</postgresql.version>
         <!--java graphql-->
@@ -181,6 +182,23 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
+    <profiles>
+        <profile>
+            <id>native</id>
+            <build>
+                <pluginManagement>
+                    <plugins>
+                        <plugin>
+                            <groupId>org.graalvm.buildtools</groupId>
+                            <artifactId>native-maven-plugin</artifactId>
+                            <version>${native-maven-plugin.version}</version>
+                        </plugin>
+                    </plugins>
+                </pluginManagement>
+            </build>
+        </profile>
+    </profiles>
 
     <build>
         <plugins>
