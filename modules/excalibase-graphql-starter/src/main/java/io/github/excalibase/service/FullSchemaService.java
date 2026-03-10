@@ -14,20 +14,34 @@ import java.util.Map;
 /**
  * Service to reflect the full database schema once using superuser privileges.
  * Part of the Root + Filter approach for efficient role-based schema generation.
- * 
+ *
  * This service maintains a single "golden" schema that contains all tables and columns,
  * which is then filtered based on role privileges instead of re-reflecting for each role.
+ *
+ * <p>The reflector is resolved lazily via {@link ServiceLookup} so that multiple
+ * DB-specific implementations can coexist on the classpath without ambiguity.</p>
  */
 @Service
 public class FullSchemaService {
     private static final Logger log = LoggerFactory.getLogger(FullSchemaService.class);
-    
-    private final IDatabaseSchemaReflector schemaReflector;
+
+    private final ServiceLookup serviceLookup;
+    private final AppConfig appConfig;
     private final TTLCache<String, Map<String, TableInfo>> schemaCache;
-    
-    public FullSchemaService(IDatabaseSchemaReflector schemaReflector, AppConfig appConfig) {
-        this.schemaReflector = schemaReflector;
+    private IDatabaseSchemaReflector schemaReflector;
+
+    public FullSchemaService(ServiceLookup serviceLookup, AppConfig appConfig) {
+        this.serviceLookup = serviceLookup;
+        this.appConfig = appConfig;
         this.schemaCache = new TTLCache<>(Duration.ofMinutes(appConfig.getCache().getSchemaTtlMinutes()));
+    }
+
+    private IDatabaseSchemaReflector getReflector() {
+        if (schemaReflector == null) {
+            schemaReflector = serviceLookup.forBean(IDatabaseSchemaReflector.class,
+                    appConfig.getDatabaseType().getName());
+        }
+        return schemaReflector;
     }
 
     /**
@@ -40,7 +54,7 @@ public class FullSchemaService {
         return schemaCache.computeIfAbsent("full_schema", key -> {
             log.info("Reflecting full database schema...");
             try {
-                Map<String, TableInfo> fullSchema = schemaReflector.reflectSchema();
+                Map<String, TableInfo> fullSchema = getReflector().reflectSchema();
                 log.debug("Schema reflection completed: {} tables/views", fullSchema.size());
                 return fullSchema;
             } catch (Exception e) {
