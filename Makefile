@@ -112,7 +112,7 @@ mysql-clean: ## Stop MySQL services and cleanup volumes
 .PHONY: mysql-test
 mysql-test: ## Run MySQL e2e tests (requires services running)
 	@echo "$(BLUE)🧪 Running MySQL E2E tests...$(NC)"
-	@./scripts/e2e-mysql.sh || (echo "$(RED)❌ MySQL tests failed$(NC)" && exit 1)
+	@cd e2e && npm install --silent && npm run test:mysql || (echo "$(RED)❌ MySQL tests failed$(NC)" && exit 1)
 
 # Benchmark targets (postgres and mysql, jvm and native)
 .PHONY: benchmark-postgres-jvm
@@ -234,7 +234,7 @@ wait-ready: ## Wait for services to be ready
 
 .PHONY: run-tests
 run-tests: ## Execute the actual test suite
-	@./scripts/e2e-test.sh || (echo "$(RED)❌ Tests failed$(NC)" && exit 1)
+	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Tests failed$(NC)" && exit 1)
 
 # Database operations (unified schema with demo + test data)
 .PHONY: db-shell
@@ -375,4 +375,4 @@ benchmark-db-stats: ## Show enterprise benchmark database statistics
 		ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
 
 # Force targets (ignore file existence)
-.PHONY: docker-compose.yml scripts/initdb.sql scripts/e2e-test.sh scripts/docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh
+.PHONY: docker-compose.yml scripts/initdb.sql scripts/docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh

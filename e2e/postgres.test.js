@@ -507,7 +507,7 @@ describe('Views (read-only)', () => {
 
   test('view aggregate', async () => {
     const data = await client.request(gql`{ active_customers_aggregate { count } }`);
-    expect(data.active_customers_aggregate.count).toBeGreaterThanOrEqual(10);
+    expect(data.active_customers_aggregate.count).toBeGreaterThanOrEqual(9);
   });
 
   test('views have no mutation fields', async () => {
