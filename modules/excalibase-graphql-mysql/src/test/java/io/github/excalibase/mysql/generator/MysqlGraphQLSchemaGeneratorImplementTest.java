@@ -136,6 +136,19 @@ class MysqlGraphQLSchemaGeneratorImplementTest {
     }
 
     @Test
+    void shouldGenerateCreateWithRelationsMutation() {
+        Map<String, TableInfo> tables = new HashMap<>();
+        tables.put("users", buildTable("users",
+                col("id", "bigint", true, false),
+                col("name", "varchar", false, false)));
+
+        GraphQLSchema schema = generator.generateSchema(tables, List.of(), List.of());
+
+        GraphQLObjectType mutationType = schema.getMutationType();
+        assertThat(mutationType.getFieldDefinition("createUsersWithRelations")).isNotNull();
+    }
+
+    @Test
     void shouldHandleMultipleTables() {
         Map<String, TableInfo> tables = new HashMap<>();
         tables.put("users", buildTable("users",

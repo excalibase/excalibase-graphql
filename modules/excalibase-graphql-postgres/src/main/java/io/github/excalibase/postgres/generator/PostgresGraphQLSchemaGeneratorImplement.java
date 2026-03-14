@@ -1001,10 +1001,20 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     }
 
     private String capitalize(String str) {
-        if (str == null || str.isEmpty()) {
-            return str;
+        if (str == null || str.isEmpty()) return str;
+        StringBuilder sb = new StringBuilder();
+        boolean nextUpper = true;
+        for (char c : str.toCharArray()) {
+            if (c == '_') {
+                nextUpper = true;
+            } else if (nextUpper) {
+                sb.append(Character.toUpperCase(c));
+                nextUpper = false;
+            } else {
+                sb.append(c);
+            }
         }
-        return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
+        return sb.toString();
     }
 
     private GraphQLOutputType mapDatabaseTypeToGraphQLType(String dbType) {
