@@ -5,6 +5,7 @@ import graphql.schema.DataFetchingEnvironment;
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
+import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
@@ -19,6 +20,7 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * MySQL implementation of {@link IDatabaseDataFetcher}.
@@ -157,10 +159,17 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
 
             StringBuilder sql = new StringBuilder("SELECT COUNT(*) AS cnt");
             if (tableInfo != null) {
-                tableInfo.getColumns().stream()
-                        .filter(col -> isNumeric(col.getType()))
-                        .findFirst()
-                        .ifPresent(col -> {
+                // Prefer decimal/float columns first — more meaningful than integer PKs.
+                // Fall back to non-PK integer columns if no decimal column exists.
+                Optional<ColumnInfo> numericCol = tableInfo.getColumns().stream()
+                        .filter(col -> isDecimalOrFloat(col.getType()))
+                        .findFirst();
+                if (numericCol.isEmpty()) {
+                    numericCol = tableInfo.getColumns().stream()
+                            .filter(col -> isNumeric(col.getType()) && !col.isPrimaryKey())
+                            .findFirst();
+                }
+                numericCol.ifPresent(col -> {
                             String q = "`" + col.getName() + "`";
                             sql.append(", SUM(").append(q).append(") AS sum_val");
                             sql.append(", AVG(").append(q).append(") AS avg_val");
@@ -192,27 +201,69 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
 
     // ─── SQL helpers ──────────────────────────────────────────────────────────
 
+    @SuppressWarnings("unchecked")
     private void applyWhere(StringBuilder sql, List<Object> params, DataFetchingEnvironment env) {
         Object whereArg = env.getArgument("where");
-        if (whereArg instanceof Map<?, ?> whereMap && !whereMap.isEmpty()) {
-            sql.append(" WHERE");
-            boolean first = true;
-            for (Map.Entry<?, ?> entry : whereMap.entrySet()) {
-                if (!first) sql.append(" AND");
-                first = false;
-                String col = (String) entry.getKey();
-                Object condObj = entry.getValue();
-                if (condObj instanceof Map<?, ?> cond) {
-                    Object eq = cond.get("eq");
-                    if (eq != null) {
-                        sql.append(" `").append(col).append("` = ?");
-                        params.add(eq);
-                    }
-                } else {
-                    sql.append(" `").append(col).append("` = ?");
-                    params.add(condObj);
-                }
+        if (!(whereArg instanceof Map<?, ?> whereMap) || whereMap.isEmpty()) return;
+
+        List<String> clauses = new ArrayList<>();
+        for (Map.Entry<?, ?> entry : whereMap.entrySet()) {
+            String col = "`" + entry.getKey() + "`";
+            Object condObj = entry.getValue();
+
+            if (condObj instanceof Map<?, ?> cond) {
+                buildColumnClauses(col, (Map<String, Object>) cond, clauses, params);
+            } else if (condObj != null) {
+                clauses.add(col + " = ?");
+                params.add(condObj);
             }
+        }
+
+        if (!clauses.isEmpty()) {
+            sql.append(" WHERE ").append(String.join(" AND ", clauses));
+        }
+    }
+
+    private void buildColumnClauses(String col, Map<String, Object> cond,
+                                     List<String> clauses, List<Object> params) {
+        Object eq       = cond.get("eq");
+        Object neq      = cond.get("neq");
+        Object gt       = cond.get("gt");
+        Object gte      = cond.get("gte");
+        Object lt       = cond.get("lt");
+        Object lte      = cond.get("lte");
+        Object contains = cond.get("contains");
+        Object startsWith = cond.get("startsWith");
+        Object endsWith   = cond.get("endsWith");
+        Object like     = cond.get("like");
+        Object isNull   = cond.get("isNull");
+        Object isNotNull = cond.get("isNotNull");
+        Object in       = cond.get("in");
+        Object notIn    = cond.get("notIn");
+
+        if (eq != null)         { clauses.add(col + " = ?");    params.add(eq); }
+        if (neq != null)        { clauses.add(col + " != ?");   params.add(neq); }
+        if (gt != null)         { clauses.add(col + " > ?");    params.add(gt); }
+        if (gte != null)        { clauses.add(col + " >= ?");   params.add(gte); }
+        if (lt != null)         { clauses.add(col + " < ?");    params.add(lt); }
+        if (lte != null)        { clauses.add(col + " <= ?");   params.add(lte); }
+        if (contains != null)   { clauses.add(col + " LIKE ?"); params.add("%" + contains + "%"); }
+        if (startsWith != null) { clauses.add(col + " LIKE ?"); params.add(startsWith + "%"); }
+        if (endsWith != null)   { clauses.add(col + " LIKE ?"); params.add("%" + endsWith); }
+        if (like != null)       { clauses.add(col + " LIKE ?"); params.add(like); }
+
+        if (Boolean.TRUE.equals(isNull))    clauses.add(col + " IS NULL");
+        if (Boolean.TRUE.equals(isNotNull)) clauses.add(col + " IS NOT NULL");
+
+        if (in instanceof List<?> inList && !inList.isEmpty()) {
+            String placeholders = String.join(", ", inList.stream().map(x -> "?").toList());
+            clauses.add(col + " IN (" + placeholders + ")");
+            params.addAll(inList);
+        }
+        if (notIn instanceof List<?> notInList && !notInList.isEmpty()) {
+            String placeholders = String.join(", ", notInList.stream().map(x -> "?").toList());
+            clauses.add(col + " NOT IN (" + placeholders + ")");
+            params.addAll(notInList);
         }
     }
 
@@ -247,6 +298,12 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         String t = type.toLowerCase();
         return t.contains("int") || t.contains("decimal") || t.contains("float")
                 || t.contains("double") || t.contains("numeric") || t.contains("real");
+    }
+
+    private boolean isDecimalOrFloat(String type) {
+        String t = type.toLowerCase();
+        return t.contains("decimal") || t.contains("float") || t.contains("double")
+                || t.contains("numeric") || t.contains("real");
     }
 
     private String encodeCursor(long position) {

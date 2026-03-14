@@ -205,6 +205,24 @@ class MysqlDatabaseDataFetcherImplementTest {
         assertThat(((Number) result.get("count")).longValue()).isEqualTo(3L);
     }
 
+    @Test
+    void shouldComputeAggregateOnDecimalColumnNotPrimaryKey() throws Exception {
+        // products: id(bigint PK) = 1,2,3  price(decimal) = 9.99, 19.99, 4.99
+        // sum of IDs = 6  |  sum of prices = 34.97
+        // If aggregate picks the PK, sum = 6. If it picks price, sum ≈ 34.97.
+        DataFetcher<Map<String, Object>> df = fetcher.buildAggregateDataFetcher("products");
+        DataFetchingEnvironment env = mockEnv(Map.of());
+
+        Map<String, Object> result = df.get(env);
+
+        double sum = ((Number) result.get("sum")).doubleValue();
+        double avg = ((Number) result.get("avg")).doubleValue();
+
+        // price sum = 9.99+19.99+4.99 = 34.97, NOT id sum = 6
+        assertThat(sum).isGreaterThan(6.0);
+        assertThat(avg).isGreaterThan(2.0);
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
