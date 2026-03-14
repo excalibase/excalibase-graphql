@@ -58,14 +58,15 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
 
         Map<String, GraphQLObjectType> tableTypes = new HashMap<>();
 
-        // ── First pass: create bare object types without FK fields ──────────
+        // ── Build object types with FK relationship fields using type references ─
+        // GraphQLTypeReference allows forward/circular references — resolved at schema build time.
         for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
             String tableName = entry.getKey();
             TableInfo tableInfo = entry.getValue();
 
-            GraphQLObjectType.Builder typeBuilder = GraphQLObjectType.newObject()
-                    .name(tableName);
+            GraphQLObjectType.Builder typeBuilder = GraphQLObjectType.newObject().name(tableName);
 
+            // Scalar columns
             for (ColumnInfo col : tableInfo.getColumns()) {
                 GraphQLOutputType gqlType = mapType(col.getType());
                 if (!col.isNullable() && col.isPrimaryKey()) {
@@ -76,6 +77,34 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                         .type(gqlType)
                         .build());
             }
+
+            // Forward FK fields (e.g. orders.customer → Customer)
+            for (ForeignKeyInfo fk : tableInfo.getForeignKeys()) {
+                if (tables.containsKey(fk.getReferencedTable())) {
+                    typeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                            .name(fk.getReferencedTable().toLowerCase())
+                            .type(new GraphQLTypeReference(fk.getReferencedTable()))
+                            .build());
+                }
+            }
+
+            // Reverse FK fields (e.g. customer.orders → [orders])
+            for (Map.Entry<String, TableInfo> otherEntry : tables.entrySet()) {
+                String otherTableName = otherEntry.getKey();
+                TableInfo otherTableInfo = otherEntry.getValue();
+                if (otherTableName.equals(tableName) || otherTableInfo.isView()) continue;
+                for (ForeignKeyInfo otherFk : otherTableInfo.getForeignKeys()) {
+                    if (otherFk.getReferencedTable().equalsIgnoreCase(tableName)) {
+                        String reverseFieldName = otherTableName.toLowerCase();
+                        if (!reverseFieldName.endsWith("s")) reverseFieldName += "s";
+                        typeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
+                                .name(reverseFieldName)
+                                .type(new GraphQLList(new GraphQLTypeReference(otherTableName)))
+                                .build());
+                    }
+                }
+            }
+
             tableTypes.put(tableName, typeBuilder.build());
         }
 
@@ -109,17 +138,20 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
             queryBuilder.field(buildConnectionQueryField(tableName, connectionTypes.get(tableName)));
             queryBuilder.field(buildAggregateQueryField(tableName, tableInfo));
 
-            // ── Mutation fields ──────────────────────────────────────────────
-            GraphQLInputObjectType createInput = buildCreateInput(tableName, tableInfo);
-            GraphQLInputObjectType updateInput = buildUpdateInput(tableName, tableInfo);
-            if (createInput != null) {
-                additionalTypes.add(createInput);
-                mutationBuilder.field(buildCreateMutationField(tableName, tableType, createInput));
-                mutationBuilder.field(buildBulkCreateMutationField(tableName, tableType, createInput));
+            // ── Mutation fields (skip views — read-only) ─────────────────────
+            if (!tableInfo.isView()) {
+                GraphQLInputObjectType createInput = buildCreateInput(tableName, tableInfo);
+                GraphQLInputObjectType updateInput = buildUpdateInput(tableName, tableInfo);
+                if (createInput != null) {
+                    additionalTypes.add(createInput);
+                    mutationBuilder.field(buildCreateMutationField(tableName, tableType, createInput));
+                    mutationBuilder.field(buildBulkCreateMutationField(tableName, tableType, createInput));
+                    mutationBuilder.field(buildCreateWithRelationsMutationField(tableName, tableType, createInput));
+                }
+                additionalTypes.add(updateInput);
+                mutationBuilder.field(buildUpdateMutationField(tableName, tableType, updateInput));
+                mutationBuilder.field(buildDeleteMutationField(tableName, tableType));
             }
-            additionalTypes.add(updateInput);
-            mutationBuilder.field(buildUpdateMutationField(tableName, tableType, updateInput));
-            mutationBuilder.field(buildDeleteMutationField(tableName, tableType));
         }
 
         additionalTypes.addAll(edgeTypes.values());
@@ -171,20 +203,47 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
 
     // ─── Query field builders ────────────────────────────────────────────────
 
-    /** Shared single-value filter inputs (one per scalar type). */
+    /** Shared filter input types (one per scalar type). */
     private static final GraphQLInputObjectType STRING_FILTER_INPUT = GraphQLInputObjectType.newInputObject()
             .name("StringFilterInput")
             .field(f -> f.name("eq").type(GraphQLString))
+            .field(f -> f.name("neq").type(GraphQLString))
+            .field(f -> f.name("contains").type(GraphQLString))
+            .field(f -> f.name("startsWith").type(GraphQLString))
+            .field(f -> f.name("endsWith").type(GraphQLString))
+            .field(f -> f.name("like").type(GraphQLString))
+            .field(f -> f.name("isNull").type(GraphQLBoolean))
+            .field(f -> f.name("isNotNull").type(GraphQLBoolean))
+            .field(f -> f.name("in").type(new GraphQLList(GraphQLString)))
+            .field(f -> f.name("notIn").type(new GraphQLList(GraphQLString)))
             .build();
 
     private static final GraphQLInputObjectType INT_FILTER_INPUT = GraphQLInputObjectType.newInputObject()
             .name("IntFilterInput")
             .field(f -> f.name("eq").type(GraphQLInt))
+            .field(f -> f.name("neq").type(GraphQLInt))
+            .field(f -> f.name("gt").type(GraphQLInt))
+            .field(f -> f.name("gte").type(GraphQLInt))
+            .field(f -> f.name("lt").type(GraphQLInt))
+            .field(f -> f.name("lte").type(GraphQLInt))
+            .field(f -> f.name("isNull").type(GraphQLBoolean))
+            .field(f -> f.name("isNotNull").type(GraphQLBoolean))
+            .field(f -> f.name("in").type(new GraphQLList(GraphQLInt)))
+            .field(f -> f.name("notIn").type(new GraphQLList(GraphQLInt)))
             .build();
 
     private static final GraphQLInputObjectType FLOAT_FILTER_INPUT = GraphQLInputObjectType.newInputObject()
             .name("FloatFilterInput")
             .field(f -> f.name("eq").type(GraphQLFloat))
+            .field(f -> f.name("neq").type(GraphQLFloat))
+            .field(f -> f.name("gt").type(GraphQLFloat))
+            .field(f -> f.name("gte").type(GraphQLFloat))
+            .field(f -> f.name("lt").type(GraphQLFloat))
+            .field(f -> f.name("lte").type(GraphQLFloat))
+            .field(f -> f.name("isNull").type(GraphQLBoolean))
+            .field(f -> f.name("isNotNull").type(GraphQLBoolean))
+            .field(f -> f.name("in").type(new GraphQLList(GraphQLFloat)))
+            .field(f -> f.name("notIn").type(new GraphQLList(GraphQLFloat)))
             .build();
 
     private GraphQLInputObjectType buildWhereInput(String tableName, TableInfo tableInfo) {
@@ -314,6 +373,16 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                 .type(new GraphQLList(tableType))
                 .argument(GraphQLArgument.newArgument().name("input")
                         .type(new GraphQLList(createInput)).build())
+                .build();
+    }
+
+    private GraphQLFieldDefinition buildCreateWithRelationsMutationField(String tableName,
+                                                                          GraphQLObjectType tableType,
+                                                                          GraphQLInputObjectType createInput) {
+        return GraphQLFieldDefinition.newFieldDefinition()
+                .name("create" + capitalize(tableName) + "WithRelations")
+                .type(tableType)
+                .argument(GraphQLArgument.newArgument().name("input").type(createInput).build())
                 .build();
     }
 
