@@ -139,6 +139,19 @@ INSERT INTO product (name, price, stock, active) VALUES
 ('Deluxe Pack', 199.99,   3, 0),
 ('Starter Pack', 4.99,  500, 1);
 
+-- ====================
+-- STORED PROCEDURES
+-- ====================
+
+DROP PROCEDURE IF EXISTS get_customer_order_count;
+CREATE PROCEDURE get_customer_order_count(
+    IN  p_customer_id BIGINT,
+    OUT p_count       INT
+)
+BEGIN
+    SELECT COUNT(*) INTO p_count FROM orders WHERE customer_id = p_customer_id;
+END;
+
 INSERT INTO task (title, status, priority, customer_id) VALUES
 ('Setup account',     'done',        'high',     1),
 ('Review order',      'in_progress', 'medium',   2),

@@ -6,6 +6,7 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLType;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
+import io.github.excalibase.model.StoredProcedureInfo;
 import io.github.excalibase.model.TableInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -163,5 +164,65 @@ class MysqlGraphQLSchemaGeneratorImplementTest {
         GraphQLObjectType queryType = schema.getQueryType();
         assertThat(queryType.getFieldDefinition("users")).isNotNull();
         assertThat(queryType.getFieldDefinition("posts")).isNotNull();
+    }
+
+    @Test
+    void shouldGenerateProcedureMutationInSchema() {
+        Map<String, TableInfo> tables = new HashMap<>();
+        tables.put("orders", buildTable("orders",
+                col("order_id", "bigint", true, false),
+                col("customer_id", "bigint", false, false)));
+
+        StoredProcedureInfo.ProcedureParam inParam =
+                new StoredProcedureInfo.ProcedureParam("p_customer_id", "bigint", "IN", 1);
+        StoredProcedureInfo.ProcedureParam outParam =
+                new StoredProcedureInfo.ProcedureParam("p_count", "int", "OUT", 2);
+        List<StoredProcedureInfo> procedures = List.of(
+                new StoredProcedureInfo("get_customer_order_count", "testdb",
+                        List.of(inParam, outParam))
+        );
+
+        GraphQLSchema schema = generator.generateSchema(tables, List.of(), List.of(), procedures);
+
+        GraphQLObjectType mutationType = schema.getMutationType();
+        assertThat(mutationType).isNotNull();
+        assertThat(mutationType.getFieldDefinition("callGetCustomerOrderCount")).isNotNull();
+    }
+
+    @Test
+    void shouldGenerateProcedureMutationWithInParamsAsArguments() {
+        Map<String, TableInfo> tables = new HashMap<>();
+        tables.put("orders", buildTable("orders",
+                col("order_id", "bigint", true, false),
+                col("total", "decimal", false, true)));
+
+        StoredProcedureInfo.ProcedureParam inParam =
+                new StoredProcedureInfo.ProcedureParam("p_customer_id", "bigint", "IN", 1);
+        List<StoredProcedureInfo> procedures = List.of(
+                new StoredProcedureInfo("get_customer_order_count", "testdb", List.of(inParam))
+        );
+
+        GraphQLSchema schema = generator.generateSchema(tables, List.of(), List.of(), procedures);
+
+        GraphQLFieldDefinition procField = schema.getMutationType()
+                .getFieldDefinition("callGetCustomerOrderCount");
+        assertThat(procField).isNotNull();
+        assertThat(procField.getArgument("p_customer_id")).isNotNull();
+    }
+
+    @Test
+    void shouldHandleNoProcedures() {
+        Map<String, TableInfo> tables = new HashMap<>();
+        tables.put("users", buildTable("users",
+                col("id", "bigint", true, false),
+                col("name", "varchar", false, false)));
+
+        GraphQLSchema schema = generator.generateSchema(tables, List.of(), List.of(), List.of());
+
+        GraphQLObjectType mutationType = schema.getMutationType();
+        assertThat(mutationType).isNotNull();
+        // No callXxx mutation fields
+        assertThat(mutationType.getFieldDefinitions().stream()
+                .noneMatch(f -> f.getName().startsWith("call"))).isTrue();
     }
 }

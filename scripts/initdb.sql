@@ -471,6 +471,20 @@ INSERT INTO child_table (child_id, parent_id1, parent_id2, description) VALUES
 ON CONFLICT DO NOTHING;
 
 -- ====================
+-- STORED PROCEDURES
+-- ====================
+
+CREATE OR REPLACE PROCEDURE get_customer_order_count(
+    IN  p_customer_id BIGINT,
+    OUT p_count       BIGINT
+)
+LANGUAGE plpgsql AS $$
+BEGIN
+    SELECT COUNT(*) INTO p_count FROM orders WHERE customer_id = p_customer_id;
+END;
+$$;
+
+-- ====================
 -- VIEWS AND MATERIALIZED VIEWS
 -- ====================
 

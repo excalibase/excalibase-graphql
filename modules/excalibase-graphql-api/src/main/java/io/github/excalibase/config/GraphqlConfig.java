@@ -44,6 +44,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import io.github.excalibase.model.StoredProcedureInfo;
+
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -278,6 +280,15 @@ public class GraphqlConfig {
             codeRegistry.dataFetcher(
                     FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, tableName.toLowerCase() + "_changes"),
                     subscriptionResolver.buildTableSubscriptionResolver(tableName)
+            );
+        }
+
+        // Wire stored procedure mutation resolvers
+        List<StoredProcedureInfo> procedures = schemaReflector.discoverStoredProcedures();
+        for (StoredProcedureInfo proc : procedures) {
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates("Mutation", "call" + toUpperCamelCase(proc.getName())),
+                    mutationResolver.buildProcedureMutationResolver(proc)
             );
         }
 

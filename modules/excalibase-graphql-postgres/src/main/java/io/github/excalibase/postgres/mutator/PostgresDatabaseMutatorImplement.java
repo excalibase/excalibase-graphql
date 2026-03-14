@@ -25,6 +25,7 @@ import io.github.excalibase.exception.DataMutationException;
 import io.github.excalibase.postgres.constant.PostgresErrorConstant;
 import io.github.excalibase.exception.NotFoundException;
 import io.github.excalibase.model.ForeignKeyInfo;
+import io.github.excalibase.model.StoredProcedureInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.postgres.util.PostgresArrayParameterHandler;
 import io.github.excalibase.postgres.util.PostgresSchemaHelper;
@@ -40,6 +41,8 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.sql.CallableStatement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -533,18 +536,77 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     private MapSqlParameterSource createBulkParameterSource(String tableName, Set<String> allFields, List<Map<String, Object>> inputs) {
         MapSqlParameterSource paramSource = new MapSqlParameterSource();
         Map<String, String> columnTypes = getSchemaHelper().getColumnTypes(tableName);
-        
+
         for (int i = 0; i < inputs.size(); i++) {
             Map<String, Object> input = inputs.get(i);
             for (String field : allFields) {
                 String paramName = field + "_" + i;
                 Object value = input.getOrDefault(field, null);
                 String columnType = columnTypes.getOrDefault(field, "").toLowerCase();
-                
+
                 getArrayParameterHandler().addTypedParameter(paramSource, paramName, value, columnType);
             }
         }
-        
+
         return paramSource;
+    }
+
+    @Override
+    public DataFetcher<Object> buildProcedureMutationResolver(StoredProcedureInfo procedure) {
+        return env -> {
+            List<StoredProcedureInfo.ProcedureParam> params = procedure.getParameters();
+            List<StoredProcedureInfo.ProcedureParam> outParams = params.stream()
+                    .filter(StoredProcedureInfo.ProcedureParam::isOut)
+                    .toList();
+
+            String placeholders = params.isEmpty() ? "" :
+                    "?,".repeat(params.size()).substring(0, params.size() * 2 - 1);
+            String sql = "CALL " + procedure.getName() + "(" + placeholders + ")";
+
+            return jdbcTemplate.execute((java.sql.Connection con) -> {
+                try (CallableStatement cs = con.prepareCall(sql)) {
+                    for (StoredProcedureInfo.ProcedureParam p : params) {
+                        int idx = p.getPosition();
+                        if (p.isIn()) {
+                            Object val = env.getArguments().get(p.getName());
+                            cs.setObject(idx, val);
+                        }
+                        if (p.isOut()) {
+                            cs.registerOutParameter(idx, sqlTypeFor(p.getDataType()));
+                        }
+                    }
+                    cs.execute();
+
+                    if (outParams.isEmpty()) {
+                        Map<String, Object> result = new HashMap<>();
+                        result.put("success", true);
+                        return result;
+                    }
+
+                    Map<String, Object> result = new HashMap<>();
+                    for (StoredProcedureInfo.ProcedureParam p : outParams) {
+                        result.put(p.getName(), cs.getObject(p.getPosition()));
+                    }
+                    return result;
+                }
+            });
+        };
+    }
+
+    private int sqlTypeFor(String dataType) {
+        if (dataType == null) return Types.OTHER;
+        return switch (dataType.toLowerCase()) {
+            case "integer", "int", "int4", "int2", "smallint" -> Types.INTEGER;
+            case "bigint", "int8" -> Types.BIGINT;
+            case "numeric", "decimal" -> Types.NUMERIC;
+            case "real", "float4" -> Types.FLOAT;
+            case "double precision", "float8" -> Types.DOUBLE;
+            case "varchar", "character varying", "char", "text" -> Types.VARCHAR;
+            case "date" -> Types.DATE;
+            case "timestamp", "timestamp without time zone" -> Types.TIMESTAMP;
+            case "timestamptz", "timestamp with time zone" -> Types.TIMESTAMP_WITH_TIMEZONE;
+            case "boolean", "bool" -> Types.BOOLEAN;
+            default -> Types.OTHER;
+        };
     }
 }

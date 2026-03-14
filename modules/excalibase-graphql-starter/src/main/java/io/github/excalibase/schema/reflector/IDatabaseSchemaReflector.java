@@ -20,6 +20,7 @@ import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.ComputedFieldFunction;
+import io.github.excalibase.model.StoredProcedureInfo;
 
 import java.util.List;
 import java.util.Map;
@@ -112,4 +113,23 @@ public interface IDatabaseSchemaReflector {
      * @return A map where keys are table names and values are lists of computed field functions
      */
     Map<String, List<ComputedFieldFunction>> discoverComputedFields(String schema);
+
+    /**
+     * Discovers stored procedures in the default schema.
+     *
+     * @return list of stored procedures with their parameters
+     */
+    default List<StoredProcedureInfo> discoverStoredProcedures() {
+        return List.of();
+    }
+
+    /**
+     * Discovers stored procedures in the given schema.
+     *
+     * @param schema the schema to discover procedures in
+     * @return list of stored procedures with their parameters
+     */
+    default List<StoredProcedureInfo> discoverStoredProcedures(String schema) {
+        return List.of();
+    }
 }

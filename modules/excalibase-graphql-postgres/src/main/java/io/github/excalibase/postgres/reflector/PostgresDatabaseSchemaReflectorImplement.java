@@ -13,6 +13,7 @@ import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.CompositeTypeAttribute;
 import io.github.excalibase.model.ComputedFieldFunction;
+import io.github.excalibase.model.StoredProcedureInfo;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -636,6 +637,40 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         }
 
         return computedFields;
+    }
+
+    @Override
+    public List<StoredProcedureInfo> discoverStoredProcedures() {
+        return discoverStoredProcedures(allowedSchema);
+    }
+
+    @Override
+    public List<StoredProcedureInfo> discoverStoredProcedures(String schemaName) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                PostgresSqlConstant.GET_PROCEDURES, schemaName);
+
+        List<StoredProcedureInfo> procedures = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            String procName = (String) row.get("routine_name");
+            String specificName = (String) row.get("specific_name");
+
+            List<Map<String, Object>> paramRows = jdbcTemplate.queryForList(
+                    PostgresSqlConstant.GET_PROCEDURE_PARAMS, schemaName, specificName);
+
+            List<StoredProcedureInfo.ProcedureParam> params = new ArrayList<>();
+            for (Map<String, Object> p : paramRows) {
+                String mode = (String) p.get("parameter_mode");
+                if (mode == null) continue;
+                params.add(new StoredProcedureInfo.ProcedureParam(
+                        (String) p.get("parameter_name"),
+                        (String) p.get("data_type"),
+                        mode.toUpperCase(),
+                        ((Number) p.get("ordinal_position")).intValue()
+                ));
+            }
+            procedures.add(new StoredProcedureInfo(procName, schemaName, params));
+        }
+        return procedures;
     }
 
     /**

@@ -17,6 +17,7 @@
 package io.github.excalibase.schema.mutator;
 
 import graphql.schema.DataFetcher;
+import io.github.excalibase.model.StoredProcedureInfo;
 
 import java.util.List;
 import java.util.Map;
@@ -112,4 +113,19 @@ public interface IDatabaseMutator {
      * @throws io.github.excalibase.exception.DataMutationException if the creation with relationships fails
      */
     DataFetcher<Map<String, Object>> buildCreateWithRelationshipsMutationResolver(String tableName);
+
+    /**
+     * Creates a DataFetcher that executes a stored procedure.
+     *
+     * <p>IN/INOUT parameters are taken from GraphQL arguments.
+     * OUT/INOUT parameters are returned in the result map.
+     * Procedures with no OUT params return {@code {"success": true}}.</p>
+     *
+     * @param procedure metadata describing the procedure and its parameters
+     * @return A DataFetcher that calls the procedure and returns a result map
+     */
+    default DataFetcher<Object> buildProcedureMutationResolver(StoredProcedureInfo procedure) {
+        throw new UnsupportedOperationException(
+                "Stored procedures not supported for this backend");
+    }
 } 

@@ -500,3 +500,23 @@ describe('Views (read-only)', () => {
     expect(viewMutations.length).toBe(0);
   });
 });
+
+// ─── Stored Procedures ────────────────────────────────────────────────────────
+
+describe('Stored Procedures', () => {
+  test('procedure mutation appears in schema', async () => {
+    const data = await client.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
+    const mutationNames = data.__type.fields.map(f => f.name);
+    expect(mutationNames).toContain('callGetCustomerOrderCount');
+  });
+
+  test('call procedure with IN param returns OUT param', async () => {
+    const data = await client.request(gql`
+      mutation { callGetCustomerOrderCount(p_customer_id: 1) }
+    `);
+    expect(data.callGetCustomerOrderCount).toBeDefined();
+    const result = JSON.parse(JSON.stringify(data.callGetCustomerOrderCount));
+    expect(result).toHaveProperty('p_count');
+    expect(Number(result.p_count)).toBeGreaterThanOrEqual(0);
+  });
+});
