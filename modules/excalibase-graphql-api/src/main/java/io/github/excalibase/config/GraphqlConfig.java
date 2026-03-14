@@ -239,7 +239,7 @@ public class GraphqlConfig {
                 }
             }
 
-            String capitalizedTableName = tableName.substring(0, 1).toUpperCase() + tableName.substring(1).toLowerCase();
+            String capitalizedTableName = toUpperCamelCase(tableName);
 
             // Only add mutations for tables, not views
             if (!tableInfo.isView()) {
@@ -289,6 +289,24 @@ public class GraphqlConfig {
         return GraphQL.newGraphQL(schema)
                 .instrumentation(securityInstrumentation)
                 .build();
+    }
+
+    /** Converts snake_case to UpperCamelCase: product_detail → ProductDetail */
+    private static String toUpperCamelCase(String name) {
+        if (name == null || name.isEmpty()) return name;
+        StringBuilder sb = new StringBuilder();
+        boolean nextUpper = true;
+        for (char c : name.toCharArray()) {
+            if (c == '_') {
+                nextUpper = true;
+            } else if (nextUpper) {
+                sb.append(Character.toUpperCase(c));
+                nextUpper = false;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     private IGraphQLSchemaGenerator getGraphQLSchemaGenerator() {

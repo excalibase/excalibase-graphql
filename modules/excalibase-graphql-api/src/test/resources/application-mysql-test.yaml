@@ -1,0 +1,40 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: Excalibase graphql MySQL Test
+  threads:
+    virtual:
+      enabled: true
+  # Datasource injected via @DynamicPropertySource in MysqlGraphqlControllerTest
+
+app:
+  allowed-schema: testdb
+  database-type: MySQL
+  security:
+    role-based-schema: false
+    user-context-enabled: false
+  cdc:
+    enabled: false
+
+graphql:
+  security:
+    max-query-depth: 10
+    max-query-complexity: 1000
+    max-query-tokens: 5000
+    max-query-characters: 50000
+    max-whitespace-tokens: 5000
+    max-rule-depth: 30
+
+spring.graphql:
+  graphiql:
+    enabled: false
+  path: /graphql
+  websocket:
+    path: /graphql
+
+logging:
+  level:
+    root: warn
+    io.github.excalibase: info

@@ -134,6 +134,22 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 requestedFields = new ArrayList<>(availableColumns);
             }
 
+            // Always include PK and FK columns so computed fields and relationship resolvers can access them
+            if (tableInfo != null) {
+                final List<String> fields = requestedFields;
+                // PK columns for computed field resolvers
+                tableInfo.getColumns().stream()
+                        .filter(ColumnInfo::isPrimaryKey)
+                        .map(ColumnInfo::getName)
+                        .filter(pk -> !fields.contains(pk))
+                        .forEach(fields::add);
+                // FK columns for forward relationship resolvers
+                tableInfo.getForeignKeys().stream()
+                        .map(fk -> fk.getColumnName())
+                        .filter(col -> !fields.contains(col))
+                        .forEach(fields::add);
+            }
+
             StringBuilder sql = new StringBuilder(PostgresSqlSyntaxConstant.SELECT_WITH_SPACE);
             sql.append(getSqlBuilder().buildColumnList(requestedFields));
             sql.append(PostgresSqlSyntaxConstant.FROM_WITH_SPACE)
@@ -241,6 +257,20 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
             if (requestedFields.isEmpty() && !availableColumns.isEmpty()) {
                 requestedFields = new ArrayList<>(availableColumns);
+            }
+
+            // Always include PK and FK columns so computed fields and relationship resolvers can access them
+            if (tableInfo != null) {
+                final List<String> fields = requestedFields;
+                tableInfo.getColumns().stream()
+                        .filter(ColumnInfo::isPrimaryKey)
+                        .map(ColumnInfo::getName)
+                        .filter(pk -> !fields.contains(pk))
+                        .forEach(fields::add);
+                tableInfo.getForeignKeys().stream()
+                        .map(fk -> fk.getColumnName())
+                        .filter(col -> !fields.contains(col))
+                        .forEach(fields::add);
             }
 
             Map<String, Object> arguments = new HashMap<>(environment.getArguments());

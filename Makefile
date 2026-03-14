@@ -75,6 +75,62 @@ ci: build-image up test clean ## CI/CD pipeline
 ci-benchmark: benchmark-build benchmark-up benchmark-test-only ## Enterprise benchmark for CI (without cleanup)
 	@echo "$(GREEN)🏢 Enterprise CI benchmark completed!$(NC)"
 
+# MySQL targets
+MYSQL_COMPOSE_FILE = docker-compose.mysql.yml
+MYSQL_COMPOSE_PROJECT = excalibase-mysql-app
+MYSQL_API_PORT = 10001
+
+.PHONY: mysql-e2e
+mysql-e2e: down-mysql build-image mysql-up mysql-test mysql-clean ## Complete MySQL e2e test suite
+	@echo "$(GREEN)🎉 MySQL E2E testing completed successfully!$(NC)"
+
+.PHONY: mysql-dev
+mysql-dev: build-image mysql-up ## Start MySQL services for development
+	@echo ""
+	@echo "$(GREEN)🚀 MySQL development environment ready!$(NC)"
+	@echo "$(BLUE)GraphQL API:$(NC) http://localhost:$(MYSQL_API_PORT)/graphql"
+	@echo "$(BLUE)MySQL:$(NC)       localhost:3306"
+	@echo ""
+
+.PHONY: mysql-up
+mysql-up: ## Start MySQL Docker services
+	@echo "$(BLUE)🚀 Starting MySQL services...$(NC)"
+	@docker compose -f $(MYSQL_COMPOSE_FILE) -p $(MYSQL_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f $(MYSQL_COMPOSE_FILE) -p $(MYSQL_COMPOSE_PROJECT) up -d
+	@echo "$(GREEN)✓ MySQL services started$(NC)"
+
+.PHONY: mysql-down
+down-mysql: ## Stop MySQL Docker services
+	@echo "$(BLUE)🛑 Stopping MySQL services...$(NC)"
+	@docker compose -f $(MYSQL_COMPOSE_FILE) -p $(MYSQL_COMPOSE_PROJECT) down > /dev/null 2>&1 || true
+	@echo "$(GREEN)✓ MySQL services stopped$(NC)"
+
+.PHONY: mysql-clean
+mysql-clean: ## Stop MySQL services and cleanup volumes
+	@docker compose -f $(MYSQL_COMPOSE_FILE) -p $(MYSQL_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+
+.PHONY: mysql-test
+mysql-test: ## Run MySQL e2e tests (requires services running)
+	@echo "$(BLUE)🧪 Running MySQL E2E tests...$(NC)"
+	@cd e2e && npm install --silent && npm run test:mysql || (echo "$(RED)❌ MySQL tests failed$(NC)" && exit 1)
+
+# Benchmark targets (postgres and mysql, jvm and native)
+.PHONY: benchmark-postgres-jvm
+benchmark-postgres-jvm: ## Run Postgres JVM benchmark (quick)
+	@./scripts/benchmark-postgres.sh jvm quick
+
+.PHONY: benchmark-postgres-native
+benchmark-postgres-native: ## Run Postgres native benchmark (quick)
+	@./scripts/benchmark-postgres.sh native quick
+
+.PHONY: benchmark-mysql-jvm
+benchmark-mysql-jvm: ## Run MySQL JVM benchmark (quick)
+	@./scripts/benchmark-mysql.sh jvm quick
+
+.PHONY: benchmark-mysql-native
+benchmark-mysql-native: ## Run MySQL native benchmark (quick)
+	@./scripts/benchmark-mysql.sh native quick
+
 # Build targets
 .PHONY: build
 build: ## Build the application with Maven
@@ -178,7 +234,7 @@ wait-ready: ## Wait for services to be ready
 
 .PHONY: run-tests
 run-tests: ## Execute the actual test suite
-	@./scripts/e2e-test.sh || (echo "$(RED)❌ Tests failed$(NC)" && exit 1)
+	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Tests failed$(NC)" && exit 1)
 
 # Database operations (unified schema with demo + test data)
 .PHONY: db-shell
@@ -319,4 +375,4 @@ benchmark-db-stats: ## Show enterprise benchmark database statistics
 		ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;"
 
 # Force targets (ignore file existence)
-.PHONY: docker-compose.yml scripts/initdb.sql scripts/e2e-test.sh scripts/docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh
+.PHONY: docker-compose.yml scripts/initdb.sql scripts/docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh

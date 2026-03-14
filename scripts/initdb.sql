@@ -510,6 +510,36 @@ FROM posts p
 JOIN users u ON p.author_id = u.id;
 
 -- ====================
+-- COMPUTED FIELD FUNCTIONS
+-- ====================
+-- Computed field functions follow the naming pattern: tablename_fieldname(row tablename)
+-- They are auto-discovered by the reflector and exposed as computed GraphQL fields.
+
+-- customer_full_name: concatenated first and last name
+CREATE OR REPLACE FUNCTION customer_full_name(c hana.customer)
+RETURNS TEXT LANGUAGE sql STABLE AS $$
+    SELECT c.first_name || ' ' || c.last_name
+$$;
+
+-- customer_active_label: human-readable active status
+CREATE OR REPLACE FUNCTION customer_active_label(c hana.customer)
+RETURNS TEXT LANGUAGE sql STABLE AS $$
+    SELECT CASE WHEN c.active THEN 'Active' ELSE 'Inactive' END
+$$;
+
+-- orders_total_with_tax: order total with 10% tax applied
+CREATE OR REPLACE FUNCTION orders_total_with_tax(o hana.orders)
+RETURNS NUMERIC LANGUAGE sql STABLE AS $$
+    SELECT ROUND(o.total_amount * 1.10, 2)
+$$;
+
+-- orders_is_high_value: true when total_amount exceeds 200
+CREATE OR REPLACE FUNCTION orders_is_high_value(o hana.orders)
+RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
+    SELECT o.total_amount > 200.00
+$$;
+
+-- ====================
 -- SEQUENCES UPDATE
 -- ====================
 SELECT setval('users_id_seq', 3, true);

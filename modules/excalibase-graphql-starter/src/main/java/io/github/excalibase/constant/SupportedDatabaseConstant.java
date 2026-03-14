@@ -7,4 +7,6 @@ public class SupportedDatabaseConstant {
     private SupportedDatabaseConstant() {}
 
     public static final String POSTGRES = "Postgres";
+
+    public static final String MYSQL = "MySQL";
 }
