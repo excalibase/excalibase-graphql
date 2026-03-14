@@ -66,14 +66,16 @@ public class MysqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaRef
     private Map<String, TableInfo> doReflect(String schemaName) {
         Map<String, TableInfo> tables = new HashMap<>();
 
-        // 1. Discover all base tables
-        List<String> tableNames = jdbcTemplate.queryForList(
-                MysqlSqlConstant.GET_TABLE_NAMES, String.class, schemaName);
+        // 1. Discover tables and views
+        List<Map<String, Object>> tableRows = jdbcTemplate.queryForList(
+                MysqlSqlConstant.GET_TABLE_NAMES, schemaName);
 
-        for (String name : tableNames) {
+        for (Map<String, Object> row : tableRows) {
+            String name = (String) row.get("TABLE_NAME");
+            String tableType = (String) row.get("TABLE_TYPE");
             TableInfo info = new TableInfo();
             info.setName(name);
-            info.setView(false);
+            info.setView("VIEW".equalsIgnoreCase(tableType));
             info.setColumns(new ArrayList<>());
             info.setForeignKeys(new ArrayList<>());
             tables.put(name, info);

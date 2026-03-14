@@ -19,6 +19,7 @@ import org.springframework.jdbc.support.KeyHolder;
 
 import org.springframework.beans.factory.annotation.Autowired;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
 import java.util.ArrayList;
@@ -179,7 +180,13 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
         jdbcTemplate.update(con -> {
             PreparedStatement ps = con.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
             for (int i = 0; i < vals.size(); i++) {
-                ps.setObject(i + 1, vals.get(i));
+                Object val = vals.get(i);
+                // MySQL JDBC doesn't natively handle JsonNode — serialize to JSON string
+                if (val instanceof JsonNode) {
+                    ps.setObject(i + 1, val.toString());
+                } else {
+                    ps.setObject(i + 1, val);
+                }
             }
             return ps;
         }, keyHolder);

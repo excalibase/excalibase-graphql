@@ -7,8 +7,8 @@ public class MysqlSqlConstant {
     private MysqlSqlConstant() {}
 
     public static final String GET_TABLE_NAMES =
-            "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES " +
-            "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE = 'BASE TABLE' " +
+            "SELECT TABLE_NAME, TABLE_TYPE FROM INFORMATION_SCHEMA.TABLES " +
+            "WHERE TABLE_SCHEMA = ? AND TABLE_TYPE IN ('BASE TABLE', 'VIEW') " +
             "ORDER BY TABLE_NAME";
 
     public static final String GET_COLUMNS =

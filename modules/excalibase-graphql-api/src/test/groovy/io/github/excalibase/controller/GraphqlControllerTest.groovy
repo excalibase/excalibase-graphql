@@ -1143,7 +1143,7 @@ class GraphqlControllerTest extends Specification {
         given: "a GraphQL mutation with direct JSON object inputs"
         def mutation = '''
         mutation {
-            createEnhanced_types(input: {
+            createEnhancedTypes(input: {
                 name: "JSON Direct Object Test"
                 json_col: {
                     user: {
@@ -1190,17 +1190,17 @@ class GraphqlControllerTest extends Specification {
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath('$.errors').doesNotExist())
-                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("JSON Direct Object Test"))
-                .andExpect(jsonPath('$.data.createEnhanced_types.json_col').exists())
-                .andExpect(jsonPath('$.data.createEnhanced_types.jsonb_col').exists())
-                .andExpect(jsonPath('$.data.createEnhanced_types.numeric_col').value(1234.56))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.name').value("JSON Direct Object Test"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.json_col').exists())
+                .andExpect(jsonPath('$.data.createEnhancedTypes.jsonb_col').exists())
+                .andExpect(jsonPath('$.data.createEnhancedTypes.numeric_col').value(1234.56))
     }
 
     def "should create enhanced_types with array inputs separately"() {
         given: "a GraphQL mutation with array inputs only (testing array type handling)"
         def mutation = '''
         mutation {
-            createEnhanced_types(input: {
+            createEnhancedTypes(input: {
                 name: "Array Test Only"
                 int_array: [1, 2, 3, 4, 5]
                 text_array: ["spring", "graphql", "postgresql"]
@@ -1224,10 +1224,10 @@ class GraphqlControllerTest extends Specification {
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath('$.errors').doesNotExist())
-                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("Array Test Only"))
-                .andExpect(jsonPath('$.data.createEnhanced_types.int_array').isArray())
-                .andExpect(jsonPath('$.data.createEnhanced_types.text_array').isArray())
-                .andExpect(jsonPath('$.data.createEnhanced_types.numeric_col').value(999.99))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.name').value("Array Test Only"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.int_array').isArray())
+                .andExpect(jsonPath('$.data.createEnhancedTypes.text_array').isArray())
+                .andExpect(jsonPath('$.data.createEnhancedTypes.numeric_col').value(999.99))
     }
 
     def "should query array columns with proper GraphQL List types"() {
@@ -2421,88 +2421,88 @@ class GraphqlControllerTest extends Specification {
         when: "creating order_items record with composite key"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createOrder_items(input: { order_id: 3, product_id: 3, quantity: 5, price: 199.99 }) { order_id product_id quantity price } }"}'))
+                .content('{"query": "mutation { createOrderItems(input: { order_id: 3, product_id: 3, quantity: 5, price: 199.99 }) { order_id product_id quantity price } }"}'))
 
         then: "should create record successfully"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createOrder_items.order_id').value(3))
-                .andExpect(jsonPath('$.data.createOrder_items.product_id').value(3))
-                .andExpect(jsonPath('$.data.createOrder_items.quantity').value(5))
-                .andExpect(jsonPath('$.data.createOrder_items.price').value(199.99))
+                .andExpect(jsonPath('$.data.createOrderItems.order_id').value(3))
+                .andExpect(jsonPath('$.data.createOrderItems.product_id').value(3))
+                .andExpect(jsonPath('$.data.createOrderItems.quantity').value(5))
+                .andExpect(jsonPath('$.data.createOrderItems.price').value(199.99))
     }
 
     def "should update record using composite primary key via mutation"() {
         when: "updating existing order_items record using composite key"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { updateOrder_items(input: { order_id: 1, product_id: 1, quantity: 10, price: 349.98 }) { order_id product_id quantity price } }"}'))
+                .content('{"query": "mutation { updateOrderItems(input: { order_id: 1, product_id: 1, quantity: 10, price: 349.98 }) { order_id product_id quantity price } }"}'))
 
         then: "should update record successfully"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.updateOrder_items.order_id').value(1))
-                .andExpect(jsonPath('$.data.updateOrder_items.product_id').value(1))
-                .andExpect(jsonPath('$.data.updateOrder_items.quantity').value(10))
-                .andExpect(jsonPath('$.data.updateOrder_items.price').value(349.98))
+                .andExpect(jsonPath('$.data.updateOrderItems.order_id').value(1))
+                .andExpect(jsonPath('$.data.updateOrderItems.product_id').value(1))
+                .andExpect(jsonPath('$.data.updateOrderItems.quantity').value(10))
+                .andExpect(jsonPath('$.data.updateOrderItems.price').value(349.98))
     }
 
     def "should delete record using composite primary key via mutation"() {
         when: "deleting order_items record using composite key"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { deleteOrder_items(input: { order_id: 2, product_id: 1 }) { order_id product_id quantity price } }"}'))
+                .content('{"query": "mutation { deleteOrderItems(input: { order_id: 2, product_id: 1 }) { order_id product_id quantity price } }"}'))
 
         then: "should delete record successfully and return deleted data"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.deleteOrder_items.order_id').value(2))
-                .andExpect(jsonPath('$.data.deleteOrder_items.product_id').value(1))
-                .andExpect(jsonPath('$.data.deleteOrder_items.quantity').value(1))
+                .andExpect(jsonPath('$.data.deleteOrderItems.order_id').value(2))
+                .andExpect(jsonPath('$.data.deleteOrderItems.product_id').value(1))
+                .andExpect(jsonPath('$.data.deleteOrderItems.quantity').value(1))
     }
 
     def "should create parent record with composite key via mutation"() {
         when: "creating parent_table record with composite primary key"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createParent_table(input: { parent_id1: 3, parent_id2: 3, name: \\"New Parent 3-3\\" }) { parent_id1 parent_id2 name } }"}'))
+                .content('{"query": "mutation { createParentTable(input: { parent_id1: 3, parent_id2: 3, name: \\"New Parent 3-3\\" }) { parent_id1 parent_id2 name } }"}'))
 
         then: "should create parent record successfully"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createParent_table.parent_id1').value(3))
-                .andExpect(jsonPath('$.data.createParent_table.parent_id2').value(3))
-                .andExpect(jsonPath('$.data.createParent_table.name').value("New Parent 3-3"))
+                .andExpect(jsonPath('$.data.createParentTable.parent_id1').value(3))
+                .andExpect(jsonPath('$.data.createParentTable.parent_id2').value(3))
+                .andExpect(jsonPath('$.data.createParentTable.name').value("New Parent 3-3"))
     }
 
     def "should update parent record using composite key via mutation"() {
         when: "updating existing parent_table record using composite key"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { updateParent_table(input: { parent_id1: 1, parent_id2: 1, name: \\"Updated Parent 1-1\\" }) { parent_id1 parent_id2 name } }"}'))
+                .content('{"query": "mutation { updateParentTable(input: { parent_id1: 1, parent_id2: 1, name: \\"Updated Parent 1-1\\" }) { parent_id1 parent_id2 name } }"}'))
 
         then: "should update parent record successfully"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.updateParent_table.parent_id1').value(1))
-                .andExpect(jsonPath('$.data.updateParent_table.parent_id2').value(1))
-                .andExpect(jsonPath('$.data.updateParent_table.name').value("Updated Parent 1-1"))
+                .andExpect(jsonPath('$.data.updateParentTable.parent_id1').value(1))
+                .andExpect(jsonPath('$.data.updateParentTable.parent_id2').value(1))
+                .andExpect(jsonPath('$.data.updateParentTable.name').value("Updated Parent 1-1"))
     }
 
     def "should create child record with composite foreign key via mutation"() {
         when: "creating child_table record that references parent via composite FK"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createChild_table(input: { child_id: 100, parent_id1: 1, parent_id2: 2, description: \\"New child for parent 1-2\\" }) { child_id parent_id1 parent_id2 description } }"}'))
+                .content('{"query": "mutation { createChildTable(input: { child_id: 100, parent_id1: 1, parent_id2: 2, description: \\"New child for parent 1-2\\" }) { child_id parent_id1 parent_id2 description } }"}'))
 
         then: "should create child record successfully"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createChild_table.child_id').value(100))
-                .andExpect(jsonPath('$.data.createChild_table.parent_id1').value(1))
-                .andExpect(jsonPath('$.data.createChild_table.parent_id2').value(2))
-                .andExpect(jsonPath('$.data.createChild_table.description').value("New child for parent 1-2"))
+                .andExpect(jsonPath('$.data.createChildTable.child_id').value(100))
+                .andExpect(jsonPath('$.data.createChildTable.parent_id1').value(1))
+                .andExpect(jsonPath('$.data.createChildTable.parent_id2').value(2))
+                .andExpect(jsonPath('$.data.createChildTable.description').value("New child for parent 1-2"))
     }
 
     def "should reject incomplete composite key in mutation"() {
         when: "attempting to update with incomplete composite key"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { updateOrder_items(input: { order_id: 1, quantity: 15 }) { order_id product_id quantity } }"}'))
+                .content('{"query": "mutation { updateOrderItems(input: { order_id: 1, quantity: 15 }) { order_id product_id quantity } }"}'))
 
         then: "should return error for missing required primary key field"
         result.andExpect(status().isOk())
@@ -2514,7 +2514,7 @@ class GraphqlControllerTest extends Specification {
         when: "attempting to create duplicate composite key record"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createOrder_items(input: { order_id: 1, product_id: 1, quantity: 999, price: 999.99 }) { order_id product_id quantity } }"}'))
+                .content('{"query": "mutation { createOrderItems(input: { order_id: 1, product_id: 1, quantity: 999, price: 999.99 }) { order_id product_id quantity } }"}'))
 
         then: "should return error for duplicate key violation"
         result.andExpect(status().isOk())
@@ -2526,7 +2526,7 @@ class GraphqlControllerTest extends Specification {
         when: "attempting to create child with non-existent composite parent"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createChild_table(input: { child_id: 101, parent_id1: 999, parent_id2: 999, description: \\"Orphaned child\\" }) { child_id parent_id1 parent_id2 } }"}'))
+                .content('{"query": "mutation { createChildTable(input: { child_id: 101, parent_id1: 999, parent_id2: 999, description: \\"Orphaned child\\" }) { child_id parent_id1 parent_id2 } }"}'))
 
         then: "should return error for foreign key violation"
         result.andExpect(status().isOk())
@@ -2538,18 +2538,18 @@ class GraphqlControllerTest extends Specification {
         when: "creating multiple order_items records with composite keys"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createManyOrder_itemss(inputs: [{ order_id: 100, product_id: 1, quantity: 2, price: 99.98 }, { order_id: 100, product_id: 2, quantity: 1, price: 79.99 }, { order_id: 101, product_id: 1, quantity: 3, price: 449.97 }]) { order_id product_id quantity price } }"}'))
+                .content('{"query": "mutation { createManyOrderItemss(inputs: [{ order_id: 100, product_id: 1, quantity: 2, price: 99.98 }, { order_id: 100, product_id: 2, quantity: 1, price: 79.99 }, { order_id: 101, product_id: 1, quantity: 3, price: 449.97 }]) { order_id product_id quantity price } }"}'))
 
         then: "should create all records successfully"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createManyOrder_itemss').isArray())
-                .andExpect(jsonPath('$.data.createManyOrder_itemss', hasSize(3)))
-                .andExpect(jsonPath('$.data.createManyOrder_itemss[0].order_id').value(100))
-                .andExpect(jsonPath('$.data.createManyOrder_itemss[0].product_id').value(1))
-                .andExpect(jsonPath('$.data.createManyOrder_itemss[1].order_id').value(100))
-                .andExpect(jsonPath('$.data.createManyOrder_itemss[1].product_id').value(2))
-                .andExpect(jsonPath('$.data.createManyOrder_itemss[2].order_id').value(101))
-                .andExpect(jsonPath('$.data.createManyOrder_itemss[2].product_id').value(1))
+                .andExpect(jsonPath('$.data.createManyOrderItemss').isArray())
+                .andExpect(jsonPath('$.data.createManyOrderItemss', hasSize(3)))
+                .andExpect(jsonPath('$.data.createManyOrderItemss[0].order_id').value(100))
+                .andExpect(jsonPath('$.data.createManyOrderItemss[0].product_id').value(1))
+                .andExpect(jsonPath('$.data.createManyOrderItemss[1].order_id').value(100))
+                .andExpect(jsonPath('$.data.createManyOrderItemss[1].product_id').value(2))
+                .andExpect(jsonPath('$.data.createManyOrderItemss[2].order_id').value(101))
+                .andExpect(jsonPath('$.data.createManyOrderItemss[2].product_id').value(1))
     }
 
     def "should perform complex queries with composite key filtering"() {
@@ -2593,12 +2593,12 @@ class GraphqlControllerTest extends Specification {
         when: "creating record with custom enum array via GraphQL mutation"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createEnhanced_types(input: { name: \\"Test Record\\" }) { id name } }"}'))
+                .content('{"query": "mutation { createEnhancedTypes(input: { name: \\"Test Record\\" }) { id name } }"}'))
 
         then: "should create record successfully"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createEnhanced_types.id').exists())
-                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("Test Record"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.id').exists())
+                .andExpect(jsonPath('$.data.createEnhancedTypes.name').value("Test Record"))
     }
 
     def "should update record with custom enum array values"() {
@@ -2608,17 +2608,17 @@ class GraphqlControllerTest extends Specification {
         when: "updating record with new custom enum array via GraphQL mutation"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"query\": \"mutation { updateEnhanced_types(input: { id: ${existingId}, statuses: [DRAFT, REVIEW, APPROVED] }) { id name statuses } }\"}"))
+                .content("{\"query\": \"mutation { updateEnhancedTypes(input: { id: ${existingId}, statuses: [DRAFT, REVIEW, APPROVED] }) { id name statuses } }\"}"))
 
         then: "should update record successfully with new enum array"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.updateEnhanced_types.id').value(existingId))
-                .andExpect(jsonPath('$.data.updateEnhanced_types.name').exists())
-                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses').isArray())
-                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses', hasSize(3)))
-                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses[0]').value("DRAFT"))
-                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses[1]').value("REVIEW"))
-                .andExpect(jsonPath('$.data.updateEnhanced_types.statuses[2]').value("APPROVED"))
+                .andExpect(jsonPath('$.data.updateEnhancedTypes.id').value(existingId))
+                .andExpect(jsonPath('$.data.updateEnhancedTypes.name').exists())
+                .andExpect(jsonPath('$.data.updateEnhancedTypes.statuses').isArray())
+                .andExpect(jsonPath('$.data.updateEnhancedTypes.statuses', hasSize(3)))
+                .andExpect(jsonPath('$.data.updateEnhancedTypes.statuses[0]').value("DRAFT"))
+                .andExpect(jsonPath('$.data.updateEnhancedTypes.statuses[1]').value("REVIEW"))
+                .andExpect(jsonPath('$.data.updateEnhancedTypes.statuses[2]').value("APPROVED"))
     }
 
     def "should query records with custom enum array filtering"() {
@@ -2641,45 +2641,45 @@ class GraphqlControllerTest extends Specification {
         when: "creating record with composite type as GraphQL object via HTTP"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createEnhanced_types(input: { name: \\"Object Test\\", locations: [{ latitude: 40.7589, longitude: -73.9851, city: \\"New York\\" }] }) { id name locations { latitude longitude city } } }"}'))
+                .content('{"query": "mutation { createEnhancedTypes(input: { name: \\"Object Test\\", locations: [{ latitude: 40.7589, longitude: -73.9851, city: \\"New York\\" }] }) { id name locations { latitude longitude city } } }"}'))
 
         then: "should create record successfully with object-based composite"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createEnhanced_types.id').exists())
-                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("Object Test"))
-                .andExpect(jsonPath('$.data.createEnhanced_types.locations').isArray())
-                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].latitude').value(40.7589))
-                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].longitude').value(-73.9851))
-                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].city').value("New York"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.id').exists())
+                .andExpect(jsonPath('$.data.createEnhancedTypes.name').value("Object Test"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.locations').isArray())
+                .andExpect(jsonPath('$.data.createEnhancedTypes.locations[0].latitude').value(40.7589))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.locations[0].longitude').value(-73.9851))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.locations[0].city').value("New York"))
     }
 
     def "should demonstrate object vs string composite type support"() {
         when: "creating record with composite type as object (new way)"
         def objectResult = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createEnhanced_types(input: { name: \\"Object Way\\", locations: [{ latitude: 34.0522, longitude: -118.2437, city: \\"Los Angeles\\" }] }) { id name locations { latitude longitude city } } }"}'))
+                .content('{"query": "mutation { createEnhancedTypes(input: { name: \\"Object Way\\", locations: [{ latitude: 34.0522, longitude: -118.2437, city: \\"Los Angeles\\" }] }) { id name locations { latitude longitude city } } }"}'))
 
         then: "should work with object format"
         objectResult.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("Object Way"))
-                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].city').value("Los Angeles"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.name').value("Object Way"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.locations[0].city').value("Los Angeles"))
 
         when: "creating record with composite type as object (another test)"
         def stringResult = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createEnhanced_types(input: { name: \\"String Way\\", locations: [{ latitude: 41.8781, longitude: -87.6298, city: \\"Chicago\\" }] }) { id name locations { latitude longitude city } } }"}'))
+                .content('{"query": "mutation { createEnhancedTypes(input: { name: \\"String Way\\", locations: [{ latitude: 41.8781, longitude: -87.6298, city: \\"Chicago\\" }] }) { id name locations { latitude longitude city } } }"}'))
 
         then: "should also work with object format"
         stringResult.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("String Way"))
-                .andExpect(jsonPath('$.data.createEnhanced_types.locations[0].city').value("Chicago"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.name').value("String Way"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.locations[0].city').value("Chicago"))
     }
 
     def "should handle BIT types in GraphQL mutations and queries"() {
         given: "a GraphQL mutation with BIT types"
         def createMutation = '''
         mutation {
-            createEnhanced_types(input: {
+            createEnhancedTypes(input: {
                 name: "BIT Test GraphQL",
                 bit_col: "10110011",
                 varbit_col: "110011001100",
@@ -2701,8 +2701,8 @@ class GraphqlControllerTest extends Specification {
 
         then: "should create record successfully"
         mutationResult.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createEnhanced_types.name').value("BIT Test GraphQL"))
-                .andExpect(jsonPath('$.data.createEnhanced_types.id').exists())
+                .andExpect(jsonPath('$.data.createEnhancedTypes.name').value("BIT Test GraphQL"))
+                .andExpect(jsonPath('$.data.createEnhancedTypes.id').exists())
                 // Note: BIT values may be converted differently by GraphQL/JDBC
 
         when: "querying for BIT type records"
