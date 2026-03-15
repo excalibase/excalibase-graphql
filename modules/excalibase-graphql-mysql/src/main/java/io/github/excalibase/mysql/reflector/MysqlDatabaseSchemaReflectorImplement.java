@@ -9,6 +9,7 @@ import io.github.excalibase.model.ComputedFieldFunction;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
+import io.github.excalibase.model.StoredProcedureInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.mysql.constant.MysqlSqlConstant;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
@@ -186,5 +187,38 @@ public class MysqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaRef
     @Override
     public Map<String, List<ComputedFieldFunction>> discoverComputedFields(String schema) {
         return Map.of();
+    }
+
+    @Override
+    public List<StoredProcedureInfo> discoverStoredProcedures() {
+        return discoverStoredProcedures(schema);
+    }
+
+    @Override
+    public List<StoredProcedureInfo> discoverStoredProcedures(String schemaName) {
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                MysqlSqlConstant.GET_PROCEDURES, schemaName);
+
+        List<StoredProcedureInfo> procedures = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            String procName = (String) row.get("ROUTINE_NAME");
+
+            List<Map<String, Object>> paramRows = jdbcTemplate.queryForList(
+                    MysqlSqlConstant.GET_PROCEDURE_PARAMS, schemaName, procName);
+
+            List<StoredProcedureInfo.ProcedureParam> params = new ArrayList<>();
+            for (Map<String, Object> p : paramRows) {
+                String mode = (String) p.get("PARAMETER_MODE");
+                if (mode == null) continue; // skip return value row
+                params.add(new StoredProcedureInfo.ProcedureParam(
+                        (String) p.get("PARAMETER_NAME"),
+                        (String) p.get("DATA_TYPE"),
+                        mode,
+                        ((Number) p.get("ORDINAL_POSITION")).intValue()
+                ));
+            }
+            procedures.add(new StoredProcedureInfo(procName, schemaName, params));
+        }
+        return procedures;
     }
 }

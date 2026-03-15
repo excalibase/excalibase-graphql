@@ -19,6 +19,7 @@ package io.github.excalibase.schema.generator;
 import graphql.schema.GraphQLSchema;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.CustomEnumInfo;
+import io.github.excalibase.model.StoredProcedureInfo;
 import io.github.excalibase.model.TableInfo;
 
 import java.util.List;
@@ -81,10 +82,19 @@ public interface IGraphQLSchemaGenerator {
      * @throws RuntimeException if schema generation fails due to invalid table metadata
      *                         or unsupported database types
      */
-    default GraphQLSchema generateSchema(Map<String, TableInfo> tables, 
+    default GraphQLSchema generateSchema(Map<String, TableInfo> tables,
                                        List<CustomEnumInfo> customEnums,
                                        List<CustomCompositeTypeInfo> customComposites) {
-        // Default implementation just calls the basic method for backward compatibility
         return generateSchema(tables);
+    }
+
+    /**
+     * Generates a complete GraphQL schema including stored procedure mutations.
+     */
+    default GraphQLSchema generateSchema(Map<String, TableInfo> tables,
+                                       List<CustomEnumInfo> customEnums,
+                                       List<CustomCompositeTypeInfo> customComposites,
+                                       List<StoredProcedureInfo> procedures) {
+        return generateSchema(tables, customEnums, customComposites);
     }
 }

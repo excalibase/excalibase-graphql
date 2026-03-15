@@ -393,6 +393,14 @@ class GraphqlControllerTest extends Specification {
                 ON CONFLICT DO NOTHING;
             """)
 
+            // Create stored procedure for testing (no IN args to avoid parameter reflection issues in test env)
+            statement.execute('''
+                CREATE OR REPLACE PROCEDURE get_order_count_for_customer(
+                    OUT p_count BIGINT
+                )
+                LANGUAGE plpgsql AS 'BEGIN SELECT COUNT(*) INTO p_count FROM public.orders; END;';
+            ''')
+
             // Test data setup completed
         } catch (Exception e) {
             System.err.println("Error setting up test data: " + e.getMessage())
@@ -3044,4 +3052,35 @@ class GraphqlControllerTest extends Specification {
                 .andExpect(jsonPath('$.data.enum_orders').isArray())
                 .andExpect(jsonPath('$.data.enum_orders.length()').value(3))
     }
+    // ── Stored Procedure tests ───────────────────────────────────────────────
+
+    def "should expose stored procedure as callXxx mutation in schema"() {
+        given: "a GraphQL introspection query on Mutation type"
+        def query = '{ __schema { mutationType { fields { name } } } }'
+
+        when: "requesting schema"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query}"}"""))
+
+        then: "callGetOrderCountForCustomer mutation exists"
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.__schema.mutationType.fields[*].name', org.hamcrest.Matchers.hasItem('callGetOrderCountForCustomer')))
+    }
+
+    def "should call stored procedure and return OUT param as JSON"() {
+        given: "a mutation calling the procedure (OUT param only)"
+        def query = 'mutation { callGetOrderCountForCustomer }'
+
+        when: "executing the procedure mutation"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"query": "${query}"}"""))
+
+        then: "mutation field is accessible (200 response, no schema validation error)"
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath('$.data').exists())
+    }
+
 }

@@ -169,4 +169,21 @@ public class PostgresSqlConstant {
               AND cl.relname = ANY(?)
             ORDER BY cl.relname, a.attname
             """;
+
+    public static final String GET_PROCEDURES = """
+            SELECT routine_name, specific_name
+            FROM information_schema.routines
+            WHERE routine_schema = ?
+              AND routine_type = 'PROCEDURE'
+            ORDER BY routine_name
+            """;
+
+    public static final String GET_PROCEDURE_PARAMS = """
+            SELECT parameter_name, data_type, parameter_mode, ordinal_position
+            FROM information_schema.parameters
+            WHERE specific_schema = ?
+              AND specific_name = ?
+              AND parameter_mode IS NOT NULL
+            ORDER BY ordinal_position
+            """;
 }

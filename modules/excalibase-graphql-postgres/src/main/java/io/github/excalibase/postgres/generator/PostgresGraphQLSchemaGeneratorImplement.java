@@ -31,6 +31,7 @@ import io.github.excalibase.model.ComputedFieldFunction;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
+import io.github.excalibase.model.StoredProcedureInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.scalar.JsonScalar;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
@@ -91,14 +92,30 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             customComposites = reflector.getCustomCompositeTypes();
         }
 
-        // Delegate to the 3-parameter method
-        return generateSchema(tables, customEnums, customComposites);
+        IDatabaseSchemaReflector reflector2 = getSchemaReflector();
+        List<StoredProcedureInfo> procedures = reflector2 != null
+                ? reflector2.discoverStoredProcedures()
+                : List.of();
+        return generateSchema(tables, customEnums, customComposites, procedures);
     }
 
     @Override
     public GraphQLSchema generateSchema(Map<String, TableInfo> tables,
                                        List<CustomEnumInfo> customEnums,
                                        List<CustomCompositeTypeInfo> customComposites) {
+        IDatabaseSchemaReflector reflector2 = getSchemaReflector();
+        List<StoredProcedureInfo> procedures = reflector2 != null
+                ? reflector2.discoverStoredProcedures()
+                : List.of();
+        return generateSchema(tables, customEnums, customComposites, procedures);
+    }
+
+    @Override
+    public GraphQLSchema generateSchema(Map<String, TableInfo> tables,
+                                       List<CustomEnumInfo> customEnums,
+                                       List<CustomCompositeTypeInfo> customComposites,
+                                       List<StoredProcedureInfo> procedures) {
+        final List<StoredProcedureInfo> effectiveProcedures = (procedures != null) ? procedures : List.of();
         log.info("🔥 SCHEMA GENERATION CALLED: tables={}, customEnums={}, customComposites={}",
                  tables != null ? tables.size() : "null", customEnums.size(), customComposites.size());
         if (tables != null && !tables.isEmpty()) {
@@ -181,10 +198,19 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         GraphQLObjectType queryType = createQueryType(tables, tableFilterTypes);
         schemaBuilder.query(queryType);
 
-        // Create Mutation type only if there are tables (not just views)
+        // Create Mutation type only if there are tables (not just views) or stored procedures
         boolean hasTables = tables.values().stream().anyMatch(table -> !table.isView());
-        if (hasTables) {
-            GraphQLObjectType mutationType = createMutationType(tables, customEnumTypes, customCompositeTypes);
+        if (hasTables || !effectiveProcedures.isEmpty()) {
+            GraphQLObjectType mutationType = hasTables
+                    ? createMutationType(tables, customEnumTypes, customCompositeTypes)
+                    : GraphQLObjectType.newObject().name("Mutation").build();
+            if (!effectiveProcedures.isEmpty()) {
+                mutationType = mutationType.transform(builder -> {
+                    for (StoredProcedureInfo proc : effectiveProcedures) {
+                        builder.field(buildProcedureMutationField(proc));
+                    }
+                });
+            }
             schemaBuilder.mutation(mutationType);
         }
 
@@ -2042,5 +2068,20 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         }
 
         return typeBuilder.build();
+    }
+
+    private GraphQLFieldDefinition buildProcedureMutationField(StoredProcedureInfo proc) {
+        GraphQLFieldDefinition.Builder field = GraphQLFieldDefinition.newFieldDefinition()
+                .name("call" + capitalize(proc.getName()))
+                .type(JsonScalar.JSON);
+        for (StoredProcedureInfo.ProcedureParam p : proc.getParameters()) {
+            if (p.isIn()) {
+                field.argument(GraphQLArgument.newArgument()
+                        .name(p.getName())
+                        .type((graphql.schema.GraphQLInputType) mapDatabaseTypeToGraphQLType(p.getDataType()))
+                        .build());
+            }
+        }
+        return field.build();
     }
 }

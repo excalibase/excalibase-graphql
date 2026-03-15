@@ -43,6 +43,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
+
+import io.github.excalibase.model.StoredProcedureInfo;
 
 import java.time.Duration;
 import java.util.List;
@@ -81,6 +84,7 @@ public class GraphqlConfig {
      * Uses default schema (no specific role).
      */
     @Bean
+    @Lazy
     public GraphQL graphQL() {
         return getGraphQLForRole(null);
     }
@@ -131,8 +135,18 @@ public class GraphqlConfig {
         if (schemaGenerator instanceof PostgresGraphQLSchemaGeneratorImplement) {
             ((PostgresGraphQLSchemaGeneratorImplement) schemaGenerator).setSchemaReflector(schemaReflector);
         }
-        
-        GraphQLSchema schema = schemaGenerator.generateSchema(tables);
+
+        // Discover stored procedures up front so non-Postgres generators can include them in the schema
+        List<StoredProcedureInfo> procedures = schemaReflector.discoverStoredProcedures();
+
+        GraphQLSchema schema;
+        if (schemaGenerator instanceof PostgresGraphQLSchemaGeneratorImplement) {
+            // Postgres generator discovers enums, composites, and procedures internally
+            schema = schemaGenerator.generateSchema(tables);
+        } else {
+            // MySQL and other generators: pass procedures explicitly
+            schema = schemaGenerator.generateSchema(tables, List.of(), List.of(), procedures);
+        }
         
         IDatabaseDataFetcher dataFetcher = getDatabaseDataFetcher();
         IDatabaseMutator mutationResolver = getDatabaseMutator();
@@ -278,6 +292,14 @@ public class GraphqlConfig {
             codeRegistry.dataFetcher(
                     FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, tableName.toLowerCase() + "_changes"),
                     subscriptionResolver.buildTableSubscriptionResolver(tableName)
+            );
+        }
+
+        // Wire stored procedure mutation resolvers
+        for (StoredProcedureInfo proc : procedures) {
+            codeRegistry.dataFetcher(
+                    FieldCoordinates.coordinates("Mutation", "call" + toUpperCamelCase(proc.getName())),
+                    mutationResolver.buildProcedureMutationResolver(proc)
             );
         }
 

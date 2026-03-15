@@ -8,6 +8,7 @@ import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
 import io.github.excalibase.model.CustomEnumInfo;
 import io.github.excalibase.model.ForeignKeyInfo;
+import io.github.excalibase.model.StoredProcedureInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.scalar.JsonScalar;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
@@ -45,13 +46,21 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
 
     @Override
     public GraphQLSchema generateSchema(Map<String, TableInfo> tables) {
-        return generateSchema(tables, List.of(), List.of());
+        return generateSchema(tables, List.of(), List.of(), List.of());
     }
 
     @Override
     public GraphQLSchema generateSchema(Map<String, TableInfo> tables,
                                         List<CustomEnumInfo> customEnums,
                                         List<CustomCompositeTypeInfo> customComposites) {
+        return generateSchema(tables, customEnums, customComposites, List.of());
+    }
+
+    @Override
+    public GraphQLSchema generateSchema(Map<String, TableInfo> tables,
+                                        List<CustomEnumInfo> customEnums,
+                                        List<CustomCompositeTypeInfo> customComposites,
+                                        List<StoredProcedureInfo> procedures) {
         Set<GraphQLType> additionalTypes = new HashSet<>();
         additionalTypes.add(SORT_DIRECTION_ENUM);
         additionalTypes.add(JsonScalar.JSON);
@@ -157,6 +166,11 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
         additionalTypes.addAll(edgeTypes.values());
         additionalTypes.addAll(connectionTypes.values());
         additionalTypes.addAll(tableTypes.values());
+
+        // ── Stored procedure mutations ───────────────────────────────────────
+        for (StoredProcedureInfo proc : procedures) {
+            mutationBuilder.field(buildProcedureMutationField(proc));
+        }
 
         return GraphQLSchema.newSchema()
                 .query(queryBuilder.build())
@@ -404,6 +418,21 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                 .type(tableType)
                 .argument(GraphQLArgument.newArgument().name("id").type(GraphQLInt).build())
                 .build();
+    }
+
+    private GraphQLFieldDefinition buildProcedureMutationField(StoredProcedureInfo proc) {
+        GraphQLFieldDefinition.Builder field = GraphQLFieldDefinition.newFieldDefinition()
+                .name("call" + capitalize(proc.getName()))
+                .type(JsonScalar.JSON);
+        for (StoredProcedureInfo.ProcedureParam p : proc.getParameters()) {
+            if (p.isIn()) {
+                field.argument(GraphQLArgument.newArgument()
+                        .name(p.getName())
+                        .type((graphql.schema.GraphQLInputType) mapType(p.getDataType()))
+                        .build());
+            }
+        }
+        return field.build();
     }
 
     // ─── Type mapping ────────────────────────────────────────────────────────

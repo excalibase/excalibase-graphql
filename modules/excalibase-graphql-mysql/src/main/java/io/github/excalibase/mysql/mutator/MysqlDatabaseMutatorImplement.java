@@ -7,6 +7,7 @@ import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.exception.DataMutationException;
 import io.github.excalibase.exception.NotFoundException;
 import io.github.excalibase.model.ColumnInfo;
+import io.github.excalibase.model.StoredProcedureInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.mutator.IDatabaseMutator;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
@@ -20,9 +21,12 @@ import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
 import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -203,5 +207,65 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT * FROM `" + tableName + "` WHERE `" + pkColumn + "` = ?", id);
         return rows.isEmpty() ? null : rows.get(0);
+    }
+
+    @Override
+    public DataFetcher<Object> buildProcedureMutationResolver(StoredProcedureInfo procedure) {
+        return env -> {
+            List<StoredProcedureInfo.ProcedureParam> params = procedure.getParameters();
+            List<StoredProcedureInfo.ProcedureParam> outParams = params.stream()
+                    .filter(StoredProcedureInfo.ProcedureParam::isOut)
+                    .toList();
+
+            // Build CALL statement: CALL proc(?, ?, ...)
+            String placeholders = params.isEmpty() ? "" :
+                    "?,".repeat(params.size()).substring(0, params.size() * 2 - 1);
+            String sql = "CALL `" + procedure.getName() + "`(" + placeholders + ")";
+
+            return jdbcTemplate.execute((java.sql.Connection con) -> {
+                try (CallableStatement cs = con.prepareCall(sql)) {
+                    // Bind IN params and register OUT params
+                    for (StoredProcedureInfo.ProcedureParam p : params) {
+                        int idx = p.getPosition();
+                        if (p.isIn()) {
+                            Object val = env.getArguments().get(p.getName());
+                            cs.setObject(idx, val);
+                        }
+                        if (p.isOut()) {
+                            cs.registerOutParameter(idx, sqlTypeFor(p.getDataType()));
+                        }
+                    }
+                    cs.execute();
+
+                    if (outParams.isEmpty()) {
+                        Map<String, Object> result = new HashMap<>();
+                        result.put("success", true);
+                        return result;
+                    }
+
+                    Map<String, Object> result = new HashMap<>();
+                    for (StoredProcedureInfo.ProcedureParam p : outParams) {
+                        result.put(p.getName(), cs.getObject(p.getPosition()));
+                    }
+                    return result;
+                }
+            });
+        };
+    }
+
+    private int sqlTypeFor(String dataType) {
+        if (dataType == null) return Types.OTHER;
+        return switch (dataType.toLowerCase()) {
+            case "int", "integer", "tinyint", "smallint", "mediumint" -> Types.INTEGER;
+            case "bigint" -> Types.BIGINT;
+            case "decimal", "numeric" -> Types.DECIMAL;
+            case "float" -> Types.FLOAT;
+            case "double" -> Types.DOUBLE;
+            case "varchar", "char", "text", "tinytext", "mediumtext", "longtext" -> Types.VARCHAR;
+            case "date" -> Types.DATE;
+            case "datetime", "timestamp" -> Types.TIMESTAMP;
+            case "boolean", "bool" -> Types.BOOLEAN;
+            default -> Types.OTHER;
+        };
     }
 }
