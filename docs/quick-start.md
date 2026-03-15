@@ -1,271 +1,233 @@
-# Quick Start Guide - Excalibase GraphQL
-
-This guide helps you quickly get started with Excalibase GraphQL using Docker Compose.
+# Installation Guide
 
 ## Prerequisites
 
-- Docker and Docker Compose installed on your system
-- The `excalibase/excalibase-graphql` Docker image available locally or in a registry
+- Docker and Docker Compose
+- (Local dev only) Java 21+, Maven 3.8+
 
-## Quick Start
+---
 
-1. **Clone the repository and navigate to the project directory:**
-   ```bash
-   git clone <repository-url>
-   cd excalibase-graphql
-   ```
+## Option 1: Docker (Recommended)
 
-2. **Start the services:**
-   ```bash
-   docker-compose up -d
-   ```
+### PostgreSQL Stack
 
-3. **Check the status:**
-   ```bash
-   docker-compose ps
-   ```
+```bash
+git clone https://github.com/excalibase/excalibase-graphql.git
+cd excalibase-graphql
+docker-compose up -d
+```
 
-4. **Access the application:**
-   - GraphQL API: http://localhost:10000
-   - Database: localhost:5432 (if you need direct access)
+API available at **http://localhost:10000/graphql**
+
+### MySQL Stack
+
+```bash
+docker-compose -f docker-compose.mysql.yml up -d
+```
+
+API available at **http://localhost:10001/graphql**
+
+### Check Status
+
+```bash
+docker-compose ps
+docker-compose logs -f excalibase-app
+```
+
+---
 
 ## What's Included
 
-The Docker Compose setup provides a complete environment with:
+Both stacks start with sample data so you can query immediately.
 
-### PostgreSQL Database
-- **Image:** postgres:15-alpine
-- **Container:** excalibase-postgres
-- **Port:** 5432
-- **Database:** hana
-- **User:** hana001
-- **Password:** password123
-- **Schema:** hana
+### PostgreSQL (`docker-compose.yml`)
 
-The database is automatically initialized with sample data including:
-- Users table with sample users
-- Posts table with sample blog posts
-- Comments table with sample comments
-- Proper indexes and foreign key relationships
+- **Image:** `postgres:15-alpine` on port 5432
+- **Database/Schema:** `hana`
+- **Credentials:** `hana001` / `password123`
 
-### Excalibase GraphQL Application
-- **Image:** excalibase/excalibase-graphql
-- **Container:** excalibase-graphql
-- **Port:** 10000
-- **Health Check:** Available at `/actuator/health`
+Sample tables:
+- `users`, `posts`, `comments`, `tasks` — blog-style demo data with custom enum/composite types
+- `customer`, `orders`, `products`, `order_items` — e-commerce data with FK relationships
+- `enhanced_types` — JSON/JSONB, arrays, INET, CIDR, MACADDR, BYTEA, XML, TIMESTAMPTZ
+- `wallets` — for stored procedure testing
+- `rls_orders` — Row-Level Security demo table
 
-## Common Commands
+Views: `active_customers`, `posts_with_authors`, `enhanced_types_summary` (materialized)
 
-### Start services
-```bash
-docker-compose up -d
-```
+Stored procedures: `get_customer_order_count`, `transfer_funds`
 
-### Stop services
-```bash
-docker-compose down
-```
+### MySQL (`docker-compose.mysql.yml`)
 
-### View logs
-```bash
-# All services
-docker-compose logs -f
+- **Image:** `mysql:8.4` on port 3306
+- **Database:** `excalibase`
+- **Credentials:** `excalibase` / `password123`
 
-# Specific service
-docker-compose logs -f excalibase-app
-docker-compose logs -f postgres
-```
+Sample tables: `customer`, `orders`, `product`, `task` (ENUM columns), `product_detail` (JSON columns), `wallets`
 
-### Restart a service
-```bash
-docker-compose restart excalibase-app
-```
+Views: `active_customers`, `orders_summary`, `high_value_orders`
 
-### Connect to PostgreSQL
-```bash
-docker-compose exec postgres psql -U hana001 -d hana
-```
+Stored procedures: `get_customer_order_count`, `transfer_funds`
 
-### Reset everything (including data)
-```bash
-docker-compose down -v
-docker-compose up -d
-```
+---
 
-## Sample GraphQL Queries
+## Sample Queries
 
-Once the application is running at http://localhost:10000, you can try these sample queries:
+### Basic Query
 
-### Get all users
 ```graphql
-query {
+{
   users {
     id
     username
     email
-    firstName
-    lastName
+    role
   }
 }
 ```
 
-### Get posts with authors
+### With Filtering and Relationships
+
 ```graphql
-query {
-  posts {
+{
+  posts(where: { published: { eq: true } }, orderBy: { created_at: ASC }) {
     id
     title
-    content
-    published
-    author {
+    author_id
+    users {
       username
-      email
+      first_name
     }
   }
 }
 ```
 
-### Get comments with post and author details
+### Custom Enum and Composite Types (PostgreSQL)
+
 ```graphql
-query {
-  comments {
+{
+  users {
     id
-    content
-    post {
-      title
-    }
-    author {
-      username
-    }
+    username
+    role             # user_role enum: admin, moderator, user, guest
+    shipping_address # address composite type
+    contact          # contact_info composite type
   }
 }
 ```
 
-### Composite Key Operations
+### Aggregate
 
-The sample database includes tables with composite keys. Try these queries:
-
-**Query order items with composite primary keys:**
 ```graphql
-query {
-  order_items {
-    order_id
-    product_id
-    quantity
-    price
+{
+  orders_aggregate {
+    count
+    sum { total_amount }
+    avg { total_amount }
   }
 }
 ```
 
-**Create order item with composite key:**
+### Stored Procedure
+
 ```graphql
 mutation {
-  createOrder_items(input: {
-    order_id: 3
-    product_id: 2
-    quantity: 5
-    price: 199.99
-  }) {
-    order_id
-    product_id
-    quantity
-    price
-  }
+  callTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 100.00)
 }
 ```
 
-**Update order item using composite key:**
-```graphql
-mutation {
-  updateOrder_items(input: {
-    order_id: 3          # Required: part of composite PK
-    product_id: 2        # Required: part of composite PK
-    quantity: 10         # Updated field
-    price: 299.99        # Updated field
-  }) {
-    order_id
-    product_id
-    quantity
-    price
-  }
-}
+---
+
+## Option 2: Local Development
+
+1. **Configure database** in `modules/excalibase-graphql-api/src/main/resources/application.yaml`:
+
+    ```yaml
+    spring:
+      datasource:
+        url: jdbc:postgresql://localhost:5432/hana
+        username: hana001
+        password: password123
+
+    app:
+      allowed-schema: hana
+      database-type: postgres   # or: mysql
+
+    server:
+      port: 10000
+    ```
+
+2. **Build and run:**
+
+    ```bash
+    mvn clean compile
+    mvn spring-boot:run -pl modules/excalibase-graphql-api
+    ```
+
+---
+
+## Option 3: Native Binary (GraalVM)
+
+Pull the pre-built native image for minimal startup time (~50ms) and memory (~80MB):
+
+```bash
+docker pull excalibase/excalibase-graphql:native
 ```
 
-**Delete order item with composite key:**
-```graphql
-mutation {
-  deleteOrder_items(input: {
-    order_id: 3
-    product_id: 2
-  }) {
-    order_id
-    product_id
-    quantity
-    price
-  }
-}
+Or build locally (requires GraalVM 21):
+
+```bash
+JAVA_HOME=~/.sdkman/candidates/java/21.0.2-graalce
+mvn -Pnative package -DskipTests -pl modules/excalibase-graphql-api -am
 ```
 
-**Filter by composite key:**
-```graphql
-query {
-  order_items(where: {
-    order_id: { eq: 1 }
-    product_id: { eq: 2 }
-  }) {
-    order_id
-    product_id
-    quantity
-    price
-  }
-}
+---
+
+## Common Commands
+
+```bash
+# Stop everything
+docker-compose down
+
+# Reset data (removes volumes)
+docker-compose down -v && docker-compose up -d
+
+# View logs
+docker-compose logs -f excalibase-app
+
+# Connect to PostgreSQL directly
+docker-compose exec postgres psql -U hana001 -d hana
+
+# Connect to MySQL directly
+docker-compose -f docker-compose.mysql.yml exec mysql mysql -u excalibase -ppassword123 excalibase
 ```
+
+---
 
 ## Troubleshooting
 
-### Application won't start
-1. Check if the database is healthy:
-   ```bash
-   docker-compose ps
-   ```
+**App won't start** — check that the database container is healthy before the app starts:
+```bash
+docker-compose ps   # both containers should show "healthy" or "Up"
+```
 
-2. View application logs:
-   ```bash
-   docker-compose logs excalibase-app
-   ```
+**Empty GraphQL schema** — the app builds the schema from the database at startup. If the DB wasn't ready, restart the app:
+```bash
+docker-compose restart excalibase-app
+```
 
-### Database connection issues
-1. Ensure the PostgreSQL service is running and healthy
-2. Check if the database initialization completed successfully:
-   ```bash
-   docker-compose logs postgres
-   ```
-
-### Port conflicts
-If you get port conflicts, you can modify the ports in `docker-compose.yml`:
+**Port conflict** — edit the host port mapping in `docker-compose.yml`:
 ```yaml
 ports:
-  - "YOUR_PORT:10000"  # Change YOUR_PORT to an available port
+  - "9000:10000"   # change 9000 to any free port
 ```
+
+---
 
 ## Next Steps
 
-- Explore the GraphQL schema at http://localhost:10000/graphql
-- Check out the [API Documentation](index.md) for more details
-- See [Contributing Guidelines](CONTRIBUTING.md) if you want to contribute
-
-## Configuration
-
-The application uses these default settings:
-- Database: PostgreSQL with hana schema
-- Application port: 10000
-- Database port: 5432
-- Default credentials: hana001/password123
-- CDC enabled by default for real-time subscriptions
-
-To customize these settings, edit the environment variables in `docker-compose.yml`:
-
-**Key CDC Configuration Options:**
-- `APP_CDC_ENABLED=true` - Enable/disable real-time subscriptions
-- `APP_CDC_CREATE_SLOT_IF_NOT_EXISTS=true` - Auto-create PostgreSQL replication slot
-- `APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS=true` - Auto-create publication 
+- [API Reference →](api/index.md) — full schema documentation
+- [Filtering →](filtering.md) — all filter operators with examples
+- [MySQL Support →](features/mysql.md) — MySQL-specific guide
+- [Stored Procedures →](features/stored-procedures.md) — calling procedures from GraphQL
+- [Subscriptions →](features/subscriptions.md) — real-time CDC subscriptions (PostgreSQL)

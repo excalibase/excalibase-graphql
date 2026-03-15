@@ -1,5 +1,5 @@
 site_name: Excalibase GraphQL
-site_description: Automatic GraphQL API generation from PostgreSQL database schemas
+site_description: Automatic GraphQL API generation from multiple databases
 site_author: Excalibase Team
 site_url: https://excalibase.github.io/excalibase-graphql/
 
@@ -105,13 +105,16 @@ extra_javascript:
 
 nav:
   - Home: index.md
-  - Quick Start: 
-    - Getting Started: quickstart/index.md
-    - Installation Guide: quick-start.md
+  - Quick Start:
+      - Getting Started: quickstart/index.md
+      - Installation Guide: quick-start.md
   - API Reference: api/index.md
   - Features:
-    - Enhanced PostgreSQL Types: features/enhanced-postgresql-types.md
-    - Real-Time Subscriptions: features/subscriptions.md
+      - MySQL Support: features/mysql.md
+      - Stored Procedures: features/stored-procedures.md
+      - Enhanced PostgreSQL Types: features/enhanced-postgresql-types.md
+      - Real-Time Subscriptions: features/subscriptions.md
+      - Row-Level Security: features/user-context-rls.md
   - Filtering: filtering.md
   - Testing: testing.md
-  - Contributing: CONTRIBUTING.md 
+  - Contributing: CONTRIBUTING.md

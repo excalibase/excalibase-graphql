@@ -3,7 +3,6 @@
 /* Enhanced code blocks */
 .highlight {
   border-radius: 0.5rem;
-  overflow: hidden;
 }
 
 .highlight pre {
@@ -11,6 +10,7 @@
   padding: 1rem;
   font-size: 0.9em;
   line-height: 1.4;
+  overflow-x: auto;
 }
 
 /* GraphQL syntax highlighting improvements */
