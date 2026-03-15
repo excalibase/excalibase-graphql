@@ -8,7 +8,6 @@ image:
   tag: "latest"
 
 database:
-  type: postgres
   url: "jdbc:postgresql://postgres-service:5432/mydb"
   # Use existingSecret in production:
   # existingSecret: "my-db-secret"

@@ -29,7 +29,6 @@ readinessProbe:
   periodSeconds: 5
 
 database:
-  type: postgres
   url: "jdbc:postgresql://postgres-service:5432/mydb"
   existingSecret: "my-db-secret"
   existingSecretUsernameKey: "username"

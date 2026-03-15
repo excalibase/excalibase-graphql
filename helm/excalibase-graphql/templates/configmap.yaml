@@ -1,3 +1,4 @@
+{{- $isMysql := or (eq .Values.database.type "mysql") (hasPrefix "jdbc:mysql" .Values.database.url) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,7 +8,7 @@ metadata:
 data:
   # Database
   SPRING_DATASOURCE_URL: {{ .Values.database.url | quote }}
-  {{- if eq .Values.database.type "mysql" }}
+  {{- if $isMysql }}
   SPRING_DATASOURCE_DRIVER_CLASS_NAME: "com.mysql.cj.jdbc.Driver"
   {{- else }}
   SPRING_DATASOURCE_DRIVER_CLASS_NAME: "org.postgresql.Driver"
@@ -33,7 +34,7 @@ data:
   # Application
   SERVER_PORT: {{ .Values.app.port | quote }}
   APP_ALLOWED_SCHEMA: {{ .Values.app.allowedSchema | quote }}
-  APP_DATABASE_TYPE: {{ .Values.database.type | quote }}
+  APP_DATABASE_TYPE: {{ if $isMysql }}"mysql"{{ else }}"postgres"{{ end }}
 
   # Security / user context (RLS)
   APP_SECURITY_USER_CONTEXT_ENABLED: {{ .Values.app.security.userContextEnabled | quote }}

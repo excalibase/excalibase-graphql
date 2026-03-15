@@ -2,7 +2,6 @@
 # helm install excalibase excalibase-graphql/ -f examples/mysql.yaml
 
 database:
-  type: mysql
   url: "jdbc:mysql://mysql-service:3306/mydb?useSSL=false&allowPublicKeyRetrieval=true"
   username: "myuser"
   password: "changeme"
