@@ -5,30 +5,42 @@
 [![Java Version](https://img.shields.io/badge/Java-21+-orange.svg)](https://openjdk.java.net/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.0-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)](https://www.postgresql.org/)
+[![MySQL](https://img.shields.io/badge/MySQL-8.4+-orange.svg)](https://www.mysql.com/)
 
 ## 🚀 Overview
 
 Excalibase GraphQL is a powerful Spring Boot application that **automatically generates GraphQL schemas from your existing database tables**. It eliminates the need for manual schema definition and provides instant GraphQL APIs with advanced features like cursor-based pagination, relationship resolution, and comprehensive CRUD operations.
 
 ### ✨ Current Features
-- **🔄 Automatic Schema Generation**: Creates GraphQL types from PostgreSQL tables
+
+#### Core
+- **🔄 Automatic Schema Generation**: Creates GraphQL types from database tables — supports **PostgreSQL** and **MySQL**
 - **📊 Rich Querying**: Filtering, sorting, and pagination out of the box
 - **🗓️ Enhanced Date/Time Filtering**: Comprehensive date and timestamp operations with multiple format support
 - **🔍 Advanced Filter Types**: StringFilter, IntFilter, FloatFilter, BooleanFilter, DateTimeFilter with operators like eq, neq, gt, gte, lt, lte, in, notIn, isNull, isNotNull
-- **🎯 Custom PostgreSQL Types**: Full support for custom enum and composite types with automatic GraphQL mapping
-- **📄 Enhanced PostgreSQL Data Types**: JSON/JSONB with **direct GraphQL object support** 🆕, arrays with **proper PGArray mapping** 🆕, network types (INET, CIDR), enhanced datetime, binary, and XML support  
-- **🔗 Relationship Resolution**: Automatic foreign key relationship handling
-- **🛠️ CRUD Operations**: Full create, read, update, delete support with **composite key support**
-- **🔑 Composite Primary Keys**: Complete support for tables with multi-column primary keys
-- **🔄 Composite Foreign Keys**: Seamless handling of multi-column foreign key relationships
+- **🔗 Relationship Resolution**: Automatic foreign key relationship handling (forward & reverse)
+- **🛠️ CRUD Operations**: Full create, read, update, delete + bulk create
+- **🔑 Composite Primary/Foreign Keys**: Tables with multi-column keys fully supported
 - **📄 Cursor Pagination**: Relay-spec compatible connection queries
-- **⚡ N+1 Prevention**: Built-in query optimization
+- **⚡ N+1 Prevention**: Built-in query optimization via batching
 - **🔧 OR Operations**: Complex logical conditions with nested filtering
-- **🛡️ GraphQL Security**: Query depth and complexity limiting following GraphQL.org best practices
-- **🐳 Docker Support**: Container images with Docker Compose setup
-- **🔄 CI/CD Pipeline**: GitHub Actions integration with automated testing
+- **🛡️ GraphQL Security**: Query depth and complexity limiting
 
-### ✅ Real-Time Subscriptions
+#### PostgreSQL-specific
+- **🎯 Custom Types**: Enums, composite types, domain types with automatic GraphQL mapping
+- **📄 Rich Data Types**: JSON/JSONB, arrays, network types (INET, CIDR), datetime, binary, XML
+- **🔒 Row-Level Security (RLS)**: Automatic enforcement via `request.user_id` session variable
+- **🧮 Computed Fields**: Expose SQL-defined computed columns as GraphQL fields
+- **🗄️ Stored Procedures**: `CALL proc(args)` exposed as `callProcName` mutations with IN/OUT param support
+- **⚡ Change Data Capture (CDC)**: Logical replication for real-time GraphQL subscriptions
+
+#### MySQL-specific
+- **🗄️ Stored Procedures**: `CALL proc(args)` exposed as `callProcName` mutations with IN/OUT param support
+- **📋 ENUM columns**: Native MySQL ENUM mapped to GraphQL enum types
+- **📦 JSON columns**: MySQL JSON column type support
+- **👁️ Views**: Read-only GraphQL queries over MySQL views
+
+### ✅ Real-Time Subscriptions (PostgreSQL)
 - **🔄 GraphQL Subscriptions** - Real-time data updates via WebSocket connections
 - **⚡ Change Data Capture (CDC)** - PostgreSQL logical replication for instant notifications
 - **📡 Table Subscriptions** - Subscribe to INSERT, UPDATE, DELETE operations
@@ -38,7 +50,6 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 ### 🚧 Planned Features
 
 - [ ] **Schema Caching** - Performance optimization for large schemas
-- [ ] **MySQL Support** - Complete MySQL database integration
 - [ ] **Oracle Support** - Add Oracle database compatibility
 - [ ] **SQL Server Support** - Microsoft SQL Server implementation
 - [ ] **Custom Directives** - Extended GraphQL functionality
@@ -50,7 +61,7 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 
 - Java 21+
 - Maven 3.8+
-- PostgreSQL 15+
+- PostgreSQL 15+ **or** MySQL 8.4+
 
 ### Installation
 
@@ -64,29 +75,42 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 
 2. **Configure your database**
 
-   Edit `docker-compose.yml` or set environment variables:
+   **PostgreSQL** — edit `docker-compose.yml`:
    ```yaml
    environment:
-     - DB_HOST=your_postgres_host
-     - DB_PORT=5432
-     - DB_NAME=your_database
-     - DB_USERNAME=your_username
-     - DB_PASSWORD=your_password
-     - DATABASE_SCHEMA=your_schema
-     # Optional CDC configuration (defaults shown)
+     - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/your_db
+     - SPRING_DATASOURCE_USERNAME=your_user
+     - SPRING_DATASOURCE_PASSWORD=your_password
+     - APP_ALLOWED_SCHEMA=your_schema
+     - APP_DATABASE_TYPE=postgres
+     # Optional CDC for real-time subscriptions
      - APP_CDC_ENABLED=true
-     - APP_CDC_CREATE_SLOT_IF_NOT_EXISTS=true
-     - APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS=true
+   ```
+
+   **MySQL** — use `docker-compose.mysql.yml`:
+   ```yaml
+   environment:
+     - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/your_db?useSSL=false&allowPublicKeyRetrieval=true
+     - SPRING_DATASOURCE_USERNAME=your_user
+     - SPRING_DATASOURCE_PASSWORD=your_password
+     - APP_ALLOWED_SCHEMA=your_db
+     - APP_DATABASE_TYPE=MySQL
+     - APP_CDC_ENABLED=false
    ```
 
 3. **Run with Docker Compose**
    ```bash
-   docker-compose up -d
+   # PostgreSQL
+   docker compose up -d
+
+   # MySQL
+   docker compose -f docker-compose.mysql.yml up -d
    ```
 
 4. **Access GraphQL endpoint**
 
-   Your GraphQL endpoint will be available at: `http://localhost:10000/graphql`
+   - PostgreSQL: `http://localhost:10000/graphql`
+   - MySQL: `http://localhost:10001/graphql`
 
 #### Option 2: Local Development
 
@@ -102,13 +126,13 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
    ```yaml
    spring:
      datasource:
-       url: jdbc:postgresql://localhost:5432/your_database
+       url: jdbc:postgresql://localhost:5432/your_database  # or jdbc:mysql://...
        username: your_username
        password: your_password
-   
+
    app:
      allowed-schema: your_schema
-     database-type: postgres
+     database-type: postgres   # or: MySQL
    ```
 
 3. **Build and run**
@@ -243,51 +267,74 @@ make help
 
 ### E2E Test Configuration
 
-The E2E setup uses unique ports to avoid conflicts:
-- **GraphQL API**: `http://localhost:10001/graphql` (unique port 10001)
-- **PostgreSQL**: `localhost:5433` (unique port 5433)
+Two backends run on separate ports:
+- **PostgreSQL API**: `http://localhost:10000/graphql`
+- **MySQL API**: `http://localhost:10001/graphql`
+
+```bash
+cd e2e
+npm run test:postgres   # 90 tests
+npm run test:mysql      # 74 tests
+npm test                # all 164 tests
+```
 
 ### E2E Test Coverage
 
-The test suite includes **25+ comprehensive tests** covering:
+The test suite includes **164 tests** across PostgreSQL and MySQL:
 
 #### **Schema & Introspection**
 - ✅ GraphQL schema introspection
 - ✅ Query and Mutation type validation
-- ✅ Field availability verification
+- ✅ Enum type registration
 
 #### **Basic GraphQL Operations**
-- ✅ Query all customers
-- ✅ Filtering with WHERE clauses
+- ✅ Query all records
+- ✅ Filtering with WHERE clauses (eq, neq, gt, lt, in, contains, isNull…)
 - ✅ OR operations with multiple conditions
 - ✅ Pagination (limit, offset)
 - ✅ Ordering (ASC/DESC)
+- ✅ Aggregate queries (count, sum, avg, min, max)
+- ✅ Cursor-based pagination (connections with hasNextPage)
 
-#### **Enhanced PostgreSQL Types** 🆕
+#### **PostgreSQL-specific**
 - ✅ JSON/JSONB column operations
 - ✅ Array types (INTEGER[], TEXT[])
 - ✅ Enhanced datetime (TIMESTAMPTZ, TIMETZ, INTERVAL)
 - ✅ Network types (INET, CIDR, MACADDR)
 - ✅ Binary and XML types
+- ✅ Custom enum and composite types
+- ✅ Domain types
+- ✅ Computed fields (SQL-defined virtual columns)
+- ✅ Row-Level Security (RLS) — per-user data isolation
+
+#### **MySQL-specific**
+- ✅ ENUM column types
+- ✅ JSON columns
+- ✅ Views (read-only)
 
 #### **Relationships & Views**
-- ✅ Foreign key relationship traversal
-- ⚠️ **Important**: Include foreign key fields in queries for relationships to work
-- ✅ PostgreSQL views (read-only queries)
-- ✅ Materialized views
-- ✅ Complex relationship queries
+- ✅ Forward FK traversal (order → customer)
+- ✅ Reverse FK traversal (customer → orders)
+- ✅ Composite primary and foreign keys
+- ✅ Views (read-only queries, no mutation fields)
 
 #### **CRUD Operations**
-- ✅ Create mutations
-- ✅ Update mutations
-- ✅ Data validation
+- ✅ Create, update, delete (single and bulk)
+- ✅ Composite key create/update/delete
+- ✅ Enum value mutations
+- ✅ Data validation and constraint error handling
 
-#### **Advanced Features**
-- ✅ Cursor-based pagination (connections)
-- ✅ Complex filtering (date ranges, string operations)
-- ✅ Boolean and array filters
-- ✅ Error handling validation
-- ✅ Performance testing (< 1000ms response times)
+#### **Stored Procedures**
+- ✅ Procedures exposed as `callProcName` GraphQL mutations
+- ✅ IN parameters passed as mutation arguments
+- ✅ OUT parameters returned as JSON scalar
+- ✅ Happy path: successful execution verified with DB state check
+- ✅ Unhappy path: insufficient funds rejected, balance unchanged (CHECK constraint safety net)
+
+#### **Security**
+- ✅ Query depth limiting
+- ✅ Query complexity limiting
+- ✅ SQL injection prevention
 
 ### Sample Data & Schema
 
@@ -1459,9 +1506,80 @@ Tests use the same PostgreSQL configuration as the main application:
 | Database | Status | Version |
 |----------|--------|---------|
 | PostgreSQL | ✅ Supported | 15+ |
-| MySQL | 🚧 Planned | - |
+| MySQL | ✅ Supported | 8.4+ |
 | Oracle | 🚧 Planned | - |
 | SQL Server | 🚧 Planned | - |
+
+## 🗄️ Stored Procedures
+
+Excalibase automatically discovers stored procedures and exposes them as GraphQL mutations prefixed with `call`.
+
+### How it works
+
+1. On startup, the reflector queries `information_schema.routines` / `information_schema.parameters` to discover all procedures in the configured schema.
+2. Each procedure becomes a `callProcName` mutation in the `Mutation` type.
+3. **IN parameters** are exposed as mutation arguments with their corresponding GraphQL scalar types.
+4. **OUT parameters** are collected and returned as a JSON scalar (parse with `JSON.parse()` on the client).
+
+### Example — wallet transfer (PostgreSQL & MySQL)
+
+```sql
+-- PostgreSQL
+CREATE OR REPLACE PROCEDURE transfer_funds(
+    IN  p_from_wallet_id BIGINT,
+    IN  p_to_wallet_id   BIGINT,
+    IN  p_amount         NUMERIC(15,2),
+    OUT p_status         TEXT
+) LANGUAGE plpgsql AS $$
+BEGIN
+    -- Check balance before deducting (procedure-level guard)
+    -- CHECK (balance >= 0) constraint is a second safety net
+    IF (SELECT balance FROM wallets WHERE wallet_id = p_from_wallet_id FOR UPDATE) < p_amount THEN
+        p_status := 'ERROR: Insufficient funds';
+        RETURN;
+    END IF;
+    UPDATE wallets SET balance = balance - p_amount WHERE wallet_id = p_from_wallet_id;
+    UPDATE wallets SET balance = balance + p_amount WHERE wallet_id = p_to_wallet_id;
+    p_status := 'SUCCESS';
+END;
+$$;
+```
+
+Generated GraphQL mutation:
+
+```graphql
+# Happy path
+mutation {
+  callTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 200.0)
+}
+# Returns: "{\"p_status\":\"SUCCESS\"}"
+
+# Unhappy path — insufficient funds
+mutation {
+  callTransferFunds(p_from_wallet_id: 3, p_to_wallet_id: 1, p_amount: 500.0)
+}
+# Returns: "{\"p_status\":\"ERROR: Insufficient funds (balance=10.00, requested=500.0)\"}"
+```
+
+Client-side usage:
+
+```js
+const raw = data.callTransferFunds;
+const result = JSON.parse(raw);
+if (result.p_status === 'SUCCESS') {
+  // transfer complete
+} else {
+  console.error(result.p_status); // "ERROR: Insufficient funds ..."
+}
+```
+
+### Supported parameter modes
+
+| Mode | PostgreSQL | MySQL | Notes |
+|------|-----------|-------|-------|
+| `IN` | ✅ | ✅ | Exposed as GraphQL argument |
+| `OUT` | ✅ | ✅ | Returned in JSON scalar result |
+| `INOUT` | ✅ | ✅ | Both argument and result |
 
 ## 🔍 Enhanced Filtering & Querying
 
