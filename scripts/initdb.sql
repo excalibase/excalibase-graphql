@@ -470,6 +470,19 @@ INSERT INTO child_table (child_id, parent_id1, parent_id2, description) VALUES
 (3, 2, 1, 'Child of 2-1')
 ON CONFLICT DO NOTHING;
 
+-- Wallet table for stored procedure testing (transfer funds)
+CREATE TABLE IF NOT EXISTS wallets (
+    wallet_id  BIGINT PRIMARY KEY,
+    owner_name VARCHAR(100) NOT NULL,
+    balance    NUMERIC(15,2) NOT NULL DEFAULT 0 CHECK (balance >= 0)
+);
+
+INSERT INTO wallets (wallet_id, owner_name, balance) VALUES
+(1, 'Alice',   1000.00),
+(2, 'Bob',      500.00),
+(3, 'Charlie',   10.00)
+ON CONFLICT DO NOTHING;
+
 -- ====================
 -- STORED PROCEDURES
 -- ====================
@@ -480,7 +493,42 @@ CREATE OR REPLACE PROCEDURE get_customer_order_count(
 )
 LANGUAGE plpgsql AS $$
 BEGIN
-    SELECT COUNT(*) INTO p_count FROM orders WHERE customer_id = p_customer_id;
+    SELECT COUNT(*) INTO p_count FROM hana.orders WHERE customer_id = p_customer_id;
+END;
+$$;
+
+-- Transfer funds between wallets.
+-- Checks balance first; sets p_status to 'SUCCESS' or an 'ERROR: ...' message.
+-- The CHECK (balance >= 0) constraint on wallets is a second safety net.
+CREATE OR REPLACE PROCEDURE transfer_funds(
+    IN  p_from_wallet_id BIGINT,
+    IN  p_to_wallet_id   BIGINT,
+    IN  p_amount         NUMERIC(15,2),
+    OUT p_status         TEXT
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_balance NUMERIC(15,2);
+BEGIN
+    SELECT balance INTO v_balance
+    FROM hana.wallets
+    WHERE wallet_id = p_from_wallet_id
+    FOR UPDATE;
+
+    IF v_balance IS NULL THEN
+        p_status := 'ERROR: Source wallet not found';
+        RETURN;
+    END IF;
+
+    IF v_balance < p_amount THEN
+        p_status := 'ERROR: Insufficient funds (balance=' || v_balance || ', requested=' || p_amount || ')';
+        RETURN;
+    END IF;
+
+    UPDATE hana.wallets SET balance = balance - p_amount WHERE wallet_id = p_from_wallet_id;
+    UPDATE hana.wallets SET balance = balance + p_amount WHERE wallet_id = p_to_wallet_id;
+
+    p_status := 'SUCCESS';
 END;
 $$;
 
@@ -673,6 +721,7 @@ ANALYZE custom_types_test;
 ANALYZE order_items;
 ANALYZE parent_table;
 ANALYZE child_table;
+ANALYZE wallets;
 
 -- ====================
 -- INITIALIZATION SUMMARY
@@ -697,6 +746,7 @@ BEGIN
     RAISE NOTICE '  - order_items: % rows', (SELECT count(*) FROM order_items);
     RAISE NOTICE '  - parent_table: % rows', (SELECT count(*) FROM parent_table);
     RAISE NOTICE '  - child_table: % rows', (SELECT count(*) FROM child_table);
+    RAISE NOTICE '  - wallets: % rows', (SELECT count(*) FROM wallets);
     RAISE NOTICE '';
     RAISE NOTICE 'VIEWS:';
     RAISE NOTICE '  - active_customers: % rows', (SELECT count(*) FROM active_customers);

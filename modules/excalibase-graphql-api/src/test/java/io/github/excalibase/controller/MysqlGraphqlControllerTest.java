@@ -22,6 +22,7 @@ import java.sql.DriverManager;
 import java.sql.Statement;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -81,6 +82,17 @@ class MysqlGraphqlControllerTest {
                 mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword());
              Statement stmt = conn.createStatement()) {
 
+            // Create stored procedure (must be created via JDBC, not init script, due to DELIMITER limitation)
+            stmt.execute("DROP PROCEDURE IF EXISTS get_order_count_for_customer");
+            stmt.execute("""
+                    CREATE PROCEDURE get_order_count_for_customer(
+                        OUT p_count INT
+                    )
+                    BEGIN
+                        SELECT COUNT(*) INTO p_count FROM orders;
+                    END
+                    """);
+
             stmt.execute("""
                     INSERT INTO customer (first_name, last_name, email) VALUES
                     ('MARY',      'SMITH',    'mary@example.com'),
@@ -108,6 +120,7 @@ class MysqlGraphqlControllerTest {
             stmt.execute("TRUNCATE TABLE orders");
             stmt.execute("TRUNCATE TABLE customer");
             stmt.execute("SET FOREIGN_KEY_CHECKS=1");
+            stmt.execute("DROP PROCEDURE IF EXISTS get_order_count_for_customer");
         }
     }
 
@@ -372,4 +385,30 @@ class MysqlGraphqlControllerTest {
                 .andExpect(jsonPath("$.data.customer").isArray())
                 .andExpect(jsonPath("$.data.customer", hasSize(0)));
     }
+    // ── Stored Procedure tests ───────────────────────────────────────────────
+
+    @Test
+    void shouldExposeProcedureAsMutationInSchema() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"query": "{ __schema { mutationType { fields { name } } } }"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.__schema.mutationType.fields[*].name", hasItem("callGetOrderCountForCustomer")));
+    }
+
+    @Test
+    void shouldCallProcedureAndReturnOutParamAsJson() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"query": "mutation { callGetOrderCountForCustomer }"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.callGetOrderCountForCustomer").exists());
+    }
+
 }

@@ -17,3 +17,4 @@ CREATE TABLE IF NOT EXISTS orders (
     status      VARCHAR(20)  DEFAULT 'pending',
     CONSTRAINT fk_orders_customer FOREIGN KEY (customer_id) REFERENCES customer(customer_id)
 );
+

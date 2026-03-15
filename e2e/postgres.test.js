@@ -739,8 +739,64 @@ describe('Stored Procedures', () => {
       mutation { callGetCustomerOrderCount(p_customer_id: 1) }
     `);
     expect(data.callGetCustomerOrderCount).toBeDefined();
-    const result = JSON.parse(JSON.stringify(data.callGetCustomerOrderCount));
+    const result = JSON.parse(data.callGetCustomerOrderCount);
     expect(result).toHaveProperty('p_count');
     expect(Number(result.p_count)).toBeGreaterThanOrEqual(0);
+  });
+
+  // ── transfer_funds: complex procedure with balance check ─────────────────
+
+  beforeAll(async () => {
+    // Reset wallet balances so transfer tests are idempotent across repeated runs
+    await client.request(gql`mutation { updateWallets(input: { wallet_id: 1, balance: 1000.00 }) { wallet_id } }`);
+    await client.request(gql`mutation { updateWallets(input: { wallet_id: 2, balance: 500.00 }) { wallet_id } }`);
+    await client.request(gql`mutation { updateWallets(input: { wallet_id: 3, balance: 10.00 }) { wallet_id } }`);
+  });
+
+  test('transfer_funds appears in schema', async () => {
+    const data = await client.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
+    const mutationNames = data.__type.fields.map(f => f.name);
+    expect(mutationNames).toContain('callTransferFunds');
+  });
+
+  test('transfer_funds happy path — sufficient balance moves money', async () => {
+    // Read balances before transfer
+    const before = await client.request(gql`
+      { wallets(orderBy: { wallet_id: ASC }) { wallet_id balance } }
+    `);
+    const aliceBefore = Number(before.wallets.find(w => w.wallet_id == 1).balance);
+    const bobBefore   = Number(before.wallets.find(w => w.wallet_id == 2).balance);
+
+    // Alice (wallet 1) transfers 200 to Bob (wallet 2)
+    const data = await client.request(gql`
+      mutation { callTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 200.00) }
+    `);
+    const result = JSON.parse(data.callTransferFunds);
+    expect(result.p_status).toBe('SUCCESS');
+
+    // Verify balances changed by exactly 200
+    const after = await client.request(gql`
+      { wallets(orderBy: { wallet_id: ASC }) { wallet_id balance } }
+    `);
+    const aliceAfter = Number(after.wallets.find(w => w.wallet_id == 1).balance);
+    const bobAfter   = Number(after.wallets.find(w => w.wallet_id == 2).balance);
+    expect(aliceAfter).toBeCloseTo(aliceBefore - 200, 2);
+    expect(bobAfter).toBeCloseTo(bobBefore + 200, 2);
+  });
+
+  test('transfer_funds unhappy path — insufficient funds rejected, balances unchanged', async () => {
+    // Charlie (wallet 3, balance=10) tries to send 500 → should fail
+    const data = await client.request(gql`
+      mutation { callTransferFunds(p_from_wallet_id: 3, p_to_wallet_id: 1, p_amount: 500.00) }
+    `);
+    const result = JSON.parse(data.callTransferFunds);
+    expect(result.p_status).toMatch(/ERROR.*Insufficient/i);
+
+    // Verify Charlie's balance is still 10, not negative (constraint not violated)
+    const wallets = await client.request(gql`
+      { wallets(orderBy: { wallet_id: ASC }) { wallet_id balance } }
+    `);
+    const charlie = wallets.wallets.find(w => w.wallet_id == 3);
+    expect(Number(charlie.balance)).toBeCloseTo(10.00, 2);
   });
 });

@@ -52,6 +52,18 @@ CREATE TABLE IF NOT EXISTS product_detail (
     CONSTRAINT fk_detail_product FOREIGN KEY (product_id) REFERENCES product(product_id)
 );
 
+-- Wallet table for stored procedure testing (transfer funds)
+CREATE TABLE IF NOT EXISTS wallets (
+    wallet_id  BIGINT PRIMARY KEY,
+    owner_name VARCHAR(100)   NOT NULL,
+    balance    DECIMAL(15,2)  NOT NULL DEFAULT 0 CHECK (balance >= 0)
+);
+
+INSERT INTO wallets (wallet_id, owner_name, balance) VALUES
+(1, 'Alice',   1000.00),
+(2, 'Bob',      500.00),
+(3, 'Charlie',   10.00);
+
 -- ====================
 -- VIEWS
 -- ====================
@@ -143,14 +155,45 @@ INSERT INTO product (name, price, stock, active) VALUES
 -- STORED PROCEDURES
 -- ====================
 
-DROP PROCEDURE IF EXISTS get_customer_order_count;
+DELIMITER $$
+DROP PROCEDURE IF EXISTS get_customer_order_count$$
 CREATE PROCEDURE get_customer_order_count(
     IN  p_customer_id BIGINT,
     OUT p_count       INT
 )
 BEGIN
     SELECT COUNT(*) INTO p_count FROM orders WHERE customer_id = p_customer_id;
-END;
+END$$
+
+-- Transfer funds between wallets.
+-- Checks balance first; sets p_status to 'SUCCESS' or an 'ERROR: ...' message.
+-- The CHECK (balance >= 0) constraint on wallets is a second safety net.
+DROP PROCEDURE IF EXISTS transfer_funds$$
+CREATE PROCEDURE transfer_funds(
+    IN  p_from_wallet_id BIGINT,
+    IN  p_to_wallet_id   BIGINT,
+    IN  p_amount         DECIMAL(15,2),
+    OUT p_status         VARCHAR(200)
+)
+BEGIN
+    DECLARE v_balance DECIMAL(15,2);
+
+    SELECT balance INTO v_balance
+    FROM wallets
+    WHERE wallet_id = p_from_wallet_id
+    FOR UPDATE;
+
+    IF v_balance IS NULL THEN
+        SET p_status = 'ERROR: Source wallet not found';
+    ELSEIF v_balance < p_amount THEN
+        SET p_status = CONCAT('ERROR: Insufficient funds (balance=', v_balance, ', requested=', p_amount, ')');
+    ELSE
+        UPDATE wallets SET balance = balance - p_amount WHERE wallet_id = p_from_wallet_id;
+        UPDATE wallets SET balance = balance + p_amount WHERE wallet_id = p_to_wallet_id;
+        SET p_status = 'SUCCESS';
+    END IF;
+END$$
+DELIMITER ;
 
 INSERT INTO task (title, status, priority, customer_id) VALUES
 ('Setup account',     'done',        'high',     1),

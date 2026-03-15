@@ -561,7 +561,9 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
 
             String placeholders = params.isEmpty() ? "" :
                     "?,".repeat(params.size()).substring(0, params.size() * 2 - 1);
-            String sql = "CALL " + procedure.getName() + "(" + placeholders + ")";
+            String schema = appConfig.getAllowedSchema();
+            String qualifiedName = (schema != null && !schema.isEmpty()) ? schema + ".\"" + procedure.getName() + "\"" : "\"" + procedure.getName() + "\"";
+            String sql = "CALL " + qualifiedName + "(" + placeholders + ")";
 
             return jdbcTemplate.execute((java.sql.Connection con) -> {
                 try (CallableStatement cs = con.prepareCall(sql)) {
@@ -569,7 +571,10 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                         int idx = p.getPosition();
                         if (p.isIn()) {
                             Object val = env.getArguments().get(p.getName());
-                            cs.setObject(idx, val);
+                            // Use explicit SQL type so JDBC driver sends the correct wire type.
+                            // Without this, e.g. Double is sent as float8 but NUMERIC param
+                            // requires numeric, causing PSQLException SQLState 42883.
+                            cs.setObject(idx, val, sqlTypeFor(p.getDataType()));
                         }
                         if (p.isOut()) {
                             cs.registerOutParameter(idx, sqlTypeFor(p.getDataType()));
