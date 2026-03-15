@@ -1,0 +1,41 @@
+# Example: Native binary (GraalVM) — minimal footprint
+# ~50ms startup, ~80MB RAM
+# helm install excalibase excalibase-graphql/ -f examples/native.yaml
+
+image:
+  repository: excalibase/excalibase-graphql
+  tag: "native"
+
+resources:
+  limits:
+    cpu: 250m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 5   # native starts in ~50ms
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: http
+  initialDelaySeconds: 3
+  periodSeconds: 5
+
+database:
+  type: postgres
+  url: "jdbc:postgresql://postgres-service:5432/mydb"
+  existingSecret: "my-db-secret"
+  existingSecretUsernameKey: "username"
+  existingSecretPasswordKey: "password"
+
+app:
+  allowedSchema: "public"
+  cdc:
+    enabled: false   # CDC not supported in native image yet

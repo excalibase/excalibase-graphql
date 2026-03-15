@@ -1,0 +1,170 @@
+# Default values for excalibase-graphql
+
+replicaCount: 1
+
+image:
+  repository: excalibase/excalibase-graphql
+  pullPolicy: IfNotPresent
+  # Use "native" tag for GraalVM native binary (faster startup, lower memory)
+  tag: "latest"
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 10000
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: excalibase.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # - secretName: excalibase-tls
+  #   hosts:
+  #     - excalibase.local
+
+# ---------------------------------------------------------------------------
+# Database connection
+# ---------------------------------------------------------------------------
+database:
+  # "postgres" or "mysql"
+  type: postgres
+
+  # Full JDBC URL
+  # PostgreSQL: jdbc:postgresql://postgres-host:5432/mydb
+  # MySQL:      jdbc:mysql://mysql-host:3306/mydb
+  url: ""
+
+  # Inline credentials (use existingSecret in production)
+  username: ""
+  password: ""
+
+  # Reference an existing Secret instead of inline credentials
+  # The secret must have keys matching existingSecretUsernameKey / existingSecretPasswordKey
+  existingSecret: ""
+  existingSecretUsernameKey: "username"
+  existingSecretPasswordKey: "password"
+
+# ---------------------------------------------------------------------------
+# Application settings
+# ---------------------------------------------------------------------------
+app:
+  # Schema/database name to expose via GraphQL
+  allowedSchema: "public"
+
+  # Server port (must match service.port)
+  port: 10000
+
+  security:
+    userContextEnabled: true
+    userIdHeader: "X-User-Id"
+
+  # CDC / real-time subscriptions (PostgreSQL only)
+  cdc:
+    enabled: false
+    slotName: "cdc_slot"
+    publicationName: "cdc_publication"
+    createSlotIfNotExists: true
+    createPublicationIfNotExists: true
+
+  # TTL cache for schema reflection (minutes)
+  cache:
+    schemaTtlMinutes: 30
+
+# ---------------------------------------------------------------------------
+# Connection pool (HikariCP)
+# ---------------------------------------------------------------------------
+hikari:
+  maximumPoolSize: 20
+  minimumIdle: 2
+  connectionTimeout: 30000
+  idleTimeout: 600000
+  maxLifetime: 1800000
+
+# ---------------------------------------------------------------------------
+# Tomcat tuning
+# ---------------------------------------------------------------------------
+tomcat:
+  threadsMax: 200
+  threadsMinSpare: 10
+  maxConnections: 8192
+  acceptCount: 100
+  connectionTimeout: 20000
+
+# Enable Java 21 virtual threads
+virtualThreads:
+  enabled: true
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+resources:
+  limits:
+    cpu: 500m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# Autoscaling
+# ---------------------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  # targetMemoryUtilizationPercentage: 80
+
+# ---------------------------------------------------------------------------
+# Liveness / readiness probes
+# ---------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 15
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: http
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  failureThreshold: 3
+
+# ---------------------------------------------------------------------------
+# Extra env vars (passed directly to the container)
+# ---------------------------------------------------------------------------
+extraEnv: []
+# - name: LOGGING_LEVEL_IO_GITHUB_EXCALIBASE
+#   value: DEBUG
+
+# Extra volumes / mounts (e.g. for TLS certs)
+extraVolumes: []
+extraVolumeMounts: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

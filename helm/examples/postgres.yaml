@@ -1,0 +1,44 @@
+# Example: PostgreSQL with CDC subscriptions enabled
+# helm install excalibase excalibase-graphql/ -f examples/postgres.yaml
+
+replicaCount: 2
+
+image:
+  repository: excalibase/excalibase-graphql
+  tag: "latest"
+
+database:
+  type: postgres
+  url: "jdbc:postgresql://postgres-service:5432/mydb"
+  # Use existingSecret in production:
+  # existingSecret: "my-db-secret"
+  username: "myuser"
+  password: "changeme"
+
+app:
+  allowedSchema: "public"
+  cdc:
+    enabled: true
+    slotName: "cdc_slot"
+    publicationName: "cdc_publication"
+    createSlotIfNotExists: true
+    createPublicationIfNotExists: true
+
+ingress:
+  enabled: true
+  className: "nginx"
+  hosts:
+    - host: graphql.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: graphql-tls
+      hosts:
+        - graphql.example.com
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70

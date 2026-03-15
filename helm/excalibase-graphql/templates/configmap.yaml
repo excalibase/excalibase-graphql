@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "excalibase-graphql.fullname" . }}
+  labels:
+    {{- include "excalibase-graphql.labels" . | nindent 4 }}
+data:
+  # Database
+  SPRING_DATASOURCE_URL: {{ .Values.database.url | quote }}
+  {{- if eq .Values.database.type "mysql" }}
+  SPRING_DATASOURCE_DRIVER_CLASS_NAME: "com.mysql.cj.jdbc.Driver"
+  {{- else }}
+  SPRING_DATASOURCE_DRIVER_CLASS_NAME: "org.postgresql.Driver"
+  {{- end }}
+
+  # HikariCP
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: {{ .Values.hikari.maximumPoolSize | quote }}
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: {{ .Values.hikari.minimumIdle | quote }}
+  SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: {{ .Values.hikari.connectionTimeout | quote }}
+  SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT: {{ .Values.hikari.idleTimeout | quote }}
+  SPRING_DATASOURCE_HIKARI_MAX_LIFETIME: {{ .Values.hikari.maxLifetime | int | quote }}
+
+  # Tomcat
+  SERVER_TOMCAT_THREADS_MAX: {{ .Values.tomcat.threadsMax | quote }}
+  SERVER_TOMCAT_THREADS_MIN_SPARE: {{ .Values.tomcat.threadsMinSpare | quote }}
+  SERVER_TOMCAT_MAX_CONNECTIONS: {{ .Values.tomcat.maxConnections | quote }}
+  SERVER_TOMCAT_ACCEPT_COUNT: {{ .Values.tomcat.acceptCount | quote }}
+  SERVER_TOMCAT_CONNECTION_TIMEOUT: {{ .Values.tomcat.connectionTimeout | quote }}
+
+  # Virtual threads
+  SPRING_THREADS_VIRTUAL_ENABLED: {{ .Values.virtualThreads.enabled | quote }}
+
+  # Application
+  SERVER_PORT: {{ .Values.app.port | quote }}
+  APP_ALLOWED_SCHEMA: {{ .Values.app.allowedSchema | quote }}
+  APP_DATABASE_TYPE: {{ .Values.database.type | quote }}
+
+  # Security / user context (RLS)
+  APP_SECURITY_USER_CONTEXT_ENABLED: {{ .Values.app.security.userContextEnabled | quote }}
+  APP_SECURITY_USER_ID_HEADER: {{ .Values.app.security.userIdHeader | quote }}
+
+  # CDC (PostgreSQL only)
+  APP_CDC_ENABLED: {{ .Values.app.cdc.enabled | quote }}
+  APP_CDC_SLOT_NAME: {{ .Values.app.cdc.slotName | quote }}
+  APP_CDC_PUBLICATION_NAME: {{ .Values.app.cdc.publicationName | quote }}
+  APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: {{ .Values.app.cdc.createSlotIfNotExists | quote }}
+  APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: {{ .Values.app.cdc.createPublicationIfNotExists | quote }}

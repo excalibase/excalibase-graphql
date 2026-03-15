@@ -1,0 +1,22 @@
+# Example: MySQL backend
+# helm install excalibase excalibase-graphql/ -f examples/mysql.yaml
+
+database:
+  type: mysql
+  url: "jdbc:mysql://mysql-service:3306/mydb?useSSL=false&allowPublicKeyRetrieval=true"
+  username: "myuser"
+  password: "changeme"
+
+app:
+  allowedSchema: "mydb"
+  cdc:
+    enabled: false   # CDC is PostgreSQL-only
+
+ingress:
+  enabled: true
+  className: "nginx"
+  hosts:
+    - host: graphql-mysql.example.com
+      paths:
+        - path: /
+          pathType: Prefix
