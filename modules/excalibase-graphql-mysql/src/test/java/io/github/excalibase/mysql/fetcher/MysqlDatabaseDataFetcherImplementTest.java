@@ -223,6 +223,60 @@ class MysqlDatabaseDataFetcherImplementTest {
         assertThat(avg).isGreaterThan(2.0);
     }
 
+    @Test
+    void shouldConnectionRespectWhereFilter() throws Exception {
+        // Only "Widget" matches eq filter — connection should return 1 edge, not all 3
+        DataFetcher<Map<String, Object>> df = fetcher.buildConnectionDataFetcher("products");
+        DataFetchingEnvironment env = mockEnv(Map.of(
+                "first", 10,
+                "where", Map.of("name", Map.of("eq", "Widget"))));
+
+        Map<String, Object> connection = df.get(env);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
+        assertThat(edges).hasSize(1);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
+        assertThat(node.get("name")).isEqualTo("Widget");
+    }
+
+    @Test
+    void shouldConnectionRespectOrderBy() throws Exception {
+        // price ASC: Doohickey(4.99) < Widget(9.99) < Gadget(19.99)
+        DataFetcher<Map<String, Object>> df = fetcher.buildConnectionDataFetcher("products");
+        DataFetchingEnvironment env = mockEnv(Map.of(
+                "first", 3,
+                "orderBy", Map.of("price", "ASC")));
+
+        Map<String, Object> connection = df.get(env);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> edges = (List<Map<String, Object>>) connection.get("edges");
+        assertThat(edges).hasSize(3);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> firstNode = (Map<String, Object>) edges.get(0).get("node");
+        assertThat(firstNode.get("name")).isEqualTo("Doohickey");
+    }
+
+    @Test
+    void shouldFilterWithOrCondition() throws Exception {
+        // or: [{name: {eq: "Widget"}}, {name: {eq: "Gadget"}}] → 2 results
+        DataFetcher<List<Map<String, Object>>> df = fetcher.buildTableDataFetcher("products");
+        DataFetchingEnvironment env = mockEnv(Map.of(
+                "where", Map.of(
+                        "or", List.of(
+                                Map.of("name", Map.of("eq", "Widget")),
+                                Map.of("name", Map.of("eq", "Gadget"))
+                        ))));
+
+        List<Map<String, Object>> results = df.get(env);
+
+        assertThat(results).hasSize(2);
+        List<Object> names = results.stream().map(r -> r.get("name")).toList();
+        assertThat(names).containsExactlyInAnyOrder("Widget", "Gadget");
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
