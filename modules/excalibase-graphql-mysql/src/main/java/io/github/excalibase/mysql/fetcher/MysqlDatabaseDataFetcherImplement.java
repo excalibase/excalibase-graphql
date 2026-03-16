@@ -89,8 +89,16 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             long offset = after != null ? decodeCursor(after) : 0L;
 
             // Fetch limit+1 to detect hasNextPage
-            String sql = "SELECT * FROM `" + tableName + "` LIMIT ? OFFSET ?";
-            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, limit + 1, offset);
+            StringBuilder sql = new StringBuilder("SELECT * FROM `").append(tableName).append("`");
+            List<Object> params = new ArrayList<>();
+            applyWhere(sql, params, env);
+            applyOrderBy(sql, env);
+            sql.append(" LIMIT ?");
+            params.add(limit + 1);
+            sql.append(" OFFSET ?");
+            params.add(offset);
+
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
 
             boolean hasNextPage = rows.size() > limit;
             List<Map<String, Object>> pageRows = hasNextPage ? rows.subList(0, limit) : rows;
@@ -109,8 +117,10 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             pageInfo.put("startCursor", pageRows.isEmpty() ? null : encodeCursor(offset));
             pageInfo.put("endCursor", pageRows.isEmpty() ? null : encodeCursor(offset + pageRows.size() - 1));
 
-            Long totalCount = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM `" + tableName + "`", Long.class);
+            StringBuilder countSql = new StringBuilder("SELECT COUNT(*) FROM `").append(tableName).append("`");
+            List<Object> countParams = new ArrayList<>();
+            applyWhere(countSql, countParams, env);
+            Long totalCount = jdbcTemplate.queryForObject(countSql.toString(), Long.class, countParams.toArray());
 
             Map<String, Object> connection = new HashMap<>();
             connection.put("edges", edges);
@@ -206,8 +216,31 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         Object whereArg = env.getArgument("where");
         if (!(whereArg instanceof Map<?, ?> whereMap) || whereMap.isEmpty()) return;
 
+        String clause = buildWhereClause((Map<String, Object>) whereMap, params);
+        if (!clause.isEmpty()) {
+            sql.append(" WHERE ").append(clause);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String buildWhereClause(Map<String, Object> whereMap, List<Object> params) {
+        // Handle top-level `or` key: OR of multiple condition maps
+        Object orArg = whereMap.get("or");
+        if (orArg instanceof List<?> orList && !orList.isEmpty()) {
+            List<String> orClauses = new ArrayList<>();
+            for (Object item : orList) {
+                if (item instanceof Map<?, ?> orBranch) {
+                    String branch = buildWhereClause((Map<String, Object>) orBranch, params);
+                    if (!branch.isEmpty()) orClauses.add("(" + branch + ")");
+                }
+            }
+            if (!orClauses.isEmpty()) return String.join(" OR ", orClauses);
+            return "";
+        }
+
         List<String> clauses = new ArrayList<>();
         for (Map.Entry<?, ?> entry : whereMap.entrySet()) {
+            if ("or".equals(entry.getKey())) continue; // already handled above
             String col = "`" + entry.getKey() + "`";
             Object condObj = entry.getValue();
 
@@ -219,9 +252,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             }
         }
 
-        if (!clauses.isEmpty()) {
-            sql.append(" WHERE ").append(String.join(" AND ", clauses));
-        }
+        return String.join(" AND ", clauses);
     }
 
     private void buildColumnClauses(String col, Map<String, Object> cond,
