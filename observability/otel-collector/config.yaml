@@ -1,0 +1,65 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+  batch:
+    timeout: 5s
+    send_batch_size: 1000
+
+  # Ensure service.name is always set
+  resource:
+    attributes:
+      - key: service.name
+        value: excalibase-graphql
+        action: insert
+
+exporters:
+  # Traces → Tempo (receives OTLP natively)
+  otlphttp/tempo:
+    endpoint: http://tempo:4318
+    tls:
+      insecure: true
+
+  # Metrics → OTel Collector exposes a Prometheus scrape endpoint;
+  # Prometheus scrapes it — no remote_write receiver needed.
+  prometheus:
+    endpoint: 0.0.0.0:9464
+    namespace: excalibase
+
+  # Logs → Loki
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+    default_labels_enabled:
+      exporter: false
+      job: true
+
+  # Debug — logs all signals to collector stdout (disable in prod)
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters:  [otlphttp/tempo, debug]
+
+    metrics:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters:  [prometheus]
+
+    logs:
+      receivers:  [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters:  [loki, debug]

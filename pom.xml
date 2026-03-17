@@ -63,6 +63,9 @@
 
         <!--testing-->
         <testcontainers.version>1.21.4</testcontainers.version>
+
+        <!--observability-->
+        <opentelemetry-instrumentation.version>2.16.0-alpha</opentelemetry-instrumentation.version>
     </properties>
 
     <dependencyManagement>
@@ -141,6 +144,13 @@
                 <artifactId>postgresql</artifactId>
                 <version>${postgresql.version}</version>
                 <scope>runtime</scope>
+            </dependency>
+
+            <!--Observability-->
+            <dependency>
+                <groupId>io.opentelemetry.instrumentation</groupId>
+                <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+                <version>${opentelemetry-instrumentation.version}</version>
             </dependency>
 
             <!--Testing-->

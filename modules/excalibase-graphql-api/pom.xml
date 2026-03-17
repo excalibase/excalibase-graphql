@@ -69,6 +69,27 @@
             <artifactId>graphql-java</artifactId>
         </dependency>
 
+        <!-- Observability: OpenTelemetry tracing + OTLP export -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-otlp</artifactId>
+        </dependency>
+        <!-- OTLP log export: sends Logback records to OTel Collector via OTLP.
+             Spring Boot OtlpLoggingAutoConfiguration picks this up automatically
+             when management.otlp.logging.endpoint is set. -->
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-logback-appender-1.0</artifactId>
+        </dependency>
+
         <!-- Reactive streams for subscriptions -->
         <dependency>
             <groupId>io.projectreactor</groupId>
