@@ -14,6 +14,7 @@ import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector
 import io.github.excalibase.service.ServiceLookup
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate
+import org.springframework.jdbc.core.namedparam.SqlParameterSource
 import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.testcontainers.containers.PostgreSQLContainer
 import spock.lang.Shared
@@ -403,6 +404,69 @@ class PostgresAggregateDataFetcherTest extends Specification {
 
         then: "should return count as 0"
         result.count == 0
+    }
+
+    def "should execute one query per aggregate function not one per column"() {
+        given: "a table with two numeric columns"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.multi_col_agg (
+                id SERIAL PRIMARY KEY,
+                col_a DECIMAL(10,2) NOT NULL,
+                col_b DECIMAL(10,2) NOT NULL
+            )
+        """)
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.multi_col_agg (col_a, col_b) VALUES (10.0, 5.0), (20.0, 15.0)
+        """)
+
+        and: "mocked schema reflector"
+        def tableInfo = new TableInfo(
+                name: "multi_col_agg",
+                columns: [
+                        new ColumnInfo(name: "id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "col_a", type: "numeric", primaryKey: false, nullable: false),
+                        new ColumnInfo(name: "col_b", type: "numeric", primaryKey: false, nullable: false)
+                ],
+                foreignKeys: []
+        )
+        schemaReflector.reflectSchema() >> ["multi_col_agg": tableInfo]
+
+        and: "a NamedParameterJdbcTemplate that counts SQL executions"
+        def queryCount = new int[1]
+        def dataSource = jdbcTemplate.dataSource
+        def countingTemplate = new NamedParameterJdbcTemplate(dataSource) {
+            @Override
+            <T> T queryForObject(String sql, SqlParameterSource paramSource, Class<T> requiredType) {
+                queryCount[0]++
+                return super.queryForObject(sql, paramSource, requiredType)
+            }
+            @Override
+            Map<String, Object> queryForMap(String sql, SqlParameterSource paramSource) {
+                queryCount[0]++
+                return super.queryForMap(sql, paramSource)
+            }
+        }
+        def countingFetcher = new PostgresDatabaseDataFetcherImplement(
+                jdbcTemplate, countingTemplate, serviceLookup, appConfig
+        )
+
+        and: "environment requesting sum on 2 columns"
+        def environment = createMockAggregateEnvironment(
+                ["sum"],
+                [:],
+                ["sum": ["col_a", "col_b"]]
+        )
+
+        when: "executing sum aggregate"
+        def fetcher = countingFetcher.buildAggregateDataFetcher("multi_col_agg")
+        def result = fetcher.get(environment)
+
+        then: "results are correct"
+        result.sum.col_a == 30.0
+        result.sum.col_b == 20.0
+
+        and: "only ONE query was fired for 2-column sum (not 2)"
+        queryCount[0] == 1
     }
 
     // Helper methods

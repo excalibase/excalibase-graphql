@@ -3343,4 +3343,197 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
             // Ignore cleanup errors
         }
     }
+
+    def "should return reverse relationship from batch context without hitting DB"() {
+        given: "tables for the reverse relationship"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.rc_customers (
+                customer_id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL
+            )
+        """)
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.rc_orders (
+                order_id SERIAL PRIMARY KEY,
+                customer_id INTEGER REFERENCES test_schema.rc_customers(customer_id),
+                total NUMERIC(10,2) NOT NULL
+            )
+        """)
+        jdbcTemplate.execute("INSERT INTO test_schema.rc_customers (customer_id, name) VALUES (1,'Alice')")
+        jdbcTemplate.execute("INSERT INTO test_schema.rc_orders (order_id, customer_id, total) VALUES (10, 1, 100.0), (11, 1, 200.0)")
+
+        and: "schema reflector returning both tables"
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.reflectSchema() >> [
+                "rc_customers": new TableInfo(name: "rc_customers", columns: [
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "name", type: "varchar", primaryKey: false, nullable: false)
+                ], foreignKeys: [], view: false),
+                "rc_orders": new TableInfo(name: "rc_orders", columns: [
+                        new ColumnInfo(name: "order_id", type: "integer", primaryKey: true, nullable: false),
+                        new ColumnInfo(name: "customer_id", type: "integer", primaryKey: false, nullable: true),
+                        new ColumnInfo(name: "total", type: "numeric", primaryKey: false, nullable: false)
+                ], foreignKeys: [new ForeignKeyInfo("customer_id", "rc_customers", "customer_id")], view: false)
+        ]
+
+        and: "a JdbcTemplate that counts queries against rc_orders"
+        def queryCount = new int[1]
+        def countingJdbc = new JdbcTemplate(jdbcTemplate.dataSource) {
+            @Override
+            List<Map<String, Object>> queryForList(String sql, Object... args) {
+                if (sql.toLowerCase().contains("rc_orders")) queryCount[0]++
+                return super.queryForList(sql, args)
+            }
+        }
+        def countingFetcher = new PostgresDatabaseDataFetcherImplement(
+                countingJdbc, namedParameterJdbcTemplate, serviceLookup, appConfig
+        )
+        countingFetcher.schemaReflector = mockReflector
+
+        and: "a GraphQL context pre-loaded with reverse batch data under REV: key"
+        def preloadedOrders = [
+                [order_id: 10, customer_id: 1, total: 100.0],
+                [order_id: 11, customer_id: 1, total: 200.0]
+        ]
+        def grouped = new HashMap()
+        grouped.put(1, preloadedOrders)
+        def batchContextMap = new HashMap()
+        batchContextMap.put("REV:rc_orders:customer_id", grouped)
+        def ctx = GraphQLContext.newContext().build()
+        ctx.put("BATCH_CONTEXT", batchContextMap)
+
+        def environment = Mock(DataFetchingEnvironment)
+        environment.getSource() >> [customer_id: 1, name: "Alice"]
+        environment.getGraphQlContext() >> ctx
+        environment.getSelectionSet() >> Mock(DataFetchingFieldSelectionSet) {
+            getFields() >> [
+                    Mock(SelectedField) { getName() >> "order_id" },
+                    Mock(SelectedField) { getName() >> "total" }
+            ]
+        }
+
+        when: "calling reverse relationship fetcher"
+        def reverseFetcher = countingFetcher.buildReverseRelationshipDataFetcher(
+                "rc_customers", "rc_orders", ["customer_id"], ["customer_id"]
+        )
+        def result = reverseFetcher.get(environment)
+
+        then: "returns pre-loaded data from context"
+        result.size() == 2
+        result[0].order_id == 10
+        result[1].order_id == 11
+
+        and: "zero queries fired against rc_orders table"
+        queryCount[0] == 0
+    }
+
+    def "should preload reverse relationship in batch context from buildTableDataFetcher"() {
+        given: "parent and child tables with FK relationship"
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.rc_customers (
+                customer_id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL
+            )
+        """)
+        jdbcTemplate.execute("""
+            CREATE TABLE test_schema.rc_orders (
+                order_id SERIAL PRIMARY KEY,
+                customer_id INTEGER REFERENCES test_schema.rc_customers(customer_id),
+                total NUMERIC(10,2) NOT NULL
+            )
+        """)
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.rc_customers (customer_id, name) VALUES (1,'Alice'),(2,'Bob'),(3,'Carol')
+        """)
+        jdbcTemplate.execute("""
+            INSERT INTO test_schema.rc_orders (customer_id, total) VALUES (1,10),(1,20),(2,30),(3,40)
+        """)
+
+        and: "schema reflector returning both tables with FK"
+        def mockReflector = Mock(IDatabaseSchemaReflector)
+        mockReflector.reflectSchema() >> [
+                "rc_customers": new TableInfo(
+                        name: "rc_customers",
+                        columns: [
+                                new ColumnInfo(name: "customer_id", type: "integer", primaryKey: true, nullable: false),
+                                new ColumnInfo(name: "name", type: "varchar", primaryKey: false, nullable: false)
+                        ],
+                        foreignKeys: [],
+                        view: false
+                ),
+                "rc_orders": new TableInfo(
+                        name: "rc_orders",
+                        columns: [
+                                new ColumnInfo(name: "order_id", type: "integer", primaryKey: true, nullable: false),
+                                new ColumnInfo(name: "customer_id", type: "integer", primaryKey: false, nullable: true),
+                                new ColumnInfo(name: "total", type: "numeric", primaryKey: false, nullable: false)
+                        ],
+                        foreignKeys: [new ForeignKeyInfo("customer_id", "rc_customers", "customer_id")],
+                        view: false
+                )
+        ]
+        dataFetcher.schemaReflector = mockReflector
+
+        and: "a counting JdbcTemplate to track rc_orders queries"
+        def rcOrdersQueryCount = new int[1]
+        def countingJdbc = new JdbcTemplate(jdbcTemplate.dataSource) {
+            @Override
+            List<Map<String, Object>> queryForList(String sql, Object... args) {
+                if (sql.toLowerCase().contains("rc_orders")) rcOrdersQueryCount[0]++
+                return super.queryForList(sql, args)
+            }
+        }
+        def countingNamedJdbc = new NamedParameterJdbcTemplate(jdbcTemplate.dataSource) {
+            @Override
+            List<Map<String, Object>> queryForList(String sql, org.springframework.jdbc.core.namedparam.SqlParameterSource paramSource) {
+                if (sql.toLowerCase().contains("rc_orders")) rcOrdersQueryCount[0]++
+                return super.queryForList(sql, paramSource)
+            }
+        }
+        def countingFetcher = new PostgresDatabaseDataFetcherImplement(
+                countingJdbc, countingNamedJdbc, serviceLookup, appConfig
+        )
+        countingFetcher.schemaReflector = mockReflector
+
+        and: "selection set requesting customer fields plus reverse FK field 'rcOrders'"
+        def rcOrdersRelField = Mock(SelectedField) {
+            getName() >> "rcOrders"
+            getSelectionSet() >> Mock(DataFetchingFieldSelectionSet) {
+                getFields() >> [
+                        Mock(SelectedField) { getName() >> "order_id" },
+                        Mock(SelectedField) { getName() >> "total" }
+                ]
+            }
+        }
+        def selectionSet = Mock(DataFetchingFieldSelectionSet)
+        selectionSet.getFields() >> [
+                Mock(SelectedField) { getName() >> "customer_id" },
+                Mock(SelectedField) { getName() >> "name" },
+                rcOrdersRelField
+        ]
+        def ctx = GraphQLContext.newContext().build()
+        def environment = Mock(DataFetchingEnvironment)
+        environment.getSelectionSet() >> selectionSet
+        environment.getArguments() >> [:]
+        environment.getGraphQlContext() >> ctx
+
+        when: "calling buildTableDataFetcher for rc_customers"
+        def tableFetcher = countingFetcher.buildTableDataFetcher("rc_customers")
+        def results = tableFetcher.get(environment)
+
+        then: "returns all 3 customers"
+        results.size() == 3
+
+        and: "exactly 1 batch query was fired against rc_orders (not 3 per customer)"
+        rcOrdersQueryCount[0] == 1
+
+        and: "BATCH_CONTEXT contains reverse relationship data keyed as REV:rc_orders:customer_id"
+        def batchCtx = ctx.get("BATCH_CONTEXT")
+        batchCtx != null
+        batchCtx["REV:rc_orders:customer_id"] != null
+        def grouped = batchCtx["REV:rc_orders:customer_id"]
+        grouped[1].size() == 2   // customer 1 has 2 orders
+        grouped[2].size() == 1   // customer 2 has 1 order
+        grouped[3].size() == 1   // customer 3 has 1 order
+    }
 }
