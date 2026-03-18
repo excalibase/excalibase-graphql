@@ -46,7 +46,7 @@ jobs:
         restore-keys: ${{ runner.os }}-sonar
 
     - name: Run tests with coverage
-      run: mvn clean test jacoco:report ${{ env.MAVEN_CLI_OPTS }}
+      run: mvn clean verify ${{ env.MAVEN_CLI_OPTS }}
 
     - name: Add coverage to PR
       id: jacoco
@@ -54,7 +54,7 @@ jobs:
       if: github.event_name == 'pull_request'
       with:
         paths: |
-          ${{ github.workspace }}/modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml
+          ${{ github.workspace }}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml
         token: ${{ secrets.GITHUB_TOKEN }}
         min-coverage-overall: 40
         min-coverage-changed-files: 60
@@ -83,14 +83,14 @@ jobs:
         mvn sonar:sonar ${{ env.MAVEN_CLI_OPTS }} \
           -Dsonar.projectKey=Excalibase-Graphql \
           "-Dsonar.projectName=Excalibase Graphql" \
-          -Dsonar.coverage.jacoco.xmlReportPaths=${{ github.workspace }}/modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml \
+          -Dsonar.coverage.jacoco.xmlReportPaths=${{ github.workspace }}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml \
           $SONAR_EXTRA
 
     - name: Upload coverage reports
       uses: actions/upload-artifact@v4
       with:
         name: coverage-reports
-        path: modules/excalibase-graphql-api/target/site/jacoco/
+        path: modules/excalibase-graphql-api/target/site/jacoco-aggregate/
         retention-days: 7
 
   build:
