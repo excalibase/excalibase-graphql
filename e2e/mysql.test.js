@@ -155,6 +155,16 @@ describe('Basic queries', () => {
     expect(data.product.length).toBeGreaterThanOrEqual(5);
   });
 
+  test('filter by or — union of conditions', async () => {
+    const data = await client.request(gql`{
+      customer(where: { or: [{ first_name: { eq: "MARY" } }, { first_name: { eq: "PATRICIA" } }] }) {
+        customer_id first_name
+      }
+    }`);
+    expect(data.customer.length).toBeGreaterThanOrEqual(2);
+    data.customer.forEach(r => expect(['MARY', 'PATRICIA']).toContain(r.first_name));
+  });
+
   test('active column is Int (0/1), not Boolean (tinyInt1isBit=false)', async () => {
     const data = await client.request(gql`{ customer(limit: 3) { customer_id active } }`);
     data.customer.forEach(r => {
@@ -214,6 +224,28 @@ describe('Connection (cursor pagination)', () => {
   test('customerConnection totalCount >= 10', async () => {
     const data = await client.request(gql`{ customerConnection(first: 5) { totalCount } }`);
     expect(data.customerConnection.totalCount).toBeGreaterThanOrEqual(10);
+  });
+
+  test('customerConnection with where filter returns only matching rows', async () => {
+    const data = await client.request(gql`{
+      customerConnection(first: 100, where: { first_name: { eq: "MARY" } }) {
+        edges { node { first_name } }
+        totalCount
+      }
+    }`);
+    data.customerConnection.edges.forEach(e => expect(e.node.first_name).toBe('MARY'));
+    expect(data.customerConnection.totalCount).toBeGreaterThanOrEqual(1);
+  });
+
+  test('customerConnection with orderBy sorts correctly', async () => {
+    const data = await client.request(gql`{
+      customerConnection(first: 5, orderBy: { first_name: "ASC" }) {
+        edges { node { first_name } }
+      }
+    }`);
+    const names = data.customerConnection.edges.map(e => e.node.first_name);
+    const sorted = [...names].sort();
+    expect(names).toEqual(sorted);
   });
 });
 

@@ -385,6 +385,49 @@ class MysqlGraphqlControllerTest {
                 .andExpect(jsonPath("$.data.customer").isArray())
                 .andExpect(jsonPath("$.data.customer", hasSize(0)));
     }
+    // ─── Connection filter / orderBy ─────────────────────────────────────────
+
+    @Test
+    void shouldConnectionRespectWhereFilter() throws Exception {
+        // MARY is one of 5 customers — connection with where should return only 1 edge
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"query": "{ customerConnection(first: 10, where: { first_name: { eq: \\"MARY\\" } }) { edges { node { customer_id first_name } } totalCount } }"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.customerConnection.edges", hasSize(1)))
+                .andExpect(jsonPath("$.data.customerConnection.edges[0].node.first_name").value("MARY"))
+                .andExpect(jsonPath("$.data.customerConnection.totalCount").value(1));
+    }
+
+    @Test
+    void shouldConnectionRespectOrderBy() throws Exception {
+        // ASC order — BARBARA (B) comes before ELIZABETH (E) alphabetically
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"query": "{ customerConnection(first: 5, orderBy: { first_name: \\"ASC\\" }) { edges { node { first_name } } } }"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.customerConnection.edges[0].node.first_name").value("BARBARA"));
+    }
+
+    @Test
+    void shouldFilterCustomersWithOrCondition() throws Exception {
+        // or: MARY or PATRICIA — should return exactly 2 customers
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"query": "{ customer(where: { or: [{ first_name: { eq: \\"MARY\\" } }, { first_name: { eq: \\"PATRICIA\\" } }] }) { customer_id first_name } }"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.customer", hasSize(2)));
+    }
+
     // ── Stored Procedure tests ───────────────────────────────────────────────
 
     @Test

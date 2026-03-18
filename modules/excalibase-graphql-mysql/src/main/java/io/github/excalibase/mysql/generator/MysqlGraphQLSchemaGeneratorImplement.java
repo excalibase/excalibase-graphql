@@ -144,7 +144,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
 
             // ── Query fields ─────────────────────────────────────────────────
             queryBuilder.field(buildListQueryField(tableName, tableType, tableInfo, whereInput, orderByInput));
-            queryBuilder.field(buildConnectionQueryField(tableName, connectionTypes.get(tableName)));
+            queryBuilder.field(buildConnectionQueryField(tableName, connectionTypes.get(tableName), whereInput, orderByInput));
             queryBuilder.field(buildAggregateQueryField(tableName, tableInfo));
 
             // ── Mutation fields (skip views — read-only) ─────────────────────
@@ -261,8 +261,9 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
             .build();
 
     private GraphQLInputObjectType buildWhereInput(String tableName, TableInfo tableInfo) {
+        String typeName = capitalize(tableName) + "WhereInput";
         GraphQLInputObjectType.Builder b = GraphQLInputObjectType.newInputObject()
-                .name(capitalize(tableName) + "WhereInput");
+                .name(typeName);
         for (ColumnInfo col : tableInfo.getColumns()) {
             GraphQLInputType filterType = filterInputFor(col.getType());
             b.field(GraphQLInputObjectField.newInputObjectField()
@@ -270,6 +271,11 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                     .type(filterType)
                     .build());
         }
+        // or: list of the same WhereInput type (self-referential via TypeReference)
+        b.field(GraphQLInputObjectField.newInputObjectField()
+                .name("or")
+                .type(new GraphQLList(new graphql.schema.GraphQLTypeReference(typeName)))
+                .build());
         return b.build();
     }
 
@@ -311,7 +317,9 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
     }
 
     private GraphQLFieldDefinition buildConnectionQueryField(String tableName,
-                                                              GraphQLObjectType connectionType) {
+                                                              GraphQLObjectType connectionType,
+                                                              GraphQLInputObjectType whereInput,
+                                                              GraphQLInputObjectType orderByInput) {
         return GraphQLFieldDefinition.newFieldDefinition()
                 .name(toLowerCamelCase(tableName) + "Connection")
                 .type(connectionType)
@@ -319,6 +327,8 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                 .argument(GraphQLArgument.newArgument().name("after").type(GraphQLString).build())
                 .argument(GraphQLArgument.newArgument().name("last").type(GraphQLInt).build())
                 .argument(GraphQLArgument.newArgument().name("before").type(GraphQLString).build())
+                .argument(GraphQLArgument.newArgument().name("where").type(whereInput).build())
+                .argument(GraphQLArgument.newArgument().name("orderBy").type(orderByInput).build())
                 .build();
     }
 
