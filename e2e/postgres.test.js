@@ -86,21 +86,21 @@ describe('Basic queries', () => {
 
 describe('Aggregate queries', () => {
   test('customer aggregate count', async () => {
-    const data = await client.request(gql`{ customer_aggregate { count } }`);
-    expect(data.customer_aggregate.count).toBeGreaterThanOrEqual(10);
+    const data = await client.request(gql`{ customerAggregate { count } }`);
+    expect(data.customerAggregate.count).toBeGreaterThanOrEqual(10);
   });
 
   test('orders aggregate count', async () => {
-    const data = await client.request(gql`{ orders_aggregate { count } }`);
-    expect(data.orders_aggregate.count).toBeGreaterThanOrEqual(1);
+    const data = await client.request(gql`{ ordersAggregate { count } }`);
+    expect(data.ordersAggregate.count).toBeGreaterThanOrEqual(1);
   });
 
   test('orders aggregate sum/avg/min/max', async () => {
     // Postgres aggregate uses nested per-column types: sum { col }, avg { col }, etc.
-    const data = await client.request(gql`{ orders_aggregate { sum { total_amount } avg { total_amount } min { total_amount } max { total_amount } } }`);
-    expect(Number(data.orders_aggregate.sum.total_amount)).toBeGreaterThan(0);
-    expect(Number(data.orders_aggregate.avg.total_amount)).toBeGreaterThan(0);
-    expect(Number(data.orders_aggregate.min.total_amount)).toBeLessThanOrEqual(Number(data.orders_aggregate.max.total_amount));
+    const data = await client.request(gql`{ ordersAggregate { sum { total_amount } avg { total_amount } min { total_amount } max { total_amount } } }`);
+    expect(Number(data.ordersAggregate.sum.total_amount)).toBeGreaterThan(0);
+    expect(Number(data.ordersAggregate.avg.total_amount)).toBeGreaterThan(0);
+    expect(Number(data.ordersAggregate.min.total_amount)).toBeLessThanOrEqual(Number(data.ordersAggregate.max.total_amount));
   });
 });
 
@@ -128,35 +128,35 @@ describe('Connection (cursor pagination)', () => {
 
 describe('Enhanced PostgreSQL types', () => {
   test('query all enhanced_types fields', async () => {
-    const data = await client.request(gql`{ enhanced_types { id name json_col jsonb_col int_array text_array timestamptz_col } }`);
-    expect(data.enhanced_types.length).toBeGreaterThanOrEqual(3);
+    const data = await client.request(gql`{ enhancedTypes { id name json_col jsonb_col int_array text_array timestamptz_col } }`);
+    expect(data.enhancedTypes.length).toBeGreaterThanOrEqual(3);
   });
 
   test('filter enhanced_types by name', async () => {
-    const data = await client.request(gql`{ enhanced_types(where: { name: { eq: "Test Record 1" } }) { id name json_col } }`);
-    expect(data.enhanced_types[0].json_col).not.toBeNull();
+    const data = await client.request(gql`{ enhancedTypes(where: { name: { eq: "Test Record 1" } }) { id name json_col } }`);
+    expect(data.enhancedTypes[0].json_col).not.toBeNull();
   });
 
   test('array fields are non-null', async () => {
-    const data = await client.request(gql`{ enhanced_types { id int_array text_array } }`);
-    expect(data.enhanced_types[0].int_array).not.toBeNull();
-    expect(data.enhanced_types[0].text_array).not.toBeNull();
+    const data = await client.request(gql`{ enhancedTypes { id int_array text_array } }`);
+    expect(data.enhancedTypes[0].int_array).not.toBeNull();
+    expect(data.enhancedTypes[0].text_array).not.toBeNull();
   });
 
   test('network type fields', async () => {
-    const data = await client.request(gql`{ enhanced_types { id inet_col cidr_col macaddr_col } }`);
-    expect(data.enhanced_types[0].inet_col).not.toBeNull();
+    const data = await client.request(gql`{ enhancedTypes { id inet_col cidr_col macaddr_col } }`);
+    expect(data.enhancedTypes[0].inet_col).not.toBeNull();
   });
 
   test('datetime fields', async () => {
-    const data = await client.request(gql`{ enhanced_types { id timestamptz_col timetz_col interval_col } }`);
-    expect(data.enhanced_types[0].timestamptz_col).not.toBeNull();
+    const data = await client.request(gql`{ enhancedTypes { id timestamptz_col timetz_col interval_col } }`);
+    expect(data.enhancedTypes[0].timestamptz_col).not.toBeNull();
   });
 
   test('BIT/VARBIT fields', async () => {
-    const data = await client.request(gql`{ enhanced_types { id name bit_col varbit_col } }`);
-    expect(data.enhanced_types[0].bit_col).not.toBeNull();
-    expect(data.enhanced_types[0].varbit_col).not.toBeNull();
+    const data = await client.request(gql`{ enhancedTypes { id name bit_col varbit_col } }`);
+    expect(data.enhancedTypes[0].bit_col).not.toBeNull();
+    expect(data.enhancedTypes[0].varbit_col).not.toBeNull();
   });
 
   test('create enhanced_types with direct JSON objects', async () => {
@@ -291,34 +291,34 @@ describe('Custom types — enums & composite', () => {
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
 describe('Domain types', () => {
-  test('query domain_types_test table', async () => {
-    const data = await client.request(gql`{ domain_types_test { id email quantity price username tags rating description is_active } }`);
-    expect(data.domain_types_test.length).toBeGreaterThanOrEqual(4);
+  test('query domainTypesTest table', async () => {
+    const data = await client.request(gql`{ domainTypesTest { id email quantity price username tags rating description is_active } }`);
+    expect(data.domainTypesTest.length).toBeGreaterThanOrEqual(4);
   });
 
   test('email domain value', async () => {
-    const data = await client.request(gql`{ domain_types_test(where: { username: { eq: "john_doe" } }) { email username } }`);
-    expect(data.domain_types_test[0].email).toBe('john.doe@example.com');
+    const data = await client.request(gql`{ domainTypesTest(where: { username: { eq: "john_doe" } }) { email username } }`);
+    expect(data.domainTypesTest[0].email).toBe('john.doe@example.com');
   });
 
   test('positive integer domain (quantity > 0)', async () => {
-    const data = await client.request(gql`{ domain_types_test { quantity } }`);
-    data.domain_types_test.forEach(row => expect(row.quantity).toBeGreaterThan(0));
+    const data = await client.request(gql`{ domainTypesTest { quantity } }`);
+    data.domainTypesTest.forEach(row => expect(row.quantity).toBeGreaterThan(0));
   });
 
   test('price domain (price >= 0)', async () => {
-    const data = await client.request(gql`{ domain_types_test { price } }`);
-    data.domain_types_test.forEach(row => expect(Number(row.price)).toBeGreaterThanOrEqual(0));
+    const data = await client.request(gql`{ domainTypesTest { price } }`);
+    data.domainTypesTest.forEach(row => expect(Number(row.price)).toBeGreaterThanOrEqual(0));
   });
 
   test('text array domain tags', async () => {
-    const data = await client.request(gql`{ domain_types_test(where: { username: { eq: "jane_smith" } }) { tags } }`);
-    expect(data.domain_types_test[0].tags.length).toBeGreaterThanOrEqual(2);
+    const data = await client.request(gql`{ domainTypesTest(where: { username: { eq: "jane_smith" } }) { tags } }`);
+    expect(data.domainTypesTest[0].tags.length).toBeGreaterThanOrEqual(2);
   });
 
   test('rating domain 1..5', async () => {
-    const data = await client.request(gql`{ domain_types_test { rating } }`);
-    data.domain_types_test.forEach(row => {
+    const data = await client.request(gql`{ domainTypesTest { rating } }`);
+    data.domainTypesTest.forEach(row => {
       expect(row.rating).toBeGreaterThanOrEqual(1);
       expect(row.rating).toBeLessThanOrEqual(5);
     });
@@ -344,32 +344,62 @@ describe('Relationships', () => {
 
 describe('Composite key tables', () => {
   test('query order_items', async () => {
-    const data = await client.request(gql`{ order_items { order_id product_id quantity price } }`);
-    expect(data.order_items.length).toBeGreaterThanOrEqual(3);
+    const data = await client.request(gql`{ orderItems { order_id product_id quantity price } }`);
+    expect(data.orderItems.length).toBeGreaterThanOrEqual(3);
   });
 
   test('filter order_items by one part of composite key', async () => {
-    const data = await client.request(gql`{ order_items(where: { order_id: { eq: 1 } }) { order_id product_id } }`);
-    expect(data.order_items.length).toBeGreaterThanOrEqual(2);
-    data.order_items.forEach(r => expect(r.order_id).toBe(1));
+    const data = await client.request(gql`{ orderItems(where: { order_id: { eq: 1 } }) { order_id product_id } }`);
+    expect(data.orderItems.length).toBeGreaterThanOrEqual(2);
+    data.orderItems.forEach(r => expect(r.order_id).toBe(1));
   });
 
   test('filter order_items by full composite key', async () => {
-    const data = await client.request(gql`{ order_items(where: { order_id: { eq: 1 }, product_id: { eq: 1 } }) { order_id product_id } }`);
-    expect(data.order_items.length).toBe(1);
-    expect(data.order_items[0].order_id).toBe(1);
-    expect(data.order_items[0].product_id).toBe(1);
+    const data = await client.request(gql`{ orderItems(where: { order_id: { eq: 1 }, product_id: { eq: 1 } }) { order_id product_id } }`);
+    expect(data.orderItems.length).toBe(1);
+    expect(data.orderItems[0].order_id).toBe(1);
+    expect(data.orderItems[0].product_id).toBe(1);
   });
 
   test('query parent_table', async () => {
-    const data = await client.request(gql`{ parent_table { parent_id1 parent_id2 name } }`);
-    expect(data.parent_table.length).toBeGreaterThanOrEqual(3);
+    const data = await client.request(gql`{ parentTable { parent_id1 parent_id2 name } }`);
+    expect(data.parentTable.length).toBeGreaterThanOrEqual(3);
   });
 
   test('query child_table with parent relationship', async () => {
-    const data = await client.request(gql`{ child_table { child_id description parent_table { parent_id1 parent_id2 name } } }`);
-    expect(data.child_table.length).toBeGreaterThanOrEqual(3);
-    data.child_table.forEach(r => expect(r.parent_table).toBeDefined());
+    const data = await client.request(gql`{ childTable { child_id description parentTable { parent_id1 parent_id2 name } } }`);
+    expect(data.childTable.length).toBeGreaterThanOrEqual(3);
+    data.childTable.forEach(r => expect(r.parentTable).toBeDefined());
+  });
+
+
+  test('query parent_table with reverse childTables (composite FK)', async () => {
+    const data = await client.request(gql`{ parentTable { parent_id1 parent_id2 name childTables { child_id description } } }`);
+    expect(data.parentTable.length).toBeGreaterThanOrEqual(3);
+
+    // Core fix assertion: each parent sees only its own children (not cross-parent leakage)
+    // Before fix: parent(1,1) and parent(1,2) both saw ALL children with parent_id1=1
+    const p11 = data.parentTable.find(p => p.parent_id1 === 1 && p.parent_id2 === 1);
+    const p12 = data.parentTable.find(p => p.parent_id1 === 1 && p.parent_id2 === 2);
+    const p21 = data.parentTable.find(p => p.parent_id1 === 2 && p.parent_id2 === 1);
+    expect(p11).toBeDefined();
+    expect(p12).toBeDefined();
+    expect(p21).toBeDefined();
+
+    // child_id=1 belongs to parent(1,1) — p11 must contain it, p12 and p21 must not
+    expect(p11.childTables.map(c => c.child_id)).toContain(1);
+    expect(p12.childTables.map(c => c.child_id)).not.toContain(1);
+    expect(p21.childTables.map(c => c.child_id)).not.toContain(1);
+
+    // child_id=2 belongs to parent(1,2) — p11 and p21 must not contain it
+    expect(p11.childTables.map(c => c.child_id)).not.toContain(2);
+    expect(p12.childTables.map(c => c.child_id)).toContain(2);
+    expect(p21.childTables.map(c => c.child_id)).not.toContain(2);
+
+    // child_id=3 belongs to parent(2,1) — p11 and p12 must not contain it
+    expect(p11.childTables.map(c => c.child_id)).not.toContain(3);
+    expect(p12.childTables.map(c => c.child_id)).not.toContain(3);
+    expect(p21.childTables.map(c => c.child_id)).toContain(3);
   });
 
   test('create order_items with composite key', async () => {
@@ -447,13 +477,13 @@ describe('Composite key tables', () => {
       body: JSON.stringify({ query: 'mutation { deleteOrderItems(input: { order_id: 5, product_id: 2 }) { order_id } }' }) });
     const data = await client.request(gql`
       mutation {
-        createManyOrderItemss(inputs: [
+        createManyOrderItems(inputs: [
           { order_id: 5, product_id: 1, quantity: 2, price: 99.98 }
           { order_id: 5, product_id: 2, quantity: 1, price: 79.99 }
         ]) { order_id product_id quantity }
       }
     `);
-    expect(data.createManyOrderItemss.length).toBe(2);
+    expect(data.createManyOrderItems.length).toBe(2);
   });
 
   test('incomplete composite key is rejected', async () => {
@@ -491,23 +521,23 @@ describe('Composite key tables', () => {
 
 describe('Views (read-only)', () => {
   test('query active_customers view', async () => {
-    const data = await client.request(gql`{ active_customers { customer_id first_name last_name email } }`);
-    expect(data.active_customers.length).toBeGreaterThanOrEqual(5);
+    const data = await client.request(gql`{ activeCustomers { customer_id first_name last_name email } }`);
+    expect(data.activeCustomers.length).toBeGreaterThanOrEqual(5);
   });
 
   test('query enhanced_types_summary view', async () => {
-    const data = await client.request(gql`{ enhanced_types_summary { id name json_name array_size } }`);
-    expect(data.enhanced_types_summary.length).toBeGreaterThanOrEqual(3);
+    const data = await client.request(gql`{ enhancedTypesSummary { id name json_name array_size } }`);
+    expect(data.enhancedTypesSummary.length).toBeGreaterThanOrEqual(3);
   });
 
   test('view pagination', async () => {
-    const data = await client.request(gql`{ active_customers(limit: 3, offset: 0) { customer_id } }`);
-    expect(data.active_customers.length).toBe(3);
+    const data = await client.request(gql`{ activeCustomers(limit: 3, offset: 0) { customer_id } }`);
+    expect(data.activeCustomers.length).toBe(3);
   });
 
   test('view aggregate', async () => {
-    const data = await client.request(gql`{ active_customers_aggregate { count } }`);
-    expect(data.active_customers_aggregate.count).toBeGreaterThanOrEqual(9);
+    const data = await client.request(gql`{ activeCustomersAggregate { count } }`);
+    expect(data.activeCustomersAggregate.count).toBeGreaterThanOrEqual(9);
   });
 
   test('views have no mutation fields', async () => {
@@ -550,13 +580,13 @@ describe('Mutations — CRUD', () => {
   test('bulk create customers', async () => {
     const data = await client.request(gql`
       mutation {
-        createManyCustomers(inputs: [
+        createManyCustomer(inputs: [
           { first_name: "Bulk1", last_name: "Test", email: "bulk1@test.com" }
           { first_name: "Bulk2", last_name: "Test", email: "bulk2@test.com" }
         ]) { customer_id first_name }
       }
     `);
-    expect(data.createManyCustomers.length).toBe(2);
+    expect(data.createManyCustomer.length).toBe(2);
   });
 
   test('create task with PriorityLevel enum', async () => {
@@ -683,32 +713,32 @@ describe('RLS (Row Level Security)', () => {
 
   beforeAll(async () => {
     const data = await client.request(gql`{ __type(name: "Query") { fields { name } } }`);
-    rlsAvailable = data.__type.fields.some(f => f.name === 'rls_orders');
+    rlsAvailable = data.__type.fields.some(f => f.name === 'rlsOrders');
     if (!rlsAvailable) {
-      console.warn('[WARN] rls_orders not in schema — RLS tests will be skipped');
+      console.warn('[WARN] rlsOrders not in schema — RLS tests will be skipped');
     }
   });
 
   test('no user context blocks all rows', async () => {
     if (!rlsAvailable) return;
-    const data = await client.request(gql`{ rls_orders { id user_id product } }`);
-    expect(data.rls_orders.length).toBe(0);
+    const data = await client.request(gql`{ rlsOrders { id user_id product } }`);
+    expect(data.rlsOrders.length).toBe(0);
   });
 
   test('X-User-Id: alice sees only her rows', async () => {
     if (!rlsAvailable) return;
     const aliceClient = createClient(API_URL, { 'X-User-Id': 'alice' });
-    const data = await aliceClient.request(gql`{ rls_orders { id user_id product } }`);
-    expect(data.rls_orders.length).toBeGreaterThan(0);
-    data.rls_orders.forEach(r => expect(r.user_id).toBe('alice'));
+    const data = await aliceClient.request(gql`{ rlsOrders { id user_id product } }`);
+    expect(data.rlsOrders.length).toBeGreaterThan(0);
+    data.rlsOrders.forEach(r => expect(r.user_id).toBe('alice'));
   });
 
   test('X-User-Id: bob sees only his rows', async () => {
     if (!rlsAvailable) return;
     const bobClient = createClient(API_URL, { 'X-User-Id': 'bob' });
-    const data = await bobClient.request(gql`{ rls_orders { id user_id product } }`);
-    expect(data.rls_orders.length).toBeGreaterThan(0);
-    data.rls_orders.forEach(r => expect(r.user_id).toBe('bob'));
+    const data = await bobClient.request(gql`{ rlsOrders { id user_id product } }`);
+    expect(data.rlsOrders.length).toBeGreaterThan(0);
+    data.rlsOrders.forEach(r => expect(r.user_id).toBe('bob'));
   });
 
   test('alice and bob see different rows (isolation)', async () => {
@@ -716,11 +746,11 @@ describe('RLS (Row Level Security)', () => {
     const aliceClient = createClient(API_URL, { 'X-User-Id': 'alice' });
     const bobClient = createClient(API_URL, { 'X-User-Id': 'bob' });
     const [aliceData, bobData] = await Promise.all([
-      aliceClient.request(gql`{ rls_orders { id } }`),
-      bobClient.request(gql`{ rls_orders { id } }`),
+      aliceClient.request(gql`{ rlsOrders { id } }`),
+      bobClient.request(gql`{ rlsOrders { id } }`),
     ]);
-    const aliceIds = aliceData.rls_orders.map(r => r.id).sort();
-    const bobIds = bobData.rls_orders.map(r => r.id).sort();
+    const aliceIds = aliceData.rlsOrders.map(r => r.id).sort();
+    const bobIds = bobData.rlsOrders.map(r => r.id).sort();
     expect(aliceIds).not.toEqual(bobIds);
   });
 });

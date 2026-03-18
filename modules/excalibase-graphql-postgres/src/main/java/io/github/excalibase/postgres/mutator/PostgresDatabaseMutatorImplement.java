@@ -462,7 +462,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
                 String reverseFK = getSchemaHelper().findReverseForeignKey(relationName, tableName, tables);
                 
                 if (reverseFK != null) {
-                    String primaryKeyColumn = getSchemaHelper().getPrimaryKeyColumns(tableName).get(0);
+                    String primaryKeyColumn = getSchemaHelper().getPrimaryKeyColumns(tableName).getFirst();
                     Object primaryKeyValue = createdRecord.get(primaryKeyColumn);
                     
                     List<Map<String, Object>> childRecords = (List<Map<String, Object>>) value;

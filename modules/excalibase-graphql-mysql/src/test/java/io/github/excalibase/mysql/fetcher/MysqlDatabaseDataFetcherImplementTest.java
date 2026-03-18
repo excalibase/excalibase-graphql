@@ -132,7 +132,7 @@ class MysqlDatabaseDataFetcherImplementTest {
         List<Map<String, Object>> results = df.get(env);
 
         assertThat(results).hasSize(1);
-        assertThat(results.get(0).get("name")).isEqualTo("Widget");
+        assertThat(results.getFirst().get("name")).isEqualTo("Widget");
     }
 
     @Test
@@ -144,7 +144,7 @@ class MysqlDatabaseDataFetcherImplementTest {
         List<Map<String, Object>> results = df.get(env);
 
         assertThat(results).hasSize(3);
-        assertThat(results.get(0).get("name")).isEqualTo("Doohickey");
+        assertThat(results.getFirst().get("name")).isEqualTo("Doohickey");
     }
 
     @Test

@@ -86,7 +86,7 @@ public class PostgresSchemaHelper {
     @Deprecated
     public String getPrimaryKeyColumn(String tableName) {
         List<String> primaryKeys = getPrimaryKeyColumns(tableName);
-        return primaryKeys.get(0); // Return first primary key for backward compatibility
+        return primaryKeys.getFirst(); // Return first primary key for backward compatibility
     }
 
     public TableInfo getTableInfo(String tableName) {
@@ -196,7 +196,7 @@ public class PostgresSchemaHelper {
     public Set<String> getForeignKeyColumns(String tableName) {
         List<ForeignKeyInfo> foreignKeys = getForeignKeys(tableName);
         return foreignKeys.stream()
-            .map(ForeignKeyInfo::getColumnName)
+            .flatMap(fk -> fk.getColumnNames().stream())
             .collect(Collectors.toSet());
     }
 

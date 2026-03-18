@@ -57,7 +57,7 @@ class SubscriptionSchemaGenerationTest extends Specification {
         schema.getSubscriptionType().getFieldDefinition("health") != null
         
         and: "should have table change subscription field"
-        def changeField = schema.getSubscriptionType().getFieldDefinition("testtable_changes")
+        def changeField = schema.getSubscriptionType().getFieldDefinition("testTableChanges")
         changeField != null
         
         and: "TestTableChangeEvent type should exist in schema"
@@ -78,7 +78,7 @@ class SubscriptionSchemaGenerationTest extends Specification {
         typeNames.contains("TestTableChangeOperation")
         
         and: "subscription type should have multiple fields"
-        schema.getSubscriptionType().getFieldDefinitions().size() >= 2 // health + testtable_changes
+        schema.getSubscriptionType().getFieldDefinitions().size() >= 2 // health + testTableChanges
     }
     
     def "debug subscription type creation process"() {

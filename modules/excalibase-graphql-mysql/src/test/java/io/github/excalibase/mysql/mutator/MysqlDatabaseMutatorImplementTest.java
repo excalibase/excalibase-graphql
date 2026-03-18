@@ -179,8 +179,8 @@ class MysqlDatabaseMutatorImplementTest {
 
     private DataFetchingEnvironment mockEnvWithInputList(List<Map<String, Object>> inputs) {
         DataFetchingEnvironment env = mock(DataFetchingEnvironment.class);
-        when(env.getArgument("input")).thenReturn(inputs);
-        when(env.getArguments()).thenReturn(Map.of("input", inputs));
+        when(env.getArgument("inputs")).thenReturn(inputs);
+        when(env.getArguments()).thenReturn(Map.of("inputs", inputs));
         when(env.containsArgument(anyString())).thenReturn(true);
         return env;
     }

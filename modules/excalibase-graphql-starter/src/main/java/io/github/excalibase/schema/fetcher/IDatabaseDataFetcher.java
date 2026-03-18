@@ -88,7 +88,22 @@ public interface IDatabaseDataFetcher {
             String foreignKeyColumn,
             String referencedTable,
             String referencedColumn);
-           
+
+    /**
+     * Creates a relationship data fetcher that supports composite foreign keys.
+     *
+     * @param tableName the name of the source table containing the foreign keys
+     * @param foreignKeyColumns ordered list of FK column names in the source table
+     * @param referencedTable the name of the target table being referenced
+     * @param referencedColumns ordered list of column names in the target table (same order as foreignKeyColumns)
+     * @return a data fetcher that resolves the relationship using all FK columns in the WHERE clause
+     */
+    DataFetcher<Map<String, Object>> buildRelationshipDataFetcher(
+            String tableName,
+            List<String> foreignKeyColumns,
+            String referencedTable,
+            List<String> referencedColumns);
+
     /**
      * Creates a reverse relationship data fetcher for resolving one-to-many relationships.
      * 
@@ -107,6 +122,21 @@ public interface IDatabaseDataFetcher {
             String targetTableName,
             String foreignKeyColumn,
             String referencedColumn);
+
+    /**
+     * Creates a reverse relationship data fetcher that supports composite foreign keys.
+     *
+     * @param sourceTableName the name of the source (parent) table
+     * @param targetTableName the name of the target table containing the composite FK
+     * @param foreignKeyColumns ordered list of FK column names in the target table
+     * @param referencedColumns ordered list of column names in the source table (same order as foreignKeyColumns)
+     * @return a data fetcher that returns all matching records using all FK columns in the WHERE clause
+     */
+    DataFetcher<List<Map<String, Object>>> buildReverseRelationshipDataFetcher(
+            String sourceTableName,
+            String targetTableName,
+            List<String> foreignKeyColumns,
+            List<String> referencedColumns);
 
     /**
      * Creates an aggregate data fetcher for computing aggregates over table data.

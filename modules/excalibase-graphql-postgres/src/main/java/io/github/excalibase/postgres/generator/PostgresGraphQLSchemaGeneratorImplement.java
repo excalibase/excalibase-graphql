@@ -260,8 +260,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add subscription fields for each table
         for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
             String tableName = entry.getKey();
-            String fieldName = tableName.toLowerCase() + "_changes";
-            String typeName = tableName + "ChangeEvent";
+            String fieldName = toLowerCamelCase(tableName) + "Changes";
+            String typeName = capitalize(tableName) + "ChangeEvent";
 
             log.info("🔥 Adding subscription field: {} -> {} for table: {}", fieldName, typeName, tableName);
 
@@ -287,12 +287,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                          Map<String, GraphQLObjectType> customCompositeTypes) {
 
         return GraphQLObjectType.newObject()
-            .name(tableName + "ChangeEvent")
+            .name(capitalize(tableName) + "ChangeEvent")
             .description("Change event for " + tableName + " table")
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("operation")
                 .description("Type of change operation")
-                .type(new GraphQLNonNull(GraphQLTypeReference.typeRef(tableName + "ChangeOperation")))
+                .type(new GraphQLNonNull(GraphQLTypeReference.typeRef(capitalize(tableName) + "ChangeOperation")))
                 .build())
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("table")
@@ -317,7 +317,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("data")
                 .description("The actual table data that changed")
-                .type(GraphQLTypeReference.typeRef(tableName + "SubscriptionData"))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "SubscriptionData"))
                 .build())
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("error")
@@ -335,7 +335,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                               Map<String, GraphQLEnumType> customEnumTypes,
                                                               Map<String, GraphQLObjectType> customCompositeTypes) {
         GraphQLObjectType.Builder dataTypeBuilder = GraphQLObjectType.newObject()
-            .name(tableName + "SubscriptionData")
+            .name(capitalize(tableName) + "SubscriptionData")
             .description("Table data for " + tableName + " subscription events");
 
         // Add all table columns as fields
@@ -355,13 +355,13 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         dataTypeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
             .name("old")
             .description("Previous values for UPDATE operations")
-            .type(GraphQLTypeReference.typeRef(tableName + "SubscriptionData"))
+            .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "SubscriptionData"))
             .build());
 
         dataTypeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
             .name("new")
             .description("New values for UPDATE operations")
-            .type(GraphQLTypeReference.typeRef(tableName + "SubscriptionData"))
+            .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "SubscriptionData"))
             .build());
 
         return dataTypeBuilder.build();
@@ -402,7 +402,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             log.debug("Creating subscription types for table: {}", tableName);
 
             // Create and add subscription data type
-            String subscriptionDataTypeName = tableName + "SubscriptionData";
+            String subscriptionDataTypeName = capitalize(tableName) + "SubscriptionData";
             if (!addedTypeNames.contains(subscriptionDataTypeName)) {
                 GraphQLObjectType subscriptionDataType = createSubscriptionTableDataType(tableName, tableInfo, customEnumTypes, customCompositeTypes);
                 schemaBuilder.additionalType(subscriptionDataType);
@@ -411,7 +411,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             }
 
             // Create and add operation enum type
-            String operationTypeName = tableName + "ChangeOperation";
+            String operationTypeName = capitalize(tableName) + "ChangeOperation";
             if (!addedTypeNames.contains(operationTypeName)) {
                 GraphQLEnumType operationType = GraphQLEnumType.newEnum()
                     .name(operationTypeName)
@@ -427,7 +427,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             }
 
             // Create and add change event type (this references the above types)
-            String changeEventTypeName = tableName + "ChangeEvent";
+            String changeEventTypeName = capitalize(tableName) + "ChangeEvent";
             if (!addedTypeNames.contains(changeEventTypeName)) {
                 GraphQLObjectType changeEventType = createTableChangeEventType(tableName, tableInfo, customEnumTypes, customCompositeTypes);
                 schemaBuilder.additionalType(changeEventType);
@@ -509,7 +509,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLObjectType createNodeType(String tableName, TableInfo tableInfo, Map<String, TableInfo> allTables) {
         GraphQLObjectType.Builder typeBuilder = GraphQLObjectType.newObject()
-                .name(tableName)
+                .name(capitalize(tableName))
                 .description("Type for table " + tableName);
 
         // Add fields for each column
@@ -526,8 +526,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add fields for forward relationships (foreign keys from this table)
         for (ForeignKeyInfo fk : tableInfo.getForeignKeys()) {
             GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
-                    .name(fk.getReferencedTable().toLowerCase())
-                    .type(GraphQLTypeReference.typeRef(fk.getReferencedTable()))
+                    .name(toLowerCamelCase(fk.getReferencedTable()))
+                    .type(GraphQLTypeReference.typeRef(capitalize(fk.getReferencedTable())))
                     .description("Relationship to " + fk.getReferencedTable());
 
             typeBuilder.field(fieldBuilder.build());
@@ -552,9 +552,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 for (ForeignKeyInfo fk : otherTableInfo.getForeignKeys()) {
                     log.debug("Found foreign key: {} -> {}.{}", fk.getColumnName(), fk.getReferencedTable(), fk.getReferencedColumn());
                     if (fk.getReferencedTable().equalsIgnoreCase(tableName)) {
-                        // Add reverse relationship field (plural name since it's one-to-many)
-                        String reverseFieldName = otherTableName.toLowerCase();
-                        // Make it plural if it doesn't end with 's'
+                        // Add reverse relationship field (camelCase, plural if not already ending in 's')
+                        String reverseFieldName = toLowerCamelCase(otherTableName);
                         if (!reverseFieldName.endsWith("s")) {
                             reverseFieldName += "s";
                         }
@@ -564,7 +563,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
                         GraphQLFieldDefinition.Builder reverseFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
                                 .name(reverseFieldName)
-                                .type(new GraphQLList(GraphQLTypeReference.typeRef(otherTableName)))
+                                .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(otherTableName))))
                                 .description("Reverse relationship to " + otherTableName + " via " + fk.getColumnName());
 
                         typeBuilder.field(reverseFieldBuilder.build());
@@ -578,7 +577,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLObjectType createEdgeType(String tableName, GraphQLObjectType nodeType) {
         return GraphQLObjectType.newObject()
-                .name(tableName + "Edge")
+                .name(capitalize(tableName) + "Edge")
                 .description("An edge in a connection for " + tableName)
                 .field(GraphQLFieldDefinition.newFieldDefinition()
                         .name(FieldConstant.NODE)
@@ -595,7 +594,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLObjectType createConnectionType(String tableName, GraphQLObjectType edgeType, GraphQLObjectType pageInfoType) {
         return GraphQLObjectType.newObject()
-                .name(tableName + "Connection")
+                .name(capitalize(tableName) + "Connection")
                 .description("A connection to a list of " + tableName)
                 .field(GraphQLFieldDefinition.newFieldDefinition()
                         .name(FieldConstant.EDGES)
@@ -603,7 +602,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                         .description("A list of edges")
                         .build())
                 .field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name(FieldConstant.PAGE_INFO)
+                        .name(FieldConstant.PAGE_INFO_FIELD)
                         .type(new GraphQLNonNull(pageInfoType))
                         .description("Information to aid in pagination")
                         .build())
@@ -617,7 +616,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLInputObjectType createOrderByInput(String tableName, TableInfo tableInfo) {
         GraphQLInputObjectType.Builder orderByInputBuilder = GraphQLInputObjectType.newInputObject()
-                .name(tableName + "OrderByInput")
+                .name(capitalize(tableName) + "OrderByInput")
                 .description("Input for ordering " + tableName + " records");
 
         // Add each column as a potential sort field with direction
@@ -650,8 +649,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private void addQueryFields(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo, GraphQLInputObjectType filterType) {
         GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
-                .name(tableName.toLowerCase())
-                .type(new GraphQLList(GraphQLTypeReference.typeRef(tableName)))
+                .name(toLowerCamelCase(tableName))
+                .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(tableName))))
                 .description("Query all records from " + tableName);
 
         // Add the where argument using the table's filter type
@@ -674,7 +673,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add orderBy argument
         fieldBuilder.argument(GraphQLArgument.newArgument()
                 .name(FieldConstant.ORDER_BY)
-                .type(GraphQLTypeReference.typeRef(tableName + "OrderByInput"))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "OrderByInput"))
                 .description("Order results by specified fields")
                 .build());
 
@@ -683,8 +682,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private void addConnectionFields(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo, Map<String, GraphQLInputObjectType> tableFilterTypes) {
         GraphQLFieldDefinition.Builder connectionFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
-                .name(tableName.toLowerCase() + "Connection")
-                .type(GraphQLTypeReference.typeRef(tableName + "Connection"))
+                .name(toLowerCamelCase(tableName) + "Connection")
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "Connection"))
                 .description("Connection to " + tableName + " records for cursor-based pagination following the Relay specification");
 
         // Add the where argument using the table's filter type
@@ -705,7 +704,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add ordering to connection fields
         connectionFieldBuilder.argument(GraphQLArgument.newArgument()
                 .name(FieldConstant.ORDER_BY)
-                .type(GraphQLTypeReference.typeRef(tableName + "OrderByInput"))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "OrderByInput"))
                 .description("Order results by specified fields")
                 .build());
 
@@ -717,8 +716,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private void addAggregateQueryField(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo, GraphQLInputObjectType filterType) {
         GraphQLFieldDefinition.Builder aggregateFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
-                .name(tableName.toLowerCase() + "_aggregate")
-                .type(GraphQLTypeReference.typeRef(tableName + "Aggregate"))
+                .name(toLowerCamelCase(tableName) + "Aggregate")
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "Aggregate"))
                 .description("Aggregate functions for " + tableName + " table");
 
         // Add WHERE filter argument
@@ -820,8 +819,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private void addMutationFields(GraphQLObjectType.Builder mutationBuilder, String tableName, TableInfo tableInfo, Map<String, TableInfo> tables,
                                    Map<String, GraphQLEnumType> customEnumTypes, Map<String, GraphQLObjectType> customCompositeTypes) {
         // Use type references instead of creating new input types to avoid duplicates
-        String createInputTypeName = tableName + "CreateInput";
-        String updateInputTypeName = tableName + "UpdateInput";
+        String createInputTypeName = capitalize(tableName) + "CreateInput";
+        String updateInputTypeName = capitalize(tableName) + "UpdateInput";
         GraphQLTypeReference createInputType = GraphQLTypeReference.typeRef(createInputTypeName);
         GraphQLTypeReference updateInputType = GraphQLTypeReference.typeRef(updateInputTypeName);
 
@@ -829,7 +828,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
                 .name(MutationConstant.CREATE_PREFIX + capitalize(tableName))
                 .description(String.format(MutationConstant.CREATE_DESCRIPTION_TEMPLATE, tableName))
-                .type(GraphQLTypeReference.typeRef(tableName))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName)))
                 .argument(GraphQLArgument.newArgument()
                         .name(GraphqlConstant.INPUT)
                         .type(new GraphQLNonNull(createInputType))
@@ -840,7 +839,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
                 .name(MutationConstant.UPDATE_PREFIX + capitalize(tableName))
                 .description(String.format(MutationConstant.UPDATE_DESCRIPTION_TEMPLATE, tableName))
-                .type(GraphQLTypeReference.typeRef(tableName))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName)))
                 .argument(GraphQLArgument.newArgument()
                         .name(GraphqlConstant.INPUT)
                         .type(new GraphQLNonNull(updateInputType))
@@ -848,12 +847,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .build());
 
         // 3. Delete mutation - supports composite keys via input object
-        String deleteInputTypeName = tableName + "DeleteInput";
+        String deleteInputTypeName = capitalize(tableName) + "DeleteInput";
         GraphQLTypeReference deleteInputType = GraphQLTypeReference.typeRef(deleteInputTypeName);
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
                 .name(MutationConstant.DELETE_PREFIX + capitalize(tableName))
                 .description(String.format(MutationConstant.DELETE_DESCRIPTION_TEMPLATE, tableName))
-                .type(GraphQLTypeReference.typeRef(tableName))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName)))
                 .argument(GraphQLArgument.newArgument()
                         .name(GraphqlConstant.INPUT)
                         .type(new GraphQLNonNull(deleteInputType))
@@ -861,11 +860,11 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                         .build())
                 .build());
 
-        // 4. Bulk create mutation
+        // 4. Bulk create mutation (no suffix — createMany already implies plurality)
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                .name(MutationConstant.CREATE_MANY_PREFIX + capitalize(tableName) + MutationConstant.BULK_SUFFIX)
+                .name(MutationConstant.CREATE_MANY_PREFIX + capitalize(tableName))
                 .description(String.format(MutationConstant.CREATE_MANY_DESCRIPTION_TEMPLATE, tableName))
-                .type(new GraphQLList(GraphQLTypeReference.typeRef(tableName)))
+                .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(tableName))))
                 .argument(GraphQLArgument.newArgument()
                         .name(GraphqlConstant.INPUTS)
                         .type(new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(createInputType))))
@@ -879,7 +878,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         mutationBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
                 .name(MutationConstant.CREATE_PREFIX + capitalize(tableName) + MutationConstant.WITH_RELATIONS_SUFFIX)
                 .description(String.format(MutationConstant.CREATE_WITH_RELATIONS_DESCRIPTION_TEMPLATE, tableName))
-                .type(GraphQLTypeReference.typeRef(tableName))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName)))
                 .argument(GraphQLArgument.newArgument()
                         .name(GraphqlConstant.INPUT)
                         .type(new GraphQLNonNull(relationshipInputType))
@@ -891,7 +890,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private GraphQLInputObjectType createInputTypes(String tableName, TableInfo tableInfo, boolean isUpdate,
                                                     Map<String, GraphQLEnumType> customEnumTypes,
                                                     Map<String, GraphQLObjectType> customCompositeTypes) {
-        String typeName = tableName + (isUpdate ? "UpdateInput" : "CreateInput");
+        String typeName = capitalize(tableName) + (isUpdate ? "UpdateInput" : "CreateInput");
         String description = "Input for " + (isUpdate ? "updating" : "creating new") + " " + tableName + " records";
 
         GraphQLInputObjectType.Builder inputTypeBuilder = GraphQLInputObjectType.newInputObject()
@@ -924,7 +923,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     }
 
     private GraphQLInputObjectType createDeleteInputType(String tableName, TableInfo tableInfo) {
-        String typeName = tableName + "DeleteInput";
+        String typeName = capitalize(tableName) + "DeleteInput";
         String description = "Input for deleting " + tableName + " records (supports composite primary keys)";
 
         GraphQLInputObjectType.Builder inputTypeBuilder = GraphQLInputObjectType.newInputObject()
@@ -959,7 +958,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLInputObjectType createRelationshipInputType(String tableName, TableInfo tableInfo, Map<String, TableInfo> tables) {
         GraphQLInputObjectType.Builder relationshipInputBuilder = GraphQLInputObjectType.newInputObject()
-                .name(tableName + "RelationshipInput")
+                .name(capitalize(tableName) + "RelationshipInput")
                 .description("Input for creating " + tableName + " with relationships");
 
         // Add all fields from the regular create input
@@ -985,7 +984,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
             // Connect to existing record
             GraphQLInputObjectType connectInputType = GraphQLInputObjectType.newInputObject()
-                    .name(tableName + capitalize(referencedTable) + "ConnectInput")
+                    .name(capitalize(tableName) + capitalize(referencedTable) + "ConnectInput")
                     .description("Input to connect to existing " + referencedTable)
                     .field(GraphQLInputObjectField.newInputObjectField()
                             .name("id")
@@ -995,15 +994,15 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                     .build();
 
             relationshipInputBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                    .name(referencedTable.toLowerCase() + "_connect")
+                    .name(toLowerCamelCase(referencedTable) + "_connect")
                     .type(connectInputType)
                     .description("Connect to existing " + referencedTable)
                     .build());
 
             // Create and connect
             relationshipInputBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                    .name(referencedTable.toLowerCase() + "_create")
-                    .type(GraphQLTypeReference.typeRef(referencedTable + "CreateInput"))
+                    .name(toLowerCamelCase(referencedTable) + "_create")
+                    .type(GraphQLTypeReference.typeRef(capitalize(referencedTable) + "CreateInput"))
                     .description("Create new " + referencedTable + " and connect")
                     .build());
         }
@@ -1017,8 +1016,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 if (fk.getReferencedTable().equals(tableName)) {
                     // This is a reverse relationship - the other table references this one
                     relationshipInputBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                            .name(otherTableName.toLowerCase() + "_createMany")
-                            .type(new GraphQLList(GraphQLTypeReference.typeRef(otherTableName + "CreateInput")))
+                            .name(toLowerCamelCase(otherTableName) + "_createMany")
+                            .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(otherTableName) + "CreateInput")))
                             .description("Create multiple " + otherTableName + " records related to this " + tableName)
                             .build());
                 }
@@ -1041,6 +1040,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             }
         }
         return sb.toString();
+    }
+
+    private String toLowerCamelCase(String str) {
+        String pascal = capitalize(str);
+        if (pascal == null || pascal.isEmpty()) return pascal;
+        return Character.toLowerCase(pascal.charAt(0)) + pascal.substring(1);
     }
 
     private GraphQLOutputType mapDatabaseTypeToGraphQLType(String dbType) {
@@ -1510,7 +1515,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private GraphQLInputObjectType createFilterInputTypeForTable(String tableName, TableInfo tableInfo,
             Map<String, GraphQLInputObjectType> filterInputTypes, Map<String, GraphQLEnumType> customEnumTypes) {
         GraphQLInputObjectType.Builder filterBuilder = GraphQLInputObjectType.newInputObject()
-            .name(tableName + "Filter")
+            .name(capitalize(tableName) + "Filter")
             .description("Filter input for " + tableName);
 
         // Add filter fields for each column
@@ -1540,7 +1545,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add OR field that accepts a list of the same filter type
         filterBuilder.field(GraphQLInputObjectField.newInputObjectField()
             .name("or")
-            .type(new GraphQLList(GraphQLTypeReference.typeRef(tableName + "Filter")))
+            .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(tableName) + "Filter")))
             .description("OR conditions")
             .build());
 
@@ -1874,7 +1879,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private List<GraphQLObjectType> createAggregateTypes(String tableName, TableInfo tableInfo) {
         List<GraphQLObjectType> types = new ArrayList<>();
         GraphQLObjectType.Builder aggregateBuilder = GraphQLObjectType.newObject()
-                .name(tableName + "Aggregate")
+                .name(capitalize(tableName) + "Aggregate")
                 .description("Aggregate functions for " + tableName);
 
         // Always add count
@@ -1886,12 +1891,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // Create numeric aggregate fields type (sum, avg)
         GraphQLObjectType.Builder numericAggsBuilder = GraphQLObjectType.newObject()
-                .name(tableName + "NumericAggregates")
+                .name(capitalize(tableName) + "NumericAggregates")
                 .description("Numeric aggregate functions for " + tableName);
 
         // Create comparable aggregate fields type (min, max)
         GraphQLObjectType.Builder comparableAggsBuilder = GraphQLObjectType.newObject()
-                .name(tableName + "ComparableAggregates")
+                .name(capitalize(tableName) + "ComparableAggregates")
                 .description("Min/Max aggregate functions for " + tableName);
 
         boolean hasNumericFields = false;
@@ -1992,7 +1997,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                             Map<String, GraphQLObjectType> customCompositeTypes,
                                                             List<ComputedFieldFunction> computedFields) {
         GraphQLObjectType.Builder typeBuilder = GraphQLObjectType.newObject()
-                .name(tableName)
+                .name(capitalize(tableName))
                 .description("Type for table " + tableName);
 
         // Add fields for each column with custom type support
@@ -2010,8 +2015,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add fields for forward relationships (foreign keys from this table)
         for (ForeignKeyInfo fk : tableInfo.getForeignKeys()) {
             GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
-                    .name(fk.getReferencedTable().toLowerCase())
-                    .type(GraphQLTypeReference.typeRef(fk.getReferencedTable()))
+                    .name(toLowerCamelCase(fk.getReferencedTable()))
+                    .type(GraphQLTypeReference.typeRef(capitalize(fk.getReferencedTable())))
                     .description("Relationship to " + fk.getReferencedTable());
 
             typeBuilder.field(fieldBuilder.build());
@@ -2030,8 +2035,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             // Find foreign keys in other tables that reference this table
             for (ForeignKeyInfo otherFk : otherTableInfo.getForeignKeys()) {
                 if (otherFk.getReferencedTable().equalsIgnoreCase(tableName)) {
-                    // Create reverse relationship field name (plural)
-                    String reverseFieldName = otherTableName.toLowerCase();
+                    // Create reverse relationship field name (camelCase, plural)
+                    String reverseFieldName = toLowerCamelCase(otherTableName);
                     if (!reverseFieldName.endsWith("s")) {
                         reverseFieldName += "s";
                     }
@@ -2041,7 +2046,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
                     GraphQLFieldDefinition.Builder reverseFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
                             .name(reverseFieldName)
-                            .type(new GraphQLList(GraphQLTypeReference.typeRef(otherTableName)))
+                            .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(otherTableName))))
                             .description("Reverse relationship to " + otherTableName);
 
                     typeBuilder.field(reverseFieldBuilder.build());

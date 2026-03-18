@@ -62,6 +62,7 @@ public class PostgresSqlConstant {
                    CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END as is_nullable
             FROM pg_catalog.pg_type t
             JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
+            JOIN pg_catalog.pg_class c ON c.oid = t.typrelid AND c.relkind = 'c'
             JOIN pg_catalog.pg_attribute a ON a.attrelid = t.typrelid
             WHERE n.nspname = ?
               AND t.typtype = 'c'
@@ -154,20 +155,23 @@ public class PostgresSqlConstant {
             """;
     
     public static final String GET_ALL_FOREIGN_KEYS = """
-            SELECT cl.relname as table_name,
-                   a.attname as column_name,
+            SELECT cl.relname  as table_name,
+                   c.conname   as constraint_name,
+                   a.attname   as column_name,
                    cl2.relname as foreign_table_name,
-                   a2.attname as foreign_column_name
+                   a2.attname  as foreign_column_name,
+                   cols.ord    as key_ordinal
             FROM pg_catalog.pg_constraint c
             JOIN pg_catalog.pg_namespace n ON n.oid = c.connamespace
-            JOIN pg_catalog.pg_class cl ON cl.oid = c.conrelid
+            JOIN pg_catalog.pg_class cl  ON cl.oid  = c.conrelid
             JOIN pg_catalog.pg_class cl2 ON cl2.oid = c.confrelid
-            JOIN pg_catalog.pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-            JOIN pg_catalog.pg_attribute a2 ON a2.attrelid = c.confrelid AND a2.attnum = c.confkey[1]
+            JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS cols(local_attnum, ref_attnum, ord) ON true
+            JOIN pg_catalog.pg_attribute a  ON a.attrelid  = c.conrelid  AND a.attnum  = cols.local_attnum
+            JOIN pg_catalog.pg_attribute a2 ON a2.attrelid = c.confrelid AND a2.attnum = cols.ref_attnum
             WHERE c.contype = 'f'
               AND n.nspname = ?
               AND cl.relname = ANY(?)
-            ORDER BY cl.relname, a.attname
+            ORDER BY cl.relname, c.conname, cols.ord
             """;
 
     public static final String GET_PROCEDURES = """

@@ -119,16 +119,26 @@ public class MysqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaRef
         // 4. Bulk-fetch foreign keys
         List<Map<String, Object>> fkRows = jdbcTemplate.queryForList(
                 MysqlSqlConstant.GET_FOREIGN_KEYS, schemaName);
+        java.util.LinkedHashMap<String, ForeignKeyInfo> byConstraint = new java.util.LinkedHashMap<>();
         for (Map<String, Object> row : fkRows) {
             String tableName = (String) row.get("TABLE_NAME");
-            TableInfo tableInfo = tables.get(tableName);
-            if (tableInfo == null) continue;
+            String constraintName = (String) row.get("CONSTRAINT_NAME");
+            String key = tableName + "|" + constraintName;
 
-            ForeignKeyInfo fk = new ForeignKeyInfo();
-            fk.setColumnName((String) row.get("COLUMN_NAME"));
-            fk.setReferencedTable((String) row.get("REFERENCED_TABLE_NAME"));
-            fk.setReferencedColumn((String) row.get("REFERENCED_COLUMN_NAME"));
-            tableInfo.getForeignKeys().add(fk);
+            ForeignKeyInfo fk = byConstraint.computeIfAbsent(key, k -> {
+                ForeignKeyInfo f = new ForeignKeyInfo();
+                f.setReferencedTable((String) row.get("REFERENCED_TABLE_NAME"));
+                return f;
+            });
+            fk.getColumnNames().add((String) row.get("COLUMN_NAME"));
+            fk.getReferencedColumns().add((String) row.get("REFERENCED_COLUMN_NAME"));
+        }
+        for (Map.Entry<String, ForeignKeyInfo> entry : byConstraint.entrySet()) {
+            String tableName = entry.getKey().split("\\|")[0];
+            TableInfo tableInfo = tables.get(tableName);
+            if (tableInfo != null) {
+                tableInfo.getForeignKeys().add(entry.getValue());
+            }
         }
 
         return tables;

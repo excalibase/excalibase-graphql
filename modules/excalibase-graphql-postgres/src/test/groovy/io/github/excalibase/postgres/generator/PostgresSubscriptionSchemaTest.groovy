@@ -58,11 +58,11 @@ class PostgresSubscriptionSchemaTest extends Specification {
         then: "subscription type should exist"
         schema.getSubscriptionType() != null
 
-        and: "should have customer_changes subscription"
-        GraphQLFieldDefinition customerChangesField = schema.getSubscriptionType().getFieldDefinition("customer_changes")
+        and: "should have customerChanges subscription"
+        GraphQLFieldDefinition customerChangesField = schema.getSubscriptionType().getFieldDefinition("customerChanges")
         customerChangesField != null
         
-        and: "customer_changes should return CustomerChangeEvent type"
+        and: "customerChanges should return CustomerChangeEvent type"
         GraphQLOutputType customerChangesType = customerChangesField.getType()
         customerChangesType instanceof GraphQLObjectType
         ((GraphQLObjectType) customerChangesType).getName() == "CustomerChangeEvent"
@@ -155,7 +155,7 @@ class PostgresSubscriptionSchemaTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables, [statusEnum], [addressType])
         
         then: "subscription should work with custom types"
-        GraphQLFieldDefinition userChangesField = schema.getSubscriptionType().getFieldDefinition("users_changes")
+        GraphQLFieldDefinition userChangesField = schema.getSubscriptionType().getFieldDefinition("usersChanges")
         userChangesField != null
         
         and: "subscription data should include custom typed fields"
@@ -193,7 +193,7 @@ class PostgresSubscriptionSchemaTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables, [], [])
         
         then: "should have subscription for view"
-        GraphQLFieldDefinition viewChangesField = schema.getSubscriptionType().getFieldDefinition("customerview_changes")
+        GraphQLFieldDefinition viewChangesField = schema.getSubscriptionType().getFieldDefinition("customerViewChanges")
         viewChangesField != null
         
         and: "view change event should have proper structure"
@@ -216,7 +216,7 @@ class PostgresSubscriptionSchemaTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables, [], [])
         
         then: "subscription data fields should be nullable"
-        GraphQLFieldDefinition changesField = schema.getSubscriptionType().getFieldDefinition("testtable_changes")
+        GraphQLFieldDefinition changesField = schema.getSubscriptionType().getFieldDefinition("testTableChanges")
         GraphQLObjectType changeEventType = (GraphQLObjectType) changesField.getType()
         GraphQLObjectType dataType = (GraphQLObjectType) changeEventType.getFieldDefinition("data").getType()
         

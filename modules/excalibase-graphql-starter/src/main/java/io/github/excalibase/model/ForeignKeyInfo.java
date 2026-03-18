@@ -16,42 +16,57 @@
  */
 package io.github.excalibase.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Represents foreign key relationship metadata for GraphQL schema generation.
+ * Supports both simple (single-column) and composite (multi-column) foreign keys.
  */
 public class ForeignKeyInfo {
-    
-    /** The name of the column in the local table that references another table */
-    private String columnName;
-    
+
+    /** Ordered list of FK column names in the local table */
+    private List<String> columnNames = new ArrayList<>();
+
     /** The name of the referenced table */
     private String referencedTable;
-    
-    /** The name of the column in the referenced table */
-    private String referencedColumn;
 
-    /**
-     * Constructs a new ForeignKeyInfo with all relationship details.
-     * 
-     * @param columnName the name of the local column that references another table
-     * @param referencedTable the name of the referenced table
-     * @param referencedColumn the name of the column in the referenced table
-     */
-    public ForeignKeyInfo(String columnName, String referencedTable, String referencedColumn) {
-        this.columnName = columnName;
-        this.referencedTable = referencedTable;
-        this.referencedColumn = referencedColumn;
-    }
+    /** Ordered list of column names in the referenced table (same order as columnNames) */
+    private List<String> referencedColumns = new ArrayList<>();
 
     public ForeignKeyInfo() {
     }
 
-    public String getColumnName() {
-        return columnName;
+    /** Convenience constructor for simple single-column foreign keys. */
+    public ForeignKeyInfo(String columnName, String referencedTable, String referencedColumn) {
+        this.columnNames = new ArrayList<>(List.of(columnName));
+        this.referencedTable = referencedTable;
+        this.referencedColumns = new ArrayList<>(List.of(referencedColumn));
     }
 
-    public void setColumnName(String columnName) {
-        this.columnName = columnName;
+    /** Constructor for composite foreign keys. */
+    public ForeignKeyInfo(List<String> columnNames, String referencedTable, List<String> referencedColumns) {
+        this.columnNames = new ArrayList<>(columnNames);
+        this.referencedTable = referencedTable;
+        this.referencedColumns = new ArrayList<>(referencedColumns);
+    }
+
+    // --- List accessors (primary API) ---
+
+    public List<String> getColumnNames() {
+        return columnNames;
+    }
+
+    public void setColumnNames(List<String> columnNames) {
+        this.columnNames = columnNames;
+    }
+
+    public List<String> getReferencedColumns() {
+        return referencedColumns;
+    }
+
+    public void setReferencedColumns(List<String> referencedColumns) {
+        this.referencedColumns = referencedColumns;
     }
 
     public String getReferencedTable() {
@@ -62,11 +77,36 @@ public class ForeignKeyInfo {
         this.referencedTable = referencedTable;
     }
 
+    // --- Convenience accessors for single-column FK (first element) ---
+
+    /** Returns the first FK column name. Use getColumnNames() for composite FKs. */
+    public String getColumnName() {
+        return columnNames.isEmpty() ? null : columnNames.getFirst();
+    }
+
+    public void setColumnName(String columnName) {
+        if (this.columnNames.isEmpty()) {
+            this.columnNames.add(columnName);
+        } else {
+            this.columnNames.set(0, columnName);
+        }
+    }
+
+    /** Returns the first referenced column name. Use getReferencedColumns() for composite FKs. */
     public String getReferencedColumn() {
-        return referencedColumn;
+        return referencedColumns.isEmpty() ? null : referencedColumns.getFirst();
     }
 
     public void setReferencedColumn(String referencedColumn) {
-        this.referencedColumn = referencedColumn;
+        if (this.referencedColumns.isEmpty()) {
+            this.referencedColumns.add(referencedColumn);
+        } else {
+            this.referencedColumns.set(0, referencedColumn);
+        }
+    }
+
+    /** Returns true if this FK spans more than one column. */
+    public boolean isComposite() {
+        return columnNames.size() > 1;
     }
 }

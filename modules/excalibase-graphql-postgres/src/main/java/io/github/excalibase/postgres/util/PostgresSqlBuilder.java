@@ -124,7 +124,7 @@ public class PostgresSqlBuilder {
                     List<String> orSubConditions = buildFilterConditions(orCondition, paramSource, columnTypes, "or_" + i);
                     if (!orSubConditions.isEmpty()) {
                         if (orSubConditions.size() == 1) {
-                            orParts.add(orSubConditions.get(0));
+                            orParts.add(orSubConditions.getFirst());
                         } else {
                             orParts.add("(" + String.join(" AND ", orSubConditions) + ")");
                         }
@@ -316,7 +316,7 @@ public class PostgresSqlBuilder {
                         List<String> orSubConditions = buildFilterConditions(orCondition, paramSource, columnTypes, paramPrefix + "_or_" + i);
                         if (!orSubConditions.isEmpty()) {
                             orParts.add(orSubConditions.size() == 1
-                                ? orSubConditions.get(0)
+                                ? orSubConditions.getFirst()
                                 : "(" + String.join(" AND ", orSubConditions) + ")");
                         }
                     }

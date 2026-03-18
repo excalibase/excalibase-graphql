@@ -73,7 +73,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
             String tableName = entry.getKey();
             TableInfo tableInfo = entry.getValue();
 
-            GraphQLObjectType.Builder typeBuilder = GraphQLObjectType.newObject().name(tableName);
+            GraphQLObjectType.Builder typeBuilder = GraphQLObjectType.newObject().name(capitalize(tableName));
 
             // Scalar columns
             for (ColumnInfo col : tableInfo.getColumns()) {
@@ -91,8 +91,8 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
             for (ForeignKeyInfo fk : tableInfo.getForeignKeys()) {
                 if (tables.containsKey(fk.getReferencedTable())) {
                     typeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                            .name(fk.getReferencedTable().toLowerCase())
-                            .type(new GraphQLTypeReference(fk.getReferencedTable()))
+                            .name(toLowerCamelCase(fk.getReferencedTable()))
+                            .type(new GraphQLTypeReference(capitalize(fk.getReferencedTable())))
                             .build());
                 }
             }
@@ -104,11 +104,11 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                 if (otherTableName.equals(tableName) || otherTableInfo.isView()) continue;
                 for (ForeignKeyInfo otherFk : otherTableInfo.getForeignKeys()) {
                     if (otherFk.getReferencedTable().equalsIgnoreCase(tableName)) {
-                        String reverseFieldName = otherTableName.toLowerCase();
+                        String reverseFieldName = toLowerCamelCase(otherTableName);
                         if (!reverseFieldName.endsWith("s")) reverseFieldName += "s";
                         typeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
                                 .name(reverseFieldName)
-                                .type(new GraphQLList(new GraphQLTypeReference(otherTableName)))
+                                .type(new GraphQLList(new GraphQLTypeReference(capitalize(otherTableName))))
                                 .build());
                     }
                 }
@@ -199,14 +199,14 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
             GraphQLObjectType tableType = e.getValue();
 
             GraphQLObjectType edgeType = GraphQLObjectType.newObject()
-                    .name(tableName + "Edge")
+                    .name(capitalize(tableName) + "Edge")
                     .field(f -> f.name("node").type(tableType))
                     .field(f -> f.name("cursor").type(new GraphQLNonNull(GraphQLString)))
                     .build();
             edgeTypes.put(tableName, edgeType);
 
             GraphQLObjectType connectionType = GraphQLObjectType.newObject()
-                    .name(tableName + "Connection")
+                    .name(capitalize(tableName) + "Connection")
                     .field(f -> f.name("edges").type(new GraphQLList(edgeType)))
                     .field(f -> f.name("pageInfo").type(new GraphQLNonNull(pageInfoType)))
                     .field(f -> f.name("totalCount").type(GraphQLInt))
@@ -307,7 +307,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                                                         GraphQLInputObjectType whereInput,
                                                         GraphQLInputObjectType orderByInput) {
         return GraphQLFieldDefinition.newFieldDefinition()
-                .name(tableName)
+                .name(toLowerCamelCase(tableName))
                 .type(new GraphQLList(tableType))
                 .argument(GraphQLArgument.newArgument().name("limit").type(GraphQLInt).build())
                 .argument(GraphQLArgument.newArgument().name("offset").type(GraphQLInt).build())
@@ -321,7 +321,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                                                               GraphQLInputObjectType whereInput,
                                                               GraphQLInputObjectType orderByInput) {
         return GraphQLFieldDefinition.newFieldDefinition()
-                .name(tableName + "Connection")
+                .name(toLowerCamelCase(tableName) + "Connection")
                 .type(connectionType)
                 .argument(GraphQLArgument.newArgument().name("first").type(GraphQLInt).build())
                 .argument(GraphQLArgument.newArgument().name("after").type(GraphQLString).build())
@@ -334,7 +334,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
 
     private GraphQLFieldDefinition buildAggregateQueryField(String tableName, TableInfo tableInfo) {
         GraphQLObjectType aggregateType = GraphQLObjectType.newObject()
-                .name(tableName + "Aggregate")
+                .name(capitalize(tableName) + "Aggregate")
                 .field(f -> f.name("count").type(GraphQLInt))
                 .field(f -> f.name("sum").type(GraphQLFloat))
                 .field(f -> f.name("avg").type(GraphQLFloat))
@@ -343,7 +343,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                 .build();
 
         return GraphQLFieldDefinition.newFieldDefinition()
-                .name(tableName.toLowerCase() + "_aggregate")
+                .name(toLowerCamelCase(tableName) + "Aggregate")
                 .type(aggregateType)
                 .argument(GraphQLArgument.newArgument().name("where").type(GraphQLString).build())
                 .build();
@@ -393,9 +393,9 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                                                                   GraphQLObjectType tableType,
                                                                   GraphQLInputObjectType createInput) {
         return GraphQLFieldDefinition.newFieldDefinition()
-                .name("createMany" + capitalize(tableName) + "s")
+                .name("createMany" + capitalize(tableName))
                 .type(new GraphQLList(tableType))
-                .argument(GraphQLArgument.newArgument().name("input")
+                .argument(GraphQLArgument.newArgument().name("inputs")
                         .type(new GraphQLList(createInput)).build())
                 .build();
     }
@@ -462,6 +462,12 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
+
+    private String toLowerCamelCase(String name) {
+        String pascal = capitalize(name);
+        if (pascal == null || pascal.isEmpty()) return pascal;
+        return Character.toLowerCase(pascal.charAt(0)) + pascal.substring(1);
+    }
 
     private String capitalize(String name) {
         if (name == null || name.isEmpty()) return name;

@@ -139,7 +139,7 @@ class MysqlDatabaseSchemaReflectorImplementTest {
         TableInfo posts = schema.get("posts");
 
         assertThat(posts.getForeignKeys()).hasSize(1);
-        ForeignKeyInfo fk = posts.getForeignKeys().get(0);
+        ForeignKeyInfo fk = posts.getForeignKeys().getFirst();
         assertThat(fk.getColumnName()).isEqualTo("user_id");
         assertThat(fk.getReferencedTable()).isEqualTo("users");
         assertThat(fk.getReferencedColumn()).isEqualTo("id");
