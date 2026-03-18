@@ -99,9 +99,9 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         schema.mutationType.name == "Mutation"
 
         and: "should contain the products type"
-        GraphQLObjectType productsType = schema.getType("products") as GraphQLObjectType
+        GraphQLObjectType productsType = schema.getType("Products") as GraphQLObjectType
         productsType != null
-        productsType.name == "products"
+        productsType.name == "Products"
         productsType.fieldDefinitions.size() == 5
 
         and: "should have correct field types"
@@ -152,7 +152,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create relationship fields"
-        GraphQLObjectType ordersType = schema.getType("orders") as GraphQLObjectType
+        GraphQLObjectType ordersType = schema.getType("Orders") as GraphQLObjectType
         ordersType != null
 
         // Should have regular columns plus relationship field
@@ -235,12 +235,12 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         connectionField.getArgument(FieldConstant.BEFORE) != null
 
         and: "should create Edge and Connection types"
-        GraphQLObjectType edgeType = schema.getType("productsEdge") as GraphQLObjectType
+        GraphQLObjectType edgeType = schema.getType("ProductsEdge") as GraphQLObjectType
         edgeType != null
         edgeType.getFieldDefinition("node") != null
         edgeType.getFieldDefinition("cursor") != null
 
-        GraphQLObjectType connectionType = schema.getType("productsConnection") as GraphQLObjectType
+        GraphQLObjectType connectionType = schema.getType("ProductsConnection") as GraphQLObjectType
         connectionType != null
         connectionType.getFieldDefinition("edges") != null
         connectionType.getFieldDefinition("pageInfo") != null
@@ -273,7 +273,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         deleteField != null
         deleteField.type instanceof GraphQLObjectType  // Now returns the deleted record
 
-        GraphQLFieldDefinition bulkCreateField = schema.mutationType.getFieldDefinition("createManyProductss")
+        GraphQLFieldDefinition bulkCreateField = schema.mutationType.getFieldDefinition("createManyProducts")
         bulkCreateField != null
         bulkCreateField.type instanceof GraphQLList
 
@@ -296,7 +296,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create CREATE input type with all optional fields"
-        GraphQLInputObjectType createInputType = schema.getType("productsCreateInput") as GraphQLInputObjectType
+        GraphQLInputObjectType createInputType = schema.getType("ProductsCreateInput") as GraphQLInputObjectType
         createInputType != null
         createInputType.fieldDefinitions.size() == 3
 
@@ -306,7 +306,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         }
 
         and: "should create UPDATE input type with required primary key"
-        GraphQLInputObjectType updateInputType = schema.getType("productsUpdateInput") as GraphQLInputObjectType
+        GraphQLInputObjectType updateInputType = schema.getType("ProductsUpdateInput") as GraphQLInputObjectType
         updateInputType != null
         updateInputType.fieldDefinitions.size() == 3
 
@@ -347,7 +347,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create relationship input type"
-        GraphQLInputObjectType orderRelationshipInput = schema.getType("ordersRelationshipInput") as GraphQLInputObjectType
+        GraphQLInputObjectType orderRelationshipInput = schema.getType("OrdersRelationshipInput") as GraphQLInputObjectType
         orderRelationshipInput != null
 
         // Should have regular fields
@@ -360,7 +360,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         orderRelationshipInput.getFieldDefinition("customers_create") != null
 
         and: "should create connect input type"
-        GraphQLInputObjectType connectInputType = schema.getType("ordersCustomersConnectInput") as GraphQLInputObjectType
+        GraphQLInputObjectType connectInputType = schema.getType("OrdersCustomersConnectInput") as GraphQLInputObjectType
         connectInputType != null
         connectInputType.getFieldDefinition("id") != null
         connectInputType.getFieldDefinition("id").type instanceof GraphQLNonNull
@@ -391,7 +391,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should map database types to correct GraphQL types"
-        GraphQLObjectType dataTypesType = schema.getType("data_types_table") as GraphQLObjectType
+        GraphQLObjectType dataTypesType = schema.getType("DataTypesTable") as GraphQLObjectType
         dataTypesType != null
 
         // Integer types should map to GraphQLInt
@@ -454,7 +454,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should map enhanced database types to correct GraphQL types"
-        GraphQLObjectType enhancedTypesType = schema.getType("enhanced_types_table") as GraphQLObjectType
+        GraphQLObjectType enhancedTypesType = schema.getType("EnhancedTypesTable") as GraphQLObjectType
         enhancedTypesType != null
 
         // JSON/JSONB types should map to our custom JSON scalar
@@ -518,7 +518,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         jsonFilter.getFieldDefinition("path") != null
 
         // Check that table filter type includes correct filter assignments
-        GraphQLInputObjectType tableFilter = schema.getType("filter_test_tableFilter") as GraphQLInputObjectType
+        GraphQLInputObjectType tableFilter = schema.getType("FilterTestTableFilter") as GraphQLInputObjectType
         tableFilter != null
 
         // JSON columns should use JSONFilter
@@ -574,7 +574,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create OrderByInput type"
-        GraphQLInputObjectType orderByInputType = schema.getType("productsOrderByInput") as GraphQLInputObjectType
+        GraphQLInputObjectType orderByInputType = schema.getType("ProductsOrderByInput") as GraphQLInputObjectType
         orderByInputType != null
         orderByInputType.fieldDefinitions.size() == 3
 
@@ -603,7 +603,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create proper types with both primary keys as non-null"
-        GraphQLObjectType orderItemsType = schema.getType("order_items") as GraphQLObjectType
+        GraphQLObjectType orderItemsType = schema.getType("OrderItems") as GraphQLObjectType
         orderItemsType != null
 
         GraphQLFieldDefinition customerIdField = orderItemsType.getFieldDefinition("customer_id")
@@ -616,7 +616,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         quantityField.type instanceof GraphQLNonNull
 
         and: "should require both primary keys in update input"
-        GraphQLInputObjectType updateInputType = schema.getType("order_itemsUpdateInput") as GraphQLInputObjectType
+        GraphQLInputObjectType updateInputType = schema.getType("OrderItemsUpdateInput") as GraphQLInputObjectType
         updateInputType != null
 
         updateInputType.getFieldDefinition("customer_id").type instanceof GraphQLNonNull
@@ -650,7 +650,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "customer relationship input should include reverse relationship to orders"
-        GraphQLInputObjectType customerRelationshipInput = schema.getType("customersRelationshipInput") as GraphQLInputObjectType
+        GraphQLInputObjectType customerRelationshipInput = schema.getType("CustomersRelationshipInput") as GraphQLInputObjectType
         customerRelationshipInput != null
 
         // Should have field to create many orders when creating customer
@@ -672,12 +672,12 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create proper schema without relationship fields"
-        GraphQLObjectType standaloneType = schema.getType("standalone_table") as GraphQLObjectType
+        GraphQLObjectType standaloneType = schema.getType("StandaloneTable") as GraphQLObjectType
         standaloneType != null
         standaloneType.fieldDefinitions.size() == 2 // Only the actual columns, no relationships
 
         and: "relationship input should only have basic fields"
-        GraphQLInputObjectType relationshipInput = schema.getType("standalone_tableRelationshipInput") as GraphQLInputObjectType
+        GraphQLInputObjectType relationshipInput = schema.getType("StandaloneTableRelationshipInput") as GraphQLInputObjectType
         relationshipInput != null
         relationshipInput.fieldDefinitions.size() == 2 // Only the actual columns
     }
@@ -708,35 +708,35 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create types for both table and view"
-        GraphQLObjectType usersType = schema.getType("users") as GraphQLObjectType
+        GraphQLObjectType usersType = schema.getType("Users") as GraphQLObjectType
         usersType != null
         usersType.fieldDefinitions.size() == 4
 
-        GraphQLObjectType activeUsersType = schema.getType("active_users") as GraphQLObjectType
+        GraphQLObjectType activeUsersType = schema.getType("ActiveUsers") as GraphQLObjectType
         activeUsersType != null
         activeUsersType.fieldDefinitions.size() == 3
 
         and: "should create query fields for both table and view"
         GraphQLObjectType queryType = schema.getQueryType()
         queryType.getFieldDefinition("users") != null
-        queryType.getFieldDefinition("active_users") != null
+        queryType.getFieldDefinition("activeUsers") != null
         queryType.getFieldDefinition("usersConnection") != null
-        queryType.getFieldDefinition("active_usersConnection") != null
+        queryType.getFieldDefinition("activeUsersConnection") != null
 
         and: "should create mutations only for table, not for view"
         GraphQLObjectType mutationType = schema.getMutationType()
         mutationType.getFieldDefinition("createUsers") != null
         mutationType.getFieldDefinition("updateUsers") != null
         mutationType.getFieldDefinition("deleteUsers") != null
-        mutationType.getFieldDefinition("createManyUserss") != null
+        mutationType.getFieldDefinition("createManyUsers") != null
         mutationType.getFieldDefinition("createUsersWithRelations") != null
 
         // View should not have mutations
-        mutationType.getFieldDefinition("createActive_users") == null
-        mutationType.getFieldDefinition("updateActive_users") == null
-        mutationType.getFieldDefinition("deleteActive_users") == null
-        mutationType.getFieldDefinition("createManyActive_userss") == null
-        mutationType.getFieldDefinition("createActive_usersWithRelations") == null
+        mutationType.getFieldDefinition("createActiveUsers") == null
+        mutationType.getFieldDefinition("updateActiveUsers") == null
+        mutationType.getFieldDefinition("deleteActiveUsers") == null
+        mutationType.getFieldDefinition("createManyActiveUsers") == null
+        mutationType.getFieldDefinition("createActiveUsersWithRelations") == null
     }
 
     def "should handle schema with only views"() {
@@ -754,14 +754,14 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create schema successfully"
-        GraphQLObjectType monthlySalesType = schema.getType("monthly_sales") as GraphQLObjectType
+        GraphQLObjectType monthlySalesType = schema.getType("MonthlySales") as GraphQLObjectType
         monthlySalesType != null
         monthlySalesType.fieldDefinitions.size() == 3
 
         and: "should create query fields for the view"
         GraphQLObjectType queryType = schema.getQueryType()
-        queryType.getFieldDefinition("monthly_sales") != null
-        queryType.getFieldDefinition("monthly_salesConnection") != null
+        queryType.getFieldDefinition("monthlySales") != null
+        queryType.getFieldDefinition("monthlySalesConnection") != null
 
         and: "should not create any mutations"
         GraphQLObjectType mutationType = schema.getMutationType()
@@ -801,21 +801,21 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create all types"
-        schema.getType("users") != null
-        schema.getType("departments") != null
-        schema.getType("employee_details") != null
+        schema.getType("Users") != null
+        schema.getType("Departments") != null
+        schema.getType("EmployeeDetails") != null
 
         and: "should create mutations only for tables"
         GraphQLObjectType mutationType = schema.getMutationType()
         mutationType.getFieldDefinition("createUsers") != null
         mutationType.getFieldDefinition("createDepartments") != null
-        mutationType.getFieldDefinition("createEmployee_details") == null
+        mutationType.getFieldDefinition("createEmployeeDetails") == null
 
         and: "should create relationship fields for tables but not views"
-        GraphQLObjectType usersType = schema.getType("users") as GraphQLObjectType
+        GraphQLObjectType usersType = schema.getType("Users") as GraphQLObjectType
         usersType.getFieldDefinition("departments") != null
 
-        GraphQLObjectType employeeDetailsType = schema.getType("employee_details") as GraphQLObjectType
+        GraphQLObjectType employeeDetailsType = schema.getType("EmployeeDetails") as GraphQLObjectType
         // Views don't have foreign key relationships in the traditional sense
         employeeDetailsType.fieldDefinitions.size() == 3 // Only the view columns
     }
@@ -837,7 +837,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         GraphQLSchema schema = generator.generateSchema(tables)
 
         then: "should create filter input types for the view"
-        GraphQLInputObjectType filterType = schema.getType("summary_viewFilter") as GraphQLInputObjectType
+        GraphQLInputObjectType filterType = schema.getType("SummaryViewFilter") as GraphQLInputObjectType
         filterType != null
 
         and: "filter should have fields for all columns"
@@ -895,7 +895,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         // Available types validated in schema
 
         // Should use enum types in table fields
-        def usersType = schema.getType("users") as GraphQLObjectType
+        def usersType = schema.getType("Users") as GraphQLObjectType
         usersType != null
         def statusField = usersType?.getFieldDefinition("status")
         statusField != null
@@ -950,7 +950,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         contactType instanceof GraphQLObjectType
         contactType.getFieldDefinition("email") != null
         contactType.getFieldDefinition("phone") != null
-        def customersType = schema.getType("customers") as GraphQLObjectType
+        def customersType = schema.getType("Customers") as GraphQLObjectType
         customersType != null
         def addressField = customersType.getFieldDefinition("address")
         addressField != null
@@ -990,7 +990,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         schema.getType("OrderStatus") instanceof GraphQLEnumType
         schema.getType("AddressType") instanceof GraphQLObjectType
 
-        def ordersType = schema.getType("orders") as GraphQLObjectType
+        def ordersType = schema.getType("Orders") as GraphQLObjectType
         ordersType != null
         ordersType.getFieldDefinition("status") != null
         ordersType.getFieldDefinition("shipping_address") != null
@@ -1026,7 +1026,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         priorityEnum != null
         priorityEnum.values.collect { it.name } == ["LOW", "MEDIUM", "HIGH", "URGENT"]
 
-        def tasksType = schema.getType("tasks") as GraphQLObjectType
+        def tasksType = schema.getType("Tasks") as GraphQLObjectType
         def priorityField = tasksType.getFieldDefinition("priority")
         priorityField != null
         
@@ -1066,7 +1066,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         geoPointType.getFieldDefinition("latitude") != null
         geoPointType.getFieldDefinition("longitude") != null
 
-        def locationsType = schema.getType("locations") as GraphQLObjectType
+        def locationsType = schema.getType("Locations") as GraphQLObjectType
         def locationField = locationsType.getFieldDefinition("location")
         locationField != null
         
@@ -1100,7 +1100,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         contentTagEnum != null
         contentTagEnum.values.collect { it.name } == ["NEWS", "TECH", "SPORTS", "ENTERTAINMENT"]
 
-        def articlesType = schema.getType("articles") as GraphQLObjectType
+        def articlesType = schema.getType("Articles") as GraphQLObjectType
         def tagsField = articlesType.getFieldDefinition("tags")
         tagsField != null
         
@@ -1143,7 +1143,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         addressInfoType.getFieldDefinition("city") != null
         addressInfoType.getFieldDefinition("zip_code") != null
 
-        def usersType = schema.getType("users") as GraphQLObjectType
+        def usersType = schema.getType("Users") as GraphQLObjectType
         def addressesField = usersType.getFieldDefinition("addresses")
         addressesField != null
         
@@ -1174,14 +1174,14 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         def schema = generator.generateSchema(tables)
 
         then: "should create input types that use custom enum"
-        def createInputType = schema.getType("ordersCreateInput") as GraphQLInputObjectType
+        def createInputType = schema.getType("OrdersCreateInput") as GraphQLInputObjectType
         createInputType != null
-        
+
         def statusInputField = createInputType.getFieldDefinition("status")
         statusInputField != null
         statusInputField.type == schema.getType("OrderStatus")
 
-        def updateInputType = schema.getType("ordersUpdateInput") as GraphQLInputObjectType
+        def updateInputType = schema.getType("OrdersUpdateInput") as GraphQLInputObjectType
         updateInputType != null
         
         def updateStatusField = updateInputType.getFieldDefinition("status")
@@ -1222,7 +1222,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         contactDetailsInputType.getFieldDefinition("phone") != null
         contactDetailsInputType.getFieldDefinition("website") != null
 
-        def createInputType = schema.getType("customersCreateInput") as GraphQLInputObjectType
+        def createInputType = schema.getType("CustomersCreateInput") as GraphQLInputObjectType
         createInputType != null
         
         def contactInputField = createInputType.getFieldDefinition("contact")
@@ -1314,7 +1314,7 @@ class PostgresGraphQLSchemaGeneratorImplementTest extends Specification {
         def schema = generator.generateSchema(["orders": tableInfo])
 
         then: "the ordersFilter type has a status field typed as OrderStatusFilter"
-        def tableFilter = schema.getType("ordersFilter") as GraphQLInputObjectType
+        def tableFilter = schema.getType("OrdersFilter") as GraphQLInputObjectType
         tableFilter != null
         def statusFilterField = tableFilter.getFieldDefinition("status")
         statusFilterField != null

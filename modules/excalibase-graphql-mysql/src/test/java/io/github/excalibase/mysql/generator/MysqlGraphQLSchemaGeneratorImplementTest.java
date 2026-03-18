@@ -88,7 +88,7 @@ class MysqlGraphQLSchemaGeneratorImplementTest {
 
         GraphQLSchema schema = generator.generateSchema(tables, List.of(), List.of());
 
-        GraphQLObjectType itemsType = (GraphQLObjectType) schema.getType("items");
+        GraphQLObjectType itemsType = (GraphQLObjectType) schema.getType("Items");
         assertThat(itemsType).isNotNull();
         GraphQLFieldDefinition idField = itemsType.getFieldDefinition("id");
         assertThat(idField).isNotNull();
@@ -105,7 +105,7 @@ class MysqlGraphQLSchemaGeneratorImplementTest {
 
         GraphQLSchema schema = generator.generateSchema(tables, List.of(), List.of());
 
-        GraphQLObjectType itemsType = (GraphQLObjectType) schema.getType("items");
+        GraphQLObjectType itemsType = (GraphQLObjectType) schema.getType("Items");
         GraphQLFieldDefinition nameField = itemsType.getFieldDefinition("name");
         assertThat(nameField.getType().toString()).contains("String");
     }
@@ -120,7 +120,7 @@ class MysqlGraphQLSchemaGeneratorImplementTest {
         GraphQLSchema schema = generator.generateSchema(tables, List.of(), List.of());
 
         GraphQLObjectType queryType = schema.getQueryType();
-        assertThat(queryType.getFieldDefinition("orders_aggregate")).isNotNull();
+        assertThat(queryType.getFieldDefinition("ordersAggregate")).isNotNull();
     }
 
     @Test
@@ -133,7 +133,7 @@ class MysqlGraphQLSchemaGeneratorImplementTest {
         GraphQLSchema schema = generator.generateSchema(tables, List.of(), List.of());
 
         GraphQLObjectType mutationType = schema.getMutationType();
-        assertThat(mutationType.getFieldDefinition("createManyUserss")).isNotNull();
+        assertThat(mutationType.getFieldDefinition("createManyUsers")).isNotNull();
     }
 
     @Test
