@@ -116,3 +116,87 @@ jobs:
           app-logs.txt
         retention-days: 3
         if-no-files-found: ignore
+
+  postgres-e2e-native:
+    name: Postgres E2E Tests (Native)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up GraalVM JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'graalvm'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-native-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-native-
+          ${{ runner.os }}-maven-
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Run Postgres E2E tests (native)
+      run: make postgres-e2e-native
+
+    - name: Upload logs as artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: postgres-e2e-native-logs
+        path: |
+          app-logs.txt
+        retention-days: 3
+        if-no-files-found: ignore
+
+  mysql-e2e-native:
+    name: MySQL E2E Tests (Native)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up GraalVM JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'graalvm'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-native-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-native-
+          ${{ runner.os }}-maven-
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Run MySQL E2E tests (native)
+      run: make mysql-e2e-native
+
+    - name: Upload logs as artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: mysql-e2e-native-logs
+        path: |
+          app-logs.txt
+        retention-days: 3
+        if-no-files-found: ignore

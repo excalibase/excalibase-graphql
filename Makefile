@@ -26,7 +26,10 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
 	@echo "$(YELLOW)Examples:$(NC)"
-	@echo "  make e2e            # Complete e2e test (build + test + cleanup)"
+	@echo "  make e2e                  # Complete Postgres e2e test (JVM)"
+	@echo "  make postgres-e2e-native  # Complete Postgres e2e test (native)"
+	@echo "  make mysql-e2e            # Complete MySQL e2e test (JVM)"
+	@echo "  make mysql-e2e-native     # Complete MySQL e2e test (native)"
 	@echo "  make dev            # Build then start services and keep running"
 	@echo "  make up             # Pull and start service from docker hub "
 	@echo "  make test-only      # Run tests against running services"
@@ -81,8 +84,57 @@ MYSQL_COMPOSE_PROJECT = excalibase-mysql-app
 MYSQL_API_PORT = 10001
 
 .PHONY: mysql-e2e
-mysql-e2e: down-mysql build-image mysql-up mysql-test mysql-clean ## Complete MySQL e2e test suite
+mysql-e2e: down-mysql build-image mysql-up mysql-test mysql-clean ## Complete MySQL e2e test suite (JVM)
 	@echo "$(GREEN)🎉 MySQL E2E testing completed successfully!$(NC)"
+
+# Native e2e targets
+NATIVE_COMPOSE_FILE = docker-compose.native.yml
+NATIVE_COMPOSE_PROJECT = excalibase-native-app
+MYSQL_NATIVE_COMPOSE_FILE = docker-compose.mysql.native.yml
+MYSQL_NATIVE_COMPOSE_PROJECT = excalibase-mysql-native-app
+
+.PHONY: postgres-e2e-native
+postgres-e2e-native: down-native build-native-image up-native test-only clean-native ## Complete Postgres e2e test suite (native image)
+	@echo "$(GREEN)🎉 Postgres Native E2E testing completed successfully!$(NC)"
+
+.PHONY: mysql-e2e-native
+mysql-e2e-native: down-mysql-native build-native-image mysql-up-native mysql-test mysql-clean-native ## Complete MySQL e2e test suite (native image)
+	@echo "$(GREEN)🎉 MySQL Native E2E testing completed successfully!$(NC)"
+
+.PHONY: up-native
+up-native: ## Start Postgres Docker services using native image
+	@echo "$(BLUE)🚀 Starting native services...$(NC)"
+	@docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) up -d
+	@echo "$(GREEN)✓ Native services started$(NC)"
+	@$(MAKE) --no-print-directory wait-ready-native
+
+.PHONY: down-native
+down-native: ## Stop native Postgres Docker services
+	@echo "$(BLUE)🛑 Stopping native services...$(NC)"
+	@docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) down > /dev/null 2>&1 || true
+	@echo "$(GREEN)✓ Native services stopped$(NC)"
+
+.PHONY: clean-native
+clean-native: ## Stop native Postgres services and cleanup volumes
+	@docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+
+.PHONY: mysql-up-native
+mysql-up-native: ## Start MySQL services using native image
+	@echo "$(BLUE)🚀 Starting MySQL native services...$(NC)"
+	@docker compose -f $(MYSQL_NATIVE_COMPOSE_FILE) -p $(MYSQL_NATIVE_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f $(MYSQL_NATIVE_COMPOSE_FILE) -p $(MYSQL_NATIVE_COMPOSE_PROJECT) up -d
+	@echo "$(GREEN)✓ MySQL native services started$(NC)"
+
+.PHONY: down-mysql-native
+down-mysql-native: ## Stop MySQL native Docker services
+	@echo "$(BLUE)🛑 Stopping MySQL native services...$(NC)"
+	@docker compose -f $(MYSQL_NATIVE_COMPOSE_FILE) -p $(MYSQL_NATIVE_COMPOSE_PROJECT) down > /dev/null 2>&1 || true
+	@echo "$(GREEN)✓ MySQL native services stopped$(NC)"
+
+.PHONY: mysql-clean-native
+mysql-clean-native: ## Stop MySQL native services and cleanup volumes
+	@docker compose -f $(MYSQL_NATIVE_COMPOSE_FILE) -p $(MYSQL_NATIVE_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 
 .PHONY: mysql-dev
 mysql-dev: build-image mysql-up ## Start MySQL services for development
@@ -231,6 +283,25 @@ wait-ready: ## Wait for services to be ready
 	@echo "$(BLUE)🔄 Waiting for application...$(NC)"
 	@sleep 10
 	@echo "$(GREEN)✓ All services ready$(NC)"
+
+.PHONY: wait-ready-native
+wait-ready-native: ## Wait for native services to be ready (DB + fast native startup)
+	@echo "$(BLUE)⏳ Waiting for native services...$(NC)"
+	@for i in $$(seq 1 30); do \
+		if docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) exec -T postgres pg_isready -U hana001 -d hana > /dev/null 2>&1; then \
+			echo "$(GREEN)✓ PostgreSQL ready$(NC)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 30 ]; then \
+			echo "$(RED)❌ PostgreSQL failed to start$(NC)"; \
+			exit 1; \
+		fi; \
+		printf "."; \
+		sleep 2; \
+	done
+	@echo "$(BLUE)🔄 Waiting for native application...$(NC)"
+	@sleep 3
+	@echo "$(GREEN)✓ All native services ready$(NC)"
 
 .PHONY: run-tests
 run-tests: ## Execute the actual test suite

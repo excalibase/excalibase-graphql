@@ -1,0 +1,84 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: excalibase-postgres-native
+    environment:
+      POSTGRES_DB: hana
+      POSTGRES_USER: hana001
+      POSTGRES_PASSWORD: password123
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_native_data:/var/lib/postgresql/data
+      - ./scripts/initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql:ro
+    command: >
+      postgres
+      -c wal_level=logical
+      -c max_replication_slots=10
+      -c max_wal_senders=10
+      -c shared_preload_libraries=''
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hana001 -d hana"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - excalibase-native-network
+    restart: unless-stopped
+
+  excalibase-app:
+    image: excalibase/excalibase-graphql:native
+    container_name: excalibase-graphql-native
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hana
+      SPRING_DATASOURCE_USERNAME: app_user
+      SPRING_DATASOURCE_PASSWORD: password123
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 50
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 2
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 30000
+      SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT: 600000
+      SPRING_DATASOURCE_HIKARI_MAX_LIFETIME: 1800000
+      SERVER_TOMCAT_THREADS_MAX: 500
+      SERVER_TOMCAT_THREADS_MIN_SPARE: 50
+      SERVER_TOMCAT_MAX_CONNECTIONS: 10000
+      SERVER_TOMCAT_ACCEPT_COUNT: 100
+      SERVER_TOMCAT_CONNECTION_TIMEOUT: 20000
+      SPRING_THREADS_VIRTUAL_ENABLED: true
+      SERVER_PORT: 10000
+      APP_ALLOWED_SCHEMA: hana
+      APP_DATABASE_TYPE: postgres
+      APP_SECURITY_USER_CONTEXT_ENABLED: true
+      APP_SECURITY_USER_ID_EXTRACTOR_TYPE: header
+      APP_SECURITY_USER_ID_HEADER: X-User-Id
+      APP_CDC_ENABLED: true
+      APP_CDC_SLOT_NAME: cdc_slot
+      APP_CDC_PUBLICATION_NAME: cdc_publication
+      APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
+      APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
+    ports:
+      - "10000:10000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - excalibase-native-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.25'
+
+volumes:
+  postgres_native_data:
+    driver: local
+
+networks:
+  excalibase-native-network:
+    driver: bridge
