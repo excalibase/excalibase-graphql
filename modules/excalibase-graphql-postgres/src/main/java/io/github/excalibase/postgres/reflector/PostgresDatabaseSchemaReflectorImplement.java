@@ -189,7 +189,10 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
             
             if (tableInfo != null) {
                 ColumnInfo columnInfo = new ColumnInfo();
-                columnInfo.setName((String) columnData.get("column_name"));
+                String columnName = (String) columnData.get("column_name");
+                columnInfo.setName(columnName);
+                columnInfo.setAliasName(columnName.replaceAll("[^_A-Za-z0-9]", "_")
+                        .replaceAll("^(\\d)", "_$1"));
                 
                 String dataType = (String) columnData.get("data_type");
                 String typeCategory = (String) columnData.get("type_category");

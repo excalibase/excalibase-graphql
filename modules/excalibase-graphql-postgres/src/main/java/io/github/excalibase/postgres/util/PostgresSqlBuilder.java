@@ -17,6 +17,7 @@
 package io.github.excalibase.postgres.util;
 
 import io.github.excalibase.constant.ColumnTypeConstant;
+import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.postgres.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.postgres.constant.PostgresSqlSyntaxConstant;
@@ -54,6 +55,25 @@ public class PostgresSqlBuilder {
         }
         return columns.stream()
                 .map(this::quoteIdentifier)
+                .collect(Collectors.joining(", "));
+    }
+
+    /**
+     * Builds a SELECT column list from ColumnInfo objects, emitting
+     * {@code "zip code" AS zip_code} for columns whose DB name differs from their alias.
+     */
+    public String buildColumnListWithAliases(List<ColumnInfo> columns) {
+        if (columns == null || columns.isEmpty()) {
+            return "*";
+        }
+        return columns.stream()
+                .map(col -> {
+                    String quoted = quoteIdentifier(col.getName());
+                    if (col.hasAlias()) {
+                        return quoted + " AS " + col.getAliasName();
+                    }
+                    return quoted;
+                })
                 .collect(Collectors.joining(", "));
     }
 

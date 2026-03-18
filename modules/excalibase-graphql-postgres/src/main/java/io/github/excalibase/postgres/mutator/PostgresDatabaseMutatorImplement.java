@@ -139,6 +139,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             log.debug("Executing create SQL: {} with parameters: {}", sql, paramSource.getValues());
 
             try {
+                log.info(sql);
                 Map<String, Object> result = namedParameterJdbcTemplate.queryForMap(sql, paramSource);
                 // Apply the same composite type conversion as queries
                 return getTypeConverter().convertPostgresTypesToGraphQLTypes(result, tableInfo);

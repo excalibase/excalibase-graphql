@@ -344,8 +344,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
             // All fields are nullable in subscription data since we might have partial updates or deletes
             dataTypeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                .name(column.getName())
-                .description("Column " + column.getName() + " from " + tableName)
+                .name(toGraphQLFieldName(column.getName()))
+                .description(columnDescription("Column ", column.getName()))
                 .type(fieldType)
                 .build());
         }
@@ -516,9 +516,9 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         for (ColumnInfo column : tableInfo.getColumns()) {
             GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(column.getType());
             GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
-                    .name(column.getName())
+                    .name(toGraphQLFieldName(column.getName()))
                     .type(column.isNullable() ? fieldType : new GraphQLNonNull(fieldType))
-                    .description("Column " + column.getName());
+                    .description(columnDescription("Column ", column.getName()));
 
             typeBuilder.field(fieldBuilder.build());
         }
@@ -622,7 +622,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add each column as a potential sort field with direction
         for (ColumnInfo column : tableInfo.getColumns()) {
             orderByInputBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                    .name(column.getName())
+                    .name(toGraphQLFieldName(column.getName()))
                     .type(GraphQLTypeReference.typeRef("OrderDirection"))
                     .description("Order by " + column.getName())
                     .build());
@@ -742,7 +742,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // Add an argument for exact matching
         fieldBuilder.argument(GraphQLArgument.newArgument()
-                .name(column.getName())
+                .name(toGraphQLFieldName(column.getName()))
                 .type(argType)
                 .description("Filter by " + column.getName())
                 .build());
@@ -899,22 +899,27 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // Add fields with different rules for primary keys
         for (ColumnInfo column : tableInfo.getColumns()) {
+            // TODO: TSvector not supported
+            if (PostgresTypeOperator.isTsVectorType(column.getType())) {
+                continue;
+            }
+
             String originalType = (column.hasOriginalType()) ? column.getOriginalType() : null;
             GraphQLInputType inputType = mapDatabaseTypeToGraphQLInputType(column.getType(), originalType, customEnumTypes, customCompositeTypes);
 
             if (isUpdate) {
                 // For UPDATE input type, primary keys are required, others are optional
                 inputTypeBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                        .name(column.getName())
+                        .name(toGraphQLFieldName(column.getName()))
                         .type(column.isPrimaryKey() ? new GraphQLNonNull(inputType) : inputType)
-                        .description("Input for " + column.getName())
+                        .description(columnDescription("Input for ", column.getName()))
                         .build());
             } else {
                 // For CREATE input type, all fields are optional
                 inputTypeBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                        .name(column.getName())
+                        .name(toGraphQLFieldName(column.getName()))
                         .type(inputType)
-                        .description("Input for " + column.getName())
+                        .description(columnDescription("Input for ", column.getName()))
                         .build());
             }
         }
@@ -937,7 +942,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 hasPrimaryKeys = true;
                 GraphQLInputType inputType = mapDatabaseTypeToGraphQLInputType(column.getType());
                 inputTypeBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                        .name(column.getName())
+                        .name(toGraphQLFieldName(column.getName()))
                         .type(new GraphQLNonNull(inputType))
                         .description("Primary key field: " + column.getName())
                         .build());
@@ -965,7 +970,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         for (ColumnInfo column : tableInfo.getColumns()) {
             GraphQLInputType inputType = mapDatabaseTypeToGraphQLInputType(column.getType());
             relationshipInputBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                    .name(column.getName())
+                    .name(toGraphQLFieldName(column.getName()))
                     .type(inputType)
                     .description("Input for " + column.getName())
                     .build());
@@ -1532,7 +1537,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
             if (filterInputTypes.containsKey(filterTypeName)) {
                 filterBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                    .name(column.getName())
+                    .name(toGraphQLFieldName(column.getName()))
                     .type(filterInputTypes.get(filterTypeName))
                     .description("Filter options for " + column.getName())
                     .build());
@@ -1563,7 +1568,11 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .description("Custom enum type: " + enumInfo.getName());
 
         for (String value : enumInfo.getValues()) {
-            enumBuilder.value(value.toUpperCase(), value, "Enum value: " + value);
+            String graphqlName = value.toUpperCase().replaceAll("[^_A-Za-z0-9]", "_");
+            if (!graphqlName.isEmpty() && Character.isDigit(graphqlName.charAt(0))) {
+                graphqlName = "_" + graphqlName;
+            }
+            enumBuilder.value(graphqlName, value, "Enum value: " + value);
         }
 
         return enumBuilder.build();
@@ -1807,6 +1816,31 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     }
 
     /**
+     * Sanitizes a PostgreSQL column name to a valid GraphQL field name.
+     * Replaces spaces, hyphens, and other invalid characters with underscores.
+     */
+    private String toGraphQLFieldName(String columnName) {
+        String sanitized = columnName.replaceAll("[^_A-Za-z0-9]", "_");
+        if (!sanitized.isEmpty() && Character.isDigit(sanitized.charAt(0))) {
+            sanitized = "_" + sanitized;
+        }
+        return sanitized;
+    }
+
+    /**
+     * Returns a description for a column field. When the column name was sanitized
+     * (e.g. "zip code" -> "zip_code"), appends the original DB name so clients know
+     * the actual column name: e.g. "Column zip_code (db: \"zip code\")"
+     */
+    private String columnDescription(String prefix, String columnName) {
+        String graphqlName = toGraphQLFieldName(columnName);
+        if (!graphqlName.equals(columnName)) {
+            return prefix + graphqlName + " (db: \"" + columnName + "\")";
+        }
+        return prefix + columnName;
+    }
+
+    /**
      * Enhanced version of createTableTypes that supports custom types.
      */
     private void createTableTypesWithCustomTypes(GraphQLSchema.Builder schemaBuilder,
@@ -1911,7 +1945,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(column.getType());
 
                 numericAggsBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name(column.getName())
+                        .name(toGraphQLFieldName(column.getName()))
                         .type(fieldType)
                         .description("Sum/Avg for " + column.getName())
                         .build());
@@ -1923,7 +1957,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(column.getType());
 
                 comparableAggsBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
-                        .name(column.getName())
+                        .name(toGraphQLFieldName(column.getName()))
                         .type(fieldType)
                         .description("Min/Max for " + column.getName())
                         .build());
@@ -2005,9 +2039,9 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             String originalType = (column.hasOriginalType()) ? column.getOriginalType() : null;
             GraphQLOutputType fieldType = mapDatabaseTypeToGraphQLType(column.getType(), originalType, customEnumTypes, customCompositeTypes);
             GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
-                    .name(column.getName())
+                    .name(toGraphQLFieldName(column.getName()))
                     .type(column.isNullable() ? fieldType : new GraphQLNonNull(fieldType))
-                    .description("Column " + column.getName());
+                    .description(columnDescription("Column ", column.getName()));
 
             typeBuilder.field(fieldBuilder.build());
         }

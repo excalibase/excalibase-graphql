@@ -135,24 +135,39 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 requestedFields = new ArrayList<>(availableColumns);
             }
 
+            // Build alias→ColumnInfo map for resolving alias names back to DB column names
+            Map<String, ColumnInfo> aliasToCi = tableInfo != null
+                    ? getSchemaHelper().getColumnsByAliasName(tableName)
+                    : Map.of();
+
             // Always include PK and FK columns so computed fields and relationship resolvers can access them
             if (tableInfo != null) {
                 final List<String> fields = requestedFields;
-                // PK columns for computed field resolvers
+                // PK columns — use alias name so it matches requestedFields
                 tableInfo.getColumns().stream()
                         .filter(ColumnInfo::isPrimaryKey)
-                        .map(ColumnInfo::getName)
+                        .map(ColumnInfo::getAliasName)
                         .filter(pk -> !fields.contains(pk))
                         .forEach(fields::add);
-                // FK columns for forward relationship resolvers
+                // FK columns — look up alias name from the map, fall back to raw name
                 tableInfo.getForeignKeys().stream()
                         .flatMap(fk -> fk.getColumnNames().stream())
+                        .map(colName -> aliasToCi.values().stream()
+                                .filter(ci -> ci.getName().equals(colName))
+                                .map(ColumnInfo::getAliasName)
+                                .findFirst().orElse(colName))
                         .filter(col -> !fields.contains(col))
                         .forEach(fields::add);
             }
 
+            // Resolve alias names → ColumnInfo so SQL uses real DB column names with AS aliases
+            List<ColumnInfo> resolvedColumns = requestedFields.stream()
+                    .map(alias -> aliasToCi.getOrDefault(alias,
+                            new ColumnInfo(alias, "", false, true)))
+                    .collect(Collectors.toList());
+
             StringBuilder sql = new StringBuilder(PostgresSqlSyntaxConstant.SELECT_WITH_SPACE);
-            sql.append(getSqlBuilder().buildColumnList(requestedFields));
+            sql.append(getSqlBuilder().buildColumnListWithAliases(resolvedColumns));
             sql.append(PostgresSqlSyntaxConstant.FROM_WITH_SPACE)
                .append(getSqlBuilder().getQualifiedTableName(tableName, appConfig.getAllowedSchema()));
 
@@ -260,16 +275,24 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 requestedFields = new ArrayList<>(availableColumns);
             }
 
+            Map<String, ColumnInfo> aliasToCi = tableInfo != null
+                    ? getSchemaHelper().getColumnsByAliasName(tableName)
+                    : Map.of();
+
             // Always include PK and FK columns so computed fields and relationship resolvers can access them
             if (tableInfo != null) {
                 final List<String> fields = requestedFields;
                 tableInfo.getColumns().stream()
                         .filter(ColumnInfo::isPrimaryKey)
-                        .map(ColumnInfo::getName)
+                        .map(ColumnInfo::getAliasName)
                         .filter(pk -> !fields.contains(pk))
                         .forEach(fields::add);
                 tableInfo.getForeignKeys().stream()
                         .flatMap(fk -> fk.getColumnNames().stream())
+                        .map(colName -> aliasToCi.values().stream()
+                                .filter(ci -> ci.getName().equals(colName))
+                                .map(ColumnInfo::getAliasName)
+                                .findFirst().orElse(colName))
                         .filter(col -> !fields.contains(col))
                         .forEach(fields::add);
             }
@@ -280,7 +303,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             if (arguments.containsKey(FieldConstant.ORDER_BY)) {
                 Map<String, Object> orderByArg = (Map<String, Object>) arguments.get(FieldConstant.ORDER_BY);
                 for (Map.Entry<String, Object> entry : orderByArg.entrySet()) {
-                    orderByFields.put(entry.getKey(), entry.getValue().toString());
+                    orderByFields.put(entry.getKey(), entry.getValue() == null ? "ASC" : entry.getValue().toString());
                 }
                 arguments.remove(FieldConstant.ORDER_BY);
             }
@@ -338,8 +361,14 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
             Integer totalCount = namedParameterJdbcTemplate.queryForObject(countSql.toString(), paramSource, Integer.class);
 
+            List<ColumnInfo> allColumns = tableInfo != null
+                    ? tableInfo.getColumns()
+                    : availableColumns.stream()
+                            .map(a -> new ColumnInfo(a, "", false, true))
+                            .collect(Collectors.toList());
+
             StringBuilder dataSql = new StringBuilder(PostgresSqlSyntaxConstant.SELECT_WITH_SPACE);
-            dataSql.append(getSqlBuilder().buildColumnList(availableColumns));
+            dataSql.append(getSqlBuilder().buildColumnListWithAliases(allColumns));
             dataSql.append(PostgresSqlSyntaxConstant.FROM_WITH_SPACE)
                    .append(getSqlBuilder().getQualifiedTableName(tableName, appConfig.getAllowedSchema()));
 

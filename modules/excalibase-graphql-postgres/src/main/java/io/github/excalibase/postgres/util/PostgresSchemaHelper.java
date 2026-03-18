@@ -46,17 +46,31 @@ public class PostgresSchemaHelper {
 
     public Map<String, String> getColumnTypes(String tableName) {
         Map<String, String> columnTypes = new HashMap<>();
-        
+
         Map<String, TableInfo> tables = schemaReflector.reflectSchema();
         TableInfo tableInfo = tables.get(tableName);
-        
+
         if (tableInfo != null) {
             for (ColumnInfo column : tableInfo.getColumns()) {
-                columnTypes.put(column.getName(), column.getType().toLowerCase());
+                // Key by alias name so WHERE clause lookups match GraphQL field names
+                columnTypes.put(column.getAliasName(), column.getType().toLowerCase());
             }
         }
-        
+
         return columnTypes;
+    }
+
+    /** Returns a map from GraphQL alias name → ColumnInfo for all columns in the table. */
+    public Map<String, ColumnInfo> getColumnsByAliasName(String tableName) {
+        Map<String, TableInfo> tables = schemaReflector.reflectSchema();
+        TableInfo tableInfo = tables.get(tableName);
+
+        if (tableInfo != null) {
+            return tableInfo.getColumns().stream()
+                .collect(Collectors.toMap(ColumnInfo::getAliasName, col -> col));
+        }
+
+        return Map.of();
     }
 
     public String getColumnType(String tableName, String columnName) {
@@ -159,26 +173,26 @@ public class PostgresSchemaHelper {
     public List<String> getAvailableColumns(String tableName) {
         Map<String, TableInfo> tables = schemaReflector.reflectSchema();
         TableInfo tableInfo = tables.get(tableName);
-        
+
         if (tableInfo != null) {
             return tableInfo.getColumns().stream()
-                .map(ColumnInfo::getName)
+                .map(ColumnInfo::getAliasName)
                 .collect(Collectors.toList());
         }
-        
+
         return List.of();
     }
 
     public Set<String> getAvailableColumnsAsSet(String tableName) {
         Map<String, TableInfo> tables = schemaReflector.reflectSchema();
         TableInfo tableInfo = tables.get(tableName);
-        
+
         if (tableInfo != null) {
             return tableInfo.getColumns().stream()
-                .map(ColumnInfo::getName)
+                .map(ColumnInfo::getAliasName)
                 .collect(Collectors.toSet());
         }
-        
+
         return Set.of();
     }
 

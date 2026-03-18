@@ -15,9 +15,9 @@ spring:
       enabled: true
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5432/hana
-    username: hana001
-    password: password123
+    url: jdbc:postgresql://localhost:5433/dvdrental
+    username: postgres
+    password: postgres
     hikari:
       maximum-pool-size: 50  # Limit connection pool
       minimum-idle: 2
@@ -48,7 +48,7 @@ management:
         http.server.requests: false  # Disable histogram to save memory
 
 app:
-  allowed-schema: hana
+  allowed-schema: public
   database-type: postgres
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
@@ -60,7 +60,7 @@ app:
     user-id-extractor-type: header
     user-id-header: X-User-Id
   cdc:
-    enabled: true  # Enable CDC (Change Data Capture) for real-time subscriptions (default: true)
+    enabled: false  # Enable CDC (Change Data Capture) for real-time subscriptions (default: true)
     slot-name: cdc_slot  # Replication slot name (default: cdc_slot)
     publication-name: cdc_publication  # Publication name (default: cdc_publication)
     create-slot-if-not-exists: true  # Create replication slot if it doesn't exist (default: true)

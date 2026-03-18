@@ -1,5 +1,7 @@
 package io.github.excalibase.postgres.util;
 
+import io.github.excalibase.model.ColumnInfo;
+import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -162,5 +164,88 @@ class PostgresSqlBuilderTest {
         );
 
         assertThat(conditions).isEmpty();
+    }
+
+    // ── buildColumnListWithAliases ────────────────────────────────────────────
+
+    @Test
+    void buildColumnListWithAliases_normalColumn_quotesWithoutAlias() {
+        // "actor_id" has no special chars → alias == name → no AS clause
+        ColumnInfo col = new ColumnInfo("actor_id", "integer", true, false);
+        col.setAliasName("actor_id");
+
+        String sql = builder.buildColumnListWithAliases(List.of(col));
+
+        assertThat(sql).isEqualTo("\"actor_id\"");
+    }
+
+    @Test
+    void buildColumnListWithAliases_spaceInColumnName_emitsAsAlias() {
+        // "zip code" (space) → aliasName "zip_code" → SELECT "zip code" AS zip_code
+        ColumnInfo col = new ColumnInfo("zip code", "character varying", false, true);
+        col.setAliasName("zip_code");
+
+        String sql = builder.buildColumnListWithAliases(List.of(col));
+
+        assertThat(sql).isEqualTo("\"zip code\" AS zip_code");
+    }
+
+    @Test
+    void buildColumnListWithAliases_mixedColumns_correctlyHandlesBoth() {
+        ColumnInfo normal = new ColumnInfo("phone", "character varying", false, true);
+        normal.setAliasName("phone");
+
+        ColumnInfo spaced = new ColumnInfo("zip code", "character varying", false, true);
+        spaced.setAliasName("zip_code");
+
+        String sql = builder.buildColumnListWithAliases(List.of(normal, spaced));
+
+        assertThat(sql).isEqualTo("\"phone\", \"zip code\" AS zip_code");
+    }
+
+    // ── ColumnInfo.aliasName ──────────────────────────────────────────────────
+
+    @Test
+    void columnInfo_aliasName_defaultsToName() {
+        ColumnInfo col = new ColumnInfo("actor_id", "integer", true, false);
+        col.setAliasName("actor_id");
+
+        assertThat(col.getAliasName()).isEqualTo("actor_id");
+        assertThat(col.hasAlias()).isFalse();
+    }
+
+    @Test
+    void columnInfo_aliasName_detectsAlias() {
+        ColumnInfo col = new ColumnInfo("zip code", "character varying", false, true);
+        col.setAliasName("zip_code");
+
+        assertThat(col.getAliasName()).isEqualTo("zip_code");
+        assertThat(col.hasAlias()).isTrue();
+    }
+
+    // ── PostgresSchemaHelper.getAvailableColumns returns alias names ──────────
+
+    @Test
+    void schemaHelper_getAvailableColumns_returnsAliasNames() {
+        // Simulate staff_list view with "zip code" column that has alias "zip_code"
+        ColumnInfo id = new ColumnInfo("id", "integer", true, false);
+        id.setAliasName("id");
+
+        ColumnInfo zipCode = new ColumnInfo("zip code", "character varying", false, true);
+        zipCode.setAliasName("zip_code");
+
+        TableInfo tableInfo = new TableInfo();
+        tableInfo.setName("staff_list");
+        tableInfo.setColumns(List.of(id, zipCode));
+
+        IDatabaseSchemaReflector reflector = mock(IDatabaseSchemaReflector.class);
+        when(reflector.reflectSchema()).thenReturn(Map.of("staff_list", tableInfo));
+
+        PostgresSchemaHelper helper = new PostgresSchemaHelper(reflector);
+        List<String> cols = helper.getAvailableColumns("staff_list");
+
+        // Must return alias names ("zip_code"), not raw DB names ("zip code")
+        assertThat(cols).containsExactly("id", "zip_code");
+        assertThat(cols).doesNotContain("zip code");
     }
 }
