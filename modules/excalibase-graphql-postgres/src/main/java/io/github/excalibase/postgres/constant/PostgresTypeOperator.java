@@ -146,6 +146,11 @@ public class PostgresTypeOperator {
         return lowerType.contains(ColumnTypeConstant.XML);
     }
 
+    public static boolean isTsVectorType(String type) {
+        if (type == null) return false;
+        return type.toLowerCase().contains("tsvector");
+    }
+
     /**
      * Checks if the given type is an array type
      *

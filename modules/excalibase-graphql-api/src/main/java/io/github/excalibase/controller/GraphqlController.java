@@ -4,6 +4,8 @@ import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import io.github.excalibase.config.GraphqlConfig;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -50,6 +52,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/graphql")
 public class GraphqlController {
+    private static final Logger log = LoggerFactory.getLogger(GraphqlController.class);
     private final GraphqlConfig graphqlConfig;
 
     public GraphqlController(GraphqlConfig graphqlConfig) {
@@ -84,7 +87,7 @@ public class GraphqlController {
                 .query(query)
                 .variables(variables)
                 .build());
-
+        log.info(query);
         return ResponseEntity.ok(result.toSpecification());
     }
 }

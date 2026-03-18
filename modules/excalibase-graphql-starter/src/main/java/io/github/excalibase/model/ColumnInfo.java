@@ -36,6 +36,14 @@ public class ColumnInfo {
     private String originalType;
 
     /**
+     * GraphQL-safe alias for this column. Equals {@code name} when the column name
+     * is already a valid GraphQL identifier; otherwise contains the sanitized form
+     * (e.g. "zip code" → "zip_code", "PG-13" → "PG_13").
+     * The SQL layer emits {@code "zip code" AS zip_code} when name ≠ aliasName.
+     */
+    private String aliasName;
+
+    /**
      * Constructs a new ColumnInfo with all metadata properties.
      * 
      * @param name the name of the column
@@ -95,6 +103,19 @@ public class ColumnInfo {
 
     public Boolean hasOriginalType() {
         return this.originalType != null;
+    }
+
+    public String getAliasName() {
+        return aliasName != null ? aliasName : name;
+    }
+
+    public void setAliasName(String aliasName) {
+        this.aliasName = aliasName;
+    }
+
+    /** Returns true when the DB column name is not a valid GraphQL identifier and was sanitized. */
+    public boolean hasAlias() {
+        return aliasName != null && !aliasName.equals(name);
     }
 
 }
