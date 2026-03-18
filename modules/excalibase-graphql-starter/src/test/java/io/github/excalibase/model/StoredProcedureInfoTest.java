@@ -50,8 +50,8 @@ class StoredProcedureInfoTest {
                 .toList();
 
         assertThat(inParams).hasSize(1);
-        assertThat(inParams.get(0).getName()).isEqualTo("p_customer_id");
+        assertThat(inParams.getFirst().getName()).isEqualTo("p_customer_id");
         assertThat(outParams).hasSize(1);
-        assertThat(outParams.get(0).getName()).isEqualTo("p_count");
+        assertThat(outParams.getFirst().getName()).isEqualTo("p_count");
     }
 }

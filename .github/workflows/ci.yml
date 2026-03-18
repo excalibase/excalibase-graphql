@@ -62,6 +62,37 @@ jobs:
         path: modules/excalibase-graphql-api/target/site/jacoco/
         retention-days: 7
 
+  mysql-e2e:
+    name: MySQL E2E Tests
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'corretto'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Run MySQL E2E tests
+      run: make mysql-e2e
+
   build:
     name: Build & Package
     needs: test

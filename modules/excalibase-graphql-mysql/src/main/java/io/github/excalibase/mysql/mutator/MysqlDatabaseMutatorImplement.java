@@ -138,7 +138,7 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
     @Override
     public DataFetcher<List<Map<String, Object>>> buildBulkCreateMutationResolver(String tableName) {
         return env -> {
-            List<Map<String, Object>> inputList = env.getArgument("input");
+            List<Map<String, Object>> inputList = env.getArgument("inputs");
             if (inputList == null || inputList.isEmpty()) return List.of();
 
             String pkColumn = getPkColumn(getTable(tableName));
@@ -206,7 +206,7 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
     private Map<String, Object> fetchById(String tableName, String pkColumn, long id) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
                 "SELECT * FROM `" + tableName + "` WHERE `" + pkColumn + "` = ?", id);
-        return rows.isEmpty() ? null : rows.get(0);
+        return rows.isEmpty() ? null : rows.getFirst();
     }
 
     @Override

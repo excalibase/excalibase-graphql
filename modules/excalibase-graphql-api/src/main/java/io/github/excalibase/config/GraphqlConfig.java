@@ -176,20 +176,20 @@ public class GraphqlConfig {
 
             // Add data fetcher for the table query with offset-based pagination
             codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase()),
+                    FieldCoordinates.coordinates(GraphqlConstant.QUERY, toLowerCamelCase(tableName)),
                     dataFetcher.buildTableDataFetcher(tableName)
             );
 
             // Add data fetcher for the connection (cursor-based pagination && offset-based pagination)
             // This follows the Relay Connection Specification
             codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase() + GraphqlConstant.CONNECTION_SUFFIX),
+                    FieldCoordinates.coordinates(GraphqlConstant.QUERY, toLowerCamelCase(tableName) + GraphqlConstant.CONNECTION_SUFFIX),
                     dataFetcher.buildConnectionDataFetcher(tableName)
             );
 
             // Add data fetcher for aggregates
             codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates(GraphqlConstant.QUERY, tableName.toLowerCase() + "_aggregate"),
+                    FieldCoordinates.coordinates(GraphqlConstant.QUERY, toLowerCamelCase(tableName) + "Aggregate"),
                     dataFetcher.buildAggregateDataFetcher(tableName)
             );
 
@@ -198,7 +198,7 @@ public class GraphqlConfig {
                     computedFields.getOrDefault(tableName, List.of());
             for (var computedField : tableComputedFields) {
                 codeRegistry.dataFetcher(
-                        FieldCoordinates.coordinates(tableName, computedField.getFieldName()),
+                        FieldCoordinates.coordinates(toUpperCamelCase(tableName), computedField.getFieldName()),
                         dataFetcher.buildComputedFieldDataFetcher(
                                 tableName,
                                 computedField.getFunctionName(),
@@ -208,14 +208,12 @@ public class GraphqlConfig {
             }
 
             // Add data fetchers for forward relationships
+            // ForeignKeyInfo is now composite-aware: each entry holds all columns for one FK constraint
             for (var fk : tableInfo.getForeignKeys()) {
                 codeRegistry.dataFetcher(
-                        FieldCoordinates.coordinates(tableName, fk.getReferencedTable().toLowerCase()),
+                        FieldCoordinates.coordinates(toUpperCamelCase(tableName), toLowerCamelCase(fk.getReferencedTable())),
                         dataFetcher.buildRelationshipDataFetcher(
-                                tableName,
-                                fk.getColumnName(),
-                                fk.getReferencedTable(),
-                                fk.getReferencedColumn()
+                                tableName, fk.getColumnNames(), fk.getReferencedTable(), fk.getReferencedColumns()
                         )
                 );
             }
@@ -233,20 +231,20 @@ public class GraphqlConfig {
                 // Find foreign keys in other tables that reference this table
                 for (var otherFk : otherTableInfo.getForeignKeys()) {
                     if (otherFk.getReferencedTable().equalsIgnoreCase(tableName)) {
-                        // Create reverse relationship field name (plural)
-                        String reverseFieldName = otherTableName.toLowerCase();
+                        // Create reverse relationship field name (camelCase, plural)
+                        String reverseFieldName = toLowerCamelCase(otherTableName);
                         if (!reverseFieldName.endsWith("s")) {
                             reverseFieldName += "s";
                         }
 
                         // Add reverse relationship data fetcher that returns a list
                         codeRegistry.dataFetcher(
-                                FieldCoordinates.coordinates(tableName, reverseFieldName),
+                                FieldCoordinates.coordinates(toUpperCamelCase(tableName), reverseFieldName),
                                 dataFetcher.buildReverseRelationshipDataFetcher(
                                         tableName,
                                         otherTableName,
-                                        otherFk.getColumnName(),
-                                        otherFk.getReferencedColumn()
+                                        otherFk.getColumnNames(),
+                                        otherFk.getReferencedColumns()
                                 )
                         );
                     }
@@ -275,9 +273,9 @@ public class GraphqlConfig {
                         mutationResolver.buildDeleteMutationResolver(tableName)
                 );
 
-                // Bulk create mutation
+                // Bulk create mutation (no 's' suffix — createMany already implies plurality)
                 codeRegistry.dataFetcher(
-                        FieldCoordinates.coordinates("Mutation", "createMany" + capitalizedTableName + "s"),
+                        FieldCoordinates.coordinates("Mutation", "createMany" + capitalizedTableName),
                         mutationResolver.buildBulkCreateMutationResolver(tableName)
                 );
 
@@ -287,10 +285,10 @@ public class GraphqlConfig {
                         mutationResolver.buildCreateWithRelationshipsMutationResolver(tableName)
                 );
             }
-            
+
             // Add subscription for each table
             codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, tableName.toLowerCase() + "_changes"),
+                    FieldCoordinates.coordinates(GraphqlConstant.SUBSCRIPTION, toLowerCamelCase(tableName) + "Changes"),
                     subscriptionResolver.buildTableSubscriptionResolver(tableName)
             );
         }
@@ -314,6 +312,12 @@ public class GraphqlConfig {
     }
 
     /** Converts snake_case to UpperCamelCase: product_detail → ProductDetail */
+    private static String toLowerCamelCase(String name) {
+        String pascal = toUpperCamelCase(name);
+        if (pascal == null || pascal.isEmpty()) return pascal;
+        return Character.toLowerCase(pascal.charAt(0)) + pascal.substring(1);
+    }
+
     private static String toUpperCamelCase(String name) {
         if (name == null || name.isEmpty()) return name;
         StringBuilder sb = new StringBuilder();

@@ -1065,7 +1065,7 @@ class GraphqlControllerTest extends Specification {
         given: "a GraphQL query for JSON data"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 json_col
@@ -1082,16 +1082,16 @@ class GraphqlControllerTest extends Specification {
         then: "should return JSON data properly"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types[0].json_col').exists())
-                .andExpect(jsonPath('$.data.enhanced_types[0].jsonb_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].json_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].jsonb_col').exists())
     }
 
     def "should filter JSON columns using basic operations"() {
         given: "a GraphQL query filtering records with JSON columns"
         def query = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 name: { 
                     eq: "Test Record 1" 
                 } 
@@ -1112,17 +1112,17 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with JSON content"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].json_col').exists())
-                .andExpect(jsonPath('$.data.enhanced_types[0].jsonb_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].json_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].jsonb_col').exists())
     }
 
     def "should filter JSON columns using hasKey operator"() {
         given: "a GraphQL query with JSON hasKey filter"
         def query = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 json_col: { 
                     hasKey: "name" 
                 } 
@@ -1142,7 +1142,7 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with specified JSON key"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
     }
 
     // ========== Enhanced JSON Scalar Tests (Direct Object Input) ==========
@@ -1242,7 +1242,7 @@ class GraphqlControllerTest extends Specification {
         given: "a GraphQL query for array data"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 int_array
@@ -1259,21 +1259,21 @@ class GraphqlControllerTest extends Specification {
         then: "should return array data as GraphQL lists"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(3))
-                .andExpect(jsonPath('$.data.enhanced_types[0].int_array').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types[0].text_array').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types[0].int_array[0]').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].int_array[1]').value(2))
-                .andExpect(jsonPath('$.data.enhanced_types[0].text_array[0]').value("apple"))
-                .andExpect(jsonPath('$.data.enhanced_types[0].text_array[1]').value("banana"))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].int_array').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].text_array').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].int_array[0]').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].int_array[1]').value(2))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].text_array[0]').value("apple"))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].text_array[1]').value("banana"))
     }
 
     def "should filter array columns using string operations"() {
         given: "a GraphQL query filtering array data"
         def query = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 name: { 
                     eq: "Test Record 1" 
                 } 
@@ -1294,17 +1294,17 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with array data"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].text_array').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types[0].int_array').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].text_array').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].int_array').isArray())
     }
 
     def "should query enhanced datetime types and validate field existence"() {
         given: "a GraphQL query for enhanced datetime data"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 timestamptz_col
@@ -1322,17 +1322,17 @@ class GraphqlControllerTest extends Specification {
         then: "should return datetime data properly"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types[0].timestamptz_col').exists())
-                .andExpect(jsonPath('$.data.enhanced_types[0].timetz_col').exists())
-                .andExpect(jsonPath('$.data.enhanced_types[0].interval_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].timestamptz_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].timetz_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].interval_col').exists())
     }
 
     def "should query enhanced datetime types and return correct count"() {
         given: "a GraphQL query for datetime types"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 timestamptz_col
@@ -1350,15 +1350,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return datetime records"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(3))
     }
 
     def "should query numeric types with precision"() {
         given: "a GraphQL query for numeric data"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 numeric_col
@@ -1374,16 +1374,16 @@ class GraphqlControllerTest extends Specification {
         then: "should return numeric data properly"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types[0].numeric_col').exists())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].numeric_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(3))
     }
 
     def "should filter numeric types with range operations"() {
         given: "a GraphQL query filtering numeric types"
         def query = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 numeric_col: { 
                     gte: 1000.00,
                     lte: 2000.00
@@ -1404,14 +1404,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return filtered numeric records"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
     }
 
     def "should query network and binary types"() {
         given: "a GraphQL query for network and binary data"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 bytea_col
@@ -1430,17 +1430,17 @@ class GraphqlControllerTest extends Specification {
         then: "should return network and binary data properly"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types[0].inet_col').exists())
-                .andExpect(jsonPath('$.data.enhanced_types[0].cidr_col').exists())
-                .andExpect(jsonPath('$.data.enhanced_types[0].macaddr_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].inet_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].cidr_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].macaddr_col').exists())
     }
 
     def "should query network types"() {
         given: "a GraphQL query for network types"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 inet_col
@@ -1458,15 +1458,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return network records"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(3))
     }
 
     def "should query XML types"() {
         given: "a GraphQL query for XML data"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 xml_col
@@ -1482,15 +1482,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return XML data properly"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types[0].xml_col').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].xml_col').exists())
     }
 
     def "should handle null values in enhanced types"() {
         given: "a GraphQL query filtering for null values in enhanced types"
         def query = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 json_col: { 
                     isNull: true 
                 } 
@@ -1511,14 +1511,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with null values"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
     }
 
     def "should handle basic enhanced types querying"() {
         given: "a GraphQL query for enhanced types table"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
             }
@@ -1533,15 +1533,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return enhanced types records"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(3))
     }
 
     def "should handle basic JSON queries"() {
         given: "a GraphQL query for JSON columns"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 json_col
@@ -1558,15 +1558,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with JSON data"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(3))
     }
 
     def "should handle basic enhanced types queries"() {
         given: "a GraphQL query for all enhanced types"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
                 inet_col
@@ -1583,15 +1583,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return enhanced types records"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(3))
     }
 
     def "should query enhanced types successfully"() {
         given: "a simple GraphQL query for enhanced types"
         def query = '''
         {
-            enhanced_types {
+            enhancedTypes {
                 id
                 name
             }
@@ -1606,15 +1606,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return enhanced types data"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(3))
     }
 
     def "should handle schema introspection for enhanced types"() {
         given: "a GraphQL introspection query for enhanced types"
         def query = '''
         {
-            __type(name: "enhanced_types") {
+            __type(name: "EnhancedTypes") {
                 name
                 fields {
                     name
@@ -1637,7 +1637,7 @@ class GraphqlControllerTest extends Specification {
         then: "should return enhanced types schema information"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.__type.name').value("enhanced_types"))
+                .andExpect(jsonPath('$.data.__type.name').value("EnhancedTypes"))
                 .andExpect(jsonPath('$.data.__type.fields').isArray())
     }
 
@@ -1675,7 +1675,7 @@ class GraphqlControllerTest extends Specification {
         when: "filtering by exact interval match using where clause"
         def exactMatchQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 interval_col: { 
                     eq: "2 days 3 hours" 
                 } 
@@ -1693,15 +1693,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return exactly one matching record"
         exactResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].name').value("Test Record 1"))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].name').value("Test Record 1"))
 
         when: "filtering by greater than comparison"
         def greaterThanQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 interval_col: { 
                     gt: "1 hour" 
                 } 
@@ -1719,13 +1719,13 @@ class GraphqlControllerTest extends Specification {
         then: "should return all records with intervals greater than 1 hour"
         gtResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(2))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(2))
 
         when: "filtering by less than comparison"
         def lessThanQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 interval_col: { 
                     lt: "1 day" 
                 } 
@@ -1743,14 +1743,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return record with interval less than 1 day"
         ltResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(3))
 
         when: "filtering by not equal comparison"
         def notEqualQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 interval_col: { 
                     neq: "2 days 3 hours" 
                 } 
@@ -1768,13 +1768,13 @@ class GraphqlControllerTest extends Specification {
         then: "should return all records except the one with '2 days 3 hours'"
         neqResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(2))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(2))
 
         when: "filtering using PostgreSQL verbose format"
         def verboseFormatQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 interval_col: { 
                     eq: "0 years 0 mons 0 days 0 hours 30 mins 0.0 secs" 
                 } 
@@ -1792,9 +1792,9 @@ class GraphqlControllerTest extends Specification {
         then: "should work with PostgreSQL's verbose interval format"
         verboseResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(3))
     }
 
     def "should filter JSON and JSONB types with various operators"() {
@@ -1803,7 +1803,7 @@ class GraphqlControllerTest extends Specification {
         when: "filtering by JSON path contains"
         def jsonContainsQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 json_col: { 
                     contains: "John" 
                 } 
@@ -1821,14 +1821,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with JSON containing 'John'"
         jsonResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
 
         when: "filtering JSONB by contains operation"
         def jsonbContainsQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 jsonb_col: { 
                     contains: "developer" 
                 } 
@@ -1846,14 +1846,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with JSONB containing 'developer'"
         jsonbResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
 
         when: "filtering for null JSON values"
         def jsonNullQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 json_col: { 
                     isNull: true 
                 } 
@@ -1871,9 +1871,9 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with null JSON values"
         jsonNullResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(3))
     }
 
     def "should filter enhanced datetime types"() {
@@ -1882,7 +1882,7 @@ class GraphqlControllerTest extends Specification {
         when: "filtering by timestamptz range"
         def timestamptzQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 timestamptz_col: { 
                     gte: "2023-01-01T00:00:00Z",
                     lt: "2023-02-01T00:00:00Z"
@@ -1901,14 +1901,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return records in the timestamptz range"
         timestamptzResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
 
         when: "filtering by timetz exact match"
         def timetzQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 timetz_col: { 
                     eq: "14:30:00+00" 
                 } 
@@ -1926,9 +1926,9 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with matching timetz"
         timetzResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
     }
 
     def "should filter numeric types with precision"() {
@@ -1937,7 +1937,7 @@ class GraphqlControllerTest extends Specification {
         when: "filtering by numeric range"
         def numericRangeQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 numeric_col: { 
                     gte: 1000.00,
                     lte: 2000.00
@@ -1956,9 +1956,9 @@ class GraphqlControllerTest extends Specification {
         then: "should return records in the numeric range"
         numericResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
 
 
     }
@@ -1969,7 +1969,7 @@ class GraphqlControllerTest extends Specification {
         when: "filtering by inet address"
         def inetQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 inet_col: { 
                     eq: "192.168.1.1" 
                 } 
@@ -1987,14 +1987,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with matching inet address"
         inetResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
 
         when: "filtering by CIDR contains IP"
         def cidrQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 cidr_col: { 
                     startsWith: "192.168" 
                 } 
@@ -2012,14 +2012,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with CIDR starting with '192.168'"
         cidrResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
 
         when: "filtering by MAC address pattern"
         def macQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 macaddr_col: { 
                     contains: "00:1B" 
                 } 
@@ -2037,14 +2037,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with MAC containing '00:1B'"
         macResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(2))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(2))
 
         when: "filtering for non-null binary data"
         def binaryQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 bytea_col: { 
                     isNotNull: true 
                 } 
@@ -2062,8 +2062,8 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with non-null binary data"
         binaryResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(2))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(2))
     }
 
     def "should filter XML types"() {
@@ -2072,7 +2072,7 @@ class GraphqlControllerTest extends Specification {
         when: "filtering by XML content contains"
         def xmlContainsQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 xml_col: { 
                     contains: "John" 
                 } 
@@ -2090,14 +2090,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with XML containing 'John'"
         xmlResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
 
         when: "filtering by XML tag structure"
         def xmlTagQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 xml_col: { 
                     contains: "<product>" 
                 } 
@@ -2115,14 +2115,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with XML containing '<product>' tag"
         xmlTagResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(2))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(2))
 
         when: "filtering for empty XML"
         def xmlEmptyQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 xml_col: { 
                     eq: "<empty/>" 
                 } 
@@ -2140,9 +2140,9 @@ class GraphqlControllerTest extends Specification {
         then: "should return records with empty XML tag"
         xmlEmptyResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(3))
     }
 
     def "should handle complex enhanced type filtering combinations"() {
@@ -2151,7 +2151,7 @@ class GraphqlControllerTest extends Specification {
         when: "combining JSON, numeric, and datetime filters"
         def complexQuery = '''
         {
-            enhanced_types(where: { 
+            enhancedTypes(where: { 
                 json_col: { isNotNull: true },
                 numeric_col: { gte: 1000.00 },
                 timestamptz_col: { gte: "2023-01-01T00:00:00Z" }
@@ -2171,15 +2171,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return records matching all conditions"
         complexResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(2))
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').value(1))
-                .andExpect(jsonPath('$.data.enhanced_types[1].id').value(2))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(2))
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').value(1))
+                .andExpect(jsonPath('$.data.enhancedTypes[1].id').value(2))
 
         when: "using OR conditions with enhanced types"
         def orQuery = '''
         {
-            enhanced_types(or: [
+            enhancedTypes(or: [
                 { inet_col: { eq: "192.168.1.1" } },
                 { xml_col: { contains: "product" } },
                 { interval_col: { eq: "30 minutes" } }
@@ -2199,8 +2199,8 @@ class GraphqlControllerTest extends Specification {
         then: "should return records matching any of the OR conditions"
         orResult.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types.length()').value(3))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes.length()').value(3))
     }
 
     // ========== View Integration Tests Summary ==========
@@ -2369,19 +2369,19 @@ class GraphqlControllerTest extends Specification {
         when: "executing bulk create customer mutation"
         def response = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createManyCustomers(inputs: [{ first_name: \\"Bulk1\\", last_name: \\"Customer\\", email: \\"bulk1@example.com\\" }, { first_name: \\"Bulk2\\", last_name: \\"Customer\\", email: \\"bulk2@example.com\\" }, { first_name: \\"Bulk3\\", last_name: \\"Customer\\", email: \\"bulk3@example.com\\" }]) { customer_id first_name last_name email } }"}'))
+                .content('{"query": "mutation { createManyCustomer(inputs: [{ first_name: \\"Bulk1\\", last_name: \\"Customer\\", email: \\"bulk1@example.com\\" }, { first_name: \\"Bulk2\\", last_name: \\"Customer\\", email: \\"bulk2@example.com\\" }, { first_name: \\"Bulk3\\", last_name: \\"Customer\\", email: \\"bulk3@example.com\\" }]) { customer_id first_name last_name email } }"}'))
 
         then: "should successfully create all customers"
         response.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.createManyCustomers').isArray())
-                .andExpect(jsonPath('$.data.createManyCustomers.size()').value(3))
-                .andExpect(jsonPath('$.data.createManyCustomers[0].first_name').value("Bulk1"))
-                .andExpect(jsonPath('$.data.createManyCustomers[1].first_name').value("Bulk2"))
-                .andExpect(jsonPath('$.data.createManyCustomers[2].first_name').value("Bulk3"))
-                .andExpect(jsonPath('$.data.createManyCustomers[0].customer_id').isNumber())
-                .andExpect(jsonPath('$.data.createManyCustomers[1].customer_id').isNumber())
-                .andExpect(jsonPath('$.data.createManyCustomers[2].customer_id').isNumber())
+                .andExpect(jsonPath('$.data.createManyCustomer').isArray())
+                .andExpect(jsonPath('$.data.createManyCustomer.size()').value(3))
+                .andExpect(jsonPath('$.data.createManyCustomer[0].first_name').value("Bulk1"))
+                .andExpect(jsonPath('$.data.createManyCustomer[1].first_name').value("Bulk2"))
+                .andExpect(jsonPath('$.data.createManyCustomer[2].first_name').value("Bulk3"))
+                .andExpect(jsonPath('$.data.createManyCustomer[0].customer_id').isNumber())
+                .andExpect(jsonPath('$.data.createManyCustomer[1].customer_id').isNumber())
+                .andExpect(jsonPath('$.data.createManyCustomer[2].customer_id').isNumber())
     }
 
     // ==========================================
@@ -2392,38 +2392,71 @@ class GraphqlControllerTest extends Specification {
         when: "querying order_items table with composite key"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "{ order_items { order_id product_id quantity price } }"}'))
+                .content('{"query": "{ orderItems { order_id product_id quantity price } }"}'))
 
         then: "should return order items data"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.order_items').isArray())
-                .andExpect(jsonPath('$.data.order_items', hasSize(3)))
+                .andExpect(jsonPath('$.data.orderItems').isArray())
+                .andExpect(jsonPath('$.data.orderItems', hasSize(3)))
     }
 
     def "should filter table with composite key by one part"() {
         when: "filtering order_items by order_id only"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "{ order_items(where: { order_id: { eq: 1 } }) { order_id product_id quantity price } }"}'))
+                .content('{"query": "{ orderItems(where: { order_id: { eq: 1 } }) { order_id product_id quantity price } }"}'))
 
         then: "should return filtered results"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.order_items').isArray())
-                .andExpect(jsonPath('$.data.order_items', hasSize(2)))
+                .andExpect(jsonPath('$.data.orderItems').isArray())
+                .andExpect(jsonPath('$.data.orderItems', hasSize(2)))
     }
 
     def "should query parent and child tables with composite foreign key"() {
         when: "querying child_table that references parent via composite FK"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "{ child_table { child_id parent_id1 parent_id2 description } }"}'))
+                .content('{"query": "{ childTable { child_id parent_id1 parent_id2 description } }"}'))
 
         then: "should return child table data"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.child_table').isArray())
-                .andExpect(jsonPath('$.data.child_table', hasSize(3)))
+                .andExpect(jsonPath('$.data.childTable').isArray())
+                .andExpect(jsonPath('$.data.childTable', hasSize(3)))
     }
 
+
+
+
+    def "should return correct reverse childTables for composite FK parent"() {
+        when: "querying parentTable with nested childTables"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query": "{ parentTable { parent_id1 parent_id2 name childTables { child_id description } } }"}'))
+
+        then: "parent (1,1) has only child_id=1"
+        result.andExpect(status().isOk())
+                .andExpect(jsonPath('$.data.parentTable').isArray())
+
+        and: "each parent has only its own children (composite FK correctness)"
+        def response = new groovy.json.JsonSlurper().parseText(
+                result.andReturn().response.getContentAsString())
+        def parents = response.data.parentTable
+        def p11 = parents.find { it.parent_id1 == 1 && it.parent_id2 == 1 }
+        def p12 = parents.find { it.parent_id1 == 1 && it.parent_id2 == 2 }
+        def p21 = parents.find { it.parent_id1 == 2 && it.parent_id2 == 1 }
+
+        p11 != null
+        p11.childTables.size() == 1
+        p11.childTables[0].child_id == 1
+
+        p12 != null
+        p12.childTables.size() == 1
+        p12.childTables[0].child_id == 2
+
+        p21 != null
+        p21.childTables.size() == 1
+        p21.childTables[0].child_id == 3
+    }
 
     def "should create record with composite primary key via mutation"() {
         when: "creating order_items record with composite key"
@@ -2546,50 +2579,50 @@ class GraphqlControllerTest extends Specification {
         when: "creating multiple order_items records with composite keys"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "mutation { createManyOrderItemss(inputs: [{ order_id: 100, product_id: 1, quantity: 2, price: 99.98 }, { order_id: 100, product_id: 2, quantity: 1, price: 79.99 }, { order_id: 101, product_id: 1, quantity: 3, price: 449.97 }]) { order_id product_id quantity price } }"}'))
+                .content('{"query": "mutation { createManyOrderItems(inputs: [{ order_id: 100, product_id: 1, quantity: 2, price: 99.98 }, { order_id: 100, product_id: 2, quantity: 1, price: 79.99 }, { order_id: 101, product_id: 1, quantity: 3, price: 449.97 }]) { order_id product_id quantity price } }"}'))
 
         then: "should create all records successfully"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.createManyOrderItemss').isArray())
-                .andExpect(jsonPath('$.data.createManyOrderItemss', hasSize(3)))
-                .andExpect(jsonPath('$.data.createManyOrderItemss[0].order_id').value(100))
-                .andExpect(jsonPath('$.data.createManyOrderItemss[0].product_id').value(1))
-                .andExpect(jsonPath('$.data.createManyOrderItemss[1].order_id').value(100))
-                .andExpect(jsonPath('$.data.createManyOrderItemss[1].product_id').value(2))
-                .andExpect(jsonPath('$.data.createManyOrderItemss[2].order_id').value(101))
-                .andExpect(jsonPath('$.data.createManyOrderItemss[2].product_id').value(1))
+                .andExpect(jsonPath('$.data.createManyOrderItems').isArray())
+                .andExpect(jsonPath('$.data.createManyOrderItems', hasSize(3)))
+                .andExpect(jsonPath('$.data.createManyOrderItems[0].order_id').value(100))
+                .andExpect(jsonPath('$.data.createManyOrderItems[0].product_id').value(1))
+                .andExpect(jsonPath('$.data.createManyOrderItems[1].order_id').value(100))
+                .andExpect(jsonPath('$.data.createManyOrderItems[1].product_id').value(2))
+                .andExpect(jsonPath('$.data.createManyOrderItems[2].order_id').value(101))
+                .andExpect(jsonPath('$.data.createManyOrderItems[2].product_id').value(1))
     }
 
     def "should perform complex queries with composite key filtering"() {
         when: "querying with multiple composite key filters"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "{ order_items(where: { order_id: { eq: 1 } }) { order_id product_id quantity price } }"}'))
+                .content('{"query": "{ orderItems(where: { order_id: { eq: 1 } }) { order_id product_id quantity price } }"}'))
 
         then: "should return correctly filtered results"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.order_items').isArray())
-                .andExpect(jsonPath('$.data.order_items', hasSize(2)))
-                .andExpect(jsonPath('$.data.order_items[*].order_id').value(everyItem(is(1))))
+                .andExpect(jsonPath('$.data.orderItems').isArray())
+                .andExpect(jsonPath('$.data.orderItems', hasSize(2)))
+                .andExpect(jsonPath('$.data.orderItems[*].order_id').value(everyItem(is(1))))
     }
 
     def "should handle composite key ordering operations"() {
         when: "querying order_items with ordering by composite key parts"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "{ order_items(orderBy: { order_id: ASC }) { order_id product_id quantity } }"}'))
+                .content('{"query": "{ orderItems(orderBy: { order_id: ASC }) { order_id product_id quantity } }"}'))
 
         then: "should return properly ordered results"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.order_items').isArray())
-                .andExpect(jsonPath('$.data.order_items', hasSize(greaterThan(2))))
+                .andExpect(jsonPath('$.data.orderItems').isArray())
+                .andExpect(jsonPath('$.data.orderItems', hasSize(greaterThan(2))))
     }
 
     def "should validate composite key field requirements in schema"() {
         when: "performing introspection on composite key table"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "{ __type(name: \\"order_itemsUpdateInput\\") { inputFields { name type { kind name } } } }"}'))
+                .content('{"query": "{ __type(name: \\"OrderItemsUpdateInput\\") { inputFields { name type { kind name } } } }"}'))
 
         then: "should show both composite key fields as required"
         result.andExpect(status().isOk())
@@ -2633,12 +2666,12 @@ class GraphqlControllerTest extends Specification {
         when: "querying records with custom enum array data"
         def result = mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content('{"query": "{ enhanced_types { id name priorities } }"}'))
+                .content('{"query": "{ enhancedTypes { id name priorities } }"}'))
 
         then: "should return records with properly converted enum arrays"
         result.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types', hasSize(greaterThan(0))))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes', hasSize(greaterThan(0))))
     }
 
     // ==========================================
@@ -2716,7 +2749,7 @@ class GraphqlControllerTest extends Specification {
         when: "querying for BIT type records"
         def query = '''
         {
-            enhanced_types(where: { name: { eq: "Test Record 1" } }) {
+            enhancedTypes(where: { name: { eq: "Test Record 1" } }) {
                 id
                 name
                 bit_col
@@ -2730,10 +2763,10 @@ class GraphqlControllerTest extends Specification {
 
         then: "should return BIT type data successfully"
         queryResult.andExpect(status().isOk())
-                .andExpect(jsonPath('$.data.enhanced_types').isArray())
-                .andExpect(jsonPath('$.data.enhanced_types[0].name').value("Test Record 1"))
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].name').value("Test Record 1"))
                 // BIT fields should be present (format may vary)
-                .andExpect(jsonPath('$.data.enhanced_types[0].id').exists())
+                .andExpect(jsonPath('$.data.enhancedTypes[0].id').exists())
     }
 
     // ==================== AGGREGATE TESTS ====================
@@ -2742,7 +2775,7 @@ class GraphqlControllerTest extends Specification {
         given: "a GraphQL aggregate query without filters"
         def query = '''
         {
-            customer_aggregate {
+            customerAggregate {
                 count
             }
         }
@@ -2756,14 +2789,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return total count of customers"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.customer_aggregate.count').value(12))
+                .andExpect(jsonPath('$.data.customerAggregate.count').value(12))
     }
 
     def "should count records with WHERE filter"() {
         given: "a GraphQL aggregate query with filters"
         def query = '''
         {
-            customer_aggregate(where: { create_date: { eq: "2006-02-14" } }) {
+            customerAggregate(where: { create_date: { eq: "2006-02-14" } }) {
                 count
             }
         }
@@ -2777,14 +2810,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return count of filtered customers"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.customer_aggregate.count').value(5))
+                .andExpect(jsonPath('$.data.customerAggregate.count').value(5))
     }
 
     def "should compute sum aggregates on numeric columns"() {
         given: "a GraphQL aggregate query with sum"
         def query = '''
         {
-            orders_aggregate {
+            ordersAggregate {
                 count
                 sum {
                     total_amount
@@ -2801,15 +2834,15 @@ class GraphqlControllerTest extends Specification {
         then: "should return sum of all order amounts"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.orders_aggregate.count').value(5))
-                .andExpect(jsonPath('$.data.orders_aggregate.sum.total_amount').value(1344.74))
+                .andExpect(jsonPath('$.data.ordersAggregate.count').value(5))
+                .andExpect(jsonPath('$.data.ordersAggregate.sum.total_amount').value(1344.74))
     }
 
     def "should compute avg aggregates on numeric columns"() {
         given: "a GraphQL aggregate query with avg"
         def query = '''
         {
-            orders_aggregate {
+            ordersAggregate {
                 avg {
                     total_amount
                 }
@@ -2825,14 +2858,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return average of order amounts"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.orders_aggregate.avg.total_amount').value(closeTo(268.948d, 0.01d)))
+                .andExpect(jsonPath('$.data.ordersAggregate.avg.total_amount').value(closeTo(268.948d, 0.01d)))
     }
 
     def "should compute min and max aggregates"() {
         given: "a GraphQL aggregate query with min and max"
         def query = '''
         {
-            orders_aggregate {
+            ordersAggregate {
                 min {
                     total_amount
                     order_date
@@ -2853,17 +2886,17 @@ class GraphqlControllerTest extends Specification {
         then: "should return min and max values"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.orders_aggregate.min.total_amount').value(75.25))
-                .andExpect(jsonPath('$.data.orders_aggregate.max.total_amount').value(450.0))
-                .andExpect(jsonPath('$.data.orders_aggregate.min.order_date').exists())
-                .andExpect(jsonPath('$.data.orders_aggregate.max.order_date').exists())
+                .andExpect(jsonPath('$.data.ordersAggregate.min.total_amount').value(75.25))
+                .andExpect(jsonPath('$.data.ordersAggregate.max.total_amount').value(450.0))
+                .andExpect(jsonPath('$.data.ordersAggregate.min.order_date').exists())
+                .andExpect(jsonPath('$.data.ordersAggregate.max.order_date').exists())
     }
 
     def "should compute multiple aggregates together with filters"() {
         given: "a GraphQL aggregate query with multiple functions and filter"
         def query = '''
         {
-            orders_aggregate(where: { status: { eq: "completed" } }) {
+            ordersAggregate(where: { status: { eq: "completed" } }) {
                 count
                 sum {
                     total_amount
@@ -2889,18 +2922,18 @@ class GraphqlControllerTest extends Specification {
         then: "should return all aggregate results for completed orders only"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.orders_aggregate.count').value(2))
-                .andExpect(jsonPath('$.data.orders_aggregate.sum.total_amount').value(749.99))
-                .andExpect(jsonPath('$.data.orders_aggregate.avg.total_amount').value(closeTo(374.995d, 0.01d)))
-                .andExpect(jsonPath('$.data.orders_aggregate.min.total_amount').value(299.99))
-                .andExpect(jsonPath('$.data.orders_aggregate.max.total_amount').value(450.0))
+                .andExpect(jsonPath('$.data.ordersAggregate.count').value(2))
+                .andExpect(jsonPath('$.data.ordersAggregate.sum.total_amount').value(749.99))
+                .andExpect(jsonPath('$.data.ordersAggregate.avg.total_amount').value(closeTo(374.995d, 0.01d)))
+                .andExpect(jsonPath('$.data.ordersAggregate.min.total_amount').value(299.99))
+                .andExpect(jsonPath('$.data.ordersAggregate.max.total_amount').value(450.0))
     }
 
     def "should handle aggregate on empty result set"() {
         given: "a GraphQL aggregate query with filter that matches no records"
         def query = '''
         {
-            orders_aggregate(where: { status: { eq: "non_existent_status" } }) {
+            ordersAggregate(where: { status: { eq: "non_existent_status" } }) {
                 count
                 sum {
                     total_amount
@@ -2917,14 +2950,14 @@ class GraphqlControllerTest extends Specification {
         then: "should return count 0 and null for other aggregates"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.orders_aggregate.count').value(0))
+                .andExpect(jsonPath('$.data.ordersAggregate.count').value(0))
     }
 
     def "should compute aggregates with OR filter"() {
         given: "a GraphQL aggregate query with OR condition"
         def query = '''
         {
-            orders_aggregate(or: [
+            ordersAggregate(or: [
                 { status: { eq: "completed" } },
                 { status: { eq: "pending" } }
             ]) {
@@ -2944,8 +2977,8 @@ class GraphqlControllerTest extends Specification {
         then: "should return aggregates for records matching OR conditions"
         result.andExpect(status().isOk())
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
-                .andExpect(jsonPath('$.data.orders_aggregate.count').value(4))
-                .andExpect(jsonPath('$.data.orders_aggregate.sum.total_amount').value(1269.49))
+                .andExpect(jsonPath('$.data.ordersAggregate.count').value(4))
+                .andExpect(jsonPath('$.data.ordersAggregate.sum.total_amount').value(1269.49))
     }
 
     // ── OR inside where clause (bug fix) ────────────────────────────────────
@@ -3009,7 +3042,7 @@ class GraphqlControllerTest extends Specification {
         given: "a GraphQL query filtering a PostgreSQL enum column by exact value (enum values are UPPERCASE in GraphQL schema)"
         def query = '''
         {
-            enum_orders(where: { status: { eq: APPROVED } }) {
+            enumOrders(where: { status: { eq: APPROVED } }) {
                 id status
             }
         }
@@ -3023,16 +3056,16 @@ class GraphqlControllerTest extends Specification {
         then: "should return only approved records"
         result.andExpect(status().isOk())
                 .andExpect(jsonPath('$.errors').doesNotExist())
-                .andExpect(jsonPath('$.data.enum_orders').isArray())
-                .andExpect(jsonPath('$.data.enum_orders.length()').value(1))
-                .andExpect(jsonPath('$.data.enum_orders[0].status').value('APPROVED'))
+                .andExpect(jsonPath('$.data.enumOrders').isArray())
+                .andExpect(jsonPath('$.data.enumOrders.length()').value(1))
+                .andExpect(jsonPath('$.data.enumOrders[0].status').value('APPROVED'))
     }
 
     def "should filter enum column with OR inside where"() {
         given: "a GraphQL query with enum OR filter nested inside where"
         def query = '''
         {
-            enum_orders(where: { or: [
+            enumOrders(where: { or: [
                 { status: { eq: DRAFT } },
                 { status: { eq: PUBLISHED } }
             ] }) {
@@ -3049,9 +3082,135 @@ class GraphqlControllerTest extends Specification {
         then: "should return only draft and published records"
         result.andExpect(status().isOk())
                 .andExpect(jsonPath('$.errors').doesNotExist())
-                .andExpect(jsonPath('$.data.enum_orders').isArray())
-                .andExpect(jsonPath('$.data.enum_orders.length()').value(3))
+                .andExpect(jsonPath('$.data.enumOrders').isArray())
+                .andExpect(jsonPath('$.data.enumOrders.length()').value(3))
     }
+    // ── Naming convention tests (camelCase field names, PascalCase type names) ──
+
+    def "query fields for snake_case tables should use lowerCamelCase"() {
+        expect: "enhanced_types exposed as enhancedTypes"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"{ enhancedTypes { id name } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.enhancedTypes').isArray())
+
+        and: "order_items exposed as orderItems"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"{ orderItems { order_id product_id } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.orderItems').isArray())
+
+        and: "parent_table exposed as parentTable"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"{ parentTable { parent_id1 parent_id2 name } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.parentTable').isArray())
+
+        and: "child_table exposed as childTable"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"{ childTable { child_id description } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.childTable').isArray())
+    }
+
+    def "aggregate fields should use lowerCamelCase suffix"() {
+        expect: "customer_aggregate becomes customerAggregate"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"{ customerAggregate { count } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.customerAggregate.count').isNumber())
+
+        and: "orders_aggregate becomes ordersAggregate"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"{ ordersAggregate { count sum { total_amount } } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.ordersAggregate.count').isNumber())
+    }
+
+    def "connection fields should use lowerCamelCase"() {
+        expect: "customerConnection is consistent camelCase"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"{ customerConnection(first: 3) { edges { node { customer_id } } pageInfo { hasNextPage } } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.customerConnection.edges').isArray())
+
+        and: "ordersConnection is consistent camelCase"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"{ ordersConnection(first: 2) { edges { node { order_id } } pageInfo { hasNextPage } } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.ordersConnection.edges').isArray())
+    }
+
+    def "bulk create mutations should not have double-s suffix"() {
+        expect: "createManyOrderItems not createManyOrderItems"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"mutation { createManyOrderItems(inputs: [{ order_id: 200, product_id: 5, quantity: 1, price: 9.99 }]) { order_id product_id } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.createManyOrderItems').isArray())
+                .andExpect(jsonPath('$.data.createManyOrderItems[0].order_id').value(200))
+
+        and: "createManyOrders not createManyOrderss (table ending in s gets no extra s)"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"mutation { createManyOrders(inputs: [{ customer_id: 1, total_amount: 9.99 }]) { order_id total_amount } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.createManyOrders').isArray())
+
+        and: "createManyCustomer still works (singular table)"
+        mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"mutation { createManyCustomer(inputs: [{ first_name: \\"BulkNaming\\", last_name: \\"Test\\", email: \\"bulknaming@test.com\\" }]) { customer_id first_name } }"}'))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath('$.errors').doesNotExist())
+                .andExpect(jsonPath('$.data.createManyCustomer').isArray())
+    }
+
+    def "GraphQL type names should use PascalCase for all tables"() {
+        given: "introspection on schema types"
+        def result = mockMvc.perform(post("/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content('{"query":"{ __schema { types { name kind } } }"}'))
+                .andExpect(status().isOk())
+                .andReturn()
+        def json = new groovy.json.JsonSlurper().parseText(result.response.contentAsString)
+        def typeNames = json.data.__schema.types.collect { it.name } as Set
+
+        expect: "PascalCase Connection types exist"
+        typeNames.contains('OrderItemsConnection')
+        typeNames.contains('EnumOrdersConnection')
+        typeNames.contains('EnhancedTypesConnection')
+        typeNames.contains('ParentTableConnection')
+
+        and: "old mixed-case type names are gone"
+        !typeNames.contains('enum_ordersConnection')
+        !typeNames.contains('enhanced_typesConnection')
+        !typeNames.contains('order_itemsConnection')
+
+        and: "PascalCase Aggregate types exist"
+        typeNames.contains('OrdersAggregate')
+        typeNames.contains('EnumOrdersAggregate')
+        typeNames.contains('OrderItemsAggregate')
+    }
+
     // ── Stored Procedure tests ───────────────────────────────────────────────
 
     def "should expose stored procedure as callXxx mutation in schema"() {

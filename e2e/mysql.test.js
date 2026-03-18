@@ -168,28 +168,28 @@ describe('Basic queries', () => {
 
 describe('Aggregate queries', () => {
   test('customer aggregate count', async () => {
-    const data = await client.request(gql`{ customer_aggregate { count } }`);
-    expect(data.customer_aggregate.count).toBeGreaterThanOrEqual(10);
+    const data = await client.request(gql`{ customerAggregate { count } }`);
+    expect(data.customerAggregate.count).toBeGreaterThanOrEqual(10);
   });
 
   test('orders aggregate count', async () => {
-    const data = await client.request(gql`{ orders_aggregate { count } }`);
-    expect(data.orders_aggregate.count).toBeGreaterThanOrEqual(10);
+    const data = await client.request(gql`{ ordersAggregate { count } }`);
+    expect(data.ordersAggregate.count).toBeGreaterThanOrEqual(10);
   });
 
   test('orders aggregate sum', async () => {
-    const data = await client.request(gql`{ orders_aggregate { sum } }`);
-    expect(data.orders_aggregate.sum).toBeGreaterThan(0);
+    const data = await client.request(gql`{ ordersAggregate { sum } }`);
+    expect(data.ordersAggregate.sum).toBeGreaterThan(0);
   });
 
   test('orders aggregate avg', async () => {
-    const data = await client.request(gql`{ orders_aggregate { avg } }`);
-    expect(data.orders_aggregate.avg).toBeGreaterThan(0);
+    const data = await client.request(gql`{ ordersAggregate { avg } }`);
+    expect(data.ordersAggregate.avg).toBeGreaterThan(0);
   });
 
   test('orders aggregate min <= max', async () => {
-    const data = await client.request(gql`{ orders_aggregate { min max } }`);
-    expect(data.orders_aggregate.min).toBeLessThanOrEqual(data.orders_aggregate.max);
+    const data = await client.request(gql`{ ordersAggregate { min max } }`);
+    expect(data.ordersAggregate.min).toBeLessThanOrEqual(data.ordersAggregate.max);
   });
 });
 
@@ -260,13 +260,13 @@ describe('Mutations — CRUD', () => {
   test('bulk create customers', async () => {
     const data = await client.request(gql`
       mutation {
-        createManyCustomers(input: [
+        createManyCustomer(inputs: [
           { first_name: "Bulk1", last_name: "Test", email: "bulk1@test.com" }
           { first_name: "Bulk2", last_name: "Test", email: "bulk2@test.com" }
         ]) { customer_id first_name }
       }
     `);
-    expect(data.createManyCustomers.length).toBe(2);
+    expect(data.createManyCustomer.length).toBe(2);
   });
 });
 
@@ -295,10 +295,10 @@ describe('Relationships', () => {
   });
 
   test('product_detail with nested product (forward FK)', async () => {
-    const data = await client.request(gql`{ product_detail(limit: 3) { detail_id product_id product { product_id name } } }`);
-    expect(data.product_detail.length).toBeGreaterThanOrEqual(1);
-    expect(data.product_detail[0].product).not.toBeNull();
-    expect(data.product_detail[0].product.name.length).toBeGreaterThan(0);
+    const data = await client.request(gql`{ productDetail(limit: 3) { detail_id product_id product { product_id name } } }`);
+    expect(data.productDetail.length).toBeGreaterThanOrEqual(1);
+    expect(data.productDetail[0].product).not.toBeNull();
+    expect(data.productDetail[0].product.name.length).toBeGreaterThan(0);
   });
 
   test('customer with nested orders (reverse FK)', async () => {
@@ -307,8 +307,8 @@ describe('Relationships', () => {
   });
 
   test('product with nested product_details (reverse FK)', async () => {
-    const data = await client.request(gql`{ product(where: { product_id: { eq: 1 } }) { product_id name product_details { detail_id } } }`);
-    expect(data.product[0].product_details.length).toBeGreaterThanOrEqual(1);
+    const data = await client.request(gql`{ product(where: { product_id: { eq: 1 } }) { product_id name productDetails { detail_id } } }`);
+    expect(data.product[0].productDetails.length).toBeGreaterThanOrEqual(1);
   });
 });
 
@@ -398,8 +398,8 @@ describe('ENUM columns', () => {
   });
 
   test('task aggregate count', async () => {
-    const data = await client.request(gql`{ task_aggregate { count } }`);
-    expect(data.task_aggregate.count).toBeGreaterThanOrEqual(5);
+    const data = await client.request(gql`{ taskAggregate { count } }`);
+    expect(data.taskAggregate.count).toBeGreaterThanOrEqual(5);
   });
 
   test('create task with ENUM values', async () => {
@@ -419,18 +419,18 @@ describe('ENUM columns', () => {
 
 describe('JSON columns', () => {
   test('product_detail basic query', async () => {
-    const data = await client.request(gql`{ product_detail { detail_id product_id attributes metadata tags } }`);
-    expect(data.product_detail.length).toBeGreaterThanOrEqual(3);
+    const data = await client.request(gql`{ productDetail { detail_id product_id attributes metadata tags } }`);
+    expect(data.productDetail.length).toBeGreaterThanOrEqual(3);
   });
 
   test('JSON columns are non-null', async () => {
-    const data = await client.request(gql`{ product_detail(limit: 1) { attributes metadata tags } }`);
-    expect(data.product_detail[0].attributes).not.toBeNull();
+    const data = await client.request(gql`{ productDetail(limit: 1) { attributes metadata tags } }`);
+    expect(data.productDetail[0].attributes).not.toBeNull();
   });
 
   test('filter product_detail by product_id', async () => {
-    const data = await client.request(gql`{ product_detail(where: { product_id: { eq: 1 } }) { detail_id product_id } }`);
-    expect(data.product_detail.length).toBeGreaterThanOrEqual(1);
+    const data = await client.request(gql`{ productDetail(where: { product_id: { eq: 1 } }) { detail_id product_id } }`);
+    expect(data.productDetail.length).toBeGreaterThanOrEqual(1);
   });
 
   test('create product_detail with JSON', async () => {
@@ -451,8 +451,8 @@ describe('JSON columns', () => {
 
 describe('Views (read-only)', () => {
   test('active_customers view query', async () => {
-    const data = await client.request(gql`{ active_customers { customer_id first_name last_name email } }`);
-    expect(data.active_customers.length).toBeGreaterThanOrEqual(10);
+    const data = await client.request(gql`{ activeCustomers { customer_id first_name last_name email } }`);
+    expect(data.activeCustomers.length).toBeGreaterThanOrEqual(10);
   });
 
   test('active_customers excludes inactive rows', async () => {
@@ -461,33 +461,33 @@ describe('Views (read-only)', () => {
   });
 
   test('orders_summary view query', async () => {
-    const data = await client.request(gql`{ orders_summary { customer_id first_name last_name order_count total_spent } }`);
+    const data = await client.request(gql`{ ordersSummary { customer_id first_name last_name order_count total_spent } }`);
     // LEFT JOIN — customers with no orders have order_count=0, total_spent=null
-    expect(data.orders_summary.length).toBeGreaterThanOrEqual(5);
-    const withOrders = data.orders_summary.filter(r => r.order_count > 0);
+    expect(data.ordersSummary.length).toBeGreaterThanOrEqual(5);
+    const withOrders = data.ordersSummary.filter(r => r.order_count > 0);
     expect(withOrders.length).toBeGreaterThanOrEqual(1);
     withOrders.forEach(r => expect(r.total_spent).toBeGreaterThan(0));
   });
 
   test('high_value_orders view — all totals > 50', async () => {
-    const data = await client.request(gql`{ high_value_orders { order_id total status first_name last_name } }`);
-    expect(data.high_value_orders.length).toBeGreaterThanOrEqual(1);
-    data.high_value_orders.forEach(r => expect(r.total).toBeGreaterThan(50));
+    const data = await client.request(gql`{ highValueOrders { order_id total status first_name last_name } }`);
+    expect(data.highValueOrders.length).toBeGreaterThanOrEqual(1);
+    data.highValueOrders.forEach(r => expect(r.total).toBeGreaterThan(50));
   });
 
   test('view pagination', async () => {
-    const data = await client.request(gql`{ active_customers(limit: 3, offset: 0) { customer_id } }`);
-    expect(data.active_customers.length).toBe(3);
+    const data = await client.request(gql`{ activeCustomers(limit: 3, offset: 0) { customer_id } }`);
+    expect(data.activeCustomers.length).toBe(3);
   });
 
   test('view ordering', async () => {
-    const data = await client.request(gql`{ active_customers(orderBy: { customer_id: "ASC" }, limit: 3) { customer_id } }`);
-    expect(data.active_customers[0].customer_id).toBeLessThan(data.active_customers[1].customer_id);
+    const data = await client.request(gql`{ activeCustomers(orderBy: { customer_id: "ASC" }, limit: 3) { customer_id } }`);
+    expect(data.activeCustomers[0].customer_id).toBeLessThan(data.activeCustomers[1].customer_id);
   });
 
   test('view aggregate count', async () => {
-    const data = await client.request(gql`{ active_customers_aggregate { count } }`);
-    expect(data.active_customers_aggregate.count).toBeGreaterThanOrEqual(10);
+    const data = await client.request(gql`{ activeCustomersAggregate { count } }`);
+    expect(data.activeCustomersAggregate.count).toBeGreaterThanOrEqual(10);
   });
 
   test('views have no mutation fields', async () => {

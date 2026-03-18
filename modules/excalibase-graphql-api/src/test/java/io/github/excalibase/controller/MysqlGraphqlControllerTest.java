@@ -205,10 +205,10 @@ class MysqlGraphqlControllerTest {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"query": "{ customer_aggregate { count } }"}
+                                {"query": "{ customerAggregate { count } }"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer_aggregate.count").value(5));
+                .andExpect(jsonPath("$.data.customerAggregate.count").value(5));
     }
 
     @Test
@@ -216,10 +216,10 @@ class MysqlGraphqlControllerTest {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"query": "{ orders_aggregate { count sum avg } }"}
+                                {"query": "{ ordersAggregate { count sum avg } }"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orders_aggregate.count").value(4));
+                .andExpect(jsonPath("$.data.ordersAggregate.count").value(4));
     }
 
     // ─── Mutation tests ───────────────────────────────────────────────────────
@@ -300,14 +300,14 @@ class MysqlGraphqlControllerTest {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"query": "mutation { createManyCustomers(input: [{ first_name: \\"Bulk1\\", last_name: \\"A\\" }, { first_name: \\"Bulk2\\", last_name: \\"B\\" }, { first_name: \\"Bulk3\\", last_name: \\"C\\" }]) { customer_id first_name } }"}
+                                {"query": "mutation { createManyCustomer(inputs: [{ first_name: \\"Bulk1\\", last_name: \\"A\\" }, { first_name: \\"Bulk2\\", last_name: \\"B\\" }, { first_name: \\"Bulk3\\", last_name: \\"C\\" }]) { customer_id first_name } }"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.createManyCustomers").isArray())
-                .andExpect(jsonPath("$.data.createManyCustomers", hasSize(3)))
-                .andExpect(jsonPath("$.data.createManyCustomers[0].first_name").value("Bulk1"))
-                .andExpect(jsonPath("$.data.createManyCustomers[1].first_name").value("Bulk2"))
-                .andExpect(jsonPath("$.data.createManyCustomers[2].first_name").value("Bulk3"));
+                .andExpect(jsonPath("$.data.createManyCustomer").isArray())
+                .andExpect(jsonPath("$.data.createManyCustomer", hasSize(3)))
+                .andExpect(jsonPath("$.data.createManyCustomer[0].first_name").value("Bulk1"))
+                .andExpect(jsonPath("$.data.createManyCustomer[1].first_name").value("Bulk2"))
+                .andExpect(jsonPath("$.data.createManyCustomer[2].first_name").value("Bulk3"));
     }
 
     // ─── Relationship tests ───────────────────────────────────────────────────
@@ -355,10 +355,10 @@ class MysqlGraphqlControllerTest {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"query": "{ __type(name: \\"customer\\") { name fields { name } } }"}
+                                {"query": "{ __type(name: \\"Customer\\") { name fields { name } } }"}
                                 """))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.__type.name").value("customer"))
+                .andExpect(jsonPath("$.data.__type.name").value("Customer"))
                 .andExpect(jsonPath("$.data.__type.fields").isArray());
     }
 

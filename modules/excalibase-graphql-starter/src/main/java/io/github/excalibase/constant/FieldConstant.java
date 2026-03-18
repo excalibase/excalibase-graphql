@@ -47,8 +47,11 @@ public class FieldConstant {
     /** Field name indicating if there are results before the current page */
     public static final String HAS_PREVIOUS_PAGE = "hasPreviousPage";
     
+    /** GraphQL type name for page information */
+    public static final String PAGE_INFO = "PageInfo";
+
     /** Field name for page information in connection types */
-    public static final String PAGE_INFO = "pageInfo";
+    public static final String PAGE_INFO_FIELD = "pageInfo";
     
     /** Field name for the cursor of the first result in the current page */
     public static final String START_CURSOR = "startCursor";

@@ -132,7 +132,27 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
 
             String sql = "SELECT * FROM `" + referencedTable + "` WHERE `" + referencedColumn + "` = ? LIMIT 1";
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, fkValue);
-            return rows.isEmpty() ? null : rows.get(0);
+            return rows.isEmpty() ? null : rows.getFirst();
+        };
+    }
+
+    @Override
+    public DataFetcher<Map<String, Object>> buildRelationshipDataFetcher(
+            String tableName, List<String> foreignKeyColumns,
+            String referencedTable, List<String> referencedColumns) {
+        return env -> {
+            Map<String, Object> source = env.getSource();
+            if (source == null) return null;
+            StringBuilder sql = new StringBuilder("SELECT * FROM `" + referencedTable + "` WHERE ");
+            List<Object> params = new ArrayList<>();
+            for (int i = 0; i < foreignKeyColumns.size(); i++) {
+                if (i > 0) sql.append(" AND ");
+                sql.append("`").append(referencedColumns.get(i)).append("` = ?");
+                params.add(source.get(foreignKeyColumns.get(i)));
+            }
+            sql.append(" LIMIT 1");
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql.toString(), params.toArray());
+            return rows.isEmpty() ? null : rows.getFirst();
         };
     }
 
@@ -148,6 +168,28 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
 
             String sql = "SELECT * FROM `" + targetTableName + "` WHERE `" + foreignKeyColumn + "` = ?";
             return jdbcTemplate.queryForList(sql, refValue);
+        };
+    }
+
+    @Override
+    public DataFetcher<List<Map<String, Object>>> buildReverseRelationshipDataFetcher(
+            String sourceTableName, String targetTableName,
+            List<String> foreignKeyColumns, List<String> referencedColumns) {
+        if (foreignKeyColumns.size() == 1) {
+            return buildReverseRelationshipDataFetcher(sourceTableName, targetTableName,
+                    foreignKeyColumns.getFirst(), referencedColumns.getFirst());
+        }
+        return env -> {
+            Map<String, Object> source = env.getSource();
+            if (source == null) return List.of();
+            StringBuilder sql = new StringBuilder("SELECT * FROM `" + targetTableName + "` WHERE ");
+            List<Object> params = new ArrayList<>();
+            for (int i = 0; i < foreignKeyColumns.size(); i++) {
+                if (i > 0) sql.append(" AND ");
+                sql.append("`").append(foreignKeyColumns.get(i)).append("` = ?");
+                params.add(source.get(referencedColumns.get(i)));
+            }
+            return jdbcTemplate.queryForList(sql.toString(), params.toArray());
         };
     }
 

@@ -41,9 +41,9 @@ class PostgresSqlBuilderTest {
         );
 
         assertThat(conditions).hasSize(1);
-        assertThat(conditions.get(0)).startsWith("(");
-        assertThat(conditions.get(0)).contains(" OR ");
-        assertThat(conditions.get(0)).contains("\"status\"");
+        assertThat(conditions.getFirst()).startsWith("(");
+        assertThat(conditions.getFirst()).contains(" OR ");
+        assertThat(conditions.getFirst()).contains("\"status\"");
     }
 
     @Test
@@ -79,7 +79,7 @@ class PostgresSqlBuilderTest {
         );
 
         assertThat(conditions).hasSize(1);
-        String clause = conditions.get(0);
+        String clause = conditions.getFirst();
         assertThat(clause).contains(" OR ");
         assertThat(clause).contains("\"status\"");
         assertThat(clause).contains("\"total_amount\"");
@@ -135,7 +135,7 @@ class PostgresSqlBuilderTest {
         );
 
         assertThat(conditions).hasSize(1);
-        assertThat(conditions.get(0)).contains(" OR ");
+        assertThat(conditions.getFirst()).contains(" OR ");
     }
 
     // ── Basic where (regression guard) ──────────────────────────────────────
@@ -151,7 +151,7 @@ class PostgresSqlBuilderTest {
         );
 
         assertThat(conditions).hasSize(1);
-        assertThat(conditions.get(0)).contains("\"customer_id\"");
+        assertThat(conditions.getFirst()).contains("\"customer_id\"");
         assertThat(params.getValues()).containsKey("where_customer_id_eq");
     }
 

@@ -145,7 +145,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         .forEach(fields::add);
                 // FK columns for forward relationship resolvers
                 tableInfo.getForeignKeys().stream()
-                        .map(fk -> fk.getColumnName())
+                        .flatMap(fk -> fk.getColumnNames().stream())
                         .filter(col -> !fields.contains(col))
                         .forEach(fields::add);
             }
@@ -240,7 +240,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
             List<String> requestedFields = environment.getSelectionSet().getFields().stream()
                     .map(SelectedField::getName)
-                    .filter(field -> !field.equals(FieldConstant.EDGES) && !field.equals(FieldConstant.PAGE_INFO) && !field.equals(FieldConstant.TOTAL_COUNT))
+                    .filter(field -> !field.equals(FieldConstant.EDGES) && !field.equals(FieldConstant.PAGE_INFO_FIELD) && !field.equals(FieldConstant.TOTAL_COUNT))
                     .filter(availableColumns::contains)
                     .collect(Collectors.toList());
 
@@ -268,7 +268,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         .filter(pk -> !fields.contains(pk))
                         .forEach(fields::add);
                 tableInfo.getForeignKeys().stream()
-                        .map(fk -> fk.getColumnName())
+                        .flatMap(fk -> fk.getColumnNames().stream())
                         .filter(col -> !fields.contains(col))
                         .forEach(fields::add);
             }
@@ -582,7 +582,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             // Build the final connection result following the Relay Connection spec
             Map<String, Object> connection = new HashMap<>();
             connection.put(FieldConstant.EDGES, edges);
-            connection.put(FieldConstant.PAGE_INFO, pageInfo);
+            connection.put(FieldConstant.PAGE_INFO_FIELD, pageInfo);
             connection.put(FieldConstant.TOTAL_COUNT, totalCount != null ? totalCount : 0);
             return connection;
         };
@@ -641,6 +641,56 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     }
     
     @Override
+    public DataFetcher<Map<String, Object>> buildRelationshipDataFetcher(
+            String tableName, List<String> foreignKeyColumns, String referencedTable, List<String> referencedColumns) {
+        // For single-column FKs, delegate to the batch-context-aware implementation
+        if (foreignKeyColumns.size() == 1) {
+            return buildRelationshipDataFetcher(tableName, foreignKeyColumns.getFirst(), referencedTable, referencedColumns.getFirst());
+        }
+        // Composite FK: batch context is keyed by single value, so do a direct query with all columns
+        return environment -> {
+            Map<String, Object> source = environment.getSource();
+
+            Set<String> availableColumns = getSchemaHelper().getAvailableColumnsAsSet(referencedTable);
+
+            List<String> requestedFields = environment.getSelectionSet().getFields().stream()
+                    .map(SelectedField::getName)
+                    .filter(availableColumns::contains)
+                    .collect(Collectors.toList());
+
+            if (requestedFields.isEmpty() && !availableColumns.isEmpty()) {
+                requestedFields = new ArrayList<>(availableColumns);
+            }
+
+            for (String refCol : referencedColumns) {
+                if (!requestedFields.contains(refCol)) {
+                    requestedFields.add(refCol);
+                }
+            }
+
+            StringBuilder sql = new StringBuilder(PostgresSqlSyntaxConstant.SELECT_WITH_SPACE);
+            sql.append(getSqlBuilder().buildColumnList(requestedFields));
+            sql.append(PostgresSqlSyntaxConstant.FROM_WITH_SPACE)
+               .append(getSqlBuilder().getQualifiedTableName(referencedTable, appConfig.getAllowedSchema()));
+            sql.append(PostgresSqlSyntaxConstant.WHERE_WITH_SPACE);
+
+            List<Object> params = new ArrayList<>();
+            for (int i = 0; i < foreignKeyColumns.size(); i++) {
+                if (i > 0) sql.append(" AND ");
+                sql.append(getSqlBuilder().quoteIdentifier(referencedColumns.get(i))).append(" = ?");
+                params.add(source.get(foreignKeyColumns.get(i)));
+            }
+
+            try {
+                return jdbcTemplate.queryForMap(sql.toString(), params.toArray());
+            } catch (Exception e) {
+                log.error("Error fetching composite relationship: {}", e.getMessage());
+                throw new DataFetcherException("Error fetching relationship for " + referencedTable + ": " + e.getMessage(), e);
+            }
+        };
+    }
+
+    @Override
     public DataFetcher<List<Map<String, Object>>> buildReverseRelationshipDataFetcher(
             String sourceTableName, String targetTableName, String foreignKeyColumn, String referencedColumn) {
         return environment -> {
@@ -682,6 +732,57 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 return results;
             } catch (Exception e) {
                 log.error("Error fetching reverse relationship from {} to {}: {}", sourceTableName, targetTableName, e.getMessage());
+                throw new DataFetcherException("Error fetching reverse relationship from " + sourceTableName + " to " + targetTableName + ": " + e.getMessage(), e);
+            }
+        };
+    }
+
+    @Override
+    public DataFetcher<List<Map<String, Object>>> buildReverseRelationshipDataFetcher(
+            String sourceTableName, String targetTableName, List<String> foreignKeyColumns, List<String> referencedColumns) {
+        // For single-column FKs, delegate to the batch-aware single-column overload
+        if (foreignKeyColumns.size() == 1) {
+            return buildReverseRelationshipDataFetcher(sourceTableName, targetTableName,
+                    foreignKeyColumns.getFirst(), referencedColumns.getFirst());
+        }
+        // Composite FK: build WHERE col1 = ? AND col2 = ? using referenced column values from parent source row
+        return environment -> {
+            Map<String, Object> source = environment.getSource();
+
+            Map<String, TableInfo> tables = getSchemaHelper().getAllTables();
+            TableInfo targetTableInfo = tables.get(targetTableName);
+            Set<String> availableColumns = getSchemaHelper().getAvailableColumnsAsSet(targetTableName);
+
+            List<String> requestedFields = environment.getSelectionSet().getFields().stream()
+                    .map(SelectedField::getName)
+                    .filter(availableColumns::contains)
+                    .collect(Collectors.toList());
+
+            if (requestedFields.isEmpty() && !availableColumns.isEmpty()) {
+                requestedFields = new ArrayList<>(availableColumns);
+            }
+
+            StringBuilder sql = new StringBuilder(PostgresSqlSyntaxConstant.SELECT_WITH_SPACE);
+            sql.append(getSqlBuilder().buildColumnList(requestedFields));
+            sql.append(PostgresSqlSyntaxConstant.FROM_WITH_SPACE)
+               .append(getSqlBuilder().getQualifiedTableName(targetTableName, appConfig.getAllowedSchema()));
+            sql.append(PostgresSqlSyntaxConstant.WHERE_WITH_SPACE);
+
+            List<Object> params = new ArrayList<>();
+            for (int i = 0; i < foreignKeyColumns.size(); i++) {
+                if (i > 0) sql.append(" AND ");
+                sql.append(getSqlBuilder().quoteIdentifier(foreignKeyColumns.get(i))).append(" = ?");
+                params.add(source.get(referencedColumns.get(i)));
+            }
+
+            try {
+                List<Map<String, Object>> results = jdbcTemplate.queryForList(sql.toString(), params.toArray());
+                if (targetTableInfo != null) {
+                    results = getTypeConverter().convertPostgresTypesToGraphQLTypes(results, targetTableInfo);
+                }
+                return results;
+            } catch (Exception e) {
+                log.error("Error fetching composite reverse relationship from {} to {}: {}", sourceTableName, targetTableName, e.getMessage());
                 throw new DataFetcherException("Error fetching reverse relationship from " + sourceTableName + " to " + targetTableName + ": " + e.getMessage(), e);
             }
         };
@@ -907,6 +1008,10 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     .findFirst();
 
             if (fkInfo.isPresent()) {
+                // Composite FK: the list resolver handles these via direct query — skip batch preload
+                if (fkInfo.get().isComposite()) {
+                    continue;
+                }
                 String foreignKeyColumn = fkInfo.get().getColumnName();
                 String referencedTable = fkInfo.get().getReferencedTable();
                 String referencedColumn = fkInfo.get().getReferencedColumn();

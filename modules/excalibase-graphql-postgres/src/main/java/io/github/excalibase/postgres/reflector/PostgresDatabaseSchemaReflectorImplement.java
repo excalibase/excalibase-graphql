@@ -294,18 +294,29 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
     /**
      * Processes foreign key data from bulk query results and populates TableInfo objects.
      */
-    private void processForeignKeysFromBulkResult(List<Map<String, Object>> foreignKeyResults, 
+    private void processForeignKeysFromBulkResult(List<Map<String, Object>> foreignKeyResults,
                                                  Map<String, TableInfo> tables) {
+        // Group rows by (table_name, constraint_name) to build composite-key-aware ForeignKeyInfo
+        java.util.LinkedHashMap<String, ForeignKeyInfo> byConstraint = new java.util.LinkedHashMap<>();
         for (Map<String, Object> fkData : foreignKeyResults) {
             String tableName = (String) fkData.get("table_name");
+            String constraintName = (String) fkData.get("constraint_name");
+            String key = tableName + "|" + constraintName;
+
+            ForeignKeyInfo fkInfo = byConstraint.computeIfAbsent(key, k -> {
+                ForeignKeyInfo f = new ForeignKeyInfo();
+                f.setReferencedTable((String) fkData.get("foreign_table_name"));
+                return f;
+            });
+            fkInfo.getColumnNames().add((String) fkData.get("column_name"));
+            fkInfo.getReferencedColumns().add((String) fkData.get("foreign_column_name"));
+        }
+
+        for (Map.Entry<String, ForeignKeyInfo> entry : byConstraint.entrySet()) {
+            String tableName = entry.getKey().split("\\|")[0];
             TableInfo tableInfo = tables.get(tableName);
-            
             if (tableInfo != null) {
-                ForeignKeyInfo fkInfo = new ForeignKeyInfo();
-                fkInfo.setColumnName((String) fkData.get("column_name"));
-                fkInfo.setReferencedTable((String) fkData.get("foreign_table_name"));
-                fkInfo.setReferencedColumn((String) fkData.get("foreign_column_name"));
-                tableInfo.getForeignKeys().add(fkInfo);
+                tableInfo.getForeignKeys().add(entry.getValue());
             }
         }
     }
