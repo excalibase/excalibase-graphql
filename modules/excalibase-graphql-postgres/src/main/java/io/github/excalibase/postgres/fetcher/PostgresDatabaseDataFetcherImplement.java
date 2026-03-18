@@ -75,6 +75,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
     private static final String BATCH_CONTEXT = "BATCH_CONTEXT";
     private static final String BATCH_LOADER = "BATCH_LOADER";
+    private static final String REVERSE_BATCH_PREFIX = "REV:";
     private static final String CURSOR_ERROR = PostgresErrorConstant.CURSOR_REQUIRED_ERROR;
     private static final int MAX_RELATIONSHIP_DEPTH = 5; // Prevent infinite recursion
 
@@ -699,7 +700,18 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             if (referencedValue == null) {
                 return List.of();
             }
-            
+
+            // Check pre-loaded batch context first (populated by preloadRelationshipsRecursive)
+            String cacheKey = REVERSE_BATCH_PREFIX + targetTableName + ":" + foreignKeyColumn;
+            Map<String, Object> batchContext = environment.getGraphQlContext().get(BATCH_CONTEXT);
+            if (batchContext != null && batchContext.containsKey(cacheKey)) {
+                @SuppressWarnings("unchecked")
+                Map<Object, List<Map<String, Object>>> grouped =
+                        (Map<Object, List<Map<String, Object>>>) batchContext.get(cacheKey);
+                List<Map<String, Object>> cached = grouped.get(referencedValue);
+                return cached != null ? cached : List.of();
+            }
+
             Map<String, TableInfo> tables = getSchemaHelper().getAllTables();
             TableInfo targetTableInfo = tables.get(targetTableName);
             Set<String> availableColumns = getSchemaHelper().getAvailableColumnsAsSet(targetTableName);
@@ -852,37 +864,41 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
     private Map<String, Object> computeFieldAggregates(String tableName, TableInfo tableInfo, SelectedField aggregateField,
                                                        String aggFunction, String whereClause, MapSqlParameterSource paramSource) {
-        Map<String, Object> aggregates = new HashMap<>();
         String qualifiedTableName = getSqlBuilder().getQualifiedTableName(tableName, appConfig.getAllowedSchema());
 
-        // Get the specific columns requested
         List<SelectedField> columnFields = aggregateField.getSelectionSet() != null ?
                 aggregateField.getSelectionSet().getFields() : List.of();
 
-        for (SelectedField columnField : columnFields) {
-            String columnName = columnField.getName();
+        // Collect only columns that exist in the table schema
+        List<String> validColumns = columnFields.stream()
+                .map(SelectedField::getName)
+                .filter(colName -> tableInfo.getColumns().stream().anyMatch(c -> c.getName().equals(colName)))
+                .collect(Collectors.toList());
 
-            // Find column info
-            ColumnInfo columnInfo = tableInfo.getColumns().stream()
-                    .filter(col -> col.getName().equals(columnName))
-                    .findFirst()
-                    .orElse(null);
-
-            if (columnInfo != null) {
-                String sql = "SELECT " + aggFunction.toUpperCase() + "(" + getSqlBuilder().quoteIdentifier(columnName) + ") as result " +
-                            "FROM " + qualifiedTableName + whereClause;
-
-                try {
-                    Object value = namedParameterJdbcTemplate.queryForObject(sql, paramSource, Object.class);
-                    aggregates.put(columnName, value);
-                } catch (Exception e) {
-                    log.error("Error computing {} for column {}: {}", aggFunction, columnName, e.getMessage());
-                    aggregates.put(columnName, null);
-                }
-            }
+        if (validColumns.isEmpty()) {
+            return new HashMap<>();
         }
 
-        return aggregates;
+        // Build a single query: SELECT AGG("col1") AS "col1", AGG("col2") AS "col2" FROM t WHERE ...
+        String selectList = validColumns.stream()
+                .map(col -> aggFunction.toUpperCase() + "(" + getSqlBuilder().quoteIdentifier(col) + ") AS " + getSqlBuilder().quoteIdentifier(col))
+                .collect(Collectors.joining(", "));
+
+        String sql = "SELECT " + selectList + " FROM " + qualifiedTableName + whereClause;
+
+        try {
+            Map<String, Object> row = namedParameterJdbcTemplate.queryForMap(sql, paramSource);
+            Map<String, Object> aggregates = new HashMap<>();
+            for (String col : validColumns) {
+                aggregates.put(col, row.get(col));
+            }
+            return aggregates;
+        } catch (Exception e) {
+            log.error("Error computing {} aggregates for table {}: {}", aggFunction, tableName, e.getMessage());
+            Map<String, Object> aggregates = new HashMap<>();
+            validColumns.forEach(col -> aggregates.put(col, null));
+            return aggregates;
+        }
     }
 
     @Override
@@ -1099,7 +1115,103 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         );
                     }
                 }
+            } else {
+                // Try to identify as a reverse FK field (other table referencing this table)
+                preloadReverseRelationshipIfMatches(
+                        relationshipField, tableName, tables, results, batchContext);
             }
         }
+    }
+
+    /**
+     * Checks if the given field name matches a reverse FK from any other table back to parentTableName.
+     * If matched, fetches all related records in one IN query and stores them in batchContext.
+     */
+    private void preloadReverseRelationshipIfMatches(
+            String relationshipField,
+            String parentTableName,
+            Map<String, TableInfo> tables,
+            List<Map<String, Object>> parentResults,
+            Map<String, Object> batchContext) {
+
+        for (Map.Entry<String, TableInfo> otherEntry : tables.entrySet()) {
+            String otherTableName = otherEntry.getKey();
+            if (otherTableName.equals(parentTableName)) continue;
+
+            TableInfo otherTableInfo = otherEntry.getValue();
+            for (ForeignKeyInfo otherFk : otherTableInfo.getForeignKeys()) {
+                if (!otherFk.getReferencedTable().equalsIgnoreCase(parentTableName)) continue;
+                if (otherFk.getColumnNames().size() != 1) continue; // composite FK: skip batching
+
+                // Compute the reverse field name the way GraphqlConfig does
+                String computedField = toLowerCamelCase(otherTableName);
+                if (!computedField.endsWith("s")) {
+                    computedField += "s";
+                }
+                if (!computedField.equalsIgnoreCase(relationshipField)) continue;
+
+                String fkColumn = otherFk.getColumnNames().getFirst();
+                String referencedCol = otherFk.getReferencedColumns().getFirst();
+                String cacheKey = REVERSE_BATCH_PREFIX + otherTableName + ":" + fkColumn;
+
+                if (batchContext.containsKey(cacheKey)) return; // already preloaded
+
+                // Collect all parent PK values
+                Set<Object> parentKeys = parentResults.stream()
+                        .map(row -> row.get(referencedCol))
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+
+                if (parentKeys.isEmpty()) return;
+
+                List<String> availableColumns = getSchemaHelper().getAvailableColumns(otherTableName);
+                String sql = PostgresSqlSyntaxConstant.SELECT_WITH_SPACE
+                        + getSqlBuilder().buildColumnList(availableColumns)
+                        + PostgresSqlSyntaxConstant.FROM_WITH_SPACE
+                        + getSqlBuilder().getQualifiedTableName(otherTableName, appConfig.getAllowedSchema())
+                        + PostgresSqlSyntaxConstant.WHERE_WITH_SPACE
+                        + getSqlBuilder().quoteIdentifier(fkColumn)
+                        + PostgresSqlSyntaxConstant.IN_WITH_SPACE + "(:ids)";
+
+                MapSqlParameterSource params = new MapSqlParameterSource();
+                params.addValue("ids", new ArrayList<>(parentKeys));
+
+                List<Map<String, Object>> relatedRecords = namedParameterJdbcTemplate.queryForList(sql, params);
+
+                // Group by FK column value → Map<parentKeyValue, List<childRow>>
+                Map<Object, List<Map<String, Object>>> grouped = new HashMap<>();
+                for (Map<String, Object> record : relatedRecords) {
+                    Object keyValue = record.get(fkColumn);
+                    if (keyValue != null) {
+                        grouped.computeIfAbsent(keyValue, k -> new ArrayList<>()).add(record);
+                    }
+                }
+                batchContext.put(cacheKey, grouped);
+                log.debug("Preloaded reverse relationship {}: {} parent keys → {} child records",
+                        cacheKey, parentKeys.size(), relatedRecords.size());
+                return;
+            }
+        }
+    }
+
+    private static String toLowerCamelCase(String name) {
+        if (name == null || name.isEmpty()) return name;
+        StringBuilder sb = new StringBuilder();
+        boolean nextUpper = false;
+        boolean first = true;
+        for (char c : name.toCharArray()) {
+            if (c == '_') {
+                nextUpper = true;
+            } else if (first) {
+                sb.append(Character.toLowerCase(c));
+                first = false;
+            } else if (nextUpper) {
+                sb.append(Character.toUpperCase(c));
+                nextUpper = false;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 }

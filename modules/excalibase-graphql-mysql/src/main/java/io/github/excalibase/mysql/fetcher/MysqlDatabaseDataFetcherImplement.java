@@ -2,10 +2,13 @@ package io.github.excalibase.mysql.fetcher;
 
 import graphql.schema.DataFetcher;
 import graphql.schema.DataFetchingEnvironment;
+import graphql.schema.DataFetchingFieldSelectionSet;
+import graphql.schema.SelectedField;
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.ColumnInfo;
+import io.github.excalibase.model.ForeignKeyInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
@@ -20,7 +23,10 @@ import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * MySQL implementation of {@link IDatabaseDataFetcher}.
@@ -32,6 +38,8 @@ import java.util.Optional;
 @ExcalibaseService(serviceName = SupportedDatabaseConstant.MYSQL)
 public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
     private static final Logger log = LoggerFactory.getLogger(MysqlDatabaseDataFetcherImplement.class);
+    private static final String BATCH_CONTEXT = "BATCH_CONTEXT";
+    private static final String REVERSE_BATCH_PREFIX = "REV:";
 
     private final JdbcTemplate jdbcTemplate;
     private final ServiceLookup serviceLookup;
@@ -75,7 +83,13 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             applyLimit(sql, params, env);
 
             log.debug("MySQL list query: {}", sql);
-            return jdbcTemplate.queryForList(sql.toString(), params.toArray());
+            List<Map<String, Object>> results = jdbcTemplate.queryForList(sql.toString(), params.toArray());
+
+            DataFetchingFieldSelectionSet selectionSet = env.getSelectionSet();
+            if (!results.isEmpty() && selectionSet != null) {
+                preloadRelationships(env, tableName, results, selectionSet);
+            }
+            return results;
         };
     }
 
@@ -130,6 +144,15 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             Object fkValue = source.get(foreignKeyColumn);
             if (fkValue == null) return null;
 
+            // Check pre-loaded batch context first
+            Map<String, Object> batchContext = env.getGraphQlContext().get(BATCH_CONTEXT);
+            if (batchContext != null && batchContext.containsKey(referencedTable)) {
+                @SuppressWarnings("unchecked")
+                Map<Object, Map<String, Object>> grouped =
+                        (Map<Object, Map<String, Object>>) batchContext.get(referencedTable);
+                return grouped.get(fkValue);
+            }
+
             String sql = "SELECT * FROM `" + referencedTable + "` WHERE `" + referencedColumn + "` = ? LIMIT 1";
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, fkValue);
             return rows.isEmpty() ? null : rows.getFirst();
@@ -165,6 +188,17 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             if (source == null) return List.of();
             Object refValue = source.get(referencedColumn);
             if (refValue == null) return List.of();
+
+            // Check pre-loaded batch context first
+            String cacheKey = REVERSE_BATCH_PREFIX + targetTableName + ":" + foreignKeyColumn;
+            Map<String, Object> batchContext = env.getGraphQlContext().get(BATCH_CONTEXT);
+            if (batchContext != null && batchContext.containsKey(cacheKey)) {
+                @SuppressWarnings("unchecked")
+                Map<Object, List<Map<String, Object>>> grouped =
+                        (Map<Object, List<Map<String, Object>>>) batchContext.get(cacheKey);
+                List<Map<String, Object>> cached = grouped.get(refValue);
+                return cached != null ? cached : List.of();
+            }
 
             String sql = "SELECT * FROM `" + targetTableName + "` WHERE `" + foreignKeyColumn + "` = ?";
             return jdbcTemplate.queryForList(sql, refValue);
@@ -359,5 +393,145 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         } catch (Exception e) {
             return 0L;
         }
+    }
+
+    // ─── Relationship preloading (N+1 prevention) ─────────────────────────────
+
+    private void preloadRelationships(DataFetchingEnvironment env, String tableName,
+                                      List<Map<String, Object>> results,
+                                      DataFetchingFieldSelectionSet selectionSet) {
+        Map<String, TableInfo> tables = getReflector().reflectSchema();
+        TableInfo tableInfo = tables.get(tableName);
+        if (tableInfo == null) return;
+
+        Set<String> columnNames = tableInfo.getColumns().stream()
+                .map(ColumnInfo::getName)
+                .collect(Collectors.toSet());
+
+        Set<String> relationshipFields = selectionSet.getFields().stream()
+                .map(SelectedField::getName)
+                .filter(name -> !columnNames.contains(name))
+                .collect(Collectors.toSet());
+
+        if (relationshipFields.isEmpty()) return;
+
+        Map<String, Object> batchContext = env.getGraphQlContext().get(BATCH_CONTEXT);
+        if (batchContext == null) {
+            batchContext = new HashMap<>();
+            env.getGraphQlContext().put(BATCH_CONTEXT, batchContext);
+        }
+
+        for (String relField : relationshipFields) {
+            Optional<ForeignKeyInfo> fkInfo = tableInfo.getForeignKeys().stream()
+                    .filter(fk -> fk.getReferencedTable().equalsIgnoreCase(relField) && !fk.isComposite())
+                    .findFirst();
+
+            if (fkInfo.isPresent()) {
+                preloadForwardFk(fkInfo.get(), results, batchContext);
+            } else {
+                preloadReverseIfMatches(relField, tableName, tables, results, batchContext);
+            }
+        }
+    }
+
+    private void preloadForwardFk(ForeignKeyInfo fk, List<Map<String, Object>> results,
+                                   Map<String, Object> batchContext) {
+        String fkColumn = fk.getColumnName();
+        String referencedTable = fk.getReferencedTable();
+        String referencedColumn = fk.getReferencedColumn();
+
+        if (batchContext.containsKey(referencedTable)) return;
+
+        Set<Object> fkValues = results.stream()
+                .map(row -> row.get(fkColumn))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        if (fkValues.isEmpty()) return;
+
+        String placeholders = fkValues.stream().map(v -> "?").collect(Collectors.joining(", "));
+        String sql = "SELECT * FROM `" + referencedTable + "` WHERE `" + referencedColumn + "` IN (" + placeholders + ")";
+
+        List<Map<String, Object>> relatedRecords = jdbcTemplate.queryForList(sql, fkValues.toArray());
+
+        Map<Object, Map<String, Object>> grouped = new HashMap<>();
+        for (Map<String, Object> record : relatedRecords) {
+            Object keyValue = record.get(referencedColumn);
+            if (keyValue != null) {
+                grouped.put(keyValue, record);
+            }
+        }
+        batchContext.put(referencedTable, grouped);
+        log.debug("Preloaded forward FK {}: {} values → {} records", referencedTable, fkValues.size(), relatedRecords.size());
+    }
+
+    private void preloadReverseIfMatches(String relField, String parentTableName,
+                                          Map<String, TableInfo> tables,
+                                          List<Map<String, Object>> parentResults,
+                                          Map<String, Object> batchContext) {
+        for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
+            String otherTableName = entry.getKey();
+            if (otherTableName.equals(parentTableName)) continue;
+
+            for (ForeignKeyInfo otherFk : entry.getValue().getForeignKeys()) {
+                if (!otherFk.getReferencedTable().equalsIgnoreCase(parentTableName)) continue;
+                if (otherFk.isComposite()) continue;
+
+                String computedField = toLowerCamelCase(otherTableName);
+                if (!computedField.endsWith("s")) computedField += "s";
+                if (!computedField.equalsIgnoreCase(relField)) continue;
+
+                String fkColumn = otherFk.getColumnName();
+                String referencedCol = otherFk.getReferencedColumn();
+                String cacheKey = REVERSE_BATCH_PREFIX + otherTableName + ":" + fkColumn;
+
+                if (batchContext.containsKey(cacheKey)) return;
+
+                Set<Object> parentKeys = parentResults.stream()
+                        .map(row -> row.get(referencedCol))
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
+
+                if (parentKeys.isEmpty()) return;
+
+                String placeholders = parentKeys.stream().map(v -> "?").collect(Collectors.joining(", "));
+                String sql = "SELECT * FROM `" + otherTableName + "` WHERE `" + fkColumn + "` IN (" + placeholders + ")";
+
+                List<Map<String, Object>> relatedRecords = jdbcTemplate.queryForList(sql, parentKeys.toArray());
+
+                Map<Object, List<Map<String, Object>>> grouped = new HashMap<>();
+                for (Map<String, Object> record : relatedRecords) {
+                    Object keyValue = record.get(fkColumn);
+                    if (keyValue != null) {
+                        grouped.computeIfAbsent(keyValue, k -> new ArrayList<>()).add(record);
+                    }
+                }
+                batchContext.put(cacheKey, grouped);
+                log.debug("Preloaded reverse FK {}: {} parent keys → {} child records",
+                        cacheKey, parentKeys.size(), relatedRecords.size());
+                return;
+            }
+        }
+    }
+
+    private static String toLowerCamelCase(String name) {
+        if (name == null || name.isEmpty()) return name;
+        StringBuilder sb = new StringBuilder();
+        boolean nextUpper = false;
+        boolean first = true;
+        for (char c : name.toCharArray()) {
+            if (c == '_') {
+                nextUpper = true;
+            } else if (first) {
+                sb.append(Character.toLowerCase(c));
+                first = false;
+            } else if (nextUpper) {
+                sb.append(Character.toUpperCase(c));
+                nextUpper = false;
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 }

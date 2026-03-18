@@ -67,6 +67,11 @@ public class ExcalibaseBatchLoader {
     private final Map<String, Map<String, Map<Object, Map<String, Object>>>> cache = new ConcurrentHashMap<>();
 
     /**
+     * One-to-many cache for reverse relationships: table -> keyColumn -> keyValue -> List of records
+     */
+    private final Map<String, Map<String, Map<Object, List<Map<String, Object>>>>> listCache = new ConcurrentHashMap<>();
+
+    /**
      * Pending loads queue: table -> keyColumn -> Set of IDs to load
      */
     private final Map<String, Map<String, Set<Object>>> pendingLoads = new ConcurrentHashMap<>();
@@ -243,10 +248,52 @@ public class ExcalibaseBatchLoader {
     }
 
     /**
+     * Caches loaded results for reverse (one-to-many) relationships.
+     * Groups records by keyColumn value so each parent key maps to its list of children.
+     *
+     * @param tableName the child table name
+     * @param keyColumn the FK column in the child table (e.g. "customer_id")
+     * @param records   the loaded child records
+     */
+    public void cacheListResults(String tableName, String keyColumn, List<Map<String, Object>> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+
+        Map<Object, List<Map<String, Object>>> columnCache = listCache
+                .computeIfAbsent(tableName, k -> new ConcurrentHashMap<>())
+                .computeIfAbsent(keyColumn, k -> new ConcurrentHashMap<>());
+
+        for (Map<String, Object> record : records) {
+            Object keyValue = record.get(keyColumn);
+            if (keyValue != null) {
+                columnCache.computeIfAbsent(keyValue, k -> new ArrayList<>()).add(record);
+            }
+        }
+    }
+
+    /**
+     * Retrieves all cached lists for a reverse relationship.
+     *
+     * @param tableName the child table name
+     * @param keyColumn the FK column in the child table
+     * @return map of parentKeyValue -> list of child records
+     */
+    public Map<Object, List<Map<String, Object>>> getAllCachedList(String tableName, String keyColumn) {
+        Map<String, Map<Object, List<Map<String, Object>>>> tableCache = listCache.get(tableName);
+        if (tableCache == null) {
+            return Map.of();
+        }
+        Map<Object, List<Map<String, Object>>> columnCache = tableCache.get(keyColumn);
+        return columnCache != null ? new HashMap<>(columnCache) : Map.of();
+    }
+
+    /**
      * Clears all caches and queues. Call this at the end of each GraphQL request.
      */
     public void clear() {
         cache.clear();
+        listCache.clear();
         pendingLoads.clear();
         processedTables.clear();
     }
