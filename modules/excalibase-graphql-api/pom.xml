@@ -90,6 +90,14 @@
             <artifactId>opentelemetry-logback-appender-1.0</artifactId>
         </dependency>
 
+        <!-- JDBC/HikariCP tracing: wraps DataSource with Micrometer observations
+             → produces connection + query spans inside each GraphQL trace -->
+        <dependency>
+            <groupId>net.ttddyy.observation</groupId>
+            <artifactId>datasource-micrometer-spring-boot</artifactId>
+            <version>1.0.6</version>
+        </dependency>
+
         <!-- Reactive streams for subscriptions -->
         <dependency>
             <groupId>io.projectreactor</groupId>
