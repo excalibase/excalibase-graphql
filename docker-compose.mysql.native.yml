@@ -1,0 +1,70 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: excalibase-mysql-native
+    environment:
+      MYSQL_DATABASE: excalibase
+      MYSQL_USER: app_user
+      MYSQL_PASSWORD: password123
+      MYSQL_ROOT_PASSWORD: rootpassword123
+    ports:
+      - "3336:3306"
+    volumes:
+      - mysql_native_data:/var/lib/mysql
+      - ./scripts/mysql-initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "app_user", "-ppassword123"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - excalibase-mysql-native-network
+    restart: unless-stopped
+
+  excalibase-app:
+    image: excalibase/excalibase-graphql:native
+    container_name: excalibase-graphql-mysql-native
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/excalibase?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false
+      SPRING_DATASOURCE_USERNAME: app_user
+      SPRING_DATASOURCE_PASSWORD: password123
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 50
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 2
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 30000
+      SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT: 600000
+      SPRING_DATASOURCE_HIKARI_MAX_LIFETIME: 1800000
+      SERVER_TOMCAT_THREADS_MAX: 500
+      SERVER_TOMCAT_THREADS_MIN_SPARE: 50
+      SERVER_TOMCAT_MAX_CONNECTIONS: 10000
+      SERVER_TOMCAT_ACCEPT_COUNT: 100
+      SPRING_THREADS_VIRTUAL_ENABLED: true
+      SERVER_PORT: 10001
+      APP_ALLOWED_SCHEMA: excalibase
+      APP_DATABASE_TYPE: MySQL
+      APP_CDC_ENABLED: false
+    ports:
+      - "10001:10001"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - excalibase-mysql-native-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.25'
+
+volumes:
+  mysql_native_data:
+    driver: local
+
+networks:
+  excalibase-mysql-native-network:
+    driver: bridge
