@@ -1,0 +1,140 @@
+# Observability stack: OTel Collector → Tempo + Prometheus + Loki → Grafana
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#
+# Ports:
+#   Grafana   → http://localhost:3000  (admin / admin)
+#   Prometheus → http://localhost:9090
+#   Tempo     → http://localhost:3200  (internal only)
+#   Loki      → http://localhost:3100  (internal only)
+#   OTel Coll → grpc :4317  http :4318  prometheus-metrics :9464
+#
+# Signal flow:
+#   App --OTLP--> otel-collector --> Tempo   (traces)
+#                               --> Prometheus scrapes port 9464 (metrics)
+#                               --> Loki    (logs)
+#   Grafana queries all three backends.
+
+services:
+
+  # ── OpenTelemetry Collector ──────────────────────────────────────────────────
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.119.0
+    container_name: otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./observability/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "9464:9464"   # Prometheus metrics (scraped by Prometheus)
+    networks:
+      - excalibase-network
+      - observability-network
+    restart: unless-stopped
+    depends_on:
+      - tempo
+      - loki
+
+  # ── Tempo (distributed traces) ───────────────────────────────────────────────
+  tempo:
+    image: grafana/tempo:2.7.2
+    container_name: tempo
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./observability/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "3200:3200"
+    networks:
+      - observability-network
+    restart: unless-stopped
+
+  # ── Prometheus (metrics) ─────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v3.3.0
+    container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=7d"
+      - "--web.enable-lifecycle"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - observability-network
+    restart: unless-stopped
+    depends_on:
+      - otel-collector
+
+  # ── Loki (logs) ──────────────────────────────────────────────────────────────
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: loki
+    user: root                  # named volume is owned by root; root avoids permission errors
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    volumes:
+      - ./observability/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki_data:/var/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - observability-network
+    restart: unless-stopped
+
+  # ── Promtail (Docker log collector → Loki) ───────────────────────────────────
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: promtail
+    command: ["-config.file=/etc/promtail/config.yaml"]
+    volumes:
+      - ./observability/promtail/config.yaml:/etc/promtail/config.yaml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - observability-network
+    restart: unless-stopped
+    depends_on:
+      - loki
+
+  # ── Grafana (dashboards) ─────────────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:11.6.0
+    container_name: grafana
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      GF_FEATURE_TOGGLES_ENABLE: "traceqlEditor traceToMetrics"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - observability-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - tempo
+      - loki
+
+volumes:
+  tempo_data:
+  prometheus_data:
+  loki_data:
+  grafana_data:
+
+networks:
+  # Joins the app network so otel-collector is reachable as "otel-collector" from the app.
+  # Docker Compose prefixes the project directory name, so the actual network name is
+  # excalibase-graphql_excalibase-network (set with: docker compose --project-name excalibase-graphql)
+  excalibase-network:
+    external: true
+    name: excalibase-graphql_excalibase-network
+  observability-network:
+    driver: bridge

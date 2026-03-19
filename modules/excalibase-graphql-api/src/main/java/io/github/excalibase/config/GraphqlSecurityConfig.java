@@ -21,6 +21,9 @@ import graphql.execution.instrumentation.Instrumentation;
 import graphql.analysis.MaxQueryDepthInstrumentation;
 import graphql.analysis.MaxQueryComplexityInstrumentation;
 import graphql.analysis.FieldComplexityCalculator;
+import io.github.excalibase.observability.GraphQLObservabilityInstrumentation;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +42,14 @@ import java.util.Arrays;
 public class GraphqlSecurityConfig {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlSecurityConfig.class);
+
+    private final ObservationRegistry observationRegistry;
+    private final MeterRegistry meterRegistry;
+
+    public GraphqlSecurityConfig(ObservationRegistry observationRegistry, MeterRegistry meterRegistry) {
+        this.observationRegistry = observationRegistry;
+        this.meterRegistry = meterRegistry;
+    }
 
     // Security limits based on GraphQL.org recommendations and our API documentation
     @Value("${graphql.security.max-query-depth:10}")
@@ -69,10 +80,13 @@ public class GraphqlSecurityConfig {
                 maxQueryDepth, maxQueryComplexity);
 
         return new ChainedInstrumentation(Arrays.asList(
-            // 1. Depth limiting - prevents deeply nested queries like friends.friends.friends...
+            // 1. Observability — traces + metrics via OpenTelemetry (runs first to capture full latency)
+            new GraphQLObservabilityInstrumentation(observationRegistry, meterRegistry),
+
+            // 2. Depth limiting - prevents deeply nested queries like friends.friends.friends...
             createQueryDepthInstrumentation(),
-            
-            // 2. Complexity analysis - prevents expensive operations based on field weights
+
+            // 3. Complexity analysis - prevents expensive operations based on field weights
             createQueryComplexityInstrumentation()
         ));
     }

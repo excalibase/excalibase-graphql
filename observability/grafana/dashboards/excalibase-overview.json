@@ -1,0 +1,180 @@
+{
+  "title": "Excalibase — Overview",
+  "uid": "excalibase-overview",
+  "version": 2,
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": { "list": [] },
+  "annotations": { "list": [] },
+  "panels": [
+
+    { "type": "text", "id": 100, "gridPos": { "x": 0, "y": 0, "w": 24, "h": 2 },
+      "options": { "mode": "markdown", "content": "## GraphQL Operations" } },
+
+    {
+      "id": 1, "type": "timeseries",
+      "title": "Request rate (req/s) by operation type",
+      "gridPos": { "x": 0, "y": 2, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "expr": "sum by (operation_type) (rate(excalibase_graphql_request_milliseconds_count[1m]))",
+          "legendFormat": "{{operation_type}}"
+        }
+      ]
+    },
+
+    {
+      "id": 2, "type": "timeseries",
+      "title": "P99 / P50 latency (ms) by operation type",
+      "gridPos": { "x": 12, "y": 2, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "lineWidth": 2 } } },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "list" } },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (operation_type, le) (rate(excalibase_graphql_request_milliseconds_bucket[5m])))",
+          "legendFormat": "p99 {{operation_type}}"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum by (operation_type, le) (rate(excalibase_graphql_request_milliseconds_bucket[5m])))",
+          "legendFormat": "p50 {{operation_type}}"
+        }
+      ]
+    },
+
+    {
+      "id": 3, "type": "timeseries",
+      "title": "GraphQL errors / second",
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "fixedColor": "red", "mode": "fixed" }, "custom": { "lineWidth": 2 } }
+      },
+      "targets": [
+        {
+          "expr": "sum by (operation_type) (rate(excalibase_graphql_request_errors_total[1m])) or vector(0)",
+          "legendFormat": "{{operation_type}}"
+        }
+      ]
+    },
+
+    {
+      "id": 4, "type": "stat",
+      "title": "Total requests (30 min)",
+      "gridPos": { "x": 12, "y": 10, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short" } },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "sum(increase(excalibase_graphql_request_milliseconds_count[30m]))", "legendFormat": "requests" }
+      ]
+    },
+
+    {
+      "id": 5, "type": "stat",
+      "title": "Total errors (30 min)",
+      "gridPos": { "x": 18, "y": 10, "w": 6, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "short", "color": { "mode": "thresholds" },
+          "thresholds": { "steps": [{ "value": null, "color": "green" }, { "value": 1, "color": "red" }] } }
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        { "expr": "sum(increase(excalibase_graphql_request_errors_total[30m])) or vector(0)", "legendFormat": "errors" }
+      ]
+    },
+
+    { "type": "text", "id": 101, "gridPos": { "x": 0, "y": 18, "w": 24, "h": 2 },
+      "options": { "mode": "markdown", "content": "## HTTP & JVM" } },
+
+    {
+      "id": 7, "type": "timeseries",
+      "title": "HTTP request rate (req/s)",
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "lineWidth": 2 } } },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        {
+          "expr": "sum by (method, status) (rate(excalibase_http_server_requests_milliseconds_count[1m]))",
+          "legendFormat": "{{method}} {{status}}"
+        }
+      ]
+    },
+
+    {
+      "id": 6, "type": "timeseries",
+      "title": "JVM heap used (MB)",
+      "gridPos": { "x": 12, "y": 20, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "decmbytes", "custom": { "lineWidth": 2 } } },
+      "targets": [
+        {
+          "expr": "excalibase_jvm_memory_used_bytes{area=\"heap\"} / 1048576",
+          "legendFormat": "{{id}}"
+        }
+      ]
+    },
+
+    {
+      "id": 8, "type": "timeseries",
+      "title": "HikariCP connections",
+      "gridPos": { "x": 0, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "excalibase_hikaricp_connections_active", "legendFormat": "active" },
+        { "expr": "excalibase_hikaricp_connections_idle",   "legendFormat": "idle" },
+        { "expr": "excalibase_hikaricp_connections_max",    "legendFormat": "max" }
+      ]
+    },
+
+    {
+      "id": 9, "type": "timeseries",
+      "title": "JVM threads",
+      "gridPos": { "x": 12, "y": 28, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "lineWidth": 2 } } },
+      "targets": [
+        { "expr": "excalibase_jvm_threads_live",   "legendFormat": "live" },
+        { "expr": "excalibase_jvm_threads_daemon", "legendFormat": "daemon" }
+      ]
+    },
+
+    { "type": "text", "id": 102, "gridPos": { "x": 0, "y": 36, "w": 24, "h": 2 },
+      "options": { "mode": "markdown", "content": "## Traces & Logs" } },
+
+    {
+      "id": 10, "type": "traces",
+      "title": "Recent traces (click a row to explore)",
+      "gridPos": { "x": 0, "y": 38, "w": 24, "h": 10 },
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "options": { "visualizationType": "table" },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "nativeSearch",
+          "serviceName": "Excalibase graphql",
+          "limit": 20
+        }
+      ]
+    },
+
+    {
+      "id": 11, "type": "logs",
+      "title": "Application logs",
+      "gridPos": { "x": 0, "y": 48, "w": 24, "h": 10 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "wrapLogMessage": true, "enableLogDetails": true },
+      "targets": [
+        { "expr": "{job=\"excalibase\"}", "legendFormat": "" }
+      ]
+    }
+
+  ]
+}

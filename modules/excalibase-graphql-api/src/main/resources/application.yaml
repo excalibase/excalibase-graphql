@@ -29,7 +29,7 @@ spring:
   jmx:
     enabled: false  # Disable JMX to save memory
 
-# Actuator optimization - expose only essential endpoints
+# Actuator + Observability
 management:
   endpoints:
     web:
@@ -46,6 +46,21 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: false  # Disable histogram to save memory
+  # OTLP export — all three signals go to the OTel Collector on port 4318
+  # Actuator is kept only for health + info; metrics/traces/logs go via OTLP push.
+  otlp:
+    metrics:
+      export:
+        url: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/metrics
+        step: 30s        # push interval
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+    logging:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/logs
+  # Tracing: sample 100% in dev; tune via OTEL_TRACES_SAMPLER_ARG in prod
+  tracing:
+    sampling:
+      probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
 
 app:
   allowed-schema: public
@@ -84,5 +99,10 @@ logging:
     io:
       github:
         excalibase: ${log.level.app:info}
+  # Structured JSON logging (ECS format) — parseable by any log collector (Loki, OpenSearch, etc.)
+  # Override with LOG_FORMAT=plain for local dev coloured output
+  structured:
+    format:
+      console: ${LOG_FORMAT:ecs}
   pattern:
     console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1}): %msg%n%throwable"

@@ -77,6 +77,16 @@ services:
       APP_CDC_PUBLICATION_NAME: cdc_publication
       APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
       APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
+
+      # Observability — send all OTLP signals to the collector
+      # Run with docker-compose.observability.yml to activate the full stack.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_TRACES_SAMPLER_ARG: "1.0"
+      # Explicit Spring Boot property bindings for OTLP — needed because
+      # OtlpLoggingAutoConfiguration uses @ConditionalOnProperty directly.
+      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
+      MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector:4318/v1/metrics
+      MANAGEMENT_OTLP_LOGGING_ENDPOINT: http://otel-collector:4318/v1/logs
     ports:
       - "10000:10000"
     depends_on:
