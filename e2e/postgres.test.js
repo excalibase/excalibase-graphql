@@ -745,10 +745,9 @@ describe('RLS (Row Level Security)', () => {
     if (!rlsAvailable) return;
     const aliceClient = createClient(API_URL, { 'X-User-Id': 'alice' });
     const bobClient = createClient(API_URL, { 'X-User-Id': 'bob' });
-    const [aliceData, bobData] = await Promise.all([
-      aliceClient.request(gql`{ rlsOrders { id } }`),
-      bobClient.request(gql`{ rlsOrders { id } }`),
-    ]);
+    // Sequential (not concurrent) to avoid race on session-scoped SET variables
+    const aliceData = await aliceClient.request(gql`{ rlsOrders { id } }`);
+    const bobData = await bobClient.request(gql`{ rlsOrders { id } }`);
     const aliceIds = aliceData.rlsOrders.map(r => r.id).sort();
     const bobIds = bobData.rlsOrders.map(r => r.id).sort();
     expect(aliceIds).not.toEqual(bobIds);
