@@ -193,7 +193,7 @@ build: ## Build the application with Maven
 .PHONY: build-native
 build-native: ## Build native image (requires GraalVM JDK 21, ~10 min)
 	@echo "$(BLUE)🔨 Building native image...$(NC)"
-	@mvn -pl modules/excalibase-graphql-api -Pnative native:compile -DskipTests -q
+	@mvn -pl modules/excalibase-graphql-api -am -Pnative package -DskipTests -q
 	@echo "$(GREEN)✓ Native image built: modules/excalibase-graphql-api/target/excalibase-graphql-api$(NC)"
 
 .PHONY: build-native-image
