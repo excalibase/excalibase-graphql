@@ -20,7 +20,11 @@ import graphql.execution.instrumentation.ChainedInstrumentation;
 import graphql.execution.instrumentation.Instrumentation;
 import graphql.analysis.MaxQueryDepthInstrumentation;
 import graphql.analysis.MaxQueryComplexityInstrumentation;
+import graphql.analysis.QueryComplexityInfo;
 import graphql.analysis.FieldComplexityCalculator;
+import graphql.schema.GraphQLType;
+import graphql.schema.GraphQLTypeUtil;
+import java.util.function.Function;
 import io.github.excalibase.observability.GraphQLObservabilityInstrumentation;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.ObservationRegistry;
@@ -98,28 +102,49 @@ public class GraphqlSecurityConfig {
         return new MaxQueryDepthInstrumentation(maxQueryDepth);
     }
 
+    // Fanout multiplier for list fields: approximates the number of rows each
+    // list field will return (capped to avoid over-penalising large but fast queries).
+    // Full MAX_ROWS (30) makes the 5-level circular query score ~2.6M — too strict.
+    // A value of 10 gives ~3,000 for the same query, making 10,000 a sensible cap.
+    private static final int COMPLEXITY_LIST_FANOUT = 10;
+
     private MaxQueryComplexityInstrumentation createQueryComplexityInstrumentation() {
-        // Define complexity calculator - each field has a base cost
         FieldComplexityCalculator fieldComplexityCalculator = (env, childrenComplexity) -> {
-            // Base field cost
-            int baseCost = 1;
-            
-            // Higher cost for list fields to prevent abuse
-            String fieldName = env.getField().getName();
-            if (fieldName.contains("Connection") || fieldName.toLowerCase().endsWith("s")) {
-                baseCost = 3;
+            // Skip introspection fields (__schema, __type, __typename)
+            if (env.getField().getName().startsWith("__")) {
+                return 0;
             }
-            
-            // Add cost for limit parameter (discourage large limit values)
-            Object limitArg = env.getArguments().get("limit");
-            if (limitArg instanceof Integer) {
-                int limit = (Integer) limitArg;
-                baseCost += Math.min(limit / 10, 20); // Cap additional complexity at 20
+
+            GraphQLType fieldType = GraphQLTypeUtil.unwrapNonNull(env.getFieldDefinition().getType());
+            boolean isList = GraphQLTypeUtil.isList(fieldType);
+
+            if (isList) {
+                // Multiplicative: list cost grows with fanout × children so nested
+                // lists (filmActors → actor → filmActors) score exponentially higher.
+                int fanout = COMPLEXITY_LIST_FANOUT;
+                Object limitArg = env.getArguments().get("limit");
+                Object firstArg = env.getArguments().get("first");
+                if (limitArg instanceof Integer l) fanout = Math.min(l, COMPLEXITY_LIST_FANOUT);
+                else if (firstArg instanceof Integer f) fanout = Math.min(f, COMPLEXITY_LIST_FANOUT);
+                return 1 + fanout * (childrenComplexity == 0 ? 1 : childrenComplexity);
+            } else {
+                // Scalar / single-row FK: additive, cheap
+                return 1 + childrenComplexity;
             }
-            
-            return baseCost + childrenComplexity;
         };
 
-        return new MaxQueryComplexityInstrumentation(maxQueryComplexity, fieldComplexityCalculator);
+        Function<QueryComplexityInfo, Boolean> complexityHandler = info -> {
+            int score = info.getComplexity();
+            boolean exceeded = score > maxQueryComplexity;
+            if (exceeded) {
+                log.warn("Query REJECTED — complexity {} exceeds max {}", score, maxQueryComplexity);
+            } else {
+                log.info("Query complexity: {} / {} ({}%)", score, maxQueryComplexity,
+                        score * 100 / maxQueryComplexity);
+            }
+            return exceeded;
+        };
+
+        return new MaxQueryComplexityInstrumentation(maxQueryComplexity, fieldComplexityCalculator, complexityHandler);
     }
 }

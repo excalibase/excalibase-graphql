@@ -63,7 +63,7 @@ management:
       probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
 
 app:
-  allowed-schema: public
+  allowed-schema: dvdrental
   database-type: postgres
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
@@ -86,7 +86,7 @@ app:
 graphql:
   security:
     max-query-depth: 20       # Prevent deeply nested queries (default: 20)
-    max-query-complexity: 1000 # Prevent expensive operations (default: 1000)
+    max-query-complexity: 10000 # Prevent expensive operations (default: 1000)
     max-query-tokens: 5000    # Prevent parser DoS (default: 5000)
     max-query-characters: 50000 # 50KB query size limit (default: 50KB)
     max-whitespace-tokens: 10000
@@ -101,8 +101,8 @@ logging:
         excalibase: ${log.level.app:info}
   # Structured JSON logging (ECS format) — parseable by any log collector (Loki, OpenSearch, etc.)
   # Override with LOG_FORMAT=plain for local dev coloured output
-  structured:
-    format:
-      console: ${LOG_FORMAT:ecs}
+#  structured:
+#    format:
+#      console: ${LOG_FORMAT:gelf}
   pattern:
     console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1}): %msg%n%throwable"

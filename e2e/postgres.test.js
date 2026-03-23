@@ -56,6 +56,16 @@ describe('Basic queries', () => {
     expect(data.customer.length).toBe(3);
   });
 
+  test('limit above MAX_ROWS (30) is capped — returns at most 30 rows', async () => {
+    const data = await client.request(gql`{ customer(limit: 1000) { customer_id } }`);
+    expect(data.customer.length).toBeLessThanOrEqual(30);
+  });
+
+  test('no limit specified returns at most MAX_ROWS (30) rows', async () => {
+    const data = await client.request(gql`{ customer { customer_id } }`);
+    expect(data.customer.length).toBeLessThanOrEqual(30);
+  });
+
   test('customer ordering ASC', async () => {
     const data = await client.request(gql`{ customer(orderBy: { customer_id: ASC }, limit: 5) { customer_id } }`);
     expect(data.customer[0].customer_id).toBeLessThan(data.customer[1].customer_id);
@@ -337,6 +347,105 @@ describe('Relationships', () => {
   test('customer with nested orders', async () => {
     const data = await client.request(gql`{ customer(where: { customer_id: { eq: 1 } }) { customer_id orders { order_id total_amount } } }`);
     expect(data.customer[0].orders.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // ── Circular / multi-level relationship tests (N+1 fix) ─────────────────────
+  // These exercise visitedTables guard, root-batchContext storage, and SELECT *
+  // on forward FK preloads. Before the fix, "Batch context not found" warnings
+  // appear and individual fallback queries run per row.
+
+  test('circular: customer → orders → customer returns correct data', async () => {
+    // customer(1) has orders [1,2]; order(1).customer_id=1 → must resolve to customer 1
+    const data = await client.request(gql`{
+      customer(where: { customer_id: { eq: 1 } }) {
+        customer_id
+        first_name
+        orders {
+          order_id
+          customer { customer_id first_name }
+        }
+      }
+    }`);
+    expect(data.customer.length).toBe(1);
+    const c = data.customer[0];
+    expect(c.customer_id).toBe(1);
+    expect(c.orders.length).toBeGreaterThanOrEqual(1);
+    // Each order's customer must resolve back to customer 1
+    c.orders.forEach(o => {
+      expect(o.customer).toBeDefined();
+      expect(o.customer.customer_id).toBe(1);
+      expect(o.customer.first_name).toBe('MARY');
+    });
+  });
+
+  test('3-level: users → posts → users resolves author correctly', async () => {
+    // user 1 (john_doe) wrote posts 1 & 3; posts[].users must resolve back to john_doe
+    const data = await client.request(gql`{
+      users(where: { id: { eq: 1 } }) {
+        id
+        username
+        posts {
+          id
+          users { id username }
+        }
+      }
+    }`);
+    expect(data.users.length).toBe(1);
+    const u = data.users[0];
+    expect(u.username).toBe('john_doe');
+    expect(u.posts.length).toBeGreaterThanOrEqual(1);
+    u.posts.forEach(p => {
+      expect(p.users).toBeDefined();
+      expect(p.users.id).toBe(1);
+      expect(p.users.username).toBe('john_doe');
+    });
+  });
+
+  test('4-level circular: users → posts → users → posts returns data without error', async () => {
+    // Deepest circular test: level 0 users → level 1 posts (reverse FK) →
+    // level 2 users (forward FK, requestedColumns={} triggers the N+1 bug) →
+    // level 3 posts (reverse FK); visitedTables prevents infinite recursion.
+    const data = await client.request(gql`{
+      users(where: { id: { eq: 1 } }) {
+        id
+        posts {
+          id
+          users {
+            posts { id }
+          }
+        }
+      }
+    }`);
+    expect(data.users.length).toBe(1);
+    const u = data.users[0];
+    expect(u.posts.length).toBeGreaterThanOrEqual(1);
+    u.posts.forEach(p => {
+      expect(p.users).toBeDefined();
+      // level-2 user's posts must be present (not null/undefined)
+      expect(Array.isArray(p.users.posts)).toBe(true);
+    });
+  });
+
+  test('3-level: users → posts → comments loads all levels', async () => {
+    // user 1's posts have comments; verify all 3 levels resolve
+    const data = await client.request(gql`{
+      users(where: { id: { eq: 1 } }) {
+        id
+        posts {
+          id
+          comments { id }
+        }
+      }
+    }`);
+    expect(data.users.length).toBe(1);
+    // user 1 authored posts 1 and 3; post 1 has 2 comments, post 3 has 0
+    const allPosts = data.users[0].posts;
+    expect(allPosts.length).toBeGreaterThanOrEqual(1);
+    const post1 = allPosts.find(p => p.id === 1);
+    if (post1) {
+      expect(Array.isArray(post1.comments)).toBe(true);
+      expect(post1.comments.length).toBeGreaterThanOrEqual(2);
+    }
   });
 });
 

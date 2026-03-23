@@ -40,6 +40,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
     private static final Logger log = LoggerFactory.getLogger(MysqlDatabaseDataFetcherImplement.class);
     private static final String BATCH_CONTEXT = "BATCH_CONTEXT";
     private static final String REVERSE_BATCH_PREFIX = "REV:";
+    private static final int MAX_ROWS = 30; // Hard cap on result set size (mirrors pg_graphql default)
 
     private final JdbcTemplate jdbcTemplate;
     private final ServiceLookup serviceLookup;
@@ -99,7 +100,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             Integer first = env.getArgument("first");
             String after = env.getArgument("after");
 
-            int limit = first != null ? first : 20;
+            int limit = first != null ? Math.min(first, MAX_ROWS) : MAX_ROWS;
             long offset = after != null ? decodeCursor(after) : 0L;
 
             // Fetch limit+1 to detect hasNextPage
@@ -393,7 +394,10 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         Integer offset = env.getArgument("offset");
         if (limit != null) {
             sql.append(" LIMIT ?");
-            params.add(limit);
+            params.add(Math.min(limit, MAX_ROWS));
+        } else {
+            sql.append(" LIMIT ?");
+            params.add(MAX_ROWS);
         }
         if (offset != null) {
             sql.append(" OFFSET ?");
@@ -460,7 +464,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             if (fkInfo.isPresent()) {
                 preloadForwardFk(fkInfo.get(), results, batchContext);
             } else {
-                preloadReverseIfMatches(relField, tableName, tables, results, batchContext);
+                preloadReverseIfMatches(relField, tableName, tables, results, batchContext, env, selectionSet);
             }
         }
     }
@@ -499,7 +503,9 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
     private void preloadReverseIfMatches(String relField, String parentTableName,
                                           Map<String, TableInfo> tables,
                                           List<Map<String, Object>> parentResults,
-                                          Map<String, Object> batchContext) {
+                                          Map<String, Object> batchContext,
+                                          DataFetchingEnvironment env,
+                                          DataFetchingFieldSelectionSet parentSelectionSet) {
         for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
             String otherTableName = entry.getKey();
             if (otherTableName.equals(parentTableName)) continue;
@@ -540,6 +546,16 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
                 batchContext.put(cacheKey, grouped);
                 log.debug("Preloaded reverse FK {}: {} parent keys → {} child records",
                         cacheKey, parentKeys.size(), relatedRecords.size());
+
+                // Recursively preload nested relationships requested inside this reverse FK field
+                if (!relatedRecords.isEmpty() && parentSelectionSet != null) {
+                    parentSelectionSet.getFields().stream()
+                            .filter(f -> f.getName().equalsIgnoreCase(relField))
+                            .findFirst()
+                            .map(f -> f.getSelectionSet())
+                            .ifPresent(nestedSelectionSet ->
+                                    preloadRelationships(env, otherTableName, relatedRecords, nestedSelectionSet));
+                }
                 return;
             }
         }
