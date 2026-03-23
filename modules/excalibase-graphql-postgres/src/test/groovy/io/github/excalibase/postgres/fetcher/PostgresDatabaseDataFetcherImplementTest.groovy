@@ -1444,6 +1444,17 @@ class PostgresDatabaseDataFetcherImplementTest extends Specification {
     def "should handle preloadRelationships with empty requested fields"() {
         given: "tables with relationships"
         jdbcTemplate.execute("""
+        CREATE TABLE test_schema.clients (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL
+        )
+    """)
+
+        jdbcTemplate.execute("""
+        INSERT INTO test_schema.clients (id, name) VALUES (1, 'Acme Corp')
+    """)
+
+        jdbcTemplate.execute("""
         CREATE TABLE test_schema.invoices (
             id SERIAL PRIMARY KEY,
             total DECIMAL(10,2),

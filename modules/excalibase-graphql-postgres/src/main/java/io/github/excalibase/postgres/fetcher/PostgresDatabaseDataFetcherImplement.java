@@ -78,6 +78,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     private static final String REVERSE_BATCH_PREFIX = "REV:";
     private static final String CURSOR_ERROR = PostgresErrorConstant.CURSOR_REQUIRED_ERROR;
     private static final int MAX_RELATIONSHIP_DEPTH = 5; // Prevent infinite recursion
+    private static final int MAX_ROWS = 30; // Hard cap on result set size (mirrors pg_graphql default)
 
     public PostgresDatabaseDataFetcherImplement(JdbcTemplate jdbcTemplate, 
                                                          NamedParameterJdbcTemplate namedParameterJdbcTemplate, 
@@ -187,8 +188,10 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             Integer offset = null;
 
             if (arguments.containsKey(FieldConstant.LIMIT)) {
-                limit = (Integer) arguments.get(FieldConstant.LIMIT);
+                limit = Math.min((Integer) arguments.get(FieldConstant.LIMIT), MAX_ROWS);
                 arguments.remove(FieldConstant.LIMIT);
+            } else {
+                limit = MAX_ROWS;
             }
 
             if (arguments.containsKey(FieldConstant.OFFSET)) {
@@ -242,6 +245,30 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             if (!relationshipFields.isEmpty() && !results.isEmpty()) {
                 preloadRelationships(environment, tableName, relationshipFields, results);
             }
+
+            // Store root results in batchContext so circular FK resolvers at deeper levels
+            // (e.g. actor → filmActors → actor) can find them without a second SQL query.
+            if (tableInfo != null && !results.isEmpty()) {
+                Map<String, Object> batchCtx = environment.getGraphQlContext().get(BATCH_CONTEXT);
+                if (batchCtx == null) {
+                    batchCtx = new HashMap<>();
+                    environment.getGraphQlContext().put(BATCH_CONTEXT, batchCtx);
+                }
+                List<String> pkCols = tableInfo.getColumns().stream()
+                        .filter(ColumnInfo::isPrimaryKey)
+                        .map(ColumnInfo::getName)
+                        .toList();
+                if (!pkCols.isEmpty()) {
+                    final String pkCol = pkCols.getFirst();
+                    Map<Object, Map<String, Object>> indexed = new HashMap<>();
+                    for (Map<String, Object> row : results) {
+                        Object pk = row.get(pkCol);
+                        if (pk != null) indexed.put(pk, row);
+                    }
+                    batchCtx.putIfAbsent(tableName, indexed);
+                }
+            }
+
             return results;
         };
     }
@@ -315,7 +342,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             Integer offset = null;
 
             if (arguments.containsKey(FieldConstant.FIRST)) {
-                first = (Integer) arguments.get(FieldConstant.FIRST);
+                first = Math.min((Integer) arguments.get(FieldConstant.FIRST), MAX_ROWS);
                 arguments.remove(FieldConstant.FIRST);
             }
 
@@ -325,7 +352,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             }
 
             if (arguments.containsKey(FieldConstant.LAST)) {
-                last = (Integer) arguments.get(FieldConstant.LAST);
+                last = Math.min((Integer) arguments.get(FieldConstant.LAST), MAX_ROWS);
                 arguments.remove(FieldConstant.LAST);
             }
 
@@ -490,7 +517,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 }
             }
 
-            Integer limit = first != null ? first : (last != null ? last : 10); // Default to 10 if neither specified
+            Integer limit = first != null ? first : (last != null ? last : MAX_ROWS); // Default to MAX_ROWS if neither specified
             dataSql.append(PostgresSqlSyntaxConstant.LIMIT_WITH_SPACE + ":limit");
             paramSource.addValue(FieldConstant.LIMIT, limit);
 
@@ -1007,7 +1034,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             String tableName,
             Set<String> relationshipFields,
             List<Map<String, Object>> results) {
-        preloadRelationshipsRecursive(environment, tableName, relationshipFields, results, 0);
+        preloadRelationshipsRecursive(environment, tableName, relationshipFields, results, 0, new HashSet<>());
     }
 
     /**
@@ -1018,14 +1045,15 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
             String tableName,
             Set<String> relationshipFields,
             List<Map<String, Object>> results,
-            int currentDepth) {
+            int currentDepth,
+            Set<String> visitedTables) {
 
-        // Prevent infinite recursion
-        if (currentDepth >= MAX_RELATIONSHIP_DEPTH) {
-            log.warn("Maximum relationship depth ({}) reached for table: {}. Stopping recursion.",
-                MAX_RELATIONSHIP_DEPTH, tableName);
+        // Cycle guard: if this table was already preloaded at a shallower depth,
+        // batchContext already has its rows — no need to re-query.
+        if (visitedTables.contains(tableName)) {
             return;
         }
+        visitedTables.add(tableName);
 
         if (relationshipFields.isEmpty() || results.isEmpty()) {
             return;
@@ -1099,9 +1127,11 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         .filter(name -> !availableColumns.contains(name))
                         .collect(Collectors.toSet());
 
-                if (!requestedColumns.isEmpty()) {
-                    requestedColumns.add(referencedColumn); // Include key column for mapping
-
+                // Always fetch all columns (SELECT *) so deeper levels have every field
+                // available regardless of what the client requested at this depth.
+                // This prevents N+1 fallback when a nested level requests only relationship
+                // fields (requestedColumns would be empty with the old column-filter approach).
+                {
                     // Get queued IDs to fetch (excludes already cached)
                     Set<Object> idsToFetch = batchLoader.getQueuedIds(referencedTable, referencedColumn);
 
@@ -1110,7 +1140,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     // Fetch uncached records
                     if (!idsToFetch.isEmpty()) {
                         String sql = PostgresSqlSyntaxConstant.SELECT_WITH_SPACE +
-                            getSqlBuilder().buildColumnList(new ArrayList<>(requestedColumns)) +
+                            "* " +
                             PostgresSqlSyntaxConstant.FROM_WITH_SPACE +
                             getSqlBuilder().getQualifiedTableName(referencedTable, appConfig.getAllowedSchema()) +
                             PostgresSqlSyntaxConstant.WHERE_WITH_SPACE +
@@ -1140,14 +1170,15 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                             referencedTable,
                             nestedRelationships,
                             relatedRecords,
-                            currentDepth + 1
+                            currentDepth + 1,
+                            visitedTables
                         );
                     }
                 }
             } else {
                 // Try to identify as a reverse FK field (other table referencing this table)
                 preloadReverseRelationshipIfMatches(
-                        relationshipField, tableName, tables, results, batchContext);
+                        environment, relationshipField, tableName, tables, results, batchContext, currentDepth, visitedTables);
             }
         }
     }
@@ -1157,11 +1188,14 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
      * If matched, fetches all related records in one IN query and stores them in batchContext.
      */
     private void preloadReverseRelationshipIfMatches(
+            DataFetchingEnvironment environment,
             String relationshipField,
             String parentTableName,
             Map<String, TableInfo> tables,
             List<Map<String, Object>> parentResults,
-            Map<String, Object> batchContext) {
+            Map<String, Object> batchContext,
+            int currentDepth,
+            Set<String> visitedTables) {
 
         for (Map.Entry<String, TableInfo> otherEntry : tables.entrySet()) {
             String otherTableName = otherEntry.getKey();
@@ -1218,6 +1252,22 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 batchContext.put(cacheKey, grouped);
                 log.debug("Preloaded reverse relationship {}: {} parent keys → {} child records",
                         cacheKey, parentKeys.size(), relatedRecords.size());
+
+                // Recursively preload nested relationships requested inside this reverse FK field
+                Set<String> otherTableColumnNames = getSchemaHelper().getAvailableColumnsAsSet(otherTableName);
+                List<SelectedField> nestedSelectedFields = environment.getSelectionSet().getFields().stream()
+                        .filter(f -> f.getName().equalsIgnoreCase(relationshipField))
+                        .findFirst()
+                        .map(f -> f.getSelectionSet() != null ? f.getSelectionSet().getFields() : List.<SelectedField>of())
+                        .orElse(List.of());
+                Set<String> nestedRelationships = nestedSelectedFields.stream()
+                        .map(SelectedField::getName)
+                        .filter(name -> !otherTableColumnNames.contains(name))
+                        .collect(Collectors.toSet());
+                if (!nestedRelationships.isEmpty() && !relatedRecords.isEmpty()) {
+                    preloadRelationshipsRecursive(environment, otherTableName, nestedRelationships,
+                            relatedRecords, currentDepth + 1, visitedTables);
+                }
                 return;
             }
         }
