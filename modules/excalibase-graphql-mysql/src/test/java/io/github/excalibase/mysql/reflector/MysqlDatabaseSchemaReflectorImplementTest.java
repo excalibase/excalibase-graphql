@@ -85,8 +85,8 @@ class MysqlDatabaseSchemaReflectorImplementTest {
     void shouldDiscoverAllTables() {
         Map<String, TableInfo> schema = reflector.reflectSchema();
 
-        assertThat(schema).containsKeys("users", "posts", "tags");
-        assertThat(schema).hasSize(3);
+        assertThat(schema).containsKeys("users", "posts", "tags")
+                .hasSize(3);
     }
 
     @Test

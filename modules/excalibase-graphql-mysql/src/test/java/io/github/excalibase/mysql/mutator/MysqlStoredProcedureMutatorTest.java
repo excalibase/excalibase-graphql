@@ -3,7 +3,6 @@ package io.github.excalibase.mysql.mutator;
 import graphql.schema.DataFetcher;
 import graphql.schema.DataFetchingEnvironment;
 import io.github.excalibase.model.StoredProcedureInfo;
-import io.github.excalibase.mysql.mutator.MysqlDatabaseMutatorImplement;
 import io.github.excalibase.mysql.reflector.MysqlDatabaseSchemaReflectorImplement;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -121,6 +120,6 @@ class MysqlStoredProcedureMutatorTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> resultMap = (Map<String, Object>) result;
         assertThat(resultMap).containsKey("success");
-        assertThat(resultMap.get("success")).isEqualTo(true);
+        assertThat(resultMap).containsEntry("success", true);
     }
 }

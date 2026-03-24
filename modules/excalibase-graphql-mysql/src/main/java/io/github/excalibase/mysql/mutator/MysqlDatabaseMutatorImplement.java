@@ -12,8 +12,6 @@ import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.mutator.IDatabaseMutator;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import io.github.excalibase.service.ServiceLookup;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -39,7 +37,6 @@ import java.util.Map;
  */
 @ExcalibaseService(serviceName = SupportedDatabaseConstant.MYSQL)
 public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
-    private static final Logger log = LoggerFactory.getLogger(MysqlDatabaseMutatorImplement.class);
     private static final String EQUALS_PARAM = "` = ?";
 
     private final JdbcTemplate jdbcTemplate;

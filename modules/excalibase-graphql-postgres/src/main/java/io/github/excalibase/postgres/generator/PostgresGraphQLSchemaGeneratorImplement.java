@@ -251,7 +251,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // Create Subscription type with table subscriptions (after types are added)
         log.info("🔥 Creating subscription type for {} tables", tables.size());
-        GraphQLObjectType subscriptionType = createSubscriptionType(tables, customEnumTypes, customCompositeTypes);
+        GraphQLObjectType subscriptionType = createSubscriptionType(tables);
         schemaBuilder.subscription(subscriptionType);
         log.info("🔥 Subscription type added to schema with {} fields", subscriptionType.getFieldDefinitions().size());
 
@@ -276,9 +276,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .build();
     }
 
-    private GraphQLObjectType createSubscriptionType(Map<String, TableInfo> tables,
-                                                    Map<String, GraphQLEnumType> customEnumTypes,
-                                                    Map<String, GraphQLObjectType> customCompositeTypes) {
+    private GraphQLObjectType createSubscriptionType(Map<String, TableInfo> tables) {
         GraphQLObjectType.Builder subscriptionBuilder = GraphQLObjectType.newObject()
             .name(GraphqlConstant.SUBSCRIPTION)
             .description("Root subscription type")

@@ -5,9 +5,6 @@ import graphql.schema.DataFetcher;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingFieldSelectionSet;
 import graphql.schema.SelectedField;
-import io.github.excalibase.model.ColumnInfo;
-import io.github.excalibase.model.ForeignKeyInfo;
-import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.mysql.reflector.MysqlDatabaseSchemaReflectorImplement;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -136,7 +133,7 @@ class MysqlDatabaseDataFetcherImplementTest {
         List<Map<String, Object>> results = df.get(env);
 
         assertThat(results).hasSize(1);
-        assertThat(results.getFirst().get("name")).isEqualTo("Widget");
+        assertThat(results.getFirst()).containsEntry("name", "Widget");
     }
 
     @Test
@@ -148,7 +145,7 @@ class MysqlDatabaseDataFetcherImplementTest {
         List<Map<String, Object>> results = df.get(env);
 
         assertThat(results).hasSize(3);
-        assertThat(results.getFirst().get("name")).isEqualTo("Doohickey");
+        assertThat(results.getFirst()).containsEntry("name", "Doohickey");
     }
 
     @Test
@@ -179,8 +176,7 @@ class MysqlDatabaseDataFetcherImplementTest {
 
         Map<String, Object> result = df.get(env);
 
-        assertThat(result).isNotNull();
-        assertThat(result.get("label")).isEqualTo("Electronics");
+        assertThat(result).isNotNull().containsEntry("label", "Electronics");
     }
 
     @Test
@@ -204,8 +200,8 @@ class MysqlDatabaseDataFetcherImplementTest {
 
         Map<String, Object> result = df.get(env);
 
-        assertThat(result).isNotNull();
-        assertThat(result).containsKey("count");
+        assertThat(result).isNotNull()
+                .containsKey("count");
         assertThat(((Number) result.get("count")).longValue()).isEqualTo(3L);
     }
 
@@ -257,9 +253,8 @@ class MysqlDatabaseDataFetcherImplementTest {
                 "product_categories", "category_id", "categories", "id");
         Map<String, Object> result = df.get(env);
 
-        assertThat(result).isNotNull();
-        assertThat(result.get("label")).isEqualTo("Electronics");
-        assertThat(queryCount[0]).as("should use batch context — zero DB queries").isEqualTo(0);
+        assertThat(result).isNotNull().containsEntry("label", "Electronics");
+        assertThat(queryCount[0]).as("should use batch context — zero DB queries").isZero();
     }
 
     @Test
@@ -324,7 +319,7 @@ class MysqlDatabaseDataFetcherImplementTest {
         List<Map<String, Object>> result = df.get(env);
 
         assertThat(result).hasSize(2);
-        assertThat(queryCount[0]).as("should use reverse batch context — zero DB queries").isEqualTo(0);
+        assertThat(queryCount[0]).as("should use reverse batch context — zero DB queries").isZero();
     }
 
     @Test
@@ -373,7 +368,7 @@ class MysqlDatabaseDataFetcherImplementTest {
         assertThat(edges).hasSize(1);
         @SuppressWarnings("unchecked")
         Map<String, Object> node = (Map<String, Object>) edges.get(0).get("node");
-        assertThat(node.get("name")).isEqualTo("Widget");
+        assertThat(node).containsEntry("name", "Widget");
     }
 
     @Test
@@ -391,7 +386,7 @@ class MysqlDatabaseDataFetcherImplementTest {
         assertThat(edges).hasSize(3);
         @SuppressWarnings("unchecked")
         Map<String, Object> firstNode = (Map<String, Object>) edges.get(0).get("node");
-        assertThat(firstNode.get("name")).isEqualTo("Doohickey");
+        assertThat(firstNode).containsEntry("name", "Doohickey");
     }
 
     @Test

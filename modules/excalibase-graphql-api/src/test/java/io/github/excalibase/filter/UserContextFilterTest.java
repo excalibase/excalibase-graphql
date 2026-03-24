@@ -22,7 +22,6 @@ import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -96,7 +95,9 @@ class UserContextFilterTest {
 
         try {
             filter.doFilter(request, response, filterChain);
-        } catch (RuntimeException ignored) {}
+        } catch (RuntimeException ignored) {
+            // expected
+        }
 
         verify(userContextService).clearUserContext();
     }
@@ -115,10 +116,10 @@ class UserContextFilterTest {
     }
 
     @Test
-    void shouldUseDatabaseTypeNameWithoutLowercase() throws Exception {
+    void shouldUseDatabaseTypeNameWithoutLowercase() {
         // Verifies the fix: getName() not getName().toLowerCase()
         // "Postgres" must match SupportedDatabaseConstant.POSTGRES
         verify(serviceLookup).forBean(IUserContextService.class, "Postgres");
-        verify(serviceLookup, never()).forBean(eq(IUserContextService.class), eq("postgres"));
+        verify(serviceLookup, never()).forBean(IUserContextService.class, "postgres");
     }
 }

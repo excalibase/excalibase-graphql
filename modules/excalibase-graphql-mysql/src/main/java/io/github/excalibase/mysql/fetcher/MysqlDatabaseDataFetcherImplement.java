@@ -498,10 +498,10 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         List<Map<String, Object>> relatedRecords = jdbcTemplate.queryForList(sql, fkValues.toArray());
 
         Map<Object, Map<String, Object>> grouped = new HashMap<>();
-        for (Map<String, Object> record : relatedRecords) {
-            Object keyValue = record.get(referencedColumn);
+        for (Map<String, Object> rec : relatedRecords) {
+            Object keyValue = rec.get(referencedColumn);
             if (keyValue != null) {
-                grouped.put(keyValue, record);
+                grouped.put(keyValue, rec);
             }
         }
         batchContext.put(referencedTable, grouped);
@@ -545,10 +545,10 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
                 List<Map<String, Object>> relatedRecords = jdbcTemplate.queryForList(sql, parentKeys.toArray());
 
                 Map<Object, List<Map<String, Object>>> grouped = new HashMap<>();
-                for (Map<String, Object> record : relatedRecords) {
-                    Object keyValue = record.get(fkColumn);
+                for (Map<String, Object> rec : relatedRecords) {
+                    Object keyValue = rec.get(fkColumn);
                     if (keyValue != null) {
-                        grouped.computeIfAbsent(keyValue, k -> new ArrayList<>()).add(record);
+                        grouped.computeIfAbsent(keyValue, k -> new ArrayList<>()).add(rec);
                     }
                 }
                 batchContext.put(cacheKey, grouped);

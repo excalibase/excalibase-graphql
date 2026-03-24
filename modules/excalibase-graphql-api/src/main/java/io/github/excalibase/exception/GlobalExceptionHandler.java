@@ -21,7 +21,7 @@ public class GlobalExceptionHandler {
         final ApplicationExceptionResponse response = ApplicationExceptionResponse.builder()
                 .code(HttpStatus.NOT_IMPLEMENTED.toString())
                 .key("Not Implemented")
-                .details(new String[] {exception.getMessage()})
+                .details(exception.getMessage())
                 .build();
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).body(response);
     }
