@@ -12,6 +12,7 @@ import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.mutator.IDatabaseMutator;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import io.github.excalibase.service.ServiceLookup;
+import io.github.excalibase.service.SqlIdentifierValidator;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
@@ -37,7 +38,7 @@ import java.util.Map;
  */
 @ExcalibaseService(serviceName = SupportedDatabaseConstant.MYSQL)
 public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
-    private static final String EQUALS_PARAM = "` = ?";
+    private static final String EQUALS_PARAM = " = ?";
 
     private final JdbcTemplate jdbcTemplate;
     private final ServiceLookup serviceLookup;
@@ -70,6 +71,10 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
         return schemaReflector;
     }
 
+    private static String q(String identifier) {
+        return SqlIdentifierValidator.quoteMysql(identifier);
+    }
+
     @Override
     public DataFetcher<Map<String, Object>> buildCreateMutationResolver(String tableName) {
         return env -> {
@@ -97,13 +102,13 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
             List<String> setCols = new ArrayList<>();
             List<Object> vals = new ArrayList<>();
             for (Map.Entry<String, Object> e : input.entrySet()) {
-                setCols.add("`" + e.getKey() + EQUALS_PARAM);
+                setCols.add(q(e.getKey()) + EQUALS_PARAM);
                 vals.add(e.getValue());
             }
             vals.add(idArg);
 
-            String sql = "UPDATE `" + tableName + "` SET " + String.join(", ", setCols)
-                    + " WHERE `" + pkColumn + EQUALS_PARAM;
+            String sql = "UPDATE " + q(tableName) + " SET " + String.join(", ", setCols)
+                    + " WHERE " + q(pkColumn) + EQUALS_PARAM;
 
             int updated = jdbcTemplate.update(sql, vals.toArray());
             if (updated == 0) {
@@ -128,7 +133,7 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
                 throw new NotFoundException("Record not found in " + tableName + " with id=" + id);
             }
 
-            jdbcTemplate.update("DELETE FROM `" + tableName + "` WHERE `" + pkColumn + EQUALS_PARAM, id);
+            jdbcTemplate.update("DELETE FROM " + q(tableName) + " WHERE " + q(pkColumn) + EQUALS_PARAM, id);
             return existing;
         };
     }
@@ -174,9 +179,9 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
         List<String> cols = new ArrayList<>(input.keySet());
         List<Object> vals = new ArrayList<>(input.values());
 
-        String colsSql = String.join(", ", cols.stream().map(c -> "`" + c + "`").toList());
+        String colsSql = String.join(", ", cols.stream().map(MysqlDatabaseMutatorImplement::q).toList());
         String valsSql = String.join(", ", cols.stream().map(c -> "?").toList());
-        String sql = "INSERT INTO `" + tableName + "` (" + colsSql + ") VALUES (" + valsSql + ")";
+        String sql = "INSERT INTO " + q(tableName) + " (" + colsSql + ") VALUES (" + valsSql + ")";
 
         KeyHolder keyHolder = new GeneratedKeyHolder();
         jdbcTemplate.update(con -> {
@@ -203,7 +208,7 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
 
     private Map<String, Object> fetchById(String tableName, String pkColumn, long id) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT * FROM `" + tableName + "` WHERE `" + pkColumn + EQUALS_PARAM, id);
+                "SELECT * FROM " + q(tableName) + " WHERE " + q(pkColumn) + EQUALS_PARAM, id);
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
@@ -218,7 +223,7 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
             // Build CALL statement: CALL proc(?, ?, ...)
             String placeholders = params.isEmpty() ? "" :
                     "?,".repeat(params.size()).substring(0, params.size() * 2 - 1);
-            String sql = "CALL `" + procedure.getName() + "`(" + placeholders + ")";
+            String sql = "CALL " + q(procedure.getName()) + "(" + placeholders + ")";
 
             return jdbcTemplate.execute((java.sql.Connection con) -> {
                 try (CallableStatement cs = con.prepareCall(sql)) {

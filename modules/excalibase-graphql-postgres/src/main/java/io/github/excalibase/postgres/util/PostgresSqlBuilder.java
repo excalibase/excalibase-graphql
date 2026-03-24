@@ -17,6 +17,7 @@
 package io.github.excalibase.postgres.util;
 
 import io.github.excalibase.constant.ColumnTypeConstant;
+import io.github.excalibase.service.SqlIdentifierValidator;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.postgres.constant.PostgresTypeOperator;
 import io.github.excalibase.constant.FieldConstant;
@@ -45,7 +46,7 @@ public class PostgresSqlBuilder {
     }
 
     public String quoteIdentifier(String identifier) {
-        return "\"" + identifier.replace("\"", "\"\"") + "\"";
+        return SqlIdentifierValidator.quotePostgres(identifier);
     }
 
     public String getQualifiedTableName(String tableName, String allowedSchema) {

@@ -14,6 +14,7 @@ import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.schema.fetcher.IDatabaseDataFetcher;
 import io.github.excalibase.schema.reflector.IDatabaseSchemaReflector;
 import io.github.excalibase.service.ServiceLookup;
+import io.github.excalibase.service.SqlIdentifierValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +33,7 @@ import java.util.stream.Collectors;
 /**
  * MySQL implementation of {@link IDatabaseDataFetcher}.
  *
- * <p>Uses backtick-quoted identifiers and {@link JdbcTemplate} for all queries.
+ * <p>Uses {@link SqlIdentifierValidator#quoteMysql(String)} for identifier quoting and {@link JdbcTemplate} for all queries.
  * The schema reflector is resolved lazily via {@link ServiceLookup} using the MySQL
  * service name, exactly like the Postgres implementation.</p>
  */
@@ -42,9 +43,6 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
     private static final String BATCH_CONTEXT = "BATCH_CONTEXT";
     private static final String REVERSE_BATCH_PREFIX = "REV:";
     private static final int MAX_ROWS = 30; // Hard cap on result set size (mirrors pg_graphql default)
-    private static final String SELECT_ALL_FROM = "SELECT * FROM `";
-    private static final String WHERE_CLAUSE = "` WHERE `";
-    private static final String EQUALS_PARAM = "` = ?";
     private static final String AND_OPERATOR = " AND ";
     private static final String LIKE_PARAM = " LIKE ?";
     private static final String LIMIT_PARAM = " LIMIT ?";
@@ -81,10 +79,14 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         return schemaReflector;
     }
 
+    private static String q(String identifier) {
+        return SqlIdentifierValidator.quoteMysql(identifier);
+    }
+
     @Override
     public DataFetcher<List<Map<String, Object>>> buildTableDataFetcher(String tableName) {
         return env -> {
-            StringBuilder sql = new StringBuilder(SELECT_ALL_FROM).append(tableName).append("`");
+            StringBuilder sql = new StringBuilder("SELECT * FROM ").append(q(tableName));
             List<Object> params = new ArrayList<>();
 
             applyWhere(sql, params, env);
@@ -112,7 +114,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             long offset = after != null ? decodeCursor(after) : 0L;
 
             // Fetch limit+1 to detect hasNextPage
-            StringBuilder sql = new StringBuilder(SELECT_ALL_FROM).append(tableName).append("`");
+            StringBuilder sql = new StringBuilder("SELECT * FROM ").append(q(tableName));
             List<Object> params = new ArrayList<>();
             applyWhere(sql, params, env);
             applyOrderBy(sql, env);
@@ -140,7 +142,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
             pageInfo.put("startCursor", pageRows.isEmpty() ? null : encodeCursor(offset));
             pageInfo.put("endCursor", pageRows.isEmpty() ? null : encodeCursor(offset + pageRows.size() - 1));
 
-            StringBuilder countSql = new StringBuilder("SELECT COUNT(*) FROM `").append(tableName).append("`");
+            StringBuilder countSql = new StringBuilder("SELECT COUNT(*) FROM ").append(q(tableName));
             List<Object> countParams = new ArrayList<>();
             applyWhere(countSql, countParams, env);
             Long totalCount = jdbcTemplate.queryForObject(countSql.toString(), Long.class, countParams.toArray());
@@ -172,7 +174,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
                 return grouped.get(fkValue);
             }
 
-            String sql = SELECT_ALL_FROM + referencedTable + WHERE_CLAUSE + referencedColumn + EQUALS_PARAM + LIMIT_ONE;
+            String sql = "SELECT * FROM " + q(referencedTable) + " WHERE " + q(referencedColumn) + " = ?" + LIMIT_ONE;
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, fkValue);
             return rows.isEmpty() ? null : rows.getFirst();
         };
@@ -185,11 +187,11 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         return env -> {
             Map<String, Object> source = env.getSource();
             if (source == null) return null;
-            StringBuilder sql = new StringBuilder(SELECT_ALL_FROM + referencedTable + "` WHERE ");
+            StringBuilder sql = new StringBuilder("SELECT * FROM " + q(referencedTable) + " WHERE ");
             List<Object> params = new ArrayList<>();
             for (int i = 0; i < foreignKeyColumns.size(); i++) {
                 if (i > 0) sql.append(AND_OPERATOR);
-                sql.append("`").append(referencedColumns.get(i)).append(EQUALS_PARAM);
+                sql.append(q(referencedColumns.get(i))).append(" = ?");
                 params.add(source.get(foreignKeyColumns.get(i)));
             }
             sql.append(LIMIT_ONE);
@@ -219,7 +221,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
                 return cached != null ? cached : List.of();
             }
 
-            String sql = SELECT_ALL_FROM + targetTableName + WHERE_CLAUSE + foreignKeyColumn + EQUALS_PARAM;
+            String sql = "SELECT * FROM " + q(targetTableName) + " WHERE " + q(foreignKeyColumn) + " = ?";
             return jdbcTemplate.queryForList(sql, refValue);
         };
     }
@@ -235,11 +237,11 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         return env -> {
             Map<String, Object> source = env.getSource();
             if (source == null) return List.of();
-            StringBuilder sql = new StringBuilder(SELECT_ALL_FROM + targetTableName + "` WHERE ");
+            StringBuilder sql = new StringBuilder("SELECT * FROM " + q(targetTableName) + " WHERE ");
             List<Object> params = new ArrayList<>();
             for (int i = 0; i < foreignKeyColumns.size(); i++) {
                 if (i > 0) sql.append(AND_OPERATOR);
-                sql.append("`").append(foreignKeyColumns.get(i)).append(EQUALS_PARAM);
+                sql.append(q(foreignKeyColumns.get(i))).append(" = ?");
                 params.add(source.get(referencedColumns.get(i)));
             }
             return jdbcTemplate.queryForList(sql.toString(), params.toArray());
@@ -265,14 +267,14 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
                             .findFirst();
                 }
                 numericCol.ifPresent(col -> {
-                            String q = "`" + col.getName() + "`";
-                            sql.append(", SUM(").append(q).append(") AS sum_val");
-                            sql.append(", AVG(").append(q).append(") AS avg_val");
-                            sql.append(", MIN(").append(q).append(") AS min_val");
-                            sql.append(", MAX(").append(q).append(") AS max_val");
+                            String quoted = q(col.getName());
+                            sql.append(", SUM(").append(quoted).append(") AS sum_val");
+                            sql.append(", AVG(").append(quoted).append(") AS avg_val");
+                            sql.append(", MIN(").append(quoted).append(") AS min_val");
+                            sql.append(", MAX(").append(quoted).append(") AS max_val");
                         });
             }
-            sql.append(" FROM `").append(tableName).append("`");
+            sql.append(" FROM ").append(q(tableName));
 
             List<Object> params = new ArrayList<>();
             applyWhere(sql, params, env);
@@ -326,7 +328,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         List<String> clauses = new ArrayList<>();
         for (Map.Entry<?, ?> entry : whereMap.entrySet()) {
             if ("or".equals(entry.getKey())) continue; // already handled above
-            String col = "`" + entry.getKey() + "`";
+            String col = q(String.valueOf(entry.getKey()));
             Object condObj = entry.getValue();
 
             if (condObj instanceof Map<?, ?> cond) {
@@ -392,7 +394,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
                 if (!first) sql.append(",");
                 first = false;
                 String direction = "DESC".equalsIgnoreCase(String.valueOf(entry.getValue())) ? "DESC" : "ASC";
-                sql.append(" `").append(entry.getKey()).append("` ").append(direction);
+                sql.append(" ").append(q(String.valueOf(entry.getKey()))).append(" ").append(direction);
             }
         }
     }
@@ -493,7 +495,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
         if (fkValues.isEmpty()) return;
 
         String placeholders = fkValues.stream().map(v -> "?").collect(Collectors.joining(", "));
-        String sql = SELECT_ALL_FROM + referencedTable + WHERE_CLAUSE + referencedColumn + "` IN (" + placeholders + ")";
+        String sql = "SELECT * FROM " + q(referencedTable) + " WHERE " + q(referencedColumn) + " IN (" + placeholders + ")";
 
         List<Map<String, Object>> relatedRecords = jdbcTemplate.queryForList(sql, fkValues.toArray());
 
@@ -540,7 +542,7 @@ public class MysqlDatabaseDataFetcherImplement implements IDatabaseDataFetcher {
                 if (parentKeys.isEmpty()) return;
 
                 String placeholders = parentKeys.stream().map(v -> "?").collect(Collectors.joining(", "));
-                String sql = SELECT_ALL_FROM + otherTableName + WHERE_CLAUSE + fkColumn + "` IN (" + placeholders + ")";
+                String sql = "SELECT * FROM " + q(otherTableName) + " WHERE " + q(fkColumn) + " IN (" + placeholders + ")";
 
                 List<Map<String, Object>> relatedRecords = jdbcTemplate.queryForList(sql, parentKeys.toArray());
 
