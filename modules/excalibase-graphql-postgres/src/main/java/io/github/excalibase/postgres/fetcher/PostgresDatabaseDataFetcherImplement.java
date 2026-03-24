@@ -23,7 +23,6 @@ import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.config.AppConfig;
 import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.postgres.constant.PostgresSqlSyntaxConstant;
-import io.github.excalibase.postgres.constant.PostgresErrorConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.dataloader.ExcalibaseBatchLoader;
 import io.github.excalibase.exception.DataFetcherException;
@@ -76,8 +75,6 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
     private static final String BATCH_CONTEXT = "BATCH_CONTEXT";
     private static final String BATCH_LOADER = "BATCH_LOADER";
     private static final String REVERSE_BATCH_PREFIX = "REV:";
-    private static final String CURSOR_ERROR = PostgresErrorConstant.CURSOR_REQUIRED_ERROR;
-    private static final int MAX_RELATIONSHIP_DEPTH = 5; // Prevent infinite recursion
     private static final int MAX_ROWS = 30; // Hard cap on result set size (mirrors pg_graphql default)
 
     public PostgresDatabaseDataFetcherImplement(JdbcTemplate jdbcTemplate, 
@@ -367,7 +364,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 arguments.remove(FieldConstant.OFFSET);
             }
 
-            //TODO this maybe not good practice, need to revisit this
+            // Choose cursor-based pagination when any cursor argument is present and no explicit offset is given
             boolean useCursorPagination = offset == null && (first != null || last != null || after != null || before != null);
             boolean useOffsetPagination = !useCursorPagination && offset != null;
 
@@ -904,10 +901,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                         result.put("count", count != null ? count : 0);
                         break;
 
-                    case "sum":
-                    case "avg":
-                    case "min":
-                    case "max":
+                    case "sum", "avg", "min", "max":
                         result.put(aggregateFunction, computeFieldAggregates(tableName, tableInfo, field, aggregateFunction, whereClause.toString(), paramSource));
                         break;
 
@@ -1245,10 +1239,10 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
 
                 // Group by FK column value → Map<parentKeyValue, List<childRow>>
                 Map<Object, List<Map<String, Object>>> grouped = new HashMap<>();
-                for (Map<String, Object> record : relatedRecords) {
-                    Object keyValue = record.get(fkColumn);
+                for (Map<String, Object> rec : relatedRecords) {
+                    Object keyValue = rec.get(fkColumn);
                     if (keyValue != null) {
-                        grouped.computeIfAbsent(keyValue, k -> new ArrayList<>()).add(record);
+                        grouped.computeIfAbsent(keyValue, k -> new ArrayList<>()).add(rec);
                     }
                 }
                 batchContext.put(cacheKey, grouped);

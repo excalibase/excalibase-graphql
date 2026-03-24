@@ -4,9 +4,12 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Map;
 
 final class JsonUtil {
+    private JsonUtil() {}
+
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     static Map<String, Object> parseJson(String json) throws IOException {
@@ -19,7 +22,7 @@ final class JsonUtil {
         try {
             return MAPPER.writeValueAsString(value);
         } catch (JsonProcessingException e) {
-            throw new RuntimeException(e);
+            throw new UncheckedIOException(e);
         }
     }
 }

@@ -4,7 +4,6 @@ import graphql.Scalars;
 import graphql.schema.*;
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.constant.FieldConstant;
-import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
@@ -14,8 +13,6 @@ import io.github.excalibase.model.StoredProcedureInfo;
 import io.github.excalibase.model.TableInfo;
 import io.github.excalibase.scalar.JsonScalar;
 import io.github.excalibase.schema.generator.IGraphQLSchemaGenerator;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
@@ -37,7 +34,6 @@ import static graphql.Scalars.*;
  */
 @ExcalibaseService(serviceName = SupportedDatabaseConstant.MYSQL)
 public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGenerator {
-    private static final Logger log = LoggerFactory.getLogger(MysqlGraphQLSchemaGeneratorImplement.class);
 
 
     // Sort-direction enum shared across all table filter inputs

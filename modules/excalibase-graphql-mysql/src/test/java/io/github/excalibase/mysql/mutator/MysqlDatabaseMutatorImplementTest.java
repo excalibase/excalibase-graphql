@@ -70,7 +70,7 @@ class MysqlDatabaseMutatorImplementTest {
         Map<String, Object> result = df.get(env);
 
         assertThat(result).isNotNull();
-        assertThat(result.get("name")).isEqualTo("Widget");
+        assertThat(result).containsEntry("name", "Widget");
         assertThat(result.get("id")).isNotNull();
     }
 
@@ -97,8 +97,7 @@ class MysqlDatabaseMutatorImplementTest {
 
         Map<String, Object> result = df.get(env);
 
-        assertThat(result).isNotNull();
-        assertThat(result.get("name")).isEqualTo("New Name");
+        assertThat(result).isNotNull().containsEntry("name", "New Name");
         assertThat(((Number) result.get("id")).longValue()).isEqualTo(id);
     }
 
@@ -112,11 +111,10 @@ class MysqlDatabaseMutatorImplementTest {
 
         Map<String, Object> result = df.get(env);
 
-        assertThat(result).isNotNull();
-        assertThat(result.get("name")).isEqualTo("ToDelete");
+        assertThat(result).isNotNull().containsEntry("name", "ToDelete");
 
         Integer count = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM items WHERE id = ?", Integer.class, id);
-        assertThat(count).isEqualTo(0);
+        assertThat(count).isZero();
     }
 
     @Test

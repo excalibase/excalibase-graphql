@@ -60,7 +60,7 @@ public class JwtUserIdExtractor implements IUserIdExtractor {
     @Override
     public String extractUserId(HttpServletRequest request) {
         Map<String, Object> claims = decodeClaims(request);
-        if (claims == null) return null;
+        if (claims.isEmpty()) return null;
 
         for (String key : USER_ID_CLAIMS) {
             Object value = claims.get(key);
@@ -77,7 +77,7 @@ public class JwtUserIdExtractor implements IUserIdExtractor {
     @Override
     public Map<String, String> extractAdditionalClaims(HttpServletRequest request) {
         Map<String, Object> claims = decodeClaims(request);
-        if (claims == null) return Map.of();
+        if (claims.isEmpty()) return Map.of();
 
         Map<String, String> result = new HashMap<>();
         for (Map.Entry<String, Object> entry : claims.entrySet()) {
@@ -101,14 +101,14 @@ public class JwtUserIdExtractor implements IUserIdExtractor {
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith(BEARER_PREFIX)) {
             log.debug("No Bearer token in Authorization header");
-            return null;
+            return Map.of();
         }
 
         String token = authHeader.substring(BEARER_PREFIX.length()).trim();
         String[] parts = token.split("\\.");
         if (parts.length < 2) {
             log.warn("Invalid JWT format — expected 3 parts separated by '.'");
-            return null;
+            return Map.of();
         }
 
         try {
@@ -117,7 +117,7 @@ public class JwtUserIdExtractor implements IUserIdExtractor {
             return objectMapper.readValue(payloadBytes, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
             log.warn("Failed to decode JWT payload: {}", e.getMessage());
-            return null;
+            return Map.of();
         }
     }
 

@@ -106,9 +106,9 @@ class HeaderUserIdExtractorTest {
 
         Map<String, String> claims = extractor.extractAdditionalClaims(request);
 
-        assertThat(claims).hasSize(2);
-        assertThat(claims).containsEntry("ROLE", "admin");
-        assertThat(claims).containsEntry("tenant_id", "acme");
+        assertThat(claims).hasSize(2)
+                .containsEntry("ROLE", "admin")
+                .containsEntry("tenant_id", "acme");
     }
 
     @Test

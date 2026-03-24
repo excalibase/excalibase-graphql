@@ -126,10 +126,9 @@ class JwtUserIdExtractorTest {
         // role, email, tenant_id should be extracted
         assertThat(claims).containsEntry("role", "authenticated")
                 .containsEntry("email", "alice@example.com")
-                .containsEntry("tenant_id", "acme");
-
-        // reserved claims should be skipped
-        assertThat(claims).doesNotContainKeys("iss", "iat", "exp", "sub");
+                .containsEntry("tenant_id", "acme")
+                // reserved claims should be skipped
+                .doesNotContainKeys("iss", "iat", "exp", "sub");
     }
 
     @Test
@@ -152,8 +151,8 @@ class JwtUserIdExtractorTest {
         Map<String, String> claims = extractor.extractAdditionalClaims(request);
 
         // sub and user_id are used as userId, not as claims
-        assertThat(claims).doesNotContainKeys("sub", "user_id");
-        assertThat(claims).containsEntry("role", "admin");
+        assertThat(claims).doesNotContainKeys("sub", "user_id")
+                .containsEntry("role", "admin");
     }
 
     @Test
@@ -182,7 +181,7 @@ class JwtUserIdExtractorTest {
 
         Map<String, String> claims = extractor.extractAdditionalClaims(request);
         assertThat(claims).containsEntry("role", "authenticated")
-                .containsEntry("email", "alice@example.com");
-        assertThat(claims).doesNotContainKeys("iss", "sub", "aud", "iat", "exp");
+                .containsEntry("email", "alice@example.com")
+                .doesNotContainKeys("iss", "sub", "aud", "iat", "exp");
     }
 }

@@ -20,6 +20,8 @@ package io.github.excalibase.postgres.constant;
  * SQL query constants for database schema reflection.
  */
 public class PostgresSqlConstant {
+    private PostgresSqlConstant() {}
+
     public static final String GET_TABLE_NAME = """
             SELECT tablename 
             FROM pg_catalog.pg_tables 
