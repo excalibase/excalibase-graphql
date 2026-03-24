@@ -57,6 +57,10 @@ import java.util.stream.Collectors;
 public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     private static final Logger log = LoggerFactory.getLogger(PostgresDatabaseMutatorImplement.class);
     private static final String TABLE_NOT_FOUND = "Table not found:";
+    private static final String INPUT_ARG = "input";
+    private static final String SUFFIX_CREATE = "_create";
+    private static final String SUFFIX_CREATE_MANY = "_createMany";
+    private static final String SUFFIX_CONNECT = "_connect";
 
     private final JdbcTemplate jdbcTemplate;
     private final NamedParameterJdbcTemplate namedParameterJdbcTemplate;
@@ -118,7 +122,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         return environment -> {
             TableInfo tableInfo = getTableInfo(tableName);
 
-            Map<String, Object> input = environment.getArgument("input");
+            Map<String, Object> input = environment.getArgument(INPUT_ARG);
             if (input == null) {
                 throw new IllegalArgumentException(String.format(PostgresErrorConstant.INPUT_REQUIRED_TEMPLATE, "create"));
             }
@@ -155,7 +159,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         return environment -> {
             TableInfo tableInfo = getTableInfo(tableName);
 
-            Map<String, Object> input = environment.getArgument("input");
+            Map<String, Object> input = environment.getArgument(INPUT_ARG);
             if (input == null) {
                 throw new NotFoundException(String.format(PostgresErrorConstant.INPUT_REQUIRED_TEMPLATE, "update"));
             }
@@ -217,7 +221,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         return environment -> {
             TableInfo tableInfo = getTableInfo(tableName);
             
-            Map<String, Object> input = environment.getArgument("input");
+            Map<String, Object> input = environment.getArgument(INPUT_ARG);
             if (input == null) {
                 throw new IllegalArgumentException(String.format(PostgresErrorConstant.INPUT_REQUIRED_TEMPLATE, "delete"));
             }
@@ -351,7 +355,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
         // Get table info
         TableInfo tableInfo = getTableInfo(tableName);
 
-        Map<String, Object> input = environment.getArgument("input");
+        Map<String, Object> input = environment.getArgument(INPUT_ARG);
         if (input == null) {
             throw new IllegalArgumentException(String.format(PostgresErrorConstant.INPUT_REQUIRED_TEMPLATE, "create with relationships"));
         }
@@ -365,7 +369,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             .collect(Collectors.toSet());
 
         Set<String> potentialRelationFields = input.keySet().stream()
-            .filter(key -> key.endsWith("_connect") || key.endsWith("_create") || key.endsWith("_createMany"))
+            .filter(key -> key.endsWith(SUFFIX_CONNECT) || key.endsWith(SUFFIX_CREATE) || key.endsWith(SUFFIX_CREATE_MANY))
             .collect(Collectors.toSet());
 
         for (Map.Entry<String, Object> entry : input.entrySet()) {
@@ -402,9 +406,9 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             String key = entry.getKey();
             Object value = entry.getValue();
             
-            if (key.endsWith("_connect") && value instanceof Map) {
+            if (key.endsWith(SUFFIX_CONNECT) && value instanceof Map) {
                 processConnectRelationship(key, (Map<String, Object>) value, foreignKeys, foreignKeyValues);
-            } else if (key.endsWith("_create") && value instanceof Map) {
+            } else if (key.endsWith(SUFFIX_CREATE) && value instanceof Map) {
                 processCreateRelationship(key, (Map<String, Object>) value, foreignKeys, foreignKeyValues);
             }
         }
@@ -415,7 +419,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     private void processConnectRelationship(String key, Map<String, Object> connectObj, 
                                           List<ForeignKeyInfo> foreignKeys, 
                                           Map<String, Object> foreignKeyValues) {
-        String relationName = key.substring(0, key.length() - "_connect".length());
+        String relationName = key.substring(0, key.length() - SUFFIX_CONNECT.length());
         
         Optional<ForeignKeyInfo> fkInfo = foreignKeys.stream()
             .filter(fk -> fk.getReferencedTable().equalsIgnoreCase(relationName))
@@ -432,7 +436,7 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
     private void processCreateRelationship(String key, Map<String, Object> createObj, 
                                          List<ForeignKeyInfo> foreignKeys, 
                                          Map<String, Object> foreignKeyValues) {
-        String relationName = key.substring(0, key.length() - "_create".length());
+        String relationName = key.substring(0, key.length() - SUFFIX_CREATE.length());
         
         Optional<ForeignKeyInfo> fkInfo = foreignKeys.stream()
             .filter(fk -> fk.getReferencedTable().equalsIgnoreCase(relationName))
@@ -456,8 +460,8 @@ public class PostgresDatabaseMutatorImplement implements IDatabaseMutator {
             String key = entry.getKey();
             Object value = entry.getValue();
             
-            if (key.endsWith("_createMany") && value instanceof List) {
-                String relationName = key.substring(0, key.length() - "_createMany".length());
+            if (key.endsWith(SUFFIX_CREATE_MANY) && value instanceof List) {
+                String relationName = key.substring(0, key.length() - SUFFIX_CREATE_MANY.length());
                 
                 // Find reverse foreign key
                 String reverseFK = getSchemaHelper().findReverseForeignKey(relationName, tableName, tables);

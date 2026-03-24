@@ -28,6 +28,9 @@ import org.slf4j.LoggerFactory;
 @Component
 public class GraphQLWebSocketHandler extends TextWebSocketHandler implements SubProtocolCapable {
     private static final Logger log = LoggerFactory.getLogger(GraphQLWebSocketHandler.class);
+    private static final String PAYLOAD = "payload";
+    private static final String ERROR = "error";
+    private static final String MESSAGE = "message";
     
     private final GraphqlConfig graphqlConfig;
     
@@ -64,7 +67,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         if ("subscribe".equals(type)) {
             String id = (String) msg.get("id");
             @SuppressWarnings("unchecked")
-            Map<String, Object> payloadMap = (Map<String, Object>) msg.get("payload");
+            Map<String, Object> payloadMap = (Map<String, Object>) msg.get(PAYLOAD);
             String query = (String) payloadMap.get("query");
             String operationName = (String) payloadMap.get("operationName");
             @SuppressWarnings("unchecked")
@@ -78,9 +81,9 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
             Map<String, Subscription> sessionSubs = sessionSubscriptions.get(session.getId());
             if (sessionSubs == null) {
                 sendMessage(session, JsonUtil.toJson(Map.of(
-                    "type", "error",
+                    "type", ERROR,
                     "id", id,
-                    "payload", Map.of("message", "Session not properly initialized")
+                    PAYLOAD, Map.of(MESSAGE, "Session not properly initialized")
                 )));
                 return;
             }
@@ -107,9 +110,9 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
             if (publisher == null) {
                 // Send error
                 sendMessage(session, JsonUtil.toJson(Map.of(
-                    "type", "error",
+                    "type", ERROR,
                     "id", id,
-                    "payload", Map.of("message", "Subscription execution failed")
+                    PAYLOAD, Map.of(MESSAGE, "Subscription execution failed")
                 )));
                 return;
             }
@@ -132,7 +135,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                         String json = JsonUtil.toJson(Map.of(
                                 "type", "next",
                                 "id", id,
-                                "payload", Map.of("data", data)
+                                PAYLOAD, Map.of("data", data)
                         ));
                         sendMessage(session, json);
                         log.info("Sent subscription data {} to session {}", id, session.getId());
@@ -154,9 +157,9 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                     log.error("Subscription {} error for session {}: ", id, session.getId(), t);
                     try {
                         String json = JsonUtil.toJson(Map.of(
-                                "type", "error",
+                                "type", ERROR,
                                 "id", id,
-                                "payload", Map.of("message", t.getMessage())
+                                PAYLOAD, Map.of(MESSAGE, t.getMessage())
                         ));
                         sendMessage(session, json);
                     } catch (Exception e) {

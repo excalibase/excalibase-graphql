@@ -12,7 +12,11 @@ import java.util.Set;
  * Used in the Root + Filter approach for efficient role-based schema generation.
  */
 public class RolePrivileges {
-    
+
+    private static final String PRIVILEGE_SELECT = "SELECT";
+    private static final String PRIVILEGE_INSERT = "INSERT";
+    private static final String PRIVILEGE_UPDATE = "UPDATE";
+
     // Table-level privileges
     private final Set<String> selectableTables;
     private final Set<String> insertableTables;
@@ -44,9 +48,9 @@ public class RolePrivileges {
         this.rlsPolicies = new ArrayList<>();
         
         // Initialize column privilege maps
-        this.columnPrivileges.put("SELECT", new HashMap<>());
-        this.columnPrivileges.put("INSERT", new HashMap<>());
-        this.columnPrivileges.put("UPDATE", new HashMap<>());
+        this.columnPrivileges.put(PRIVILEGE_SELECT, new HashMap<>());
+        this.columnPrivileges.put(PRIVILEGE_INSERT, new HashMap<>());
+        this.columnPrivileges.put(PRIVILEGE_UPDATE, new HashMap<>());
         this.columnPrivileges.put("REFERENCES", new HashMap<>());
     }
     
@@ -95,7 +99,7 @@ public class RolePrivileges {
         if (isSuperuser) {
             return Set.of("*"); // Superuser can access all columns
         }
-        return columnPrivileges.getOrDefault("SELECT", Map.of())
+        return columnPrivileges.getOrDefault(PRIVILEGE_SELECT, Map.of())
                               .getOrDefault(tableName, Set.of());
     }
     
@@ -103,7 +107,7 @@ public class RolePrivileges {
         if (isSuperuser) {
             return Set.of("*");
         }
-        return columnPrivileges.getOrDefault("INSERT", Map.of())
+        return columnPrivileges.getOrDefault(PRIVILEGE_INSERT, Map.of())
                               .getOrDefault(tableName, Set.of());
     }
     
@@ -111,7 +115,7 @@ public class RolePrivileges {
         if (isSuperuser) {
             return Set.of("*");
         }
-        return columnPrivileges.getOrDefault("UPDATE", Map.of())
+        return columnPrivileges.getOrDefault(PRIVILEGE_UPDATE, Map.of())
                               .getOrDefault(tableName, Set.of());
     }
     
@@ -194,6 +198,7 @@ public class RolePrivileges {
             case "DELETE" -> deletableTables.add(tableName);
             case "TRUNCATE" -> truncatableTables.add(tableName);
             case "REFERENCES" -> referencableTables.add(tableName);
+            default -> { /* unsupported privilege type, ignore */ }
         }
     }
     

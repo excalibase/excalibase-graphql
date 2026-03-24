@@ -36,6 +36,9 @@ import io.github.excalibase.constant.ColumnTypeConstant;
 )
 public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchemaReflector {
     private static final Logger log = LoggerFactory.getLogger(PostgresDatabaseSchemaReflectorImplement.class);
+    private static final String COL_TABLE_NAME = "table_name";
+    private static final String COL_COLUMN_NAME = "column_name";
+    private static final String COL_SCHEMA_NAME = "schema_name";
     private final JdbcTemplate jdbcTemplate;
     private final TTLCache<String, Map<String, TableInfo>> schemaCache;
     private final TTLCache<String, List<CustomEnumInfo>> enumCache;
@@ -184,14 +187,14 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                 .collect(java.util.stream.Collectors.toSet());
         
         for (Map<String, Object> columnData : columnResults) {
-            String tableName = (String) columnData.get("table_name");
+            String tableName = (String) columnData.get(COL_TABLE_NAME);
             TableInfo tableInfo = tables.get(tableName);
             
             if (tableInfo != null) {
                 ColumnInfo columnInfo = new ColumnInfo();
-                String columnName = (String) columnData.get("column_name");
+                String columnName = (String) columnData.get(COL_COLUMN_NAME);
                 columnInfo.setName(columnName);
-                columnInfo.setAliasName(columnName.replaceAll("[^_A-Za-z0-9]", "_")
+                columnInfo.setAliasName(columnName.replaceAll("\\W", "_")
                         .replaceAll("^(\\d)", "_$1"));
                 
                 String dataType = (String) columnData.get("data_type");
@@ -274,8 +277,8 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         Map<String, List<String>> primaryKeysByTable = new HashMap<>();
         
         for (Map<String, Object> pkData : primaryKeyResults) {
-            String tableName = (String) pkData.get("table_name");
-            String columnName = (String) pkData.get("column_name");
+            String tableName = (String) pkData.get(COL_TABLE_NAME);
+            String columnName = (String) pkData.get(COL_COLUMN_NAME);
             
             primaryKeysByTable.computeIfAbsent(tableName, k -> new ArrayList<>()).add(columnName);
         }
@@ -302,7 +305,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
         // Group rows by (table_name, constraint_name) to build composite-key-aware ForeignKeyInfo
         java.util.LinkedHashMap<String, ForeignKeyInfo> byConstraint = new java.util.LinkedHashMap<>();
         for (Map<String, Object> fkData : foreignKeyResults) {
-            String tableName = (String) fkData.get("table_name");
+            String tableName = (String) fkData.get(COL_TABLE_NAME);
             String constraintName = (String) fkData.get("constraint_name");
             String key = tableName + "|" + constraintName;
 
@@ -311,7 +314,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
                 f.setReferencedTable((String) fkData.get("foreign_table_name"));
                 return f;
             });
-            fkInfo.getColumnNames().add((String) fkData.get("column_name"));
+            fkInfo.getColumnNames().add((String) fkData.get(COL_COLUMN_NAME));
             fkInfo.getReferencedColumns().add((String) fkData.get("foreign_column_name"));
         }
 
@@ -386,7 +389,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
             for (Map<String, Object> result : results) {
                 CustomEnumInfo enumInfo = new CustomEnumInfo();
                 enumInfo.setName((String) result.get("enum_name"));
-                enumInfo.setSchema((String) result.get("schema_name"));
+                enumInfo.setSchema((String) result.get(COL_SCHEMA_NAME));
 
                 // Handle PostgreSQL array result
                 Object enumValuesObj = result.get("enum_values");
@@ -433,7 +436,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
 
             for (Map<String, Object> result : results) {
                 String typeName = (String) result.get("type_name");
-                String schemaName = (String) result.get("schema_name");
+                String schemaName = (String) result.get(COL_SCHEMA_NAME);
 
                 // Get or create composite type info
                 CustomCompositeTypeInfo typeInfo = typeMap.get(typeName);
@@ -472,7 +475,7 @@ public class PostgresDatabaseSchemaReflectorImplement implements IDatabaseSchema
 
             for (Map<String, Object> result : results) {
                 String typeName = (String) result.get("type_name");
-                String schemaName = (String) result.get("schema_name");
+                String schemaName = (String) result.get(COL_SCHEMA_NAME);
 
                 // Get or create composite type info
                 CustomCompositeTypeInfo typeInfo = typeMap.get(typeName);

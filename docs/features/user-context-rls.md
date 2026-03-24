@@ -2,7 +2,7 @@
 
 ## Overview
 
-Excalibase now supports **Supabase-style RLS** where user context is automatically set as PostgreSQL session variables. This allows dynamic, per-user row filtering without creating separate database roles for each user.
+Excalibase supports **user context-based RLS** where user context is automatically set as PostgreSQL session variables. This allows dynamic, per-user row filtering without creating separate database roles for each user.
 
 ## How It Works
 
@@ -387,5 +387,4 @@ See example RLS policies in:
 ## References
 
 - [PostgreSQL RLS Documentation](https://www.postgresql.org/docs/current/ddl-rowsecurity.html)
-- [Supabase RLS Guide](https://supabase.com/docs/guides/database/postgres/row-level-security)
 - [PostgreSQL Session Variables](https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-SET)

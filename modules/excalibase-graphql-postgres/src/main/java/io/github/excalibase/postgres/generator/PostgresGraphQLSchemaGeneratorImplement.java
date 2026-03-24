@@ -60,6 +60,37 @@ import static graphql.Scalars.*;
 )
 public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGenerator {
     private static final Logger log = LoggerFactory.getLogger(PostgresGraphQLSchemaGeneratorImplement.class);
+
+    // --- Type name suffixes ---
+    private static final String SUFFIX_CHANGE_EVENT = "ChangeEvent";
+    private static final String SUFFIX_SUBSCRIPTION_DATA = "SubscriptionData";
+    private static final String SUFFIX_CONNECTION = "Connection";
+    private static final String SUFFIX_ORDER_BY_INPUT = "OrderByInput";
+    private static final String SUFFIX_AGGREGATE = "Aggregate";
+    private static final String SUFFIX_CREATE_INPUT = "CreateInput";
+    private static final String SUFFIX_FILTER = "Filter";
+
+    // --- Description prefixes ---
+    private static final String DESC_PREFIX_TABLE = " table";
+    private static final String DESC_PREFIX_COLUMN = "Column ";
+    private static final String DESC_PREFIX_INPUT_FOR = "Input for ";
+
+    // --- Filter type names ---
+    private static final String FILTER_TYPE_INT = "IntFilter";
+    private static final String FILTER_TYPE_FLOAT = "FloatFilter";
+    private static final String FILTER_TYPE_BOOLEAN = "BooleanFilter";
+    private static final String FILTER_TYPE_DATE_TIME = "DateTimeFilter";
+    private static final String FILTER_TYPE_JSON = "JSONFilter";
+
+
+    // --- Filter descriptions ---
+    private static final String DESC_EQUALS = "Equals";
+    private static final String DESC_NOT_EQUALS = "Not equals";
+    private static final String DESC_IS_NULL = "Is null";
+    private static final String DESC_IS_NOT_NULL = "Is not null";
+    private static final String DESC_IN_LIST = "In list of values";
+    private static final String DESC_NOT_IN_LIST = "Not in list of values";
+
     private IDatabaseSchemaReflector schemaReflector;
     private final ServiceLookup serviceLookup;
     private final AppConfig appConfig;
@@ -261,14 +292,14 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         for (Map.Entry<String, TableInfo> entry : tables.entrySet()) {
             String tableName = entry.getKey();
             String fieldName = toLowerCamelCase(tableName) + "Changes";
-            String typeName = capitalize(tableName) + "ChangeEvent";
+            String typeName = capitalize(tableName) + SUFFIX_CHANGE_EVENT;
 
             log.info("🔥 Adding subscription field: {} -> {} for table: {}", fieldName, typeName, tableName);
 
             // Add subscription field for this table using type reference
             subscriptionBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
                 .name(fieldName)
-                .description("Subscribe to real-time changes for " + tableName + " table")
+                .description("Subscribe to real-time changes for " + tableName + DESC_PREFIX_TABLE)
                 .type(GraphQLTypeReference.typeRef(typeName))
                 .build());
         }
@@ -287,8 +318,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                          Map<String, GraphQLObjectType> customCompositeTypes) {
 
         return GraphQLObjectType.newObject()
-            .name(capitalize(tableName) + "ChangeEvent")
-            .description("Change event for " + tableName + " table")
+            .name(capitalize(tableName) + SUFFIX_CHANGE_EVENT)
+            .description("Change event for " + tableName + DESC_PREFIX_TABLE)
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("operation")
                 .description("Type of change operation")
@@ -317,7 +348,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("data")
                 .description("The actual table data that changed")
-                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "SubscriptionData"))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + SUFFIX_SUBSCRIPTION_DATA))
                 .build())
             .field(GraphQLFieldDefinition.newFieldDefinition()
                 .name("error")
@@ -335,7 +366,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                                                               Map<String, GraphQLEnumType> customEnumTypes,
                                                               Map<String, GraphQLObjectType> customCompositeTypes) {
         GraphQLObjectType.Builder dataTypeBuilder = GraphQLObjectType.newObject()
-            .name(capitalize(tableName) + "SubscriptionData")
+            .name(capitalize(tableName) + SUFFIX_SUBSCRIPTION_DATA)
             .description("Table data for " + tableName + " subscription events");
 
         // Add all table columns as fields
@@ -345,7 +376,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             // All fields are nullable in subscription data since we might have partial updates or deletes
             dataTypeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
                 .name(toGraphQLFieldName(column.getName()))
-                .description(columnDescription("Column ", column.getName()))
+                .description(columnDescription(DESC_PREFIX_COLUMN, column.getName()))
                 .type(fieldType)
                 .build());
         }
@@ -355,13 +386,13 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         dataTypeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
             .name("old")
             .description("Previous values for UPDATE operations")
-            .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "SubscriptionData"))
+            .type(GraphQLTypeReference.typeRef(capitalize(tableName) + SUFFIX_SUBSCRIPTION_DATA))
             .build());
 
         dataTypeBuilder.field(GraphQLFieldDefinition.newFieldDefinition()
             .name("new")
             .description("New values for UPDATE operations")
-            .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "SubscriptionData"))
+            .type(GraphQLTypeReference.typeRef(capitalize(tableName) + SUFFIX_SUBSCRIPTION_DATA))
             .build());
 
         return dataTypeBuilder.build();
@@ -402,7 +433,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             log.debug("Creating subscription types for table: {}", tableName);
 
             // Create and add subscription data type
-            String subscriptionDataTypeName = capitalize(tableName) + "SubscriptionData";
+            String subscriptionDataTypeName = capitalize(tableName) + SUFFIX_SUBSCRIPTION_DATA;
             if (!addedTypeNames.contains(subscriptionDataTypeName)) {
                 GraphQLObjectType subscriptionDataType = createSubscriptionTableDataType(tableName, tableInfo, customEnumTypes, customCompositeTypes);
                 schemaBuilder.additionalType(subscriptionDataType);
@@ -427,7 +458,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             }
 
             // Create and add change event type (this references the above types)
-            String changeEventTypeName = capitalize(tableName) + "ChangeEvent";
+            String changeEventTypeName = capitalize(tableName) + SUFFIX_CHANGE_EVENT;
             if (!addedTypeNames.contains(changeEventTypeName)) {
                 GraphQLObjectType changeEventType = createTableChangeEventType(tableName, tableInfo, customEnumTypes, customCompositeTypes);
                 schemaBuilder.additionalType(changeEventType);
@@ -518,7 +549,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
                     .name(toGraphQLFieldName(column.getName()))
                     .type(column.isNullable() ? fieldType : new GraphQLNonNull(fieldType))
-                    .description(columnDescription("Column ", column.getName()));
+                    .description(columnDescription(DESC_PREFIX_COLUMN, column.getName()));
 
             typeBuilder.field(fieldBuilder.build());
         }
@@ -594,7 +625,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLObjectType createConnectionType(String tableName, GraphQLObjectType edgeType, GraphQLObjectType pageInfoType) {
         return GraphQLObjectType.newObject()
-                .name(capitalize(tableName) + "Connection")
+                .name(capitalize(tableName) + SUFFIX_CONNECTION)
                 .description("A connection to a list of " + tableName)
                 .field(GraphQLFieldDefinition.newFieldDefinition()
                         .name(FieldConstant.EDGES)
@@ -616,7 +647,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private GraphQLInputObjectType createOrderByInput(String tableName, TableInfo tableInfo) {
         GraphQLInputObjectType.Builder orderByInputBuilder = GraphQLInputObjectType.newInputObject()
-                .name(capitalize(tableName) + "OrderByInput")
+                .name(capitalize(tableName) + SUFFIX_ORDER_BY_INPUT)
                 .description("Input for ordering " + tableName + " records");
 
         // Add each column as a potential sort field with direction
@@ -673,7 +704,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add orderBy argument
         fieldBuilder.argument(GraphQLArgument.newArgument()
                 .name(FieldConstant.ORDER_BY)
-                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "OrderByInput"))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + SUFFIX_ORDER_BY_INPUT))
                 .description("Order results by specified fields")
                 .build());
 
@@ -682,8 +713,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private void addConnectionFields(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo, Map<String, GraphQLInputObjectType> tableFilterTypes) {
         GraphQLFieldDefinition.Builder connectionFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
-                .name(toLowerCamelCase(tableName) + "Connection")
-                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "Connection"))
+                .name(toLowerCamelCase(tableName) + SUFFIX_CONNECTION)
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + SUFFIX_CONNECTION))
                 .description("Connection to " + tableName + " records for cursor-based pagination following the Relay specification");
 
         // Add the where argument using the table's filter type
@@ -704,7 +735,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add ordering to connection fields
         connectionFieldBuilder.argument(GraphQLArgument.newArgument()
                 .name(FieldConstant.ORDER_BY)
-                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "OrderByInput"))
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + SUFFIX_ORDER_BY_INPUT))
                 .description("Order results by specified fields")
                 .build());
 
@@ -716,9 +747,9 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
     private void addAggregateQueryField(GraphQLObjectType.Builder queryBuilder, String tableName, TableInfo tableInfo, GraphQLInputObjectType filterType) {
         GraphQLFieldDefinition.Builder aggregateFieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
-                .name(toLowerCamelCase(tableName) + "Aggregate")
-                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + "Aggregate"))
-                .description("Aggregate functions for " + tableName + " table");
+                .name(toLowerCamelCase(tableName) + SUFFIX_AGGREGATE)
+                .type(GraphQLTypeReference.typeRef(capitalize(tableName) + SUFFIX_AGGREGATE))
+                .description("Aggregate functions for " + tableName + DESC_PREFIX_TABLE);
 
         // Add WHERE filter argument
         aggregateFieldBuilder.argument(GraphQLArgument.newArgument()
@@ -819,7 +850,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private void addMutationFields(GraphQLObjectType.Builder mutationBuilder, String tableName, TableInfo tableInfo, Map<String, TableInfo> tables,
                                    Map<String, GraphQLEnumType> customEnumTypes, Map<String, GraphQLObjectType> customCompositeTypes) {
         // Use type references instead of creating new input types to avoid duplicates
-        String createInputTypeName = capitalize(tableName) + "CreateInput";
+        String createInputTypeName = capitalize(tableName) + SUFFIX_CREATE_INPUT;
         String updateInputTypeName = capitalize(tableName) + "UpdateInput";
         GraphQLTypeReference createInputType = GraphQLTypeReference.typeRef(createInputTypeName);
         GraphQLTypeReference updateInputType = GraphQLTypeReference.typeRef(updateInputTypeName);
@@ -890,8 +921,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private GraphQLInputObjectType createInputTypes(String tableName, TableInfo tableInfo, boolean isUpdate,
                                                     Map<String, GraphQLEnumType> customEnumTypes,
                                                     Map<String, GraphQLObjectType> customCompositeTypes) {
-        String typeName = capitalize(tableName) + (isUpdate ? "UpdateInput" : "CreateInput");
-        String description = "Input for " + (isUpdate ? "updating" : "creating new") + " " + tableName + " records";
+        String typeName = capitalize(tableName) + (isUpdate ? "UpdateInput" : SUFFIX_CREATE_INPUT);
+        String description = DESC_PREFIX_INPUT_FOR + (isUpdate ? "updating" : "creating new") + " " + tableName + " records";
 
         GraphQLInputObjectType.Builder inputTypeBuilder = GraphQLInputObjectType.newInputObject()
                 .name(typeName)
@@ -899,7 +930,8 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // Add fields with different rules for primary keys
         for (ColumnInfo column : tableInfo.getColumns()) {
-            // TODO: TSvector not supported
+            // Skip tsvector columns — they are full-text-search internal types
+            // and have no meaningful GraphQL scalar mapping
             if (PostgresTypeOperator.isTsVectorType(column.getType())) {
                 continue;
             }
@@ -912,14 +944,14 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 inputTypeBuilder.field(GraphQLInputObjectField.newInputObjectField()
                         .name(toGraphQLFieldName(column.getName()))
                         .type(column.isPrimaryKey() ? new GraphQLNonNull(inputType) : inputType)
-                        .description(columnDescription("Input for ", column.getName()))
+                        .description(columnDescription(DESC_PREFIX_INPUT_FOR, column.getName()))
                         .build());
             } else {
                 // For CREATE input type, all fields are optional
                 inputTypeBuilder.field(GraphQLInputObjectField.newInputObjectField()
                         .name(toGraphQLFieldName(column.getName()))
                         .type(inputType)
-                        .description(columnDescription("Input for ", column.getName()))
+                        .description(columnDescription(DESC_PREFIX_INPUT_FOR, column.getName()))
                         .build());
             }
         }
@@ -972,7 +1004,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             relationshipInputBuilder.field(GraphQLInputObjectField.newInputObjectField()
                     .name(toGraphQLFieldName(column.getName()))
                     .type(inputType)
-                    .description("Input for " + column.getName())
+                    .description(DESC_PREFIX_INPUT_FOR + column.getName())
                     .build());
         }
 
@@ -1007,7 +1039,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             // Create and connect
             relationshipInputBuilder.field(GraphQLInputObjectField.newInputObjectField()
                     .name(toLowerCamelCase(referencedTable) + "_create")
-                    .type(GraphQLTypeReference.typeRef(capitalize(referencedTable) + "CreateInput"))
+                    .type(GraphQLTypeReference.typeRef(capitalize(referencedTable) + SUFFIX_CREATE_INPUT))
                     .description("Create new " + referencedTable + " and connect")
                     .build());
         }
@@ -1022,7 +1054,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                     // This is a reverse relationship - the other table references this one
                     relationshipInputBuilder.field(GraphQLInputObjectField.newInputObjectField()
                             .name(toLowerCamelCase(otherTableName) + "_createMany")
-                            .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(otherTableName) + "CreateInput")))
+                            .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(otherTableName) + SUFFIX_CREATE_INPUT)))
                             .description("Create multiple " + otherTableName + " records related to this " + tableName)
                             .build());
                 }
@@ -1133,12 +1165,12 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name(FieldConstant.OPERATOR_EQ)
                 .type(GraphQLString)
-                .description("Equals")
+                .description(DESC_EQUALS)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name(FieldConstant.OPERATOR_NEQ)
                 .type(GraphQLString)
-                .description("Not equals")
+                .description(DESC_NOT_EQUALS)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name(FieldConstant.OPERATOR_CONTAINS)
@@ -1168,39 +1200,39 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name(FieldConstant.OPERATOR_IS_NULL)
                 .type(GraphQLBoolean)
-                .description("Is null")
+                .description(DESC_IS_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name(FieldConstant.OPERATOR_IS_NOT_NULL)
                 .type(GraphQLBoolean)
-                .description("Is not null")
+                .description(DESC_IS_NOT_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name(FieldConstant.OPERATOR_IN)
                 .type(new GraphQLList(GraphQLString))
-                .description("In list of values")
+                .description(DESC_IN_LIST)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name(FieldConstant.OPERATOR_NOT_IN)
                 .type(new GraphQLList(GraphQLString))
-                .description("Not in list of values")
+                .description(DESC_NOT_IN_LIST)
                 .build())
             .build();
         filterTypes.put("StringFilter", stringFilter);
 
         // Integer filter type
         GraphQLInputObjectType intFilter = GraphQLInputObjectType.newInputObject()
-            .name("IntFilter")
+            .name(FILTER_TYPE_INT)
             .description("Integer filter options")
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("eq")
                 .type(GraphQLInt)
-                .description("Equals")
+                .description(DESC_EQUALS)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("neq")
                 .type(GraphQLInt)
-                .description("Not equals")
+                .description(DESC_NOT_EQUALS)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("gt")
@@ -1223,41 +1255,41 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .description("Less than or equal")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNull")
+                .name(FieldConstant.OPERATOR_IS_NULL)
                 .type(GraphQLBoolean)
-                .description("Is null")
+                .description(DESC_IS_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNotNull")
+                .name(FieldConstant.OPERATOR_IS_NOT_NULL)
                 .type(GraphQLBoolean)
-                .description("Is not null")
+                .description(DESC_IS_NOT_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("in")
                 .type(new GraphQLList(GraphQLInt))
-                .description("In list of values")
+                .description(DESC_IN_LIST)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("notIn")
+                .name(FieldConstant.OPERATOR_NOT_IN)
                 .type(new GraphQLList(GraphQLInt))
-                .description("Not in list of values")
+                .description(DESC_NOT_IN_LIST)
                 .build())
             .build();
-        filterTypes.put("IntFilter", intFilter);
+        filterTypes.put(FILTER_TYPE_INT, intFilter);
 
         // Float filter type
         GraphQLInputObjectType floatFilter = GraphQLInputObjectType.newInputObject()
-            .name("FloatFilter")
+            .name(FILTER_TYPE_FLOAT)
             .description("Float filter options")
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("eq")
                 .type(GraphQLFloat)
-                .description("Equals")
+                .description(DESC_EQUALS)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("neq")
                 .type(GraphQLFloat)
-                .description("Not equals")
+                .description(DESC_NOT_EQUALS)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("gt")
@@ -1280,58 +1312,58 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .description("Less than or equal")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNull")
+                .name(FieldConstant.OPERATOR_IS_NULL)
                 .type(GraphQLBoolean)
-                .description("Is null")
+                .description(DESC_IS_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNotNull")
+                .name(FieldConstant.OPERATOR_IS_NOT_NULL)
                 .type(GraphQLBoolean)
-                .description("Is not null")
+                .description(DESC_IS_NOT_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("in")
                 .type(new GraphQLList(GraphQLFloat))
-                .description("In list of values")
+                .description(DESC_IN_LIST)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("notIn")
+                .name(FieldConstant.OPERATOR_NOT_IN)
                 .type(new GraphQLList(GraphQLFloat))
-                .description("Not in list of values")
+                .description(DESC_NOT_IN_LIST)
                 .build())
             .build();
-        filterTypes.put("FloatFilter", floatFilter);
+        filterTypes.put(FILTER_TYPE_FLOAT, floatFilter);
 
         // Boolean filter type
         GraphQLInputObjectType booleanFilter = GraphQLInputObjectType.newInputObject()
-            .name("BooleanFilter")
+            .name(FILTER_TYPE_BOOLEAN)
             .description("Boolean filter options")
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("eq")
                 .type(GraphQLBoolean)
-                .description("Equals")
+                .description(DESC_EQUALS)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("neq")
                 .type(GraphQLBoolean)
-                .description("Not equals")
+                .description(DESC_NOT_EQUALS)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNull")
+                .name(FieldConstant.OPERATOR_IS_NULL)
                 .type(GraphQLBoolean)
-                .description("Is null")
+                .description(DESC_IS_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNotNull")
+                .name(FieldConstant.OPERATOR_IS_NOT_NULL)
                 .type(GraphQLBoolean)
-                .description("Is not null")
+                .description(DESC_IS_NOT_NULL)
                 .build())
             .build();
-        filterTypes.put("BooleanFilter", booleanFilter);
+        filterTypes.put(FILTER_TYPE_BOOLEAN, booleanFilter);
 
         // DateTime filter type for timestamps and dates
         GraphQLInputObjectType dateTimeFilter = GraphQLInputObjectType.newInputObject()
-            .name("DateTimeFilter")
+            .name(FILTER_TYPE_DATE_TIME)
             .description("DateTime filter options for timestamps and dates")
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("eq")
@@ -1341,7 +1373,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("neq")
                 .type(GraphQLString)
-                .description("Not equals")
+                .description(DESC_NOT_EQUALS)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("gt")
@@ -1364,14 +1396,14 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .description("Less than or equal (before or on)")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNull")
+                .name(FieldConstant.OPERATOR_IS_NULL)
                 .type(GraphQLBoolean)
-                .description("Is null")
+                .description(DESC_IS_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNotNull")
+                .name(FieldConstant.OPERATOR_IS_NOT_NULL)
                 .type(GraphQLBoolean)
-                .description("Is not null")
+                .description(DESC_IS_NOT_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("in")
@@ -1379,16 +1411,16 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .description("In list of dates/timestamps")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("notIn")
+                .name(FieldConstant.OPERATOR_NOT_IN)
                 .type(new GraphQLList(GraphQLString))
                 .description("Not in list of dates/timestamps")
                 .build())
             .build();
-        filterTypes.put("DateTimeFilter", dateTimeFilter);
+        filterTypes.put(FILTER_TYPE_DATE_TIME, dateTimeFilter);
 
         // JSON filter type for JSON/JSONB columns
         GraphQLInputObjectType jsonFilter = GraphQLInputObjectType.newInputObject()
-            .name("JSONFilter")
+            .name(FILTER_TYPE_JSON)
             .description("JSON filter options for JSON and JSONB columns")
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("eq")
@@ -1436,17 +1468,17 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .description("JSON path as text (#>>)")
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNull")
+                .name(FieldConstant.OPERATOR_IS_NULL)
                 .type(GraphQLBoolean)
-                .description("Is null")
+                .description(DESC_IS_NULL)
                 .build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNotNull")
+                .name(FieldConstant.OPERATOR_IS_NOT_NULL)
                 .type(GraphQLBoolean)
-                .description("Is not null")
+                .description(DESC_IS_NOT_NULL)
                 .build())
             .build();
-        filterTypes.put("JSONFilter", jsonFilter);
+        filterTypes.put(FILTER_TYPE_JSON, jsonFilter);
 
         return filterTypes;
     }
@@ -1465,27 +1497,27 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
 
         // JSON/JSONB types
         if (PostgresTypeOperator.isJsonType(type)) {
-            return "JSONFilter";
+            return FILTER_TYPE_JSON;
         }
 
         // Date/Time types (including enhanced ones)
         else if (PostgresTypeOperator.isDateTimeType(type)) {
-            return "DateTimeFilter";
+            return FILTER_TYPE_DATE_TIME;
         }
 
         // Integer types
         else if (PostgresTypeOperator.isIntegerType(type)) {
-            return "IntFilter";
+            return FILTER_TYPE_INT;
         }
 
         // Floating point types
         else if (PostgresTypeOperator.isFloatingPointType(type)) {
-            return "FloatFilter";
+            return FILTER_TYPE_FLOAT;
         }
 
         // Boolean types
         else if (PostgresTypeOperator.isBooleanType(type)) {
-            return "BooleanFilter";
+            return FILTER_TYPE_BOOLEAN;
         }
 
         // Default to string filter for text, binary, network, and other types
@@ -1508,9 +1540,9 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             .field(GraphQLInputObjectField.newInputObjectField()
                 .name("in").type(new GraphQLList(enumType)).description("In list").build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("notIn").type(new GraphQLList(enumType)).description("Not in list").build())
+                .name(FieldConstant.OPERATOR_NOT_IN).type(new GraphQLList(enumType)).description("Not in list").build())
             .field(GraphQLInputObjectField.newInputObjectField()
-                .name("isNull").type(GraphQLBoolean).description("Is null").build())
+                .name(FieldConstant.OPERATOR_IS_NULL).type(GraphQLBoolean).description(DESC_IS_NULL).build())
             .build();
     }
 
@@ -1520,7 +1552,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private GraphQLInputObjectType createFilterInputTypeForTable(String tableName, TableInfo tableInfo,
             Map<String, GraphQLInputObjectType> filterInputTypes, Map<String, GraphQLEnumType> customEnumTypes) {
         GraphQLInputObjectType.Builder filterBuilder = GraphQLInputObjectType.newInputObject()
-            .name(capitalize(tableName) + "Filter")
+            .name(capitalize(tableName) + SUFFIX_FILTER)
             .description("Filter input for " + tableName);
 
         // Add filter fields for each column
@@ -1530,7 +1562,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 // Strip schema prefix (e.g., "hana.order_status" -> "order_status") before mapping to filter name
                 String rawType = column.getType();
                 String unqualifiedType = rawType.contains(".") ? rawType.substring(rawType.lastIndexOf('.') + 1) : rawType;
-                filterTypeName = toGraphQLTypeName(unqualifiedType) + "Filter";
+                filterTypeName = toGraphQLTypeName(unqualifiedType) + SUFFIX_FILTER;
             } else {
                 filterTypeName = getFilterTypeNameForColumn(column.getType());
             }
@@ -1550,7 +1582,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         // Add OR field that accepts a list of the same filter type
         filterBuilder.field(GraphQLInputObjectField.newInputObjectField()
             .name("or")
-            .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(tableName) + "Filter")))
+            .type(new GraphQLList(GraphQLTypeReference.typeRef(capitalize(tableName) + SUFFIX_FILTER)))
             .description("OR conditions")
             .build());
 
@@ -1568,7 +1600,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
                 .description("Custom enum type: " + enumInfo.getName());
 
         for (String value : enumInfo.getValues()) {
-            String graphqlName = value.toUpperCase().replaceAll("[^_A-Za-z0-9]", "_");
+            String graphqlName = value.toUpperCase().replaceAll("\\W", "_");
             if (!graphqlName.isEmpty() && Character.isDigit(graphqlName.charAt(0))) {
                 graphqlName = "_" + graphqlName;
             }
@@ -1757,7 +1789,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             inputBuilder.field(GraphQLInputObjectField.newInputObjectField()
                     .name(field.getName())
                     .type(inputFieldType)
-                    .description("Input for " + field.getName())
+                    .description(DESC_PREFIX_INPUT_FOR + field.getName())
                     .build());
         }
 
@@ -1820,7 +1852,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
      * Replaces spaces, hyphens, and other invalid characters with underscores.
      */
     private String toGraphQLFieldName(String columnName) {
-        String sanitized = columnName.replaceAll("[^_A-Za-z0-9]", "_");
+        String sanitized = columnName.replaceAll("\\W", "_");
         if (!sanitized.isEmpty() && Character.isDigit(sanitized.charAt(0))) {
             sanitized = "_" + sanitized;
         }
@@ -1861,7 +1893,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
         for (Map.Entry<String, GraphQLEnumType> enumEntry : customEnumTypes.entrySet()) {
             String enumName = enumEntry.getKey();
             GraphQLEnumType enumType = enumEntry.getValue();
-            String filterTypeName = toGraphQLTypeName(enumName) + "Filter";
+            String filterTypeName = toGraphQLTypeName(enumName) + SUFFIX_FILTER;
             if (!allFilterTypes.containsKey(filterTypeName)) {
                 GraphQLInputObjectType enumFilter = buildEnumFilterType(filterTypeName, enumType);
                 allFilterTypes.put(filterTypeName, enumFilter);
@@ -1913,7 +1945,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
     private List<GraphQLObjectType> createAggregateTypes(String tableName, TableInfo tableInfo) {
         List<GraphQLObjectType> types = new ArrayList<>();
         GraphQLObjectType.Builder aggregateBuilder = GraphQLObjectType.newObject()
-                .name(capitalize(tableName) + "Aggregate")
+                .name(capitalize(tableName) + SUFFIX_AGGREGATE)
                 .description("Aggregate functions for " + tableName);
 
         // Always add count
@@ -2041,7 +2073,7 @@ public class PostgresGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGe
             GraphQLFieldDefinition.Builder fieldBuilder = GraphQLFieldDefinition.newFieldDefinition()
                     .name(toGraphQLFieldName(column.getName()))
                     .type(column.isNullable() ? fieldType : new GraphQLNonNull(fieldType))
-                    .description(columnDescription("Column ", column.getName()));
+                    .description(columnDescription(DESC_PREFIX_COLUMN, column.getName()));
 
             typeBuilder.field(fieldBuilder.build());
         }

@@ -40,6 +40,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @ExcalibaseService(serviceName = SupportedDatabaseConstant.MYSQL)
 public class MysqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaReflector {
 
+    private static final String TABLE_NAME_COL = "TABLE_NAME";
+    private static final String COLUMN_NAME_COL = "COLUMN_NAME";
+
     private final JdbcTemplate jdbcTemplate;
     private final String schema;
 
@@ -72,7 +75,7 @@ public class MysqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaRef
                 MysqlSqlConstant.GET_TABLE_NAMES, schemaName);
 
         for (Map<String, Object> row : tableRows) {
-            String name = (String) row.get("TABLE_NAME");
+            String name = (String) row.get(TABLE_NAME_COL);
             String tableType = (String) row.get("TABLE_TYPE");
             TableInfo info = new TableInfo();
             info.setName(name);
@@ -88,12 +91,12 @@ public class MysqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaRef
         List<Map<String, Object>> columnRows = jdbcTemplate.queryForList(
                 MysqlSqlConstant.GET_COLUMNS, schemaName);
         for (Map<String, Object> row : columnRows) {
-            String tableName = (String) row.get("TABLE_NAME");
+            String tableName = (String) row.get(TABLE_NAME_COL);
             TableInfo tableInfo = tables.get(tableName);
             if (tableInfo == null) continue;
 
             ColumnInfo col = new ColumnInfo();
-            col.setName((String) row.get("COLUMN_NAME"));
+            col.setName((String) row.get(COLUMN_NAME_COL));
             col.setType(((String) row.get("DATA_TYPE")).toLowerCase());
             col.setNullable("YES".equalsIgnoreCase((String) row.get("IS_NULLABLE")));
             tableInfo.getColumns().add(col);
@@ -104,8 +107,8 @@ public class MysqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaRef
         List<Map<String, Object>> pkRows = jdbcTemplate.queryForList(
                 MysqlSqlConstant.GET_PRIMARY_KEYS, schemaName);
         for (Map<String, Object> row : pkRows) {
-            String tableName = (String) row.get("TABLE_NAME");
-            String colName = (String) row.get("COLUMN_NAME");
+            String tableName = (String) row.get(TABLE_NAME_COL);
+            String colName = (String) row.get(COLUMN_NAME_COL);
             pksByTable.computeIfAbsent(tableName, k -> new HashSet<>()).add(colName);
         }
         for (Map.Entry<String, Set<String>> e : pksByTable.entrySet()) {
@@ -121,7 +124,7 @@ public class MysqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaRef
                 MysqlSqlConstant.GET_FOREIGN_KEYS, schemaName);
         java.util.LinkedHashMap<String, ForeignKeyInfo> byConstraint = new java.util.LinkedHashMap<>();
         for (Map<String, Object> row : fkRows) {
-            String tableName = (String) row.get("TABLE_NAME");
+            String tableName = (String) row.get(TABLE_NAME_COL);
             String constraintName = (String) row.get("CONSTRAINT_NAME");
             String key = tableName + "|" + constraintName;
 
@@ -130,7 +133,7 @@ public class MysqlDatabaseSchemaReflectorImplement implements IDatabaseSchemaRef
                 f.setReferencedTable((String) row.get("REFERENCED_TABLE_NAME"));
                 return f;
             });
-            fk.getColumnNames().add((String) row.get("COLUMN_NAME"));
+            fk.getColumnNames().add((String) row.get(COLUMN_NAME_COL));
             fk.getReferencedColumns().add((String) row.get("REFERENCED_COLUMN_NAME"));
         }
         for (Map.Entry<String, ForeignKeyInfo> entry : byConstraint.entrySet()) {

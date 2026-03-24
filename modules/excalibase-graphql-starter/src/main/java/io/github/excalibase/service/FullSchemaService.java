@@ -24,6 +24,7 @@ import java.util.Map;
 @Service
 public class FullSchemaService {
     private static final Logger log = LoggerFactory.getLogger(FullSchemaService.class);
+    private static final String FULL_SCHEMA_KEY = "full_schema";
 
     private final ServiceLookup serviceLookup;
     private final AppConfig appConfig;
@@ -51,7 +52,7 @@ public class FullSchemaService {
      * Cost: ~300ms once per TTL duration vs ~300ms per role per request.
      */
     public Map<String, TableInfo> getFullSchema() {
-        return schemaCache.computeIfAbsent("full_schema", key -> {
+        return schemaCache.computeIfAbsent(FULL_SCHEMA_KEY, key -> {
             log.info("Reflecting full database schema...");
             try {
                 Map<String, TableInfo> fullSchema = getReflector().reflectSchema();
@@ -70,7 +71,7 @@ public class FullSchemaService {
      */
     public Map<String, TableInfo> refreshFullSchema() {
         log.info("Force refreshing full database schema...");
-        schemaCache.remove("full_schema");
+        schemaCache.remove(FULL_SCHEMA_KEY);
         return getFullSchema();
     }
 
@@ -78,7 +79,7 @@ public class FullSchemaService {
      * Check if schema is cached.
      */
     public boolean isSchemaLoaded() {
-        return schemaCache.get("full_schema") != null;
+        return schemaCache.get(FULL_SCHEMA_KEY) != null;
     }
 
     /**

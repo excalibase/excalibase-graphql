@@ -34,6 +34,9 @@ import java.util.stream.Collectors;
 
 public class PostgresSqlBuilder {
     private static final Logger log = LoggerFactory.getLogger(PostgresSqlBuilder.class);
+    private static final String ARG_WHERE = "where";
+    private static final String LIKE_PARAM = " LIKE :";
+    private static final String ILIKE_PARAM = " ILIKE :";
     
     private final PostgresTypeConverter typeConverter;
 
@@ -129,9 +132,9 @@ public class PostgresSqlBuilder {
         List<String> conditions = new ArrayList<>();
         
         // Handle the "where" argument (new filter format)
-        if (arguments.containsKey("where")) {
-            Map<String, Object> whereConditions = (Map<String, Object>) arguments.get("where");
-            conditions.addAll(buildFilterConditions(whereConditions, paramSource, columnTypes, "where"));
+        if (arguments.containsKey(ARG_WHERE)) {
+            Map<String, Object> whereConditions = (Map<String, Object>) arguments.get(ARG_WHERE);
+            conditions.addAll(buildFilterConditions(whereConditions, paramSource, columnTypes, ARG_WHERE));
         }
         
         // Handle the "or" argument (array of filter objects)
@@ -174,7 +177,7 @@ public class PostgresSqlBuilder {
             Object value = entry.getValue();
 
             // Skip special arguments
-            if (key.equals("where") || key.equals("or") || key.equals(FieldConstant.ORDER_BY) || 
+            if (key.equals(ARG_WHERE) || key.equals("or") || key.equals(FieldConstant.ORDER_BY) ||
                 key.equals(FieldConstant.LIMIT) || key.equals(FieldConstant.OFFSET) || key.equals(FieldConstant.FIRST) || 
                 key.equals(FieldConstant.LAST) || key.equals(FieldConstant.BEFORE) || key.equals(FieldConstant.AFTER)) {
                 continue;
@@ -393,10 +396,10 @@ public class PostgresSqlBuilder {
                 return buildComparisonCondition(quotedColumnName, paramName, value, columnType, isInterval, "<=", paramSource);
             case "like":
                 paramSource.addValue(paramName, "%" + value + "%");
-                return quotedColumnName + " LIKE :" + paramName;
+                return quotedColumnName + LIKE_PARAM +paramName;
             case "ilike":
                 paramSource.addValue(paramName, "%" + value + "%");
-                return quotedColumnName + " ILIKE :" + paramName;
+                return quotedColumnName + ILIKE_PARAM +paramName;
             case "contains":
                 return buildContainsCondition(quotedColumnName, paramName, value, columnType, paramSource);
             case "startswith":
@@ -488,16 +491,16 @@ public class PostgresSqlBuilder {
                                         MapSqlParameterSource paramSource) {
         if (columnType != null && PostgresTypeOperator.isJsonType(columnType)) {
             paramSource.addValue(paramName, "%" + value + "%");
-            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " LIKE :" + paramName;
+            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + LIKE_PARAM +paramName;
         } else if (columnType != null && PostgresTypeOperator.isXmlType(columnType)) {
             paramSource.addValue(paramName, "%" + value + "%");
-            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " LIKE :" + paramName;
+            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + LIKE_PARAM +paramName;
         } else if (columnType != null && PostgresTypeOperator.isNetworkType(columnType)) {
             paramSource.addValue(paramName, "%" + value + "%");
-            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + paramName;
+            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + ILIKE_PARAM +paramName;
         } else {
             paramSource.addValue(paramName, "%" + value + "%");
-            return quotedColumnName + " LIKE :" + paramName;
+            return quotedColumnName + LIKE_PARAM +paramName;
         }
     }
 
@@ -505,10 +508,10 @@ public class PostgresSqlBuilder {
                                           MapSqlParameterSource paramSource) {
         if (columnType != null && PostgresTypeOperator.isNetworkType(columnType)) {
             paramSource.addValue(paramName, value + "%");
-            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + paramName;
+            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + ILIKE_PARAM +paramName;
         } else {
             paramSource.addValue(paramName, value + "%");
-            return quotedColumnName + " LIKE :" + paramName;
+            return quotedColumnName + LIKE_PARAM +paramName;
         }
     }
 
@@ -516,10 +519,10 @@ public class PostgresSqlBuilder {
                                         MapSqlParameterSource paramSource) {
         if (columnType != null && PostgresTypeOperator.isNetworkType(columnType)) {
             paramSource.addValue(paramName, "%" + value);
-            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + paramName;
+            return quotedColumnName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + ILIKE_PARAM +paramName;
         } else {
             paramSource.addValue(paramName, "%" + value);
-            return quotedColumnName + " LIKE :" + paramName;
+            return quotedColumnName + LIKE_PARAM +paramName;
         }
     }
 
@@ -609,16 +612,16 @@ public class PostgresSqlBuilder {
                                               MapSqlParameterSource paramSource) {
         if (PostgresTypeOperator.isJsonType(fieldColumnType)) {
             paramSource.addValue(key, "%" + value + "%");
-            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " LIKE :" + key;
+            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + LIKE_PARAM +key;
         } else if (PostgresTypeOperator.isXmlType(fieldColumnType)) {
             paramSource.addValue(key, "%" + value + "%");
-            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " LIKE :" + key;
+            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + LIKE_PARAM +key;
         } else if (PostgresTypeOperator.isNetworkType(fieldColumnType)) {
             paramSource.addValue(key, "%" + value + "%");
-            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + key;
+            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + ILIKE_PARAM +key;
         } else {
             paramSource.addValue(key, "%" + value + "%");
-            return quotedFieldName + " LIKE :" + key;
+            return quotedFieldName + LIKE_PARAM +key;
         }
     }
 
@@ -626,10 +629,10 @@ public class PostgresSqlBuilder {
                                                 MapSqlParameterSource paramSource) {
         if (PostgresTypeOperator.isNetworkType(fieldColumnType) || PostgresTypeOperator.isXmlType(fieldColumnType)) {
             paramSource.addValue(key, value + "%");
-            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + key;
+            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + ILIKE_PARAM +key;
         } else {
             paramSource.addValue(key, value + "%");
-            return quotedFieldName + " LIKE :" + key;
+            return quotedFieldName + LIKE_PARAM +key;
         }
     }
 
@@ -637,10 +640,10 @@ public class PostgresSqlBuilder {
                                               MapSqlParameterSource paramSource) {
         if (PostgresTypeOperator.isNetworkType(fieldColumnType) || PostgresTypeOperator.isXmlType(fieldColumnType)) {
             paramSource.addValue(key, "%" + value);
-            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + " ILIKE :" + key;
+            return quotedFieldName + PostgresSqlSyntaxConstant.CAST_TO_TEXT + ILIKE_PARAM +key;
         } else {
             paramSource.addValue(key, "%" + value);
-            return quotedFieldName + " LIKE :" + key;
+            return quotedFieldName + LIKE_PARAM +key;
         }
     }
 

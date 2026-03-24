@@ -15,7 +15,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Extracts user ID and claims from a JWT Bearer token — Supabase style.
+ * Extracts user ID and claims from a JWT Bearer token.
  *
  * Config:
  *   app.security.user-id-extractor-type: jwt

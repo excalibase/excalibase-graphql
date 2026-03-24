@@ -40,6 +40,7 @@ import java.util.Map;
 @ExcalibaseService(serviceName = SupportedDatabaseConstant.MYSQL)
 public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
     private static final Logger log = LoggerFactory.getLogger(MysqlDatabaseMutatorImplement.class);
+    private static final String EQUALS_PARAM = "` = ?";
 
     private final JdbcTemplate jdbcTemplate;
     private final ServiceLookup serviceLookup;
@@ -99,13 +100,13 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
             List<String> setCols = new ArrayList<>();
             List<Object> vals = new ArrayList<>();
             for (Map.Entry<String, Object> e : input.entrySet()) {
-                setCols.add("`" + e.getKey() + "` = ?");
+                setCols.add("`" + e.getKey() + EQUALS_PARAM);
                 vals.add(e.getValue());
             }
             vals.add(idArg);
 
             String sql = "UPDATE `" + tableName + "` SET " + String.join(", ", setCols)
-                    + " WHERE `" + pkColumn + "` = ?";
+                    + " WHERE `" + pkColumn + EQUALS_PARAM;
 
             int updated = jdbcTemplate.update(sql, vals.toArray());
             if (updated == 0) {
@@ -130,7 +131,7 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
                 throw new NotFoundException("Record not found in " + tableName + " with id=" + id);
             }
 
-            jdbcTemplate.update("DELETE FROM `" + tableName + "` WHERE `" + pkColumn + "` = ?", id);
+            jdbcTemplate.update("DELETE FROM `" + tableName + "` WHERE `" + pkColumn + EQUALS_PARAM, id);
             return existing;
         };
     }
@@ -205,7 +206,7 @@ public class MysqlDatabaseMutatorImplement implements IDatabaseMutator {
 
     private Map<String, Object> fetchById(String tableName, String pkColumn, long id) {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(
-                "SELECT * FROM `" + tableName + "` WHERE `" + pkColumn + "` = ?", id);
+                "SELECT * FROM `" + tableName + "` WHERE `" + pkColumn + EQUALS_PARAM, id);
         return rows.isEmpty() ? null : rows.getFirst();
     }
 

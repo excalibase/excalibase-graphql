@@ -5,7 +5,7 @@ import java.util.Map;
 /**
  * Interface for setting user context in database session for RLS (Row Level Security) policies.
  *
- * This enables dynamic RLS policies like Supabase:
+ * This enables dynamic RLS policies:
  * CREATE POLICY user_policy ON orders
  * FOR SELECT TO PUBLIC
  * USING (user_id = current_setting('request.user_id'));

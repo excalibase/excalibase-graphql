@@ -545,8 +545,7 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                 if (useCursorPagination && !orderByFields.isEmpty()) {
                     List<String> cursorParts = new ArrayList<>();
                     for (String orderField : orderByFields.keySet()) {
-                        Object fieldValue = node.get(orderField);
-                        String valueStr = fieldValue != null ? fieldValue.toString() : "";
+                        String valueStr = Objects.toString(node.get(orderField), "");
                         cursorParts.add(orderField + ":" + valueStr);
                     }
 
@@ -910,6 +909,9 @@ public class PostgresDatabaseDataFetcherImplement implements IDatabaseDataFetche
                     case "min":
                     case "max":
                         result.put(aggregateFunction, computeFieldAggregates(tableName, tableInfo, field, aggregateFunction, whereClause.toString(), paramSource));
+                        break;
+
+                    default:
                         break;
                 }
             }
