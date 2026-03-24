@@ -51,6 +51,10 @@ import java.util.Map;
 )
 public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscription {
     private static final Logger log = LoggerFactory.getLogger(PostgresDatabaseSubscriptionImplement.class);
+    private static final String FIELD_OPERATION = "operation";
+    private static final String FIELD_TABLE = "table";
+    private static final String FIELD_TIMESTAMP = "timestamp";
+    private static final String FIELD_ERROR = "error";
     
     private final CDCService cdcService;
     private final ObjectMapper objectMapper;
@@ -74,12 +78,12 @@ public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscript
             Flux<Map<String, Object>> heartbeatStream = Flux.interval(Duration.ofSeconds(30))
                     .map(tick -> {
                         Map<String, Object> heartbeatEvent = new HashMap<>();
-                        heartbeatEvent.put("operation", "HEARTBEAT");
-                        heartbeatEvent.put("table", tableName);
+                        heartbeatEvent.put(FIELD_OPERATION, "HEARTBEAT");
+                        heartbeatEvent.put(FIELD_TABLE, tableName);
                         heartbeatEvent.put("schema", "public");
-                        heartbeatEvent.put("timestamp", Instant.now().toString());
+                        heartbeatEvent.put(FIELD_TIMESTAMP, Instant.now().toString());
                         heartbeatEvent.put("lsn", null);
-                        heartbeatEvent.put("error", null);
+                        heartbeatEvent.put(FIELD_ERROR, null);
                         heartbeatEvent.put("data", null);
                         return heartbeatEvent;
                     });
@@ -118,10 +122,10 @@ public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscript
         Map<String, Object> graphqlEvent = new HashMap<>();
         
         // Basic event metadata matching GraphQL schema
-        graphqlEvent.put("table", cdcEvent.getTable());
+        graphqlEvent.put(FIELD_TABLE, cdcEvent.getTable());
         graphqlEvent.put("schema", cdcEvent.getSchema());
-        graphqlEvent.put("operation", cdcEvent.getType().name());
-        graphqlEvent.put("timestamp", Instant.ofEpochMilli(cdcEvent.getTimestamp()).toString());
+        graphqlEvent.put(FIELD_OPERATION, cdcEvent.getType().name());
+        graphqlEvent.put(FIELD_TIMESTAMP, Instant.ofEpochMilli(cdcEvent.getTimestamp()).toString());
         graphqlEvent.put("lsn", cdcEvent.getLsn() != null ? cdcEvent.getLsn().asString() : null);
         
         // Parse and structure data payload according to GraphQL schema
@@ -129,7 +133,7 @@ public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscript
         graphqlEvent.put("data", dataPayload);
         
         // Error field (null if no error)
-        graphqlEvent.put("error", null);
+        graphqlEvent.put(FIELD_ERROR, null);
         
         return graphqlEvent;
     }
@@ -230,10 +234,10 @@ public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscript
      */
     private Map<String, Object>  createErrorEvent(String tableName, String errorMessage) {
         Map<String, Object> errorEvent = new HashMap<>();
-        errorEvent.put("table", tableName);
-        errorEvent.put("operation", "ERROR");
-        errorEvent.put("timestamp", Instant.now().toString());
-        errorEvent.put("error", errorMessage);
+        errorEvent.put(FIELD_TABLE, tableName);
+        errorEvent.put(FIELD_OPERATION, "ERROR");
+        errorEvent.put(FIELD_TIMESTAMP, Instant.now().toString());
+        errorEvent.put(FIELD_ERROR, errorMessage);
         errorEvent.put("data", new HashMap<>());
         return errorEvent;
     }

@@ -169,10 +169,10 @@ class JwtUserIdExtractorTest {
     }
 
     @Test
-    void shouldHandleSupabaseStyleJwt() {
-        // Typical Supabase JWT payload
+    void shouldHandleTypicalJwt() {
+        // Typical JWT payload with common claims
         mockBearer(buildJwt("""
-                {"iss":"https://project.supabase.co/auth/v1","sub":"abc-uuid-123",
+                {"iss":"https://auth.example.com/v1","sub":"abc-uuid-123",
                  "aud":"authenticated","role":"authenticated",
                  "email":"alice@example.com","app_metadata":{"provider":"email"},
                  "iat":1700000000,"exp":1700003600}

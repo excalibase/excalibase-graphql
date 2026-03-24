@@ -12,7 +12,7 @@ import java.util.Map;
 
 /**
  * PostgreSQL implementation for setting user context via session variables.
- * Enables Supabase-style RLS policies using current_setting('request.user_id').
+ * Enables RLS policies using current_setting('request.user_id').
  */
 @Service
 @ExcalibaseService(serviceName = SupportedDatabaseConstant.POSTGRES)

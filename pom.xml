@@ -246,6 +246,34 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.13</version>
+                <configuration>
+                    <excludes>
+                        <!-- Constants / enums -->
+                        <exclude>**/constant/**</exclude>
+                        <!-- Data models / POJOs -->
+                        <exclude>**/model/**</exclude>
+                        <!-- Custom exception classes -->
+                        <exclude>**/exception/**</exclude>
+                        <!-- Marker annotations -->
+                        <exclude>**/annotation/**</exclude>
+                        <!-- Spring Boot main class -->
+                        <exclude>**/ExcalibaseGraphqlApplication*</exclude>
+                        <!-- Spring / framework configuration -->
+                        <exclude>**/config/**</exclude>
+                        <!-- GraalVM native-image hints -->
+                        <exclude>**/ExcalibaseRuntimeHints*</exclude>
+                        <!-- Starter auto-configuration -->
+                        <exclude>**/ExcalibaseGraphqlStarterConfig*</exclude>
+                        <!-- Custom GraphQL scalars -->
+                        <exclude>**/scalar/**</exclude>
+                        <!-- CLS (Column-Level Security) — to be removed -->
+                        <exclude>**/SchemaFilterService*</exclude>
+                        <exclude>**/RolePrivilegeService*</exclude>
+                        <exclude>**/IRolePrivilegeService*</exclude>
+                        <!-- CDC — handled by excalibase-watcher -->
+                        <exclude>**/PostgresCDCListener*</exclude>
+                    </excludes>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>

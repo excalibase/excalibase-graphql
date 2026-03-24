@@ -245,7 +245,8 @@ class PostgresSqlBuilderTest {
         List<String> cols = helper.getAvailableColumns("staff_list");
 
         // Must return alias names ("zip_code"), not raw DB names ("zip code")
-        assertThat(cols).containsExactly("id", "zip_code");
-        assertThat(cols).doesNotContain("zip code");
+        assertThat(cols)
+                .containsExactly("id", "zip_code")
+                .doesNotContain("zip code");
     }
 }

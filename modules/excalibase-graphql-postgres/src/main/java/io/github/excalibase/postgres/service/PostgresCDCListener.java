@@ -26,6 +26,7 @@ import java.util.function.Consumer;
 public class PostgresCDCListener {
 
     private static final Logger logger = LoggerFactory.getLogger(PostgresCDCListener.class);
+    private static final String UNKNOWN_RELATION_ID = "Unknown relation ID: {}";
 
     private final String jdbcUrl;
     private final String username;
@@ -243,7 +244,7 @@ public class PostgresCDCListener {
         RelationInfo relation = relationMap.get(relationId);
 
         if (relation == null) {
-            logger.warn("Unknown relation ID: {}", relationId);
+            logger.warn(UNKNOWN_RELATION_ID, relationId);
             return null;
         }
 
@@ -262,7 +263,7 @@ public class PostgresCDCListener {
         RelationInfo relation = relationMap.get(relationId);
 
         if (relation == null) {
-            logger.warn("Unknown relation ID: {}", relationId);
+            logger.warn(UNKNOWN_RELATION_ID, relationId);
             return null;
         }
 
@@ -300,7 +301,7 @@ public class PostgresCDCListener {
         RelationInfo relation = relationMap.get(relationId);
 
         if (relation == null) {
-            logger.warn("Unknown relation ID: {}", relationId);
+            logger.warn(UNKNOWN_RELATION_ID, relationId);
             return null;
         }
 

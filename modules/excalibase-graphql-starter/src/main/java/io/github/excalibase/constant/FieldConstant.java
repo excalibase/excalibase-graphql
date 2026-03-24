@@ -130,6 +130,14 @@ public class FieldConstant {
     /** Operator for checking if value is not in a list */
     public static final String OPERATOR_NOT_IN = "notIn";
 
+    // GraphQL argument names (shared across database modules)
+
+    /** Argument name for WHERE filter input */
+    public static final String ARG_WHERE = "where";
+
+    /** Argument name for mutation input */
+    public static final String ARG_INPUT = "input";
+
     // Context keys
     
     /** Context key for storing batch loading context information */

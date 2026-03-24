@@ -3,6 +3,8 @@ package io.github.excalibase.mysql.generator;
 import graphql.Scalars;
 import graphql.schema.*;
 import io.github.excalibase.annotation.ExcalibaseService;
+import io.github.excalibase.constant.FieldConstant;
+import io.github.excalibase.constant.FieldConstant;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
 import io.github.excalibase.model.ColumnInfo;
 import io.github.excalibase.model.CustomCompositeTypeInfo;
@@ -36,6 +38,7 @@ import static graphql.Scalars.*;
 @ExcalibaseService(serviceName = SupportedDatabaseConstant.MYSQL)
 public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGenerator {
     private static final Logger log = LoggerFactory.getLogger(MysqlGraphQLSchemaGeneratorImplement.class);
+
 
     // Sort-direction enum shared across all table filter inputs
     private static final GraphQLEnumType SORT_DIRECTION_ENUM = GraphQLEnumType.newEnum()
@@ -226,10 +229,10 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
             .field(f -> f.name("startsWith").type(GraphQLString))
             .field(f -> f.name("endsWith").type(GraphQLString))
             .field(f -> f.name("like").type(GraphQLString))
-            .field(f -> f.name("isNull").type(GraphQLBoolean))
-            .field(f -> f.name("isNotNull").type(GraphQLBoolean))
+            .field(f -> f.name(FieldConstant.OPERATOR_IS_NULL).type(GraphQLBoolean))
+            .field(f -> f.name(FieldConstant.OPERATOR_IS_NOT_NULL).type(GraphQLBoolean))
             .field(f -> f.name("in").type(new GraphQLList(GraphQLString)))
-            .field(f -> f.name("notIn").type(new GraphQLList(GraphQLString)))
+            .field(f -> f.name(FieldConstant.OPERATOR_NOT_IN).type(new GraphQLList(GraphQLString)))
             .build();
 
     private static final GraphQLInputObjectType INT_FILTER_INPUT = GraphQLInputObjectType.newInputObject()
@@ -240,10 +243,10 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
             .field(f -> f.name("gte").type(GraphQLInt))
             .field(f -> f.name("lt").type(GraphQLInt))
             .field(f -> f.name("lte").type(GraphQLInt))
-            .field(f -> f.name("isNull").type(GraphQLBoolean))
-            .field(f -> f.name("isNotNull").type(GraphQLBoolean))
+            .field(f -> f.name(FieldConstant.OPERATOR_IS_NULL).type(GraphQLBoolean))
+            .field(f -> f.name(FieldConstant.OPERATOR_IS_NOT_NULL).type(GraphQLBoolean))
             .field(f -> f.name("in").type(new GraphQLList(GraphQLInt)))
-            .field(f -> f.name("notIn").type(new GraphQLList(GraphQLInt)))
+            .field(f -> f.name(FieldConstant.OPERATOR_NOT_IN).type(new GraphQLList(GraphQLInt)))
             .build();
 
     private static final GraphQLInputObjectType FLOAT_FILTER_INPUT = GraphQLInputObjectType.newInputObject()
@@ -254,10 +257,10 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
             .field(f -> f.name("gte").type(GraphQLFloat))
             .field(f -> f.name("lt").type(GraphQLFloat))
             .field(f -> f.name("lte").type(GraphQLFloat))
-            .field(f -> f.name("isNull").type(GraphQLBoolean))
-            .field(f -> f.name("isNotNull").type(GraphQLBoolean))
+            .field(f -> f.name(FieldConstant.OPERATOR_IS_NULL).type(GraphQLBoolean))
+            .field(f -> f.name(FieldConstant.OPERATOR_IS_NOT_NULL).type(GraphQLBoolean))
             .field(f -> f.name("in").type(new GraphQLList(GraphQLFloat)))
-            .field(f -> f.name("notIn").type(new GraphQLList(GraphQLFloat)))
+            .field(f -> f.name(FieldConstant.OPERATOR_NOT_IN).type(new GraphQLList(GraphQLFloat)))
             .build();
 
     private GraphQLInputObjectType buildWhereInput(String tableName, TableInfo tableInfo) {
@@ -312,7 +315,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                 .argument(GraphQLArgument.newArgument().name("limit").type(GraphQLInt).build())
                 .argument(GraphQLArgument.newArgument().name("offset").type(GraphQLInt).build())
                 .argument(GraphQLArgument.newArgument().name("orderBy").type(orderByInput).build())
-                .argument(GraphQLArgument.newArgument().name("where").type(whereInput).build())
+                .argument(GraphQLArgument.newArgument().name(FieldConstant.ARG_WHERE).type(whereInput).build())
                 .build();
     }
 
@@ -327,7 +330,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                 .argument(GraphQLArgument.newArgument().name("after").type(GraphQLString).build())
                 .argument(GraphQLArgument.newArgument().name("last").type(GraphQLInt).build())
                 .argument(GraphQLArgument.newArgument().name("before").type(GraphQLString).build())
-                .argument(GraphQLArgument.newArgument().name("where").type(whereInput).build())
+                .argument(GraphQLArgument.newArgument().name(FieldConstant.ARG_WHERE).type(whereInput).build())
                 .argument(GraphQLArgument.newArgument().name("orderBy").type(orderByInput).build())
                 .build();
     }
@@ -345,7 +348,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
         return GraphQLFieldDefinition.newFieldDefinition()
                 .name(toLowerCamelCase(tableName) + "Aggregate")
                 .type(aggregateType)
-                .argument(GraphQLArgument.newArgument().name("where").type(GraphQLString).build())
+                .argument(GraphQLArgument.newArgument().name(FieldConstant.ARG_WHERE).type(GraphQLString).build())
                 .build();
     }
 
@@ -385,7 +388,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
         return GraphQLFieldDefinition.newFieldDefinition()
                 .name("create" + capitalize(tableName))
                 .type(tableType)
-                .argument(GraphQLArgument.newArgument().name("input").type(createInput).build())
+                .argument(GraphQLArgument.newArgument().name(FieldConstant.ARG_INPUT).type(createInput).build())
                 .build();
     }
 
@@ -406,7 +409,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
         return GraphQLFieldDefinition.newFieldDefinition()
                 .name("create" + capitalize(tableName) + "WithRelations")
                 .type(tableType)
-                .argument(GraphQLArgument.newArgument().name("input").type(createInput).build())
+                .argument(GraphQLArgument.newArgument().name(FieldConstant.ARG_INPUT).type(createInput).build())
                 .build();
     }
 
@@ -417,7 +420,7 @@ public class MysqlGraphQLSchemaGeneratorImplement implements IGraphQLSchemaGener
                 .name("update" + capitalize(tableName))
                 .type(tableType)
                 .argument(GraphQLArgument.newArgument().name("id").type(GraphQLInt).build())
-                .argument(GraphQLArgument.newArgument().name("input").type(updateInput).build())
+                .argument(GraphQLArgument.newArgument().name(FieldConstant.ARG_INPUT).type(updateInput).build())
                 .build();
     }
 

@@ -21,7 +21,7 @@ import java.util.Map;
  *
  * Supports two security models:
  *
- * 1. User Context RLS (Row-Level Security) - Supabase style:
+ * 1. User Context RLS (Row-Level Security):
  *    - UserContextFilter extracts X-User-Id header
  *    - Sets PostgreSQL session variable: SET LOCAL request.user_id = 'user-123'
  *    - RLS policies reference: USING (user_id = current_setting('request.user_id'))

@@ -58,6 +58,7 @@ import java.util.Map;
 @Configuration
 public class GraphqlConfig {
     private static final Logger log = LoggerFactory.getLogger(GraphqlConfig.class);
+    private static final String DEFAULT_ROLE = "default";
     private final AppConfig appConfig;
     private final ServiceLookup serviceLookup;
     private final FullSchemaService fullSchemaService;
@@ -97,10 +98,10 @@ public class GraphqlConfig {
      * @return GraphQL instance with role-aware filtered schema
      */
     public GraphQL getGraphQLForRole(String databaseRole) {
-        String cacheKey = databaseRole != null ? databaseRole : "default";
+        String cacheKey = databaseRole != null ? databaseRole : DEFAULT_ROLE;
         
         return roleBasedGraphQLCache.computeIfAbsent(cacheKey, key -> {
-            log.debug("Generating GraphQL schema for role: {}", databaseRole != null ? databaseRole : "default");
+            log.debug("Generating GraphQL schema for role: {}", databaseRole != null ? databaseRole : DEFAULT_ROLE);
             return buildGraphQLForRole(databaseRole);
         });
     }
@@ -257,31 +258,31 @@ public class GraphqlConfig {
             if (!tableInfo.isView()) {
                 // Create mutation
                 codeRegistry.dataFetcher(
-                        FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName),
+                        FieldCoordinates.coordinates(GraphqlConstant.MUTATION, "create" + capitalizedTableName),
                         mutationResolver.buildCreateMutationResolver(tableName)
                 );
 
                 // Update mutation
                 codeRegistry.dataFetcher(
-                        FieldCoordinates.coordinates("Mutation", "update" + capitalizedTableName),
+                        FieldCoordinates.coordinates(GraphqlConstant.MUTATION, "update" + capitalizedTableName),
                         mutationResolver.buildUpdateMutationResolver(tableName)
                 );
 
                 // Delete mutation
                 codeRegistry.dataFetcher(
-                        FieldCoordinates.coordinates("Mutation", "delete" + capitalizedTableName),
+                        FieldCoordinates.coordinates(GraphqlConstant.MUTATION, "delete" + capitalizedTableName),
                         mutationResolver.buildDeleteMutationResolver(tableName)
                 );
 
                 // Bulk create mutation (no 's' suffix — createMany already implies plurality)
                 codeRegistry.dataFetcher(
-                        FieldCoordinates.coordinates("Mutation", "createMany" + capitalizedTableName),
+                        FieldCoordinates.coordinates(GraphqlConstant.MUTATION, "createMany" + capitalizedTableName),
                         mutationResolver.buildBulkCreateMutationResolver(tableName)
                 );
 
                 // Create with relationships mutation
                 codeRegistry.dataFetcher(
-                        FieldCoordinates.coordinates("Mutation", "create" + capitalizedTableName + "WithRelations"),
+                        FieldCoordinates.coordinates(GraphqlConstant.MUTATION, "create" + capitalizedTableName + "WithRelations"),
                         mutationResolver.buildCreateWithRelationshipsMutationResolver(tableName)
                 );
             }
@@ -296,7 +297,7 @@ public class GraphqlConfig {
         // Wire stored procedure mutation resolvers
         for (StoredProcedureInfo proc : procedures) {
             codeRegistry.dataFetcher(
-                    FieldCoordinates.coordinates("Mutation", "call" + toUpperCamelCase(proc.getName())),
+                    FieldCoordinates.coordinates(GraphqlConstant.MUTATION, "call" + toUpperCamelCase(proc.getName())),
                     mutationResolver.buildProcedureMutationResolver(proc)
             );
         }
@@ -304,7 +305,7 @@ public class GraphqlConfig {
         schema = schema.transform(builder -> builder.codeRegistry(codeRegistry.build()));
         
         log.debug("Building GraphQL instance with security instrumentation for role: {}", 
-                databaseRole != null ? databaseRole : "default");
+                databaseRole != null ? databaseRole : DEFAULT_ROLE);
         
         return GraphQL.newGraphQL(schema)
                 .instrumentation(securityInstrumentation)
