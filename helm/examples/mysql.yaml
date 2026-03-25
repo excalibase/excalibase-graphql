@@ -8,8 +8,8 @@ database:
 
 app:
   allowedSchema: "mydb"
-  cdc:
-    enabled: false   # CDC is PostgreSQL-only
+  nats:
+    enabled: false   # Enable when excalibase-watcher is deployed
 
 ingress:
   enabled: true

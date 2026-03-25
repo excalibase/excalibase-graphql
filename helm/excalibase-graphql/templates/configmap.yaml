@@ -40,9 +40,8 @@ data:
   APP_SECURITY_USER_CONTEXT_ENABLED: {{ .Values.app.security.userContextEnabled | quote }}
   APP_SECURITY_USER_ID_HEADER: {{ .Values.app.security.userIdHeader | quote }}
 
-  # CDC (PostgreSQL only)
-  APP_CDC_ENABLED: {{ .Values.app.cdc.enabled | quote }}
-  APP_CDC_SLOT_NAME: {{ .Values.app.cdc.slotName | quote }}
-  APP_CDC_PUBLICATION_NAME: {{ .Values.app.cdc.publicationName | quote }}
-  APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: {{ .Values.app.cdc.createSlotIfNotExists | quote }}
-  APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: {{ .Values.app.cdc.createPublicationIfNotExists | quote }}
+  # NATS CDC subscription (events from excalibase-watcher)
+  APP_NATS_ENABLED: {{ .Values.app.nats.enabled | quote }}
+  APP_NATS_URL: {{ .Values.app.nats.url | quote }}
+  APP_NATS_STREAM_NAME: {{ .Values.app.nats.streamName | quote }}
+  APP_NATS_SUBJECT_PREFIX: {{ .Values.app.nats.subjectPrefix | quote }}

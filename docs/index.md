@@ -9,7 +9,7 @@
 - **Relationships** — foreign keys become GraphQL fields automatically
 - **Stored procedures** — call via GraphQL mutations
 - **Computed fields** — PostgreSQL functions exposed as GraphQL fields (PostgreSQL)
-- **Real-time subscriptions** — live table-change events via CDC (PostgreSQL)
+- **Real-time subscriptions** — live table-change events via [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS
 - **Row-Level Security** — per-request user context for RLS policies (PostgreSQL)
 
 ---
@@ -172,7 +172,9 @@ mutation {
 # Returns JSON string: {"p_status":"SUCCESS"}
 ```
 
-### Real-Time Subscriptions (PostgreSQL)
+### Real-Time Subscriptions
+
+Powered by [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) and NATS JetStream. Works with PostgreSQL and MySQL.
 
 ```graphql
 subscription {
@@ -182,6 +184,7 @@ subscription {
       customer_id
       first_name
       last_name
+      new { customer_id first_name last_name }
     }
   }
 }
@@ -238,9 +241,9 @@ docker pull excalibase/excalibase-graphql:native
 
 ## Test Coverage
 
-- **PostgreSQL e2e**: 85 tests
-- **MySQL e2e**: 69 tests
-- **Total**: 164 tests passing on both JVM and native builds
+- **PostgreSQL e2e**: 91 tests
+- **MySQL e2e**: 74 tests
+- **Total**: 204+ tests passing on both JVM and native builds
 
 ---
 

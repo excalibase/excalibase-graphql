@@ -4,6 +4,8 @@
 # Configuration
 COMPOSE_PROJECT = excalibase-app
 COMPOSE_FILE = docker-compose.yml
+OBSERVABILITY_FILE = docker-compose.observability.yml
+OBSERVABILITY_PROJECT = excalibase-obs
 APP_PORT = 10000
 DB_PORT = 5432
 API_URL = http://localhost:$(APP_PORT)/graphql
@@ -214,22 +216,28 @@ build-skip: ## Skip Maven build (for rapid iteration)
 
 # Service management
 .PHONY: up
-up: ## Start Docker services
+up: ## Start Docker services (app + observability)
 	@echo "$(BLUE)🚀 Starting services...$(NC)"
 	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d
-	@echo "$(GREEN)✓ Services started$(NC)"
+	@echo "$(GREEN)✓ App services started$(NC)"
+	@echo "$(BLUE)📊 Starting observability stack...$(NC)"
+	@docker compose -f $(OBSERVABILITY_FILE) -p $(OBSERVABILITY_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f $(OBSERVABILITY_FILE) -p $(OBSERVABILITY_PROJECT) up -d
+	@echo "$(GREEN)✓ Observability services started$(NC)"
 	@$(MAKE) --no-print-directory wait-ready
 
 .PHONY: down
-down: ## Stop Docker services
+down: ## Stop Docker services (app + observability)
 	@echo "$(BLUE)🛑 Stopping services...$(NC)"
+	@docker compose -f $(OBSERVABILITY_FILE) -p $(OBSERVABILITY_PROJECT) down > /dev/null 2>&1 || true
 	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Services stopped$(NC)"
 
 .PHONY: clean
-clean: ## Stop services and cleanup volumes
+clean: ## Stop services and cleanup volumes (app + observability)
 	@echo "$(BLUE)🧹 Cleaning up...$(NC)"
+	@docker compose -f $(OBSERVABILITY_FILE) -p $(OBSERVABILITY_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 	@echo "$(GREEN)✓ Cleanup completed$(NC)"
 

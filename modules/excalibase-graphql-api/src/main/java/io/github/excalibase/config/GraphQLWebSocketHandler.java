@@ -105,14 +105,22 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
             }
             ExecutionResult result = graphQL.execute(builder.build());
 
+            if (result.getErrors() != null && !result.getErrors().isEmpty()) {
+                log.error("Subscription execution errors for {}: {}", id, result.getErrors());
+            }
+
             @SuppressWarnings("unchecked")
             Publisher<ExecutionResult> publisher = (Publisher<ExecutionResult>) result.getData();
             if (publisher == null) {
-                // Send error
+                // Send error with details
+                String errorDetail = result.getErrors() != null && !result.getErrors().isEmpty()
+                        ? result.getErrors().toString()
+                        : "Subscription execution returned null publisher";
+                log.error("Subscription {} failed: {}", id, errorDetail);
                 sendMessage(session, JsonUtil.toJson(Map.of(
                     "type", ERROR,
                     "id", id,
-                    PAYLOAD, Map.of(MESSAGE, "Subscription execution failed")
+                    PAYLOAD, Map.of(MESSAGE, "Subscription execution failed: " + errorDetail)
                 )));
                 return;
             }

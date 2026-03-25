@@ -55,10 +55,10 @@ make help
 
 The scripts work seamlessly with the docker-compose setup:
 
-1. **`docker-compose.yml`** defines services (app + postgres)
+1. **`docker-compose.yml`** defines services (app + postgres + nats + excalibase-watcher + graphiql)
 2. **`initdb.sql`** initializes the database with sample data
 3. **`e2e-test.sh`** validates the complete API
-4. **`Makefile`** orchestrates the entire workflow
+4. **`Makefile`** orchestrates the entire workflow (including observability stack)
 
 ## Development Workflow
 

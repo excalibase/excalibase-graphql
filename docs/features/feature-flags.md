@@ -4,6 +4,25 @@ Excalibase GraphQL supports feature flags for flexible configuration and deploym
 
 ## Available Feature Flags
 
+### NATS CDC Subscription
+
+**Property:** `app.nats.enabled`
+**Type:** `boolean`
+**Default:** `false`
+
+Controls whether excalibase-graphql connects to NATS JetStream to receive CDC events from [excalibase-watcher](https://github.com/excalibase/excalibase-watcher). When enabled, real-time GraphQL subscriptions are powered by watcher events. When disabled, subscription resolvers still exist in the schema but will not emit data events (only heartbeats).
+
+```yaml
+app:
+  nats:
+    enabled: true                    # Enable NATS CDC subscription
+    url: nats://localhost:4222       # NATS server URL
+    stream-name: CDC                 # JetStream stream name
+    subject-prefix: cdc              # Subject prefix
+```
+
+**See:** [Real-Time Subscriptions Documentation](./subscriptions.md)
+
 ### Role-Based Security
 
 **Property:** `app.security.role-based-schema`  

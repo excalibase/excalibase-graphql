@@ -15,7 +15,7 @@ app:
   security:
     role-based-schema: false
     user-context-enabled: false
-  cdc:
+  nats:
     enabled: false
 
 graphql:

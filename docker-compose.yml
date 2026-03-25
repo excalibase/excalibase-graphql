@@ -71,12 +71,11 @@ services:
       APP_SECURITY_USER_ID_EXTRACTOR_TYPE: header
       APP_SECURITY_USER_ID_HEADER: X-User-Id
 
-      # CDC configuration for real-time subscriptions
-      APP_CDC_ENABLED: true
-      APP_CDC_SLOT_NAME: cdc_slot
-      APP_CDC_PUBLICATION_NAME: cdc_publication
-      APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
-      APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
+      # NATS CDC subscription (events from excalibase-watcher)
+      APP_NATS_ENABLED: true
+      APP_NATS_URL: nats://nats:4222
+      APP_NATS_STREAM_NAME: CDC
+      APP_NATS_SUBJECT_PREFIX: cdc
 
       # Observability — send all OTLP signals to the collector
       # Run with docker-compose.observability.yml to activate the full stack.
@@ -92,6 +91,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      nats:
+        condition: service_healthy
+      excalibase-watcher:
+        condition: service_started
     networks:
       - excalibase-network
     restart: unless-stopped
@@ -104,6 +107,49 @@ services:
         reservations:
           memory: 512M
           cpus: '0.25'
+
+  nats:
+    image: nats:2.10
+    container_name: excalibase-nats
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD", "/nats-server", "--help"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - excalibase-network
+    restart: unless-stopped
+
+  excalibase-watcher:
+    image: excalibase/excalibase-watcher
+    container_name: excalibase-watcher
+    environment:
+      # Postgres CDC
+      APP_CDC_POSTGRES_URL: jdbc:postgresql://postgres:5432/hana
+      APP_CDC_POSTGRES_USERNAME: hana001
+      APP_CDC_POSTGRES_PASSWORD: password123
+      APP_CDC_POSTGRES_ENABLED: true
+      APP_CDC_SLOT_NAME: cdc_slot
+      APP_CDC_PUBLICATION_NAME: cdc_publication
+      APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
+      APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
+      # NATS
+      APP_NATS_URL: nats://nats:4222
+      APP_NATS_STREAM_NAME: CDC
+      APP_NATS_SUBJECT_PREFIX: cdc
+      APP_NATS_ENABLED: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - excalibase-network
+    restart: unless-stopped
 
   graphiql:
     container_name: graphiql

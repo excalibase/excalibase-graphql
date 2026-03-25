@@ -1,6 +1,6 @@
 # Real-Time Subscriptions
 
-Excalibase GraphQL provides **real-time data updates** through GraphQL subscriptions powered by PostgreSQL Change Data Capture (CDC) and WebSocket connections.
+Excalibase GraphQL provides **real-time data updates** through GraphQL subscriptions powered by [excalibase-watcher](https://github.com/excalibase/excalibase-watcher), NATS JetStream, and WebSocket connections.
 
 ## Overview
 
@@ -8,46 +8,63 @@ Real-time subscriptions allow clients to receive instant notifications when data
 
 <div class="feature-grid">
 <div class="feature-card">
-<h3>⚡ Change Data Capture</h3>
-<p>Uses PostgreSQL logical replication to capture database changes in real-time without performance impact from polling.</p>
+<h3>Change Data Capture</h3>
+<p><a href="https://github.com/excalibase/excalibase-watcher">excalibase-watcher</a> captures database changes via logical replication (PostgreSQL) or binlog (MySQL) and publishes them to NATS JetStream.</p>
 </div>
 
 <div class="feature-card">
-<h3>📡 WebSocket Transport</h3>
+<h3>NATS JetStream</h3>
+<p>Durable, fan-out message streaming ensures every excalibase-graphql pod receives every CDC event — no duplicate replication slots.</p>
+</div>
+
+<div class="feature-card">
+<h3>WebSocket Transport</h3>
 <p>Standards-compliant <code>graphql-transport-ws</code> protocol for reliable, persistent connections.</p>
 </div>
 
 <div class="feature-card">
-<h3>💓 Connection Management</h3>
-<p>Automatic heartbeat, reconnection, and graceful error handling for production reliability.</p>
-</div>
-
-<div class="feature-card">
-<h3>🎯 Table-Specific Streams</h3>
-<p>Subscribe to changes for specific tables with automatic data transformation and column mapping.</p>
+<h3>DDL Auto-Refresh</h3>
+<p>Schema changes (CREATE TABLE, ALTER TABLE, etc.) are detected via DDL events and automatically invalidate the GraphQL schema cache — no restart needed.</p>
 </div>
 </div>
 
-## How It Works
+## Architecture
 
 ```mermaid
 graph LR
-    A[Database Change] --> B[PostgreSQL WAL]
-    B --> C[CDC Listener]
-    C --> D[Event Processing]
-    D --> E[WebSocket Handler]
-    E --> F[GraphQL Client]
-    
+    A[Database Change] --> B[WAL / Binlog]
+    B --> C[excalibase-watcher]
+    C --> D[NATS JetStream]
+    D --> E[NatsCDCService]
+    E --> F[WebSocket Handler]
+    F --> G[GraphQL Client]
+
     style A fill:#e1f5fe
-    style F fill:#e8f5e8
+    style C fill:#fff3e0
+    style D fill:#fce4ec
+    style G fill:#e8f5e8
 ```
 
-1. **Database Changes**: INSERT, UPDATE, DELETE operations occur in PostgreSQL
-2. **WAL Processing**: PostgreSQL writes changes to Write-Ahead Log (WAL)
-3. **CDC Listener**: Consumes logical replication stream from PostgreSQL
-4. **Event Processing**: Transforms raw CDC events into GraphQL-compatible format
-5. **WebSocket Delivery**: Events are delivered to subscribed clients via WebSocket
-6. **Client Processing**: GraphQL clients receive and process real-time updates
+1. **Database Changes**: INSERT, UPDATE, DELETE operations occur in your database
+2. **WAL / Binlog**: The database writes changes to its write-ahead log (PostgreSQL) or binary log (MySQL)
+3. **excalibase-watcher**: A standalone CDC server that owns the replication slot / binlog connection and publishes events to NATS JetStream on subjects like `cdc.{schema}.{table}` (DML) and `cdc.{schema}._ddl` (DDL)
+4. **NATS JetStream**: Distributes CDC events to all excalibase-graphql pods using ephemeral consumers with `DeliverPolicy.New` (fan-out)
+5. **NatsCDCService**: Routes DML events to per-table Reactor Sinks; DDL events trigger schema cache invalidation
+6. **WebSocket Delivery**: Events are delivered to subscribed clients via `graphql-transport-ws` WebSocket
+7. **Client Processing**: GraphQL clients receive and process real-time updates
+
+### Why excalibase-watcher?
+
+In the previous architecture, each excalibase-graphql pod held its own replication slot / binlog connection. When scaling horizontally, this caused **duplicate CDC events** — pod A and pod B both captured the same change. By moving CDC ownership to a single watcher instance that publishes to NATS, every pod receives every event exactly once through fan-out delivery.
+
+See [excalibase-watcher on GitHub](https://github.com/excalibase/excalibase-watcher) and [excalibase-watcher on Docker Hub](https://hub.docker.com/r/excalibase/excalibase-watcher).
+
+## Supported Databases
+
+| Database | CDC Method | Status |
+|----------|-----------|--------|
+| **PostgreSQL** | Logical replication (pgoutput) | Supported |
+| **MySQL** | Binary log (binlog) | Supported |
 
 ## GraphQL Schema
 
@@ -56,51 +73,61 @@ Excalibase automatically generates subscription types for each table in your dat
 ```graphql
 type Subscription {
   # Subscribe to customer table changes
-  customerChanges: CustomerSubscriptionEvent!
-  
-  # Subscribe to orders table changes  
-  ordersChanges: OrdersSubscriptionEvent!
-  
-  # Subscribe to posts table changes
-  postsChanges: PostsSubscriptionEvent!
+  customerChanges: CustomerChangeEvent!
+
+  # Subscribe to orders table changes
+  ordersChanges: OrdersChangeEvent!
+
+  # Health check heartbeat
+  health: String
 }
 
 # Event structure for table changes
-type CustomerSubscriptionEvent {
-  table: String!           # Table name
-  schema: String!          # Database schema
-  operation: String!       # INSERT, UPDATE, DELETE, HEARTBEAT, ERROR
-  timestamp: String!       # ISO 8601 timestamp
-  lsn: String             # PostgreSQL Log Sequence Number
-  data: CustomerData      # Table row data (structure varies by operation)
-  error: String           # Error message (null if no error)
+type CustomerChangeEvent {
+  table: String!                        # Table name
+  schema: String                        # Database schema
+  operation: CustomerChangeOperation!   # INSERT, UPDATE, DELETE, ERROR
+  timestamp: String!                    # ISO 8601 timestamp
+  data: CustomerSubscriptionData        # Row data (structure varies by operation)
+  error: String                         # Error message (null if no error)
+}
+
+enum CustomerChangeOperation {
+  INSERT
+  UPDATE
+  DELETE
+  ERROR
 }
 
 # Data payload varies by operation type
-type CustomerData {
-  # For INSERT/DELETE: direct column values
+type CustomerSubscriptionData {
+  # For INSERT: direct column values
+  # For DELETE: primary key only (REPLICA IDENTITY DEFAULT)
   customer_id: Int
   first_name: String
   last_name: String
   email: String
   active: Boolean
-  
-  # For UPDATE: includes old and new values
-  old: Customer           # Previous values
-  new: Customer           # Updated values
+
+  # For UPDATE: the updated row is nested under "new"
+  old: CustomerSubscriptionData  # Previous values (if available)
+  new: CustomerSubscriptionData  # Updated values
 }
 ```
 
 ## Operation Types
 
 ### INSERT Events
+
+Full row data is included:
+
 ```json
 {
   "table": "customer",
   "operation": "INSERT",
-  "timestamp": "2024-01-15T10:30:45.123Z",
+  "timestamp": "2026-03-25T07:43:24Z",
   "data": {
-    "customer_id": 123,
+    "customer_id": 13,
     "first_name": "John",
     "last_name": "Doe",
     "email": "john.doe@example.com",
@@ -111,29 +138,20 @@ type CustomerData {
 ```
 
 ### UPDATE Events
+
+Updated row is nested under `new`. With PostgreSQL `REPLICA IDENTITY DEFAULT`, only the new values are sent (no `old`):
+
 ```json
 {
-  "table": "customer", 
+  "table": "customer",
   "operation": "UPDATE",
-  "timestamp": "2024-01-15T10:31:15.456Z",
+  "timestamp": "2026-03-25T07:43:57Z",
   "data": {
-    "customer_id": 123,
-    "first_name": "John",
-    "last_name": "Smith",
-    "email": "john.smith@example.com", 
-    "active": true,
-    "old": {
-      "customer_id": 123,
-      "first_name": "John",
-      "last_name": "Doe",
-      "email": "john.doe@example.com",
-      "active": true
-    },
     "new": {
-      "customer_id": 123,
-      "first_name": "John", 
-      "last_name": "Smith",
-      "email": "john.smith@example.com",
+      "customer_id": 13,
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "email": "jane.doe@example.com",
       "active": true
     }
   },
@@ -141,42 +159,53 @@ type CustomerData {
 }
 ```
 
+!!! tip "Getting old values in UPDATE events"
+    To include old column values, set `REPLICA IDENTITY FULL` on the table:
+    ```sql
+    ALTER TABLE customer REPLICA IDENTITY FULL;
+    ```
+
 ### DELETE Events
+
+With `REPLICA IDENTITY DEFAULT`, only the primary key is included:
+
 ```json
 {
   "table": "customer",
-  "operation": "DELETE", 
-  "timestamp": "2024-01-15T10:32:30.789Z",
+  "operation": "DELETE",
+  "timestamp": "2026-03-25T07:44:13Z",
   "data": {
-    "customer_id": 123,
-    "first_name": "John",
-    "last_name": "Smith", 
-    "email": "john.smith@example.com",
-    "active": true
+    "customer_id": 13
   },
   "error": null
 }
 ```
 
 ### HEARTBEAT Events
+
+Sent every 30 seconds by the subscription resolver to keep the WebSocket connection alive. Note: `HEARTBEAT` is not part of the `ChangeOperation` enum — it is injected by the resolver as a plain string.
+
 ```json
 {
   "table": "customer",
   "operation": "HEARTBEAT",
-  "timestamp": "2024-01-15T10:33:00.000Z", 
+  "timestamp": "2026-03-25T07:44:30Z",
   "data": null,
   "error": null
 }
 ```
 
 ### ERROR Events
+
+Emitted when the CDC stream encounters an error:
+
 ```json
 {
   "table": "customer",
   "operation": "ERROR",
-  "timestamp": "2024-01-15T10:33:30.123Z",
+  "timestamp": "2026-03-25T07:44:45Z",
   "data": {},
-  "error": "CDC connection lost"
+  "error": "NATS connection lost"
 }
 ```
 
@@ -194,10 +223,7 @@ Basic subscription setup:
 import { createClient } from 'graphql-ws';
 
 const client = createClient({
-  url: 'ws://localhost:10000/graphql-ws',
-  connectionParams: {
-    // Add authentication headers if needed
-  }
+  url: 'ws://localhost:10000/graphql',
 });
 
 // Subscribe to customer changes
@@ -208,13 +234,18 @@ const subscription = client.iterate({
         table
         operation
         timestamp
-        lsn
         data {
           customer_id
           first_name
           last_name
           email
           active
+          new {
+            customer_id
+            first_name
+            last_name
+            email
+          }
         }
         error
       }
@@ -225,16 +256,13 @@ const subscription = client.iterate({
 for await (const event of subscription) {
   const change = event.data.customerChanges;
   console.log(`${change.operation} on ${change.table}:`, change);
-  
+
   switch (change.operation) {
     case 'INSERT':
       console.log('New customer added:', change.data);
       break;
     case 'UPDATE':
-      console.log('Customer updated:', {
-        old: change.data.old,
-        new: change.data.new
-      });
+      console.log('Customer updated:', change.data.new);
       break;
     case 'DELETE':
       console.log('Customer deleted:', change.data);
@@ -269,7 +297,7 @@ export function useCustomerSubscription() {
 
   useEffect(() => {
     const client = createClient({
-      url: 'ws://localhost:10000/graphql-ws'
+      url: 'ws://localhost:10000/graphql'
     });
 
     const subscription = client.iterate({
@@ -285,6 +313,7 @@ export function useCustomerSubscription() {
               last_name
               email
               active
+              new { customer_id first_name last_name email }
             }
             error
           }
@@ -297,7 +326,7 @@ export function useCustomerSubscription() {
         setConnected(true);
         for await (const event of subscription) {
           const change = event.data.customerChanges;
-          setChanges(prev => [...prev.slice(-99), change]); // Keep last 100 changes
+          setChanges(prev => [...prev.slice(-99), change]);
         }
       } catch (error) {
         console.error('Subscription error:', error);
@@ -315,25 +344,6 @@ export function useCustomerSubscription() {
 
   return { changes, connected };
 }
-
-// Usage in component
-function CustomerDashboard() {
-  const { changes, connected } = useCustomerSubscription();
-
-  return (
-    <div>
-      <div>Status: {connected ? '🟢 Connected' : '🔴 Disconnected'}</div>
-      <div>
-        <h3>Recent Changes:</h3>
-        {changes.map((change, i) => (
-          <div key={i}>
-            {change.timestamp}: {change.operation} on {change.table}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 ```
 
 ### WebSocket Testing with wscat
@@ -345,7 +355,7 @@ For testing and debugging, you can use `wscat` to connect directly:
 npm install -g wscat
 
 # Connect to WebSocket endpoint
-wscat -c ws://localhost:10000/graphql-ws -s graphql-transport-ws
+wscat -c ws://localhost:10000/graphql -s graphql-transport-ws
 
 # Send connection init
 {"type":"connection_init"}
@@ -355,151 +365,142 @@ wscat -c ws://localhost:10000/graphql-ws -s graphql-transport-ws
   "type": "subscribe",
   "id": "customer-sub-1",
   "payload": {
-    "query": "subscription { customerChanges { table operation timestamp data { customer_id first_name last_name email } error } }"
+    "query": "subscription { customerChanges { table operation timestamp data { customer_id first_name last_name email new { customer_id first_name last_name email } } error } }"
   }
 }
 
 # You'll receive events in real-time as they occur
 ```
 
-## Database Configuration
-
-### PostgreSQL Setup
-
-Subscriptions require PostgreSQL logical replication to be enabled:
-
-```sql
--- Enable logical replication (requires superuser privileges)
-ALTER SYSTEM SET wal_level = logical;
-ALTER SYSTEM SET max_replication_slots = 10;
-ALTER SYSTEM SET max_wal_senders = 10;
-
--- Restart PostgreSQL server after changing these settings
--- sudo systemctl restart postgresql
-
--- Create publication for all tables
-CREATE PUBLICATION cdc_publication FOR ALL TABLES;
-
--- Grant replication permissions to your application user
-ALTER USER your_username REPLICATION;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO your_username;
-
--- Verify logical replication is enabled
-SHOW wal_level; -- Should return 'logical'
-```
+## Configuration
 
 ### Application Configuration
 
-Configure the CDC service in your application:
+Configure the NATS CDC consumer in your `application.yaml`:
 
 ```yaml
-# application.yaml
-spring:
-  websocket:
-    enabled: true
-    heartbeat-interval: 30s
-
 app:
-  cdc:
-    enabled: true                              # Enable CDC (Change Data Capture) for real-time subscriptions (default: true)
-    slot-name: "cdc_slot"                      # Replication slot name (default: cdc_slot)
-    publication-name: "cdc_publication"        # Publication name (default: cdc_publication)
-    create-slot-if-not-exists: true            # Create replication slot if it doesn't exist (default: true)
-    create-publication-if-not-exists: true     # Create publication if it doesn't exist (default: true)
-    heartbeat-interval: 30                     # Heartbeat interval in seconds
+  nats:
+    enabled: true                    # Enable NATS CDC subscription (default: false)
+    url: nats://localhost:4222       # NATS server URL
+    stream-name: CDC                 # JetStream stream name (must match watcher config)
+    subject-prefix: cdc              # Subject prefix (must match watcher config)
 ```
 
-### Automatic Setup Features
+### Docker Compose Setup
 
-Excalibase GraphQL now includes **automatic CDC setup** to simplify deployment:
-
-**🚀 Auto-Creation Features:**
-- **`create-slot-if-not-exists: true`** - Automatically creates the replication slot if it doesn't exist
-- **`create-publication-if-not-exists: true`** - Automatically creates the publication for all tables
-
-**Benefits:**
-- **Zero Configuration**: Works out-of-the-box with minimal setup
-- **Development Friendly**: No manual PostgreSQL setup required for local development
-- **Production Ready**: Safe to use in production environments
-- **Error Handling**: Gracefully handles existing slots/publications without conflicts
-
-**Manual vs Automatic Setup:**
-
-| Setup Type | Manual | Automatic (New) |
-|------------|--------|-----------------|
-| **Replication Slot** | `SELECT pg_create_logical_replication_slot('cdc_slot', 'pgoutput');` | Handled automatically |
-| **Publication** | `CREATE PUBLICATION cdc_publication FOR ALL TABLES;` | Handled automatically |
-| **Error Handling** | Manual cleanup required | Automatic conflict resolution |
-| **Development Time** | Manual setup per environment | Instant setup |
-
-**Configuration Examples:**
+The `docker-compose.yml` includes all required services:
 
 ```yaml
-# Full automatic setup (recommended for development)
-app:
-  cdc:
-    enabled: true
-    create-slot-if-not-exists: true     # Auto-create slot
-    create-publication-if-not-exists: true  # Auto-create publication
+services:
+  postgres:
+    image: postgres:15-alpine
+    command: postgres -c wal_level=logical -c max_replication_slots=10 -c max_wal_senders=10
 
-# Manual setup (for environments with pre-existing CDC configuration)  
-app:
-  cdc:
-    enabled: true
-    create-slot-if-not-exists: false    # Use existing slot
-    create-publication-if-not-exists: false # Use existing publication
-    slot-name: "my_existing_slot"
-    publication-name: "my_existing_publication"
+  nats:
+    image: nats:2.10
+    command: ["-js", "-m", "8222"]    # JetStream enabled
+
+  excalibase-watcher:
+    image: excalibase/excalibase-watcher
+    environment:
+      APP_CDC_POSTGRES_URL: jdbc:postgresql://postgres:5432/mydb
+      APP_CDC_POSTGRES_USERNAME: myuser
+      APP_CDC_POSTGRES_PASSWORD: mypassword
+      APP_CDC_POSTGRES_ENABLED: true
+      APP_CDC_SLOT_NAME: cdc_slot
+      APP_CDC_PUBLICATION_NAME: cdc_publication
+      APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
+      APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
+      APP_NATS_URL: nats://nats:4222
+      APP_NATS_STREAM_NAME: CDC
+      APP_NATS_SUBJECT_PREFIX: cdc
+      APP_NATS_ENABLED: true
+
+  excalibase-app:
+    image: excalibase/excalibase-graphql
+    environment:
+      APP_NATS_ENABLED: true
+      APP_NATS_URL: nats://nats:4222
+      APP_NATS_STREAM_NAME: CDC
+      APP_NATS_SUBJECT_PREFIX: cdc
+    depends_on:
+      nats:
+        condition: service_healthy
+      excalibase-watcher:
+        condition: service_started
 ```
+
+### Helm Chart
+
+```yaml
+# values.yaml
+app:
+  nats:
+    enabled: true
+    url: "nats://nats:4222"
+    streamName: "CDC"
+    subjectPrefix: "cdc"
+```
+
+### PostgreSQL Setup
+
+PostgreSQL logical replication must be enabled for the watcher to connect:
+
+```sql
+-- Enable logical replication (requires superuser)
+ALTER SYSTEM SET wal_level = logical;
+ALTER SYSTEM SET max_replication_slots = 10;
+ALTER SYSTEM SET max_wal_senders = 10;
+-- Restart PostgreSQL after changing these settings
+```
+
+!!! note "excalibase-watcher handles slot and publication creation automatically"
+    When `APP_CDC_CREATE_SLOT_IF_NOT_EXISTS=true` and `APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS=true`, the watcher will create the replication slot and publication on first startup. No manual SQL setup is needed.
 
 ## Performance & Scalability
 
 ### Performance Characteristics
 
-- **Low Latency**: ~50ms from database change to WebSocket delivery
+- **Low Latency**: Database change to WebSocket delivery in milliseconds
 - **High Throughput**: Handles 1000+ concurrent subscriptions
-- **Memory Efficient**: Uses reactive streams with backpressure handling
-- **CPU Efficient**: Single CDC listener serves all table subscriptions
+- **Memory Efficient**: Uses Reactor Sinks with backpressure handling
+- **Horizontally Scalable**: Every pod receives every event via NATS fan-out
 
-### Scalability Considerations
+### Horizontal Scaling
 
-**Horizontal Scaling:**
-- CDC service runs per application instance
-- Multiple instances can share the same replication slot
-- WebSocket connections are load-balanced across instances
+The watcher architecture solves the horizontal scaling problem:
 
-**Memory Usage:**
-- Each active subscription uses ~1KB of memory
-- Event buffering is configurable via backpressure settings
-- Automatic cleanup of inactive subscriptions
+| Concern | Old (embedded CDC) | New (watcher + NATS) |
+|---------|-------------------|---------------------|
+| **Replication slots** | One per pod (N slots for N pods) | One slot total (watcher owns it) |
+| **Duplicate events** | Each pod processes every event | Each pod receives every event once via NATS |
+| **Scaling** | Adding pods adds replication slots | Adding pods adds NATS consumers (lightweight) |
+| **Resource usage** | Each pod holds a DB connection for CDC | Only watcher holds the DB connection |
 
-**Connection Limits:**
-- PostgreSQL replication slots: Configure `max_replication_slots`
-- WebSocket connections: Limited by application server capacity
-- Network bandwidth: Consider message frequency and size
+### DDL Schema Auto-Refresh
 
-### Monitoring & Metrics
+When excalibase-watcher detects a DDL change (e.g., `ALTER TABLE`, `CREATE TABLE`), it publishes a DDL event on `cdc.{schema}._ddl`. The `NatsCDCService` receives this event and automatically:
 
-**PostgreSQL Monitoring:**
-```sql
--- Check replication slot status
-SELECT slot_name, active, restart_lsn, confirmed_flush_lsn 
-FROM pg_replication_slots;
+1. Invalidates the schema reflector cache for that schema
+2. Invalidates the full GraphQL schema cache
+3. The next request rebuilds the GraphQL schema from the updated database
 
--- Monitor replication lag
-SELECT EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp())) as lag_seconds;
+This means **schema changes no longer require an application restart**.
 
--- Check publication status
-SELECT pubname, puballtables, pubinsert, pubupdate, pubdelete 
-FROM pg_publication;
+### Monitoring
+
+**NATS Monitoring:**
+```bash
+# NATS server monitoring (port 8222)
+curl http://localhost:8222/jsz?streams=true&consumers=true
 ```
 
 **Application Metrics:**
 - Active subscription count per table
-- CDC event processing rate  
+- NATS consumer delivery/ack counts
 - WebSocket connection count
 - Error rates and types
-- Memory usage for event buffering
 
 ## Production Deployment
 
@@ -511,43 +512,25 @@ FROM pg_publication;
 server:
   ssl:
     enabled: true
-    
-# Configure CORS for WebSocket
-spring:
-  web:
-    cors:
-      allowed-origins: "https://yourdomain.com"
-      allowed-headers: "*"
-      allow-credentials: true
 ```
 
 **Database Security:**
 ```sql
--- Create dedicated replication user
+-- Create dedicated replication user for excalibase-watcher
 CREATE USER cdc_user WITH REPLICATION;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO cdc_user;
-
--- Restrict access to specific IP ranges
--- Edit pg_hba.conf to limit replication connections
 ```
 
 ### High Availability
 
-**Database Redundancy:**
-- Use PostgreSQL streaming replication for high availability
-- Configure automatic failover with tools like Patroni or Stolon
-- Monitor replication lag and alert on issues
+- **Watcher**: Deploy a single watcher instance per database (it owns the replication slot). Use Kubernetes restart policies or a standby for HA.
+- **NATS**: Deploy a NATS cluster for high availability. JetStream provides persistence.
+- **excalibase-graphql**: Deploy multiple pods behind a load balancer. Use sticky sessions or a WebSocket-aware load balancer.
 
-**Application Redundancy:**
-- Deploy multiple application instances behind a load balancer
-- Use sticky sessions for WebSocket connections
-- Implement client-side reconnection logic
-
-**Error Recovery:**
+**Client-side reconnection:**
 ```javascript
-// Client-side reconnection example
 const client = createClient({
-  url: 'ws://localhost:10000/graphql-ws',
+  url: 'ws://localhost:10000/graphql',
   retryAttempts: 5,
   retryWait: async function* () {
     for (const wait of [1000, 2000, 4000, 8000, 16000]) {
@@ -561,26 +544,24 @@ const client = createClient({
 
 **Common Issues:**
 
-1. **Connection Refused**
-   - Check if PostgreSQL logical replication is enabled
-   - Verify publication and replication slot exist
-   - Ensure user has REPLICATION privileges
+1. **Subscription returns "Subscription execution failed"**
+    - The `data` field requires subselection — use `data { customer_id first_name ... }` not just `data`
+    - Check the GraphQL schema introspection for the correct `*SubscriptionData` type name
 
-2. **High Memory Usage** 
-   - Monitor event buffer sizes
-   - Check for slow clients causing backpressure
-   - Adjust WebSocket timeout settings
+2. **No events received**
+    - Verify `APP_NATS_ENABLED=true` on both watcher and excalibase-graphql
+    - Check NATS stream has messages: `curl http://localhost:8222/jsz?streams=true`
+    - Check watcher logs for CDC activity: `docker logs excalibase-watcher`
 
-3. **Missing Events**
-   - Check CDC service logs for errors
-   - Monitor replication slot lag
-   - Verify publication includes target tables
+3. **Connection Refused**
+    - Verify NATS is running and reachable
+    - Check PostgreSQL logical replication is enabled (`SHOW wal_level;` should return `logical`)
 
 **Debug Logging:**
 ```yaml
 logging:
   level:
-    io.github.excalibase.postgres.service: DEBUG
+    io.github.excalibase.service.NatsCDCService: DEBUG
     io.github.excalibase.config.GraphQLWebSocketHandler: DEBUG
 ```
 
@@ -591,28 +572,26 @@ logging:
 Run the subscription-specific test suite:
 
 ```bash
-# Test subscription implementation
-cd modules/excalibase-graphql-postgres
-mvn test -Dtest=PostgresDatabaseSubscriptionImplementTest
+# Test NatsCDCService (NATS consumer, routing, DDL cache invalidation)
+mvn test -pl modules/excalibase-graphql-starter -Dtest=NatsCDCServiceTest
 
-# Test CDC service
-mvn test -Dtest=CDCServiceTest
+# Test subscription implementation (event transformation)
+mvn test -pl modules/excalibase-graphql-postgres -Dtest=PostgresDatabaseSubscriptionImplementTest
 
-# Test WebSocket handler  
-cd modules/excalibase-graphql-api
-mvn test -Dtest=GraphQLWebSocketHandlerTest
+# Test WebSocket handler
+mvn test -pl modules/excalibase-graphql-api -Dtest=GraphQLWebSocketHandlerTest
 ```
 
 ### Integration Testing
 
-Test with a real PostgreSQL instance:
+Test with a real database using Docker Compose:
 
 ```bash
-# Start development environment
+# Start full environment (app + postgres + nats + watcher + observability)
 make dev
 
 # Connect to WebSocket for manual testing
-wscat -c ws://localhost:10001/graphql-ws -s graphql-transport-ws
+wscat -c ws://localhost:10000/graphql -s graphql-transport-ws
 
 # In another terminal, make database changes
 make db-shell
@@ -621,68 +600,28 @@ INSERT INTO customer (first_name, last_name, email) VALUES ('Test', 'User', 'tes
 # Verify events are received in WebSocket connection
 ```
 
-### Load Testing
-
-Test subscription scalability:
-
-```javascript
-// Load test script
-const clients = [];
-for (let i = 0; i < 100; i++) {
-  const client = createClient({
-    url: 'ws://localhost:10000/graphql-ws'
-  });
-  
-  clients.push(client.iterate({
-    query: 'subscription { customerChanges { operation data { customer_id } } }'
-  }));
-}
-
-// Monitor performance during load
-```
-
-## Best Practices
-
-### Client Implementation
-
-1. **Implement Reconnection Logic**: Handle network failures gracefully
-2. **Buffer Management**: Limit client-side event buffers to prevent memory leaks  
-3. **Error Handling**: Process ERROR events and implement fallback behavior
-4. **Heartbeat Monitoring**: Use HEARTBEAT events to detect connection issues
-
-### Database Configuration
-
-1. **Replication Slots**: Monitor and clean up unused replication slots
-2. **WAL Retention**: Configure appropriate WAL retention policies
-3. **User Permissions**: Use dedicated users with minimal required privileges
-4. **Publication Management**: Create targeted publications for specific tables if needed
-
-### Application Design
-
-1. **Subscription Lifecycle**: Clean up subscriptions when components unmount
-2. **State Management**: Integrate subscription events with your application state
-3. **Rate Limiting**: Implement subscription rate limits for multi-tenant applications
-4. **Event Filtering**: Consider server-side filtering for high-frequency tables
-
 ## Limitations
 
 ### Current Limitations
 
-- **PostgreSQL Only**: Currently supports PostgreSQL databases only
 - **Table-Level Granularity**: Subscriptions are per-table, not query-based
-- **No Filtering**: Cannot filter subscription events by column values
-- **Schema Changes**: Dynamic schema changes require application restart
+- **No Filtering**: Cannot filter subscription events by column values (all changes for a table are delivered)
+- **Single Watcher**: One watcher instance per database (replication slot is single-consumer)
 
 ### Future Enhancements
 
 - Row-level subscription filtering based on WHERE conditions
 - Cross-table subscription support
-- Multi-database subscription federation
-- Schema evolution support for dynamic table changes
 - Authentication and authorization for subscription access
+- Watcher health-check integration for cache TTL fallback
+
+## Excalibase Ecosystem
+
+| Project | Purpose | Links |
+|---------|---------|-------|
+| **excalibase-graphql** | Auto-generated GraphQL API | [GitHub](https://github.com/excalibase/excalibase-graphql) · [Docker Hub](https://hub.docker.com/r/excalibase/excalibase-graphql) |
+| **excalibase-watcher** | Centralized CDC server (NATS publisher) | [GitHub](https://github.com/excalibase/excalibase-watcher) · [Docker Hub](https://hub.docker.com/r/excalibase/excalibase-watcher) |
 
 ## Summary
 
-Real-time subscriptions in Excalibase GraphQL provide a robust, scalable solution for streaming database changes to clients. By leveraging PostgreSQL's logical replication and WebSocket connections, applications can deliver real-time user experiences with minimal latency and high reliability.
-
-The implementation handles the complexities of CDC, connection management, and error recovery, allowing developers to focus on building reactive user interfaces that respond instantly to data changes.
+Real-time subscriptions in Excalibase GraphQL provide a robust, horizontally-scalable solution for streaming database changes to clients. By delegating CDC to [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) and using NATS JetStream for event distribution, the architecture supports multiple pods without duplicate replication slots or events. DDL changes are automatically detected and trigger schema cache invalidation, eliminating the need for application restarts on schema changes.

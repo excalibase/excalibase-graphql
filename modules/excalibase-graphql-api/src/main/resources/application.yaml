@@ -74,12 +74,11 @@ app:
     user-context-enabled: true
     user-id-extractor-type: header
     user-id-header: X-User-Id
-  cdc:
-    enabled: false  # Enable CDC (Change Data Capture) for real-time subscriptions (default: true)
-    slot-name: cdc_slot  # Replication slot name (default: cdc_slot)
-    publication-name: cdc_publication  # Publication name (default: cdc_publication)
-    create-slot-if-not-exists: true  # Create replication slot if it doesn't exist (default: true)
-    create-publication-if-not-exists: true  # Create publication if it doesn't exist (default: true)
+  nats:
+    enabled: false  # Enable NATS CDC subscription from excalibase-watcher (default: false)
+    url: nats://localhost:4222  # NATS server URL
+    stream-name: CDC  # JetStream stream name
+    subject-prefix: cdc  # Subject prefix (events on cdc.{schema}.{table})
 
 # GraphQL Security Configuration - Production Defaults
 # Based on GraphQL.org security recommendations and OWASP guidelines

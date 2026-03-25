@@ -39,6 +39,9 @@ public class AppConfig {
     /** Cache configuration */
     private CacheConfig cache = new CacheConfig();
 
+    /** NATS configuration for CDC event streaming */
+    private NatsConfig nats = new NatsConfig();
+
     public String getAllowedSchema() {
         return allowedSchema;
     }
@@ -69,6 +72,14 @@ public class AppConfig {
 
     public void setCache(CacheConfig cache) {
         this.cache = cache;
+    }
+
+    public NatsConfig getNats() {
+        return nats;
+    }
+
+    public void setNats(NatsConfig nats) {
+        this.nats = nats;
     }
 
     /**
@@ -163,6 +174,56 @@ public class AppConfig {
 
         public void setGraphqlTtlMinutes(int graphqlTtlMinutes) {
             this.graphqlTtlMinutes = graphqlTtlMinutes;
+        }
+    }
+
+    /**
+     * NATS configuration for CDC event streaming from excalibase-watcher.
+     */
+    public static class NatsConfig {
+
+        /** NATS server URL */
+        private String url = "nats://localhost:4222";
+
+        /** JetStream stream name to subscribe to */
+        private String streamName = "CDC";
+
+        /** Subject prefix used by excalibase-watcher (e.g. "cdc") */
+        private String subjectPrefix = "cdc";
+
+        /** Enable/disable NATS CDC subscription */
+        private boolean enabled = false;
+
+        public String getUrl() {
+            return url;
+        }
+
+        public void setUrl(String url) {
+            this.url = url;
+        }
+
+        public String getStreamName() {
+            return streamName;
+        }
+
+        public void setStreamName(String streamName) {
+            this.streamName = streamName;
+        }
+
+        public String getSubjectPrefix() {
+            return subjectPrefix;
+        }
+
+        public void setSubjectPrefix(String subjectPrefix) {
+            this.subjectPrefix = subjectPrefix;
+        }
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
         }
     }
 }
