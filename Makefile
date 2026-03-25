@@ -230,11 +230,11 @@ build-skip: ## Skip Maven build (for rapid iteration)
 up: ## Start Docker services (app + observability)
 	@echo "$(BLUE)🚀 Starting services...$(NC)"
 	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d 2>&1 || true
 	@echo "$(GREEN)✓ App services started$(NC)"
 	@echo "$(BLUE)📊 Starting observability stack...$(NC)"
 	@docker compose -f $(OBSERVABILITY_FILE) -p $(OBSERVABILITY_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker compose -f $(OBSERVABILITY_FILE) -p $(OBSERVABILITY_PROJECT) up -d
+	@docker compose -f $(OBSERVABILITY_FILE) -p $(OBSERVABILITY_PROJECT) up -d 2>&1 || true
 	@echo "$(GREEN)✓ Observability services started$(NC)"
 	@$(MAKE) --no-print-directory wait-ready
 
@@ -299,8 +299,23 @@ wait-ready: ## Wait for services to be ready
 		printf "."; \
 		sleep 2; \
 	done
+	@echo "$(BLUE)🔄 Restarting watcher to ensure CDC connection...$(NC)"
+	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) restart excalibase-watcher > /dev/null 2>&1 || true
+	@sleep 3
+	@echo "$(GREEN)✓ Watcher restarted$(NC)"
 	@echo "$(BLUE)🔄 Waiting for application...$(NC)"
-	@sleep 10
+	@for i in $$(seq 1 30); do \
+		if curl -s -X POST http://localhost:$(APP_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
+			echo "$(GREEN)✓ GraphQL API ready$(NC)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 30 ]; then \
+			echo "$(RED)❌ Application failed to start$(NC)"; \
+			exit 1; \
+		fi; \
+		printf "."; \
+		sleep 2; \
+	done
 	@echo "$(GREEN)✓ All services ready$(NC)"
 
 .PHONY: wait-ready-native
