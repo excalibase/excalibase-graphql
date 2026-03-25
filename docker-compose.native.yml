@@ -65,7 +65,7 @@ services:
       nats:
         condition: service_healthy
       excalibase-watcher:
-        condition: service_started
+        condition: service_healthy
     networks:
       - excalibase-native-network
     restart: unless-stopped
@@ -110,6 +110,12 @@ services:
       APP_NATS_STREAM_NAME: CDC
       APP_NATS_SUBJECT_PREFIX: cdc
       APP_NATS_ENABLED: true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
     depends_on:
       postgres:
         condition: service_healthy

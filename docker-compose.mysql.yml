@@ -64,6 +64,12 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_DATASOURCE_PASSWORD: rootpassword123
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
     depends_on:
       mysql:
         condition: service_healthy
@@ -110,7 +116,7 @@ services:
       nats:
         condition: service_healthy
       excalibase-watcher:
-        condition: service_started
+        condition: service_healthy
     networks:
       - excalibase-mysql-network
     restart: unless-stopped
