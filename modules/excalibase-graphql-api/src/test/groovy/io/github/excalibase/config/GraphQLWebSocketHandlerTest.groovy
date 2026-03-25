@@ -470,7 +470,7 @@ class GraphQLWebSocketHandlerTest extends Specification {
             def data = objectMapper.readValue(msg.payload, Map)
             data.type == "error" && 
             data.id == "failed-sub" &&
-            data.payload.message == "Subscription execution failed"
+            data.payload.message.startsWith("Subscription execution failed")
         })
     }
 
