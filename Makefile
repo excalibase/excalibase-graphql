@@ -168,6 +168,17 @@ mysql-test: ## Run MySQL e2e tests (requires services running)
 	@echo "$(BLUE)🧪 Running MySQL E2E tests...$(NC)"
 	@cd e2e && npm install --silent && npm run test:mysql || (echo "$(RED)❌ MySQL tests failed$(NC)" && exit 1)
 
+# CDC subscription test targets
+.PHONY: subscription-test
+subscription-test: ## Run Postgres CDC subscription e2e tests (requires make up)
+	@echo "$(BLUE)🧪 Running Postgres subscription tests...$(NC)"
+	@cd e2e && npm install --silent && npm run test:subscription:postgres || (echo "$(RED)❌ Postgres subscription tests failed$(NC)" && exit 1)
+
+.PHONY: mysql-subscription-test
+mysql-subscription-test: ## Run MySQL CDC subscription e2e tests (requires mysql-up)
+	@echo "$(BLUE)🧪 Running MySQL subscription tests...$(NC)"
+	@cd e2e && npm install --silent && npm run test:subscription:mysql || (echo "$(RED)❌ MySQL subscription tests failed$(NC)" && exit 1)
+
 # Benchmark targets (postgres and mysql, jvm and native)
 .PHONY: benchmark-postgres-jvm
 benchmark-postgres-jvm: ## Run Postgres JVM benchmark (quick)
@@ -312,8 +323,10 @@ wait-ready-native: ## Wait for native services to be ready (DB + fast native sta
 	@echo "$(GREEN)✓ All native services ready$(NC)"
 
 .PHONY: run-tests
-run-tests: ## Execute the actual test suite
-	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Tests failed$(NC)" && exit 1)
+run-tests: ## Execute the actual test suite (queries/mutations + CDC subscriptions)
+	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Postgres tests failed$(NC)" && exit 1)
+	@echo "$(BLUE)🧪 Running CDC subscription tests...$(NC)"
+	@cd e2e && npm run test:subscription:postgres || (echo "$(RED)❌ Subscription tests failed$(NC)" && exit 1)
 
 # Database operations (unified schema with demo + test data)
 .PHONY: db-shell

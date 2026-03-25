@@ -53,7 +53,7 @@ jobs:
           docker-compose --version
         fi
         
-    - name: Run complete E2E test suite
+    - name: Run complete E2E test suite (queries, mutations, CDC subscriptions)
       run: make ci
       
     - name: Upload application logs on failure
