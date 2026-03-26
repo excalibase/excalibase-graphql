@@ -53,15 +53,18 @@ services:
       APP_SECURITY_USER_CONTEXT_ENABLED: true
       APP_SECURITY_USER_ID_EXTRACTOR_TYPE: header
       APP_SECURITY_USER_ID_HEADER: X-User-Id
-      APP_CDC_ENABLED: true
-      APP_CDC_SLOT_NAME: cdc_slot
-      APP_CDC_PUBLICATION_NAME: cdc_publication
-      APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
-      APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
+      APP_NATS_ENABLED: true
+      APP_NATS_URL: nats://nats:4222
+      APP_NATS_STREAM_NAME: CDC
+      APP_NATS_SUBJECT_PREFIX: cdc
     ports:
       - "10000:10000"
     depends_on:
       postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      excalibase-watcher:
         condition: service_healthy
     networks:
       - excalibase-native-network
@@ -74,6 +77,53 @@ services:
         reservations:
           memory: 64M
           cpus: '0.25'
+
+  nats:
+    image: nats:2.10
+    container_name: excalibase-nats-native
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD", "/nats-server", "--help"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - excalibase-native-network
+    restart: unless-stopped
+
+  excalibase-watcher:
+    image: excalibase/excalibase-watcher
+    container_name: excalibase-watcher-native
+    environment:
+      APP_CDC_POSTGRES_URL: jdbc:postgresql://postgres:5432/hana
+      APP_CDC_POSTGRES_USERNAME: hana001
+      APP_CDC_POSTGRES_PASSWORD: password123
+      APP_CDC_POSTGRES_ENABLED: true
+      APP_CDC_SLOT_NAME: cdc_slot
+      APP_CDC_PUBLICATION_NAME: cdc_publication
+      APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
+      APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
+      APP_NATS_URL: nats://nats:4222
+      APP_NATS_STREAM_NAME: CDC
+      APP_NATS_SUBJECT_PREFIX: cdc
+      APP_NATS_ENABLED: true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    networks:
+      - excalibase-native-network
+    restart: unless-stopped
 
 volumes:
   postgres_native_data:

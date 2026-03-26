@@ -61,6 +61,9 @@
         <spock-core.version>2.4-M4-groovy-4.0</spock-core.version>
         <groovy-json.version>4.0.24</groovy-json.version>
 
+        <!--nats-->
+        <jnats.version>2.17.6</jnats.version>
+
         <!--testing-->
         <testcontainers.version>1.21.4</testcontainers.version>
 
@@ -144,6 +147,13 @@
                 <artifactId>postgresql</artifactId>
                 <version>${postgresql.version}</version>
                 <scope>runtime</scope>
+            </dependency>
+
+            <!--NATS-->
+            <dependency>
+                <groupId>io.nats</groupId>
+                <artifactId>jnats</artifactId>
+                <version>${jnats.version}</version>
             </dependency>
 
             <!--Observability-->

@@ -20,13 +20,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.schema.DataFetcher;
 import io.github.excalibase.annotation.ExcalibaseService;
 import io.github.excalibase.constant.SupportedDatabaseConstant;
-import io.github.excalibase.model.ColumnInfo;
-import io.github.excalibase.postgres.constant.PostgresErrorConstant;
-import io.github.excalibase.model.TableInfo;
-import io.github.excalibase.postgres.reflector.PostgresDatabaseSchemaReflectorImplement;
-import io.github.excalibase.postgres.service.CDCEvent;
-import io.github.excalibase.postgres.service.CDCService;
+import io.github.excalibase.model.CDCEvent;
 import io.github.excalibase.schema.subscription.IDatabaseSubscription;
+import io.github.excalibase.service.NatsCDCService;
 import org.reactivestreams.Publisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,209 +32,94 @@ import reactor.core.publisher.Flux;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
  * PostgreSQL implementation of IDatabaseSubscription.
- * 
- * <p>This implementation provides real-time subscription functionality for PostgreSQL databases
- * using Change Data Capture (CDC) through logical replication. It subscribes to actual database
- * changes and streams them to GraphQL clients via WebSocket subscriptions.</p>
+ * <p>
+ * Subscribes to CDC events from excalibase-watcher via NATS JetStream.
+ * The watcher sends real column names in the data payload, so no col_0 mapping is needed.
+ * </p>
  */
-@ExcalibaseService(
-        serviceName = SupportedDatabaseConstant.POSTGRES
-)
+@ExcalibaseService(serviceName = SupportedDatabaseConstant.POSTGRES)
 public class PostgresDatabaseSubscriptionImplement implements IDatabaseSubscription {
+
     private static final Logger log = LoggerFactory.getLogger(PostgresDatabaseSubscriptionImplement.class);
-    private static final String FIELD_OPERATION = "operation";
-    private static final String FIELD_TABLE = "table";
-    private static final String FIELD_TIMESTAMP = "timestamp";
-    private static final String FIELD_ERROR = "error";
-    
-    private final CDCService cdcService;
+
+    private final NatsCDCService natsCDCService;
     private final ObjectMapper objectMapper;
-    private final PostgresDatabaseSchemaReflectorImplement reflector;
-    
+
     @Autowired
-    public PostgresDatabaseSubscriptionImplement(CDCService cdcService, PostgresDatabaseSchemaReflectorImplement reflector) {
-        this.cdcService = cdcService;
-        this.reflector = reflector;
+    public PostgresDatabaseSubscriptionImplement(NatsCDCService natsCDCService) {
+        this.natsCDCService = natsCDCService;
         this.objectMapper = new ObjectMapper();
     }
 
     @Override
     public DataFetcher<Publisher<Map<String, Object>>> buildTableSubscriptionResolver(String tableName) {
-        return (DataFetcher<Publisher<Map<String, Object>>>) environment -> {
-            log.info(PostgresErrorConstant.TABLE_SUBSCRIPTION_RESOLVER_CALLED, tableName);
-            log.info(PostgresErrorConstant.GRAPHQL_FIELD_LOG, environment.getField().getName());
-            log.info(PostgresErrorConstant.ARGUMENTS_LOG, environment.getArguments());
-            
-            // Create a heartbeat stream to keep connection alive
+        return environment -> {
+            log.info("Postgres subscription resolver called for table: {}", tableName);
+
+            // Heartbeat stream to keep WebSocket alive
             Flux<Map<String, Object>> heartbeatStream = Flux.interval(Duration.ofSeconds(30))
                     .map(tick -> {
-                        Map<String, Object> heartbeatEvent = new HashMap<>();
-                        heartbeatEvent.put(FIELD_OPERATION, "HEARTBEAT");
-                        heartbeatEvent.put(FIELD_TABLE, tableName);
-                        heartbeatEvent.put("schema", "public");
-                        heartbeatEvent.put(FIELD_TIMESTAMP, Instant.now().toString());
-                        heartbeatEvent.put("lsn", null);
-                        heartbeatEvent.put(FIELD_ERROR, null);
-                        heartbeatEvent.put("data", null);
-                        return heartbeatEvent;
+                        Map<String, Object> event = new HashMap<>();
+                        event.put("operation", "HEARTBEAT");
+                        event.put("table", tableName);
+                        event.put("schema", "public");
+                        event.put("timestamp", Instant.now().toString());
+                        event.put("error", null);
+                        event.put("data", null);
+                        return event;
                     });
 
-            // Create the CDC stream and handle completion by recreating stream
-            Flux<Map<String, Object>> cdcEventStream = cdcService.getTableEventStream(tableName)
-                    .map(this::convertCDCEventToGraphQLEvent)
-                    .doOnComplete(() -> {
-                        log.warn(PostgresErrorConstant.CDC_STREAM_COMPLETED, tableName);
-                    })
-                    .doOnError(error -> {
-                        log.error(PostgresErrorConstant.CDC_STREAM_ERROR, tableName, error);
-                    })
-                    // Restart the stream if it completes or errors
+            // CDC event stream from NATS
+            Flux<Map<String, Object>> cdcEventStream = natsCDCService.getTableEventStream(tableName)
+                    .map(this::toGraphQLEvent)
                     .repeatWhen(flux -> flux.delayElements(Duration.ofSeconds(1)))
                     .retryWhen(reactor.util.retry.Retry.backoff(Long.MAX_VALUE, Duration.ofSeconds(1))
                             .maxBackoff(Duration.ofSeconds(30)));
 
-            // Merge CDC events with heartbeat to prevent completion
             return Flux.merge(cdcEventStream, heartbeatStream)
-            .onErrorResume(error -> {
-                log.error("Error in table subscription for {}: ", tableName, error);
-                return Flux.just(createErrorEvent(tableName, error.getMessage()));
-            })
-            .doOnSubscribe(s -> log.info(PostgresErrorConstant.CLIENT_SUBSCRIBED, tableName))
-            .doOnCancel(() -> log.info(PostgresErrorConstant.CLIENT_UNSUBSCRIBED, tableName))
-            .doOnComplete(() -> log.debug(PostgresErrorConstant.COMBINED_STREAM_COMPLETED, tableName))
-            .doOnError(error -> log.error(PostgresErrorConstant.SUBSCRIPTION_ERROR, tableName, error));
+                    .onErrorResume(error -> {
+                        log.error("Error in subscription for {}: ", tableName, error);
+                        return Flux.just(createErrorEvent(tableName, error.getMessage()));
+                    })
+                    .doOnSubscribe(s -> log.info("Client subscribed to table: {}", tableName))
+                    .doOnCancel(() -> log.info("Client unsubscribed from table: {}", tableName));
         };
     }
 
-    /**
-     * Convert CDC event to GraphQL-compatible event format matching the schema
-     */
-    private Map<String, Object> convertCDCEventToGraphQLEvent(CDCEvent cdcEvent) {
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> toGraphQLEvent(CDCEvent event) {
         Map<String, Object> graphqlEvent = new HashMap<>();
-        
-        // Basic event metadata matching GraphQL schema
-        graphqlEvent.put(FIELD_TABLE, cdcEvent.getTable());
-        graphqlEvent.put("schema", cdcEvent.getSchema());
-        graphqlEvent.put(FIELD_OPERATION, cdcEvent.getType().name());
-        graphqlEvent.put(FIELD_TIMESTAMP, Instant.ofEpochMilli(cdcEvent.getTimestamp()).toString());
-        graphqlEvent.put("lsn", cdcEvent.getLsn() != null ? cdcEvent.getLsn().asString() : null);
-        
-        // Parse and structure data payload according to GraphQL schema
-        Map<String, Object> dataPayload = parseDataPayload(cdcEvent, cdcEvent.getTable());
+        graphqlEvent.put("table", event.getTable());
+        graphqlEvent.put("schema", event.getSchema());
+        graphqlEvent.put("operation", event.getType().name());
+        graphqlEvent.put("timestamp", Instant.ofEpochMilli(event.getTimestamp()).toString());
+        graphqlEvent.put("error", null);
+
+        // Watcher sends real column names — parse data JSON directly
+        Map<String, Object> dataPayload = new HashMap<>();
+        if (event.getData() != null && !event.getData().isBlank()) {
+            try {
+                dataPayload = objectMapper.readValue(event.getData(), Map.class);
+            } catch (Exception e) {
+                log.warn("Failed to parse CDC data for table {}: {}", event.getTable(), e.getMessage());
+            }
+        }
         graphqlEvent.put("data", dataPayload);
-        
-        // Error field (null if no error)
-        graphqlEvent.put(FIELD_ERROR, null);
-        
+
         return graphqlEvent;
     }
-    
-    /**
-     * Parse CDC event data payload and structure it for GraphQL schema
-     */
-    private Map<String, Object> parseDataPayload(CDCEvent cdcEvent, String tableName) {
-        try {
-            if (cdcEvent.getData() == null || cdcEvent.getData().trim().isEmpty()) {
-                return new HashMap<>();
-            }
-            
-            log.debug("Parsing CDC data for table {}: {}", cdcEvent.getTable(), 
-                     cdcEvent.getData().substring(0, Math.min(200, cdcEvent.getData().length())));
-            
-            @SuppressWarnings("unchecked")
-            Map<String, Object> rawData = objectMapper.readValue(cdcEvent.getData(), Map.class);
-            
-            // Handle different CDC event types
-            return switch (cdcEvent.getType()) {
-                case INSERT, DELETE -> flattenRowData(rawData, tableName);
-                case UPDATE -> handleUpdateData(rawData, tableName);
-                default -> rawData;
-            };
-            
-        } catch (Exception e) {
-            log.warn("Failed to parse CDC event data as JSON for table {}: {}", 
-                    cdcEvent.getTable(), e.getMessage());
-            log.debug("Raw CDC data that failed to parse: {}", cdcEvent.getData());
-            
-            // Return error structure but still try to make it work
-            Map<String, Object> errorData = new HashMap<>();
-            errorData.put("parseError", "Failed to parse data as JSON: " + e.getMessage());
-            errorData.put("rawData", cdcEvent.getData());
-            errorData.put("table", cdcEvent.getTable());
-            errorData.put("eventType", cdcEvent.getType().name());
-            return errorData;
-        }
-    }
-    
-    /**
-     * Flatten row data to match GraphQL field structure
-     */
-    private Map<String, Object> flattenRowData(Map<String, Object> rawData, String tableName) {
-        Map<String, Object> flatData = new HashMap<>();
-        TableInfo tableInfo = reflector.reflectSchema().getOrDefault(tableName, null);
-        List<String> columns = tableInfo.getColumns().stream().map(ColumnInfo::getName).toList();
-        // Copy all fields directly 
-        for (Map.Entry<String, Object> entry : rawData.entrySet()) {
-            String key = entry.getKey();
 
-            Object value = entry.getValue();
-
-            // Handle nested objects if needed
-            if (value instanceof Map) {
-                @SuppressWarnings("unchecked")
-                Map<String, Object> nestedMap = (Map<String, Object>) value;
-                flatData.putAll(nestedMap);
-            } else {
-                int index = Integer.parseInt(key.replace("col_", ""));
-                String column = columns.get(index);
-                flatData.put(column, value);
-            }
-        }
-        
-        return flatData;
-    }
-    
-    /**
-     * Handle UPDATE data which may have old/new structure
-     */
-    private Map<String, Object> handleUpdateData(Map<String, Object> rawData, String tableName) {
-        Map<String, Object> updateData = new HashMap<>();
-        
-        // Check if we have old/new structure
-        if (rawData.containsKey("old") && rawData.containsKey("new")) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> oldData = (Map<String, Object>) rawData.get("old");
-            @SuppressWarnings("unchecked")
-            Map<String, Object> newData = (Map<String, Object>) rawData.get("new");
-            
-            updateData.put("old", flattenRowData(oldData, tableName));
-            updateData.put("new", flattenRowData(newData, tableName));
-            
-            // Also include the new data directly for easier access
-            updateData.putAll(flattenRowData(newData, tableName));
-        } else {
-            // Single data structure, treat as new data
-            updateData.putAll(flattenRowData(rawData, tableName));
-        }
-        
-        return updateData;
-    }
-    
-    /**
-     * Create error event for subscription errors
-     */
-    private Map<String, Object>  createErrorEvent(String tableName, String errorMessage) {
-        Map<String, Object> errorEvent = new HashMap<>();
-        errorEvent.put(FIELD_TABLE, tableName);
-        errorEvent.put(FIELD_OPERATION, "ERROR");
-        errorEvent.put(FIELD_TIMESTAMP, Instant.now().toString());
-        errorEvent.put(FIELD_ERROR, errorMessage);
-        errorEvent.put("data", new HashMap<>());
-        return errorEvent;
+    private Map<String, Object> createErrorEvent(String tableName, String errorMessage) {
+        Map<String, Object> event = new HashMap<>();
+        event.put("table", tableName);
+        event.put("operation", "ERROR");
+        event.put("timestamp", Instant.now().toString());
+        event.put("error", errorMessage);
+        event.put("data", new HashMap<>());
+        return event;
     }
 }

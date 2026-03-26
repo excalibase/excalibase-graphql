@@ -36,5 +36,5 @@ database:
 
 app:
   allowedSchema: "public"
-  cdc:
-    enabled: false   # CDC not supported in native image yet
+  nats:
+    enabled: false   # Enable when excalibase-watcher is deployed

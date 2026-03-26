@@ -81,13 +81,12 @@ app:
     userContextEnabled: true
     userIdHeader: "X-User-Id"
 
-  # CDC / real-time subscriptions (PostgreSQL only)
-  cdc:
+  # NATS CDC subscription (events from excalibase-watcher)
+  nats:
     enabled: false
-    slotName: "cdc_slot"
-    publicationName: "cdc_publication"
-    createSlotIfNotExists: true
-    createPublicationIfNotExists: true
+    url: "nats://nats:4222"
+    streamName: "CDC"
+    subjectPrefix: "cdc"
 
   # TTL cache for schema reflection (minutes)
   cache:

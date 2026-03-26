@@ -5,11 +5,15 @@
   "scripts": {
     "test:postgres": "jest postgres.test.js --forceExit",
     "test:mysql": "jest mysql.test.js --forceExit",
+    "test:subscription:postgres": "jest subscription.test.js --forceExit --testNamePattern='Postgres'",
+    "test:subscription:mysql": "jest subscription.test.js --forceExit --testNamePattern='MySQL'",
+    "test:subscription": "jest subscription.test.js --forceExit",
     "test": "jest --forceExit"
   },
   "dependencies": {
     "graphql": "^16.9.0",
-    "graphql-request": "^6.1.0"
+    "graphql-request": "^6.1.0",
+    "ws": "^8.16.0"
   },
   "devDependencies": {
     "jest": "^29.7.0"

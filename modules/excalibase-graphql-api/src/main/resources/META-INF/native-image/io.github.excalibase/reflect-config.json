@@ -130,5 +130,19 @@
     "condition": { "typeReachable": "com.mysql.cj.jdbc.ha.LoadBalancedConnectionProxy" },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.jdbc.ha.StandardLoadBalanceExceptionChecker"
+  },
+  {
+    "name": "io.github.excalibase.model.CDCEvent",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allDeclaredMethods": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "io.github.excalibase.model.CDCEvent$Type",
+    "allDeclaredConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
   }
 ]

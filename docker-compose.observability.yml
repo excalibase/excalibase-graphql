@@ -135,6 +135,6 @@ networks:
   # excalibase-graphql_excalibase-network (set with: docker compose --project-name excalibase-graphql)
   excalibase-network:
     external: true
-    name: excalibase-graphql_excalibase-network
+    name: excalibase-app_excalibase-network
   observability-network:
     driver: bridge

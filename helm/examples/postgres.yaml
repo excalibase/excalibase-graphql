@@ -1,4 +1,4 @@
-# Example: PostgreSQL with CDC subscriptions enabled
+# Example: PostgreSQL with NATS CDC subscriptions (via excalibase-watcher)
 # helm install excalibase excalibase-graphql/ -f examples/postgres.yaml
 
 replicaCount: 2
@@ -16,12 +16,11 @@ database:
 
 app:
   allowedSchema: "public"
-  cdc:
+  nats:
     enabled: true
-    slotName: "cdc_slot"
-    publicationName: "cdc_publication"
-    createSlotIfNotExists: true
-    createPublicationIfNotExists: true
+    url: "nats://nats-service:4222"
+    streamName: "CDC"
+    subjectPrefix: "cdc"
 
 ingress:
   enabled: true

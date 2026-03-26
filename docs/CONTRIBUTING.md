@@ -260,19 +260,19 @@ test: add integration tests for relationship queries
 
 ### Current Priorities
 
-1. **MySQL Support**: Add MySQL database implementation
-2. **Basic Authentication**: Simple JWT or API key auth
-3. **Error Handling**: Better error messages and validation
-4. **Documentation**: More examples and use cases
-5. **Schema Caching**: Performance optimization for large schemas
+1. **MongoDB Support**: Add MongoDB database implementation
+2. **Subscription Filtering**: Row-level WHERE filtering on subscription events
+3. **Authentication**: JWT or API key auth for GraphQL and WebSocket endpoints
+4. **Observability**: Grafana dashboards and alerting rules
+5. **excalibase-watcher HA**: Health-check integration and failover
 
 ### Good First Issues
 
-- Adding new filter operators (e.g., `in`, `notIn`)
 - Improving error messages
 - Adding more unit tests
 - Documentation improvements
 - Code cleanup and refactoring
+- Adding Grafana dashboard JSON exports
 
 ## Project Architecture
 
