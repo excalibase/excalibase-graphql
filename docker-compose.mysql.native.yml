@@ -42,7 +42,9 @@ services:
       SPRING_THREADS_VIRTUAL_ENABLED: true
       SERVER_PORT: 10001
       APP_ALLOWED_SCHEMA: excalibase
-      APP_DATABASE_TYPE: MySQL
+      APP_SCHEMA: excalibase
+      APP_DATABASE_TYPE: mysql
+      APP_MAX_ROWS: 30
       APP_NATS_ENABLED: false
     ports:
       - "10001:10001"

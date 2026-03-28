@@ -132,7 +132,7 @@
     "name": "com.mysql.cj.jdbc.ha.StandardLoadBalanceExceptionChecker"
   },
   {
-    "name": "io.github.excalibase.model.CDCEvent",
+    "name": "io.github.excalibase.CDCEvent",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true,
     "allDeclaredMethods": true,
@@ -140,7 +140,32 @@
     "allDeclaredFields": true
   },
   {
-    "name": "io.github.excalibase.model.CDCEvent$Type",
+    "name": "io.github.excalibase.postgres.PostgresEngineProvider",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.github.excalibase.postgres.PostgresMutationCompiler",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.github.excalibase.mysql.MysqlEngineProvider",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.github.excalibase.mysql.MysqlMutationCompiler",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.nats.client.impl.SocketDataPort",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.nats.client.support.JsonValue",
     "allDeclaredConstructors": true,
     "allPublicMethods": true,
     "allDeclaredFields": true

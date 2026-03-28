@@ -12,9 +12,14 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 import org.springframework.web.socket.server.support.WebSocketHttpRequestHandler;
 
+/**
+ * Routes WebSocket upgrade requests on /graphql to the GraphQLWebSocketHandler,
+ * while letting normal POST /graphql pass through to the REST controller.
+ */
 @Configuration
 @EnableWebSocket
 public class WebSocketConfig implements WebSocketConfigurer {
+
     private final GraphQLWebSocketHandler graphQLWebSocketHandler;
 
     public WebSocketConfig(GraphQLWebSocketHandler graphQLWebSocketHandler) {
@@ -23,8 +28,7 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        // Intentionally left blank. We bind WS on /graphql via a custom HandlerMapping that
-        // only activates for HTTP Upgrade requests, allowing POST /graphql to be handled by MVC.
+        // Intentionally blank — we bind via custom HandlerMapping below
     }
 
     @Bean
@@ -37,12 +41,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 if ("/graphql".equals(uri) && upgrade != null && "websocket".equalsIgnoreCase(upgrade)) {
                     return new WebSocketHttpRequestHandler(graphQLWebSocketHandler, new DefaultHandshakeHandler());
                 }
-                return null; // Defer to other handler mappings (e.g., @PostMapping "/graphql")
+                return null;
             }
         };
         mapping.setOrder(Ordered.HIGHEST_PRECEDENCE);
         return mapping;
     }
 }
-
-

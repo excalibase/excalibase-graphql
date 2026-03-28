@@ -188,18 +188,18 @@ describe('Aggregate queries', () => {
   });
 
   test('orders aggregate sum', async () => {
-    const data = await client.request(gql`{ ordersAggregate { sum } }`);
-    expect(data.ordersAggregate.sum).toBeGreaterThan(0);
+    const data = await client.request(gql`{ ordersAggregate { sum { total } } }`);
+    expect(data.ordersAggregate.sum.total).toBeGreaterThan(0);
   });
 
   test('orders aggregate avg', async () => {
-    const data = await client.request(gql`{ ordersAggregate { avg } }`);
-    expect(data.ordersAggregate.avg).toBeGreaterThan(0);
+    const data = await client.request(gql`{ ordersAggregate { avg { total } } }`);
+    expect(data.ordersAggregate.avg.total).toBeGreaterThan(0);
   });
 
   test('orders aggregate min <= max', async () => {
-    const data = await client.request(gql`{ ordersAggregate { min max } }`);
-    expect(data.ordersAggregate.min).toBeLessThanOrEqual(data.ordersAggregate.max);
+    const data = await client.request(gql`{ ordersAggregate { min { total } max { total } } }`);
+    expect(data.ordersAggregate.min.total).toBeLessThanOrEqual(data.ordersAggregate.max.total);
   });
 });
 

@@ -64,7 +64,9 @@ services:
       # Application settings
       SERVER_PORT: 10000
       APP_ALLOWED_SCHEMA: hana
+      APP_SCHEMA: hana
       APP_DATABASE_TYPE: postgres
+      APP_MAX_ROWS: 30
 
       # User context for RLS (Row Level Security)
       APP_SECURITY_USER_CONTEXT_ENABLED: true

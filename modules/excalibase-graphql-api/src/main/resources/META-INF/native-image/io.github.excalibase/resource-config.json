@@ -9,7 +9,8 @@
       { "pattern": "graphql/.*\\.graphqls" },
       { "pattern": "graphql/.*\\.graphql" },
       { "pattern": "META-INF/spring\\.factories" },
-      { "pattern": "META-INF/spring/.*" }
+      { "pattern": "META-INF/spring/.*" },
+      { "pattern": "META-INF/services/.*" }
     ]
   }
 }

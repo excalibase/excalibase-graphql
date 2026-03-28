@@ -63,8 +63,11 @@ management:
       probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
 
 app:
+  schema: ${app.allowed-schema:dvdrental}
   allowed-schema: dvdrental
   database-type: postgres
+  max-rows: 30
+  max-query-depth: 0
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
     role-privileges-ttl-minutes: 30  # Role privileges cache TTL in minutes (default: 30 minutes)
