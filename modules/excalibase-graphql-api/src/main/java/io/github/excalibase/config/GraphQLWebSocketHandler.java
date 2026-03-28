@@ -133,10 +133,18 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         Disposable disposable = subscriptionService.subscribe(tableName)
                 .subscribe(event -> {
                     try {
+                        Object parsedData = "";
+                        if (event.data() != null && !event.data().isBlank()) {
+                            try {
+                                parsedData = objectMapper.readValue(event.data(), Object.class);
+                            } catch (Exception ignored) {
+                                parsedData = event.data();
+                            }
+                        }
                         Map<String, Object> changeData = Map.of(
                                 "operation", event.type(),
                                 "table", event.table(),
-                                "data", event.data() != null ? event.data() : "",
+                                "data", parsedData,
                                 "timestamp", event.timestamp()
                         );
                         Map<String, Object> nextMsg = Map.of(

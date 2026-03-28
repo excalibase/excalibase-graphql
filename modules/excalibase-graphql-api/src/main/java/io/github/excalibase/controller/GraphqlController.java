@@ -54,7 +54,9 @@ public class GraphqlController {
             @Value("${app.schema}") String dbSchema,
             @Value("${app.max-rows:30}") int maxRows,
             @Value("${app.database-type:postgres}") String databaseType,
-            @Value("${app.max-query-depth:0}") int maxQueryDepth) {
+            @Value("${app.max-query-depth:0}") int maxQueryDepth,
+            @org.springframework.beans.factory.annotation.Autowired(required = false)
+            NatsCDCService natsCDCService) {
         this.jdbcTemplate = jdbcTemplate;
         this.namedJdbc = namedJdbc;
         this.dataSource = dataSource;
@@ -64,6 +66,9 @@ public class GraphqlController {
         this.maxRows = maxRows;
         this.databaseType = databaseType;
         this.maxQueryDepth = maxQueryDepth;
+        if (natsCDCService != null) {
+            natsCDCService.setSchemaReloadCallback(this::reload);
+        }
     }
 
     @PostConstruct
