@@ -182,7 +182,7 @@ cd modules/excalibase-graphql-starter && mvn test
 
 # Run specific test classes (from module directory)
 cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlControllerTest
-cd modules/excalibase-graphql-postgres && mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
+cd modules/excalibase-graphql-api && mvn test -Dtest=SqlCompilerIntegrationTest
 
 # Run with coverage (from project root)
 mvn clean test jacoco:report
@@ -279,15 +279,11 @@ test: add integration tests for relationship queries
 Understanding the codebase:
 
 ```
-src/main/java/io/github/excalibase/
-├── schema/reflector/     # Database introspection
-├── schema/generator/     # GraphQL schema creation
-├── schema/fetcher/       # Query resolvers
-├── schema/mutator/       # Mutation resolvers
-├── service/             # Service lookup and utilities
-├── config/              # Spring configuration
-├── model/               # Data models (no Lombok!)
-└── constant/            # Constants and enums
+modules/
+├── excalibase-graphql-starter/    # Core: SqlCompiler, QueryBuilder, MutationBuilder, FilterBuilder, interfaces
+├── excalibase-graphql-postgres/   # PostgresDialect, PostgresSchemaLoader, PostgresMutationCompiler
+├── excalibase-graphql-mysql/      # MysqlDialect, MysqlSchemaLoader, MysqlMutationCompiler
+└── excalibase-graphql-api/        # GraphqlController, WebSocket, Spring Boot app, config
 ```
 
 ### Adding Database Support

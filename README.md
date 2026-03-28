@@ -1465,7 +1465,7 @@ cd modules/excalibase-graphql-starter && mvn test
 
 # Run specific test classes (from module directory)
 cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlControllerTest
-cd modules/excalibase-graphql-postgres && mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
+cd modules/excalibase-graphql-api && mvn test -Dtest=SqlCompilerIntegrationTest
 
 # Run with coverage (from project root)
 mvn clean test jacoco:report

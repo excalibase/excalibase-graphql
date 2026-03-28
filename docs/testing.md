@@ -303,8 +303,8 @@ cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlPerformanceTest
 # Security tests only
 cd modules/excalibase-graphql-api && mvn test -Dtest=GraphqlSecurityTest
 
-# PostgreSQL implementation tests
-cd modules/excalibase-graphql-postgres && mvn test -Dtest=PostgresDatabaseDataFetcherImplementTest
+# PostgreSQL integration tests
+cd modules/excalibase-graphql-api && mvn test -Dtest=SqlCompilerIntegrationTest
 ```
 
 ### Run Enhanced Types Tests Specifically ✅ **NEW**
