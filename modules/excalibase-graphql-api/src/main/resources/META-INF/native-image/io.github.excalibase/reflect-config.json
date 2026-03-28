@@ -145,7 +145,23 @@
     "allPublicConstructors": true
   },
   {
+    "name": "io.github.excalibase.postgres.PostgresDialect",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "io.github.excalibase.postgres.PostgresSchemaLoader",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
     "name": "io.github.excalibase.postgres.PostgresMutationCompiler",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.github.excalibase.postgres.PostgresMutationExecutor",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true
   },
@@ -155,9 +171,44 @@
     "allPublicConstructors": true
   },
   {
+    "name": "io.github.excalibase.mysql.MysqlDialect",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "io.github.excalibase.mysql.MysqlSchemaLoader",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
     "name": "io.github.excalibase.mysql.MysqlMutationCompiler",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true
+  },
+  {
+    "name": "io.github.excalibase.mysql.MysqlMutationExecutor",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.github.excalibase.NatsCDCService",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allPublicMethods": true,
+    "allDeclaredFields": true
+  },
+  {
+    "name": "io.github.excalibase.SubscriptionService",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "io.github.excalibase.config.GraphQLWebSocketHandler",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allPublicMethods": true
   },
   {
     "name": "io.nats.client.impl.SocketDataPort",

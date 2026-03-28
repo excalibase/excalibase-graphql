@@ -9,7 +9,6 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
@@ -21,7 +20,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * through {@link SubscriptionService} to WebSocket subscribers.
  */
 @Service
-@ConditionalOnProperty(name = "app.nats.enabled", havingValue = "true", matchIfMissing = false)
 public class NatsCDCService {
 
     private static final Logger log = LoggerFactory.getLogger(NatsCDCService.class);
@@ -29,6 +27,9 @@ public class NatsCDCService {
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
     private Runnable schemaReloadCallback;
+
+    @Value("${app.nats.enabled:false}")
+    private boolean natsEnabled;
 
     @Value("${app.nats.url:nats://localhost:4222}")
     private String natsUrl;
@@ -58,6 +59,10 @@ public class NatsCDCService {
 
     @PostConstruct
     public void start() {
+        if (!natsEnabled) {
+            log.info("NATS CDC service disabled (app.nats.enabled=false)");
+            return;
+        }
         try {
             Options options = Options.builder()
                     .server(natsUrl)
