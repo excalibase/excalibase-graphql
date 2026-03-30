@@ -42,4 +42,5 @@ public final class NamingUtils {
         if (name == null) return null;
         return name.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
     }
+
 }

@@ -339,8 +339,8 @@ describe('Relationships', () => {
   });
 
   test('product with nested product_details (reverse FK)', async () => {
-    const data = await client.request(gql`{ product(where: { product_id: { eq: 1 } }) { product_id name productDetails { detail_id } } }`);
-    expect(data.product[0].productDetails.length).toBeGreaterThanOrEqual(1);
+    const data = await client.request(gql`{ product(where: { product_id: { eq: 1 } }) { product_id name productDetail { detail_id } } }`);
+    expect(data.product[0].productDetail.length).toBeGreaterThanOrEqual(1);
   });
 });
 

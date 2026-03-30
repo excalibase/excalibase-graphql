@@ -482,8 +482,8 @@ describe('Composite key tables', () => {
   });
 
 
-  test('query parent_table with reverse childTables (composite FK)', async () => {
-    const data = await client.request(gql`{ parentTable { parent_id1 parent_id2 name childTables { child_id description } } }`);
+  test('query parent_table with reverse childTable (composite FK)', async () => {
+    const data = await client.request(gql`{ parentTable { parent_id1 parent_id2 name childTable { child_id description } } }`);
     expect(data.parentTable.length).toBeGreaterThanOrEqual(3);
 
     // Core fix assertion: each parent sees only its own children (not cross-parent leakage)
@@ -496,19 +496,19 @@ describe('Composite key tables', () => {
     expect(p21).toBeDefined();
 
     // child_id=1 belongs to parent(1,1) — p11 must contain it, p12 and p21 must not
-    expect(p11.childTables.map(c => c.child_id)).toContain(1);
-    expect(p12.childTables.map(c => c.child_id)).not.toContain(1);
-    expect(p21.childTables.map(c => c.child_id)).not.toContain(1);
+    expect(p11.childTable.map(c => c.child_id)).toContain(1);
+    expect(p12.childTable.map(c => c.child_id)).not.toContain(1);
+    expect(p21.childTable.map(c => c.child_id)).not.toContain(1);
 
     // child_id=2 belongs to parent(1,2) — p11 and p21 must not contain it
-    expect(p11.childTables.map(c => c.child_id)).not.toContain(2);
-    expect(p12.childTables.map(c => c.child_id)).toContain(2);
-    expect(p21.childTables.map(c => c.child_id)).not.toContain(2);
+    expect(p11.childTable.map(c => c.child_id)).not.toContain(2);
+    expect(p12.childTable.map(c => c.child_id)).toContain(2);
+    expect(p21.childTable.map(c => c.child_id)).not.toContain(2);
 
     // child_id=3 belongs to parent(2,1) — p11 and p12 must not contain it
-    expect(p11.childTables.map(c => c.child_id)).not.toContain(3);
-    expect(p12.childTables.map(c => c.child_id)).not.toContain(3);
-    expect(p21.childTables.map(c => c.child_id)).toContain(3);
+    expect(p11.childTable.map(c => c.child_id)).not.toContain(3);
+    expect(p12.childTable.map(c => c.child_id)).not.toContain(3);
+    expect(p21.childTable.map(c => c.child_id)).toContain(3);
   });
 
   test('create order_items with composite key', async () => {

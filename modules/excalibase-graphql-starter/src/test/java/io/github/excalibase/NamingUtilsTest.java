@@ -65,4 +65,5 @@ class NamingUtilsTest {
     void camelToSnakeCase_null() {
         assertNull(NamingUtils.camelToSnakeCase(null));
     }
+
 }
