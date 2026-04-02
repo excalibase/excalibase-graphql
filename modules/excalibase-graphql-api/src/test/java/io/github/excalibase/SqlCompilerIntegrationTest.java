@@ -863,10 +863,10 @@ class SqlCompilerIntegrationTest {
     void reverseFkCustomerToTasks() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { customer_id: { eq: 1 } }) { first_name tasks { task_id title } } }")))
+                        .content(graphql("{ customer(where: { customer_id: { eq: 1 } }) { first_name task { task_id title } } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.customer[0].tasks", hasSize(2)));
+                .andExpect(jsonPath("$.data.customer[0].task", hasSize(2)));
     }
 
     // === Connection without totalCount (conditional totalCount) ===

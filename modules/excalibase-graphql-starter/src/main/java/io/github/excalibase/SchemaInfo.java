@@ -87,7 +87,6 @@ public class SchemaInfo {
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(List.of(fromCol), toTable, List.of(toCol)));
         String revFieldName = NamingUtils.toLowerCamelCase(fromTable);
-        if (!revFieldName.endsWith("s")) revFieldName += "s";
         reverseFks.put(toTable + "." + revFieldName,
                 new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
     }
@@ -98,7 +97,6 @@ public class SchemaInfo {
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(fromCols, toTable, toCols));
         String revFieldName = NamingUtils.toLowerCamelCase(fromTable);
-        if (!revFieldName.endsWith("s")) revFieldName += "s";
         reverseFks.put(toTable + "." + revFieldName,
                 new ReverseFkInfo(fromTable, fromCols, toCols));
     }
