@@ -13,6 +13,8 @@ spring:
   threads:
     virtual:
       enabled: true
+  jpa:
+    open-in-view: false
   datasource:
     driver-class-name: org.postgresql.Driver
     url: jdbc:postgresql://localhost:5433/dvdrental
@@ -63,8 +65,7 @@ management:
       probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
 
 app:
-  schema: ${app.allowed-schema:dvdrental}
-  allowed-schema: dvdrental
+  schemas: dvdrental
   database-type: postgres
   max-rows: 30
   max-query-depth: 0

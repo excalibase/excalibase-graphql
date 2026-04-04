@@ -33,6 +33,13 @@ public class MutationBuilder {
     public SqlDialect dialect() { return dialect; }
     public FilterBuilder filterBuilder() { return filterBuilder; }
     public String dbSchema() { return dbSchema; }
+
+    /** Resolve the qualified table expression using per-table schema metadata. */
+    public String qualifiedTable(String tableName) {
+        String schema = schemaInfo.resolveSchema(tableName, dbSchema);
+        String rawTable = tableName.contains(".") ? tableName.substring(tableName.indexOf('.') + 1) : tableName;
+        return dialect.qualifiedTable(schema, rawTable);
+    }
     public QueryBuilder queryBuilder() { return queryBuilder; }
 
     // === Mutation compilation — delegates to dialect-specific compiler ===
@@ -57,7 +64,9 @@ public class MutationBuilder {
         SchemaInfo.ProcedureInfo proc = schemaInfo.getStoredProcedures().get(procName);
         if (proc == null) return null;
 
-        String qualifiedName = dbSchema + "." + dialect.quoteIdentifier(procName);
+        String rawProc = procName.contains(".") ? procName.substring(procName.indexOf('.') + 1) : procName;
+        String procSchema = procName.contains(".") ? procName.substring(0, procName.indexOf('.')) : dbSchema;
+        String qualifiedName = procSchema + "." + dialect.quoteIdentifier(rawProc);
         List<SqlCompiler.ProcedureCallParam> allParams = new ArrayList<>();
 
         for (SchemaInfo.ProcParam p : proc.params()) {
@@ -79,6 +88,14 @@ public class MutationBuilder {
         if (schemaInfo.getStoredProcedures().containsKey(snake)) return snake;
         String lower = pascalName.toLowerCase();
         if (schemaInfo.getStoredProcedures().containsKey(lower)) return lower;
+
+        // Compound keys: match prefixed name (e.g., "HanaTransferFunds" → "hana.transfer_funds")
+        for (String procKey : schemaInfo.getStoredProcedures().keySet()) {
+            if (!procKey.contains(".")) continue;
+            String schema = procKey.substring(0, procKey.indexOf('.'));
+            String rawProc = procKey.substring(procKey.indexOf('.') + 1);
+            if (NamingUtils.schemaTypeName(schema, rawProc).equals(pascalName)) return procKey;
+        }
         return null;
     }
 
@@ -89,6 +106,14 @@ public class MutationBuilder {
         if (schemaInfo.hasTable(snake)) return snake;
         String lower = typeName.toLowerCase();
         if (schemaInfo.hasTable(lower)) return lower;
+
+        // Compound keys: match prefixed type name (e.g., "TestSchemaCustomer" → "test_schema.customer")
+        for (String table : schemaInfo.getTableNames()) {
+            if (!table.contains(".")) continue;
+            String schema = table.substring(0, table.indexOf('.'));
+            String rawTable = table.substring(table.indexOf('.') + 1);
+            if (NamingUtils.schemaTypeName(schema, rawTable).equals(typeName)) return table;
+        }
         return null;
     }
 
@@ -96,12 +121,15 @@ public class MutationBuilder {
 
     public String getEnumCastForMutation(String tableName, String colName) {
         String enumType = schemaInfo.getEnumType(tableName, colName);
+        String resolvedSchema = schemaInfo.resolveSchema(tableName, dbSchema);
         if (enumType != null) {
+            // Extract raw enum name from compound key (e.g., "hana.priority_level" → "priority_level")
+            String rawEnum = enumType.contains(".") ? enumType.substring(enumType.indexOf('.') + 1) : enumType;
             if (schemaInfo.getEnumTypes().containsKey(enumType)) {
-                return dialect.enumCast(dbSchema, enumType);
+                return dialect.enumCast(resolvedSchema, rawEnum);
             }
             if (schemaInfo.isCompositeType(enumType)) {
-                return dialect.enumCast(dbSchema, enumType);
+                return dialect.enumCast(resolvedSchema, rawEnum);
             }
         }
         String colType = schemaInfo.getColumnType(tableName, colName);

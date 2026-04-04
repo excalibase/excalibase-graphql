@@ -34,7 +34,7 @@ class SqlCompilerIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.schema", () -> "test_schema");
+        registry.add("app.schemas", () -> "test_schema");
         registry.add("app.max-rows", () -> 30);
     }
 
@@ -54,10 +54,10 @@ class SqlCompilerIntegrationTest {
     void listCustomers() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(orderBy: { customer_id: ASC }) { customer_id first_name last_name } }")))
+                        .content(graphql("{ testSchemaCustomer(orderBy: { customer_id: ASC }) { customer_id first_name last_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(5)))
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(5)))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"));
     }
 
     @Test
@@ -65,9 +65,9 @@ class SqlCompilerIntegrationTest {
     void listWithWhereFilter() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { active: { eq: true } }) { customer_id first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { active: { eq: true } }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(4)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(4)));
     }
 
     @Test
@@ -75,9 +75,9 @@ class SqlCompilerIntegrationTest {
     void listWithLimit() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(limit: 2) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(limit: 2) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(2)));
     }
 
     @Test
@@ -85,9 +85,9 @@ class SqlCompilerIntegrationTest {
     void listWithOrderBy() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(orderBy: { first_name: DESC }, limit: 1) { first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(orderBy: { first_name: DESC }, limit: 1) { first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Eve"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Eve"));
     }
 
     // === Forward FK ===
@@ -97,9 +97,9 @@ class SqlCompilerIntegrationTest {
     void forwardFkRelationship() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ orders(limit: 1) { order_id total_amount customer { first_name } } }")))
+                        .content(graphql("{ testSchemaOrders(limit: 1) { order_id total_amount testSchemaCustomer { first_name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orders[0].customer.first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaOrders[0].testSchemaCustomer.first_name").value("Alice"));
     }
 
     // === Reverse FK ===
@@ -110,10 +110,10 @@ class SqlCompilerIntegrationTest {
         // Reverse FK field: orders (from table) -> on customer -> field name is "orders" (already ends with s)
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { customer_id: { eq: 1 } }) { first_name orders { order_id total_amount } } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaOrders { order_id total_amount } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.customer[0].orders", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaOrders", hasSize(2)));
     }
 
     // === Connection ===
@@ -123,14 +123,14 @@ class SqlCompilerIntegrationTest {
     void connectionBasic() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customerConnection(first: 2) { edges { cursor node { customer_id first_name } } pageInfo { hasNextPage hasPreviousPage } totalCount } }")))
+                        .content(graphql("{ testSchemaCustomerConnection(first: 2) { edges { cursor node { customer_id first_name } } pageInfo { hasNextPage hasPreviousPage } totalCount } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customerConnection.edges", hasSize(2)))
-                .andExpect(jsonPath("$.data.customerConnection.edges[0].cursor").isString())
-                .andExpect(jsonPath("$.data.customerConnection.edges[0].node.first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.customerConnection.pageInfo.hasNextPage").value(true))
-                .andExpect(jsonPath("$.data.customerConnection.pageInfo.hasPreviousPage").value(false))
-                .andExpect(jsonPath("$.data.customerConnection.totalCount").value(5));
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.edges", hasSize(2)))
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.edges[0].cursor").isString())
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.edges[0].node.first_name").value("Alice"))
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.pageInfo.hasNextPage").value(true))
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.pageInfo.hasPreviousPage").value(false))
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.totalCount").value(5));
     }
 
     @Test
@@ -139,18 +139,18 @@ class SqlCompilerIntegrationTest {
         // Get first page
         var result = mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customerConnection(first: 2) { edges { cursor node { customer_id } } } }")))
+                        .content(graphql("{ testSchemaCustomerConnection(first: 2) { edges { cursor node { customer_id } } } }")))
                 .andReturn();
         String body = result.getResponse().getContentAsString();
-        String cursor = com.jayway.jsonpath.JsonPath.read(body, "$.data.customerConnection.edges[1].cursor");
+        String cursor = com.jayway.jsonpath.JsonPath.read(body, "$.data.testSchemaCustomerConnection.edges[1].cursor");
 
         // Get second page using after cursor
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customerConnection(first: 2, after: \"" + cursor + "\") { edges { node { customer_id first_name } } pageInfo { hasPreviousPage } } }")))
+                        .content(graphql("{ testSchemaCustomerConnection(first: 2, after: \"" + cursor + "\") { edges { node { customer_id first_name } } pageInfo { hasPreviousPage } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customerConnection.edges[0].node.customer_id").value(3))
-                .andExpect(jsonPath("$.data.customerConnection.pageInfo.hasPreviousPage").value(true));
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.edges[0].node.customer_id").value(3))
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.pageInfo.hasPreviousPage").value(true));
     }
 
     // === Aggregates ===
@@ -160,9 +160,9 @@ class SqlCompilerIntegrationTest {
     void aggregateCount() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customerAggregate { count } }")))
+                        .content(graphql("{ testSchemaCustomerAggregate { count } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customerAggregate.count").value(5));
+                .andExpect(jsonPath("$.data.testSchemaCustomerAggregate.count").value(5));
     }
 
     @Test
@@ -170,10 +170,10 @@ class SqlCompilerIntegrationTest {
     void aggregateSumAvgMinMax() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ ordersAggregate { count sum { total_amount } avg { total_amount } min { total_amount } max { total_amount } } }")))
+                        .content(graphql("{ testSchemaOrdersAggregate { count sum { total_amount } avg { total_amount } min { total_amount } max { total_amount } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.ordersAggregate.count").value(5))
-                .andExpect(jsonPath("$.data.ordersAggregate.max.total_amount").isNumber());
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.count").value(5))
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.max.total_amount").isNumber());
     }
 
     // === Mutations ===
@@ -183,10 +183,10 @@ class SqlCompilerIntegrationTest {
     void createCustomer() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { createCustomer(input: { first_name: \"Test\", last_name: \"User\", email: \"test@test.com\" }) { customer_id first_name } }")))
+                        .content(graphql("mutation { createTestSchemaCustomer(input: { first_name: \"Test\", last_name: \"User\", email: \"test@test.com\" }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.createCustomer.first_name").value("Test"))
-                .andExpect(jsonPath("$.data.createCustomer.customer_id").isNumber());
+                .andExpect(jsonPath("$.data.createTestSchemaCustomer.first_name").value("Test"))
+                .andExpect(jsonPath("$.data.createTestSchemaCustomer.customer_id").isNumber());
     }
 
     @Test
@@ -194,9 +194,9 @@ class SqlCompilerIntegrationTest {
     void updateCustomer() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { updateCustomer(input: { customer_id: 1, email: \"updated@test.com\" }) { customer_id email } }")))
+                        .content(graphql("mutation { updateTestSchemaCustomer(input: { customer_id: 1, email: \"updated@test.com\" }) { customer_id email } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.updateCustomer.email").value("updated@test.com"));
+                .andExpect(jsonPath("$.data.updateTestSchemaCustomer.email").value("updated@test.com"));
     }
 
     @Test
@@ -205,14 +205,14 @@ class SqlCompilerIntegrationTest {
         // Create a customer to delete
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { createCustomer(input: { first_name: \"ToDelete\", last_name: \"User\" }) { customer_id } }")))
+                        .content(graphql("mutation { createTestSchemaCustomer(input: { first_name: \"ToDelete\", last_name: \"User\" }) { customer_id } }")))
                 .andExpect(status().isOk());
 
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { deleteCustomer(input: { customer_id: 7 }) { customer_id first_name } }")))
+                        .content(graphql("mutation { deleteTestSchemaCustomer(input: { customer_id: 7 }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.deleteCustomer.first_name").value("ToDelete"));
+                .andExpect(jsonPath("$.data.deleteTestSchemaCustomer.first_name").value("ToDelete"));
     }
 
     @Test
@@ -220,9 +220,9 @@ class SqlCompilerIntegrationTest {
     void bulkCreateCustomers() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { createManyCustomer(inputs: [{ first_name: \"Bulk1\", last_name: \"Test\" }, { first_name: \"Bulk2\", last_name: \"Test\" }]) { customer_id first_name } }")))
+                        .content(graphql("mutation { createManyTestSchemaCustomer(inputs: [{ first_name: \"Bulk1\", last_name: \"Test\" }, { first_name: \"Bulk2\", last_name: \"Test\" }]) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.createManyCustomer", hasSize(2)));
+                .andExpect(jsonPath("$.data.createManyTestSchemaCustomer", hasSize(2)));
     }
 
     // === Enhanced WHERE filters ===
@@ -232,9 +232,9 @@ class SqlCompilerIntegrationTest {
     void whereInFilter() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { customer_id: { in: [1, 3] } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { in: [1, 3] } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(2)));
     }
 
     @Test
@@ -242,9 +242,9 @@ class SqlCompilerIntegrationTest {
     void whereLikeFilter() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { first_name: { like: \"A%\" } }) { first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { first_name: { like: \"A%\" } }) { first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"));
     }
 
     @Test
@@ -252,9 +252,9 @@ class SqlCompilerIntegrationTest {
     void whereGtLtFilters() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ orders(where: { total_amount: { gt: 100 } }) { order_id total_amount } }")))
+                        .content(graphql("{ testSchemaOrders(where: { total_amount: { gt: 100 } }) { order_id total_amount } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orders", hasSize(greaterThanOrEqualTo(2))));
+                .andExpect(jsonPath("$.data.testSchemaOrders", hasSize(greaterThanOrEqualTo(2))));
     }
 
     // === Introspection ===
@@ -275,9 +275,9 @@ class SqlCompilerIntegrationTest {
     void introspectionType() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ __type(name: \"Customer\") { name fields { name } } }")))
+                        .content(graphql("{ __type(name: \"TestSchemaCustomer\") { name fields { name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.__type.name").value("Customer"))
+                .andExpect(jsonPath("$.data.__type.name").value("TestSchemaCustomer"))
                 .andExpect(jsonPath("$.data.__type.fields").isArray());
     }
 
@@ -288,11 +288,11 @@ class SqlCompilerIntegrationTest {
     void fragmentSpread() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("fragment CustomerFields on Customer { customer_id first_name } { customer(limit: 1) { ...CustomerFields last_name } }")))
+                        .content(graphql("fragment CustomerFields on TestSchemaCustomer { customer_id first_name } { testSchemaCustomer(limit: 1) { ...CustomerFields last_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].customer_id").isNumber())
-                .andExpect(jsonPath("$.data.customer[0].first_name").isString())
-                .andExpect(jsonPath("$.data.customer[0].last_name").isString());
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].customer_id").isNumber())
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").isString())
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].last_name").isString());
     }
 
     // === Phase 1A: Enum support ===
@@ -302,10 +302,10 @@ class SqlCompilerIntegrationTest {
     void enumColumnReturnsValue() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ task(limit: 1, where: { priority: { eq: \"HIGH\" } }) { task_id title priority } }")))
+                        .content(graphql("{ testSchemaTask(limit: 1, where: { priority: { eq: \"HIGH\" } }) { task_id title priority } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.task[0].title").value("Fix bug"))
-                .andExpect(jsonPath("$.data.task[0].priority").value("HIGH"));
+                .andExpect(jsonPath("$.data.testSchemaTask[0].title").value("Fix bug"))
+                .andExpect(jsonPath("$.data.testSchemaTask[0].priority").value("HIGH"));
     }
 
     @Test
@@ -313,9 +313,9 @@ class SqlCompilerIntegrationTest {
     void enumFilterIn() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ task(where: { priority: { in: [\"HIGH\", \"CRITICAL\"] } }) { task_id priority } }")))
+                        .content(graphql("{ testSchemaTask(where: { priority: { in: [\"HIGH\", \"CRITICAL\"] } }) { task_id priority } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.task", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaTask", hasSize(2)));
     }
 
     // === Phase 1B: Computed fields ===
@@ -325,9 +325,9 @@ class SqlCompilerIntegrationTest {
     void computedFieldFullName() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(limit: 1, orderBy: { customer_id: ASC }) { first_name last_name customer_full_name } }")))
+                        .content(graphql("{ testSchemaCustomer(limit: 1, orderBy: { customer_id: ASC }) { first_name last_name customer_full_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].customer_full_name").value("Alice Smith"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].customer_full_name").value("Alice Smith"));
     }
 
     // === Phase 1C: Bulk UPDATE by filter ===
@@ -337,14 +337,14 @@ class SqlCompilerIntegrationTest {
     void bulkUpdateByFilter() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { updateTaskCollection(set: { priority: \"LOW\" }, filter: { priority: { eq: \"HIGH\" } }, atMost: 10) { task_id priority } }")))
+                        .content(graphql("mutation { updateTestSchemaTaskCollection(set: { priority: \"LOW\" }, filter: { priority: { eq: \"HIGH\" } }, atMost: 10) { task_id priority } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.updateTaskCollection[0].priority").value("LOW"));
+                .andExpect(jsonPath("$.data.updateTestSchemaTaskCollection[0].priority").value("LOW"));
 
         // Restore
         mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(graphql("mutation { updateTask(input: { task_id: 1, priority: \"HIGH\" }) { task_id } }")));
+                .content(graphql("mutation { updateTestSchemaTask(input: { task_id: 1, priority: \"HIGH\" }) { task_id } }")));
     }
 
     // === Phase 1D: Bulk DELETE by filter ===
@@ -355,17 +355,17 @@ class SqlCompilerIntegrationTest {
         // Insert temp data
         mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(graphql("mutation { createTask(input: { title: \"temp1\", priority: \"LOW\" }) { task_id } }")));
+                .content(graphql("mutation { createTestSchemaTask(input: { title: \"temp1\", priority: \"LOW\" }) { task_id } }")));
         mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(graphql("mutation { createTask(input: { title: \"temp2\", priority: \"LOW\" }) { task_id } }")));
+                .content(graphql("mutation { createTestSchemaTask(input: { title: \"temp2\", priority: \"LOW\" }) { task_id } }")));
 
         // Bulk delete by filter
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { deleteFromTaskCollection(filter: { title: { like: \"temp%\" } }, atMost: 10) { task_id title } }")))
+                        .content(graphql("mutation { deleteFromTestSchemaTaskCollection(filter: { title: { like: \"temp%\" } }, atMost: 10) { task_id title } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.deleteFromTaskCollection", hasSize(2)));
+                .andExpect(jsonPath("$.data.deleteFromTestSchemaTaskCollection", hasSize(2)));
     }
 
     // === Phase 1E: Upsert ===
@@ -376,9 +376,9 @@ class SqlCompilerIntegrationTest {
         // First call: inserts
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { createCustomer(input: { first_name: \"Upsert\", last_name: \"Test\", email: \"upsert@test.com\" }, onConflict: { constraint: \"customer_pkey\", update_columns: [\"email\"] }) { customer_id first_name email } }")))
+                        .content(graphql("mutation { createTestSchemaCustomer(input: { first_name: \"Upsert\", last_name: \"Test\", email: \"upsert@test.com\" }, onConflict: { constraint: \"customer_pkey\", update_columns: [\"email\"] }) { customer_id first_name email } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.createCustomer.first_name").value("Upsert"));
+                .andExpect(jsonPath("$.data.createTestSchemaCustomer.first_name").value("Upsert"));
     }
 
     // === Phase 1F: Nulls ordering ===
@@ -390,9 +390,9 @@ class SqlCompilerIntegrationTest {
         // Use email which could be null
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(orderBy: { email: AscNullsLast }, limit: 5) { customer_id email } }")))
+                        .content(graphql("{ testSchemaCustomer(orderBy: { email: AscNullsLast }, limit: 5) { customer_id email } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(5)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(5)));
     }
 
     // === Phase 2A: Array columns ===
@@ -402,10 +402,10 @@ class SqlCompilerIntegrationTest {
     void arrayColumnReturned() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { customer_id: { eq: 1 } }) { first_name tags } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name tags } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].tags").isArray())
-                .andExpect(jsonPath("$.data.customer[0].tags", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].tags").isArray())
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].tags", hasSize(2)));
     }
 
     // === Phase 2B: JSONB columns ===
@@ -415,9 +415,9 @@ class SqlCompilerIntegrationTest {
     void jsonbColumnReturned() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { customer_id: { eq: 1 } }) { first_name metadata } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name metadata } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].metadata.vip").value(true));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].metadata.vip").value(true));
     }
 
     // === Phase 2E: Aggregate with WHERE ===
@@ -427,9 +427,9 @@ class SqlCompilerIntegrationTest {
     void aggregateWithFilter() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ ordersAggregate(where: { total_amount: { gt: 100 } }) { count } }")))
+                        .content(graphql("{ testSchemaOrdersAggregate(where: { total_amount: { gt: 100 } }) { count } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.ordersAggregate.count").value(3));
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.count").value(3));
     }
 
     // === Phase 2F: Views ===
@@ -439,9 +439,9 @@ class SqlCompilerIntegrationTest {
     void queryView() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ activeCustomers { customer_id first_name } }")))
+                        .content(graphql("{ testSchemaActiveCustomers { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.activeCustomers", hasSize(greaterThanOrEqualTo(4))));
+                .andExpect(jsonPath("$.data.testSchemaActiveCustomers", hasSize(greaterThanOrEqualTo(4))));
     }
 
     // === Phase 2C: Additional filter operators ===
@@ -451,9 +451,9 @@ class SqlCompilerIntegrationTest {
     void filterNin() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { customer_id: { nin: [1, 2, 3] } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { nin: [1, 2, 3] } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(2))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(2))));
     }
 
     @Test
@@ -461,9 +461,9 @@ class SqlCompilerIntegrationTest {
     void filterEndsWith() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { email: { endsWith: \"@example.com\" } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { email: { endsWith: \"@example.com\" } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(4))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(4))));
     }
 
     // === Phase 1C/1D: Forward FK on task -> customer ===
@@ -473,9 +473,9 @@ class SqlCompilerIntegrationTest {
     void taskForwardFkToCustomer() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ task(limit: 1, orderBy: { task_id: ASC }) { task_id title customer { first_name } } }")))
+                        .content(graphql("{ testSchemaTask(limit: 1, orderBy: { task_id: ASC }) { task_id title testSchemaCustomer { first_name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.task[0].customer.first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaTask[0].testSchemaCustomer.first_name").value("Alice"));
     }
 
     // === Phase 1G: Introspection with relationships ===
@@ -486,9 +486,9 @@ class SqlCompilerIntegrationTest {
         // Customer type should show 'orders' reverse FK field and scalar fields
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ __type(name: \"Customer\") { name fields { name } } }")))
+                        .content(graphql("{ __type(name: \"TestSchemaCustomer\") { name fields { name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.__type.name").value("Customer"))
+                .andExpect(jsonPath("$.data.__type.name").value("TestSchemaCustomer"))
                 .andExpect(jsonPath("$.data.__type.fields[?(@.name == 'customer_id')]").exists())
                 .andExpect(jsonPath("$.data.__type.fields[?(@.name == 'first_name')]").exists());
     }
@@ -498,7 +498,7 @@ class SqlCompilerIntegrationTest {
     void introspectionEnumType() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ __type(name: \"PriorityLevel\") { kind enumValues { name } } }")))
+                        .content(graphql("{ __type(name: \"TestSchemaPriorityLevel\") { kind enumValues { name } } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.__type.kind").value("ENUM"))
                 .andExpect(jsonPath("$.data.__type.enumValues", hasSize(4)));
@@ -512,9 +512,9 @@ class SqlCompilerIntegrationTest {
         // order_items has multiple rows per order_id. Distinct on order_id should deduplicate.
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ orderItems(distinctOn: [\"order_id\"]) { order_id } }")))
+                        .content(graphql("{ testSchemaOrderItems(distinctOn: [\"order_id\"]) { order_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orderItems", hasSize(4)));
+                .andExpect(jsonPath("$.data.testSchemaOrderItems", hasSize(4)));
     }
 
     // === Additional filter coverage ===
@@ -524,10 +524,10 @@ class SqlCompilerIntegrationTest {
     void filterIlike() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { first_name: { ilike: \"alice\" } }) { first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { first_name: { ilike: \"alice\" } }) { first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(1)))
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(1)))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"));
     }
 
     @Test
@@ -535,10 +535,10 @@ class SqlCompilerIntegrationTest {
     void filterStartsWith() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { first_name: { startsWith: \"Al\" } }) { first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { first_name: { startsWith: \"Al\" } }) { first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(1)))
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(1)))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"));
     }
 
     @Test
@@ -546,10 +546,10 @@ class SqlCompilerIntegrationTest {
     void filterContains() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { first_name: { contains: \"li\" } }) { first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { first_name: { contains: \"li\" } }) { first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(1)))
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(1)))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"));
     }
 
     @Test
@@ -558,9 +558,9 @@ class SqlCompilerIntegrationTest {
         // Customers with null email — earlier mutations may have added rows without email
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { email: { eq: null } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { email: { eq: null } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(0))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(0))));
     }
 
     @Test
@@ -569,9 +569,9 @@ class SqlCompilerIntegrationTest {
         // Customers with non-null email
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { email: { neq: null } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { email: { neq: null } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(5))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(5))));
     }
 
     @Test
@@ -580,9 +580,9 @@ class SqlCompilerIntegrationTest {
         // Use { is: NULL } enum form
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { email: { is: NULL } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { email: { is: NULL } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(0))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(0))));
     }
 
     @Test
@@ -591,9 +591,9 @@ class SqlCompilerIntegrationTest {
         // Use { is: NOT_NULL } enum form
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { email: { is: NOT_NULL } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { email: { is: NOT_NULL } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(5))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(5))));
     }
 
     @Test
@@ -602,9 +602,9 @@ class SqlCompilerIntegrationTest {
         // OR: first_name = Alice OR first_name = Bob
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { or: [{ first_name: { eq: \"Alice\" } }, { first_name: { eq: \"Bob\" } }] }) { first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { or: [{ first_name: { eq: \"Alice\" } }, { first_name: { eq: \"Bob\" } }] }) { first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(2)));
     }
 
     @Test
@@ -613,10 +613,10 @@ class SqlCompilerIntegrationTest {
         // AND: active = true AND first_name = Alice (email-based filter unreliable due to earlier mutations)
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { and: [{ active: { eq: true } }, { first_name: { eq: \"Alice\" } }] }) { first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { and: [{ active: { eq: true } }, { first_name: { eq: \"Alice\" } }] }) { first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(1)))
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(1)))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"));
     }
 
     @Test
@@ -625,9 +625,9 @@ class SqlCompilerIntegrationTest {
         // NOT: not { first_name = Alice } -> should return 4 others
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { not: { first_name: { eq: \"Alice\" } } }) { first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { not: { first_name: { eq: \"Alice\" } } }) { first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(4))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(4))));
     }
 
     @Test
@@ -635,9 +635,9 @@ class SqlCompilerIntegrationTest {
     void filterGte() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ orders(where: { total_amount: { gte: 250 } }) { order_id total_amount } }")))
+                        .content(graphql("{ testSchemaOrders(where: { total_amount: { gte: 250 } }) { order_id total_amount } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orders", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaOrders", hasSize(2)));
     }
 
     @Test
@@ -645,9 +645,9 @@ class SqlCompilerIntegrationTest {
     void filterLt() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ orders(where: { total_amount: { lt: 100 } }) { order_id total_amount } }")))
+                        .content(graphql("{ testSchemaOrders(where: { total_amount: { lt: 100 } }) { order_id total_amount } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orders", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaOrders", hasSize(2)));
     }
 
     @Test
@@ -655,9 +655,9 @@ class SqlCompilerIntegrationTest {
     void filterLte() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ orders(where: { total_amount: { lte: 100.50 } }) { order_id } }")))
+                        .content(graphql("{ testSchemaOrders(where: { total_amount: { lte: 100.50 } }) { order_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orders", hasSize(3)));
+                .andExpect(jsonPath("$.data.testSchemaOrders", hasSize(3)));
     }
 
     @Test
@@ -665,9 +665,9 @@ class SqlCompilerIntegrationTest {
     void filterNeq() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { first_name: { neq: \"Alice\" } }) { first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { first_name: { neq: \"Alice\" } }) { first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(4))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(4))));
     }
 
     // === Offset pagination ===
@@ -677,10 +677,10 @@ class SqlCompilerIntegrationTest {
     void listWithOffset() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(orderBy: { customer_id: ASC }, limit: 2, offset: 2) { customer_id first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(orderBy: { customer_id: ASC }, limit: 2, offset: 2) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(2)))
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Carol"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(2)))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Carol"));
     }
 
     // === Multiple root fields ===
@@ -690,10 +690,10 @@ class SqlCompilerIntegrationTest {
     void multipleRootFields() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(limit: 1, orderBy: { customer_id: ASC }) { first_name } orders(limit: 1, orderBy: { order_id: ASC }) { order_id total_amount } }")))
+                        .content(graphql("{ testSchemaCustomer(limit: 1, orderBy: { customer_id: ASC }) { first_name } testSchemaOrders(limit: 1, orderBy: { order_id: ASC }) { order_id total_amount } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.orders[0].order_id").value(1));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"))
+                .andExpect(jsonPath("$.data.testSchemaOrders[0].order_id").value(1));
     }
 
     // === Error cases ===
@@ -727,9 +727,9 @@ class SqlCompilerIntegrationTest {
     void orderByAscNullsFirst() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(orderBy: { email: AscNullsFirst }, limit: 5) { customer_id email } }")))
+                        .content(graphql("{ testSchemaCustomer(orderBy: { email: AscNullsFirst }, limit: 5) { customer_id email } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(5)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(5)));
     }
 
     @Test
@@ -737,9 +737,9 @@ class SqlCompilerIntegrationTest {
     void orderByDescNullsFirst() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(orderBy: { email: DescNullsFirst }, limit: 5) { customer_id email } }")))
+                        .content(graphql("{ testSchemaCustomer(orderBy: { email: DescNullsFirst }, limit: 5) { customer_id email } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(5)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(5)));
     }
 
     @Test
@@ -747,9 +747,9 @@ class SqlCompilerIntegrationTest {
     void orderByDescNullsLast() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(orderBy: { email: DescNullsLast }, limit: 5) { customer_id email } }")))
+                        .content(graphql("{ testSchemaCustomer(orderBy: { email: DescNullsLast }, limit: 5) { customer_id email } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(5)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(5)));
     }
 
     // === Connection with startCursor and endCursor ===
@@ -759,12 +759,12 @@ class SqlCompilerIntegrationTest {
     void connectionWithStartEndCursor() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customerConnection(first: 3) { edges { cursor node { customer_id } } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }")))
+                        .content(graphql("{ testSchemaCustomerConnection(first: 3) { edges { cursor node { customer_id } } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } totalCount } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customerConnection.edges", hasSize(3)))
-                .andExpect(jsonPath("$.data.customerConnection.pageInfo.startCursor").isString())
-                .andExpect(jsonPath("$.data.customerConnection.pageInfo.endCursor").isString())
-                .andExpect(jsonPath("$.data.customerConnection.totalCount").value(greaterThanOrEqualTo(5)));
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.edges", hasSize(3)))
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.pageInfo.startCursor").isString())
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.pageInfo.endCursor").isString())
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.totalCount").value(greaterThanOrEqualTo(5)));
     }
 
     // === Connection with where filter ===
@@ -774,9 +774,9 @@ class SqlCompilerIntegrationTest {
     void connectionWithWhereFilter() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customerConnection(first: 10, where: { active: { eq: true } }) { edges { node { first_name } } totalCount } }")))
+                        .content(graphql("{ testSchemaCustomerConnection(first: 10, where: { active: { eq: true } }) { edges { node { first_name } } totalCount } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customerConnection.totalCount").value(greaterThanOrEqualTo(4)));
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.totalCount").value(greaterThanOrEqualTo(4)));
     }
 
     // === Connection last (backward pagination) ===
@@ -786,9 +786,9 @@ class SqlCompilerIntegrationTest {
     void connectionLast() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customerConnection(last: 2) { edges { node { customer_id first_name } } pageInfo { hasNextPage hasPreviousPage } } }")))
+                        .content(graphql("{ testSchemaCustomerConnection(last: 2) { edges { node { customer_id first_name } } pageInfo { hasNextPage hasPreviousPage } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customerConnection.edges", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.edges", hasSize(2)));
     }
 
     // === Aggregate with sum/avg on orders ===
@@ -798,9 +798,9 @@ class SqlCompilerIntegrationTest {
     void aggregateSumOnly() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ ordersAggregate { sum { total_amount } } }")))
+                        .content(graphql("{ testSchemaOrdersAggregate { sum { total_amount } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.ordersAggregate.sum.total_amount").isNumber());
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.sum.total_amount").isNumber());
     }
 
     @Test
@@ -808,10 +808,10 @@ class SqlCompilerIntegrationTest {
     void aggregateMinMax() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ ordersAggregate { min { total_amount } max { total_amount } } }")))
+                        .content(graphql("{ testSchemaOrdersAggregate { min { total_amount } max { total_amount } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.ordersAggregate.min.total_amount").isNumber())
-                .andExpect(jsonPath("$.data.ordersAggregate.max.total_amount").isNumber());
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.min.total_amount").isNumber())
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.max.total_amount").isNumber());
     }
 
     // === Inline fragment ===
@@ -821,11 +821,11 @@ class SqlCompilerIntegrationTest {
     void inlineFragment() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(limit: 1, orderBy: { customer_id: ASC }) { ... on Customer { customer_id first_name } last_name } }")))
+                        .content(graphql("{ testSchemaCustomer(limit: 1, orderBy: { customer_id: ASC }) { ... on TestSchemaCustomer { customer_id first_name } last_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].customer_id").isNumber())
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.customer[0].last_name").value("Smith"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].customer_id").isNumber())
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].last_name").value("Smith"));
     }
 
     // === RLS path (X-User-Id header triggers RLS in Postgres) ===
@@ -837,10 +837,10 @@ class SqlCompilerIntegrationTest {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .header("X-User-Id", "alice")
-                        .content(graphql("{ customer(limit: 2, orderBy: { customer_id: ASC }) { customer_id first_name } }")))
+                        .content(graphql("{ testSchemaCustomer(limit: 2, orderBy: { customer_id: ASC }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(2)))
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(2)))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"));
     }
 
     // === Order items (composite PK table) — list ===
@@ -850,10 +850,10 @@ class SqlCompilerIntegrationTest {
     void listOrderItems() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ orderItems(limit: 3, orderBy: { order_id: ASC }) { order_id product_id quantity price } }")))
+                        .content(graphql("{ testSchemaOrderItems(limit: 3, orderBy: { order_id: ASC }) { order_id product_id quantity price } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.orderItems", hasSize(3)))
-                .andExpect(jsonPath("$.data.orderItems[0].order_id").value(1));
+                .andExpect(jsonPath("$.data.testSchemaOrderItems", hasSize(3)))
+                .andExpect(jsonPath("$.data.testSchemaOrderItems[0].order_id").value(1));
     }
 
     // === Reverse FK: customer -> tasks ===
@@ -863,10 +863,10 @@ class SqlCompilerIntegrationTest {
     void reverseFkCustomerToTasks() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { customer_id: { eq: 1 } }) { first_name task { task_id title } } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaTask { task_id title } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.customer[0].task", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"))
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaTask", hasSize(2)));
     }
 
     // === Connection without totalCount (conditional totalCount) ===
@@ -876,10 +876,10 @@ class SqlCompilerIntegrationTest {
     void connectionWithoutTotalCount() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customerConnection(first: 2) { edges { node { first_name } } pageInfo { hasNextPage } } }")))
+                        .content(graphql("{ testSchemaCustomerConnection(first: 2) { edges { node { first_name } } pageInfo { hasNextPage } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customerConnection.edges", hasSize(2)))
-                .andExpect(jsonPath("$.data.customerConnection.pageInfo.hasNextPage").value(true));
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.edges", hasSize(2)))
+                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.pageInfo.hasNextPage").value(true));
     }
 
     // === Aggregate count only (no sum/avg/min/max sub-selections) ===
@@ -889,9 +889,9 @@ class SqlCompilerIntegrationTest {
     void aggregateCountOnly() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ taskAggregate { count } }")))
+                        .content(graphql("{ testSchemaTaskAggregate { count } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.taskAggregate.count").value(greaterThanOrEqualTo(2)));
+                .andExpect(jsonPath("$.data.testSchemaTaskAggregate.count").value(greaterThanOrEqualTo(2)));
     }
 
     // === isNull / isNotNull / notIn filter operators ===
@@ -901,9 +901,9 @@ class SqlCompilerIntegrationTest {
     void whereIsNullFilter() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { email: { isNull: true } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { email: { isNull: true } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer").isArray());
+                .andExpect(jsonPath("$.data.testSchemaCustomer").isArray());
     }
 
     @Test
@@ -911,9 +911,9 @@ class SqlCompilerIntegrationTest {
     void whereIsNotNullFilter() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { email: { isNotNull: true } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { email: { isNotNull: true } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(5))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(5))));
     }
 
     @Test
@@ -921,9 +921,9 @@ class SqlCompilerIntegrationTest {
     void whereNotInFilter() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(where: { customer_id: { notIn: [1, 2] } }) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { notIn: [1, 2] } }) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer", hasSize(greaterThanOrEqualTo(3))));
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(3))));
     }
 
     // === String-value ordering (e2e tests pass "DESC" as string, not enum) ===
@@ -933,9 +933,9 @@ class SqlCompilerIntegrationTest {
     void orderByDescString() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ customer(orderBy: { customer_id: \"DESC\" }, limit: 2) { customer_id } }")))
+                        .content(graphql("{ testSchemaCustomer(orderBy: { customer_id: \"DESC\" }, limit: 2) { customer_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.customer[0].customer_id").value(greaterThan(3)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].customer_id").value(greaterThan(3)));
     }
 
     // === Update with separate id arg + input arg (e2e test style) ===
@@ -945,8 +945,8 @@ class SqlCompilerIntegrationTest {
     void updateWithIdArg() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { updateCustomer(id: 2, input: { first_name: \"Bobby\" }) { customer_id first_name } }")))
+                        .content(graphql("mutation { updateTestSchemaCustomer(id: 2, input: { first_name: \"Bobby\" }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.updateCustomer.first_name").value("Bobby"));
+                .andExpect(jsonPath("$.data.updateTestSchemaCustomer.first_name").value("Bobby"));
     }
 }

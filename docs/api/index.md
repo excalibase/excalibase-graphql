@@ -41,15 +41,15 @@ For every table and view, three query fields are generated:
 
 | Field | Description |
 |-------|-------------|
-| `{table}` | List with filtering, sorting, pagination |
-| `{table}Connection` | Cursor-based (Relay) pagination |
-| `{table}_aggregate` | Aggregate functions (count, sum, avg, min, max) |
+| `{schema}{Table}` | List with filtering, sorting, pagination |
+| `{schema}{Table}Connection` | Cursor-based (Relay) pagination |
+| `{schema}{Table}Aggregate` | Aggregate functions (count, sum, avg, min, max) |
 
 ### List Query
 
 ```graphql
 {
-  customer(
+  hanaCustomer(
     where: { active: { eq: true } }
     orderBy: { last_name: ASC }
     limit: 20
@@ -76,7 +76,7 @@ For every table and view, three query fields are generated:
 
 ```graphql
 {
-  customerConnection(first: 10, after: "cursor_value") {
+  hanaCustomerConnection(first: 10, after: "cursor_value") {
     edges {
       node {
         customer_id
@@ -102,7 +102,7 @@ PostgreSQL aggregate fields return nested per-column results:
 
 ```graphql
 {
-  orders_aggregate {
+  hanaOrdersAggregate {
     count
     sum { total_amount }
     avg { total_amount }
@@ -116,7 +116,7 @@ MySQL aggregate fields return flat scalars:
 
 ```graphql
 {
-  orders_aggregate {
+  excalibaseOrdersAggregate {
     count
     sum
     avg
@@ -134,17 +134,17 @@ For every table, the following mutations are generated:
 
 | Mutation | Description |
 |----------|-------------|
-| `create{Table}` | Insert one row |
-| `createMany{Table}s` | Bulk insert |
-| `update{Table}` | Update one row |
-| `delete{Table}` | Delete one row, returns the deleted row |
-| `call{ProcedureName}` | Call a stored procedure |
+| `create{Schema}{Table}` | Insert one row |
+| `createMany{Schema}{Table}` | Bulk insert |
+| `update{Schema}{Table}` | Update one row |
+| `delete{Schema}{Table}` | Delete one row, returns the deleted row |
+| `call{Schema}{ProcedureName}` | Call a stored procedure |
 
 ### Create
 
 ```graphql
 mutation {
-  createCustomer(input: {
+  createHanaCustomer(input: {
     first_name: "Alice"
     last_name: "Smith"
     email: "alice@example.com"
@@ -159,7 +159,7 @@ mutation {
 
 ```graphql
 mutation {
-  createManyCustomers(inputs: [
+  createManyHanaCustomer(inputs: [
     { first_name: "Bob", last_name: "Jones", email: "bob@example.com" }
     { first_name: "Carol", last_name: "White", email: "carol@example.com" }
   ]) {
@@ -174,7 +174,7 @@ mutation {
 **PostgreSQL** — PK is part of the input object:
 ```graphql
 mutation {
-  updateCustomer(input: { customer_id: 1, email: "new@example.com" }) {
+  updateHanaCustomer(input: { customer_id: 1, email: "new@example.com" }) {
     customer_id
     email
   }
@@ -184,7 +184,7 @@ mutation {
 **MySQL** — PK is a separate `id` argument:
 ```graphql
 mutation {
-  updateCustomer(id: 1, input: { email: "new@example.com" }) {
+  updateExcalibaseCustomer(id: 1, input: { email: "new@example.com" }) {
     customer_id
     email
   }
@@ -197,7 +197,7 @@ Delete returns the deleted row so you can update your UI without a separate fetc
 
 ```graphql
 mutation {
-  deleteCustomer(input: { customer_id: 1 }) {
+  deleteHanaCustomer(input: { customer_id: 1 }) {
     customer_id
     first_name
     last_name
@@ -207,11 +207,11 @@ mutation {
 
 ### Stored Procedure Call
 
-Each discovered procedure becomes a `call{ProcedureName}` mutation. IN parameters become arguments; OUT parameters are returned as a JSON string.
+Each discovered procedure becomes a `call{Schema}{ProcedureName}` mutation. IN parameters become arguments; OUT parameters are returned as a JSON string.
 
 ```graphql
 mutation {
-  callTransferFunds(
+  callHanaTransferFunds(
     p_from_wallet_id: 1
     p_to_wallet_id: 2
     p_amount: 200.00
@@ -220,7 +220,7 @@ mutation {
 ```
 
 ```json
-{ "data": { "callTransferFunds": "{\"p_status\":\"SUCCESS\"}" } }
+{ "data": { "callHanaTransferFunds": "{\"p_status\":\"SUCCESS\"}" } }
 ```
 
 See [Stored Procedures →](../features/stored-procedures.md) for full documentation.
@@ -262,7 +262,7 @@ Every query accepts a `where` argument with per-column filter inputs.
 
 ```graphql
 {
-  enhanced_types(where: {
+  hanaEnhancedTypes(where: {
     jsonb_col: {
       hasKey: "score"
       contains: "{\"active\": true}"
@@ -285,7 +285,7 @@ Every query accepts a `where` argument with per-column filter inputs.
 
 ```graphql
 {
-  enhanced_types(where: {
+  hanaEnhancedTypes(where: {
     text_array: { hasAny: ["postgresql", "graphql"] }
   }) {
     id
@@ -299,7 +299,7 @@ Every query accepts a `where` argument with per-column filter inputs.
 
 ```graphql
 {
-  customer(or: [
+  hanaCustomer(or: [
     { first_name: { eq: "MARY" } }
     { first_name: { eq: "JOHN" } }
   ]) {
@@ -320,10 +320,10 @@ When a table has a FK column, a relationship field is added. **Include the FK co
 
 ```graphql
 {
-  orders {
+  hanaOrders {
     order_id
     customer_id       # required — resolver reads this value
-    customer {
+    hanaCustomer {
       first_name
       last_name
     }
@@ -338,10 +338,10 @@ The referenced table gets a list field for all rows that point to it:
 
 ```graphql
 {
-  customer {
+  hanaCustomer {
     customer_id
     first_name
-    orders {
+    hanaOrders {
       order_id
       total_amount
       status
@@ -356,12 +356,12 @@ Multi-column FKs work the same way — include all FK columns:
 
 ```graphql
 {
-  child_table {
+  hanaChildTable {
     child_id
     parent_id1
     parent_id2
     description
-    parent_table {
+    hanaParentTable {
       name
     }
   }
@@ -384,7 +384,7 @@ CREATE FUNCTION orders_is_high_value(o orders) RETURNS BOOLEAN ...
 
 ```graphql
 {
-  customer {
+  hanaCustomer {
     customer_id
     first_name
     last_name
@@ -394,7 +394,7 @@ CREATE FUNCTION orders_is_high_value(o orders) RETURNS BOOLEAN ...
 }
 
 {
-  orders {
+  hanaOrders {
     order_id
     total_amount
     total_with_tax  # computed: total_amount * 1.10
@@ -411,14 +411,14 @@ Views and materialized views appear as read-only query fields (no mutations gene
 
 ```graphql
 # PostgreSQL views from initdb.sql
-{ active_customers { customer_id first_name last_name email } }
-{ posts_with_authors { id title author_username published } }
-{ enhanced_types_summary { id name json_name array_size } }
+{ hanaActiveCustomers { customer_id first_name last_name email } }
+{ hanaPostsWithAuthors { id title author_username published } }
+{ hanaEnhancedTypesSummary { id name json_name array_size } }
 
 # MySQL views
-{ active_customers { customer_id first_name last_name email } }
-{ orders_summary { customer_id first_name order_count total_spent } }
-{ high_value_orders { order_id total status first_name last_name } }
+{ excalibaseActiveCustomers { customer_id first_name last_name email } }
+{ excalibaseOrdersSummary { customer_id first_name order_count total_spent } }
+{ excalibaseHighValueOrders { order_id total status first_name last_name } }
 ```
 
 ---
@@ -430,21 +430,21 @@ Tables with composite PKs work with all CRUD operations. All PK columns are requ
 ```graphql
 # Create
 mutation {
-  createOrderItems(input: { order_id: 1, product_id: 2, quantity: 3, price: 59.99 }) {
+  createHanaOrderItems(input: { order_id: 1, product_id: 2, quantity: 3, price: 59.99 }) {
     order_id product_id quantity price
   }
 }
 
 # Update — all PK columns required
 mutation {
-  updateOrderItems(input: { order_id: 1, product_id: 2, quantity: 5 }) {
+  updateHanaOrderItems(input: { order_id: 1, product_id: 2, quantity: 5 }) {
     order_id product_id quantity
   }
 }
 
 # Delete — all PK columns required
 mutation {
-  deleteOrderItems(input: { order_id: 1, product_id: 2 }) {
+  deleteHanaOrderItems(input: { order_id: 1, product_id: 2 }) {
     order_id product_id
   }
 }
@@ -490,7 +490,7 @@ Excalibase uses PostgreSQL logical replication (CDC) to push live changes over W
 
 ```graphql
 subscription {
-  customerChanges {
+  hanaCustomerChanges {
     operation
     data { customer_id first_name last_name }
   }

@@ -43,4 +43,14 @@ public final class NamingUtils {
         return name.replaceAll("([a-z])([A-Z])", "$1_$2").toLowerCase();
     }
 
+    /** Schema-prefixed PascalCase type name: ("public", "order_items") → "PublicOrderItems" */
+    public static String schemaTypeName(String schema, String table) {
+        return capitalize(schema) + capitalize(table);
+    }
+
+    /** Schema-prefixed lowerCamelCase field name: ("public", "order_items") → "publicOrderItems" */
+    public static String schemaFieldName(String schema, String table) {
+        return toLowerCamelCase(schema) + capitalize(table);
+    }
+
 }

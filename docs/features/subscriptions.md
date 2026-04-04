@@ -73,26 +73,26 @@ Excalibase automatically generates subscription types for each table in your dat
 ```graphql
 type Subscription {
   # Subscribe to customer table changes
-  customerChanges: CustomerChangeEvent!
+  hanaCustomerChanges: HanaCustomerChangeEvent!
 
   # Subscribe to orders table changes
-  ordersChanges: OrdersChangeEvent!
+  hanaOrdersChanges: HanaOrdersChangeEvent!
 
   # Health check heartbeat
   health: String
 }
 
 # Event structure for table changes
-type CustomerChangeEvent {
-  table: String!                        # Table name
-  schema: String                        # Database schema
-  operation: CustomerChangeOperation!   # INSERT, UPDATE, DELETE, ERROR
-  timestamp: String!                    # ISO 8601 timestamp
-  data: CustomerSubscriptionData        # Row data (structure varies by operation)
-  error: String                         # Error message (null if no error)
+type HanaCustomerChangeEvent {
+  table: String!                            # Table name
+  schema: String                            # Database schema
+  operation: HanaCustomerChangeOperation!   # INSERT, UPDATE, DELETE, ERROR
+  timestamp: String!                        # ISO 8601 timestamp
+  data: HanaCustomerSubscriptionData        # Row data (structure varies by operation)
+  error: String                             # Error message (null if no error)
 }
 
-enum CustomerChangeOperation {
+enum HanaCustomerChangeOperation {
   INSERT
   UPDATE
   DELETE
@@ -100,7 +100,7 @@ enum CustomerChangeOperation {
 }
 
 # Data payload varies by operation type
-type CustomerSubscriptionData {
+type HanaCustomerSubscriptionData {
   # For INSERT: direct column values
   # For DELETE: primary key only (REPLICA IDENTITY DEFAULT)
   customer_id: Int
@@ -110,8 +110,8 @@ type CustomerSubscriptionData {
   active: Boolean
 
   # For UPDATE: the updated row is nested under "new"
-  old: CustomerSubscriptionData  # Previous values (if available)
-  new: CustomerSubscriptionData  # Updated values
+  old: HanaCustomerSubscriptionData  # Previous values (if available)
+  new: HanaCustomerSubscriptionData  # Updated values
 }
 ```
 
@@ -230,7 +230,7 @@ const client = createClient({
 const subscription = client.iterate({
   query: `
     subscription {
-      customerChanges {
+      hanaCustomerChanges {
         table
         operation
         timestamp
@@ -254,7 +254,7 @@ const subscription = client.iterate({
 });
 
 for await (const event of subscription) {
-  const change = event.data.customerChanges;
+  const change = event.data.hanaCustomerChanges;
   console.log(`${change.operation} on ${change.table}:`, change);
 
   switch (change.operation) {
@@ -303,7 +303,7 @@ export function useCustomerSubscription() {
     const subscription = client.iterate({
       query: `
         subscription {
-          customerChanges {
+          hanaCustomerChanges {
             table
             operation
             timestamp
@@ -325,7 +325,7 @@ export function useCustomerSubscription() {
       try {
         setConnected(true);
         for await (const event of subscription) {
-          const change = event.data.customerChanges;
+          const change = event.data.hanaCustomerChanges;
           setChanges(prev => [...prev.slice(-99), change]);
         }
       } catch (error) {
@@ -365,7 +365,7 @@ wscat -c ws://localhost:10000/graphql -s graphql-transport-ws
   "type": "subscribe",
   "id": "customer-sub-1",
   "payload": {
-    "query": "subscription { customerChanges { table operation timestamp data { customer_id first_name last_name email new { customer_id first_name last_name email } } error } }"
+    "query": "subscription { hanaCustomerChanges { table operation timestamp data { customer_id first_name last_name email new { customer_id first_name last_name email } } error } }"
   }
 }
 

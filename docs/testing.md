@@ -431,7 +431,7 @@ def "should query enhanced types table successfully"() {
     given: "GraphQL query for enhanced types"
     def query = '''
         query {
-            enhanced_types {
+            hanaEnhancedTypes {
                 id
                 name
                 json_col
@@ -450,19 +450,19 @@ def "should query enhanced types table successfully"() {
     
     then: "should return enhanced types data"
     result.errors.isEmpty()
-    result.data.enhanced_types.size() == 3
+    result.data.hanaEnhancedTypes.size() == 3
     
     // Validate JSON fields
-    result.data.enhanced_types[0].json_col != null
-    result.data.enhanced_types[0].jsonb_col != null
+    result.data.hanaEnhancedTypes[0].json_col != null
+    result.data.hanaEnhancedTypes[0].jsonb_col != null
     
     // Validate array fields (returned as GraphQL lists)
-    result.data.enhanced_types[0].int_array != null
-    result.data.enhanced_types[0].text_array != null
+    result.data.hanaEnhancedTypes[0].int_array != null
+    result.data.hanaEnhancedTypes[0].text_array != null
     
     // Validate network and XML types
-    result.data.enhanced_types[0].inet_col != null
-    result.data.enhanced_types[0].xml_col != null
+    result.data.hanaEnhancedTypes[0].inet_col != null
+    result.data.hanaEnhancedTypes[0].xml_col != null
 }
 ```
 
@@ -496,7 +496,7 @@ def "should have enhanced types in schema introspection"() {
     def types = result.data.__schema.types
     
     // Verify enhanced_types table exists
-    def enhancedTypesType = types.find { it.name == 'enhanced_types' }
+    def enhancedTypesType = types.find { it.name == 'HanaEnhancedTypes' }
     enhancedTypesType != null
     
     // Verify JSON scalar exists
@@ -518,7 +518,7 @@ def "should handle complex OR operations with mixed field types"() {
     given: "GraphQL query with complex OR conditions"
     def query = '''
         query {
-            customer(or: [
+            hanaCustomer(or: [
                 { customer_id: { lt: 5 } },
                 { first_name: { startsWith: "A" } },
                 { active: { eq: true } }
@@ -535,7 +535,7 @@ def "should handle complex OR operations with mixed field types"() {
     
     then: "should return filtered results"
     result.errors.isEmpty()
-    result.data.customer.size() >= 3
+    result.data.hanaCustomer.size() >= 3
 }
 ```
 
@@ -552,7 +552,7 @@ def "should handle large IN arrays efficiently"() {
     
     then: "should complete within performance threshold"
     endTime - startTime < 600 // 600ms threshold
-    result.data.customer.size() > 0
+    result.data.hanaCustomer.size() > 0
 }
 ```
 
@@ -565,7 +565,7 @@ def "should prevent SQL injection in string filters"() {
     when: "attempting SQL injection"
     def result = graphqlTester.query("""
         query {
-            users(where: { name: { eq: "$maliciousInput" } }) {
+            hanaUsers(where: { name: { eq: "$maliciousInput" } }) {
                 id name
             }
         }
@@ -573,7 +573,7 @@ def "should prevent SQL injection in string filters"() {
     
     then: "should safely handle malicious input"
     result.errors.isEmpty()
-    result.data.users.size() == 0
+    result.data.hanaUsers.size() == 0
     // Database should remain intact
 }
 ```

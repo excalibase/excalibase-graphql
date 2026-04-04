@@ -10,7 +10,7 @@ Instead of the old flat syntax like `customer_id_eq: 524`, we now use nested obj
 
 ```graphql
 {
-  customer(where: { customer_id: { eq: 524 } }) {
+  hanaCustomer(where: { customer_id: { eq: 524 } }) {
     customer_id
     first_name
     last_name
@@ -24,7 +24,7 @@ The old syntax continues to work for backward compatibility:
 
 ```graphql
 {
-  customer(customer_id: 524) {
+  hanaCustomer(customer_id: 524) {
     customer_id
     first_name
     last_name
@@ -65,7 +65,7 @@ where: { profile: { pathText: ["user", "name"] } }
 **Complex JSON Filtering:**
 ```graphql
 {
-  users(where: {
+  hanaUsers(where: {
     profile: { 
       hasKey: "preferences",
       contains: "{\"active\": true}"
@@ -100,7 +100,7 @@ where: { tags: { isNotNull: true } }
 **Real-world Array Examples:**
 ```graphql
 {
-  posts(where: {
+  hanaPosts(where: {
     categories: { contains: "postgresql" },
     tags: { hasAny: ["development", "database"] }
   }) {
@@ -134,7 +134,7 @@ where: { daily_checkin: { eq: "09:00:00+00" } }
 **DateTime Range Queries:**
 ```graphql
 {
-  events(where: {
+  hanaEvents(where: {
     start_time: { 
       gte: "2023-12-01T00:00:00Z",
       lt: "2023-12-31T23:59:59Z"
@@ -171,7 +171,7 @@ where: { server_ip: { startsWith: "10." } }
 **Network Type Examples:**
 ```graphql
 {
-  servers(where: {
+  hanaServers(where: {
     ip_address: { like: "192.168.%" },
     status: { eq: "active" }
   }) {
@@ -313,7 +313,7 @@ where: { customer_id: { notIn: [1, 2, 3] } }
 
 ```graphql
 {
-  customer(or: [
+  hanaCustomer(or: [
     { customer_id: { eq: 524 } },
     { customer_id: { eq: 525 } }
   ]) {
@@ -328,7 +328,7 @@ where: { customer_id: { notIn: [1, 2, 3] } }
 
 ```graphql
 {
-  customer(or: [
+  hanaCustomer(or: [
     { customer_id: { lt: 5 } },
     { customer_id: { gt: 615 } }
   ]) {
@@ -343,7 +343,7 @@ where: { customer_id: { notIn: [1, 2, 3] } }
 
 ```graphql
 {
-  users(or: [
+  hanaUsers(or: [
     { profile: { hasKey: "admin" } },
     { tags: { contains: "moderator" } },
     { ip_address: { like: "10.%" } }
@@ -361,7 +361,7 @@ where: { customer_id: { notIn: [1, 2, 3] } }
 
 ```graphql
 {
-  customer(or: [
+  hanaCustomer(or: [
     { first_name: { eq: "John" }, active: { eq: true } },
     { customer_id: { gte: 600 } }
   ]) {
@@ -379,7 +379,7 @@ You can combine both `where` and `or` conditions. They are combined with AND log
 
 ```graphql
 {
-  customer(
+  hanaCustomer(
     where: { active: { eq: true } }
     or: [
       { customer_id: { lt: 10 } },
@@ -400,7 +400,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  posts(
+  hanaPosts(
     where: { 
       published: { eq: true },
       categories: { hasAny: ["tech", "programming"] }
@@ -424,7 +424,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  customer(
+  hanaCustomer(
     where: { active: { eq: true } }
     limit: 10
     offset: 20
@@ -441,7 +441,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  posts(
+  hanaPosts(
     where: { 
       categories: { contains: "postgresql" },
       created_at: { gte: "2023-01-01T00:00:00Z" }
@@ -461,7 +461,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  customerConnection(
+  hanaCustomerConnection(
     where: { customer_id: { gte: 524 } }
     first: 3
     orderBy: { customer_id: ASC }
@@ -521,7 +521,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  users(where: { 
+  hanaUsers(where: { 
     profile: { 
       hasKey: "preferences",
       contains: "{\"notifications\": true}"
@@ -538,7 +538,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  posts(where: { 
+  hanaPosts(where: { 
     categories: { hasAny: ["postgresql", "graphql"] },
     published: { eq: true }
   }) {
@@ -553,7 +553,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  servers(where: { 
+  hanaServers(where: { 
     ip_address: { like: "192.168.%" },
     last_ping: { gte: "2023-12-01T00:00:00Z" }
   }) {
@@ -568,7 +568,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  customer(where: { address: { city: { eq: "New York" } } }) {
+  hanaCustomer(where: { address: { city: { eq: "New York" } } }) {
     customer_id
     first_name
     last_name
@@ -580,7 +580,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  customer(where: { create_date: { gte: "2023-01-01" } }) {
+  hanaCustomer(where: { create_date: { gte: "2023-01-01" } }) {
     customer_id
     first_name
     last_name
@@ -593,7 +593,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  customer(where: { first_name: { ilike: "mar%" } }) {
+  hanaCustomer(where: { first_name: { ilike: "mar%" } }) {
     customer_id
     first_name
     last_name
@@ -605,7 +605,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  users(
+  hanaUsers(
     where: { 
       active: { eq: true },
       profile: { hasKey: "subscription" }
@@ -638,7 +638,7 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 
 ```graphql
 {
-  customer(
+  hanaCustomer(
     where: { active: { eq: true } }
     or: [
       { store_id: { eq: 1 }, customer_id: { lt: 100 } },
@@ -676,7 +676,7 @@ All filter operations are parameterized to prevent SQL injection:
 ```graphql
 # This is safe - parameters are properly escaped
 {
-  users(where: { name: { eq: "'; DROP TABLE users; --" } }) {
+  hanaUsers(where: { name: { eq: "'; DROP TABLE users; --" } }) {
     id name
   }
 }
@@ -687,7 +687,7 @@ All filter operations are parameterized to prevent SQL injection:
 ```graphql
 # JSON injection attempts are safely handled
 {
-  users(where: { 
+  hanaUsers(where: { 
     profile: { 
       contains: "'; DROP TABLE users; --" 
     }
@@ -698,7 +698,7 @@ All filter operations are parameterized to prevent SQL injection:
 
 # Array injection attempts are parameterized
 {
-  posts(where: { 
+  hanaPosts(where: { 
     categories: { 
       hasAny: ["'; DELETE FROM posts; --", "tech"] 
     }
@@ -722,7 +722,7 @@ All filter operations are parameterized to prevent SQL injection:
 ### Before (Legacy)
 ```graphql
 {
-  customer(customer_id_gte: 524, customer_id_lte: 526, active: true) {
+  hanaCustomer(customer_id_gte: 524, customer_id_lte: 526, active: true) {
     customer_id
     first_name
     last_name
@@ -733,7 +733,7 @@ All filter operations are parameterized to prevent SQL injection:
 ### After (New Syntax)
 ```graphql
 {
-  customer(where: { 
+  hanaCustomer(where: { 
     customer_id: { gte: 524, lte: 526 }, 
     active: { eq: true } 
   }) {
@@ -754,7 +754,7 @@ All filter operations are parameterized to prevent SQL injection:
 **After (Enhanced Support):**
 ```graphql
 {
-  users(where: {
+  hanaUsers(where: {
     profile: { hasKey: "preferences" },
     tags: { contains: "developer" },
     ip_address: { like: "192.168.%" }
@@ -786,7 +786,7 @@ The new syntax with enhanced types provides:
 ```graphql
 # Invalid date format
 {
-  users(where: { created_at: { eq: "invalid-date" } }) {
+  hanaUsers(where: { created_at: { eq: "invalid-date" } }) {
     id name
   }
 }
@@ -811,7 +811,7 @@ Response:
 ```graphql
 # Invalid JSON format
 {
-  users(where: { profile: { eq: "invalid-json{" } }) {
+  hanaUsers(where: { profile: { eq: "invalid-json{" } }) {
     id name
   }
 }
@@ -834,7 +834,7 @@ Response:
 ```graphql
 # Invalid network address
 {
-  servers(where: { ip_address: { eq: "invalid-ip" } }) {
+  hanaServers(where: { ip_address: { eq: "invalid-ip" } }) {
     hostname ip_address
   }
 }
@@ -859,7 +859,7 @@ Response:
 ```graphql
 # String value for integer field
 {
-  users(where: { id: { eq: "not-a-number" } }) {
+  hanaUsers(where: { id: { eq: "not-a-number" } }) {
     id name
   }
 }
@@ -888,7 +888,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
 **Filter by specific composite key:**
 ```graphql
 {
-  order_items(where: {
+  hanaOrderItems(where: {
     order_id: { eq: 3 }
     product_id: { eq: 2 }
   }) {
@@ -903,7 +903,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
 **Filter by single component of composite key:**
 ```graphql
 {
-  order_items(where: {
+  hanaOrderItems(where: {
     order_id: { eq: 1 }
   }) {
     order_id
@@ -917,7 +917,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
 **Filter with ranges on composite keys:**
 ```graphql
 {
-  order_items(where: {
+  hanaOrderItems(where: {
     order_id: { gte: 1, lte: 3 }
     product_id: { in: [1, 2, 3] }
   }) {
@@ -934,7 +934,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
 **Filter child table by composite foreign key:**
 ```graphql
 {
-  child_table(where: {
+  hanaChildTable(where: {
     parent_id1: { eq: 1 }
     parent_id2: { eq: 2 }
   }) {
@@ -942,7 +942,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
     parent_id1
     parent_id2
     description
-    parent_table {        # Automatic relationship resolution
+    hanaParentTable {        # Automatic relationship resolution
       parent_id1
       parent_id2
       name
@@ -956,7 +956,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
 **Multiple composite key combinations:**
 ```graphql
 {
-  order_items(where: {
+  hanaOrderItems(where: {
     or: [
       { order_id: { eq: 1 }, product_id: { eq: 1 } },
       { order_id: { eq: 2 }, product_id: { eq: 3 } },
@@ -974,7 +974,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
 **Mixed individual and composite conditions:**
 ```graphql
 {
-  order_items(where: {
+  hanaOrderItems(where: {
     or: [
       { order_id: { eq: 1 } },                    # All items for order 1
       { product_id: { eq: 5 } },                  # All instances of product 5
@@ -994,7 +994,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
 **Combine with other field filters:**
 ```graphql
 {
-  order_items(where: {
+  hanaOrderItems(where: {
     order_id: { eq: 2 }
     product_id: { gte: 1 }
     quantity: { gt: 5 }
@@ -1011,7 +1011,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
 **Relationship filtering through composite keys:**
 ```graphql
 {
-  child_table(where: {
+  hanaChildTable(where: {
     parent_table: {
       name: { startsWith: "Parent" }
     }
@@ -1020,7 +1020,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
     parent_id1
     parent_id2
     description
-    parent_table {
+    hanaParentTable {
       parent_id1
       parent_id2
       name
@@ -1034,7 +1034,7 @@ Excalibase GraphQL provides comprehensive filtering support for tables with comp
 **Update specific composite key record:**
 ```graphql
 mutation {
-  updateOrder_items(input: {
+  updateHanaOrderItems(input: {
     order_id: 3          # Required: part of composite PK
     product_id: 2        # Required: part of composite PK
     quantity: 10         # Updated field
@@ -1051,7 +1051,7 @@ mutation {
 **Delete using composite key:**
 ```graphql
 mutation {
-  deleteOrder_items(input: {
+  deleteHanaOrderItems(input: {
     order_id: 3
     product_id: 2
   }) {
@@ -1068,7 +1068,7 @@ mutation {
 **Ordered by composite primary key:**
 ```graphql
 {
-  order_items(
+  hanaOrderItems(
     orderBy: { order_id: ASC, product_id: ASC }
     limit: 10
     offset: 20
@@ -1084,7 +1084,7 @@ mutation {
 **Cursor-based pagination with composite keys:**
 ```graphql
 {
-  order_itemsConnection(
+  hanaOrderItemsConnection(
     first: 10
     after: "cursor123"
     orderBy: { order_id: ASC }
@@ -1129,11 +1129,11 @@ For optimal performance with composite key filtering:
 3. **Relationship Performance**: When filtering through relationships, include foreign key fields in your selection:
    ```graphql
    {
-     child_table {
+     hanaChildTable {
        child_id
        parent_id1     # Include FK fields for performance
        parent_id2     # Include FK fields for performance
-       parent_table {
+       hanaParentTable {
          name
        }
      }

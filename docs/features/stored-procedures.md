@@ -43,11 +43,11 @@ END;
 
 ## Calling from GraphQL
 
-Excalibase generates a mutation named `call{ProcedureName}` (camel-cased):
+Excalibase generates a mutation named `call{Schema}{ProcedureName}` (camel-cased):
 
 ```graphql
 mutation {
-  callGetCustomerOrderCount(p_customer_id: 1)
+  callHanaGetCustomerOrderCount(p_customer_id: 1)
 }
 ```
 
@@ -56,7 +56,7 @@ mutation {
 ```json
 {
   "data": {
-    "callGetCustomerOrderCount": "{\"p_count\":3}"
+    "callHanaGetCustomerOrderCount": "{\"p_count\":3}"
   }
 }
 ```
@@ -64,7 +64,7 @@ mutation {
 Parse the result:
 
 ```js
-const raw = data.callGetCustomerOrderCount;
+const raw = data.callHanaGetCustomerOrderCount;
 const result = JSON.parse(raw);
 console.log(result.p_count); // 3
 ```
@@ -159,7 +159,7 @@ END;
 
 ```graphql
 mutation {
-  callTransferFunds(
+  callHanaTransferFunds(
     p_from_wallet_id: 1
     p_to_wallet_id: 2
     p_amount: 200.00
@@ -170,7 +170,7 @@ mutation {
 ```json
 {
   "data": {
-    "callTransferFunds": "{\"p_status\":\"SUCCESS\"}"
+    "callHanaTransferFunds": "{\"p_status\":\"SUCCESS\"}"
   }
 }
 ```
@@ -181,7 +181,7 @@ Alice's balance drops from 1000 to 800; Bob's rises from 500 to 700.
 
 ```graphql
 mutation {
-  callTransferFunds(
+  callHanaTransferFunds(
     p_from_wallet_id: 3
     p_to_wallet_id: 1
     p_amount: 500.00
@@ -192,7 +192,7 @@ mutation {
 ```json
 {
   "data": {
-    "callTransferFunds": "{\"p_status\":\"ERROR: Insufficient funds (balance=10.00, requested=500.00)\"}"
+    "callHanaTransferFunds": "{\"p_status\":\"ERROR: Insufficient funds (balance=10.00, requested=500.00)\"}"
   }
 }
 ```
@@ -209,7 +209,7 @@ const client = new GraphQLClient('http://localhost:10000/graphql');
 async function transferFunds(fromId, toId, amount) {
   const data = await client.request(gql`
     mutation($from: Int!, $to: Int!, $amount: Float!) {
-      callTransferFunds(
+      callHanaTransferFunds(
         p_from_wallet_id: $from
         p_to_wallet_id: $to
         p_amount: $amount
@@ -217,7 +217,7 @@ async function transferFunds(fromId, toId, amount) {
     }
   `, { from: fromId, to: toId, amount });
 
-  const result = JSON.parse(data.callTransferFunds);
+  const result = JSON.parse(data.callHanaTransferFunds);
 
   if (result.p_status === 'SUCCESS') {
     console.log('Transfer completed');
@@ -245,7 +245,7 @@ You can verify a procedure is available via GraphQL introspection:
 }
 ```
 
-Look for fields starting with `call` in the Mutation type.
+Look for fields starting with `call{Schema}` in the Mutation type (e.g., `callHanaTransferFunds`, `callExcalibaseGetCustomerOrderCount`).
 
 ## Limitations
 

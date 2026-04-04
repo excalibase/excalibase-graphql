@@ -24,6 +24,26 @@ public class IntrospectionHandler {
         this.graphQL = GraphQL.newGraphQL(buildSchema(schemaInfo)).build();
     }
 
+    /** Derive the GraphQL type name from a table key. Compound keys always prefix. */
+    private static String typeName(String tableKey) {
+        if (tableKey.contains(".")) {
+            String schema = tableKey.substring(0, tableKey.indexOf('.'));
+            String rawTable = tableKey.substring(tableKey.indexOf('.') + 1);
+            return NamingUtils.schemaTypeName(schema, rawTable);
+        }
+        return NamingUtils.capitalize(tableKey);
+    }
+
+    /** Derive the GraphQL field name from a table key. Compound keys always prefix. */
+    private static String fieldName(String tableKey) {
+        if (tableKey.contains(".")) {
+            String schema = tableKey.substring(0, tableKey.indexOf('.'));
+            String rawTable = tableKey.substring(tableKey.indexOf('.') + 1);
+            return NamingUtils.schemaFieldName(schema, rawTable);
+        }
+        return NamingUtils.toLowerCamelCase(tableKey);
+    }
+
     public Map<String, Object> execute(String query, Map<String, Object> variables) {
         ExecutionInput input = ExecutionInput.newExecutionInput()
                 .query(query)
@@ -46,8 +66,13 @@ public class IntrospectionHandler {
         // Build enum types from schema metadata
         Map<String, GraphQLEnumType> enumTypeMap = new LinkedHashMap<>();
         for (Map.Entry<String, List<String>> entry : schemaInfo.getEnumTypes().entrySet()) {
-            String enumName = NamingUtils.capitalize(entry.getKey());
+            String enumName = typeName(entry.getKey());
             GraphQLEnumType.Builder enumBuilder = newEnum().name(enumName);
+            if (entry.getKey().contains(".")) {
+                String schema = entry.getKey().substring(0, entry.getKey().indexOf('.'));
+                String rawEnum = entry.getKey().substring(entry.getKey().indexOf('.') + 1);
+                enumBuilder.description("Enum " + rawEnum + " from schema " + schema);
+            }
             for (String label : entry.getValue()) {
                 enumBuilder.value(label);
             }
@@ -78,7 +103,7 @@ public class IntrospectionHandler {
         // Build types for each table
         for (String table : schemaInfo.getTableNames()) {
             Set<String> columns = schemaInfo.getColumns(table);
-            String typeName = NamingUtils.capitalize(table);
+            String typeName = typeName(table);
 
             // Object type
             GraphQLObjectType.Builder typeBuilder = newObject().name(typeName);
@@ -129,14 +154,20 @@ public class IntrospectionHandler {
 
         // Build query type
         GraphQLObjectType.Builder queryBuilder = newObject().name("Query");
+
+        // GraphQL requires at least one field in Query — add placeholder when no tables exist
+        if (schemaInfo.getTableNames().isEmpty()) {
+            queryBuilder.field(newFieldDefinition().name("_empty").type(GraphQLString).build());
+        }
+
         for (String table : schemaInfo.getTableNames()) {
-            String fieldName = NamingUtils.toLowerCamelCase(table);
-            String typeName = NamingUtils.capitalize(table);
+            String fName = fieldName(table);
+            String tName = typeName(table);
             GraphQLObjectType type = types.get(table);
 
             // List query
             queryBuilder.field(newFieldDefinition()
-                    .name(fieldName)
+                    .name(fName)
                     .type(GraphQLList.list(type))
                     .argument(GraphQLArgument.newArgument().name("where").type(whereTypes.get(table)).build())
                     .argument(GraphQLArgument.newArgument().name("limit").type(GraphQLInt).build())
@@ -144,17 +175,17 @@ public class IntrospectionHandler {
                     .build());
 
             // Connection query
-            GraphQLObjectType edgeType = newObject().name(typeName + "Edge")
+            GraphQLObjectType edgeType = newObject().name(tName + "Edge")
                     .field(newFieldDefinition().name("node").type(type).build())
                     .field(newFieldDefinition().name("cursor").type(GraphQLString).build())
                     .build();
-            GraphQLObjectType connectionType = newObject().name(typeName + "Connection")
+            GraphQLObjectType connectionType = newObject().name(tName + "Connection")
                     .field(newFieldDefinition().name("edges").type(GraphQLList.list(edgeType)).build())
                     .field(newFieldDefinition().name("pageInfo").type(pageInfoType).build())
                     .field(newFieldDefinition().name("totalCount").type(GraphQLInt).build())
                     .build();
             queryBuilder.field(newFieldDefinition()
-                    .name(fieldName + "Connection")
+                    .name(fName + "Connection")
                     .type(connectionType)
                     .argument(GraphQLArgument.newArgument().name("first").type(GraphQLInt).build())
                     .argument(GraphQLArgument.newArgument().name("after").type(GraphQLString).build())
@@ -165,8 +196,8 @@ public class IntrospectionHandler {
 
             // Aggregate query
             queryBuilder.field(newFieldDefinition()
-                    .name(fieldName + "Aggregate")
-                    .type(newObject().name(typeName + "Aggregate")
+                    .name(fName + "Aggregate")
+                    .type(newObject().name(tName + "Aggregate")
                             .field(newFieldDefinition().name("count").type(GraphQLInt).build())
                             .build())
                     .build());
@@ -178,7 +209,7 @@ public class IntrospectionHandler {
             // Skip views — they are read-only
             if (schemaInfo.isView(table)) continue;
 
-            String typeName = NamingUtils.capitalize(table);
+            String typeName = typeName(table);
             GraphQLObjectType type = types.get(table);
             GraphQLInputObjectType createInput = createInputs.get(table);
 
@@ -208,7 +239,7 @@ public class IntrospectionHandler {
         for (var procEntry : schemaInfo.getStoredProcedures().entrySet()) {
             String procName = procEntry.getKey();
             SchemaInfo.ProcedureInfo proc = procEntry.getValue();
-            String mutationName = "call" + NamingUtils.capitalize(procName);
+            String mutationName = "call" + typeName(procName);
 
             GraphQLFieldDefinition.Builder procField = newFieldDefinition()
                     .name(mutationName)
@@ -224,16 +255,20 @@ public class IntrospectionHandler {
             mutationBuilder.field(procField.build());
         }
 
+        GraphQLObjectType mutationType = mutationBuilder.build();
         GraphQLSchema.Builder schemaBuilder = GraphQLSchema.newSchema()
-                .query(queryBuilder.build())
-                .mutation(mutationBuilder.build());
+                .query(queryBuilder.build());
+        // Only add Mutation type if it has fields (empty Mutation is invalid in GraphQL)
+        if (!mutationType.getFieldDefinitions().isEmpty()) {
+            schemaBuilder.mutation(mutationType);
+        }
         // Register enum types as additional types so they're discoverable via __type
         for (GraphQLEnumType enumType : enumTypeMap.values()) {
             schemaBuilder.additionalType(enumType);
         }
         // Register composite types as GraphQL object types
         for (var entry : schemaInfo.getCompositeTypes().entrySet()) {
-            String typeName = NamingUtils.capitalize(entry.getKey());
+            String typeName = typeName(entry.getKey());
             GraphQLObjectType.Builder ctBuilder = newObject().name(typeName);
             for (SchemaInfo.CompositeTypeField field : entry.getValue()) {
                 ctBuilder.field(newFieldDefinition()

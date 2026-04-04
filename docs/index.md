@@ -9,6 +9,7 @@
 - **Relationships** — foreign keys become GraphQL fields automatically
 - **Stored procedures** — call via GraphQL mutations
 - **Computed fields** — PostgreSQL functions exposed as GraphQL fields (PostgreSQL)
+- **Multi-Schema** — connect to multiple schemas simultaneously with automatic prefix naming
 - **Real-time subscriptions** — live table-change events via [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS
 - **Row-Level Security** — per-request user context for RLS policies (PostgreSQL)
 
@@ -42,7 +43,7 @@ Then open your GraphQL client and start querying:
 
 ```graphql
 {
-  users {
+  hanaUsers {
     id
     username
     email
@@ -59,7 +60,7 @@ Then open your GraphQL client and start querying:
 
 ```graphql
 {
-  customer(
+  hanaCustomer(
     where: { active: { eq: true }, last_name: { startsWith: "S" } }
     orderBy: { last_name: ASC }
     limit: 10
@@ -83,10 +84,10 @@ Foreign keys are automatically resolved — include the FK column to enable rela
 
 ```graphql
 {
-  orders {
+  hanaOrders {
     order_id
     customer_id       # required for relationship
-    customer {
+    hanaCustomer {
       first_name
       last_name
     }
@@ -101,14 +102,14 @@ Foreign keys are automatically resolved — include the FK column to enable rela
 ```graphql
 # Create
 mutation {
-  createCustomer(input: { first_name: "Alice", last_name: "Smith", email: "alice@example.com" }) {
+  createHanaCustomer(input: { first_name: "Alice", last_name: "Smith", email: "alice@example.com" }) {
     customer_id
   }
 }
 
 # Update
 mutation {
-  updateCustomer(input: { customer_id: 1, email: "new@example.com" }) {
+  updateHanaCustomer(input: { customer_id: 1, email: "new@example.com" }) {
     customer_id
     email
   }
@@ -116,7 +117,7 @@ mutation {
 
 # Bulk create
 mutation {
-  createManyCustomers(inputs: [
+  createManyHanaCustomer(inputs: [
     { first_name: "Bob", last_name: "Jones", email: "bob@example.com" }
     { first_name: "Carol", last_name: "White", email: "carol@example.com" }
   ]) { customer_id }
@@ -124,7 +125,7 @@ mutation {
 
 # Delete
 mutation {
-  deleteCustomer(input: { customer_id: 1 }) {
+  deleteHanaCustomer(input: { customer_id: 1 }) {
     customer_id
   }
 }
@@ -134,7 +135,7 @@ mutation {
 
 ```graphql
 {
-  customerConnection(first: 10, after: "cursor_value") {
+  hanaCustomerConnection(first: 10, after: "cursor_value") {
     edges {
       node { customer_id first_name last_name }
       cursor
@@ -149,7 +150,7 @@ mutation {
 
 ```graphql
 {
-  orders_aggregate {
+  hanaOrdersAggregate {
     count
     sum { total_amount }
     avg { total_amount }
@@ -163,7 +164,7 @@ mutation {
 
 ```graphql
 mutation {
-  callTransferFunds(
+  callHanaTransferFunds(
     p_from_wallet_id: 1
     p_to_wallet_id: 2
     p_amount: 200.00
@@ -178,7 +179,7 @@ Powered by [excalibase-watcher](https://github.com/excalibase/excalibase-watcher
 
 ```graphql
 subscription {
-  customerChanges {
+  hanaCustomerChanges {
     operation   # INSERT, UPDATE, DELETE
     data {
       customer_id
@@ -241,9 +242,9 @@ docker pull excalibase/excalibase-graphql:native
 
 ## Test Coverage
 
-- **PostgreSQL e2e**: 91 tests
+- **PostgreSQL e2e**: 120+ tests
 - **MySQL e2e**: 74 tests
-- **Total**: 204+ tests passing on both JVM and native builds
+- **Total**: 223+ tests passing on both JVM and native builds
 
 ---
 

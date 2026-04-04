@@ -60,14 +60,14 @@ public class MysqlMutationCompiler implements MutationCompiler {
             params.put(paramName, entry.getValue());
         }
 
-        String dmlSql = "INSERT INTO " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        String dmlSql = "INSERT INTO " + shared.qualifiedTable(tableName)
                 + " (" + String.join(", ", cols) + ") VALUES (" + String.join(", ", vals) + ")";
 
         String pk = shared.schemaInfo().getPrimaryKey(tableName);
         String lastIdParam = "last_id_" + params.size();
         String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
                 "'" + fieldName + "', (" +
-                "SELECT " + objectSql + " FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName) + " " + alias
+                "SELECT " + objectSql + " FROM " + shared.qualifiedTable(tableName) + " " + alias
                 + " WHERE " + alias + "." + shared.dialect().quoteIdentifier(pk) + " = :" + lastIdParam + ")"));
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, lastIdParam);
@@ -100,7 +100,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
             valueRows.add("(" + String.join(", ", vals) + ")");
         }
 
-        String dmlSql = "INSERT INTO " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        String dmlSql = "INSERT INTO " + shared.qualifiedTable(tableName)
                 + " (" + String.join(", ", colsSql) + ") VALUES " + String.join(", ", valueRows);
 
         String pk = shared.schemaInfo().getPrimaryKey(tableName);
@@ -109,7 +109,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
         String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
                 "'" + fieldName + "', (" +
                 "SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
-                + " FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName) + " " + alias
+                + " FROM " + shared.qualifiedTable(tableName) + " " + alias
                 + " WHERE " + alias + "." + shared.dialect().quoteIdentifier(pk) + " >= :" + lastIdParam
                 + " AND " + alias + "." + shared.dialect().quoteIdentifier(pk) + " < :" + lastIdParam + " + " + rowCount
                 + ")"));
@@ -150,13 +150,13 @@ public class MysqlMutationCompiler implements MutationCompiler {
 
         if (setClauses.isEmpty() || whereClauses.isEmpty()) return null;
 
-        String dmlSql = "UPDATE " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        String dmlSql = "UPDATE " + shared.qualifiedTable(tableName)
                 + " SET " + String.join(", ", setClauses)
                 + " WHERE " + String.join(" AND ", whereClauses);
 
         String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
                 "'" + fieldName + "', (" +
-                "SELECT " + objectSql + " FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName) + " " + alias
+                "SELECT " + objectSql + " FROM " + shared.qualifiedTable(tableName) + " " + alias
                 + " WHERE " + String.join(" AND ", selectWhereClauses) + ")"));
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, null);
@@ -195,10 +195,10 @@ public class MysqlMutationCompiler implements MutationCompiler {
 
         String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
                 "'" + fieldName + "', (" +
-                "SELECT " + objectSql + " FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName) + " " + alias
+                "SELECT " + objectSql + " FROM " + shared.qualifiedTable(tableName) + " " + alias
                 + " WHERE " + String.join(" AND ", selectWhereClauses) + ")"));
 
-        String dmlSql = "DELETE FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        String dmlSql = "DELETE FROM " + shared.qualifiedTable(tableName)
                 + " WHERE " + String.join(" AND ", whereClauses);
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, MutationBuilder.MUTATION_DELETE);

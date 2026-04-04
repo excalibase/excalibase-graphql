@@ -193,9 +193,12 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                     String name = f.getName(); // e.g., "customerChanges"
                     if (name.endsWith("Changes")) {
                         String tablePart = name.substring(0, name.length() - "Changes".length());
-                        // camelCase -> snake_case
-                        String tableName = NamingUtils.camelToSnakeCase(tablePart);
-                        return new String[]{tableName, name};
+                        // camelCase -> snake_case (e.g., "testSchemaCustomer" -> "test_schema.customer")
+                        String snakeName = NamingUtils.camelToSnakeCase(tablePart);
+                        // Convert underscore-joined schema_table to dot-separated schema.table
+                        // by checking if it matches a compound key pattern (contains underscore that represents schema separator)
+                        // Simple approach: use the snake_case name as-is (becomes sink key)
+                        return new String[]{snakeName, name};
                     }
                 }
             }

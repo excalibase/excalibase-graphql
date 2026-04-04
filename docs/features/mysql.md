@@ -23,7 +23,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
 
 app:
-  allowed-schema: excalibase
+  schemas: excalibase
   database-type: mysql
 
 server:
@@ -39,7 +39,7 @@ Full create, read, update, and delete on every table:
 ```graphql
 # Query with filtering and pagination
 {
-  customer(
+  excalibaseCustomer(
     where: { active: { eq: 1 } }
     orderBy: { last_name: "ASC" }
     limit: 10
@@ -54,7 +54,7 @@ Full create, read, update, and delete on every table:
 
 # Create
 mutation {
-  createCustomer(input: {
+  createExcalibaseCustomer(input: {
     first_name: "Alice"
     last_name: "Smith"
     email: "alice@example.com"
@@ -67,7 +67,7 @@ mutation {
 
 # Update
 mutation {
-  updateCustomer(id: 1, input: { email: "newemail@example.com" }) {
+  updateExcalibaseCustomer(id: 1, input: { email: "newemail@example.com" }) {
     customer_id
     email
   }
@@ -75,14 +75,14 @@ mutation {
 
 # Delete
 mutation {
-  deleteCustomer(id: 1) {
+  deleteExcalibaseCustomer(id: 1) {
     customer_id
   }
 }
 
 # Bulk create
 mutation {
-  createManyCustomers(inputs: [
+  createManyExcalibaseCustomer(inputs: [
     { first_name: "Bob", last_name: "Jones", email: "bob@example.com" }
     { first_name: "Carol", last_name: "White", email: "carol@example.com" }
   ]) {
@@ -107,7 +107,7 @@ CREATE TABLE task (
 
 ```graphql
 {
-  task(where: { status: { eq: "in_progress" }, priority: { eq: "high" } }) {
+  excalibaseTask(where: { status: { eq: "in_progress" }, priority: { eq: "high" } }) {
     task_id
     title
     status
@@ -132,7 +132,7 @@ CREATE TABLE product_detail (
 
 ```graphql
 {
-  product_detail {
+  excalibaseProductDetail {
     detail_id
     attributes
     metadata
@@ -147,7 +147,7 @@ Read-only GraphQL types are generated for MySQL views:
 
 ```graphql
 {
-  active_customers {
+  excalibaseActiveCustomers {
     customer_id
     first_name
     last_name
@@ -156,7 +156,7 @@ Read-only GraphQL types are generated for MySQL views:
 }
 
 {
-  orders_summary {
+  excalibaseOrdersSummary {
     customer_id
     first_name
     last_name
@@ -172,11 +172,11 @@ Forward and reverse FK fields are automatically added to the schema:
 
 ```graphql
 {
-  orders {
+  excalibaseOrders {
     order_id
     total
     status
-    customer {          # forward FK: orders.customer_id -> customer
+    excalibaseCustomer {          # forward FK: orders.customer_id -> customer
       first_name
       last_name
     }
@@ -184,10 +184,10 @@ Forward and reverse FK fields are automatically added to the schema:
 }
 
 {
-  customer {
+  excalibaseCustomer {
     customer_id
     first_name
-    orders {            # reverse FK: all orders for this customer
+    excalibaseOrders {            # reverse FK: all orders for this customer
       order_id
       total
       status
@@ -200,7 +200,7 @@ Forward and reverse FK fields are automatically added to the schema:
 
 ```graphql
 {
-  orders_aggregate {
+  excalibaseOrdersAggregate {
     count
     sum
     avg
@@ -214,7 +214,7 @@ Forward and reverse FK fields are automatically added to the schema:
 
 ```graphql
 {
-  customerConnection(first: 10, after: "cursor123") {
+  excalibaseCustomerConnection(first: 10, after: "cursor123") {
     edges {
       node {
         customer_id
@@ -239,12 +239,12 @@ See [Stored Procedures](stored-procedures.md) for full details. MySQL example:
 ```graphql
 # Call a stored procedure
 mutation {
-  callGetCustomerOrderCount(p_customer_id: 1)
+  callExcalibaseGetCustomerOrderCount(p_customer_id: 1)
 }
 
 # Transfer funds (IN/OUT params)
 mutation {
-  callTransferFunds(
+  callExcalibaseTransferFunds(
     p_from_wallet_id: 1
     p_to_wallet_id: 2
     p_amount: 200.00
@@ -255,7 +255,7 @@ mutation {
 Results are returned as a JSON string. Parse on the client:
 
 ```js
-const result = JSON.parse(data.callTransferFunds);
+const result = JSON.parse(data.callExcalibaseTransferFunds);
 console.log(result.p_status); // "SUCCESS"
 ```
 
@@ -291,4 +291,3 @@ console.log(result.p_status); // "SUCCESS"
 
 - **CDC / Subscriptions** — real-time subscriptions via Change Data Capture are PostgreSQL-only for now
 - **Spatial types** — PostGIS equivalents not yet supported
-- **Schema isolation** — single schema per instance (configured via `app.allowed-schema`)

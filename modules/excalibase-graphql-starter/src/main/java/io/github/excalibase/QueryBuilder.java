@@ -29,6 +29,13 @@ public class QueryBuilder {
         this.fragmentsHolder = fragmentsHolder;
     }
 
+    /** Resolve the qualified table expression using per-table schema metadata. */
+    private String qualifiedTable(String tableName) {
+        String schema = schemaInfo.resolveSchema(tableName, dbSchema);
+        String rawTable = tableName.contains(".") ? tableName.substring(tableName.indexOf('.') + 1) : tableName;
+        return dialect.qualifiedTable(schema, rawTable);
+    }
+
     // === List query ===
 
     public String compileList(Field field, String tableName, Map<String, Object> params) {
@@ -47,7 +54,7 @@ public class QueryBuilder {
         }
 
         sql.append(alias).append(".*");
-        sql.append(" FROM ").append(dialect.qualifiedTable(dbSchema, tableName)).append(" ").append(alias);
+        sql.append(" FROM ").append(qualifiedTable(tableName)).append(" ").append(alias);
 
         // WHERE from arguments
         filterBuilder.applyWhere(sql, field, alias, params, tableName);
@@ -110,7 +117,7 @@ public class QueryBuilder {
 
             if ("count".equals(aggName)) {
                 StringBuilder countSql = new StringBuilder();
-                countSql.append("SELECT count(*) FROM ").append(dialect.qualifiedTable(dbSchema, tableName)).append(" ").append(alias);
+                countSql.append("SELECT count(*) FROM ").append(qualifiedTable(tableName)).append(" ").append(alias);
                 filterBuilder.applyWhere(countSql, field, alias, params, tableName);
                 parts.add("'count', (" + countSql + ")");
             } else if (Set.of("sum", "avg", "min", "max").contains(aggName) && aggField.getSelectionSet() != null) {
@@ -122,7 +129,7 @@ public class QueryBuilder {
                         String subAlias = dialect.randAlias();
                         StringBuilder subSql = new StringBuilder();
                         subSql.append("SELECT ").append(aggName).append("(").append(subAlias).append(".").append(dialect.quoteIdentifier(col)).append(") FROM ")
-                                .append(dialect.qualifiedTable(dbSchema, tableName)).append(" ").append(subAlias);
+                                .append(qualifiedTable(tableName)).append(" ").append(subAlias);
                         filterBuilder.applyWhere(subSql, field, subAlias, params, tableName);
                         colParts.add("'" + col + "', (" + subSql + ")");
                     }
@@ -200,7 +207,7 @@ public class QueryBuilder {
         String recordsCte = dialect.cteName(block, "_records");
         sql.append(recordsCte).append(" AS (");
         sql.append("SELECT ").append(block).append(".*");
-        sql.append(" FROM ").append(dialect.qualifiedTable(dbSchema, tableName)).append(" ").append(block);
+        sql.append(" FROM ").append(qualifiedTable(tableName)).append(" ").append(block);
 
         // WHERE clause (filter + cursor conditions)
         List<String> conditions = new ArrayList<>();
@@ -265,7 +272,7 @@ public class QueryBuilder {
         if (wantsTotalCount) {
             String countBlock = dialect.randAlias();
             sql.append(", ").append(dialect.cteName(block, "_total")).append(" AS (");
-            sql.append("SELECT count(*) AS val FROM ").append(dialect.qualifiedTable(dbSchema, tableName)).append(" ").append(countBlock);
+            sql.append("SELECT count(*) AS val FROM ").append(qualifiedTable(tableName)).append(" ").append(countBlock);
             List<String> countConds = new ArrayList<>();
             filterBuilder.buildWhereConditions(field, countBlock, params, countConds, tableName);
             if (!countConds.isEmpty()) {
@@ -393,7 +400,7 @@ public class QueryBuilder {
                             + " = " + alias + "." + dialect.quoteIdentifier(fk.fkColumns().get(i)));
                 }
                 pairs.add("'" + name + "', (SELECT " + subObj
-                        + " FROM " + dialect.qualifiedTable(dbSchema, fk.refTable()) + " " + subAlias
+                        + " FROM " + qualifiedTable(fk.refTable()) + " " + subAlias
                         + " WHERE " + String.join(" AND ", joinConds) + ")");
                 continue;
             }
@@ -410,7 +417,7 @@ public class QueryBuilder {
                             + " = " + alias + "." + dialect.quoteIdentifier(rfk.refColumns().get(i)));
                 }
                 pairs.add("'" + name + "', (SELECT " + dialect.coalesceArray(dialect.aggregateArray(subObj))
-                        + " FROM " + dialect.qualifiedTable(dbSchema, rfk.childTable()) + " " + subAlias
+                        + " FROM " + qualifiedTable(rfk.childTable()) + " " + subAlias
                         + " WHERE " + String.join(" AND ", joinConds) + ")");
                 continue;
             }
@@ -421,8 +428,9 @@ public class QueryBuilder {
                 boolean found = false;
                 for (SchemaInfo.ComputedField cf : computed) {
                     // Match: field name = function name, or function name = tableName_fieldName
-                    if (cf.functionName().equals(name) || cf.functionName().equals(tableName + "_" + name)) {
-                        String funcCall = dbSchema + "." + dialect.quoteIdentifier(cf.functionName()) + "(" + alias + ")";
+                    String rawTable = tableName.contains(".") ? tableName.substring(tableName.indexOf('.') + 1) : tableName;
+                    if (cf.functionName().equals(name) || cf.functionName().equals(rawTable + "_" + name)) {
+                        String funcCall = schemaInfo.resolveSchema(tableName, dbSchema) + "." + dialect.quoteIdentifier(cf.functionName()) + "(" + alias + ")";
                         pairs.add("'" + name + "', " + funcCall);
                         found = true;
                         break;
@@ -469,6 +477,16 @@ public class QueryBuilder {
         String snake = NamingUtils.camelToSnakeCase(name);
         if (schemaInfo.hasTable(snake)) return snake;
         if (schemaInfo.hasTable(name)) return name;
+
+        // Compound keys: match prefixed field name (e.g., "publicUsers" → "public.users")
+        for (String table : schemaInfo.getTableNames()) {
+            if (!table.contains(".")) continue;
+            String schema = table.substring(0, table.indexOf('.'));
+            String rawTable = table.substring(table.indexOf('.') + 1);
+            String expectedField = NamingUtils.schemaFieldName(schema, rawTable);
+            if (expectedField.equals(name)) return table;
+        }
+
         return null;
     }
 

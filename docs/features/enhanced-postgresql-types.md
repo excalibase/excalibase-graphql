@@ -46,7 +46,7 @@ CREATE TABLE orders (
 
 ```graphql
 # GraphQL Schema (Auto-generated)
-enum order_status {
+enum HanaOrderStatus {
   pending
   processing  
   shipped
@@ -54,7 +54,7 @@ enum order_status {
   cancelled
 }
 
-type address {
+type HanaAddress {
   street: String
   city: String
   state: String
@@ -62,15 +62,15 @@ type address {
   country: String
 }
 
-type orders {
+type HanaOrders {
   id: Int!
-  status: order_status
-  shipping_address: address
-  billing_address: address
+  status: HanaOrderStatus
+  shipping_address: HanaAddress
+  billing_address: HanaAddress
 }
 
 # Input types for mutations
-input address_Input {
+input HanaAddress_Input {
   street: String
   city: String
   state: String
@@ -78,10 +78,10 @@ input address_Input {
   country: String
 }
 
-input orders_CreateInput {
-  status: order_status
-  shipping_address: address_Input
-  billing_address: address_Input
+input HanaOrders_CreateInput {
+  status: HanaOrderStatus
+  shipping_address: HanaAddress_Input
+  billing_address: HanaAddress_Input
 }
 ```
 
@@ -99,7 +99,7 @@ input orders_CreateInput {
 ```graphql
 # Query with enum filtering
 {
-  orders(where: { status: { eq: shipped } }) {
+  hanaOrders(where: { status: { eq: shipped } }) {
     id
     status
     shipping_address {
@@ -112,7 +112,7 @@ input orders_CreateInput {
 
 # Create with custom types
 mutation {
-  createOrders(input: {
+  createHanaOrders(input: {
     status: pending
     shipping_address: {
       street: "123 Main St"
@@ -133,7 +133,7 @@ mutation {
 
 # Update with partial composite type
 mutation {
-  updateOrders(input: {
+  updateHanaOrders(input: {
     id: 1
     status: shipped
     shipping_address: {
@@ -207,7 +207,7 @@ input JSONFilter {
 ```graphql
 # NEW: Direct GraphQL object syntax (recommended)
 mutation {
-  createUsers(input: {
+  createHanaUsers(input: {
     name: "Alice Johnson"
     profile: {
       age: 28
@@ -234,7 +234,7 @@ mutation {
 
 # Backward compatible: JSON string input (still works)
 mutation {
-  createUsers(input: {
+  createHanaUsers(input: {
     name: "Bob Smith"
     profile: "{\"age\": 35, \"city\": \"Boston\"}"
     metadata: "{\"plan\": \"basic\"}"
@@ -246,7 +246,7 @@ mutation {
 
 # Mixed usage: Objects, arrays, and primitives
 mutation {
-  createUsers(input: {
+  createHanaUsers(input: {
     profile: {
       settings: { notifications: false }
       tags: ["developer", "senior"]
@@ -312,7 +312,7 @@ input posts_Filter {
 ```graphql
 # Direct array input syntax (natural GraphQL)
 mutation {
-  createPosts(input: {
+  createHanaPosts(input: {
     title: "GraphQL Arrays"
     categories: ["technology", "databases", "graphql"]
     tag_ids: [1, 5, 12, 23]
@@ -332,7 +332,7 @@ mutation {
 
 # Query with array filtering
 {
-  posts(where: {
+  hanaPosts(where: {
     categories: { contains: "graphql" }
     tag_ids: { in: [1, 2, 3] }
     flags: { eq: true }
@@ -346,7 +346,7 @@ mutation {
 
 # Arrays work with custom types too
 mutation {
-  createCustomData(input: {
+  createHanaCustomData(input: {
     enum_array: [active, pending, completed]      # Array of custom enums
     composite_array: [                            # Array of custom composite types
       { name: "Item 1", value: 100 },
@@ -829,14 +829,14 @@ public class ColumnTypeConstant {
 ```graphql
 # Check if profile has preferences key
 {
-  users(where: { profile: { hasKey: "preferences" } }) {
+  hanaUsers(where: { profile: { hasKey: "preferences" } }) {
     id name profile
   }
 }
 
 # JSON containment
 {
-  users(where: { 
+  hanaUsers(where: { 
     preferences: { contains: "{\"theme\": \"dark\"}" }
   }) {
     id name preferences
@@ -845,7 +845,7 @@ public class ColumnTypeConstant {
 
 # JSON path operations
 {
-  products(where: {
+  hanaProducts(where: {
     metadata: { path: ["specs", "processor", "cores"] }
   }) {
     name metadata
@@ -854,7 +854,7 @@ public class ColumnTypeConstant {
 
 # Multiple JSON operations
 {
-  users(where: {
+  hanaUsers(where: {
     profile: {
       hasKey: "settings"
       contains: "{\"active\": true}"
@@ -871,14 +871,14 @@ public class ColumnTypeConstant {
 ```graphql
 # Array contains element
 {
-  posts(where: { categories: { contains: "postgresql" } }) {
+  hanaPosts(where: { categories: { contains: "postgresql" } }) {
     title categories
   }
 }
 
 # Multiple array conditions
 {
-  users(where: {
+  hanaUsers(where: {
     skills: { contains: "java" }
     interests: { contains: "databases" }
   }) {
@@ -892,7 +892,7 @@ public class ColumnTypeConstant {
 ```graphql
 # Timezone-aware filtering
 {
-  events(where: {
+  hanaEvents(where: {
     start_time: { 
       gte: "2023-12-01T00:00:00Z"
       lt: "2024-01-01T00:00:00Z"
@@ -904,7 +904,7 @@ public class ColumnTypeConstant {
 
 # Time interval filtering
 {
-  sessions(where: {
+  hanaSessions(where: {
     duration: { gt: "2 hours" }
   }) {
     user_id duration
@@ -917,7 +917,7 @@ public class ColumnTypeConstant {
 ```graphql
 # IP address range filtering
 {
-  servers(where: {
+  hanaServers(where: {
     ip_address: { like: "192.168.%" }
     network: { startsWith: "10." }
   }) {
@@ -927,7 +927,7 @@ public class ColumnTypeConstant {
 
 # MAC address pattern matching
 {
-  devices(where: {
+  hanaDevices(where: {
     mac_address: { startsWith: "08:00:27" }
   }) {
     name mac_address
@@ -939,7 +939,7 @@ public class ColumnTypeConstant {
 
 ```graphql
 {
-  users(
+  hanaUsers(
     where: {
       profile: { hasKey: "subscription" }
       tags: { contains: "premium" }
