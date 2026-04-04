@@ -29,10 +29,10 @@ When traversing a relationship, you must include the foreign key column in your 
 
 ```graphql
 {
-  orders {
+  hanaOrders {
     order_id
     customer_id     # ← required for relationship to work
-    customer {
+    hanaCustomer {
       first_name
       last_name
     }
@@ -45,7 +45,7 @@ When traversing a relationship, you must include the foreign key column in your 
 OUT parameters come back as a single JSON string. Parse it on the client:
 
 ```js
-const raw = data.callTransferFunds;
+const raw = data.callHanaTransferFunds;
 const result = JSON.parse(raw);
 // result.p_status === "SUCCESS"
 ```

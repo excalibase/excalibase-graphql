@@ -77,7 +77,7 @@ Stored procedures: `get_customer_order_count`, `transfer_funds`
 
 ```graphql
 {
-  users {
+  hanaUsers {
     id
     username
     email
@@ -90,11 +90,11 @@ Stored procedures: `get_customer_order_count`, `transfer_funds`
 
 ```graphql
 {
-  posts(where: { published: { eq: true } }, orderBy: { created_at: ASC }) {
+  hanaPosts(where: { published: { eq: true } }, orderBy: { created_at: ASC }) {
     id
     title
     author_id
-    users {
+    hanaUsers {
       username
       first_name
     }
@@ -106,7 +106,7 @@ Stored procedures: `get_customer_order_count`, `transfer_funds`
 
 ```graphql
 {
-  users {
+  hanaUsers {
     id
     username
     role             # user_role enum: admin, moderator, user, guest
@@ -120,7 +120,7 @@ Stored procedures: `get_customer_order_count`, `transfer_funds`
 
 ```graphql
 {
-  orders_aggregate {
+  hanaOrdersAggregate {
     count
     sum { total_amount }
     avg { total_amount }
@@ -132,7 +132,7 @@ Stored procedures: `get_customer_order_count`, `transfer_funds`
 
 ```graphql
 mutation {
-  callTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 100.00)
+  callHanaTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 100.00)
 }
 ```
 
@@ -150,7 +150,7 @@ mutation {
         password: password123
 
     app:
-      allowed-schema: hana
+      schemas: hana
       database-type: postgres   # or: mysql
 
     server:

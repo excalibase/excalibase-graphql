@@ -110,6 +110,7 @@ nav:
       - Installation Guide: quick-start.md
   - API Reference: api/index.md
   - Features:
+      - Multi-Schema Support: features/multi-schema.md
       - MySQL Support: features/mysql.md
       - Stored Procedures: features/stored-procedures.md
       - Enhanced PostgreSQL Types: features/enhanced-postgresql-types.md

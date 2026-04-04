@@ -69,7 +69,7 @@ curl -X POST http://localhost:10000/graphql \
   -H "Content-Type: application/json" \
   -H "X-User-Id: user-123" \
   -d '{
-    "query": "{ orders { id total } }"
+    "query": "{ hanaOrders { id total } }"
   }'
 ```
 
@@ -84,7 +84,7 @@ curl -X POST http://localhost:10000/graphql \
   -H "X-Claim-tenant_id: acme-corp" \
   -H "X-Claim-department_id: 5" \
   -d '{
-    "query": "{ orders { id total } }"
+    "query": "{ hanaOrders { id total } }"
   }'
 ```
 
@@ -242,13 +242,13 @@ SELECT * FROM orders;
 ```bash
 # User A sees only their orders
 curl -H "X-User-Id: user-a" \
-  -d '{"query": "{ orders { id } }"}' \
+  -d '{"query": "{ hanaOrders { id } }"}' \
   http://localhost:10000/graphql
 # Returns: [{"id": 1}, {"id": 2}]
 
 # User B sees different orders
 curl -H "X-User-Id: user-b" \
-  -d '{"query": "{ orders { id } }"}' \
+  -d '{"query": "{ hanaOrders { id } }"}' \
   http://localhost:10000/graphql
 # Returns: [{"id": 3}, {"id": 4}]
 ```
@@ -313,7 +313,7 @@ JWT support will be added in a future release:
 ```bash
 # Future feature
 curl -H "Authorization: Bearer eyJhbGc..." \
-  -d '{"query": "{ orders { id } }"}' \
+  -d '{"query": "{ hanaOrders { id } }"}' \
   http://localhost:10000/graphql
 ```
 
