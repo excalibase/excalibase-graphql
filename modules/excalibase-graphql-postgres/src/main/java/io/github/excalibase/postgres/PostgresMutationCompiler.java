@@ -84,7 +84,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
             }
         }
 
-        return "WITH " + alias + " AS (INSERT INTO " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        return "WITH " + alias + " AS (INSERT INTO " + shared.qualifiedTable(tableName)
                 + " (" + String.join(", ", cols) + ") VALUES (" + String.join(", ", vals) + ")"
                 + onConflictSql
                 + " RETURNING *) SELECT " + objectSql + " FROM " + alias;
@@ -117,7 +117,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
             valueRows.add("(" + String.join(", ", vals) + ")");
         }
 
-        return "WITH " + alias + " AS (INSERT INTO " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        return "WITH " + alias + " AS (INSERT INTO " + shared.qualifiedTable(tableName)
                 + " (" + String.join(", ", colsSql) + ") VALUES " + String.join(", ", valueRows)
                 + " RETURNING *) SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql)) + " FROM " + alias;
     }
@@ -154,7 +154,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
         if (setClauses.isEmpty() || whereClauses.isEmpty()) return null;
 
-        return "WITH " + alias + " AS (UPDATE " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        return "WITH " + alias + " AS (UPDATE " + shared.qualifiedTable(tableName)
                 + " SET " + String.join(", ", setClauses)
                 + " WHERE " + String.join(" AND ", whereClauses)
                 + " RETURNING *) SELECT " + objectSql + " FROM " + alias;
@@ -172,7 +172,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
             String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
             String paramName = "del_" + pks.get(0) + "_" + params.size();
             params.put(paramName, shared.filterBuilder().extractValue(idArg.getValue(), variables));
-            return "WITH " + alias + " AS (DELETE FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+            return "WITH " + alias + " AS (DELETE FROM " + shared.qualifiedTable(tableName)
                     + " WHERE " + shared.dialect().quoteIdentifier(pks.get(0)) + " = :" + paramName
                     + " RETURNING *) SELECT " + objectSql + " FROM " + alias;
         }
@@ -196,7 +196,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
             params.put(paramName, val);
         }
 
-        return "WITH " + alias + " AS (DELETE FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        return "WITH " + alias + " AS (DELETE FROM " + shared.qualifiedTable(tableName)
                 + " WHERE " + String.join(" AND ", whereClauses)
                 + " RETURNING *) SELECT " + objectSql + " FROM " + alias;
     }
@@ -239,9 +239,9 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String atMostParam = "uc_atmost_" + params.size();
         params.put(atMostParam, atMost);
 
-        return "WITH " + alias + " AS (UPDATE " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        return "WITH " + alias + " AS (UPDATE " + shared.qualifiedTable(tableName)
                 + " SET " + String.join(", ", setClauses)
-                + " WHERE ctid IN (SELECT ctid FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+                + " WHERE ctid IN (SELECT ctid FROM " + shared.qualifiedTable(tableName)
                 + " " + innerAlias + filterWhere + " LIMIT :" + atMostParam + ")"
                 + " RETURNING *) SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql)) + " FROM " + alias;
     }
@@ -272,8 +272,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String atMostParam = "dc_atmost_" + params.size();
         params.put(atMostParam, atMost);
 
-        return "WITH " + alias + " AS (DELETE FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
-                + " WHERE ctid IN (SELECT ctid FROM " + shared.dialect().qualifiedTable(shared.dbSchema(), tableName)
+        return "WITH " + alias + " AS (DELETE FROM " + shared.qualifiedTable(tableName)
+                + " WHERE ctid IN (SELECT ctid FROM " + shared.qualifiedTable(tableName)
                 + " " + innerAlias + filterWhere + " LIMIT :" + atMostParam + ")"
                 + " RETURNING *) SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql)) + " FROM " + alias;
     }

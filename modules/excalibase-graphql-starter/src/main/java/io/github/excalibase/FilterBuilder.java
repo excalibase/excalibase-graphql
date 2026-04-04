@@ -102,8 +102,10 @@ public class FilterBuilder {
                 String enumCast = "";
                 if (schemaInfo != null && tableName != null) {
                     String enumType = schemaInfo.getEnumType(tableName, col);
-                    if (enumType != null && dbSchema != null) {
-                        enumCast = dialect.enumCast(dbSchema, enumType);
+                    if (enumType != null) {
+                        String resolvedSchema = schemaInfo.resolveSchema(tableName, dbSchema);
+                        String rawEnum = enumType.contains(".") ? enumType.substring(enumType.indexOf('.') + 1) : enumType;
+                        enumCast = dialect.enumCast(resolvedSchema, rawEnum);
                     }
                 }
 

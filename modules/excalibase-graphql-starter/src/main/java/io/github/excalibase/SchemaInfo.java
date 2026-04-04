@@ -10,6 +10,8 @@ import java.util.*;
  */
 public class SchemaInfo {
 
+    // table → schema name (e.g. "public", "dvdrental")
+    private final Map<String, String> tableSchema = new HashMap<>();
     // table → Set<column_name>
     private final Map<String, Set<String>> tableColumns = new HashMap<>();
     // table → column → type
@@ -53,7 +55,23 @@ public class SchemaInfo {
         loader.loadStoredProcedures(jdbc, schema, this);
     }
 
+    public void removeTable(String table) {
+        tableSchema.remove(table);
+        Set<String> cols = tableColumns.remove(table);
+        columnTypes.remove(table);
+        primaryKeys.remove(table);
+        viewNames.remove(table);
+        computedFields.remove(table);
+        // Clean column enum type entries
+        if (cols != null) {
+            for (String col : cols) {
+                columnEnumType.remove(table + "." + col);
+            }
+        }
+    }
+
     public void clearAll() {
+        tableSchema.clear();
         tableColumns.clear();
         columnTypes.clear();
         primaryKeys.clear();
@@ -78,27 +96,41 @@ public class SchemaInfo {
         columnTypes.computeIfAbsent(table, k -> new HashMap<>()).put(column, type);
     }
 
+    public void setTableSchema(String table, String schema) {
+        tableSchema.put(table, schema);
+    }
+
     public void addColumnEnumType(String table, String column, String enumTypeName) {
         columnEnumType.put(table + "." + column, enumTypeName);
     }
 
     public void addForeignKey(String fromTable, String fromCol, String toTable, String toCol) {
-        String fwdFieldName = NamingUtils.toLowerCamelCase(toTable);
+        String fwdFieldName = fkFieldName(toTable);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(List.of(fromCol), toTable, List.of(toCol)));
-        String revFieldName = NamingUtils.toLowerCamelCase(fromTable);
+        String revFieldName = fkFieldName(fromTable);
         reverseFks.put(toTable + "." + revFieldName,
                 new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
     }
 
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
                                  String toTable, List<String> toCols) {
-        String fwdFieldName = NamingUtils.toLowerCamelCase(toTable);
+        String fwdFieldName = fkFieldName(toTable);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(fromCols, toTable, toCols));
-        String revFieldName = NamingUtils.toLowerCamelCase(fromTable);
+        String revFieldName = fkFieldName(fromTable);
         reverseFks.put(toTable + "." + revFieldName,
                 new ReverseFkInfo(fromTable, fromCols, toCols));
+    }
+
+    /** Derive FK field name from table key. Handles compound keys ("public.users" → "publicUsers"). */
+    private String fkFieldName(String tableKey) {
+        if (tableKey.contains(".")) {
+            String schema = tableKey.substring(0, tableKey.indexOf('.'));
+            String rawTable = tableKey.substring(tableKey.indexOf('.') + 1);
+            return NamingUtils.schemaFieldName(schema, rawTable);
+        }
+        return NamingUtils.toLowerCamelCase(tableKey);
     }
 
     public void addView(String viewName) {
@@ -127,6 +159,20 @@ public class SchemaInfo {
 
     public Set<String> getTableNames() { return Collections.unmodifiableSet(tableColumns.keySet()); }
     public boolean hasTable(String name) { return tableColumns.containsKey(name); }
+    public String getTableSchema(String table) { return tableSchema.get(table); }
+
+    /** True when tables from more than one schema are loaded. */
+    public boolean isMultiSchema() {
+        return new HashSet<>(tableSchema.values()).size() > 1;
+    }
+
+    /**
+     * Resolve the schema for a table. Falls back to the given default if not explicitly set.
+     */
+    public String resolveSchema(String table, String defaultSchema) {
+        String schema = tableSchema.get(table);
+        return schema != null ? schema : defaultSchema;
+    }
     public Set<String> getColumns(String table) { return tableColumns.getOrDefault(table, Set.of()); }
     public String getColumnType(String table, String col) {
         return columnTypes.getOrDefault(table, Map.of()).get(col);
@@ -139,6 +185,7 @@ public class SchemaInfo {
         return primaryKeys.getOrDefault(table, List.of("id"));
     }
     public FkInfo getForwardFk(String table, String fieldName) { return forwardFks.get(table + "." + fieldName); }
+    public Map<String, FkInfo> getAllForwardFks() { return Collections.unmodifiableMap(forwardFks); }
     public ReverseFkInfo getReverseFk(String table, String fieldName) { return reverseFks.get(table + "." + fieldName); }
     public String getEnumType(String table, String column) { return columnEnumType.get(table + "." + column); }
     public List<ComputedField> getComputedFields(String table) { return computedFields.get(table); }

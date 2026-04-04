@@ -1,12 +1,173 @@
 package io.github.excalibase.mysql;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SchemaInfo;
 import io.github.excalibase.SchemaLoader;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.*;
+import java.util.Map;
 
 public class MysqlSchemaLoader implements SchemaLoader {
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+
+    private static String buildMysqlBulkQuery(int schemaCount) {
+        String inClause = "(" + String.join(",", Collections.nCopies(schemaCount, "?")) + ")";
+        return """
+            WITH
+              cols AS (
+                SELECT 'column' as kind, table_schema, table_name, column_name, data_type,
+                       NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column,
+                       NULL as proc_name, NULL as param_name, NULL as param_mode, NULL as param_type
+                FROM information_schema.columns
+                WHERE table_schema IN """ + inClause + """
+                ORDER BY table_schema, table_name, ordinal_position
+              ),
+              pkeys AS (
+                SELECT 'pk' as kind, tc.table_schema, tc.table_name, kcu.column_name, NULL as data_type,
+                       NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column,
+                       NULL as proc_name, NULL as param_name, NULL as param_mode, NULL as param_type
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                    ON tc.constraint_name = kcu.constraint_name
+                    AND tc.table_schema = kcu.table_schema AND tc.table_name = kcu.table_name
+                WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema IN """ + inClause + """
+                ORDER BY tc.table_schema, tc.table_name, kcu.ordinal_position
+              ),
+              fkeys AS (
+                SELECT 'fk' as kind, kcu.TABLE_SCHEMA as table_schema, kcu.TABLE_NAME as table_name,
+                       NULL as column_name, NULL as data_type,
+                       kcu.CONSTRAINT_NAME as constraint_name, kcu.COLUMN_NAME as from_column,
+                       kcu.REFERENCED_TABLE_NAME as to_table, kcu.REFERENCED_COLUMN_NAME as to_column,
+                       NULL as proc_name, NULL as param_name, NULL as param_mode, NULL as param_type
+                FROM information_schema.KEY_COLUMN_USAGE kcu
+                WHERE kcu.TABLE_SCHEMA IN """ + inClause + """
+                  AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+              ),
+              views AS (
+                SELECT 'view' as kind, table_schema, table_name, NULL as column_name, NULL as data_type,
+                       NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column,
+                       NULL as proc_name, NULL as param_name, NULL as param_mode, NULL as param_type
+                FROM information_schema.views
+                WHERE table_schema IN """ + inClause + """
+              ),
+              procs AS (
+                SELECT 'proc' as kind, r.ROUTINE_SCHEMA as table_schema, NULL as table_name,
+                       NULL as column_name, NULL as data_type, NULL as constraint_name, NULL as from_column,
+                       NULL as to_table, NULL as to_column,
+                       r.SPECIFIC_NAME as proc_name, p.PARAMETER_NAME as param_name,
+                       p.PARAMETER_MODE as param_mode, p.DATA_TYPE as param_type
+                FROM information_schema.ROUTINES r
+                LEFT JOIN information_schema.PARAMETERS p
+                    ON r.SPECIFIC_NAME = p.SPECIFIC_NAME AND r.ROUTINE_SCHEMA = p.SPECIFIC_SCHEMA
+                WHERE r.ROUTINE_SCHEMA IN """ + inClause + """
+                  AND r.ROUTINE_TYPE = 'PROCEDURE'
+                  AND (p.PARAMETER_NAME IS NOT NULL OR p.ORDINAL_POSITION IS NULL)
+                ORDER BY r.ROUTINE_SCHEMA, r.SPECIFIC_NAME, p.ORDINAL_POSITION
+              )
+            SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
+                   'column_name', column_name, 'data_type', data_type,
+                   'constraint_name', constraint_name, 'from_column', from_column,
+                   'to_table', to_table, 'to_column', to_column,
+                   'proc_name', proc_name, 'param_name', param_name,
+                   'param_mode', param_mode, 'param_type', param_type) as row_json
+            FROM cols
+            UNION ALL SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
+                   'column_name', column_name, 'data_type', data_type,
+                   'constraint_name', constraint_name, 'from_column', from_column,
+                   'to_table', to_table, 'to_column', to_column,
+                   'proc_name', proc_name, 'param_name', param_name,
+                   'param_mode', param_mode, 'param_type', param_type) FROM pkeys
+            UNION ALL SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
+                   'column_name', column_name, 'data_type', data_type,
+                   'constraint_name', constraint_name, 'from_column', from_column,
+                   'to_table', to_table, 'to_column', to_column,
+                   'proc_name', proc_name, 'param_name', param_name,
+                   'param_mode', param_mode, 'param_type', param_type) FROM fkeys
+            UNION ALL SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
+                   'column_name', column_name, 'data_type', data_type,
+                   'constraint_name', constraint_name, 'from_column', from_column,
+                   'to_table', to_table, 'to_column', to_column,
+                   'proc_name', proc_name, 'param_name', param_name,
+                   'param_mode', param_mode, 'param_type', param_type) FROM views
+            UNION ALL SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
+                   'column_name', column_name, 'data_type', data_type,
+                   'constraint_name', constraint_name, 'from_column', from_column,
+                   'to_table', to_table, 'to_column', to_column,
+                   'proc_name', proc_name, 'param_name', param_name,
+                   'param_mode', param_mode, 'param_type', param_type) FROM procs
+            """;
+    }
+
+    @Override
+    public void loadAll(JdbcTemplate jdbc, List<String> schemas, Map<String, SchemaInfo> perSchema) {
+        if (schemas.isEmpty()) return;
+        String[] schemaArray = schemas.toArray(new String[0]);
+        String sql = buildMysqlBulkQuery(schemas.size());
+        int cteCount = 5; // cols, pkeys, fkeys, views, procs
+
+        Map<String, Map<String, List<SchemaInfo.ProcParam>>> schemaProcParams = new LinkedHashMap<>();
+
+        jdbc.query(sql, ps -> {
+            int idx = 1;
+            for (int i = 0; i < cteCount; i++) {
+                for (String s : schemaArray) {
+                    ps.setString(idx++, s);
+                }
+            }
+        }, rs -> {
+            try {
+                JsonNode node = JSON.readTree(rs.getString(1));
+                String kind = node.get("kind").asText();
+                String schema = node.has("table_schema") && !node.get("table_schema").isNull()
+                        ? node.get("table_schema").asText() : null;
+                if (schema == null) return;
+                SchemaInfo info = perSchema.computeIfAbsent(schema, k -> new SchemaInfo());
+
+                switch (kind) {
+                    case "column" -> {
+                        String table = node.get("table_name").asText();
+                        String type = node.get("data_type").asText();
+                        if ("enum".equalsIgnoreCase(type)) type = "varchar";
+                        info.addColumn(table, node.get("column_name").asText(), type);
+                        info.setTableSchema(table, schema);
+                    }
+                    case "pk" -> info.addPrimaryKey(node.get("table_name").asText(), node.get("column_name").asText());
+                    case "fk" -> info.addForeignKey(
+                            node.get("table_name").asText(), node.get("from_column").asText(),
+                            node.get("to_table").asText(), node.get("to_column").asText());
+                    case "view" -> info.addView(node.get("table_name").asText());
+                    case "proc" -> {
+                        String procName = node.get("proc_name").asText();
+                        String paramName = node.has("param_name") && !node.get("param_name").isNull()
+                                ? node.get("param_name").asText() : null;
+                        Map<String, List<SchemaInfo.ProcParam>> procParams =
+                                schemaProcParams.computeIfAbsent(schema, k -> new LinkedHashMap<>());
+                        if (paramName != null) {
+                            procParams.computeIfAbsent(procName, k -> new ArrayList<>())
+                                    .add(new SchemaInfo.ProcParam(
+                                            node.get("param_mode").asText(), paramName, node.get("param_type").asText()));
+                        } else {
+                            procParams.putIfAbsent(procName, new ArrayList<>());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to parse MySQL introspection row", e);
+            }
+        });
+
+        // Post-process stored procedures
+        for (var schemaEntry : schemaProcParams.entrySet()) {
+            SchemaInfo info = perSchema.computeIfAbsent(schemaEntry.getKey(), k -> new SchemaInfo());
+            for (var procEntry : schemaEntry.getValue().entrySet()) {
+                info.addStoredProcedure(procEntry.getKey(),
+                        new SchemaInfo.ProcedureInfo(procEntry.getKey(), procEntry.getValue()));
+            }
+        }
+    }
 
     @Override
     public void loadColumns(JdbcTemplate jdbc, String schema, SchemaInfo info) {
@@ -22,6 +183,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
             // MySQL ENUM is a column constraint, not a separate type system — treat as varchar
             if ("enum".equalsIgnoreCase(type)) type = "varchar";
             info.addColumn(table, col, type);
+            info.setTableSchema(table, schema);
         }, schema);
     }
 

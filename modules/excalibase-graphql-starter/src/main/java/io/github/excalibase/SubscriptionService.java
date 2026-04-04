@@ -53,14 +53,16 @@ public class SubscriptionService {
         if (event.table() == null) {
             return;
         }
-        Sinks.Many<CDCEvent> sink = tableSinks.get(event.table());
+        // Match on schema_table key (underscore format, matches subscription registration)
+        String key = (event.schema() != null ? event.schema() + "_" : "") + event.table();
+        Sinks.Many<CDCEvent> sink = tableSinks.get(key);
         if (sink != null) {
             Sinks.EmitResult result = sink.tryEmitNext(event);
             if (result.isFailure()) {
                 log.warn("Failed to emit CDC event for table '{}': {}", event.table(), result);
                 if (result == Sinks.EmitResult.FAIL_TERMINATED) {
-                    tableSinks.remove(event.table());
-                    Sinks.Many<CDCEvent> newSink = getOrCreateSink(event.table());
+                    tableSinks.remove(key);
+                    Sinks.Many<CDCEvent> newSink = getOrCreateSink(key);
                     newSink.tryEmitNext(event);
                 }
             }

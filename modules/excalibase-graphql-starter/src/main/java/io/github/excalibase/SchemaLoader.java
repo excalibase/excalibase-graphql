@@ -2,6 +2,10 @@ package io.github.excalibase;
 
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
 /**
  * Interface for loading database schema metadata.
  * Implementations handle database-specific queries for columns, FKs, views, etc.
@@ -9,6 +13,26 @@ import org.springframework.jdbc.core.JdbcTemplate;
 public interface SchemaLoader {
 
     void loadColumns(JdbcTemplate jdbc, String schema, SchemaInfo info);
+
+    /**
+     * Bulk load all metadata for multiple schemas.
+     * Default falls back to per-schema calls (8 × N queries).
+     * Override in implementations for optimized single-query loading.
+     */
+    default void loadAll(JdbcTemplate jdbc, List<String> schemas, Map<String, SchemaInfo> perSchema) {
+        if (schemas.isEmpty()) return;
+        for (String schema : schemas) {
+            SchemaInfo info = perSchema.computeIfAbsent(schema, k -> new SchemaInfo());
+            loadColumns(jdbc, schema, info);
+            loadPrimaryKeys(jdbc, schema, info);
+            loadForeignKeys(jdbc, schema, info);
+            loadViews(jdbc, schema, info);
+            loadEnums(jdbc, schema, info);
+            loadCompositeTypes(jdbc, schema, info);
+            loadComputedFields(jdbc, schema, info);
+            loadStoredProcedures(jdbc, schema, info);
+        }
+    }
 
     /** Load primary keys. Default uses standard information_schema (works for PG + MySQL). */
     default void loadPrimaryKeys(JdbcTemplate jdbc, String schema, SchemaInfo info) {
