@@ -78,6 +78,8 @@ app:
     user-context-enabled: true
     user-id-extractor-type: header
     user-id-header: X-User-Id
+    jwt-enabled: ${JWT_ENABLED:false}
+    provisioning-url: ${PROVISIONING_URL:http://localhost:24005/api}
   nats:
     enabled: false  # Enable NATS CDC subscription from excalibase-watcher (default: false)
     url: nats://localhost:4222  # NATS server URL

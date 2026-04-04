@@ -211,7 +211,14 @@ public class GraphqlController {
     @PostMapping("/graphql")
     public ResponseEntity<Object> graphql(
             @RequestBody Map<String, Object> request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            jakarta.servlet.http.HttpServletRequest httpRequest) {
+        // Prefer JWT claims over X-User-Id header
+        var jwtClaims = (io.github.excalibase.security.JwtClaims) httpRequest.getAttribute(
+                io.github.excalibase.security.JwtAuthFilter.JWT_CLAIMS_ATTR);
+        if (jwtClaims != null) {
+            userId = String.valueOf(jwtClaims.userId());
+        }
         if (!(request.get("query") instanceof String query) || query.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of(
                     "errors", java.util.List.of(Map.of("message", "Missing or invalid 'query' field"))));
@@ -255,7 +262,7 @@ public class GraphqlController {
 
             // For RLS-enabled queries: set user context in a transaction
             if (userId != null && !userId.isBlank() && "postgres".equalsIgnoreCase(databaseType)) {
-                return executeWithRlsContext(compiled, params, userId, isProcedureCall);
+                return executeWithRlsContext(compiled, params, userId, jwtClaims, isProcedureCall);
             }
 
             String json = namedJdbc.queryForObject(compiled.sql(), params, String.class);
@@ -352,6 +359,7 @@ public class GraphqlController {
             SqlCompiler.CompiledQuery compiled,
             MapSqlParameterSource params,
             String userId,
+            io.github.excalibase.security.JwtClaims jwtClaims,
             boolean isProcedureCall) throws Exception {
         // Use raw connection to set session variable and execute query in same connection
         try (Connection conn = dataSource.getConnection()) {
@@ -362,6 +370,17 @@ public class GraphqlController {
                 try (var pstmt = conn.prepareStatement("SELECT set_config('request.user_id', ?, true)")) {
                     pstmt.setString(1, userId);
                     pstmt.execute();
+                }
+                // Set additional JWT claims as session vars when available
+                if (jwtClaims != null) {
+                    try (var pstmt = conn.prepareStatement("SELECT set_config('request.project_id', ?, true)")) {
+                        pstmt.setString(1, jwtClaims.projectId());
+                        pstmt.execute();
+                    }
+                    try (var pstmt = conn.prepareStatement("SELECT set_config('request.role', ?, true)")) {
+                        pstmt.setString(1, jwtClaims.role());
+                        pstmt.execute();
+                    }
                 }
 
                 // Execute the query using the same connection
