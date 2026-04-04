@@ -37,7 +37,7 @@ class WebSocketSubscriptionTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.schema", () -> "test_schema");
+        registry.add("app.schemas", () -> "test_schema");
         registry.add("app.max-rows", () -> 30);
         registry.add("app.nats.enabled", () -> false);
     }
@@ -127,12 +127,12 @@ class WebSocketSubscriptionTest {
             session.sendMessage(new TextMessage("{\"type\":\"connection_init\"}"));
             messages.poll(5, TimeUnit.SECONDS); // ack
 
-            // Subscribe to customerChanges
+            // Subscribe to testSchemaCustomerChanges
             String subscribeMsg = mapper.writeValueAsString(Map.of(
                     "type", "subscribe",
                     "id", "sub-1",
                     "payload", Map.of(
-                            "query", "subscription { customerChanges { operation table data } }"
+                            "query", "subscription { testSchemaCustomerChanges { operation table data } }"
                     )
             ));
             session.sendMessage(new TextMessage(subscribeMsg));
@@ -164,7 +164,7 @@ class WebSocketSubscriptionTest {
             Map<String, Object> data = (Map<String, Object>) payload.get("data");
             assertNotNull(data);
             @SuppressWarnings("unchecked")
-            Map<String, Object> changes = (Map<String, Object>) data.get("customerChanges");
+            Map<String, Object> changes = (Map<String, Object>) data.get("testSchemaCustomerChanges");
             assertNotNull(changes);
             assertEquals("INSERT", changes.get("operation"));
             assertEquals("customer", changes.get("table"));
@@ -190,7 +190,7 @@ class WebSocketSubscriptionTest {
                     "type", "subscribe",
                     "id", "sub-2",
                     "payload", Map.of(
-                            "query", "subscription { customerChanges { operation table data } }"
+                            "query", "subscription { testSchemaCustomerChanges { operation table data } }"
                     )
             ));
             session.sendMessage(new TextMessage(subscribeMsg));
@@ -234,14 +234,14 @@ class WebSocketSubscriptionTest {
             session.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
                     "type", "subscribe",
                     "id", "sub-customer",
-                    "payload", Map.of("query", "subscription { customerChanges { operation table } }")
+                    "payload", Map.of("query", "subscription { testSchemaCustomerChanges { operation table } }")
             ))));
 
             // Subscribe to orders changes
             session.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
                     "type", "subscribe",
                     "id", "sub-orders",
-                    "payload", Map.of("query", "subscription { ordersChanges { operation table } }")
+                    "payload", Map.of("query", "subscription { testSchemaOrdersChanges { operation table } }")
             ))));
 
             Thread.sleep(200);
@@ -274,11 +274,11 @@ class WebSocketSubscriptionTest {
             session.sendMessage(new TextMessage("{\"type\":\"connection_init\"}"));
             messages.poll(5, TimeUnit.SECONDS); // ack
 
-            // Subscribe to orderItemsChanges -> table "order_items"
+            // Subscribe to testSchemaOrderItemsChanges -> table "order_items"
             session.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
                     "type", "subscribe",
                     "id", "sub-oi",
-                    "payload", Map.of("query", "subscription { orderItemsChanges { operation table data } }")
+                    "payload", Map.of("query", "subscription { testSchemaOrderItemsChanges { operation table data } }")
             ))));
 
             Thread.sleep(200);
@@ -300,7 +300,7 @@ class WebSocketSubscriptionTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> data = (Map<String, Object>) payload.get("data");
             @SuppressWarnings("unchecked")
-            Map<String, Object> changes = (Map<String, Object>) data.get("orderItemsChanges");
+            Map<String, Object> changes = (Map<String, Object>) data.get("testSchemaOrderItemsChanges");
             assertEquals("DELETE", changes.get("operation"));
             assertEquals("order_items", changes.get("table"));
         } finally {

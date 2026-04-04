@@ -63,8 +63,7 @@ services:
 
       # Application settings
       SERVER_PORT: 10000
-      APP_ALLOWED_SCHEMA: hana
-      APP_SCHEMA: hana
+      APP_SCHEMAS: hana
       APP_DATABASE_TYPE: postgres
       APP_MAX_ROWS: 30
 

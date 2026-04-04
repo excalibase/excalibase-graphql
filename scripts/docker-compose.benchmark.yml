@@ -32,7 +32,7 @@ services:
       - SPRING_THREADS_VIRTUAL_ENABLED=true
 
       # Application configuration
-      - APP_ALLOWED_SCHEMA=hana
+      - APP_SCHEMAS=hana
       - APP_DATABASE_TYPE=postgres
       - SERVER_PORT=10000
 

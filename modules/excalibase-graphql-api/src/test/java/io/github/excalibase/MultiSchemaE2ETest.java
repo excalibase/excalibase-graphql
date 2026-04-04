@@ -20,25 +20,26 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * E2E test verifying per-table schema metadata is correctly set during introspection
- * and used when compiling SQL. Uses a real PostgreSQL container with a named schema.
+ * E2E test for multi-schema merge support.
+ * Two schemas (schema_a, schema_b) loaded into one GraphQL API with prefixed type names.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class PerTableSchemaE2ETest {
+class MultiSchemaE2ETest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withInitScript("init.sql");
+            .withInitScript("init-multischema.sql");
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.schemas", () -> "test_schema");
+        registry.add("app.schemas", () -> "schema_a,schema_b");
+        registry.add("app.database-type", () -> "postgres");
         registry.add("app.max-rows", () -> 30);
     }
 
@@ -51,68 +52,76 @@ class PerTableSchemaE2ETest {
         return mapper.writeValueAsString(Map.of("query", query));
     }
 
-    // === Verify schema-qualified queries work (tables loaded with correct schema) ===
+    // === Prefixed list queries ===
 
     @Test
     @Order(1)
-    void listQuery_usesCorrectSchema() throws Exception {
+    void listSchemaAUsers_prefixed() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaCustomer(orderBy: { customer_id: ASC }) { customer_id first_name } }")))
+                        .content(graphql("{ schemaAUsers { user_id name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(5)))
-                .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.schemaAUsers", hasSize(2)))
+                .andExpect(jsonPath("$.data.schemaAUsers[0].name").value("Alice"));
     }
 
     @Test
     @Order(2)
-    void connectionQuery_usesCorrectSchema() throws Exception {
+    void listSchemaBOrders_prefixed() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaCustomerConnection(first: 2) { edges { node { customer_id first_name } } pageInfo { hasNextPage } } }")))
+                        .content(graphql("{ schemaBOrders { order_id amount } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.edges", hasSize(2)))
-                .andExpect(jsonPath("$.data.testSchemaCustomerConnection.pageInfo.hasNextPage").value(true));
+                .andExpect(jsonPath("$.data.schemaBOrders", hasSize(3)));
     }
+
+    // === Introspection shows prefixed types ===
 
     @Test
     @Order(3)
-    void fkTraversal_usesCorrectSchema() throws Exception {
-        // orders has FK to customer — both in test_schema
-        mockMvc.perform(post("/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaOrders(orderBy: { order_id: ASC }) { order_id total_amount testSchemaCustomer { first_name } } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaOrders[0].testSchemaCustomer.first_name").exists());
-    }
-
-    @Test
-    @Order(4)
-    void createMutation_usesCorrectSchema() throws Exception {
-        mockMvc.perform(post("/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { createTestSchemaCustomer(input: { first_name: \"Test\", last_name: \"User\", email: \"test@test.com\" }) { customer_id first_name } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.createTestSchemaCustomer.first_name").value("Test"));
-    }
-
-    @Test
-    @Order(5)
-    void introspection_returnsSchemaWithTables() throws Exception {
+    void introspection_showsPrefixedTypes() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ __schema { queryType { fields { name } } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.__schema.queryType.fields[*].name", hasItem("testSchemaCustomer")));
+                .andExpect(jsonPath("$.data.__schema.queryType.fields[*].name", hasItem("schemaAUsers")))
+                .andExpect(jsonPath("$.data.__schema.queryType.fields[*].name", hasItem("schemaBOrders")));
     }
+
+    // === Cross-schema FK traversal ===
+
+    @Test
+    @Order(4)
+    void crossSchemaFk_ordersToUsers() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("{ schemaBOrders(orderBy: { order_id: ASC }) { order_id amount schemaAUsers { name } } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.schemaBOrders[0].schemaAUsers.name").value("Alice"));
+    }
+
+    // === Connection query with prefix ===
+
+    @Test
+    @Order(5)
+    void connectionQuery_prefixed() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("{ schemaAUsersConnection(first: 1) { edges { node { user_id name } } pageInfo { hasNextPage } } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.schemaAUsersConnection.edges", hasSize(1)))
+                .andExpect(jsonPath("$.data.schemaAUsersConnection.pageInfo.hasNextPage").value(true));
+    }
+
+    // === Aggregate query with prefix ===
 
     @Test
     @Order(6)
-    void aggregateQuery_usesCorrectSchema() throws Exception {
+    void aggregateQuery_prefixed() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaCustomerAggregate { count } }")))
+                        .content(graphql("{ schemaBOrdersAggregate { count } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaCustomerAggregate.count").isNumber());
+                .andExpect(jsonPath("$.data.schemaBOrdersAggregate.count").value(3));
     }
 }

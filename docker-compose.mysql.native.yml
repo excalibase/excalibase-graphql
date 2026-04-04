@@ -41,8 +41,7 @@ services:
       SERVER_TOMCAT_ACCEPT_COUNT: 100
       SPRING_THREADS_VIRTUAL_ENABLED: true
       SERVER_PORT: 10001
-      APP_ALLOWED_SCHEMA: excalibase
-      APP_SCHEMA: excalibase
+      APP_SCHEMAS: excalibase
       APP_DATABASE_TYPE: mysql
       APP_MAX_ROWS: 30
       APP_NATS_ENABLED: false

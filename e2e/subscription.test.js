@@ -25,7 +25,7 @@ const PG_WS = process.env.POSTGRES_WS_URL || 'ws://localhost:10000/graphql';
 
 const CUSTOMER_SUBSCRIPTION = `
   subscription {
-    customerChanges {
+    hanaCustomerChanges {
       operation
       table
       timestamp
@@ -65,14 +65,14 @@ describe('Postgres CDC subscriptions', () => {
 
     const data = await pgClient.request(gql`
       mutation {
-        createCustomer(input: {
+        createHanaCustomer(input: {
           first_name: "CDC_PG_Insert"
           last_name: "E2E"
           email: "cdc-pg-insert@e2e.test"
         }) { customer_id first_name }
       }
     `);
-    const cid = data.createCustomer.customer_id;
+    const cid = data.createHanaCustomer.customer_id;
 
     await waitFor(sub.events, (e) =>
       e.some((ev) => ev.operation === 'INSERT' && ev.data?.email === 'cdc-pg-insert@e2e.test')
@@ -86,28 +86,28 @@ describe('Postgres CDC subscriptions', () => {
     expect(insert.data.first_name).toBe('CDC_PG_Insert');
 
     // Clean up
-    await pgClient.request(gql`mutation { deleteCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
+    await pgClient.request(gql`mutation { deleteHanaCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
   });
 
   test('receives UPDATE event from GraphQL mutation', async () => {
     // Create a row to update
     const create = await pgClient.request(gql`
       mutation {
-        createCustomer(input: {
+        createHanaCustomer(input: {
           first_name: "CDC_PG_Update"
           last_name: "E2E"
           email: "cdc-pg-update@e2e.test"
         }) { customer_id }
       }
     `);
-    const cid = create.createCustomer.customer_id;
+    const cid = create.createHanaCustomer.customer_id;
 
     sub = subscribeGraphQL(PG_WS, CUSTOMER_SUBSCRIPTION);
     await sub.ready;
 
     await pgClient.request(gql`
       mutation {
-        updateCustomer(input: {
+        updateHanaCustomer(input: {
           customer_id: ${cid}
           first_name: "CDC_PG_Updated"
         }) { customer_id first_name }
@@ -123,27 +123,27 @@ describe('Postgres CDC subscriptions', () => {
     expect(update.data.new.first_name).toBe('CDC_PG_Updated');
 
     // Clean up
-    await pgClient.request(gql`mutation { deleteCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
+    await pgClient.request(gql`mutation { deleteHanaCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
   });
 
   test('receives DELETE event from GraphQL mutation', async () => {
     // Create a row to delete
     const create = await pgClient.request(gql`
       mutation {
-        createCustomer(input: {
+        createHanaCustomer(input: {
           first_name: "CDC_PG_Delete"
           last_name: "E2E"
           email: "cdc-pg-delete@e2e.test"
         }) { customer_id }
       }
     `);
-    const cid = create.createCustomer.customer_id;
+    const cid = create.createHanaCustomer.customer_id;
 
     sub = subscribeGraphQL(PG_WS, CUSTOMER_SUBSCRIPTION);
     await sub.ready;
 
     await pgClient.request(gql`
-      mutation { deleteCustomer(input: { customer_id: ${cid} }) { customer_id } }
+      mutation { deleteHanaCustomer(input: { customer_id: ${cid} }) { customer_id } }
     `);
 
     await waitFor(sub.events, (e) =>
@@ -206,6 +206,29 @@ describe('Postgres CDC subscriptions', () => {
 const MYSQL_API = process.env.MYSQL_API_URL || 'http://localhost:10001/graphql';
 const MYSQL_WS = process.env.MYSQL_WS_URL || 'ws://localhost:10001/graphql';
 
+const MYSQL_CUSTOMER_SUBSCRIPTION = `
+  subscription {
+    excalibaseCustomerChanges {
+      operation
+      table
+      timestamp
+      data {
+        customer_id
+        first_name
+        last_name
+        email
+        new {
+          customer_id
+          first_name
+          last_name
+          email
+        }
+      }
+      error
+    }
+  }
+`;
+
 // MySQL schema generator does not yet generate subscription types.
 // These tests are ready for when that feature is added.
 // To enable: remove the .skip and ensure docker-compose.mysql.yml has NATS + watcher.
@@ -223,19 +246,19 @@ describe.skip('MySQL CDC subscriptions', () => {
   });
 
   test('receives INSERT event from GraphQL mutation', async () => {
-    sub = subscribeGraphQL(MYSQL_WS, CUSTOMER_SUBSCRIPTION);
+    sub = subscribeGraphQL(MYSQL_WS, MYSQL_CUSTOMER_SUBSCRIPTION);
     await sub.ready;
 
     const data = await myClient.request(gql`
       mutation {
-        createCustomer(input: {
+        createExcalibaseCustomer(input: {
           first_name: "CDC_MY_Insert"
           last_name: "E2E"
           email: "cdc-my-insert@e2e.test"
         }) { customer_id first_name }
       }
     `);
-    const cid = data.createCustomer.customer_id;
+    const cid = data.createExcalibaseCustomer.customer_id;
 
     await waitFor(sub.events, (e) =>
       e.some((ev) => ev.operation === 'INSERT' && ev.data?.email === 'cdc-my-insert@e2e.test')
@@ -249,27 +272,27 @@ describe.skip('MySQL CDC subscriptions', () => {
     expect(insert.data.first_name).toBe('CDC_MY_Insert');
 
     // Clean up
-    await myClient.request(gql`mutation { deleteCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
+    await myClient.request(gql`mutation { deleteExcalibaseCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
   });
 
   test('receives UPDATE event from GraphQL mutation', async () => {
     const create = await myClient.request(gql`
       mutation {
-        createCustomer(input: {
+        createExcalibaseCustomer(input: {
           first_name: "CDC_MY_Update"
           last_name: "E2E"
           email: "cdc-my-update@e2e.test"
         }) { customer_id }
       }
     `);
-    const cid = create.createCustomer.customer_id;
+    const cid = create.createExcalibaseCustomer.customer_id;
 
-    sub = subscribeGraphQL(MYSQL_WS, CUSTOMER_SUBSCRIPTION);
+    sub = subscribeGraphQL(MYSQL_WS, MYSQL_CUSTOMER_SUBSCRIPTION);
     await sub.ready;
 
     await myClient.request(gql`
       mutation {
-        updateCustomer(input: {
+        updateExcalibaseCustomer(input: {
           customer_id: ${cid}
           first_name: "CDC_MY_Updated"
         }) { customer_id first_name }
@@ -285,26 +308,26 @@ describe.skip('MySQL CDC subscriptions', () => {
     expect(update.data.new.first_name).toBe('CDC_MY_Updated');
 
     // Clean up
-    await myClient.request(gql`mutation { deleteCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
+    await myClient.request(gql`mutation { deleteExcalibaseCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
   });
 
   test('receives DELETE event from GraphQL mutation', async () => {
     const create = await myClient.request(gql`
       mutation {
-        createCustomer(input: {
+        createExcalibaseCustomer(input: {
           first_name: "CDC_MY_Delete"
           last_name: "E2E"
           email: "cdc-my-delete@e2e.test"
         }) { customer_id }
       }
     `);
-    const cid = create.createCustomer.customer_id;
+    const cid = create.createExcalibaseCustomer.customer_id;
 
-    sub = subscribeGraphQL(MYSQL_WS, CUSTOMER_SUBSCRIPTION);
+    sub = subscribeGraphQL(MYSQL_WS, MYSQL_CUSTOMER_SUBSCRIPTION);
     await sub.ready;
 
     await myClient.request(gql`
-      mutation { deleteCustomer(input: { customer_id: ${cid} }) { customer_id } }
+      mutation { deleteExcalibaseCustomer(input: { customer_id: ${cid} }) { customer_id } }
     `);
 
     await waitFor(sub.events, (e) => e.some((ev) => ev.operation === 'DELETE'));
@@ -315,7 +338,7 @@ describe.skip('MySQL CDC subscriptions', () => {
   });
 
   test('receives INSERT event from direct mysql', async () => {
-    sub = subscribeGraphQL(MYSQL_WS, CUSTOMER_SUBSCRIPTION);
+    sub = subscribeGraphQL(MYSQL_WS, MYSQL_CUSTOMER_SUBSCRIPTION);
     await sub.ready;
 
     mysqlExec(
@@ -341,7 +364,7 @@ describe.skip('MySQL CDC subscriptions', () => {
       "INSERT INTO customer (first_name, last_name, email) VALUES ('CDC_MYSQL_UpdTarget', 'E2E', 'cdc-mysql-upd@e2e.test')"
     );
 
-    sub = subscribeGraphQL(MYSQL_WS, CUSTOMER_SUBSCRIPTION);
+    sub = subscribeGraphQL(MYSQL_WS, MYSQL_CUSTOMER_SUBSCRIPTION);
     await sub.ready;
 
     mysqlExec("UPDATE customer SET first_name = 'CDC_MYSQL_Updated' WHERE email = 'cdc-mysql-upd@e2e.test'");
