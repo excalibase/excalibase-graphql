@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/vault/pki/public-key"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "public-key-response.json"
+  }
+}

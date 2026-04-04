@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: testdb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - ./init-e2e.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "25433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  mock-vault:
+    image: wiremock/wiremock:3.10.0
+    volumes:
+      - ./wiremock:/home/wiremock
+    ports:
+      - "28080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/__admin/mappings"]
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  auth:
+    build:
+      context: ../../excalibase-auth
+    environment:
+      PROVISIONING_URL: http://mock-vault:8080/api
+      PROVISIONING_PAT: test-pat
+      PORT: "24000"
+    ports:
+      - "24000:24000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock-vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:24000/healthz"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  graphql:
+    build:
+      context: ..
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/testdb
+      SPRING_DATASOURCE_USERNAME: app_user
+      SPRING_DATASOURCE_PASSWORD: apppass
+      APP_SCHEMAS: public
+      APP_DATABASE_TYPE: postgres
+      APP_MAX_ROWS: "100"
+      APP_SECURITY_JWT_ENABLED: "true"
+      APP_SECURITY_PROVISIONING_URL: http://mock-vault:8080
+      APP_SECURITY_USER_CONTEXT_ENABLED: "true"
+      SERVER_PORT: "10000"
+    ports:
+      - "10000:10000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock-vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:10000/actuator/health"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
