@@ -3,8 +3,20 @@ name: Continuous Integration
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements.txt'
+      - '*.md'
+      - '.github/workflows/docs.yml'
   pull_request:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements.txt'
+      - '*.md'
+      - '.github/workflows/docs.yml'
 
 env:
   MAVEN_OPTS: "-Djava.awt.headless=true"

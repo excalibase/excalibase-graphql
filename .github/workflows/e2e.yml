@@ -4,6 +4,12 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements.txt'
+      - '*.md'
+      - '.github/workflows/docs.yml'
   workflow_dispatch: # Allow manual triggering
 
 jobs:
