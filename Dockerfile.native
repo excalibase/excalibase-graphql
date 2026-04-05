@@ -1,9 +1,0 @@
-FROM debian:bookworm-slim
-
-COPY modules/excalibase-graphql-api/target/excalibase-graphql-api /app/excalibase-graphql-api
-
-RUN chmod +x /app/excalibase-graphql-api
-
-EXPOSE 10000
-
-ENTRYPOINT ["/app/excalibase-graphql-api"]
