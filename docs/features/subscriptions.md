@@ -562,7 +562,7 @@ const client = createClient({
 logging:
   level:
     io.github.excalibase.service.NatsCDCService: DEBUG
-    io.github.excalibase.config.GraphQLWebSocketHandler: DEBUG
+    io.github.excalibase.config.ws.GraphQLWebSocketHandler: DEBUG
 ```
 
 ## Testing

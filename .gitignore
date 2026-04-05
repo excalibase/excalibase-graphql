@@ -3,6 +3,8 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 e2e/node_modules/
+e2e/*.pem
+e2e/wiremock/__files/
 
 ### IntelliJ IDEA ###
 /.idea/
