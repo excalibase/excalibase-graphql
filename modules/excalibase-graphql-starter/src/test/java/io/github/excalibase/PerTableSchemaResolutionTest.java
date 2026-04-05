@@ -1,5 +1,9 @@
 package io.github.excalibase;
 
+import io.github.excalibase.compiler.MutationBuilder;
+import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.spi.MutationCompiler;
+import io.github.excalibase.compiler.SqlCompiler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

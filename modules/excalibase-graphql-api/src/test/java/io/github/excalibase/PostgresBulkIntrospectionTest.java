@@ -1,13 +1,13 @@
 package io.github.excalibase;
 
 import io.github.excalibase.postgres.PostgresSchemaLoader;
+import io.github.excalibase.schema.SchemaInfo;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import javax.sql.DataSource;
 import com.zaxxer.hikari.HikariDataSource;
 import java.util.*;
 

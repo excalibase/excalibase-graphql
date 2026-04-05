@@ -106,8 +106,8 @@ logging:
         excalibase: ${log.level.app:info}
   # Structured JSON logging (ECS format) — parseable by any log collector (Loki, OpenSearch, etc.)
   # Override with LOG_FORMAT=plain for local dev coloured output
-#  structured:
-#    format:
-#      console: ${LOG_FORMAT:gelf}
+  structured:
+    format:
+      console: ${LOG_FORMAT:ecs}
   pattern:
     console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1}): %msg%n%throwable"

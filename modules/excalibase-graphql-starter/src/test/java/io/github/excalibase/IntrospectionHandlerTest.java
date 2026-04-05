@@ -1,5 +1,7 @@
 package io.github.excalibase;
 
+import io.github.excalibase.schema.IntrospectionHandler;
+import io.github.excalibase.schema.SchemaInfo;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
