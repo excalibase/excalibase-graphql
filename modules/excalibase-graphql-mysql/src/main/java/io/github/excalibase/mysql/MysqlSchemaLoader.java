@@ -2,8 +2,8 @@ package io.github.excalibase.mysql;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.excalibase.SchemaInfo;
-import io.github.excalibase.SchemaLoader;
+import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.spi.SchemaLoader;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.*;

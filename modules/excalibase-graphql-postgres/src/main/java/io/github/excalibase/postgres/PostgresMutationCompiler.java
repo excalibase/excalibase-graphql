@@ -1,7 +1,9 @@
 package io.github.excalibase.postgres;
 
-import io.github.excalibase.*;
 import graphql.language.*;
+import io.github.excalibase.compiler.MutationBuilder;
+import io.github.excalibase.spi.MutationCompiler;
+import io.github.excalibase.compiler.SqlCompiler;
 
 import java.util.*;
 
@@ -15,8 +17,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
     @Override
     public SqlCompiler.CompiledQuery compileMutation(Field field, String fieldName,
-            Map<String, Object> params, Map<String, Object> variables,
-            MutationBuilder shared) {
+                                                     Map<String, Object> params, Map<String, Object> variables,
+                                                     MutationBuilder shared) {
         String sql = null;
         if (fieldName.startsWith("update") && fieldName.endsWith("Collection")) {
             String typePart = fieldName.substring("update".length(), fieldName.length() - "Collection".length());
