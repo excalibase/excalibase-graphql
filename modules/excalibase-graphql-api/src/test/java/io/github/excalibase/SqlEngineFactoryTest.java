@@ -1,9 +1,14 @@
 package io.github.excalibase;
 
+import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.mysql.MysqlDialect;
 import io.github.excalibase.mysql.MysqlSchemaLoader;
 import io.github.excalibase.postgres.PostgresDialect;
 import io.github.excalibase.postgres.PostgresSchemaLoader;
+import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.spi.SchemaLoader;
+import io.github.excalibase.spi.SqlEngine;
+import io.github.excalibase.spi.SqlEngineFactory;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;

@@ -670,6 +670,37 @@ SELECT pg_create_logical_replication_slot('cdc_slot', 'pgoutput');
 REFRESH MATERIALIZED VIEW enhanced_types_summary;
 
 -- ====================
+-- AUTH SCHEMA (for excalibase-auth service)
+-- ====================
+CREATE SCHEMA IF NOT EXISTS auth;
+
+CREATE TABLE auth.users (
+    id BIGSERIAL PRIMARY KEY,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    full_name VARCHAR(100) NOT NULL,
+    role VARCHAR(50) NOT NULL DEFAULT 'user',
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    last_login_at TIMESTAMPTZ
+);
+
+CREATE TABLE auth.refresh_tokens (
+    id BIGSERIAL PRIMARY KEY,
+    token VARCHAR(255) NOT NULL UNIQUE,
+    user_id BIGINT NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    expiry_date TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    revoked BOOLEAN NOT NULL DEFAULT false
+);
+
+CREATE ROLE auth_admin WITH LOGIN PASSWORD 'authpass';
+GRANT USAGE ON SCHEMA auth TO auth_admin;
+GRANT ALL ON ALL TABLES IN SCHEMA auth TO auth_admin;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO auth_admin;
+
+-- ====================
 -- RLS (ROW LEVEL SECURITY) TEST SETUP
 -- ====================
 -- Create non-superuser for app connections (required for RLS to be enforced)

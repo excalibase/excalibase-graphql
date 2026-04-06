@@ -28,10 +28,8 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
 	@echo "$(YELLOW)Examples:$(NC)"
-	@echo "  make e2e                  # Complete Postgres e2e test (JVM)"
-	@echo "  make postgres-e2e-native  # Complete Postgres e2e test (native)"
-	@echo "  make mysql-e2e            # Complete MySQL e2e test (JVM)"
-	@echo "  make mysql-e2e-native     # Complete MySQL e2e test (native)"
+	@echo "  make e2e                  # Complete Postgres e2e test"
+	@echo "  make mysql-e2e            # Complete MySQL e2e test"
 	@echo "  make dev            # Build then start services and keep running"
 	@echo "  make up             # Pull and start service from docker hub "
 	@echo "  make test-only      # Run tests against running services"
@@ -73,6 +71,15 @@ dev: build-image up ## Start services for development (no cleanup)
 	@echo "$(YELLOW)To cleanup:$(NC)  make clean"
 	@echo ""
 
+.PHONY: test-all
+test-all: ## Run all tests: unit + Postgres/MySQL E2E (JVM)
+	@echo "$(BLUE)🧪 Running unit and integration tests...$(NC)"
+	@mvn test -q || (echo "$(RED)❌ Unit/integration tests failed$(NC)" && exit 1)
+	@echo "$(GREEN)✓ Unit/integration tests passed$(NC)"
+	@$(MAKE) --no-print-directory e2e
+	@$(MAKE) --no-print-directory mysql-e2e
+	@echo "$(GREEN)🎉 All tests passed!$(NC)"
+
 .PHONY: ci
 ci: build-image up test clean ## CI/CD pipeline
 
@@ -88,55 +95,6 @@ MYSQL_API_PORT = 10001
 .PHONY: mysql-e2e
 mysql-e2e: down-mysql build-image mysql-up mysql-test mysql-clean ## Complete MySQL e2e test suite (JVM)
 	@echo "$(GREEN)🎉 MySQL E2E testing completed successfully!$(NC)"
-
-# Native e2e targets
-NATIVE_COMPOSE_FILE = docker-compose.native.yml
-NATIVE_COMPOSE_PROJECT = excalibase-native-app
-MYSQL_NATIVE_COMPOSE_FILE = docker-compose.mysql.native.yml
-MYSQL_NATIVE_COMPOSE_PROJECT = excalibase-mysql-native-app
-
-.PHONY: postgres-e2e-native
-postgres-e2e-native: down-native build-native-image up-native test-only-native clean-native ## Complete Postgres e2e test suite (native image)
-	@echo "$(GREEN)🎉 Postgres Native E2E testing completed successfully!$(NC)"
-
-.PHONY: mysql-e2e-native
-mysql-e2e-native: down-mysql-native build-native-image mysql-up-native mysql-test mysql-clean-native ## Complete MySQL e2e test suite (native image)
-	@echo "$(GREEN)🎉 MySQL Native E2E testing completed successfully!$(NC)"
-
-.PHONY: up-native
-up-native: ## Start Postgres Docker services using native image
-	@echo "$(BLUE)🚀 Starting native services...$(NC)"
-	@docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) up -d 2>&1 || true
-	@echo "$(GREEN)✓ Native services started$(NC)"
-	@$(MAKE) --no-print-directory wait-ready-native
-
-.PHONY: down-native
-down-native: ## Stop native Postgres Docker services
-	@echo "$(BLUE)🛑 Stopping native services...$(NC)"
-	@docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) down > /dev/null 2>&1 || true
-	@echo "$(GREEN)✓ Native services stopped$(NC)"
-
-.PHONY: clean-native
-clean-native: ## Stop native Postgres services and cleanup volumes
-	@docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
-
-.PHONY: mysql-up-native
-mysql-up-native: ## Start MySQL services using native image
-	@echo "$(BLUE)🚀 Starting MySQL native services...$(NC)"
-	@docker compose -f $(MYSQL_NATIVE_COMPOSE_FILE) -p $(MYSQL_NATIVE_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
-	@docker compose -f $(MYSQL_NATIVE_COMPOSE_FILE) -p $(MYSQL_NATIVE_COMPOSE_PROJECT) up -d 2>&1 || true
-	@echo "$(GREEN)✓ MySQL native services started$(NC)"
-
-.PHONY: down-mysql-native
-down-mysql-native: ## Stop MySQL native Docker services
-	@echo "$(BLUE)🛑 Stopping MySQL native services...$(NC)"
-	@docker compose -f $(MYSQL_NATIVE_COMPOSE_FILE) -p $(MYSQL_NATIVE_COMPOSE_PROJECT) down > /dev/null 2>&1 || true
-	@echo "$(GREEN)✓ MySQL native services stopped$(NC)"
-
-.PHONY: mysql-clean-native
-mysql-clean-native: ## Stop MySQL native services and cleanup volumes
-	@docker compose -f $(MYSQL_NATIVE_COMPOSE_FILE) -p $(MYSQL_NATIVE_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 
 .PHONY: mysql-dev
 mysql-dev: build-image mysql-up ## Start MySQL services for development
@@ -167,6 +125,8 @@ mysql-clean: ## Stop MySQL services and cleanup volumes
 mysql-test: ## Run MySQL e2e tests (requires services running)
 	@echo "$(BLUE)🧪 Running MySQL E2E tests...$(NC)"
 	@cd e2e && npm install --silent && npm run test:mysql || (echo "$(RED)❌ MySQL tests failed$(NC)" && exit 1)
+	@echo "$(BLUE)🧪 Running MySQL CDC subscription tests...$(NC)"
+	@cd e2e && npm run test:subscription:mysql || (echo "$(RED)❌ MySQL subscription tests failed$(NC)" && exit 1)
 
 # CDC subscription test targets
 .PHONY: subscription-test
@@ -184,17 +144,9 @@ mysql-subscription-test: ## Run MySQL CDC subscription e2e tests (requires mysql
 benchmark-postgres-jvm: ## Run Postgres JVM benchmark (quick)
 	@./scripts/benchmark-postgres.sh jvm quick
 
-.PHONY: benchmark-postgres-native
-benchmark-postgres-native: ## Run Postgres native benchmark (quick)
-	@./scripts/benchmark-postgres.sh native quick
-
 .PHONY: benchmark-mysql-jvm
 benchmark-mysql-jvm: ## Run MySQL JVM benchmark (quick)
 	@./scripts/benchmark-mysql.sh jvm quick
-
-.PHONY: benchmark-mysql-native
-benchmark-mysql-native: ## Run MySQL native benchmark (quick)
-	@./scripts/benchmark-mysql.sh native quick
 
 # Build targets
 .PHONY: build
@@ -202,18 +154,6 @@ build: ## Build the application with Maven
 	@echo "$(BLUE)🔨 Building application...$(NC)"
 	@mvn clean package -DskipTests -q
 	@echo "$(GREEN)✓ Build completed$(NC)"
-
-.PHONY: build-native
-build-native: ## Build native image (requires GraalVM JDK 21, ~10 min)
-	@echo "$(BLUE)🔨 Building native image...$(NC)"
-	@mvn -pl modules/excalibase-graphql-api -am -Pnative package -DskipTests -q
-	@echo "$(GREEN)✓ Native image built: modules/excalibase-graphql-api/target/excalibase-graphql-api$(NC)"
-
-.PHONY: build-native-image
-build-native-image: build-native ## Build native Docker image
-	@echo "$(BLUE)🐳 Building native Docker image...$(NC)"
-	@docker build -f Dockerfile.native -t excalibase/excalibase-graphql:native .
-	@echo "$(GREEN)✓ Native Docker image built$(NC)"
 
 .PHONY: build-image
 build-image: build ## Build Docker image locally for e2e testing
@@ -225,9 +165,14 @@ build-image: build ## Build Docker image locally for e2e testing
 build-skip: ## Skip Maven build (for rapid iteration)
 	@echo "$(YELLOW)⚠️  Skipping Maven build$(NC)"
 
+# Key generation for WireMock mock-vault
+.PHONY: generate-keys
+generate-keys: ## Generate test EC keypair and WireMock stubs
+	@e2e/generate-keys.sh
+
 # Service management
 .PHONY: up
-up: ## Start Docker services (app + observability)
+up: generate-keys ## Start Docker services (app + observability)
 	@echo "$(BLUE)🚀 Starting services...$(NC)"
 	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 	@docker compose -f $(COMPOSE_FILE) -p $(COMPOSE_PROJECT) up -d 2>&1 || true
@@ -314,52 +259,11 @@ wait-ready: ## Wait for services to be ready
 	done
 	@echo "$(GREEN)✓ All services ready$(NC)"
 
-.PHONY: wait-ready-native
-wait-ready-native: ## Wait for native services to be ready (DB + fast native startup)
-	@echo "$(BLUE)⏳ Waiting for native services...$(NC)"
-	@for i in $$(seq 1 30); do \
-		if docker compose -f $(NATIVE_COMPOSE_FILE) -p $(NATIVE_COMPOSE_PROJECT) exec -T postgres pg_isready -U hana001 -d hana > /dev/null 2>&1; then \
-			echo "$(GREEN)✓ PostgreSQL ready$(NC)"; \
-			break; \
-		fi; \
-		if [ $$i -eq 30 ]; then \
-			echo "$(RED)❌ PostgreSQL failed to start$(NC)"; \
-			exit 1; \
-		fi; \
-		printf "."; \
-		sleep 2; \
-	done
-	@echo "$(BLUE)🔄 Waiting for native application...$(NC)"
-	@for i in $$(seq 1 30); do \
-		if curl -s -X POST http://localhost:$(APP_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
-			echo "$(GREEN)✓ GraphQL API ready$(NC)"; \
-			break; \
-		fi; \
-		if [ $$i -eq 30 ]; then \
-			echo "$(RED)❌ Native application failed to start$(NC)"; \
-			exit 1; \
-		fi; \
-		printf "."; \
-		sleep 2; \
-	done
-	@echo "$(GREEN)✓ All native services ready$(NC)"
-
 .PHONY: run-tests
 run-tests: ## Execute the actual test suite (queries/mutations + CDC subscriptions)
 	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Postgres tests failed$(NC)" && exit 1)
 	@echo "$(BLUE)🧪 Running CDC subscription tests...$(NC)"
 	@cd e2e && npm run test:subscription:postgres || (echo "$(RED)❌ Subscription tests failed$(NC)" && exit 1)
-
-.PHONY: test-only-native
-test-only-native: ## Run e2e tests for native (sets container names for native compose)
-	@echo "$(BLUE)🧪 Running Native E2E tests...$(NC)"
-	@$(MAKE) --no-print-directory run-tests-native
-
-.PHONY: run-tests-native
-run-tests-native: ## Execute test suite against native containers
-	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Postgres tests failed$(NC)" && exit 1)
-	@echo "$(BLUE)🧪 Running CDC subscription tests (native)...$(NC)"
-	@cd e2e && PG_CONTAINER=excalibase-postgres-native npm run test:subscription:postgres || (echo "$(RED)❌ Subscription tests failed$(NC)" && exit 1)
 
 # Database operations (unified schema with demo + test data)
 .PHONY: db-shell

@@ -1,5 +1,6 @@
 package io.github.excalibase;
 
+import io.github.excalibase.schema.SchemaInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

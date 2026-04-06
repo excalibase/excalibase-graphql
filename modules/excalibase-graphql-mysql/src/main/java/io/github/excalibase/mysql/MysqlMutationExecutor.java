@@ -1,7 +1,7 @@
 package io.github.excalibase.mysql;
 
-import io.github.excalibase.MutationExecutor;
-import io.github.excalibase.SqlCompiler;
+import io.github.excalibase.spi.MutationExecutor;
+import io.github.excalibase.compiler.SqlCompiler;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;

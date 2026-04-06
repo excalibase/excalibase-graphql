@@ -2,6 +2,8 @@ package io.github.excalibase;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.cdc.CDCEvent;
+import io.github.excalibase.cdc.SubscriptionService;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -49,6 +51,14 @@ class WebSocketSubscriptionTest {
     private SubscriptionService subscriptionService;
 
     private static final ObjectMapper mapper = new ObjectMapper();
+
+    private void awaitSubscription(String tableName) throws InterruptedException {
+        for (int i = 0; i < 50; i++) {
+            if (subscriptionService.hasSubscribers(tableName)) return;
+            Thread.sleep(100);
+        }
+        fail("Subscription for '" + tableName + "' not registered within 5 seconds");
+    }
 
     private WebSocketSession connectWebSocket(BlockingQueue<String> messages) throws Exception {
         StandardWebSocketClient client = new StandardWebSocketClient();
@@ -137,8 +147,8 @@ class WebSocketSubscriptionTest {
             ));
             session.sendMessage(new TextMessage(subscribeMsg));
 
-            // Give subscription time to set up
-            Thread.sleep(200);
+            // Wait for subscription to be registered
+            awaitSubscription("test_schema_customer");
 
             // Simulate a CDC event via SubscriptionService
             CDCEvent event = new CDCEvent(
@@ -194,7 +204,7 @@ class WebSocketSubscriptionTest {
                     )
             ));
             session.sendMessage(new TextMessage(subscribeMsg));
-            Thread.sleep(200);
+            awaitSubscription("test_schema_customer");
 
             // Complete (unsubscribe)
             session.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
@@ -244,7 +254,8 @@ class WebSocketSubscriptionTest {
                     "payload", Map.of("query", "subscription { testSchemaOrdersChanges { operation table } }")
             ))));
 
-            Thread.sleep(200);
+            awaitSubscription("test_schema_customer");
+            awaitSubscription("test_schema_orders");
 
             // Publish order event — only sub-orders should receive
             subscriptionService.publish(new CDCEvent(
@@ -281,7 +292,7 @@ class WebSocketSubscriptionTest {
                     "payload", Map.of("query", "subscription { testSchemaOrderItemsChanges { operation table data } }")
             ))));
 
-            Thread.sleep(200);
+            awaitSubscription("test_schema_order_items");
 
             // Publish event for order_items table
             subscriptionService.publish(new CDCEvent(

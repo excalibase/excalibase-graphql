@@ -938,3 +938,131 @@ describe('Stored Procedures', () => {
     expect(Number(charlie.balance)).toBeCloseTo(10.00, 2);
   });
 });
+
+// ─── JWT + RLS Integration Tests ──────────────────────────────────────────────
+
+const AUTH_URL = process.env.AUTH_URL || 'http://localhost:24000';
+const PROJECT_ID = 'e2e-test';
+
+async function authPost(path, body) {
+  const res = await fetch(`${AUTH_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+
+async function rawGraphql(query, headers = {}) {
+  const res = await fetch(API_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({ query }),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+
+describe('JWT Authentication (via excalibase-auth)', () => {
+  let accessToken;
+
+  beforeAll(async () => {
+    // Wait for auth service
+    for (let i = 0; i < 15; i++) {
+      try {
+        const r = await fetch(`${AUTH_URL}/healthz`, { signal: AbortSignal.timeout(3000) });
+        if (r.ok) break;
+      } catch (_) {}
+      await new Promise(r => setTimeout(r, 3000));
+    }
+
+    // Register (ignore 409)
+    await authPost(`/auth/${PROJECT_ID}/register`, {
+      email: 'alice-e2e@test.com', password: 'secret123', fullName: 'Alice E2E',
+    });
+
+    // Login
+    const login = await authPost(`/auth/${PROJECT_ID}/login`, {
+      email: 'alice-e2e@test.com', password: 'secret123',
+    });
+    accessToken = login.data.accessToken;
+  });
+
+  test('login returns valid JWT', () => {
+    expect(accessToken).toBeTruthy();
+    expect(accessToken).toMatch(/^eyJ/);
+  });
+
+  test('validate token via auth service', async () => {
+    const res = await authPost(`/auth/${PROJECT_ID}/validate`, { token: accessToken });
+    expect(res.status).toBe(200);
+    expect(res.data.valid).toBe(true);
+    expect(res.data.email).toBe('alice-e2e@test.com');
+  });
+
+  test('graphql accepts valid JWT', async () => {
+    const res = await rawGraphql(
+      '{ hanaRlsOrders { id product } }',
+      { Authorization: `Bearer ${accessToken}` },
+    );
+    expect(res.status).toBe(200);
+    expect(res.data.data).toBeDefined();
+  });
+
+  test('graphql rejects invalid JWT with 401', async () => {
+    const res = await rawGraphql(
+      '{ hanaRlsOrders { id } }',
+      { Authorization: 'Bearer invalid.jwt.token' },
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test('graphql without token still works (no 401)', async () => {
+    const res = await rawGraphql('{ __schema { queryType { name } } }');
+    expect(res.status).toBe(200);
+    expect(res.data.data.__schema.queryType.name).toBe('Query');
+  });
+
+  test('refresh token returns new access token', async () => {
+    const login = await authPost(`/auth/${PROJECT_ID}/login`, {
+      email: 'alice-e2e@test.com', password: 'secret123',
+    });
+    const res = await authPost(`/auth/${PROJECT_ID}/refresh`, {
+      refreshToken: login.data.refreshToken,
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.accessToken).toMatch(/^eyJ/);
+  });
+});
+
+describe('RLS with X-User-Id header', () => {
+  test('alice sees only her RLS orders', async () => {
+    const res = await rawGraphql(
+      '{ hanaRlsOrders(orderBy: { id: ASC }) { id user_id product } }',
+      { 'X-User-Id': 'alice' },
+    );
+    expect(res.status).toBe(200);
+    const orders = res.data.data.hanaRlsOrders;
+    expect(orders).toHaveLength(2);
+    orders.forEach(o => expect(o.user_id).toBe('alice'));
+  });
+
+  test('bob sees only his RLS orders', async () => {
+    const res = await rawGraphql(
+      '{ hanaRlsOrders(orderBy: { id: ASC }) { id user_id product } }',
+      { 'X-User-Id': 'bob' },
+    );
+    expect(res.status).toBe(200);
+    const orders = res.data.data.hanaRlsOrders;
+    expect(orders).toHaveLength(2);
+    orders.forEach(o => expect(o.user_id).toBe('bob'));
+  });
+
+  test('alice and bob see different rows', async () => {
+    const alice = await rawGraphql('{ hanaRlsOrders { id } }', { 'X-User-Id': 'alice' });
+    const bob = await rawGraphql('{ hanaRlsOrders { id } }', { 'X-User-Id': 'bob' });
+    const aliceIds = alice.data.data.hanaRlsOrders.map(o => o.id);
+    const bobIds = bob.data.data.hanaRlsOrders.map(o => o.id);
+    const overlap = aliceIds.filter(id => bobIds.includes(id));
+    expect(overlap).toHaveLength(0);
+  });
+});

@@ -72,6 +72,10 @@ services:
       APP_SECURITY_USER_ID_EXTRACTOR_TYPE: header
       APP_SECURITY_USER_ID_HEADER: X-User-Id
 
+      # JWT verification (optional — fetches public key from vault)
+      APP_SECURITY_JWT_ENABLED: true
+      APP_SECURITY_PROVISIONING_URL: http://mock-vault:8080
+
       # NATS CDC subscription (events from excalibase-watcher)
       APP_NATS_ENABLED: true
       APP_NATS_URL: nats://nats:4222
@@ -95,6 +99,8 @@ services:
       nats:
         condition: service_healthy
       excalibase-watcher:
+        condition: service_healthy
+      mock-vault:
         condition: service_healthy
     networks:
       - excalibase-network
@@ -154,6 +160,45 @@ services:
         condition: service_healthy
       nats:
         condition: service_healthy
+    networks:
+      - excalibase-network
+    restart: unless-stopped
+
+  mock-vault:
+    image: wiremock/wiremock:3.10.0
+    container_name: excalibase-mock-vault
+    volumes:
+      - ./e2e/wiremock:/home/wiremock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/__admin/mappings"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - excalibase-network
+    restart: unless-stopped
+
+  excalibase-auth:
+    image: excalibase/excalibase-auth
+    container_name: excalibase-auth
+    build:
+      context: ../excalibase-auth
+    environment:
+      PROVISIONING_URL: http://mock-vault:8080/api
+      PROVISIONING_PAT: test-pat
+      PORT: "24000"
+    ports:
+      - "24000:24000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mock-vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:24000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
     networks:
       - excalibase-network
     restart: unless-stopped
