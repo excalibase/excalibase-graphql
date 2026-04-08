@@ -6,6 +6,9 @@ metadata:
   labels:
     {{- include "excalibase-graphql.labels" . | nindent 4 }}
 data:
+  # JVM
+  JAVA_TOOL_OPTIONS: {{ .Values.jvm.opts | quote }}
+
   # Database
   SPRING_DATASOURCE_URL: {{ .Values.database.url | quote }}
   {{- if $isMysql }}

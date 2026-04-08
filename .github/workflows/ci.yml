@@ -36,10 +36,10 @@ jobs:
       with:
         fetch-depth: 0  # Required for SonarQube branch/PR analysis
 
-    - name: Set up JDK 21
+    - name: Set up JDK 25
       uses: actions/setup-java@v4
       with:
-        java-version: '21'
+        java-version: '25'
         distribution: 'corretto'
 
     - name: Cache Maven dependencies
@@ -114,10 +114,10 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Set up JDK 21
+    - name: Set up JDK 25
       uses: actions/setup-java@v4
       with:
-        java-version: '21'
+        java-version: '25'
         distribution: 'corretto'
         
     - name: Cache Maven dependencies
@@ -136,6 +136,4 @@ jobs:
       with:
         name: jar-artifacts
         path: modules/excalibase-graphql-api/target/*.jar
-        retention-days: 7
-
         retention-days: 7
