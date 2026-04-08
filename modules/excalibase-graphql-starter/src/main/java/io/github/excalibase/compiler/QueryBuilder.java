@@ -6,6 +6,7 @@ import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.SqlDialect;
 
 import java.util.*;
+import static io.github.excalibase.schema.GraphqlConstants.*;
 
 /**
  * Handles query compilation: list, connection (CTE-based cursor pagination),
@@ -71,7 +72,7 @@ public class QueryBuilder {
             }
             // Append any user-specified ORDER BY columns (that aren't already in distinctOn)
             Argument orderByArg = field.getArguments().stream()
-                    .filter(a -> "orderBy".equals(a.getName()))
+                    .filter(a -> ARG_ORDER_BY.equals(a.getName()))
                     .findFirst().orElse(null);
             if (orderByArg != null && orderByArg.getValue() instanceof ObjectValue ov) {
                 for (ObjectField of : ov.getObjectFields()) {
@@ -97,7 +98,7 @@ public class QueryBuilder {
     private List<String> parseDistinctOn(Field field) {
         List<String> cols = new ArrayList<>();
         for (Argument arg : field.getArguments()) {
-            if ("distinctOn".equals(arg.getName()) && arg.getValue() instanceof ArrayValue av) {
+            if (ARG_DISTINCT_ON.equals(arg.getName()) && arg.getValue() instanceof ArrayValue av) {
                 for (Value<?> v : av.getValues()) {
                     if (v instanceof StringValue sv) {
                         cols.add(sv.getValue());
@@ -118,12 +119,12 @@ public class QueryBuilder {
             if (!(sel instanceof Field aggField)) continue;
             String aggName = aggField.getName();
 
-            if ("count".equals(aggName)) {
+            if (FIELD_COUNT.equals(aggName)) {
                 StringBuilder countSql = new StringBuilder();
                 countSql.append("SELECT count(*) FROM ").append(qualifiedTable(tableName)).append(" ").append(alias);
                 filterBuilder.applyWhere(countSql, field, alias, params, tableName);
                 parts.add("'count', (" + countSql + ")");
-            } else if (Set.of("sum", "avg", "min", "max").contains(aggName) && aggField.getSelectionSet() != null) {
+            } else if (Set.of(AGG_SUM, AGG_AVG, AGG_MIN, AGG_MAX).contains(aggName) && aggField.getSelectionSet() != null) {
                 // Nested per-column: sum { total_amount }, avg { total_amount }
                 List<String> colParts = new ArrayList<>();
                 for (Selection<?> colSel : aggField.getSelectionSet().getSelections()) {
@@ -159,24 +160,23 @@ public class QueryBuilder {
 
         for (Selection<?> s : field.getSelectionSet().getSelections()) {
             if (s instanceof Field f) {
-                switch (f.getName()) {
-                    case "edges" -> {
-                        if (f.getSelectionSet() != null) {
-                            for (Selection<?> es : f.getSelectionSet().getSelections()) {
-                                if (es instanceof Field ef) {
-                                    if ("node".equals(ef.getName())) edgesNodeSS = ef.getSelectionSet();
-                                    if ("cursor".equals(ef.getName())) wantsCursor = true;
-                                }
+                String fname = f.getName();
+                if (FIELD_EDGES.equals(fname)) {
+                    if (f.getSelectionSet() != null) {
+                        for (Selection<?> es : f.getSelectionSet().getSelections()) {
+                            if (es instanceof Field ef) {
+                                if (FIELD_NODE.equals(ef.getName())) edgesNodeSS = ef.getSelectionSet();
+                                if (FIELD_CURSOR.equals(ef.getName())) wantsCursor = true;
                             }
                         }
                     }
-                    case "totalCount" -> wantsTotalCount = true;
-                    case "pageInfo" -> {
-                        wantsPageInfo = true;
-                        if (f.getSelectionSet() != null) {
-                            for (Selection<?> ps : f.getSelectionSet().getSelections()) {
-                                if (ps instanceof Field pf) pageInfoFields.add(pf.getName());
-                            }
+                } else if (FIELD_TOTAL_COUNT.equals(fname)) {
+                    wantsTotalCount = true;
+                } else if (FIELD_PAGE_INFO.equals(fname)) {
+                    wantsPageInfo = true;
+                    if (f.getSelectionSet() != null) {
+                        for (Selection<?> ps : f.getSelectionSet().getSelections()) {
+                            if (ps instanceof Field pf) pageInfoFields.add(pf.getName());
                         }
                     }
                 }
@@ -187,11 +187,17 @@ public class QueryBuilder {
         Integer first = null, last = null;
         String afterCursor = null, beforeCursor = null;
         for (Argument arg : field.getArguments()) {
-            switch (arg.getName()) {
-                case "first" -> { Integer v = filterBuilder.resolveIntArg(arg.getValue(), Map.of()); if (v != null) first = Math.min(v, maxRows); }
-                case "last" -> { Integer v = filterBuilder.resolveIntArg(arg.getValue(), Map.of()); if (v != null) last = Math.min(v, maxRows); }
-                case "after" -> afterCursor = filterBuilder.resolveStringArg(arg.getValue(), Map.of());
-                case "before" -> beforeCursor = filterBuilder.resolveStringArg(arg.getValue(), Map.of());
+            String argName = arg.getName();
+            if (ARG_FIRST.equals(argName)) {
+                Integer v = filterBuilder.resolveIntArg(arg.getValue(), Map.of());
+                if (v != null) first = Math.min(v, maxRows);
+            } else if (ARG_LAST.equals(argName)) {
+                Integer v = filterBuilder.resolveIntArg(arg.getValue(), Map.of());
+                if (v != null) last = Math.min(v, maxRows);
+            } else if (ARG_AFTER.equals(argName)) {
+                afterCursor = filterBuilder.resolveStringArg(arg.getValue(), Map.of());
+            } else if (ARG_BEFORE.equals(argName)) {
+                beforeCursor = filterBuilder.resolveStringArg(arg.getValue(), Map.of());
             }
         }
 
@@ -248,7 +254,7 @@ public class QueryBuilder {
         sql.append(")");
 
         // CTE 2: __has_next_page
-        boolean needsHasNext = wantsPageInfo && (pageInfoFields.isEmpty() || pageInfoFields.contains("hasNextPage"));
+        boolean needsHasNext = wantsPageInfo && (pageInfoFields.isEmpty() || pageInfoFields.contains(FIELD_HAS_NEXT_PAGE));
         if (needsHasNext) {
             String hnParam = "hn_limit_" + params.size();
             sql.append(", ").append(dialect.cteName(block, "_has_next")).append(" AS (");
@@ -259,7 +265,7 @@ public class QueryBuilder {
         }
 
         // CTE 3: __has_previous_page
-        boolean needsHasPrev = wantsPageInfo && (pageInfoFields.isEmpty() || pageInfoFields.contains("hasPreviousPage"));
+        boolean needsHasPrev = wantsPageInfo && (pageInfoFields.isEmpty() || pageInfoFields.contains(FIELD_HAS_PREVIOUS_PAGE));
         if (needsHasPrev) {
             sql.append(", ").append(dialect.cteName(block, "_has_prev")).append(" AS (");
             if (afterCursor != null || !isForward) {
@@ -337,11 +343,11 @@ public class QueryBuilder {
                     piParts.add("'hasPreviousPage', " + dialect.jsonBool("(SELECT val FROM " + dialect.cteName(block, "_has_next") + ")"));
                 }
             }
-            if (pageInfoFields.contains("startCursor")) {
+            if (pageInfoFields.contains(FIELD_START_CURSOR)) {
                 String pkTextExpr = "(SELECT CAST(" + dialect.quoteIdentifier(pk) + " AS CHAR) FROM " + recordsCte + " LIMIT 1)";
                 piParts.add("'startCursor', (SELECT " + dialect.encodeCursor(pkTextExpr) + ")");
             }
-            if (pageInfoFields.contains("endCursor")) {
+            if (pageInfoFields.contains(FIELD_END_CURSOR)) {
                 String pkTextExpr = "(SELECT CAST(" + dialect.quoteIdentifier(pk) + " AS CHAR) FROM " + recordsCte +
                         " ORDER BY " + dialect.quoteIdentifier(pk) + " DESC LIMIT 1)";
                 piParts.add("'endCursor', (SELECT " + dialect.encodeCursor(pkTextExpr) + ")");
@@ -470,7 +476,7 @@ public class QueryBuilder {
 
     public String resolveTableName(String fieldName) {
         String name = fieldName;
-        for (String suffix : List.of("Connection", "Aggregate")) {
+        for (String suffix : List.of(CONNECTION_SUFFIX, AGGREGATE_SUFFIX)) {
             if (name.endsWith(suffix)) {
                 name = name.substring(0, name.length() - suffix.length());
                 break;

@@ -107,10 +107,10 @@ public class SchemaInfo {
     }
 
     public void addForeignKey(String fromTable, String fromCol, String toTable, String toCol) {
-        String fwdFieldName = fkFieldName(toTable);
+        String fwdFieldName = fkColumnFieldName(fromTable, fromCol);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(List.of(fromCol), toTable, List.of(toCol)));
-        String revFieldName = fkFieldName(fromTable);
+        String revFieldName = fkColumnFieldName(fromTable, fromCol);
         reverseFks.put(toTable + "." + revFieldName,
                 new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
     }
@@ -123,6 +123,15 @@ public class SchemaInfo {
         String revFieldName = fkFieldName(fromTable);
         reverseFks.put(toTable + "." + revFieldName,
                 new ReverseFkInfo(fromTable, fromCols, toCols));
+    }
+
+    /** Derive FK field name from the FK column name. No guessing, no stripping. */
+    private String fkColumnFieldName(String tableKey, String fkColumn) {
+        if (tableKey.contains(".")) {
+            String schema = tableKey.substring(0, tableKey.indexOf('.'));
+            return NamingUtils.schemaFieldName(schema, fkColumn);
+        }
+        return NamingUtils.toLowerCamelCase(fkColumn);
     }
 
     /** Derive FK field name from table key. Handles compound keys ("public.users" → "publicUsers"). */
@@ -185,6 +194,11 @@ public class SchemaInfo {
     }
     public List<String> getPrimaryKeys(String table) {
         return primaryKeys.getOrDefault(table, List.of("id"));
+    }
+    /** True only when the table has explicitly declared primary key columns. */
+    public boolean hasPrimaryKey(String table) {
+        List<String> pks = primaryKeys.get(table);
+        return pks != null && !pks.isEmpty();
     }
     public FkInfo getForwardFk(String table, String fieldName) { return forwardFks.get(table + "." + fieldName); }
     public Map<String, FkInfo> getAllForwardFks() { return Collections.unmodifiableMap(forwardFks); }

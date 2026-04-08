@@ -146,8 +146,10 @@ public class GraphqlSchemaManager {
                     }
                 }
                 schemaInfo.setTableSchema(key, schema);
-                for (String pk : temp.getPrimaryKeys(table)) {
-                    schemaInfo.addPrimaryKey(key, pk);
+                if (temp.hasPrimaryKey(table)) {
+                    for (String pk : temp.getPrimaryKeys(table)) {
+                        schemaInfo.addPrimaryKey(key, pk);
+                    }
                 }
                 if (temp.isView(table)) {
                     schemaInfo.addView(key);

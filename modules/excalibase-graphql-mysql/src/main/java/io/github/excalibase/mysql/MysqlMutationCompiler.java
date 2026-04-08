@@ -7,6 +7,7 @@ import io.github.excalibase.compiler.SqlCompiler;
 
 import java.util.*;
 import java.util.stream.Collectors;
+import static io.github.excalibase.schema.GraphqlConstants.*;
 
 /**
  * MySQL mutation compiler. Uses two-phase DML + SELECT (no RETURNING).
@@ -27,17 +28,17 @@ public class MysqlMutationCompiler implements MutationCompiler {
     private MutationBuilder.MysqlMutationResult compileMysqlMutation(Field field, String fieldName,
                                                                       Map<String, Object> params, Map<String, Object> variables,
                                                                       MutationBuilder shared) {
-        if (fieldName.startsWith("createMany")) {
-            String tableName = shared.resolveMutationTable(fieldName.substring("createMany".length()));
+        if (fieldName.startsWith(CREATE_MANY_PREFIX)) {
+            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_MANY_PREFIX.length()));
             if (tableName != null) return compileBulkInsert(field, fieldName, tableName, params, variables, shared);
-        } else if (fieldName.startsWith("create")) {
-            String tableName = shared.resolveMutationTable(fieldName.substring("create".length()));
+        } else if (fieldName.startsWith(CREATE_PREFIX)) {
+            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_PREFIX.length()));
             if (tableName != null) return compileInsert(field, fieldName, tableName, params, variables, shared);
-        } else if (fieldName.startsWith("update")) {
-            String tableName = shared.resolveMutationTable(fieldName.substring("update".length()));
+        } else if (fieldName.startsWith(UPDATE_PREFIX)) {
+            String tableName = shared.resolveMutationTable(fieldName.substring(UPDATE_PREFIX.length()));
             if (tableName != null) return compileUpdate(field, fieldName, tableName, params, variables, shared);
-        } else if (fieldName.startsWith("delete")) {
-            String tableName = shared.resolveMutationTable(fieldName.substring("delete".length()));
+        } else if (fieldName.startsWith(DELETE_PREFIX)) {
+            String tableName = shared.resolveMutationTable(fieldName.substring(DELETE_PREFIX.length()));
             if (tableName != null) return compileDelete(field, fieldName, tableName, params, variables, shared);
         }
         return null;
@@ -46,7 +47,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
     private MutationBuilder.MysqlMutationResult compileInsert(Field field, String fieldName, String tableName,
                                                                Map<String, Object> params, Map<String, Object> variables,
                                                                MutationBuilder shared) {
-        Argument inputArg = shared.findArg(field, "input");
+        Argument inputArg = shared.findArg(field, ARG_INPUT);
         if (inputArg == null) return null;
 
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
@@ -78,7 +79,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
     private MutationBuilder.MysqlMutationResult compileBulkInsert(Field field, String fieldName, String tableName,
                                                                     Map<String, Object> params, Map<String, Object> variables,
                                                                     MutationBuilder shared) {
-        Argument inputsArg = shared.findArg(field, "inputs");
+        Argument inputsArg = shared.findArg(field, ARG_INPUTS);
         if (inputsArg == null) return null;
 
         List<Map<String, Object>> rows = shared.extractArrayOfObjects(inputsArg.getValue(), variables);
@@ -122,44 +123,37 @@ public class MysqlMutationCompiler implements MutationCompiler {
     private MutationBuilder.MysqlMutationResult compileUpdate(Field field, String fieldName, String tableName,
                                                                Map<String, Object> params, Map<String, Object> variables,
                                                                MutationBuilder shared) {
-        Argument inputArg = shared.findArg(field, "input");
+        Argument inputArg = shared.findArg(field, ARG_INPUT);
         if (inputArg == null) return null;
 
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
-        List<String> pks = shared.schemaInfo().getPrimaryKeys(tableName);
-
-        Argument idArg = shared.findArg(field, "id");
-        if (idArg != null && pks.size() == 1) {
-            inputFields.putIfAbsent(pks.get(0), shared.filterBuilder().extractValue(idArg.getValue(), variables));
-        }
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
         List<String> setClauses = new ArrayList<>();
-        List<String> whereClauses = new ArrayList<>();
-        List<String> selectWhereClauses = new ArrayList<>();
-
         for (var entry : inputFields.entrySet()) {
             String paramName = "upd_" + entry.getKey() + "_" + params.size();
+            setClauses.add(shared.dialect().quoteIdentifier(entry.getKey()) + " = :" + paramName);
             params.put(paramName, entry.getValue());
-            if (pks.contains(entry.getKey())) {
-                whereClauses.add(shared.dialect().quoteIdentifier(entry.getKey()) + " = :" + paramName);
-                selectWhereClauses.add(alias + "." + shared.dialect().quoteIdentifier(entry.getKey()) + " = :" + paramName);
-            } else {
-                setClauses.add(shared.dialect().quoteIdentifier(entry.getKey()) + " = :" + paramName);
-            }
         }
+        if (setClauses.isEmpty()) return null;
 
-        if (setClauses.isEmpty() || whereClauses.isEmpty()) return null;
+        // Build WHERE from where argument (filter-based)
+        StringBuilder whereSql = new StringBuilder();
+        shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName);
+        if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table update
 
-        String dmlSql = "UPDATE " + shared.qualifiedTable(tableName)
+        // MySQL two-phase: DML first, then SELECT affected rows
+        // Use subquery to find matching rows before update
+        String dmlSql = "UPDATE " + shared.qualifiedTable(tableName) + " " + alias
                 + " SET " + String.join(", ", setClauses)
-                + " WHERE " + String.join(" AND ", whereClauses);
+                + whereSql;
 
         String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
                 "'" + fieldName + "', (" +
-                "SELECT " + objectSql + " FROM " + shared.qualifiedTable(tableName) + " " + alias
-                + " WHERE " + String.join(" AND ", selectWhereClauses) + ")"));
+                "SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
+                + " FROM " + shared.qualifiedTable(tableName) + " " + alias
+                + whereSql + ")"));
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, null);
     }
@@ -167,41 +161,23 @@ public class MysqlMutationCompiler implements MutationCompiler {
     private MutationBuilder.MysqlMutationResult compileDelete(Field field, String fieldName, String tableName,
                                                                Map<String, Object> params, Map<String, Object> variables,
                                                                MutationBuilder shared) {
-        Argument inputArg = shared.findArg(field, "input");
-        Map<String, Object> inputFields;
-        if (inputArg != null) {
-            inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
-        } else {
-            inputFields = new LinkedHashMap<>();
-        }
-        List<String> pks = shared.schemaInfo().getPrimaryKeys(tableName);
-
-        Argument idArg = shared.findArg(field, "id");
-        if (idArg != null && pks.size() == 1) {
-            inputFields.putIfAbsent(pks.get(0), shared.filterBuilder().extractValue(idArg.getValue(), variables));
-        }
-        if (inputFields.isEmpty()) return null;
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
-        List<String> whereClauses = new ArrayList<>();
-        List<String> selectWhereClauses = new ArrayList<>();
-        for (String pk : pks) {
-            Object val = inputFields.get(pk);
-            if (val == null) return null;
-            String paramName = "del_" + pk + "_" + params.size();
-            whereClauses.add(shared.dialect().quoteIdentifier(pk) + " = :" + paramName);
-            selectWhereClauses.add(alias + "." + shared.dialect().quoteIdentifier(pk) + " = :" + paramName);
-            params.put(paramName, val);
-        }
+        // Build WHERE from where argument (filter-based)
+        StringBuilder whereSql = new StringBuilder();
+        shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName);
+        if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table delete
 
+        // MySQL two-phase: SELECT first (to capture deleted rows), then DELETE
         String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
                 "'" + fieldName + "', (" +
-                "SELECT " + objectSql + " FROM " + shared.qualifiedTable(tableName) + " " + alias
-                + " WHERE " + String.join(" AND ", selectWhereClauses) + ")"));
+                "SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
+                + " FROM " + shared.qualifiedTable(tableName) + " " + alias
+                + whereSql + ")"));
 
-        String dmlSql = "DELETE FROM " + shared.qualifiedTable(tableName)
-                + " WHERE " + String.join(" AND ", whereClauses);
+        String dmlSql = "DELETE FROM " + shared.qualifiedTable(tableName) + " " + alias
+                + whereSql;
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, MutationBuilder.MUTATION_DELETE);
     }

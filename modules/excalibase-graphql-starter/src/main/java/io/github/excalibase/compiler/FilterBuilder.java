@@ -5,6 +5,7 @@ import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.SqlDialect;
 
 import java.util.*;
+import static io.github.excalibase.schema.GraphqlConstants.*;
 
 /**
  * Extracts and applies WHERE, ORDER BY, and LIMIT/OFFSET clauses from GraphQL
@@ -44,7 +45,7 @@ public class FilterBuilder {
      */
     public void buildWhereConditions(Field field, String alias, Map<String, Object> params, List<String> conditions, String tableName) {
         Argument whereArg = field.getArguments().stream()
-                .filter(a -> "where".equals(a.getName()) || "filter".equals(a.getName()))
+                .filter(a -> ARG_WHERE.equals(a.getName()) || ARG_FILTER.equals(a.getName()))
                 .findFirst().orElse(null);
         if (whereArg == null || !(whereArg.getValue() instanceof ObjectValue ov)) return;
 
@@ -127,7 +128,7 @@ public class FilterBuilder {
                     String colRef = alias + "." + dialect.quoteIdentifier(col);
 
                     switch (opName) {
-                        case "eq" -> {
+                        case FILTER_EQ -> {
                             if (op.getValue() instanceof NullValue) {
                                 conditions.add(colRef + " IS NULL");
                             } else {
@@ -136,7 +137,7 @@ public class FilterBuilder {
                                 params.put(p, extractValue(op.getValue()));
                             }
                         }
-                        case "neq" -> {
+                        case FILTER_NEQ -> {
                             if (op.getValue() instanceof NullValue) {
                                 conditions.add(colRef + " IS NOT NULL");
                             } else {
@@ -145,27 +146,27 @@ public class FilterBuilder {
                                 params.put(p, extractValue(op.getValue()));
                             }
                         }
-                        case "gt" -> {
+                        case FILTER_GT -> {
                             String p = nextParam("p_" + col + "_gt", params);
                             conditions.add(colRef + " > :" + p + paramCast);
                             params.put(p, extractValue(op.getValue()));
                         }
-                        case "gte" -> {
+                        case FILTER_GTE -> {
                             String p = nextParam("p_" + col + "_gte", params);
                             conditions.add(colRef + " >= :" + p + paramCast);
                             params.put(p, extractValue(op.getValue()));
                         }
-                        case "lt" -> {
+                        case FILTER_LT -> {
                             String p = nextParam("p_" + col + "_lt", params);
                             conditions.add(colRef + " < :" + p + paramCast);
                             params.put(p, extractValue(op.getValue()));
                         }
-                        case "lte" -> {
+                        case FILTER_LTE -> {
                             String p = nextParam("p_" + col + "_lte", params);
                             conditions.add(colRef + " <= :" + p + paramCast);
                             params.put(p, extractValue(op.getValue()));
                         }
-                        case "in" -> {
+                        case FILTER_IN -> {
                             if (op.getValue() instanceof ArrayValue av) {
                                 List<String> inParams = new ArrayList<>();
                                 for (int i = 0; i < av.getValues().size(); i++) {
@@ -187,27 +188,27 @@ public class FilterBuilder {
                                 conditions.add(colRef + " NOT IN (" + String.join(", ", inParams) + ")");
                             }
                         }
-                        case "like" -> {
+                        case FILTER_LIKE -> {
                             String p = nextParam("p_" + col + "_like", params);
                             conditions.add(colRef + " LIKE :" + p);
                             params.put(p, extractValue(op.getValue()));
                         }
-                        case "ilike" -> {
+                        case FILTER_ILIKE -> {
                             String p = nextParam("p_" + col + "_ilike", params);
                             conditions.add(dialect.ilike(colRef, ":" + p));
                             params.put(p, extractValue(op.getValue()));
                         }
-                        case "startsWith" -> {
+                        case FILTER_STARTS_WITH -> {
                             String p = nextParam("p_" + col + "_sw", params);
                             conditions.add(colRef + " LIKE :" + p);
                             params.put(p, extractValue(op.getValue()) + "%");
                         }
-                        case "endsWith" -> {
+                        case FILTER_ENDS_WITH -> {
                             String p = nextParam("p_" + col + "_ew", params);
                             conditions.add(colRef + " LIKE :" + p);
                             params.put(p, "%" + extractValue(op.getValue()));
                         }
-                        case "contains" -> {
+                        case FILTER_CONTAINS -> {
                             String p = nextParam("p_" + col + "_ct", params);
                             conditions.add(colRef + " LIKE :" + p);
                             params.put(p, "%" + extractValue(op.getValue()) + "%");
@@ -221,7 +222,7 @@ public class FilterBuilder {
                                 conditions.add(colRef + " IS NOT NULL");
                             }
                         }
-                        case "isNull" -> {
+                        case FILTER_IS_NULL -> {
                             // { isNull: true } → IS NULL, { isNull: false } → IS NOT NULL
                             Object v = extractValue(op.getValue());
                             if (Boolean.TRUE.equals(v) || "true".equals(String.valueOf(v))) {
@@ -230,7 +231,7 @@ public class FilterBuilder {
                                 conditions.add(colRef + " IS NOT NULL");
                             }
                         }
-                        case "isNotNull" -> {
+                        case FILTER_IS_NOT_NULL -> {
                             // { isNotNull: true } → IS NOT NULL, { isNotNull: false } → IS NULL
                             Object v = extractValue(op.getValue());
                             if (Boolean.TRUE.equals(v) || "true".equals(String.valueOf(v))) {
@@ -239,7 +240,7 @@ public class FilterBuilder {
                                 conditions.add(colRef + " IS NULL");
                             }
                         }
-                        case "notIn" -> {
+                        case FILTER_NOT_IN -> {
                             if (op.getValue() instanceof ArrayValue av) {
                                 List<String> inParams = new ArrayList<>();
                                 for (int i = 0; i < av.getValues().size(); i++) {
@@ -286,7 +287,7 @@ public class FilterBuilder {
      */
     public void applyOrderBy(StringBuilder sql, Field field, String alias) {
         Argument orderByArg = field.getArguments().stream()
-                .filter(a -> "orderBy".equals(a.getName()))
+                .filter(a -> ARG_ORDER_BY.equals(a.getName()))
                 .findFirst().orElse(null);
 
         if (orderByArg == null || !(orderByArg.getValue() instanceof ObjectValue ov)) return;
@@ -316,7 +317,7 @@ public class FilterBuilder {
     public List<String[]> parseOrderBy(Field field) {
         List<String[]> result = new ArrayList<>();
         Argument orderByArg = field.getArguments().stream()
-                .filter(a -> "orderBy".equals(a.getName()))
+                .filter(a -> ARG_ORDER_BY.equals(a.getName()))
                 .findFirst().orElse(null);
         if (orderByArg != null && orderByArg.getValue() instanceof ObjectValue ov) {
             for (ObjectField of : ov.getObjectFields()) {
@@ -356,7 +357,7 @@ public class FilterBuilder {
     public void applyLimit(StringBuilder sql, Field field, String alias, Map<String, Object> params) {
         int limit = maxRows;
         for (Argument arg : field.getArguments()) {
-            if ("limit".equals(arg.getName()) || "first".equals(arg.getName())) {
+            if (ARG_LIMIT.equals(arg.getName()) || ARG_FIRST.equals(arg.getName())) {
                 Integer v = resolveIntArg(arg.getValue(), Map.of());
                 if (v != null) limit = Math.min(v, maxRows);
             }
@@ -366,7 +367,7 @@ public class FilterBuilder {
         params.put(paramName, limit);
 
         for (Argument arg : field.getArguments()) {
-            if ("offset".equals(arg.getName())) {
+            if (ARG_OFFSET.equals(arg.getName())) {
                 Integer v = resolveIntArg(arg.getValue(), Map.of());
                 if (v != null) {
                     String offParam = "offset_" + params.size();

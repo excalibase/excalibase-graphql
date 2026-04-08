@@ -3,6 +3,7 @@ package io.github.excalibase.schema;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
+import graphql.scalars.ExtendedScalars;
 import graphql.schema.*;
 
 import java.util.*;
@@ -11,6 +12,7 @@ import static graphql.Scalars.*;
 import static graphql.schema.GraphQLFieldDefinition.newFieldDefinition;
 import static graphql.schema.GraphQLObjectType.newObject;
 import static graphql.schema.GraphQLEnumType.newEnum;
+import static io.github.excalibase.schema.GraphqlConstants.*;
 
 /**
  * Builds a GraphQL-Java schema from SchemaInfo metadata for introspection queries only.
@@ -82,22 +84,22 @@ public class IntrospectionHandler {
         // String filter input
         GraphQLInputObjectType stringFilter = GraphQLInputObjectType.newInputObject()
                 .name("StringFilterInput")
-                .field(GraphQLInputObjectField.newInputObjectField().name("eq").type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("neq").type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("like").type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("ilike").type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("in").type(GraphQLList.list(GraphQLString)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LIKE).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_ILIKE).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLString)).build())
                 .build();
 
         GraphQLInputObjectType intFilter = GraphQLInputObjectType.newInputObject()
                 .name("IntFilterInput")
-                .field(GraphQLInputObjectField.newInputObjectField().name("eq").type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("neq").type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("gt").type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("gte").type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("lt").type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("lte").type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name("in").type(GraphQLList.list(GraphQLInt)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLInt).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLInt).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GT).type(GraphQLInt).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GTE).type(GraphQLInt).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LT).type(GraphQLInt).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LTE).type(GraphQLInt).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLInt)).build())
                 .build();
 
         // Build types for each table
@@ -117,11 +119,27 @@ public class IntrospectionHandler {
                         .type(colType)
                         .build());
             }
+            // Add computed fields to the type
+            List<SchemaInfo.ComputedField> computed = schemaInfo.getComputedFields(table);
+            if (computed != null) {
+                String rawTable = table.contains(".") ? table.substring(table.indexOf('.') + 1) : table;
+                for (SchemaInfo.ComputedField cf : computed) {
+                    // Field name: strip table prefix if present (e.g., "customer_full_name" → "full_name")
+                    String cfName = cf.functionName();
+                    if (cfName.startsWith(rawTable + "_")) {
+                        cfName = cfName.substring(rawTable.length() + 1);
+                    }
+                    typeBuilder.field(newFieldDefinition()
+                            .name(cfName)
+                            .type(mapColumnType(cf.returnType()))
+                            .build());
+                }
+            }
             types.put(table, typeBuilder.build());
 
             // Where input type
             GraphQLInputObjectType.Builder whereBuilder = GraphQLInputObjectType.newInputObject()
-                    .name(typeName + "WhereInput");
+                    .name(typeName + WHERE_INPUT_SUFFIX);
             for (String col : columns) {
                 String colType = schemaInfo.getColumnType(table, col);
                 GraphQLInputObjectType filter = isNumericType(colType) ? intFilter : stringFilter;
@@ -132,7 +150,7 @@ public class IntrospectionHandler {
 
             // Create input type
             GraphQLInputObjectType.Builder createBuilder = GraphQLInputObjectType.newInputObject()
-                    .name(typeName + "CreateInput");
+                    .name(typeName + CREATE_INPUT_SUFFIX);
             for (String col : columns) {
                 String enumTypeName = schemaInfo.getEnumType(table, col);
                 GraphQLInputType inputType = enumTypeName != null && enumTypeMap.containsKey(enumTypeName)
@@ -145,19 +163,19 @@ public class IntrospectionHandler {
         }
 
         // Shared PageInfo type
-        GraphQLObjectType pageInfoType = newObject().name("PageInfo")
-                .field(newFieldDefinition().name("hasNextPage").type(GraphQLBoolean).build())
-                .field(newFieldDefinition().name("hasPreviousPage").type(GraphQLBoolean).build())
-                .field(newFieldDefinition().name("startCursor").type(GraphQLString).build())
-                .field(newFieldDefinition().name("endCursor").type(GraphQLString).build())
+        GraphQLObjectType pageInfoType = newObject().name(TYPE_PAGE_INFO)
+                .field(newFieldDefinition().name(FIELD_HAS_NEXT_PAGE).type(GraphQLBoolean).build())
+                .field(newFieldDefinition().name(FIELD_HAS_PREVIOUS_PAGE).type(GraphQLBoolean).build())
+                .field(newFieldDefinition().name(FIELD_START_CURSOR).type(GraphQLString).build())
+                .field(newFieldDefinition().name(FIELD_END_CURSOR).type(GraphQLString).build())
                 .build();
 
         // Build query type
-        GraphQLObjectType.Builder queryBuilder = newObject().name("Query");
+        GraphQLObjectType.Builder queryBuilder = newObject().name(TYPE_QUERY);
 
         // GraphQL requires at least one field in Query — add placeholder when no tables exist
         if (schemaInfo.getTableNames().isEmpty()) {
-            queryBuilder.field(newFieldDefinition().name("_empty").type(GraphQLString).build());
+            queryBuilder.field(newFieldDefinition().name(EMPTY_FIELD).type(GraphQLString).build());
         }
 
         for (String table : schemaInfo.getTableNames()) {
@@ -169,42 +187,42 @@ public class IntrospectionHandler {
             queryBuilder.field(newFieldDefinition()
                     .name(fName)
                     .type(GraphQLList.list(type))
-                    .argument(GraphQLArgument.newArgument().name("where").type(whereTypes.get(table)).build())
-                    .argument(GraphQLArgument.newArgument().name("limit").type(GraphQLInt).build())
-                    .argument(GraphQLArgument.newArgument().name("offset").type(GraphQLInt).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_WHERE).type(whereTypes.get(table)).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_LIMIT).type(GraphQLInt).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_OFFSET).type(GraphQLInt).build())
                     .build());
 
             // Connection query
-            GraphQLObjectType edgeType = newObject().name(tName + "Edge")
-                    .field(newFieldDefinition().name("node").type(type).build())
-                    .field(newFieldDefinition().name("cursor").type(GraphQLString).build())
+            GraphQLObjectType edgeType = newObject().name(tName + EDGE_SUFFIX)
+                    .field(newFieldDefinition().name(FIELD_NODE).type(type).build())
+                    .field(newFieldDefinition().name(FIELD_CURSOR).type(GraphQLString).build())
                     .build();
-            GraphQLObjectType connectionType = newObject().name(tName + "Connection")
-                    .field(newFieldDefinition().name("edges").type(GraphQLList.list(edgeType)).build())
-                    .field(newFieldDefinition().name("pageInfo").type(pageInfoType).build())
-                    .field(newFieldDefinition().name("totalCount").type(GraphQLInt).build())
+            GraphQLObjectType connectionType = newObject().name(tName + CONNECTION_SUFFIX)
+                    .field(newFieldDefinition().name(FIELD_EDGES).type(GraphQLList.list(edgeType)).build())
+                    .field(newFieldDefinition().name(FIELD_PAGE_INFO).type(pageInfoType).build())
+                    .field(newFieldDefinition().name(FIELD_TOTAL_COUNT).type(GraphQLInt).build())
                     .build();
             queryBuilder.field(newFieldDefinition()
-                    .name(fName + "Connection")
+                    .name(fName + CONNECTION_SUFFIX)
                     .type(connectionType)
-                    .argument(GraphQLArgument.newArgument().name("first").type(GraphQLInt).build())
-                    .argument(GraphQLArgument.newArgument().name("after").type(GraphQLString).build())
-                    .argument(GraphQLArgument.newArgument().name("last").type(GraphQLInt).build())
-                    .argument(GraphQLArgument.newArgument().name("before").type(GraphQLString).build())
-                    .argument(GraphQLArgument.newArgument().name("where").type(whereTypes.get(table)).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_FIRST).type(GraphQLInt).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_AFTER).type(GraphQLString).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_LAST).type(GraphQLInt).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_BEFORE).type(GraphQLString).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_WHERE).type(whereTypes.get(table)).build())
                     .build());
 
             // Aggregate query
             queryBuilder.field(newFieldDefinition()
-                    .name(fName + "Aggregate")
-                    .type(newObject().name(tName + "Aggregate")
-                            .field(newFieldDefinition().name("count").type(GraphQLInt).build())
+                    .name(fName + AGGREGATE_SUFFIX)
+                    .type(newObject().name(tName + AGGREGATE_SUFFIX)
+                            .field(newFieldDefinition().name(FIELD_COUNT).type(GraphQLInt).build())
                             .build())
                     .build());
         }
 
         // Build mutation type
-        GraphQLObjectType.Builder mutationBuilder = newObject().name("Mutation");
+        GraphQLObjectType.Builder mutationBuilder = newObject().name(TYPE_MUTATION);
         for (String table : schemaInfo.getTableNames()) {
             // Skip views — they are read-only
             if (schemaInfo.isView(table)) continue;
@@ -214,24 +232,25 @@ public class IntrospectionHandler {
             GraphQLInputObjectType createInput = createInputs.get(table);
 
             mutationBuilder.field(newFieldDefinition()
-                    .name("create" + typeName)
+                    .name(CREATE_PREFIX + typeName)
                     .type(type)
-                    .argument(GraphQLArgument.newArgument().name("input").type(createInput).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_INPUT).type(createInput).build())
                     .build());
             mutationBuilder.field(newFieldDefinition()
-                    .name("createMany" + typeName)
+                    .name(CREATE_MANY_PREFIX + typeName)
                     .type(GraphQLList.list(type))
-                    .argument(GraphQLArgument.newArgument().name("inputs").type(GraphQLList.list(createInput)).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_INPUTS).type(GraphQLList.list(createInput)).build())
                     .build());
             mutationBuilder.field(newFieldDefinition()
-                    .name("update" + typeName)
-                    .type(type)
-                    .argument(GraphQLArgument.newArgument().name("input").type(createInput).build())
+                    .name(UPDATE_PREFIX + typeName)
+                    .type(GraphQLList.list(type))
+                    .argument(GraphQLArgument.newArgument().name(ARG_WHERE).type(whereTypes.get(table)).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_INPUT).type(createInput).build())
                     .build());
             mutationBuilder.field(newFieldDefinition()
-                    .name("delete" + typeName)
-                    .type(type)
-                    .argument(GraphQLArgument.newArgument().name("input").type(createInput).build())
+                    .name(DELETE_PREFIX + typeName)
+                    .type(GraphQLList.list(type))
+                    .argument(GraphQLArgument.newArgument().name(ARG_WHERE).type(whereTypes.get(table)).build())
                     .build());
         }
 
@@ -239,7 +258,7 @@ public class IntrospectionHandler {
         for (var procEntry : schemaInfo.getStoredProcedures().entrySet()) {
             String procName = procEntry.getKey();
             SchemaInfo.ProcedureInfo proc = procEntry.getValue();
-            String mutationName = "call" + typeName(procName);
+            String mutationName = CALL_PREFIX + typeName(procName);
 
             GraphQLFieldDefinition.Builder procField = newFieldDefinition()
                     .name(mutationName)
@@ -262,6 +281,8 @@ public class IntrospectionHandler {
         if (!mutationType.getFieldDefinitions().isEmpty()) {
             schemaBuilder.mutation(mutationType);
         }
+        // Register extended scalar types
+        schemaBuilder.additionalType(ExtendedScalars.GraphQLBigInteger);
         // Register enum types as additional types so they're discoverable via __type
         for (GraphQLEnumType enumType : enumTypeMap.values()) {
             schemaBuilder.additionalType(enumType);
@@ -284,6 +305,7 @@ public class IntrospectionHandler {
     private GraphQLInputType mapInputType(String dbType) {
         if (dbType == null) return GraphQLString;
         String t = dbType.toLowerCase();
+        if (t.equals("bigint") || t.equals("int8")) return ExtendedScalars.GraphQLBigInteger;
         if (t.contains("int")) return GraphQLInt;
         if (t.contains("float") || t.contains("double") || t.contains("numeric") || t.contains("decimal") || t.contains("real")) return GraphQLFloat;
         if (t.contains("bool")) return GraphQLBoolean;
@@ -293,6 +315,7 @@ public class IntrospectionHandler {
     private GraphQLOutputType mapColumnType(String dbType) {
         if (dbType == null) return GraphQLString;
         String t = dbType.toLowerCase();
+        if (t.equals("bigint") || t.equals("int8")) return ExtendedScalars.GraphQLBigInteger;
         if (t.contains("int")) return GraphQLInt;
         if (t.contains("float") || t.contains("double") || t.contains("numeric") || t.contains("decimal") || t.contains("real")) return GraphQLFloat;
         if (t.contains("bool")) return GraphQLBoolean;
