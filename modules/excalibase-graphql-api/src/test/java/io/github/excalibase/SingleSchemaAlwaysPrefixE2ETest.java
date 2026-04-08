@@ -113,9 +113,9 @@ class SingleSchemaAlwaysPrefixE2ETest {
     void fkTraversal_prefixed() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaOrders(orderBy: { order_id: ASC }) { order_id testSchemaCustomer { first_name } } }")))
+                        .content(graphql("{ testSchemaOrders(orderBy: { order_id: ASC }) { order_id testSchemaCustomerId { first_name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaOrders[0].testSchemaCustomer.first_name").exists());
+                .andExpect(jsonPath("$.data.testSchemaOrders[0].testSchemaCustomerId.first_name").exists());
     }
 
     @Test

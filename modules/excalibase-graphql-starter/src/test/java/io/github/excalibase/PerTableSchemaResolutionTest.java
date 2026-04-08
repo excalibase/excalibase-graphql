@@ -113,8 +113,8 @@ class PerTableSchemaResolutionTest {
         SqlCompiler compiler = new SqlCompiler(schemaInfo, "default_schema", 30,
                 testDialect, new NoOpMutationCompiler());
 
-        // Query orders with FK traversal to users
-        SqlCompiler.CompiledQuery result = compiler.compile("{ orders { id total users { id name } } }");
+        // Query orders with FK traversal to users (field name = column name: user_id → userId)
+        SqlCompiler.CompiledQuery result = compiler.compile("{ orders { id total userId { id name } } }");
 
         assertNotNull(result);
         String sql = result.sql();

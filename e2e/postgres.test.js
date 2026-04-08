@@ -201,13 +201,13 @@ describe('Enhanced PostgreSQL types', () => {
   test('update enhanced_types BIT fields', async () => {
     const data = await client.request(gql`
       mutation {
-        updateHanaEnhancedTypes(input: { id: 1, bit_col: "11110000", varbit_col: "0011001100" }) {
+        updateHanaEnhancedTypes(where: { id: { eq: 1 } }, input: { bit_col: "11110000", varbit_col: "0011001100" }) {
           id bit_col varbit_col
         }
       }
     `);
-    expect(data.updateHanaEnhancedTypes.id).toBe(1);
-    expect(data.updateHanaEnhancedTypes.bit_col).not.toBeNull();
+    expect(data.updateHanaEnhancedTypes[0].id).toBe(1);
+    expect(data.updateHanaEnhancedTypes[0].bit_col).not.toBeNull();
   });
 });
 
@@ -256,9 +256,9 @@ describe('Custom types — enums & composite', () => {
 
   test('update order status enum', async () => {
     const data = await client.request(gql`
-      mutation { updateHanaOrders(input: { order_id: 1, status: SHIPPED }) { order_id status } }
+      mutation { updateHanaOrders(where: { order_id: { eq: 1 } }, input: { status: SHIPPED }) { order_id status } }
     `);
-    expect(data.updateHanaOrders.status).toBe('SHIPPED');
+    expect(data.updateHanaOrders[0].status).toBe('SHIPPED');
   });
 
   test('create order with composite Address input', async () => {
@@ -339,14 +339,14 @@ describe('Domain types', () => {
 
 describe('Relationships', () => {
   test('orders with nested customer', async () => {
-    const data = await client.request(gql`{ hanaOrders { order_id hanaCustomer { first_name last_name } } }`);
+    const data = await client.request(gql`{ hanaOrders { order_id hanaCustomerId { first_name last_name } } }`);
     expect(data.hanaOrders.length).toBeGreaterThanOrEqual(1);
-    expect(data.hanaOrders[0].hanaCustomer.first_name.length).toBeGreaterThan(0);
+    expect(data.hanaOrders[0].hanaCustomerId.first_name.length).toBeGreaterThan(0);
   });
 
   test('customer with nested orders', async () => {
-    const data = await client.request(gql`{ hanaCustomer(where: { customer_id: { eq: 1 } }) { customer_id hanaOrders { order_id total_amount } } }`);
-    expect(data.hanaCustomer[0].hanaOrders.length).toBeGreaterThanOrEqual(1);
+    const data = await client.request(gql`{ hanaCustomer(where: { customer_id: { eq: 1 } }) { customer_id hanaCustomerId { order_id total_amount } } }`);
+    expect(data.hanaCustomer[0].hanaCustomerId.length).toBeGreaterThanOrEqual(1);
   });
 
   // ── Circular / multi-level relationship tests (N+1 fix) ─────────────────────
@@ -360,44 +360,44 @@ describe('Relationships', () => {
       hanaCustomer(where: { customer_id: { eq: 1 } }) {
         customer_id
         first_name
-        hanaOrders {
+        hanaCustomerId {
           order_id
-          hanaCustomer { customer_id first_name }
+          hanaCustomerId { customer_id first_name }
         }
       }
     }`);
     expect(data.hanaCustomer.length).toBe(1);
     const c = data.hanaCustomer[0];
     expect(c.customer_id).toBe(1);
-    expect(c.hanaOrders.length).toBeGreaterThanOrEqual(1);
+    expect(c.hanaCustomerId.length).toBeGreaterThanOrEqual(1);
     // Each order's customer must resolve back to customer 1
-    c.hanaOrders.forEach(o => {
-      expect(o.hanaCustomer).toBeDefined();
-      expect(o.hanaCustomer.customer_id).toBe(1);
-      expect(o.hanaCustomer.first_name).toBe('MARY');
+    c.hanaCustomerId.forEach(o => {
+      expect(o.hanaCustomerId).toBeDefined();
+      expect(o.hanaCustomerId.customer_id).toBe(1);
+      expect(o.hanaCustomerId.first_name).toBe('MARY');
     });
   });
 
   test('3-level: users → posts → users resolves author correctly', async () => {
-    // user 1 (john_doe) wrote posts 1 & 3; posts[].users must resolve back to john_doe
+    // user 1 (john_doe) wrote posts 1 & 3; posts[].hanaAuthorId must resolve back to john_doe
     const data = await client.request(gql`{
       hanaUsers(where: { id: { eq: 1 } }) {
         id
         username
-        hanaPosts {
+        hanaAuthorId {
           id
-          hanaUsers { id username }
+          hanaAuthorId { id username }
         }
       }
     }`);
     expect(data.hanaUsers.length).toBe(1);
     const u = data.hanaUsers[0];
     expect(u.username).toBe('john_doe');
-    expect(u.hanaPosts.length).toBeGreaterThanOrEqual(1);
-    u.hanaPosts.forEach(p => {
-      expect(p.hanaUsers).toBeDefined();
-      expect(p.hanaUsers.id).toBe(1);
-      expect(p.hanaUsers.username).toBe('john_doe');
+    expect(u.hanaAuthorId.length).toBeGreaterThanOrEqual(1);
+    u.hanaAuthorId.forEach(p => {
+      expect(p.hanaAuthorId).toBeDefined();
+      expect(p.hanaAuthorId.id).toBe(1);
+      expect(p.hanaAuthorId.username).toBe('john_doe');
     });
   });
 
@@ -408,21 +408,21 @@ describe('Relationships', () => {
     const data = await client.request(gql`{
       hanaUsers(where: { id: { eq: 1 } }) {
         id
-        hanaPosts {
+        hanaAuthorId {
           id
-          hanaUsers {
-            hanaPosts { id }
+          hanaAuthorId {
+            hanaAuthorId { id }
           }
         }
       }
     }`);
     expect(data.hanaUsers.length).toBe(1);
     const u = data.hanaUsers[0];
-    expect(u.hanaPosts.length).toBeGreaterThanOrEqual(1);
-    u.hanaPosts.forEach(p => {
-      expect(p.hanaUsers).toBeDefined();
+    expect(u.hanaAuthorId.length).toBeGreaterThanOrEqual(1);
+    u.hanaAuthorId.forEach(p => {
+      expect(p.hanaAuthorId).toBeDefined();
       // level-2 user's posts must be present (not null/undefined)
-      expect(Array.isArray(p.hanaUsers.hanaPosts)).toBe(true);
+      expect(Array.isArray(p.hanaAuthorId.hanaAuthorId)).toBe(true);
     });
   });
 
@@ -431,20 +431,20 @@ describe('Relationships', () => {
     const data = await client.request(gql`{
       hanaUsers(where: { id: { eq: 1 } }) {
         id
-        hanaPosts {
+        hanaAuthorId {
           id
-          hanaComments { id }
+          hanaPostId { id }
         }
       }
     }`);
     expect(data.hanaUsers.length).toBe(1);
     // user 1 authored posts 1 and 3; post 1 has 2 comments, post 3 has 0
-    const allPosts = data.hanaUsers[0].hanaPosts;
+    const allPosts = data.hanaUsers[0].hanaAuthorId;
     expect(allPosts.length).toBeGreaterThanOrEqual(1);
     const post1 = allPosts.find(p => p.id === 1);
     if (post1) {
-      expect(Array.isArray(post1.hanaComments)).toBe(true);
-      expect(post1.hanaComments.length).toBeGreaterThanOrEqual(2);
+      expect(Array.isArray(post1.hanaPostId)).toBe(true);
+      expect(post1.hanaPostId.length).toBeGreaterThanOrEqual(2);
     }
   });
 });
@@ -512,6 +512,9 @@ describe('Composite key tables', () => {
   });
 
   test('create order_items with composite key', async () => {
+    // Delete first for idempotency across test runs
+    await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: 'mutation { deleteHanaOrderItems(where: { order_id: { eq: 4 }, product_id: { eq: 3 } }) { order_id } }' }) });
     const data = await client.request(gql`
       mutation {
         createHanaOrderItems(input: { order_id: 4, product_id: 3, quantity: 5, price: 199.99 }) {
@@ -527,31 +530,31 @@ describe('Composite key tables', () => {
   test('update order_items with composite key', async () => {
     const data = await client.request(gql`
       mutation {
-        updateHanaOrderItems(input: { order_id: 1, product_id: 1, quantity: 10, price: 349.98 }) {
+        updateHanaOrderItems(where: { order_id: { eq: 1 }, product_id: { eq: 1 } }, input: { quantity: 10, price: 349.98 }) {
           order_id product_id quantity
         }
       }
     `);
-    expect(data.updateHanaOrderItems.order_id).toBe(1);
-    expect(data.updateHanaOrderItems.quantity).toBe(10);
+    expect(data.updateHanaOrderItems[0].order_id).toBe(1);
+    expect(data.updateHanaOrderItems[0].quantity).toBe(10);
   });
 
   test('delete order_items with composite key', async () => {
     const data = await client.request(gql`
       mutation {
-        deleteHanaOrderItems(input: { order_id: 4, product_id: 3 }) {
+        deleteHanaOrderItems(where: { order_id: { eq: 4 }, product_id: { eq: 3 } }) {
           order_id product_id
         }
       }
     `);
-    expect(data.deleteHanaOrderItems.order_id).toBe(4);
-    expect(data.deleteHanaOrderItems.product_id).toBe(3);
+    expect(data.deleteHanaOrderItems[0].order_id).toBe(4);
+    expect(data.deleteHanaOrderItems[0].product_id).toBe(3);
   });
 
   test('create parent_table with composite key', async () => {
     // Delete first for idempotency across test runs
     await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'mutation { deleteHanaParentTable(input: { parent_id1: 9001, parent_id2: 9001 }) { parent_id1 } }' }) });
+      body: JSON.stringify({ query: 'mutation { deleteHanaParentTable(where: { parent_id1: { eq: 9001 }, parent_id2: { eq: 9001 } }) { parent_id1 } }' }) });
     const data = await client.request(gql`
       mutation {
         createHanaParentTable(input: { parent_id1: 9001, parent_id2: 9001, name: "New Parent 9001-9001" }) {
@@ -566,7 +569,7 @@ describe('Composite key tables', () => {
   test('create child_table with composite FK', async () => {
     // Delete first for idempotency across test runs
     await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'mutation { deleteHanaChildTable(input: { child_id: 9001 }) { child_id } }' }) });
+      body: JSON.stringify({ query: 'mutation { deleteHanaChildTable(where: { child_id: { eq: 9001 } }) { child_id } }' }) });
     const data = await client.request(gql`
       mutation {
         createHanaChildTable(input: { child_id: 9001, parent_id1: 1, parent_id2: 2, description: "New child for parent 1-2" }) {
@@ -581,9 +584,9 @@ describe('Composite key tables', () => {
   test('bulk create order_items', async () => {
     // Use order 5 (no items) with products 1,2 — delete first for idempotency
     await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'mutation { deleteHanaOrderItems(input: { order_id: 5, product_id: 1 }) { order_id } }' }) });
+      body: JSON.stringify({ query: 'mutation { deleteHanaOrderItems(where: { order_id: { eq: 5 }, product_id: { eq: 1 } }) { order_id } }' }) });
     await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'mutation { deleteHanaOrderItems(input: { order_id: 5, product_id: 2 }) { order_id } }' }) });
+      body: JSON.stringify({ query: 'mutation { deleteHanaOrderItems(where: { order_id: { eq: 5 }, product_id: { eq: 2 } }) { order_id } }' }) });
     const data = await client.request(gql`
       mutation {
         createManyHanaOrderItems(inputs: [
@@ -595,11 +598,11 @@ describe('Composite key tables', () => {
     expect(data.createManyHanaOrderItems.length).toBe(2);
   });
 
-  test('incomplete composite key is rejected', async () => {
+  test('non-existent FK reference is rejected on create', async () => {
     const resp = await fetch(API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: 'mutation { updateHanaOrderItems(input: { order_id: 1, quantity: 15 }) { order_id } }' }),
+      body: JSON.stringify({ query: 'mutation { createHanaOrderItems(input: { order_id: 99999, product_id: 99999, quantity: 1, price: 1.00 }) { order_id } }' }),
     });
     const json = await resp.json();
     expect(json.errors).toBeDefined();
@@ -680,10 +683,10 @@ describe('Mutations — CRUD', () => {
 
   test('update customer', async () => {
     const data = await client.request(gql`
-      mutation { updateHanaCustomer(input: { customer_id: 1, email: "updated@example.com" }) { customer_id email } }
+      mutation { updateHanaCustomer(where: { customer_id: { eq: 1 } }, input: { email: "updated@example.com" }) { customer_id email } }
     `);
-    expect(data.updateHanaCustomer.customer_id).toBe(1);
-    expect(data.updateHanaCustomer.email).toBe('updated@example.com');
+    expect(data.updateHanaCustomer[0].customer_id).toBe(1);
+    expect(data.updateHanaCustomer[0].email).toBe('updated@example.com');
   });
 
   test('bulk create customers', async () => {
@@ -886,9 +889,9 @@ describe('Stored Procedures', () => {
 
   beforeAll(async () => {
     // Reset wallet balances so transfer tests are idempotent across repeated runs
-    await client.request(gql`mutation { updateHanaWallets(input: { wallet_id: 1, balance: 1000.00 }) { wallet_id } }`);
-    await client.request(gql`mutation { updateHanaWallets(input: { wallet_id: 2, balance: 500.00 }) { wallet_id } }`);
-    await client.request(gql`mutation { updateHanaWallets(input: { wallet_id: 3, balance: 10.00 }) { wallet_id } }`);
+    await client.request(gql`mutation { updateHanaWallets(where: { wallet_id: { eq: 1 } }, input: { balance: 1000.00 }) { wallet_id } }`);
+    await client.request(gql`mutation { updateHanaWallets(where: { wallet_id: { eq: 2 } }, input: { balance: 500.00 }) { wallet_id } }`);
+    await client.request(gql`mutation { updateHanaWallets(where: { wallet_id: { eq: 3 } }, input: { balance: 10.00 }) { wallet_id } }`);
   });
 
   test('transfer_funds appears in schema', async () => {

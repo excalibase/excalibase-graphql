@@ -97,9 +97,9 @@ class SqlCompilerIntegrationTest {
     void forwardFkRelationship() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaOrders(limit: 1) { order_id total_amount testSchemaCustomer { first_name } } }")))
+                        .content(graphql("{ testSchemaOrders(limit: 1) { order_id total_amount testSchemaCustomerId { first_name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaOrders[0].testSchemaCustomer.first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaOrders[0].testSchemaCustomerId.first_name").value("Alice"));
     }
 
     // === Reverse FK ===
@@ -107,13 +107,13 @@ class SqlCompilerIntegrationTest {
     @Test
     @Order(6)
     void reverseFkRelationship() throws Exception {
-        // Reverse FK field: orders (from table) -> on customer -> field name is "orders" (already ends with s)
+        // Reverse FK field: orders.customer_id FK -> on customer -> field name is "testSchemaCustomerId"
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaOrders { order_id total_amount } } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaCustomerId { order_id total_amount } } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaOrders", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaCustomerId", hasSize(2)));
     }
 
     // === Connection ===
@@ -194,25 +194,28 @@ class SqlCompilerIntegrationTest {
     void updateCustomer() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { updateTestSchemaCustomer(input: { customer_id: 1, email: \"updated@test.com\" }) { customer_id email } }")))
+                        .content(graphql("mutation { updateTestSchemaCustomer(where: { customer_id: { eq: 1 } }, input: { email: \"updated@test.com\" }) { customer_id email } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.updateTestSchemaCustomer.email").value("updated@test.com"));
+                .andExpect(jsonPath("$.data.updateTestSchemaCustomer[0].email").value("updated@test.com"));
     }
 
     @Test
     @Order(32)
     void deleteCustomer() throws Exception {
         // Create a customer to delete
-        mockMvc.perform(post("/graphql")
+        var createResult = mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("mutation { createTestSchemaCustomer(input: { first_name: \"ToDelete\", last_name: \"User\" }) { customer_id } }")))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andReturn();
+        int createdId = com.jayway.jsonpath.JsonPath.read(
+                createResult.getResponse().getContentAsString(), "$.data.createTestSchemaCustomer.customer_id");
 
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { deleteTestSchemaCustomer(input: { customer_id: 7 }) { customer_id first_name } }")))
+                        .content(graphql("mutation { deleteTestSchemaCustomer(where: { customer_id: { eq: " + createdId + " } }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.deleteTestSchemaCustomer.first_name").value("ToDelete"));
+                .andExpect(jsonPath("$.data.deleteTestSchemaCustomer[0].first_name").value("ToDelete"));
     }
 
     @Test
@@ -473,9 +476,9 @@ class SqlCompilerIntegrationTest {
     void taskForwardFkToCustomer() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaTask(limit: 1, orderBy: { task_id: ASC }) { task_id title testSchemaCustomer { first_name } } }")))
+                        .content(graphql("{ testSchemaTask(limit: 1, orderBy: { task_id: ASC }) { task_id title testSchemaAssignedTo { first_name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaTask[0].testSchemaCustomer.first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testSchemaTask[0].testSchemaAssignedTo.first_name").value("Alice"));
     }
 
     // === Phase 1G: Introspection with relationships ===
@@ -863,10 +866,10 @@ class SqlCompilerIntegrationTest {
     void reverseFkCustomerToTasks() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaTask { task_id title } } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaAssignedTo { task_id title } } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaTask", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaAssignedTo", hasSize(2)));
     }
 
     // === Connection without totalCount (conditional totalCount) ===
@@ -945,8 +948,8 @@ class SqlCompilerIntegrationTest {
     void updateWithIdArg() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { updateTestSchemaCustomer(id: 2, input: { first_name: \"Bobby\" }) { customer_id first_name } }")))
+                        .content(graphql("mutation { updateTestSchemaCustomer(where: { customer_id: { eq: 2 } }, input: { first_name: \"Bobby\" }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.updateTestSchemaCustomer.first_name").value("Bobby"));
+                .andExpect(jsonPath("$.data.updateTestSchemaCustomer[0].first_name").value("Bobby"));
     }
 }

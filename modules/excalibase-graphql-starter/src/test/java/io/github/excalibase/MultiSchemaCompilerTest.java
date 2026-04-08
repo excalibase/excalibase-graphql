@@ -110,9 +110,9 @@ class MultiSchemaCompilerTest {
 
         SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
 
-        // Query sales.orders with FK traversal to public.users
+        // Query sales.orders with FK traversal to public.users (field name = column: user_id → salesUserId)
         SqlCompiler.CompiledQuery result = compiler.compile(
-                "{ salesOrders { id total publicUsers { id name } } }");
+                "{ salesOrders { id total salesUserId { id name } } }");
         assertNotNull(result);
         String sql = result.sql();
         assertTrue(sql.contains("sales.\"orders\""), "Should query sales.orders — got: " + sql);

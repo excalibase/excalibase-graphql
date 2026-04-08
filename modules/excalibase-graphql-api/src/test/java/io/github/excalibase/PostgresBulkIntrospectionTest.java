@@ -73,8 +73,8 @@ class PostgresBulkIntrospectionTest {
         loader.loadAll(jdbcTemplate, List.of("schema_a", "schema_b"), perSchema);
 
         SchemaInfo b = perSchema.get("schema_b");
-        // orders has FK to users (cross-schema)
-        SchemaInfo.FkInfo fk = b.getForwardFk("orders", "users");
+        // orders has FK to users (cross-schema); field name derived from FK column "user_id" → "userId"
+        SchemaInfo.FkInfo fk = b.getForwardFk("orders", "userId");
         assertNotNull(fk, "orders should have FK to users");
         assertEquals("user_id", fk.fkColumn());
         assertEquals("users", fk.refTable());

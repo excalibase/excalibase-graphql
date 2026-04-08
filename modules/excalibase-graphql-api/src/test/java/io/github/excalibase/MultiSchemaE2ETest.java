@@ -95,9 +95,9 @@ class MultiSchemaE2ETest {
     void crossSchemaFk_ordersToUsers() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ schemaBOrders(orderBy: { order_id: ASC }) { order_id amount schemaAUsers { name } } }")))
+                        .content(graphql("{ schemaBOrders(orderBy: { order_id: ASC }) { order_id amount schemaBUserId { name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.schemaBOrders[0].schemaAUsers.name").value("Alice"));
+                .andExpect(jsonPath("$.data.schemaBOrders[0].schemaBUserId.name").value("Alice"));
     }
 
     // === Connection query with prefix ===

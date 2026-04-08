@@ -89,9 +89,9 @@ class MysqlIntegrationTest {
     void forwardFkRelationship() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testOrders(limit: 1, orderBy: { order_id: ASC }) { order_id total_amount testCustomer { first_name } } }")))
+                        .content(graphql("{ testOrders(limit: 1, orderBy: { order_id: ASC }) { order_id total_amount testCustomerId { first_name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testOrders[0].testCustomer.first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testOrders[0].testCustomerId.first_name").value("Alice"));
     }
 
     // === Reverse FK ===
@@ -101,9 +101,9 @@ class MysqlIntegrationTest {
     void reverseFkRelationship() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testCustomer(where: { customer_id: { eq: 1 } }) { first_name testOrders { order_id } } }")))
+                        .content(graphql("{ testCustomer(where: { customer_id: { eq: 1 } }) { first_name testCustomerId { order_id } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testCustomer[0].testOrders", hasSize(2)));
+                .andExpect(jsonPath("$.data.testCustomer[0].testCustomerId", hasSize(2)));
     }
 
     // === Connection ===
@@ -150,9 +150,9 @@ class MysqlIntegrationTest {
     void updateCustomer() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { updateTestCustomer(input: { customer_id: 1, email: \"updated@mysql.com\" }) { customer_id email } }")))
+                        .content(graphql("mutation { updateTestCustomer(where: { customer_id: { eq: 1 } }, input: { email: \"updated@mysql.com\" }) { customer_id email } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.updateTestCustomer.email").value("updated@mysql.com"));
+                .andExpect(jsonPath("$.data.updateTestCustomer[0].email").value("updated@mysql.com"));
     }
 
     @Test
@@ -169,9 +169,9 @@ class MysqlIntegrationTest {
 
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { deleteTestCustomer(input: { customer_id: " + createdId + " }) { customer_id first_name } }")))
+                        .content(graphql("mutation { deleteTestCustomer(where: { customer_id: { eq: " + createdId + " } }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.deleteTestCustomer.first_name").value("ToDelete"));
+                .andExpect(jsonPath("$.data.deleteTestCustomer[0].first_name").value("ToDelete"));
     }
 
     // === Bulk create (createMany) ===
@@ -511,9 +511,9 @@ class MysqlIntegrationTest {
     void updateWithIdArg() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("mutation { updateTestCustomer(id: 2, input: { first_name: \"Bobby\" }) { customer_id first_name } }")))
+                        .content(graphql("mutation { updateTestCustomer(where: { customer_id: { eq: 2 } }, input: { first_name: \"Bobby\" }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.updateTestCustomer.first_name").value("Bobby"));
+                .andExpect(jsonPath("$.data.updateTestCustomer[0].first_name").value("Bobby"));
     }
 
     // === Views — read-only, no mutation fields ===
@@ -570,8 +570,8 @@ class MysqlIntegrationTest {
     void taskForwardFkToCustomer() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testTask(orderBy: { task_id: ASC }, limit: 1) { title testCustomer { first_name } } }")))
+                        .content(graphql("{ testTask(orderBy: { task_id: ASC }, limit: 1) { title testAssignedTo { first_name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testTask[0].testCustomer.first_name").value("Alice"));
+                .andExpect(jsonPath("$.data.testTask[0].testAssignedTo.first_name").value("Alice"));
     }
 }

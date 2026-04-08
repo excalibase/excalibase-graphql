@@ -78,12 +78,12 @@ class PerTableSchemaE2ETest {
     @Test
     @Order(3)
     void fkTraversal_usesCorrectSchema() throws Exception {
-        // orders has FK to customer — both in test_schema
+        // orders has FK to customer — both in test_schema; field name derived from FK column "customer_id" → "testSchemaCustomerId"
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaOrders(orderBy: { order_id: ASC }) { order_id total_amount testSchemaCustomer { first_name } } }")))
+                        .content(graphql("{ testSchemaOrders(orderBy: { order_id: ASC }) { order_id total_amount testSchemaCustomerId { first_name } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaOrders[0].testSchemaCustomer.first_name").exists());
+                .andExpect(jsonPath("$.data.testSchemaOrders[0].testSchemaCustomerId.first_name").exists());
     }
 
     @Test
