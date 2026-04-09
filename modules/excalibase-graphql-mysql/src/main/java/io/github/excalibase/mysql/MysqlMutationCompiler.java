@@ -63,8 +63,8 @@ public class MysqlMutationCompiler implements MutationCompiler {
             params.put(paramName, entry.getValue());
         }
 
-        String dmlSql = "INSERT INTO " + shared.qualifiedTable(tableName)
-                + " (" + String.join(", ", cols) + ") VALUES (" + String.join(", ", vals) + ")";
+        String dmlSql = shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
+                String.join(", ", cols), String.join(", ", vals), "", objectSql);
 
         String pk = shared.schemaInfo().getPrimaryKey(tableName);
         String lastIdParam = "last_id_" + params.size();
@@ -103,8 +103,8 @@ public class MysqlMutationCompiler implements MutationCompiler {
             valueRows.add("(" + String.join(", ", vals) + ")");
         }
 
-        String dmlSql = "INSERT INTO " + shared.qualifiedTable(tableName)
-                + " (" + String.join(", ", colsSql) + ") VALUES " + String.join(", ", valueRows);
+        String dmlSql = shared.dialect().cteBulkInsert(alias, shared.qualifiedTable(tableName),
+                String.join(", ", colsSql), String.join(", ", valueRows), objectSql);
 
         String pk = shared.schemaInfo().getPrimaryKey(tableName);
         String lastIdParam = "last_id_" + params.size();
@@ -144,10 +144,8 @@ public class MysqlMutationCompiler implements MutationCompiler {
         if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table update
 
         // MySQL two-phase: DML first, then SELECT affected rows
-        // Use subquery to find matching rows before update
-        String dmlSql = "UPDATE " + shared.qualifiedTable(tableName) + " " + alias
-                + " SET " + String.join(", ", setClauses)
-                + whereSql;
+        String dmlSql = shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
+                String.join(", ", setClauses), whereSql.toString(), objectSql);
 
         String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
                 "'" + fieldName + "', (" +
@@ -176,8 +174,8 @@ public class MysqlMutationCompiler implements MutationCompiler {
                 + " FROM " + shared.qualifiedTable(tableName) + " " + alias
                 + whereSql + ")"));
 
-        String dmlSql = "DELETE FROM " + shared.qualifiedTable(tableName) + " " + alias
-                + whereSql;
+        String dmlSql = shared.dialect().cteDelete(alias, shared.qualifiedTable(tableName),
+                whereSql.toString(), objectSql);
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, MutationBuilder.MUTATION_DELETE);
     }

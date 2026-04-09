@@ -73,4 +73,32 @@ public interface SqlDialect {
     default String enumCast(String schema, String enumType) {
         return "::" + schema + "." + quoteIdentifier(enumType);
     }
+
+    // === CTE builder methods — dialect-specific SQL statement templates ===
+
+    /** CTE INSERT returning single row: WITH alias AS (INSERT ... RETURNING *) SELECT obj FROM alias */
+    default String cteInsert(String alias, String table, String colsSql, String valsSql,
+                     String onConflictSql, String objectSql) {
+        throw new UnsupportedOperationException("cteInsert not implemented for this dialect");
+    }
+
+    /** CTE bulk INSERT returning array: WITH alias AS (INSERT ... RETURNING *) SELECT agg(obj) FROM alias */
+    default String cteBulkInsert(String alias, String table, String colsSql, String valueRowsSql, String objectSql) {
+        throw new UnsupportedOperationException("cteBulkInsert not implemented for this dialect");
+    }
+
+    /** CTE UPDATE returning array: WITH alias AS (UPDATE ... RETURNING *) SELECT agg(obj) FROM alias */
+    default String cteUpdate(String alias, String table, String setClauses, String whereSql, String objectSql) {
+        throw new UnsupportedOperationException("cteUpdate not implemented for this dialect");
+    }
+
+    /** CTE DELETE returning array: WITH alias AS (DELETE ... RETURNING *) SELECT agg(obj) FROM alias */
+    default String cteDelete(String alias, String table, String whereSql, String objectSql) {
+        throw new UnsupportedOperationException("cteDelete not implemented for this dialect");
+    }
+
+    /** Wrap final mutation SQL with field name: SELECT jsonb_build_object('fieldName', (innerSql)) */
+    default String wrapMutationResult(String mutationSql, String fieldName) {
+        return mutationSql;
+    }
 }

@@ -43,7 +43,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
             if (tableName != null) sql = compileDelete(field, tableName, params, variables, shared);
         }
         if (sql == null) return null;
-        String wrappedSql = wrapMutationResult(sql, fieldName);
+        String wrappedSql = shared.dialect().wrapMutationResult(sql, fieldName);
         return new SqlCompiler.CompiledQuery(wrappedSql, params);
     }
 
@@ -87,10 +87,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
             }
         }
 
-        return "WITH " + alias + " AS (INSERT INTO " + shared.qualifiedTable(tableName)
-                + " (" + String.join(", ", cols) + ") VALUES (" + String.join(", ", vals) + ")"
-                + onConflictSql
-                + " RETURNING *) SELECT " + objectSql + " FROM " + alias;
+        return shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
+                String.join(", ", cols), String.join(", ", vals), onConflictSql, objectSql);
     }
 
     String compileBulkInsert(Field field, String tableName, Map<String, Object> params,
@@ -120,9 +118,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
             valueRows.add("(" + String.join(", ", vals) + ")");
         }
 
-        return "WITH " + alias + " AS (INSERT INTO " + shared.qualifiedTable(tableName)
-                + " (" + String.join(", ", colsSql) + ") VALUES " + String.join(", ", valueRows)
-                + " RETURNING *) SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql)) + " FROM " + alias;
+        return shared.dialect().cteBulkInsert(alias, shared.qualifiedTable(tableName),
+                String.join(", ", colsSql), String.join(", ", valueRows), objectSql);
     }
 
     String compileUpdate(Field field, String tableName, Map<String, Object> params,
@@ -148,10 +145,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
         shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName);
         if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table update
 
-        return "WITH " + alias + " AS (UPDATE " + shared.qualifiedTable(tableName) + " " + alias
-                + " SET " + String.join(", ", setClauses)
-                + whereSql
-                + " RETURNING *) SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql)) + " FROM " + alias;
+        return shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
+                String.join(", ", setClauses), whereSql.toString(), objectSql);
     }
 
     String compileDelete(Field field, String tableName, Map<String, Object> params,
@@ -164,9 +159,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
         shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName);
         if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table delete
 
-        return "WITH " + alias + " AS (DELETE FROM " + shared.qualifiedTable(tableName) + " " + alias
-                + whereSql
-                + " RETURNING *) SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql)) + " FROM " + alias;
+        return shared.dialect().cteDelete(alias, shared.qualifiedTable(tableName),
+                whereSql.toString(), objectSql);
     }
 
     String compileUpdateCollection(Field field, String tableName, Map<String, Object> params,
@@ -207,11 +201,10 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String atMostParam = "uc_atmost_" + params.size();
         params.put(atMostParam, atMost);
 
-        return "WITH " + alias + " AS (UPDATE " + shared.qualifiedTable(tableName)
-                + " SET " + String.join(", ", setClauses)
-                + " WHERE ctid IN (SELECT ctid FROM " + shared.qualifiedTable(tableName)
-                + " " + innerAlias + filterWhere + " LIMIT :" + atMostParam + ")"
-                + " RETURNING *) SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql)) + " FROM " + alias;
+        String ctidWhere = " WHERE ctid IN (SELECT ctid FROM " + shared.qualifiedTable(tableName)
+                + " " + innerAlias + filterWhere + " LIMIT :" + atMostParam + ")";
+        return shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
+                String.join(", ", setClauses), ctidWhere, objectSql);
     }
 
     String compileDeleteFromCollection(Field field, String tableName, Map<String, Object> params,
@@ -240,17 +233,10 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String atMostParam = "dc_atmost_" + params.size();
         params.put(atMostParam, atMost);
 
-        return "WITH " + alias + " AS (DELETE FROM " + shared.qualifiedTable(tableName)
-                + " WHERE ctid IN (SELECT ctid FROM " + shared.qualifiedTable(tableName)
-                + " " + innerAlias + filterWhere + " LIMIT :" + atMostParam + ")"
-                + " RETURNING *) SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql)) + " FROM " + alias;
+        String ctidWhere = " WHERE ctid IN (SELECT ctid FROM " + shared.qualifiedTable(tableName)
+                + " " + innerAlias + filterWhere + " LIMIT :" + atMostParam + ")";
+        return shared.dialect().cteDelete(alias, shared.qualifiedTable(tableName),
+                ctidWhere, objectSql);
     }
 
-    String wrapMutationResult(String mutationSql, String fieldName) {
-        int selectIdx = mutationSql.lastIndexOf(") SELECT ");
-        if (selectIdx == -1) return mutationSql;
-        String ctePart = mutationSql.substring(0, selectIdx + 1);
-        String selectPart = mutationSql.substring(selectIdx + 2);
-        return ctePart + " SELECT jsonb_build_object('" + fieldName + "', (" + selectPart + "))";
-    }
 }

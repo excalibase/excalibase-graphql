@@ -99,6 +99,47 @@ public class PostgresDialect implements SqlDialect {
                 .collect(Collectors.joining(", ")) + ")";
     }
 
+    // === CTE builder methods ===
+
+    @Override
+    public String cteInsert(String alias, String table, String colsSql, String valsSql,
+                            String onConflictSql, String objectSql) {
+        return "WITH " + alias + " AS (INSERT INTO " + table
+                + " (" + colsSql + ") VALUES (" + valsSql + ")"
+                + onConflictSql
+                + " RETURNING *) SELECT " + objectSql + " FROM " + alias;
+    }
+
+    @Override
+    public String cteBulkInsert(String alias, String table, String colsSql, String valueRowsSql, String objectSql) {
+        return "WITH " + alias + " AS (INSERT INTO " + table
+                + " (" + colsSql + ") VALUES " + valueRowsSql
+                + " RETURNING *) SELECT " + coalesceArray(aggregateArray(objectSql)) + " FROM " + alias;
+    }
+
+    @Override
+    public String cteUpdate(String alias, String table, String setClauses, String whereSql, String objectSql) {
+        return "WITH " + alias + " AS (UPDATE " + table + " " + alias
+                + " SET " + setClauses + whereSql
+                + " RETURNING *) SELECT " + coalesceArray(aggregateArray(objectSql)) + " FROM " + alias;
+    }
+
+    @Override
+    public String cteDelete(String alias, String table, String whereSql, String objectSql) {
+        return "WITH " + alias + " AS (DELETE FROM " + table + " " + alias
+                + whereSql
+                + " RETURNING *) SELECT " + coalesceArray(aggregateArray(objectSql)) + " FROM " + alias;
+    }
+
+    @Override
+    public String wrapMutationResult(String mutationSql, String fieldName) {
+        int selectIdx = mutationSql.lastIndexOf(") SELECT ");
+        if (selectIdx == -1) return mutationSql;
+        String ctePart = mutationSql.substring(0, selectIdx + 1);
+        String selectPart = mutationSql.substring(selectIdx + 2);
+        return ctePart + " SELECT jsonb_build_object('" + fieldName + "', (" + selectPart + "))";
+    }
+
     @Override
     public String paramCast(String columnType) {
         if (columnType == null) return "";

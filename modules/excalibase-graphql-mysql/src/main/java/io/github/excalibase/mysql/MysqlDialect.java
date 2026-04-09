@@ -116,4 +116,34 @@ public class MysqlDialect implements SqlDialect {
     public String enumCast(String schema, String enumType) {
         return ""; // MySQL handles string-to-enum conversion implicitly
     }
+
+    // === CTE builder methods (MySQL uses two-phase, not CTEs) ===
+
+    @Override
+    public String cteInsert(String alias, String table, String colsSql, String valsSql,
+                            String onConflictSql, String objectSql) {
+        // MySQL: single INSERT DML (no CTE)
+        return "INSERT INTO " + table + " (" + colsSql + ") VALUES (" + valsSql + ")" + onConflictSql;
+    }
+
+    @Override
+    public String cteBulkInsert(String alias, String table, String colsSql, String valueRowsSql, String objectSql) {
+        return "INSERT INTO " + table + " (" + colsSql + ") VALUES " + valueRowsSql;
+    }
+
+    @Override
+    public String cteUpdate(String alias, String table, String setClauses, String whereSql, String objectSql) {
+        return "UPDATE " + table + " " + alias + " SET " + setClauses + whereSql;
+    }
+
+    @Override
+    public String cteDelete(String alias, String table, String whereSql, String objectSql) {
+        return "DELETE FROM " + table + " " + alias + whereSql;
+    }
+
+    @Override
+    public String wrapMutationResult(String mutationSql, String fieldName) {
+        // MySQL wraps at the select phase, not at CTE level
+        return mutationSql;
+    }
 }
