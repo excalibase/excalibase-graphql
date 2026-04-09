@@ -1,11 +1,11 @@
 {
   "request": {
     "method": "GET",
-    "urlPathPattern": "/api/vault/secrets/projects/.*/credentials/excalibase_app"
+    "url": "/api/vault/secrets/projects/beta-inc/app-b/credentials/excalibase_app"
   },
   "response": {
     "status": 200,
     "headers": { "Content-Type": "application/json" },
-    "bodyFileName": "credentials-response.json"
+    "bodyFileName": "tenant-b-app-creds.json"
   }
 }

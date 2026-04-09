@@ -11,11 +11,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 public class SecurityConfig {
 
-    @Autowired(required = false)
-    private JwtAuthFilter jwtAuthFilter;
-
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http,
+                                           @Autowired(required = false) JwtAuthFilter jwtAuthFilter) throws Exception {
+        // CSRF disabled — stateless JWT API, no session cookies
         http.csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
 

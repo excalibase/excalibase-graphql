@@ -41,6 +41,8 @@ class JwtServiceTest {
                 .subject(email)
                 .claim("userId", userId)
                 .claim("projectId", projectId)
+                .claim("orgSlug", "duc-corp")
+                .claim("projectName", "app-a")
                 .claim("role", role)
                 .issuer("excalibase")
                 .issuedAt(Date.from(Instant.now()))
@@ -58,6 +60,8 @@ class JwtServiceTest {
 
         assertEquals(42, claims.userId());
         assertEquals("my-project", claims.projectId());
+        assertEquals("duc-corp", claims.orgSlug());
+        assertEquals("app-a", claims.projectName());
         assertEquals("user", claims.role());
         assertEquals("alice@test.com", claims.email());
     }

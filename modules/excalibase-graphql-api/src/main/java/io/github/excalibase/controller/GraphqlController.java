@@ -67,7 +67,7 @@ public class GraphqlController {
 
         return observability.observe(query, null, () -> {
             try {
-                GraphqlSchemaManager.EngineState state = schemaManager.getEngineState();
+                GraphqlSchemaManager.EngineState state = schemaManager.resolveEngineState(finalClaims);
 
                 // Introspection passthrough to GraphQL-Java
                 if (state.compiler().isIntrospection(finalQuery)) {

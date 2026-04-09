@@ -36,12 +36,18 @@ data:
 
   # Application
   SERVER_PORT: {{ .Values.app.port | quote }}
-  APP_ALLOWED_SCHEMA: {{ .Values.app.allowedSchema | quote }}
+  APP_SCHEMAS: {{ .Values.app.allowedSchema | quote }}
   APP_DATABASE_TYPE: {{ if $isMysql }}"mysql"{{ else }}"postgres"{{ end }}
 
   # Security / user context (RLS)
   APP_SECURITY_USER_CONTEXT_ENABLED: {{ .Values.app.security.userContextEnabled | quote }}
   APP_SECURITY_USER_ID_HEADER: {{ .Values.app.security.userIdHeader | quote }}
+
+  # JWT + multi-tenant datasource routing
+  APP_SECURITY_JWT_ENABLED: {{ .Values.app.security.jwtEnabled | quote }}
+  {{- if .Values.app.security.provisioningUrl }}
+  APP_SECURITY_PROVISIONING_URL: {{ .Values.app.security.provisioningUrl | quote }}
+  {{- end }}
 
   # NATS CDC subscription (events from excalibase-watcher)
   APP_NATS_ENABLED: {{ .Values.app.nats.enabled | quote }}

@@ -8,6 +8,7 @@
     "test:subscription:postgres": "jest subscription.test.js --forceExit --testNamePattern='Postgres'",
     "test:subscription:mysql": "jest subscription.test.js --forceExit --testNamePattern='MySQL'",
     "test:subscription": "jest subscription.test.js --forceExit",
+    "test:multi-tenant": "jest multi-tenant/multi-tenant.test.js --forceExit",
     "test": "jest --forceExit"
   },
   "dependencies": {

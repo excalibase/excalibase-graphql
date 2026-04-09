@@ -29,29 +29,34 @@ public class DataSourceConfig {
     private static final Logger log = LoggerFactory.getLogger(DataSourceConfig.class);
 
     @Bean
-    public DataSource dataSource(DataSourceProperties properties) {
-        DynamicRoutingDataSource routing = new DynamicRoutingDataSource();
+    public DataSource dataSource(DataSourceProperties properties,
+                                 @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                 DynamicDataSourceManager dataSourceManager) {
         Map<Object, Object> targets = new HashMap<>();
+        boolean hasDefault = false;
 
         if (properties.getUrl() != null && !properties.getUrl().isBlank()) {
             try {
                 HikariDataSource hikari = properties.initializeDataSourceBuilder()
                         .type(HikariDataSource.class)
                         .build();
-                // Don't validate connection on pool creation — allows deferred connectivity
                 hikari.setInitializationFailTimeout(-1);
-
                 targets.put(DynamicRoutingDataSource.DEFAULT_KEY, hikari);
-                routing.setDefaultTargetDataSource(hikari);
+                hasDefault = true;
                 log.info("DataSource registered: {}", properties.getUrl());
             } catch (Exception e) {
                 log.warn("Failed to create DataSource — starting without database. Cause: {}", e.getMessage());
             }
         } else {
-            log.warn("No datasource URL configured — starting without database");
+            log.warn("No datasource URL configured — starting in multi-tenant only mode");
         }
 
+        DynamicRoutingDataSource routing = new DynamicRoutingDataSource(dataSourceManager, hasDefault);
         routing.setTargetDataSources(targets);
+        if (hasDefault) {
+            routing.setDefaultTargetDataSource(targets.get(DynamicRoutingDataSource.DEFAULT_KEY));
+        }
+        routing.setLenientFallback(true);
         routing.afterPropertiesSet();
         return routing;
     }

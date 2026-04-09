@@ -1,5 +1,6 @@
 package io.github.excalibase.security;
 
+import io.github.excalibase.config.datasource.TenantContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,10 +28,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
         String authHeader = request.getHeader("Authorization");
 
+        JwtClaims claims = null;
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             String token = authHeader.substring(7);
             try {
-                JwtClaims claims = jwtService.verify(token);
+                claims = jwtService.verify(token);
                 request.setAttribute(JWT_CLAIMS_ATTR, claims);
             } catch (JwtVerificationException e) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
@@ -40,6 +42,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
         }
 
-        chain.doFilter(request, response);
+        if (claims != null && claims.projectId() != null) {
+            try {
+                ScopedValue.where(TenantContext.TENANT_ID, claims.projectId())
+                    .call(() -> { chain.doFilter(request, response); return null; });
+            } catch (IOException | ServletException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new ServletException(e);
+            }
+        } else {
+            chain.doFilter(request, response);
+        }
     }
 }

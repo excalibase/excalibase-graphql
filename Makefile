@@ -72,12 +72,13 @@ dev: build-image up ## Start services for development (no cleanup)
 	@echo ""
 
 .PHONY: test-all
-test-all: ## Run all tests: unit + Postgres/MySQL E2E (JVM)
+test-all: ## Run all tests: unit + Postgres/MySQL/Multi-tenant E2E (JVM)
 	@echo "$(BLUE)🧪 Running unit and integration tests...$(NC)"
 	@mvn test -q || (echo "$(RED)❌ Unit/integration tests failed$(NC)" && exit 1)
 	@echo "$(GREEN)✓ Unit/integration tests passed$(NC)"
 	@$(MAKE) --no-print-directory e2e
 	@$(MAKE) --no-print-directory mysql-e2e
+	@$(MAKE) --no-print-directory multi-tenant-e2e
 	@echo "$(GREEN)🎉 All tests passed!$(NC)"
 
 .PHONY: ci
@@ -127,6 +128,58 @@ mysql-test: ## Run MySQL e2e tests (requires services running)
 	@cd e2e && npm install --silent && npm run test:mysql || (echo "$(RED)❌ MySQL tests failed$(NC)" && exit 1)
 	@echo "$(BLUE)🧪 Running MySQL CDC subscription tests...$(NC)"
 	@cd e2e && npm run test:subscription:mysql || (echo "$(RED)❌ MySQL subscription tests failed$(NC)" && exit 1)
+
+# Multi-tenant targets
+MT_COMPOSE_FILE = e2e/multi-tenant/docker-compose.multi-tenant.yml
+MT_COMPOSE_PROJECT = excalibase-multi-tenant
+MT_API_PORT = 10003
+
+.PHONY: multi-tenant-e2e
+multi-tenant-e2e: down-multi-tenant build-image multi-tenant-generate-keys multi-tenant-up multi-tenant-test multi-tenant-clean ## Complete multi-tenant e2e test suite
+	@echo "$(GREEN)🎉 Multi-tenant E2E testing completed successfully!$(NC)"
+
+.PHONY: multi-tenant-generate-keys
+multi-tenant-generate-keys: ## Generate test EC keypair for multi-tenant WireMock
+	@e2e/multi-tenant/generate-keys.sh
+
+.PHONY: multi-tenant-up
+multi-tenant-up: ## Start multi-tenant Docker services
+	@echo "$(BLUE)🚀 Starting multi-tenant services...$(NC)"
+	@docker compose -f $(MT_COMPOSE_FILE) -p $(MT_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f $(MT_COMPOSE_FILE) -p $(MT_COMPOSE_PROJECT) up -d 2>&1 || true
+	@echo "$(GREEN)✓ Multi-tenant services started$(NC)"
+	@$(MAKE) --no-print-directory multi-tenant-wait-ready
+
+.PHONY: down-multi-tenant
+down-multi-tenant: ## Stop multi-tenant Docker services
+	@echo "$(BLUE)🛑 Stopping multi-tenant services...$(NC)"
+	@docker compose -f $(MT_COMPOSE_FILE) -p $(MT_COMPOSE_PROJECT) down > /dev/null 2>&1 || true
+	@echo "$(GREEN)✓ Multi-tenant services stopped$(NC)"
+
+.PHONY: multi-tenant-clean
+multi-tenant-clean: ## Stop multi-tenant services and cleanup volumes
+	@docker compose -f $(MT_COMPOSE_FILE) -p $(MT_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+
+.PHONY: multi-tenant-test
+multi-tenant-test: ## Run multi-tenant e2e tests
+	@echo "$(BLUE)🧪 Running multi-tenant E2E tests...$(NC)"
+	@cd e2e && npm install --silent && npm run test:multi-tenant || (echo "$(RED)❌ Multi-tenant tests failed$(NC)" && exit 1)
+
+.PHONY: multi-tenant-wait-ready
+multi-tenant-wait-ready:
+	@echo "$(BLUE)⏳ Waiting for multi-tenant services...$(NC)"
+	@for i in $$(seq 1 30); do \
+		if curl -s -X POST http://localhost:$(MT_API_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data\|error"; then \
+			echo "$(GREEN)✓ Multi-tenant GraphQL API ready$(NC)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 30 ]; then \
+			echo "$(RED)❌ Multi-tenant application failed to start$(NC)"; \
+			exit 1; \
+		fi; \
+		printf "."; \
+		sleep 3; \
+	done
 
 # CDC subscription test targets
 .PHONY: subscription-test

@@ -57,6 +57,18 @@ spec:
                 secretKeyRef:
                   name: {{ include "excalibase-graphql.secretName" . }}
                   key: {{ .Values.database.existingSecretPasswordKey }}
+            {{- if or .Values.app.security.provisioningPat .Values.app.security.existingProvisioningSecret }}
+            - name: APP_SECURITY_PROVISIONING_PAT
+              valueFrom:
+                secretKeyRef:
+                  {{- if .Values.app.security.existingProvisioningSecret }}
+                  name: {{ .Values.app.security.existingProvisioningSecret }}
+                  key: {{ .Values.app.security.existingProvisioningPatKey }}
+                  {{- else }}
+                  name: {{ include "excalibase-graphql.secretName" . }}
+                  key: provisioning-pat
+                  {{- end }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

@@ -1,0 +1,1 @@
+{"host":"tenant-a-postgres","port":"5432","username":"auth_admin","password":"auth_pass_a","database":"tenant_a_db"}

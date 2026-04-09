@@ -72,9 +72,10 @@ services:
       APP_SECURITY_USER_ID_EXTRACTOR_TYPE: header
       APP_SECURITY_USER_ID_HEADER: X-User-Id
 
-      # JWT verification (optional — fetches public key from vault)
+      # JWT verification + multi-tenant vault credentials
       APP_SECURITY_JWT_ENABLED: true
-      APP_SECURITY_PROVISIONING_URL: http://mock-vault:8080
+      APP_SECURITY_PROVISIONING_URL: http://mock-vault:8080/api
+      APP_SECURITY_PROVISIONING_PAT: test-pat
 
       # NATS CDC subscription (events from excalibase-watcher)
       APP_NATS_ENABLED: true

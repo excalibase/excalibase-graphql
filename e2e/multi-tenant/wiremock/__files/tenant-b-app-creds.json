@@ -1,0 +1,1 @@
+{"host":"tenant-b-postgres","port":"5432","username":"excalibase_app","password":"app_pass_b","database":"tenant_b_db"}

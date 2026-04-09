@@ -2,11 +2,12 @@ package io.github.excalibase.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.cache.TTLCache;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -26,49 +27,56 @@ import java.util.Base64;
 public class JwtService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
+    private static final String CACHE_KEY = "public-key";
+    private static final Duration TIMEOUT = Duration.ofSeconds(10);
+    private static final ObjectMapper mapper = new ObjectMapper();
 
-    @Value("${app.security.provisioning-url:}")
-    private String provisioningUrl;
+    private final String provisioningUrl;
+    private final TTLCache<String, ECPublicKey> keyCache;
+    private final HttpClient httpClient;
 
-    private ECPublicKey publicKey;
+    /** Production constructor — fetches key from vault on first verify, caches with TTL. */
+    @Autowired
+    public JwtService(
+            @Value("${app.security.provisioning-url:}") String provisioningUrl,
+            @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes) {
+        this.provisioningUrl = provisioningUrl;
+        this.keyCache = new TTLCache<>(Duration.ofMinutes(ttlMinutes));
+        this.httpClient = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
 
-    /** Constructor for production — key fetched in @PostConstruct */
-    public JwtService() {}
-
-    /** Constructor for tests — inject key directly */
-    public JwtService(ECPublicKey publicKey) {
-        this.publicKey = publicKey;
+        // Eagerly load key at startup to fail fast if vault is unreachable
+        if (provisioningUrl != null && !provisioningUrl.isBlank()) {
+            try {
+                keyCache.put(CACHE_KEY, fetchPublicKey());
+                log.info("jwt_public_key_loaded source=vault");
+            } catch (Exception e) {
+                log.error("failed_to_fetch_jwt_public_key url={}", provisioningUrl, e);
+                throw new IllegalStateException("Cannot start with jwt-enabled=true without vault public key", e);
+            }
+        }
     }
 
-    @PostConstruct
-    void init() {
-        if (publicKey != null) return; // already set (test constructor)
-        if (provisioningUrl == null || provisioningUrl.isBlank()) {
-            log.warn("JWT enabled but no provisioning-url configured — JWT verification disabled");
-            return;
-        }
-        try {
-            publicKey = fetchPublicKey(provisioningUrl);
-            log.info("JWT verification enabled — public key loaded from vault");
-        } catch (Exception e) {
-            log.error("Failed to fetch JWT public key from vault: {}", e.getMessage());
-            throw new IllegalStateException("Cannot start with jwt-enabled=true without vault public key", e);
-        }
+    /** Test constructor — inject key directly, no vault fetch. */
+    public JwtService(ECPublicKey publicKey) {
+        this.provisioningUrl = null;
+        this.keyCache = new TTLCache<>(Duration.ofHours(24));
+        this.httpClient = null;
+        this.keyCache.put(CACHE_KEY, publicKey);
     }
 
     public JwtClaims verify(String token) {
-        if (publicKey == null) {
-            throw new JwtVerificationException("JWT verification not initialized");
-        }
+        ECPublicKey key = getPublicKey();
         try {
             Claims claims = Jwts.parser()
-                    .verifyWith(publicKey)
+                    .verifyWith(key)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
 
             Long userId = claims.get("userId", Long.class);
             String projectId = claims.get("projectId", String.class);
+            String orgSlug = claims.get("orgSlug", String.class);
+            String projectName = claims.get("projectName", String.class);
             String role = claims.get("role", String.class);
             String email = claims.getSubject();
 
@@ -76,24 +84,42 @@ public class JwtService {
                 throw new JwtVerificationException("Missing required claims: userId or projectId");
             }
 
-            return new JwtClaims(userId, projectId, role != null ? role : "user", email);
+            return new JwtClaims(userId, projectId, orgSlug, projectName, role != null ? role : "user", email);
+        } catch (JwtVerificationException e) {
+            throw e;
         } catch (Exception e) {
             throw new JwtVerificationException("Invalid JWT: " + e.getMessage(), e);
         }
     }
 
-    private static ECPublicKey fetchPublicKey(String provisioningUrl) throws Exception {
+    private ECPublicKey getPublicKey() {
+        return keyCache.computeIfAbsent(CACHE_KEY, k -> {
+            try {
+                log.info("jwt_public_key_refresh source=vault");
+                return fetchPublicKey();
+            } catch (Exception e) {
+                throw new JwtVerificationException("Failed to refresh public key from vault", e);
+            }
+        });
+    }
+
+    private ECPublicKey fetchPublicKey() throws Exception {
+        if (provisioningUrl == null || provisioningUrl.isBlank()) {
+            throw new IllegalStateException("provisioning-url not configured");
+        }
         String url = provisioningUrl + "/vault/pki/public-key";
-        HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-        HttpRequest req = HttpRequest.newBuilder().uri(URI.create(url)).GET()
-                .timeout(Duration.ofSeconds(10)).build();
-        HttpResponse<String> resp = client.send(req, HttpResponse.BodyHandlers.ofString());
+        HttpRequest req = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .GET()
+                .timeout(TIMEOUT)
+                .build();
+        HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
 
         if (resp.statusCode() != 200) {
             throw new IllegalStateException("Vault returned " + resp.statusCode() + " for public key");
         }
 
-        JsonNode json = new ObjectMapper().readTree(resp.body());
+        JsonNode json = mapper.readTree(resp.body());
         String pem = json.get("key").asText();
         return parseECPublicKey(pem);
     }

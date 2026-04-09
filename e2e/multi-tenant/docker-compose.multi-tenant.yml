@@ -1,0 +1,129 @@
+services:
+  tenant-a-postgres:
+    image: postgres:16-alpine
+    container_name: mt-tenant-a-postgres
+    environment:
+      POSTGRES_DB: tenant_a_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5440:5432"
+    volumes:
+      - ./sql/init-tenant-a.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tenant_a_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - multi-tenant-network
+
+  tenant-b-postgres:
+    image: postgres:16-alpine
+    container_name: mt-tenant-b-postgres
+    environment:
+      POSTGRES_DB: tenant_b_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5441:5432"
+    volumes:
+      - ./sql/init-tenant-b.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d tenant_b_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - multi-tenant-network
+
+  mock-vault:
+    image: wiremock/wiremock:3.10.0
+    container_name: mt-mock-vault
+    volumes:
+      - ./wiremock:/home/wiremock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/__admin/mappings"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - multi-tenant-network
+
+  excalibase-auth:
+    image: excalibase/excalibase-auth
+    container_name: mt-excalibase-auth
+    build:
+      context: ../../../excalibase-auth
+    environment:
+      PROVISIONING_URL: http://mock-vault:8080/api
+      PROVISIONING_PAT: test-pat
+      PORT: "24000"
+    ports:
+      - "24003:24000"
+    depends_on:
+      tenant-a-postgres:
+        condition: service_healthy
+      tenant-b-postgres:
+        condition: service_healthy
+      mock-vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:24000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks:
+      - multi-tenant-network
+
+  excalibase-app:
+    image: excalibase/excalibase-graphql
+    container_name: mt-excalibase-graphql
+    environment:
+      # NO default datasource — pure multi-tenant mode
+      SPRING_DATASOURCE_URL: ""
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+
+      # HikariCP per tenant datasource
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 5
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 1
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 10000
+
+      SPRING_THREADS_VIRTUAL_ENABLED: true
+
+      SERVER_PORT: 10000
+      APP_SCHEMAS: tenant
+      APP_DATABASE_TYPE: postgres
+      APP_MAX_ROWS: 30
+
+      # JWT + multi-tenant vault credentials
+      APP_SECURITY_JWT_ENABLED: true
+      APP_SECURITY_PROVISIONING_URL: http://mock-vault:8080/api
+      APP_SECURITY_PROVISIONING_PAT: test-pat
+
+      # No NATS needed for multi-tenant routing test
+      APP_NATS_ENABLED: false
+    ports:
+      - "10003:10000"
+    depends_on:
+      tenant-a-postgres:
+        condition: service_healthy
+      tenant-b-postgres:
+        condition: service_healthy
+      mock-vault:
+        condition: service_healthy
+      excalibase-auth:
+        condition: service_healthy
+    networks:
+      - multi-tenant-network
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '0.5'
+
+networks:
+  multi-tenant-network:
+    driver: bridge

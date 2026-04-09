@@ -81,6 +81,18 @@ app:
     userContextEnabled: true
     userIdHeader: "X-User-Id"
 
+    # JWT verification + multi-tenant datasource routing
+    # When enabled, fetches EC public key from vault for JWT signature verification.
+    # JWT claims (orgSlug, projectName) are used to fetch per-tenant DB credentials
+    # from the vault endpoint and route requests to tenant-specific databases.
+    jwtEnabled: false
+    provisioningUrl: ""
+    # PAT for authenticating vault API calls (use existingSecret in production)
+    provisioningPat: ""
+    # Reference an existing Secret for provisioning PAT
+    existingProvisioningSecret: ""
+    existingProvisioningPatKey: "provisioning-pat"
+
   # NATS CDC subscription (events from excalibase-watcher)
   nats:
     enabled: false
