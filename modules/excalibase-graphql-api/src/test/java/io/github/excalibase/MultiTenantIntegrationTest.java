@@ -270,7 +270,7 @@ class MultiTenantIntegrationTest {
             .content(graphql("{ anything { id } }")))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.errors").exists())
-        .andExpect(jsonPath("$.errors[0].message", containsString("404")));
+        .andExpect(jsonPath("$.errors[0].message", containsString("Database not available")));
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

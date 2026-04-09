@@ -1,16 +1,22 @@
 package io.github.excalibase.security;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import io.jsonwebtoken.Jwts;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Date;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -96,5 +102,87 @@ class JwtServiceTest {
     @Test
     void malformedToken_throws() {
         assertThrows(JwtVerificationException.class, () -> jwtService.verify("not.a.jwt"));
+    }
+
+    // ─── Public Key Cache Tests ──────────────────────────────────────────────────
+
+    @Nested
+    class PublicKeyCacheTest {
+
+        static HttpServer mockVault;
+        static int vaultPort;
+        static AtomicInteger fetchCount;
+        static ECPrivateKey cacheTestPrivateKey;
+        static ECPublicKey cacheTestPublicKey;
+
+        @BeforeAll
+        static void startVault() throws Exception {
+            KeyPairGenerator gen = KeyPairGenerator.getInstance("EC");
+            gen.initialize(new ECGenParameterSpec("secp256r1"));
+            KeyPair kp = gen.generateKeyPair();
+            cacheTestPrivateKey = (ECPrivateKey) kp.getPrivate();
+            cacheTestPublicKey = (ECPublicKey) kp.getPublic();
+
+            fetchCount = new AtomicInteger(0);
+            mockVault = HttpServer.create(new InetSocketAddress(0), 0);
+            vaultPort = mockVault.getAddress().getPort();
+
+            String pubPem = toPem(cacheTestPublicKey);
+            String keyJson = new ObjectMapper().writeValueAsString(
+                Map.of("key", pubPem, "algorithm", "EC-P256"));
+
+            mockVault.createContext("/api/vault/pki/public-key", exchange -> {
+                fetchCount.incrementAndGet();
+                byte[] body = keyJson.getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, body.length);
+                exchange.getResponseBody().write(body);
+                exchange.getResponseBody().close();
+            });
+            mockVault.start();
+        }
+
+        @AfterAll
+        static void stopVault() {
+            if (mockVault != null) mockVault.stop(0);
+        }
+
+        @Test
+        @DisplayName("constructor eagerly fetches public key from vault")
+        void constructor_fetchesFromVault() {
+            fetchCount.set(0);
+            new JwtService("http://localhost:" + vaultPort + "/api", 30);
+            assertEquals(1, fetchCount.get());
+        }
+
+        @Test
+        @DisplayName("verify uses cached key — no additional vault calls")
+        void verify_usesCachedKey_noExtraFetch() {
+            fetchCount.set(0);
+            var svc = new JwtService("http://localhost:" + vaultPort + "/api", 30);
+            assertEquals(1, fetchCount.get());
+
+            // 3 verify calls — all use cached key
+            for (int i = 0; i < 3; i++) {
+                String token = Jwts.builder()
+                    .subject("test@test.com")
+                    .claim("userId", 1L)
+                    .claim("projectId", "test/proj")
+                    .issuer("excalibase")
+                    .issuedAt(Date.from(Instant.now()))
+                    .expiration(Date.from(Instant.now().plusSeconds(3600)))
+                    .signWith(cacheTestPrivateKey)
+                    .compact();
+                svc.verify(token);
+            }
+
+            assertEquals(1, fetchCount.get(), "Should not re-fetch — key is cached");
+        }
+
+        private static String toPem(ECPublicKey key) {
+            byte[] encoded = key.getEncoded();
+            String base64 = Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(encoded);
+            return "-----BEGIN PUBLIC KEY-----\n" + base64 + "\n-----END PUBLIC KEY-----\n";
+        }
     }
 }

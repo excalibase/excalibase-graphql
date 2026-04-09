@@ -102,4 +102,17 @@ class DynamicDataSourceManagerTest {
     assertTrue(manager.isCached("org-x/proj-y"));
     assertFalse(manager.isCached("org-x/proj-z"));
   }
+
+  @Test
+  @DisplayName("destroy clears all cached datasources")
+  void destroy_clearsCache() {
+    when(vaultService.fetchCredentials("duc-corp", "app-a")).thenReturn(CREDS);
+
+    manager.getDataSource("duc-corp", "app-a");
+    assertTrue(manager.isCached("duc-corp/app-a"));
+
+    manager.destroy();
+
+    assertFalse(manager.isCached("duc-corp/app-a"));
+  }
 }

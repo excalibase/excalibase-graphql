@@ -74,7 +74,7 @@ class VaultCredentialServiceTest {
   void fetchCredentials_notFound_throws() {
     var ex = assertThrows(VaultCredentialException.class,
         () -> service.fetchCredentials("unknown-org", "unknown-app"));
-    assertTrue(ex.getMessage().contains("404"));
+    assertTrue(ex.getMessage().contains("Database not available"));
   }
 
   @Test
@@ -88,10 +88,46 @@ class VaultCredentialServiceTest {
   @Test
   @DisplayName("fetchCredentials sends Authorization Bearer header")
   void fetchCredentials_sendsAuthHeader() {
-    // The mock doesn't verify auth, but service should send it.
-    // We verify by checking that credentials are returned (mock accepts any auth)
     var serviceWithPat = new VaultCredentialService("http://localhost:" + port + "/api", "my-secret-pat");
     VaultCredentials creds = serviceWithPat.fetchCredentials("duc-corp", "app-a");
     assertNotNull(creds);
+  }
+
+  // ─── Slug Validation (path traversal prevention) ─────────────────────────────
+
+  @Test
+  @DisplayName("rejects orgSlug with path traversal")
+  void fetchCredentials_pathTraversal_orgSlug_throws() {
+    assertThrows(VaultCredentialException.class,
+        () -> service.fetchCredentials("../../admin", "app-a"));
+  }
+
+  @Test
+  @DisplayName("rejects projectName with query string injection")
+  void fetchCredentials_queryInjection_projectName_throws() {
+    assertThrows(VaultCredentialException.class,
+        () -> service.fetchCredentials("org", "app?bypass=1"));
+  }
+
+  @Test
+  @DisplayName("rejects empty orgSlug")
+  void fetchCredentials_emptyOrgSlug_throws() {
+    assertThrows(VaultCredentialException.class,
+        () -> service.fetchCredentials("", "app-a"));
+  }
+
+  @Test
+  @DisplayName("rejects null projectName")
+  void fetchCredentials_nullProjectName_throws() {
+    assertThrows(VaultCredentialException.class,
+        () -> service.fetchCredentials("org", null));
+  }
+
+  @Test
+  @DisplayName("rejects slug longer than 64 characters")
+  void fetchCredentials_tooLongSlug_throws() {
+    String longSlug = "a".repeat(65);
+    assertThrows(VaultCredentialException.class,
+        () -> service.fetchCredentials(longSlug, "app-a"));
   }
 }
