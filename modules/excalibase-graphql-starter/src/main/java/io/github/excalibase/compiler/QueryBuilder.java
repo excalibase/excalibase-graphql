@@ -7,6 +7,7 @@ import io.github.excalibase.SqlDialect;
 
 import java.util.*;
 import static io.github.excalibase.schema.GraphqlConstants.*;
+import static io.github.excalibase.compiler.SqlKeywords.*;
 
 /**
  * Handles query compilation: list, connection (CTE-based cursor pagination),
@@ -50,15 +51,15 @@ public class QueryBuilder {
         List<String> distinctOnCols = parseDistinctOn(field);
 
         StringBuilder sql = new StringBuilder();
-        sql.append("SELECT ").append(dialect.coalesceArray(dialect.aggregateArray(objectSql)));
-        sql.append(" FROM (SELECT ");
+        sql.append(SELECT).append(dialect.coalesceArray(dialect.aggregateArray(objectSql)));
+        sql.append(FROM).append("(").append(SELECT);
 
         if (!distinctOnCols.isEmpty()) {
             sql.append(dialect.distinctOn(distinctOnCols, alias)).append(" ");
         }
 
         sql.append(alias).append(".*");
-        sql.append(" FROM ").append(qualifiedTable(tableName)).append(" ").append(alias);
+        sql.append(FROM).append(qualifiedTable(tableName)).append(" ").append(alias);
 
         // WHERE from arguments
         filterBuilder.applyWhere(sql, field, alias, params, tableName);
@@ -68,7 +69,7 @@ public class QueryBuilder {
             // DISTINCT ON requires the distinct columns to appear first in ORDER BY
             List<String> orderClauses = new ArrayList<>();
             for (String col : distinctOnCols) {
-                orderClauses.add(alias + "." + dialect.quoteIdentifier(col) + " ASC");
+                orderClauses.add(alias + "." + dialect.quoteIdentifier(col) + " " + ASC);
             }
             // Append any user-specified ORDER BY columns (that aren't already in distinctOn)
             Argument orderByArg = field.getArguments().stream()
@@ -77,12 +78,12 @@ public class QueryBuilder {
             if (orderByArg != null && orderByArg.getValue() instanceof ObjectValue ov) {
                 for (ObjectField of : ov.getObjectFields()) {
                     if (!distinctOnCols.contains(of.getName())) {
-                        String dir = of.getValue() instanceof EnumValue ev ? ev.getName() : "ASC";
+                        String dir = of.getValue() instanceof EnumValue ev ? ev.getName() : ASC;
                         orderClauses.add(alias + "." + dialect.quoteIdentifier(of.getName()) + " " + dir);
                     }
                 }
             }
-            sql.append(" ORDER BY ").append(String.join(", ", orderClauses));
+            sql.append(ORDER_BY).append(joinCols(orderClauses));
         } else {
             // ORDER BY
             filterBuilder.applyOrderBy(sql, field, alias);
@@ -121,7 +122,7 @@ public class QueryBuilder {
 
             if (FIELD_COUNT.equals(aggName)) {
                 StringBuilder countSql = new StringBuilder();
-                countSql.append("SELECT count(*) FROM ").append(qualifiedTable(tableName)).append(" ").append(alias);
+                countSql.append(SELECT).append(COUNT_ALL).append(FROM).append(qualifiedTable(tableName)).append(" ").append(alias);
                 filterBuilder.applyWhere(countSql, field, alias, params, tableName);
                 parts.add("'count', (" + countSql + ")");
             } else if (Set.of(AGG_SUM, AGG_AVG, AGG_MIN, AGG_MAX).contains(aggName) && aggField.getSelectionSet() != null) {
@@ -132,7 +133,7 @@ public class QueryBuilder {
                         String col = colField.getName();
                         String subAlias = dialect.randAlias();
                         StringBuilder subSql = new StringBuilder();
-                        subSql.append("SELECT ").append(aggName).append("(").append(subAlias).append(".").append(dialect.quoteIdentifier(col)).append(") FROM ")
+                        subSql.append(SELECT).append(aggName).append("(").append(subAlias).append(".").append(dialect.quoteIdentifier(col)).append(")").append(FROM)
                                 .append(qualifiedTable(tableName)).append(" ").append(subAlias);
                         filterBuilder.applyWhere(subSql, field, subAlias, params, tableName);
                         colParts.add("'" + col + "', (" + subSql + ")");
@@ -142,7 +143,7 @@ public class QueryBuilder {
             }
         }
 
-        return "SELECT " + dialect.buildObject(parts);
+        return SELECT + dialect.buildObject(parts);
     }
 
     // === Connection (CTE-based cursor pagination) ===
@@ -203,20 +204,20 @@ public class QueryBuilder {
 
         // Determine order columns (default: PK ASC)
         List<String[]> orderCols = filterBuilder.parseOrderBy(field); // [col, dir] pairs
-        if (orderCols.isEmpty()) orderCols.add(new String[]{pk, "ASC"});
+        if (orderCols.isEmpty()) orderCols.add(new String[]{pk, ASC});
 
         boolean isForward = (last == null); // forward pagination by default, backward if "last" is used
         int limit = isForward ? (first != null ? first : maxRows) : last;
 
         // === Build CTE-based Connection SQL ===
         StringBuilder sql = new StringBuilder();
-        sql.append("WITH ");
+        sql.append(WITH);
 
         // CTE 1: __records — filtered, ordered, limited rows
         String recordsCte = dialect.cteName(block, "_records");
-        sql.append(recordsCte).append(" AS (");
-        sql.append("SELECT ").append(block).append(".*");
-        sql.append(" FROM ").append(qualifiedTable(tableName)).append(" ").append(block);
+        sql.append(recordsCte).append(AS_OPEN);
+        sql.append(SELECT).append(block).append(".*");
+        sql.append(FROM).append(qualifiedTable(tableName)).append(" ").append(block);
 
         // WHERE clause (filter + cursor conditions)
         List<String> conditions = new ArrayList<>();
@@ -224,55 +225,55 @@ public class QueryBuilder {
 
         // Cursor-based WHERE: after → pk > decoded_cursor, before → pk < decoded_cursor
         if (afterCursor != null) {
-            String paramName = "p_after_" + params.size();
+            String paramName = namedParam(P_AFTER, params.size());
             conditions.add(block + "." + dialect.quoteIdentifier(pk) + " > :" + paramName);
             params.put(paramName, decodeCursor(afterCursor));
         }
         if (beforeCursor != null) {
-            String paramName = "p_before_" + params.size();
+            String paramName = namedParam(P_BEFORE, params.size());
             conditions.add(block + "." + dialect.quoteIdentifier(pk) + " < :" + paramName);
             params.put(paramName, decodeCursor(beforeCursor));
         }
 
         if (!conditions.isEmpty()) {
-            sql.append(" WHERE ").append(String.join(" AND ", conditions));
+            sql.append(WHERE).append(String.join(AND, conditions));
         }
 
         // ORDER BY — reverse for backward pagination
-        sql.append(" ORDER BY ");
+        sql.append(ORDER_BY);
         List<String> orderClauses = new ArrayList<>();
         for (String[] oc : orderCols) {
             String dir = isForward ? oc[1] : reverseDir(oc[1]);
             orderClauses.add(block + "." + dialect.quoteIdentifier(oc[0]) + " " + dir);
         }
-        sql.append(String.join(", ", orderClauses));
+        sql.append(joinCols(orderClauses));
 
         // LIMIT: fetch one extra to detect hasNextPage/hasPreviousPage
-        String limitParam = "limit_" + params.size();
-        sql.append(" LIMIT :").append(limitParam);
+        String limitParam = namedParam(P_LIMIT, params.size());
+        sql.append(LIMIT).append(PARAM_PREFIX).append(limitParam);
         params.put(limitParam, limit + 1);
         sql.append(")");
 
         // CTE 2: __has_next_page
         boolean needsHasNext = wantsPageInfo && (pageInfoFields.isEmpty() || pageInfoFields.contains(FIELD_HAS_NEXT_PAGE));
         if (needsHasNext) {
-            String hnParam = "hn_limit_" + params.size();
-            sql.append(", ").append(dialect.cteName(block, "_has_next")).append(" AS (");
-            sql.append("SELECT count(*) > :").append(hnParam);
+            String hnParam = namedParam(P_HN_LIMIT, params.size());
+            sql.append(", ").append(dialect.cteName(block, "_has_next")).append(AS_OPEN);
+            sql.append(SELECT).append(COUNT_ALL).append(" > :").append(hnParam);
             params.put(hnParam, limit);
-            sql.append(" AS val FROM ").append(recordsCte);
+            sql.append(" AS val").append(FROM).append(recordsCte);
             sql.append(")");
         }
 
         // CTE 3: __has_previous_page
         boolean needsHasPrev = wantsPageInfo && (pageInfoFields.isEmpty() || pageInfoFields.contains(FIELD_HAS_PREVIOUS_PAGE));
         if (needsHasPrev) {
-            sql.append(", ").append(dialect.cteName(block, "_has_prev")).append(" AS (");
+            sql.append(", ").append(dialect.cteName(block, "_has_prev")).append(AS_OPEN);
             if (afterCursor != null || !isForward) {
                 // There's a previous page if afterCursor was provided, or we're paginating backward
-                sql.append("SELECT true AS val");
+                sql.append(SELECT).append("true AS val");
             } else {
-                sql.append("SELECT false AS val");
+                sql.append(SELECT).append("false AS val");
             }
             sql.append(")");
         }
@@ -280,12 +281,12 @@ public class QueryBuilder {
         // CTE 4: __total_count (only if requested)
         if (wantsTotalCount) {
             String countBlock = dialect.randAlias();
-            sql.append(", ").append(dialect.cteName(block, "_total")).append(" AS (");
-            sql.append("SELECT count(*) AS val FROM ").append(qualifiedTable(tableName)).append(" ").append(countBlock);
+            sql.append(", ").append(dialect.cteName(block, "_total")).append(AS_OPEN);
+            sql.append(SELECT).append(COUNT_ALL).append(" AS val").append(FROM).append(qualifiedTable(tableName)).append(" ").append(countBlock);
             List<String> countConds = new ArrayList<>();
             filterBuilder.buildWhereConditions(field, countBlock, params, countConds, tableName);
             if (!countConds.isEmpty()) {
-                sql.append(" WHERE ").append(String.join(" AND ", countConds));
+                sql.append(WHERE).append(String.join(AND, countConds));
             }
             sql.append(")");
         }
@@ -305,15 +306,15 @@ public class QueryBuilder {
 
         // Build edges subquery
         StringBuilder edgesSub = new StringBuilder();
-        edgesSub.append("SELECT ").append(dialect.aggregateArray(edgeObj));
+        edgesSub.append(SELECT).append(dialect.aggregateArray(edgeObj));
         // For backward pagination, reverse the rows back to natural order
         if (!isForward) {
             // NOTE: JSON_ARRAYAGG with ORDER BY isn't supported the same way across dialects
             // For simplicity, we don't reorder inside aggregateArray here
         }
-        edgesSub.append(" FROM (SELECT * FROM ").append(recordsCte);
-        String pageLimitParam = "page_limit_" + params.size();
-        edgesSub.append(" LIMIT :").append(pageLimitParam);
+        edgesSub.append(FROM).append("(").append(SELECT).append("*").append(FROM).append(recordsCte);
+        String pageLimitParam = namedParam(P_PAGE_LIMIT, params.size());
+        edgesSub.append(LIMIT).append(PARAM_PREFIX).append(pageLimitParam);
         params.put(pageLimitParam, limit);
         edgesSub.append(") ").append(pageBlock);
 
@@ -323,7 +324,7 @@ public class QueryBuilder {
 
         // totalCount
         if (wantsTotalCount) {
-            rootParts.add("'totalCount', (SELECT val FROM " + dialect.cteName(block, "_total") + ")");
+            rootParts.add("'totalCount', (" + SELECT + "val" + FROM + dialect.cteName(block, "_total") + ")");
         }
 
         // pageInfo
@@ -331,31 +332,31 @@ public class QueryBuilder {
             List<String> piParts = new ArrayList<>();
             if (needsHasNext) {
                 if (isForward) {
-                    piParts.add("'hasNextPage', " + dialect.jsonBool("(SELECT val FROM " + dialect.cteName(block, "_has_next") + ")"));
+                    piParts.add("'hasNextPage', " + dialect.jsonBool("(" + SELECT + "val" + FROM + dialect.cteName(block, "_has_next") + ")"));
                 } else {
                     piParts.add("'hasNextPage', " + dialect.jsonBoolLiteral(beforeCursor != null));
                 }
             }
             if (needsHasPrev) {
                 if (isForward) {
-                    piParts.add("'hasPreviousPage', " + dialect.jsonBool("(SELECT val FROM " + dialect.cteName(block, "_has_prev") + ")"));
+                    piParts.add("'hasPreviousPage', " + dialect.jsonBool("(" + SELECT + "val" + FROM + dialect.cteName(block, "_has_prev") + ")"));
                 } else {
-                    piParts.add("'hasPreviousPage', " + dialect.jsonBool("(SELECT val FROM " + dialect.cteName(block, "_has_next") + ")"));
+                    piParts.add("'hasPreviousPage', " + dialect.jsonBool("(" + SELECT + "val" + FROM + dialect.cteName(block, "_has_next") + ")"));
                 }
             }
             if (pageInfoFields.contains(FIELD_START_CURSOR)) {
-                String pkTextExpr = "(SELECT CAST(" + dialect.quoteIdentifier(pk) + " AS CHAR) FROM " + recordsCte + " LIMIT 1)";
-                piParts.add("'startCursor', (SELECT " + dialect.encodeCursor(pkTextExpr) + ")");
+                String pkTextExpr = "(" + SELECT + "CAST(" + dialect.quoteIdentifier(pk) + " AS CHAR)" + FROM + recordsCte + LIMIT + "1)";
+                piParts.add("'startCursor', (" + SELECT + dialect.encodeCursor(pkTextExpr) + ")");
             }
             if (pageInfoFields.contains(FIELD_END_CURSOR)) {
-                String pkTextExpr = "(SELECT CAST(" + dialect.quoteIdentifier(pk) + " AS CHAR) FROM " + recordsCte +
-                        " ORDER BY " + dialect.quoteIdentifier(pk) + " DESC LIMIT 1)";
-                piParts.add("'endCursor', (SELECT " + dialect.encodeCursor(pkTextExpr) + ")");
+                String pkTextExpr = "(" + SELECT + "CAST(" + dialect.quoteIdentifier(pk) + " AS CHAR)" + FROM + recordsCte +
+                        ORDER_BY + dialect.quoteIdentifier(pk) + " " + DESC + LIMIT + "1)";
+                piParts.add("'endCursor', (" + SELECT + dialect.encodeCursor(pkTextExpr) + ")");
             }
             rootParts.add("'pageInfo', " + dialect.buildObject(piParts));
         }
 
-        sql.append(" SELECT ").append(dialect.buildObject(rootParts));
+        sql.append(" ").append(SELECT).append(dialect.buildObject(rootParts));
         return sql.toString();
     }
 
@@ -408,9 +409,9 @@ public class QueryBuilder {
                     joinConds.add(subAlias + "." + dialect.quoteIdentifier(fk.refColumns().get(i))
                             + " = " + alias + "." + dialect.quoteIdentifier(fk.fkColumns().get(i)));
                 }
-                pairs.add("'" + name + "', (SELECT " + subObj
-                        + " FROM " + qualifiedTable(fk.refTable()) + " " + subAlias
-                        + " WHERE " + String.join(" AND ", joinConds) + ")");
+                pairs.add("'" + name + "', (" + SELECT + subObj
+                        + FROM + qualifiedTable(fk.refTable()) + " " + subAlias
+                        + WHERE + String.join(AND, joinConds) + ")");
                 continue;
             }
 
@@ -425,9 +426,9 @@ public class QueryBuilder {
                     joinConds.add(subAlias + "." + dialect.quoteIdentifier(rfk.fkColumns().get(i))
                             + " = " + alias + "." + dialect.quoteIdentifier(rfk.refColumns().get(i)));
                 }
-                pairs.add("'" + name + "', (SELECT " + dialect.coalesceArray(dialect.aggregateArray(subObj))
-                        + " FROM " + qualifiedTable(rfk.childTable()) + " " + subAlias
-                        + " WHERE " + String.join(" AND ", joinConds) + ")");
+                pairs.add("'" + name + "', (" + SELECT + dialect.coalesceArray(dialect.aggregateArray(subObj))
+                        + FROM + qualifiedTable(rfk.childTable()) + " " + subAlias
+                        + WHERE + String.join(AND, joinConds) + ")");
                 continue;
             }
 
@@ -514,7 +515,7 @@ public class QueryBuilder {
     }
 
     private String reverseDir(String dir) {
-        return "ASC".equalsIgnoreCase(dir) ? "DESC" : "ASC";
+        return ASC.equalsIgnoreCase(dir) ? DESC : ASC;
     }
 
     private String applySuffixCast(String type) {

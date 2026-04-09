@@ -8,6 +8,7 @@ import io.github.excalibase.compiler.SqlCompiler;
 import java.util.*;
 import java.util.stream.Collectors;
 import static io.github.excalibase.schema.GraphqlConstants.*;
+import static io.github.excalibase.compiler.SqlKeywords.*;
 
 /**
  * MySQL mutation compiler. Uses two-phase DML + SELECT (no RETURNING).
@@ -58,20 +59,20 @@ public class MysqlMutationCompiler implements MutationCompiler {
         List<String> vals = new ArrayList<>();
         for (var entry : inputFields.entrySet()) {
             cols.add(shared.dialect().quoteIdentifier(entry.getKey()));
-            String paramName = "ins_" + entry.getKey() + "_" + params.size();
-            vals.add(":" + paramName);
+            String paramName = namedParam(P_INSERT, entry.getKey(), params.size());
+            vals.add(param(paramName));
             params.put(paramName, entry.getValue());
         }
 
         String dmlSql = shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
-                String.join(", ", cols), String.join(", ", vals), "", objectSql);
+                joinCols(cols), joinCols(vals), "", objectSql);
 
         String pk = shared.schemaInfo().getPrimaryKey(tableName);
-        String lastIdParam = "last_id_" + params.size();
-        String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
-                "'" + fieldName + "', (" +
-                "SELECT " + objectSql + " FROM " + shared.qualifiedTable(tableName) + " " + alias
-                + " WHERE " + alias + "." + shared.dialect().quoteIdentifier(pk) + " = :" + lastIdParam + ")"));
+        String lastIdParam = namedParam(P_LAST_ID, params.size());
+        String innerSelect = SELECT + objectSql + FROM + shared.qualifiedTable(tableName) + " " + alias
+                + WHERE + alias + "." + shared.dialect().quoteIdentifier(pk) + ASSIGN + param(lastIdParam);
+        String selectSql = SELECT + shared.dialect().buildObject(List.of(
+                "'" + fieldName + "', " + parens(innerSelect)));
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, lastIdParam);
     }
@@ -96,26 +97,26 @@ public class MysqlMutationCompiler implements MutationCompiler {
             Map<String, Object> row = rows.get(i);
             List<String> vals = new ArrayList<>();
             for (String col : colNames) {
-                String paramName = "bins_" + col + "_" + i + "_" + params.size();
-                vals.add(":" + paramName);
+                String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
+                vals.add(param(paramName));
                 params.put(paramName, row.get(col));
             }
-            valueRows.add("(" + String.join(", ", vals) + ")");
+            valueRows.add(parens(joinCols(vals)));
         }
 
         String dmlSql = shared.dialect().cteBulkInsert(alias, shared.qualifiedTable(tableName),
-                String.join(", ", colsSql), String.join(", ", valueRows), objectSql);
+                joinCols(colsSql), joinCols(valueRows), objectSql);
 
         String pk = shared.schemaInfo().getPrimaryKey(tableName);
-        String lastIdParam = "last_id_" + params.size();
+        String lastIdParam = namedParam(P_LAST_ID, params.size());
         int rowCount = rows.size();
-        String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
-                "'" + fieldName + "', (" +
-                "SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
-                + " FROM " + shared.qualifiedTable(tableName) + " " + alias
-                + " WHERE " + alias + "." + shared.dialect().quoteIdentifier(pk) + " >= :" + lastIdParam
-                + " AND " + alias + "." + shared.dialect().quoteIdentifier(pk) + " < :" + lastIdParam + " + " + rowCount
-                + ")"));
+        String pkCol = alias + "." + shared.dialect().quoteIdentifier(pk);
+        String innerSelect = SELECT + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
+                + FROM + shared.qualifiedTable(tableName) + " " + alias
+                + WHERE + pkCol + " >= " + param(lastIdParam)
+                + AND + pkCol + " < " + param(lastIdParam) + " + " + rowCount;
+        String selectSql = SELECT + shared.dialect().buildObject(List.of(
+                "'" + fieldName + "', " + parens(innerSelect)));
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, lastIdParam);
     }
@@ -132,8 +133,8 @@ public class MysqlMutationCompiler implements MutationCompiler {
 
         List<String> setClauses = new ArrayList<>();
         for (var entry : inputFields.entrySet()) {
-            String paramName = "upd_" + entry.getKey() + "_" + params.size();
-            setClauses.add(shared.dialect().quoteIdentifier(entry.getKey()) + " = :" + paramName);
+            String paramName = namedParam(P_UPDATE, entry.getKey(), params.size());
+            setClauses.add(assign(shared.dialect().quoteIdentifier(entry.getKey()), paramName));
             params.put(paramName, entry.getValue());
         }
         if (setClauses.isEmpty()) return null;
@@ -145,13 +146,12 @@ public class MysqlMutationCompiler implements MutationCompiler {
 
         // MySQL two-phase: DML first, then SELECT affected rows
         String dmlSql = shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
-                String.join(", ", setClauses), whereSql.toString(), objectSql);
+                joinCols(setClauses), whereSql.toString(), objectSql);
 
-        String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
-                "'" + fieldName + "', (" +
-                "SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
-                + " FROM " + shared.qualifiedTable(tableName) + " " + alias
-                + whereSql + ")"));
+        String innerSelect = SELECT + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
+                + FROM + shared.qualifiedTable(tableName) + " " + alias + whereSql;
+        String selectSql = SELECT + shared.dialect().buildObject(List.of(
+                "'" + fieldName + "', " + parens(innerSelect)));
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, null);
     }
@@ -162,17 +162,14 @@ public class MysqlMutationCompiler implements MutationCompiler {
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
-        // Build WHERE from where argument (filter-based)
         StringBuilder whereSql = new StringBuilder();
         shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName);
-        if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table delete
+        if (whereSql.isEmpty()) return null;
 
-        // MySQL two-phase: SELECT first (to capture deleted rows), then DELETE
-        String selectSql = "SELECT " + shared.dialect().buildObject(List.of(
-                "'" + fieldName + "', (" +
-                "SELECT " + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
-                + " FROM " + shared.qualifiedTable(tableName) + " " + alias
-                + whereSql + ")"));
+        String innerSelect = SELECT + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
+                + FROM + shared.qualifiedTable(tableName) + " " + alias + whereSql;
+        String selectSql = SELECT + shared.dialect().buildObject(List.of(
+                "'" + fieldName + "', " + parens(innerSelect)));
 
         String dmlSql = shared.dialect().cteDelete(alias, shared.qualifiedTable(tableName),
                 whereSql.toString(), objectSql);

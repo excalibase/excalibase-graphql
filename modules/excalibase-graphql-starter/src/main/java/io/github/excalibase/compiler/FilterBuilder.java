@@ -6,6 +6,7 @@ import io.github.excalibase.SqlDialect;
 
 import java.util.*;
 import static io.github.excalibase.schema.GraphqlConstants.*;
+import static io.github.excalibase.compiler.SqlKeywords.*;
 
 /**
  * Extracts and applies WHERE, ORDER BY, and LIMIT/OFFSET clauses from GraphQL
@@ -72,12 +73,12 @@ public class FilterBuilder {
                         List<String> subConds = new ArrayList<>();
                         buildFilterConditions(subOv, alias, params, subConds, tableName);
                         if (!subConds.isEmpty()) {
-                            orParts.add("(" + String.join(" AND ", subConds) + ")");
+                            orParts.add("(" + String.join(AND, subConds) + ")");
                         }
                     }
                 }
                 if (!orParts.isEmpty()) {
-                    conditions.add("(" + String.join(" OR ", orParts) + ")");
+                    conditions.add("(" + String.join(OR, orParts) + ")");
                 }
                 continue;
             }
@@ -93,7 +94,7 @@ public class FilterBuilder {
                 List<String> subConds = new ArrayList<>();
                 buildFilterConditions(notOv, alias, params, subConds, tableName);
                 if (!subConds.isEmpty()) {
-                    conditions.add("NOT (" + String.join(" AND ", subConds) + ")");
+                    conditions.add(NOT + "(" + String.join(AND, subConds) + ")");
                 }
                 continue;
             }
@@ -130,7 +131,7 @@ public class FilterBuilder {
                     switch (opName) {
                         case FILTER_EQ -> {
                             if (op.getValue() instanceof NullValue) {
-                                conditions.add(colRef + " IS NULL");
+                                conditions.add(colRef + IS_NULL);
                             } else {
                                 String p = nextParam("p_" + col + "_eq", params);
                                 conditions.add(colRef + " = :" + p + paramCast);
@@ -139,7 +140,7 @@ public class FilterBuilder {
                         }
                         case FILTER_NEQ -> {
                             if (op.getValue() instanceof NullValue) {
-                                conditions.add(colRef + " IS NOT NULL");
+                                conditions.add(colRef + IS_NOT_NULL);
                             } else {
                                 String p = nextParam("p_" + col + "_neq", params);
                                 conditions.add(colRef + " != :" + p + paramCast);
@@ -174,7 +175,7 @@ public class FilterBuilder {
                                     inParams.add(":" + p + paramCast);
                                     params.put(p, extractValue(av.getValues().get(i)));
                                 }
-                                conditions.add(colRef + " IN (" + String.join(", ", inParams) + ")");
+                                conditions.add(colRef + IN + "(" + joinCols(inParams) + ")");
                             }
                         }
                         case "nin" -> {
@@ -185,59 +186,59 @@ public class FilterBuilder {
                                     inParams.add(":" + p + paramCast);
                                     params.put(p, extractValue(av.getValues().get(i)));
                                 }
-                                conditions.add(colRef + " NOT IN (" + String.join(", ", inParams) + ")");
+                                conditions.add(colRef + " NOT IN (" + joinCols(inParams) + ")");
                             }
                         }
                         case FILTER_LIKE -> {
                             String p = nextParam("p_" + col + "_like", params);
-                            conditions.add(colRef + " LIKE :" + p);
+                            conditions.add(colRef + LIKE + PARAM_PREFIX + p);
                             params.put(p, extractValue(op.getValue()));
                         }
                         case FILTER_ILIKE -> {
                             String p = nextParam("p_" + col + "_ilike", params);
-                            conditions.add(dialect.ilike(colRef, ":" + p));
+                            conditions.add(dialect.ilike(colRef, param(p)));
                             params.put(p, extractValue(op.getValue()));
                         }
                         case FILTER_STARTS_WITH -> {
                             String p = nextParam("p_" + col + "_sw", params);
-                            conditions.add(colRef + " LIKE :" + p);
+                            conditions.add(colRef + LIKE + PARAM_PREFIX + p);
                             params.put(p, extractValue(op.getValue()) + "%");
                         }
                         case FILTER_ENDS_WITH -> {
                             String p = nextParam("p_" + col + "_ew", params);
-                            conditions.add(colRef + " LIKE :" + p);
+                            conditions.add(colRef + LIKE + PARAM_PREFIX + p);
                             params.put(p, "%" + extractValue(op.getValue()));
                         }
                         case FILTER_CONTAINS -> {
                             String p = nextParam("p_" + col + "_ct", params);
-                            conditions.add(colRef + " LIKE :" + p);
+                            conditions.add(colRef + LIKE + PARAM_PREFIX + p);
                             params.put(p, "%" + extractValue(op.getValue()) + "%");
                         }
                         case "is" -> {
                             // { is: NULL } or { is: NOT_NULL }
                             String v = op.getValue() instanceof EnumValue ev ? ev.getName() : extractValue(op.getValue()).toString();
                             if ("NULL".equalsIgnoreCase(v)) {
-                                conditions.add(colRef + " IS NULL");
+                                conditions.add(colRef + IS_NULL);
                             } else if ("NOT_NULL".equalsIgnoreCase(v)) {
-                                conditions.add(colRef + " IS NOT NULL");
+                                conditions.add(colRef + IS_NOT_NULL);
                             }
                         }
                         case FILTER_IS_NULL -> {
                             // { isNull: true } → IS NULL, { isNull: false } → IS NOT NULL
                             Object v = extractValue(op.getValue());
                             if (Boolean.TRUE.equals(v) || "true".equals(String.valueOf(v))) {
-                                conditions.add(colRef + " IS NULL");
+                                conditions.add(colRef + IS_NULL);
                             } else {
-                                conditions.add(colRef + " IS NOT NULL");
+                                conditions.add(colRef + IS_NOT_NULL);
                             }
                         }
                         case FILTER_IS_NOT_NULL -> {
                             // { isNotNull: true } → IS NOT NULL, { isNotNull: false } → IS NULL
                             Object v = extractValue(op.getValue());
                             if (Boolean.TRUE.equals(v) || "true".equals(String.valueOf(v))) {
-                                conditions.add(colRef + " IS NOT NULL");
+                                conditions.add(colRef + IS_NOT_NULL);
                             } else {
-                                conditions.add(colRef + " IS NULL");
+                                conditions.add(colRef + IS_NULL);
                             }
                         }
                         case FILTER_NOT_IN -> {
@@ -248,7 +249,7 @@ public class FilterBuilder {
                                     inParams.add(":" + p + paramCast);
                                     params.put(p, extractValue(av.getValues().get(i)));
                                 }
-                                conditions.add(colRef + " NOT IN (" + String.join(", ", inParams) + ")");
+                                conditions.add(colRef + " NOT IN (" + joinCols(inParams) + ")");
                             }
                         }
                         default -> {
@@ -276,7 +277,7 @@ public class FilterBuilder {
         List<String> conditions = new ArrayList<>();
         buildWhereConditions(field, alias, params, conditions, tableName);
         if (!conditions.isEmpty()) {
-            sql.append(" WHERE ").append(String.join(" AND ", conditions));
+            sql.append(WHERE).append(String.join(AND, conditions));
         }
     }
 
@@ -300,14 +301,14 @@ public class FilterBuilder {
             } else if (of.getValue() instanceof StringValue sv) {
                 dir = sv.getValue();
             } else {
-                dir = "ASC";
+                dir = ASC;
             }
             String colRef = alias + "." + dialect.quoteIdentifier(of.getName());
             String orderClause = parseOrderDirection(colRef, dir);
             clauses.add(orderClause);
         }
         if (!clauses.isEmpty()) {
-            sql.append(" ORDER BY ").append(String.join(", ", clauses));
+            sql.append(ORDER_BY).append(joinCols(clauses));
         }
     }
 
@@ -327,7 +328,7 @@ public class FilterBuilder {
                 } else if (of.getValue() instanceof StringValue sv) {
                     dir = sv.getValue();
                 } else {
-                    dir = "ASC";
+                    dir = ASC;
                 }
                 result.add(new String[]{of.getName(), dir.toUpperCase()});
             }
@@ -341,10 +342,10 @@ public class FilterBuilder {
     private String parseOrderDirection(String colRef, String dir) {
         String upper = dir.toUpperCase();
         return switch (upper) {
-            case "ASCNULLSLAST" -> dialect.orderByNulls(colRef, "ASC", "LAST");
-            case "ASCNULLSFIRST" -> dialect.orderByNulls(colRef, "ASC", "FIRST");
-            case "DESCNULLSLAST" -> dialect.orderByNulls(colRef, "DESC", "LAST");
-            case "DESCNULLSFIRST" -> dialect.orderByNulls(colRef, "DESC", "FIRST");
+            case "ASCNULLSLAST" -> dialect.orderByNulls(colRef, ASC, "LAST");
+            case "ASCNULLSFIRST" -> dialect.orderByNulls(colRef, ASC, "FIRST");
+            case "DESCNULLSLAST" -> dialect.orderByNulls(colRef, DESC, "LAST");
+            case "DESCNULLSFIRST" -> dialect.orderByNulls(colRef, DESC, "FIRST");
             default -> colRef + " " + dir;
         };
     }
@@ -362,8 +363,8 @@ public class FilterBuilder {
                 if (v != null) limit = Math.min(v, maxRows);
             }
         }
-        String paramName = "limit_" + params.size();
-        sql.append(" LIMIT :").append(paramName);
+        String paramName = namedParam(P_LIMIT, params.size());
+        sql.append(LIMIT).append(PARAM_PREFIX).append(paramName);
         params.put(paramName, limit);
 
         for (Argument arg : field.getArguments()) {

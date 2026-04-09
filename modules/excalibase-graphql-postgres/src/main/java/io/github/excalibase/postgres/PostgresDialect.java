@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static io.github.excalibase.compiler.SqlKeywords.*;
+
 /**
  * PostgreSQL implementation of {@link SqlDialect}.
  * Extracts all Postgres-specific SQL fragments from SqlCompiler.
@@ -104,40 +106,40 @@ public class PostgresDialect implements SqlDialect {
     @Override
     public String cteInsert(String alias, String table, String colsSql, String valsSql,
                             String onConflictSql, String objectSql) {
-        return "WITH " + alias + " AS (INSERT INTO " + table
-                + " (" + colsSql + ") VALUES (" + valsSql + ")"
+        return WITH + alias + AS_OPEN + INSERT_INTO + table
+                + parens(colsSql) + VALUES + parens(valsSql)
                 + onConflictSql
-                + " RETURNING *) SELECT " + objectSql + " FROM " + alias;
+                + RETURNING_ALL + " " + SELECT + objectSql + FROM + alias;
     }
 
     @Override
     public String cteBulkInsert(String alias, String table, String colsSql, String valueRowsSql, String objectSql) {
-        return "WITH " + alias + " AS (INSERT INTO " + table
-                + " (" + colsSql + ") VALUES " + valueRowsSql
-                + " RETURNING *) SELECT " + coalesceArray(aggregateArray(objectSql)) + " FROM " + alias;
+        return WITH + alias + AS_OPEN + INSERT_INTO + table
+                + parens(colsSql) + VALUES + valueRowsSql
+                + RETURNING_ALL + " " + SELECT + coalesceArray(aggregateArray(objectSql)) + FROM + alias;
     }
 
     @Override
     public String cteUpdate(String alias, String table, String setClauses, String whereSql, String objectSql) {
-        return "WITH " + alias + " AS (UPDATE " + table + " " + alias
-                + " SET " + setClauses + whereSql
-                + " RETURNING *) SELECT " + coalesceArray(aggregateArray(objectSql)) + " FROM " + alias;
+        return WITH + alias + AS_OPEN + UPDATE + table + " " + alias
+                + SET + setClauses + whereSql
+                + RETURNING_ALL + " " + SELECT + coalesceArray(aggregateArray(objectSql)) + FROM + alias;
     }
 
     @Override
     public String cteDelete(String alias, String table, String whereSql, String objectSql) {
-        return "WITH " + alias + " AS (DELETE FROM " + table + " " + alias
+        return WITH + alias + AS_OPEN + DELETE_FROM + table + " " + alias
                 + whereSql
-                + " RETURNING *) SELECT " + coalesceArray(aggregateArray(objectSql)) + " FROM " + alias;
+                + RETURNING_ALL + " " + SELECT + coalesceArray(aggregateArray(objectSql)) + FROM + alias;
     }
 
     @Override
     public String wrapMutationResult(String mutationSql, String fieldName) {
-        int selectIdx = mutationSql.lastIndexOf(") SELECT ");
+        int selectIdx = mutationSql.lastIndexOf(") " + SELECT.trim());
         if (selectIdx == -1) return mutationSql;
         String ctePart = mutationSql.substring(0, selectIdx + 1);
         String selectPart = mutationSql.substring(selectIdx + 2);
-        return ctePart + " SELECT jsonb_build_object('" + fieldName + "', (" + selectPart + "))";
+        return ctePart + " " + SELECT + "jsonb_build_object('" + fieldName + "', " + parens(selectPart) + ")";
     }
 
     @Override

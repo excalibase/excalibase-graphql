@@ -7,6 +7,8 @@ import io.github.excalibase.compiler.SqlCompiler;
 
 import java.util.*;
 import static io.github.excalibase.schema.GraphqlConstants.*;
+import static io.github.excalibase.compiler.SqlKeywords.*;
+import static io.github.excalibase.compiler.SqlKeywords.*;
 
 /**
  * PostgreSQL mutation compiler. Uses CTE + RETURNING pattern.
@@ -15,36 +17,45 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
     public PostgresMutationCompiler() {}
 
-
     @Override
     public SqlCompiler.CompiledQuery compileMutation(Field field, String fieldName,
                                                      Map<String, Object> params, Map<String, Object> variables,
                                                      MutationBuilder shared) {
-        String sql = null;
+        String sql = routeMutation(field, fieldName, params, variables, shared);
+        if (sql == null) return null;
+        return new SqlCompiler.CompiledQuery(shared.dialect().wrapMutationResult(sql, fieldName), params);
+    }
+
+    private String routeMutation(Field field, String fieldName,
+                                 Map<String, Object> params, Map<String, Object> variables,
+                                 MutationBuilder shared) {
         if (fieldName.startsWith(UPDATE_PREFIX) && fieldName.endsWith(COLLECTION_SUFFIX)) {
             String typePart = fieldName.substring(UPDATE_PREFIX.length(), fieldName.length() - COLLECTION_SUFFIX.length());
             String tableName = shared.resolveMutationTable(typePart);
-            if (tableName != null) sql = compileUpdateCollection(field, tableName, params, variables, shared);
-        } else if (fieldName.startsWith(DELETE_FROM_PREFIX) && fieldName.endsWith(COLLECTION_SUFFIX)) {
+            return tableName != null ? compileUpdateCollection(field, tableName, params, variables, shared) : null;
+        }
+        if (fieldName.startsWith(DELETE_FROM_PREFIX) && fieldName.endsWith(COLLECTION_SUFFIX)) {
             String typePart = fieldName.substring(DELETE_FROM_PREFIX.length(), fieldName.length() - COLLECTION_SUFFIX.length());
             String tableName = shared.resolveMutationTable(typePart);
-            if (tableName != null) sql = compileDeleteFromCollection(field, tableName, params, variables, shared);
-        } else if (fieldName.startsWith(CREATE_MANY_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_MANY_PREFIX.length()));
-            if (tableName != null) sql = compileBulkInsert(field, tableName, params, variables, shared);
-        } else if (fieldName.startsWith(CREATE_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_PREFIX.length()));
-            if (tableName != null) sql = compileInsert(field, tableName, params, variables, shared);
-        } else if (fieldName.startsWith(UPDATE_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(UPDATE_PREFIX.length()));
-            if (tableName != null) sql = compileUpdate(field, tableName, params, variables, shared);
-        } else if (fieldName.startsWith(DELETE_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(DELETE_PREFIX.length()));
-            if (tableName != null) sql = compileDelete(field, tableName, params, variables, shared);
+            return tableName != null ? compileDeleteFromCollection(field, tableName, params, variables, shared) : null;
         }
-        if (sql == null) return null;
-        String wrappedSql = shared.dialect().wrapMutationResult(sql, fieldName);
-        return new SqlCompiler.CompiledQuery(wrappedSql, params);
+        if (fieldName.startsWith(CREATE_MANY_PREFIX)) {
+            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_MANY_PREFIX.length()));
+            return tableName != null ? compileBulkInsert(field, tableName, params, variables, shared) : null;
+        }
+        if (fieldName.startsWith(CREATE_PREFIX)) {
+            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_PREFIX.length()));
+            return tableName != null ? compileInsert(field, tableName, params, variables, shared) : null;
+        }
+        if (fieldName.startsWith(UPDATE_PREFIX)) {
+            String tableName = shared.resolveMutationTable(fieldName.substring(UPDATE_PREFIX.length()));
+            return tableName != null ? compileUpdate(field, tableName, params, variables, shared) : null;
+        }
+        if (fieldName.startsWith(DELETE_PREFIX)) {
+            String tableName = shared.resolveMutationTable(fieldName.substring(DELETE_PREFIX.length()));
+            return tableName != null ? compileDelete(field, tableName, params, variables, shared) : null;
+        }
+        return null;
     }
 
     String compileInsert(Field field, String tableName, Map<String, Object> params,
@@ -60,35 +71,17 @@ public class PostgresMutationCompiler implements MutationCompiler {
         List<String> vals = new ArrayList<>();
         for (var entry : inputFields.entrySet()) {
             cols.add(shared.dialect().quoteIdentifier(entry.getKey()));
-            String paramName = "ins_" + entry.getKey() + "_" + params.size();
+            String paramName = namedParam(P_INSERT, entry.getKey(), params.size());
             String enumCast = shared.getEnumCastForMutation(tableName, entry.getKey());
             Object value = shared.convertCompositeValue(tableName, entry.getKey(), entry.getValue());
-            vals.add(":" + paramName + enumCast);
+            vals.add(param(paramName) + enumCast);
             params.put(paramName, value);
         }
 
-        // Check for onConflict (upsert)
-        Argument onConflictArg = shared.findArg(field, ARG_ON_CONFLICT);
-        String onConflictSql = "";
-        if (onConflictArg != null && onConflictArg.getValue() instanceof ObjectValue ocOv) {
-            String constraint = null;
-            List<String> updateCols = new ArrayList<>();
-            for (ObjectField of : ocOv.getObjectFields()) {
-                if (ON_CONFLICT_CONSTRAINT.equals(of.getName())) {
-                    constraint = shared.filterBuilder().extractValue(of.getValue()).toString();
-                } else if (ON_CONFLICT_UPDATE_COLUMNS.equals(of.getName()) && of.getValue() instanceof ArrayValue av) {
-                    for (Value<?> v : av.getValues()) {
-                        updateCols.add(shared.filterBuilder().extractValue(v).toString());
-                    }
-                }
-            }
-            if (constraint != null && !updateCols.isEmpty()) {
-                onConflictSql = " " + shared.dialect().onConflict(List.of(constraint), updateCols);
-            }
-        }
+        String onConflictSql = parseOnConflict(field, shared);
 
         return shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
-                String.join(", ", cols), String.join(", ", vals), onConflictSql, objectSql);
+                joinCols(cols), joinCols(vals), onConflictSql, objectSql);
     }
 
     String compileBulkInsert(Field field, String tableName, Map<String, Object> params,
@@ -110,16 +103,16 @@ public class PostgresMutationCompiler implements MutationCompiler {
             Map<String, Object> row = rows.get(i);
             List<String> vals = new ArrayList<>();
             for (String col : colNames) {
-                String paramName = "bins_" + col + "_" + i + "_" + params.size();
+                String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
                 String enumCast = shared.getEnumCastForMutation(tableName, col);
-                vals.add(":" + paramName + enumCast);
+                vals.add(param(paramName) + enumCast);
                 params.put(paramName, row.get(col));
             }
-            valueRows.add("(" + String.join(", ", vals) + ")");
+            valueRows.add(parens(joinCols(vals)));
         }
 
         return shared.dialect().cteBulkInsert(alias, shared.qualifiedTable(tableName),
-                String.join(", ", colsSql), String.join(", ", valueRows), objectSql);
+                joinCols(colsSql), joinCols(valueRows), objectSql);
     }
 
     String compileUpdate(Field field, String tableName, Map<String, Object> params,
@@ -133,20 +126,19 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
         List<String> setClauses = new ArrayList<>();
         for (var entry : inputFields.entrySet()) {
-            String paramName = "upd_" + entry.getKey() + "_" + params.size();
+            String paramName = namedParam(P_UPDATE, entry.getKey(), params.size());
             String enumCast = shared.getEnumCastForMutation(tableName, entry.getKey());
-            setClauses.add(shared.dialect().quoteIdentifier(entry.getKey()) + " = :" + paramName + enumCast);
+            setClauses.add(assignWithCast(shared.dialect().quoteIdentifier(entry.getKey()), paramName, enumCast));
             params.put(paramName, entry.getValue());
         }
         if (setClauses.isEmpty()) return null;
 
-        // Build WHERE from where argument (filter-based, same as queries)
         StringBuilder whereSql = new StringBuilder();
         shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName);
-        if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table update
+        if (whereSql.isEmpty()) return null;
 
         return shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
-                String.join(", ", setClauses), whereSql.toString(), objectSql);
+                joinCols(setClauses), whereSql.toString(), objectSql);
     }
 
     String compileDelete(Field field, String tableName, Map<String, Object> params,
@@ -154,10 +146,9 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
-        // Build WHERE from where argument (filter-based, same as queries)
         StringBuilder whereSql = new StringBuilder();
         shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName);
-        if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table delete
+        if (whereSql.isEmpty()) return null;
 
         return shared.dialect().cteDelete(alias, shared.qualifiedTable(tableName),
                 whereSql.toString(), objectSql);
@@ -172,39 +163,25 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
-        int atMost = 1;
-        Argument atMostArg = shared.findArg(field, ARG_AT_MOST);
-        if (atMostArg != null) {
-            Object val = MutationBuilder.extractValue(atMostArg.getValue(), variables);
-            if (val instanceof Number n) atMost = n.intValue();
-        }
+        int atMost = parseAtMost(field, variables, shared);
 
         List<String> setClauses = new ArrayList<>();
         for (var entry : setFields.entrySet()) {
-            String paramName = "uc_set_" + entry.getKey() + "_" + params.size();
+            String paramName = namedParam(P_UC_SET, entry.getKey(), params.size());
             String enumCast = shared.getEnumCastForMutation(tableName, entry.getKey());
-            setClauses.add(shared.dialect().quoteIdentifier(entry.getKey()) + " = :" + paramName + enumCast);
+            setClauses.add(assignWithCast(shared.dialect().quoteIdentifier(entry.getKey()), paramName, enumCast));
             params.put(paramName, entry.getValue());
         }
 
-        String innerAlias = shared.dialect().quoteIdentifier("__inner");
-        StringBuilder filterWhere = new StringBuilder();
-        Argument filterArg = shared.findArg(field, ARG_FILTER);
-        if (filterArg != null && filterArg.getValue() instanceof ObjectValue filterOv) {
-            List<String> conditions = new ArrayList<>();
-            shared.filterBuilder().buildFilterConditions(filterOv, innerAlias, params, conditions, tableName);
-            if (!conditions.isEmpty()) {
-                filterWhere.append(" WHERE ").append(String.join(" AND ", conditions));
-            }
-        }
-
-        String atMostParam = "uc_atmost_" + params.size();
+        String filterWhere = buildCollectionFilter(field, shared, params, tableName);
+        String atMostParam = namedParam(P_UC_AT_MOST, params.size());
         params.put(atMostParam, atMost);
 
-        String ctidWhere = " WHERE ctid IN (SELECT ctid FROM " + shared.qualifiedTable(tableName)
-                + " " + innerAlias + filterWhere + " LIMIT :" + atMostParam + ")";
         return shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
-                String.join(", ", setClauses), ctidWhere, objectSql);
+                joinCols(setClauses),
+                ctidSubquery(shared.qualifiedTable(tableName),
+                        shared.dialect().quoteIdentifier(INNER_ALIAS), filterWhere, atMostParam),
+                objectSql);
     }
 
     String compileDeleteFromCollection(Field field, String tableName, Map<String, Object> params,
@@ -212,31 +189,62 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
-        int atMost = 1;
+        int atMost = parseAtMost(field, variables, shared);
+
+        String filterWhere = buildCollectionFilter(field, shared, params, tableName);
+        String atMostParam = namedParam(P_DC_AT_MOST, params.size());
+        params.put(atMostParam, atMost);
+
+        return shared.dialect().cteDelete(alias, shared.qualifiedTable(tableName),
+                ctidSubquery(shared.qualifiedTable(tableName),
+                        shared.dialect().quoteIdentifier(INNER_ALIAS), filterWhere, atMostParam),
+                objectSql);
+    }
+
+    // === Private helpers ===
+
+    private String parseOnConflict(Field field, MutationBuilder shared) {
+        Argument onConflictArg = shared.findArg(field, ARG_ON_CONFLICT);
+        if (onConflictArg == null || !(onConflictArg.getValue() instanceof ObjectValue ocOv)) {
+            return "";
+        }
+        String constraint = null;
+        List<String> updateCols = new ArrayList<>();
+        for (ObjectField of : ocOv.getObjectFields()) {
+            if (ON_CONFLICT_CONSTRAINT.equals(of.getName())) {
+                constraint = shared.filterBuilder().extractValue(of.getValue()).toString();
+            } else if (ON_CONFLICT_UPDATE_COLUMNS.equals(of.getName()) && of.getValue() instanceof ArrayValue av) {
+                for (Value<?> v : av.getValues()) {
+                    updateCols.add(shared.filterBuilder().extractValue(v).toString());
+                }
+            }
+        }
+        if (constraint != null && !updateCols.isEmpty()) {
+            return " " + shared.dialect().onConflict(List.of(constraint), updateCols);
+        }
+        return "";
+    }
+
+    private int parseAtMost(Field field, Map<String, Object> variables, MutationBuilder shared) {
         Argument atMostArg = shared.findArg(field, ARG_AT_MOST);
         if (atMostArg != null) {
             Object val = MutationBuilder.extractValue(atMostArg.getValue(), variables);
-            if (val instanceof Number n) atMost = n.intValue();
+            if (val instanceof Number n) return n.intValue();
         }
+        return 1;
+    }
 
-        String innerAlias = shared.dialect().quoteIdentifier("__inner");
-        StringBuilder filterWhere = new StringBuilder();
+    private String buildCollectionFilter(Field field, MutationBuilder shared,
+                                         Map<String, Object> params, String tableName) {
         Argument filterArg = shared.findArg(field, ARG_FILTER);
         if (filterArg != null && filterArg.getValue() instanceof ObjectValue filterOv) {
+            String innerAlias = shared.dialect().quoteIdentifier(INNER_ALIAS);
             List<String> conditions = new ArrayList<>();
             shared.filterBuilder().buildFilterConditions(filterOv, innerAlias, params, conditions, tableName);
             if (!conditions.isEmpty()) {
-                filterWhere.append(" WHERE ").append(String.join(" AND ", conditions));
+                return WHERE + String.join(AND, conditions);
             }
         }
-
-        String atMostParam = "dc_atmost_" + params.size();
-        params.put(atMostParam, atMost);
-
-        String ctidWhere = " WHERE ctid IN (SELECT ctid FROM " + shared.qualifiedTable(tableName)
-                + " " + innerAlias + filterWhere + " LIMIT :" + atMostParam + ")";
-        return shared.dialect().cteDelete(alias, shared.qualifiedTable(tableName),
-                ctidWhere, objectSql);
+        return "";
     }
-
 }

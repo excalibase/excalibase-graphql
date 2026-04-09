@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static io.github.excalibase.compiler.SqlKeywords.*;
+
 /**
  * MySQL implementation of {@link SqlDialect}.
  * Uses MySQL-specific JSON functions and syntax.
@@ -122,23 +124,22 @@ public class MysqlDialect implements SqlDialect {
     @Override
     public String cteInsert(String alias, String table, String colsSql, String valsSql,
                             String onConflictSql, String objectSql) {
-        // MySQL: single INSERT DML (no CTE)
-        return "INSERT INTO " + table + " (" + colsSql + ") VALUES (" + valsSql + ")" + onConflictSql;
+        return INSERT_INTO + table + parens(colsSql) + VALUES + parens(valsSql) + onConflictSql;
     }
 
     @Override
     public String cteBulkInsert(String alias, String table, String colsSql, String valueRowsSql, String objectSql) {
-        return "INSERT INTO " + table + " (" + colsSql + ") VALUES " + valueRowsSql;
+        return INSERT_INTO + table + parens(colsSql) + VALUES + valueRowsSql;
     }
 
     @Override
     public String cteUpdate(String alias, String table, String setClauses, String whereSql, String objectSql) {
-        return "UPDATE " + table + " " + alias + " SET " + setClauses + whereSql;
+        return UPDATE + table + " " + alias + SET + setClauses + whereSql;
     }
 
     @Override
     public String cteDelete(String alias, String table, String whereSql, String objectSql) {
-        return "DELETE FROM " + table + " " + alias + whereSql;
+        return DELETE_FROM + table + " " + alias + whereSql;
     }
 
     @Override
