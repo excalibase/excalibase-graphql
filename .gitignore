@@ -4,6 +4,9 @@ target/
 !**/src/test/**/target/
 e2e/node_modules/
 e2e/*.pem
+e2e/multi-tenant/*.pem
+e2e/multi-tenant/wiremock/__files/public-key-response.json
+e2e/multi-tenant/wiremock/__files/private-key-response.json
 e2e/wiremock/__files/
 
 ### IntelliJ IDEA ###
