@@ -93,14 +93,21 @@ app:
     schemaTtlMinutes: 30
 
 # ---------------------------------------------------------------------------
-# Connection pool (HikariCP)
+# Connection pool (HikariCP) — per data source
+# Formula: (target_db_CPU × 2 + 1) / replicas
+# With AbstractRoutingDataSource, each DB gets its own pool.
+# Total connections from pod = pool × number_of_data_sources
+#
+# Example: 2 CPU PostgreSQL + 2 CPU MySQL, 2 replicas
+#   per_source = (2×2+1)/2 = 3 → set to 5 for headroom
+#   total from pod = 5 × 2 sources = 10 connections
 # ---------------------------------------------------------------------------
 hikari:
-  maximumPoolSize: 20
-  minimumIdle: 2
-  connectionTimeout: 30000
-  idleTimeout: 600000
-  maxLifetime: 1800000
+  maximumPoolSize: 10
+  minimumIdle: 3
+  connectionTimeout: 10000
+  idleTimeout: 300000
+  maxLifetime: 900000
 
 # ---------------------------------------------------------------------------
 # Tomcat tuning

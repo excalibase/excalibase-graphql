@@ -41,18 +41,18 @@ services:
       SPRING_DATASOURCE_PASSWORD: password123
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
 
-      # HikariCP Connection Pool Configuration
-      # Experiment: Try 10 (default), 20, 30, 50 to see performance impact
-      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 50
+      # HikariCP Connection Pool (per data source)
+      # Formula: (target_db_CPU × 2 + 1) / replicas_using_that_db
+      # Dev: PostgreSQL 1 CPU, 1 replica → pool=5
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 5
       SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 2
-      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 30000
-      SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT: 600000
-      SPRING_DATASOURCE_HIKARI_MAX_LIFETIME: 1800000
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 10000
+      SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT: 300000
+      SPRING_DATASOURCE_HIKARI_MAX_LIFETIME: 900000
 
-      # Tomcat Configuration (with Virtual Threads)
-      # Experiment: Try 200 (default), 300, 500, 1000 for max threads
-      SERVER_TOMCAT_THREADS_MAX: 500
-      SERVER_TOMCAT_THREADS_MIN_SPARE: 50
+      # Tomcat (Virtual Threads handle concurrency — this is carrier threads only)
+      SERVER_TOMCAT_THREADS_MAX: 200
+      SERVER_TOMCAT_THREADS_MIN_SPARE: 10
       SERVER_TOMCAT_MAX_CONNECTIONS: 10000
       SERVER_TOMCAT_ACCEPT_COUNT: 100
       SERVER_TOMCAT_CONNECTION_TIMEOUT: 20000
