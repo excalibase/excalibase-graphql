@@ -2,7 +2,9 @@ package io.github.excalibase.rest.compiler;
 
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.schema.SchemaInfo;
+import org.springframework.jdbc.core.SqlParameterValue;
 
+import java.sql.Types;
 import java.util.*;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
@@ -99,7 +101,7 @@ public class RestQueryCompiler {
             String pn = P_INSERT + (i++);
             cols.add(dialect.quoteIdentifier(entry.getKey()));
             vals.add(PARAM_PREFIX + pn);
-            params.put(pn, entry.getValue());
+            params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
         }
         return new CompiledResult(
             WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
@@ -124,7 +126,7 @@ public class RestQueryCompiler {
             List<String> vals = new ArrayList<>();
             for (String col : colNames) {
                 String pn = P_INSERT + r + UNDERSCORE + col;
-                params.put(pn, rows.get(r).getOrDefault(col, null));
+                params.put(pn, coerceParam(table, col, rows.get(r).getOrDefault(col, null)));
                 vals.add(PARAM_PREFIX + pn);
             }
             valueRows.add(parens(String.join(COMMA_SEP, vals)));
@@ -149,7 +151,7 @@ public class RestQueryCompiler {
             String pn = P_INSERT + (i++);
             cols.add(dialect.quoteIdentifier(entry.getKey()));
             vals.add(PARAM_PREFIX + pn);
-            params.put(pn, entry.getValue());
+            params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
         }
         List<String> quotedConflict = conflictCols.stream().map(dialect::quoteIdentifier).toList();
         List<String> updateSets = new ArrayList<>();
@@ -180,7 +182,7 @@ public class RestQueryCompiler {
             if (!knownCols.contains(entry.getKey())) continue;
             String pn = P_UPDATE + (i++);
             setClauses.add(dialect.quoteIdentifier(entry.getKey()) + ASSIGN + PARAM_PREFIX + pn);
-            params.put(pn, entry.getValue());
+            params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
         }
         StringBuilder where = buildWhere(filters, quotedTable, P_WHERE_FILTER, params, table);
         return new CompiledResult(
@@ -431,7 +433,31 @@ public class RestQueryCompiler {
         return neg + col + (not ? NOT_IN : IN) + parens(String.join(COMMA_SEP, ph));
     }
 
+    /** Coerce a value from a JSON body (Object) for binding — wraps ENUM values for JDBC. */
+    private Object coerceParam(String table, String column, Object value) {
+        if (!(value instanceof String s)) return value;
+        if (schemaInfo.getEnumType(table, column) != null) {
+            return new SqlParameterValue(Types.OTHER, s);
+        }
+        String type = schemaInfo.getColumnType(table, column);
+        if (type != null) {
+            return switch (type.toLowerCase()) {
+                case "timestamp", "timestamptz", "timestamp with time zone",
+                     "timestamp without time zone", "date", "time", "timetz",
+                     "time with time zone", "time without time zone", "interval",
+                     "jsonb", "json", "uuid", "_text", "text[]" ->
+                    new SqlParameterValue(Types.OTHER, s);
+                default -> value;
+            };
+        }
+        return value;
+    }
+
+    /** Coerce a filter value (String) for binding — handles type conversions including ENUMs. */
     private Object convertValue(String value, String table, String column) {
+        if (schemaInfo.getEnumType(table, column) != null) {
+            return new SqlParameterValue(Types.OTHER, value);
+        }
         String type = schemaInfo.getColumnType(table, column);
         if (type == null) return value;
         try {

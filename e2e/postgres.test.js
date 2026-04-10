@@ -345,8 +345,8 @@ describe('Relationships', () => {
   });
 
   test('customer with nested orders', async () => {
-    const data = await client.request(gql`{ hanaCustomer(where: { customer_id: { eq: 1 } }) { customer_id hanaCustomerId { order_id total_amount } } }`);
-    expect(data.hanaCustomer[0].hanaCustomerId.length).toBeGreaterThanOrEqual(1);
+    const data = await client.request(gql`{ hanaCustomer(where: { customer_id: { eq: 1 } }) { customer_id hanaOrders { order_id total_amount } } }`);
+    expect(data.hanaCustomer[0].hanaOrders.length).toBeGreaterThanOrEqual(1);
   });
 
   // ── Circular / multi-level relationship tests (N+1 fix) ─────────────────────
@@ -360,7 +360,7 @@ describe('Relationships', () => {
       hanaCustomer(where: { customer_id: { eq: 1 } }) {
         customer_id
         first_name
-        hanaCustomerId {
+        hanaOrders {
           order_id
           hanaCustomerId { customer_id first_name }
         }
@@ -369,9 +369,9 @@ describe('Relationships', () => {
     expect(data.hanaCustomer.length).toBe(1);
     const c = data.hanaCustomer[0];
     expect(c.customer_id).toBe(1);
-    expect(c.hanaCustomerId.length).toBeGreaterThanOrEqual(1);
+    expect(c.hanaOrders.length).toBeGreaterThanOrEqual(1);
     // Each order's customer must resolve back to customer 1
-    c.hanaCustomerId.forEach(o => {
+    c.hanaOrders.forEach(o => {
       expect(o.hanaCustomerId).toBeDefined();
       expect(o.hanaCustomerId.customer_id).toBe(1);
       expect(o.hanaCustomerId.first_name).toBe('MARY');
@@ -384,7 +384,7 @@ describe('Relationships', () => {
       hanaUsers(where: { id: { eq: 1 } }) {
         id
         username
-        hanaAuthorId {
+        hanaPosts {
           id
           hanaAuthorId { id username }
         }
@@ -393,8 +393,8 @@ describe('Relationships', () => {
     expect(data.hanaUsers.length).toBe(1);
     const u = data.hanaUsers[0];
     expect(u.username).toBe('john_doe');
-    expect(u.hanaAuthorId.length).toBeGreaterThanOrEqual(1);
-    u.hanaAuthorId.forEach(p => {
+    expect(u.hanaPosts.length).toBeGreaterThanOrEqual(1);
+    u.hanaPosts.forEach(p => {
       expect(p.hanaAuthorId).toBeDefined();
       expect(p.hanaAuthorId.id).toBe(1);
       expect(p.hanaAuthorId.username).toBe('john_doe');
@@ -408,21 +408,21 @@ describe('Relationships', () => {
     const data = await client.request(gql`{
       hanaUsers(where: { id: { eq: 1 } }) {
         id
-        hanaAuthorId {
+        hanaPosts {
           id
           hanaAuthorId {
-            hanaAuthorId { id }
+            hanaPosts { id }
           }
         }
       }
     }`);
     expect(data.hanaUsers.length).toBe(1);
     const u = data.hanaUsers[0];
-    expect(u.hanaAuthorId.length).toBeGreaterThanOrEqual(1);
-    u.hanaAuthorId.forEach(p => {
+    expect(u.hanaPosts.length).toBeGreaterThanOrEqual(1);
+    u.hanaPosts.forEach(p => {
       expect(p.hanaAuthorId).toBeDefined();
       // level-2 user's posts must be present (not null/undefined)
-      expect(Array.isArray(p.hanaAuthorId.hanaAuthorId)).toBe(true);
+      expect(Array.isArray(p.hanaAuthorId.hanaPosts)).toBe(true);
     });
   });
 
@@ -431,20 +431,20 @@ describe('Relationships', () => {
     const data = await client.request(gql`{
       hanaUsers(where: { id: { eq: 1 } }) {
         id
-        hanaAuthorId {
+        hanaPosts {
           id
-          hanaPostId { id }
+          hanaComments { id }
         }
       }
     }`);
     expect(data.hanaUsers.length).toBe(1);
     // user 1 authored posts 1 and 3; post 1 has 2 comments, post 3 has 0
-    const allPosts = data.hanaUsers[0].hanaAuthorId;
+    const allPosts = data.hanaUsers[0].hanaPosts;
     expect(allPosts.length).toBeGreaterThanOrEqual(1);
     const post1 = allPosts.find(p => p.id === 1);
     if (post1) {
-      expect(Array.isArray(post1.hanaPostId)).toBe(true);
-      expect(post1.hanaPostId.length).toBeGreaterThanOrEqual(2);
+      expect(Array.isArray(post1.hanaComments)).toBe(true);
+      expect(post1.hanaComments.length).toBeGreaterThanOrEqual(2);
     }
   });
 });

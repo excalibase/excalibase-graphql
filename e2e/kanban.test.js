@@ -44,19 +44,19 @@ describe('Kanban GraphQL — Organization', () => {
     const data = await client.request(gql`{
       kanbanOrganizations(where: { slug: { eq: "acme" } }) {
         name
-        kanbanOrgId { id name role email }
+        kanbanUsers { id name role email }
       }
     }`);
-    expect(data.kanbanOrganizations[0].kanbanOrgId.length).toBe(3);
+    expect(data.kanbanOrganizations[0].kanbanUsers.length).toBe(3);
   });
 
   test('org → projects (reverse FK)', async () => {
     const data = await client.request(gql`{
       kanbanOrganizations(where: { slug: { eq: "acme" } }) {
-        kanbanOrgId { id name key }
+        kanbanProjects { id name key }
       }
     }`);
-    const projects = data.kanbanOrganizations[0].kanbanOrgId;
+    const projects = data.kanbanOrganizations[0].kanbanProjects;
     expect(projects.length).toBeGreaterThanOrEqual(2);
   });
 });
@@ -124,10 +124,10 @@ describe('Kanban GraphQL — Issues', () => {
     const data = await client.request(gql`{
       kanbanIssues(where: { id: { eq: 3 } }) {
         title
-        kanbanIssueId { body kanbanAuthorId { name } }
+        kanbanComments { body kanbanAuthorId { name } }
       }
     }`);
-    const comments = data.kanbanIssues[0].kanbanIssueId;
+    const comments = data.kanbanIssues[0].kanbanComments;
     expect(comments.length).toBeGreaterThanOrEqual(3);
   });
 

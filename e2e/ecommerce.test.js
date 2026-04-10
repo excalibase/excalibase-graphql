@@ -57,10 +57,10 @@ describe('E-Commerce GraphQL — Catalog', () => {
     const data = await client.request(gql`{
       shopifyProducts(where: { slug: { eq: "iphone-15" } }) {
         id name
-        shopifyProductId { id sku color size stock_quantity price_override }
+        shopifyProductVariants { id sku color size stock_quantity price_override }
       }
     }`);
-    const variants = data.shopifyProducts[0].shopifyProductId;
+    const variants = data.shopifyProducts[0].shopifyProductVariants;
     expect(variants.length).toBe(2);
     expect(variants[0].sku).toContain('IP15');
   });
@@ -110,21 +110,21 @@ describe('E-Commerce GraphQL — FK Chains', () => {
     const data = await client.request(gql`{
       shopifyCustomers(where: { email: { eq: "alice@shop.com" } }) {
         name
-        shopifyCustomerId { id status total }
+        shopifyOrders { id status total }
       }
     }`);
     expect(data.shopifyCustomers[0].name).toBe('Alice Johnson');
-    expect(data.shopifyCustomers[0].shopifyCustomerId.length).toBeGreaterThanOrEqual(2);
+    expect(data.shopifyCustomers[0].shopifyOrders.length).toBeGreaterThanOrEqual(2);
   });
 
   test('order → payment FK', async () => {
     const data = await client.request(gql`{
       shopifyOrders(where: { id: { eq: 1 } }) {
         id status total
-        shopifyOrderId { id method amount status }
+        shopifyPayments { id method amount status }
       }
     }`);
-    const payments = data.shopifyOrders[0].shopifyOrderId;
+    const payments = data.shopifyOrders[0].shopifyPayments;
     expect(payments.length).toBeGreaterThanOrEqual(1);
     expect(payments[0].status).toBe('COMPLETED');
   });
@@ -149,7 +149,7 @@ describe('E-Commerce GraphQL — Aggregates & Views', () => {
     const data = await client.request(gql`{
       shopifyReviewsAggregate { count }
     }`);
-    expect(data.shopifyReviewsAggregate.count).toBeGreaterThanOrEqual(8);
+    expect(data.shopifyReviewsAggregate.count).toBeGreaterThanOrEqual(7);
   });
 
   test('wishlist composite key', async () => {

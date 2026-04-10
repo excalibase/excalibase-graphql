@@ -259,11 +259,12 @@ public class RestApiController {
         return txTemplate.execute(status -> {
             try {
                 setRlsContext(claims);
-                String json = namedJdbc.queryForObject(compiled.sql(), new MapSqlParameterSource(compiled.params()), String.class);
+                List<String> rows = namedJdbc.queryForList(compiled.sql(), new MapSqlParameterSource(compiled.params()), String.class);
+                String json = rows.isEmpty() ? null : rows.get(0);
 
                 if (maxAffected != null && json != null) {
-                    List<?> rows = parseJsonList((Object) json);
-                    if (rows.size() > maxAffected) {
+                    List<?> affected = parseJsonList((Object) json);
+                    if (affected.size() > maxAffected) {
                         status.setRollbackOnly();
                         return ResponseEntity.badRequest().body(Map.of("error", "Affected rows exceed max-affected limit"));
                     }

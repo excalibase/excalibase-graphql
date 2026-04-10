@@ -16,9 +16,9 @@ describe('Deep FK Chain', () => {
     const data = await client.request(gql`{
       complexCompany(where: { id: { eq: 1 } }) {
         id name
-        complexCompanyId {
+        complexDepartment {
           id name
-          complexDepartmentId {
+          complexTeam {
             id name
           }
         }
@@ -26,11 +26,11 @@ describe('Deep FK Chain', () => {
     }`);
     expect(data.complexCompany).toHaveLength(1);
     expect(data.complexCompany[0].name).toBe('Acme Corp');
-    // Reverse FK: department.company_id → company, field name = complexCompanyId
-    const depts = data.complexCompany[0].complexCompanyId;
+    // Reverse FK: department.company_id → company, field name = complexDepartment
+    const depts = data.complexCompany[0].complexDepartment;
     expect(depts.length).toBeGreaterThanOrEqual(1);
-    // Nested: team.department_id → department, field name = complexDepartmentId
-    expect(depts[0].complexDepartmentId.length).toBeGreaterThanOrEqual(1);
+    // Nested: team.department_id → department, field name = complexTeam
+    expect(depts[0].complexTeam.length).toBeGreaterThanOrEqual(1);
   });
 });
 

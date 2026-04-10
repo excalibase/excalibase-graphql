@@ -45,10 +45,10 @@ describe('Clinic GraphQL — Doctors', () => {
     const data = await client.request(gql`{
       clinicDoctors(where: { id: { eq: 1 } }) {
         name
-        clinicDoctorId { day_of_week start_time end_time }
+        clinicDoctorAvailability { day_of_week start_time end_time }
       }
     }`);
-    const slots = data.clinicDoctors[0].clinicDoctorId;
+    const slots = data.clinicDoctors[0].clinicDoctorAvailability;
     expect(slots.length).toBe(3);
   });
 });
@@ -113,10 +113,10 @@ describe('Clinic GraphQL — Appointments', () => {
     const data = await client.request(gql`{
       clinicPatients(where: { id: { eq: 1 } }) {
         name
-        clinicPatientId { id status clinicAppointmentId { icd_code description severity } }
+        clinicAppointments { id status clinicDiagnoses { icd_code description severity } }
       }
     }`);
-    const appointments = data.clinicPatients[0].clinicPatientId;
+    const appointments = data.clinicPatients[0].clinicAppointments;
     expect(appointments.length).toBeGreaterThanOrEqual(2);
   });
 
@@ -200,7 +200,7 @@ describe('Clinic GraphQL — Views', () => {
     }`);
     expect(data.clinicPatientHistory.length).toBe(10);
     const john = data.clinicPatientHistory.find(p => p.name === 'John Doe');
-    expect(john.appointment_count).toBeGreaterThanOrEqual(2);
+    expect(Number(john.appointment_count)).toBeGreaterThanOrEqual(2);
   });
 
   test('connection pagination on appointments', async () => {

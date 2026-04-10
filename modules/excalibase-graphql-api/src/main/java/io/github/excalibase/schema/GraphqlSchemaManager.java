@@ -189,7 +189,16 @@ public class GraphqlSchemaManager implements SchemaProvider {
     }
 
     private String findCompoundKey(SchemaInfo schemaInfo, String rawTable, List<String> allSchemas) {
+        return findCompoundKey(schemaInfo, rawTable, allSchemas, null);
+    }
+
+    private String findCompoundKey(SchemaInfo schemaInfo, String rawTable, List<String> allSchemas, String preferredSchema) {
+        if (preferredSchema != null) {
+            String candidate = preferredSchema + "." + rawTable;
+            if (schemaInfo.hasTable(candidate)) return candidate;
+        }
         for (String s : allSchemas) {
+            if (s.equals(preferredSchema)) continue;
             String candidate = s + "." + rawTable;
             if (schemaInfo.hasTable(candidate)) return candidate;
         }
@@ -297,7 +306,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
                 String fromTable = fkKey.substring(0, fkKey.lastIndexOf('.'));
                 SchemaInfo.FkInfo fk = entry.getValue();
                 String compoundFrom = schema + "." + fromTable;
-                String compoundTo = findCompoundKey(target, fk.refTable(), schemaList);
+                String compoundTo = findCompoundKey(target, fk.refTable(), schemaList, schema);
                 if (compoundTo != null && target.hasTable(compoundFrom)) {
                     if (fk.isComposite()) {
                         target.addCompositeForeignKey(compoundFrom, fk.fkColumns(), compoundTo, fk.refColumns());

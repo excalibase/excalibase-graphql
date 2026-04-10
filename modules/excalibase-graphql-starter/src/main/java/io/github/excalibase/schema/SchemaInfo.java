@@ -20,9 +20,9 @@ public class SchemaInfo {
     private final Map<String, Map<String, String>> columnTypes = new HashMap<>();
     // table → primary key columns (ordered)
     private final Map<String, List<String>> primaryKeys = new HashMap<>();
-    // table.fieldName → FkInfo (forward FK: fieldName = toLowerCamelCase(refTable))
+    // table.fieldName → FkInfo (forward FK: fieldName = schemaFieldName(schema, fkColumn))
     private final Map<String, FkInfo> forwardFks = new HashMap<>();
-    // table.fieldName → ReverseFkInfo (reverse FK: fieldName = toLowerCamelCase(childTable) + "s")
+    // table.fieldName → ReverseFkInfo (reverse FK: fieldName = schemaFieldName(schema, childTable))
     private final Map<String, ReverseFkInfo> reverseFks = new HashMap<>();
     // enum name → list of enum values
     private final Map<String, List<String>> enumTypes = new HashMap<>();
@@ -110,9 +110,22 @@ public class SchemaInfo {
         String fwdFieldName = fkColumnFieldName(fromTable, fromCol);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(List.of(fromCol), toTable, List.of(toCol)));
-        String revFieldName = fkColumnFieldName(fromTable, fromCol);
-        reverseFks.put(toTable + "." + revFieldName,
-                new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
+
+        // Reverse FK: use child table name — unique across different child tables.
+        // On collision (same child table, multiple FK columns to same parent), disambiguate.
+        String baseRevName = fkFieldName(fromTable);
+        String revKey = toTable + "." + baseRevName;
+        if (reverseFks.containsKey(revKey)) {
+            ReverseFkInfo existing = reverseFks.remove(revKey);
+            String existingFkCol = existing.fkColumns().get(0);
+            String existingSuffix = NamingUtils.capitalize(NamingUtils.toLowerCamelCase(existingFkCol));
+            reverseFks.put(toTable + "." + baseRevName + existingSuffix, existing);
+            String newSuffix = NamingUtils.capitalize(NamingUtils.toLowerCamelCase(fromCol));
+            reverseFks.put(toTable + "." + baseRevName + newSuffix,
+                    new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
+        } else {
+            reverseFks.put(revKey, new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
+        }
     }
 
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
