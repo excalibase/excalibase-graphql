@@ -181,6 +181,57 @@ multi-tenant-wait-ready:
 		sleep 3; \
 	done
 
+SC_COMPOSE_FILE = e2e/study-cases/docker-compose.study-cases.yml
+SC_COMPOSE_PROJECT = excalibase-study-cases
+SC_API_PORT = 10004
+SC_AUTH_PORT = 24004
+
+.PHONY: study-cases-e2e
+study-cases-e2e: down-study-cases build-image study-cases-generate-keys study-cases-up study-cases-test study-cases-clean ## Complete study-cases e2e test suite
+
+.PHONY: study-cases-generate-keys
+study-cases-generate-keys: ## Generate test EC keypair for study-cases WireMock
+	@e2e/study-cases/generate-keys.sh
+
+.PHONY: study-cases-up
+study-cases-up: ## Start study-cases Docker services
+	@echo "$(BLUE)🚀 Starting study-cases services...$(NC)"
+	@docker compose -f $(SC_COMPOSE_FILE) -p $(SC_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+	@docker compose -f $(SC_COMPOSE_FILE) -p $(SC_COMPOSE_PROJECT) up -d 2>&1 || true
+	@$(MAKE) --no-print-directory study-cases-wait-ready
+
+.PHONY: down-study-cases
+down-study-cases: ## Stop study-cases Docker services
+	@echo "$(BLUE)🛑 Stopping study-cases services...$(NC)"
+	@docker compose -f $(SC_COMPOSE_FILE) -p $(SC_COMPOSE_PROJECT) down > /dev/null 2>&1 || true
+
+.PHONY: study-cases-clean
+study-cases-clean: ## Stop study-cases services and cleanup volumes
+	@docker compose -f $(SC_COMPOSE_FILE) -p $(SC_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
+
+.PHONY: study-cases-test
+study-cases-test: ## Run study-cases e2e tests
+	@echo "$(BLUE)🧪 Running study-cases E2E tests...$(NC)"
+	@cd e2e && SC_GRAPHQL_URL=http://localhost:$(SC_API_PORT)/graphql SC_AUTH_URL=http://localhost:$(SC_AUTH_PORT)/auth npm install --silent && \
+	 SC_GRAPHQL_URL=http://localhost:$(SC_API_PORT)/graphql SC_AUTH_URL=http://localhost:$(SC_AUTH_PORT)/auth npm run test:study-cases || \
+	 (echo "$(RED)❌ Study-cases tests failed$(NC)" && exit 1)
+
+.PHONY: study-cases-wait-ready
+study-cases-wait-ready:
+	@echo "$(BLUE)⏳ Waiting for study-cases services...$(NC)"
+	@for i in $$(seq 1 40); do \
+		if curl -s -X POST http://localhost:$(SC_API_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data\|errors\|Unauthorized\|401"; then \
+			echo "$(GREEN)✓ Study-cases GraphQL API ready$(NC)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 40 ]; then \
+			echo "$(RED)❌ Study-cases application failed to start$(NC)"; \
+			exit 1; \
+		fi; \
+		printf "."; \
+		sleep 5; \
+	done
+
 # CDC subscription test targets
 .PHONY: subscription-test
 subscription-test: ## Run Postgres CDC subscription e2e tests (requires make up)

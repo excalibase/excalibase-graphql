@@ -1,23 +1,68 @@
 const { GraphQLClient, gql } = require('graphql-request');
 const { waitForApi } = require('./client');
 
-const API_URL = process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql';
-const REST_URL = API_URL.replace('/graphql', '/api/v1');
+const GRAPHQL_URL = process.env.SC_GRAPHQL_URL || 'http://localhost:10004/graphql';
+const AUTH_URL = process.env.SC_AUTH_URL || 'http://localhost:24004/auth';
+const REST_URL = GRAPHQL_URL.replace('/graphql', '/api/v1');
+
+const PROJECT = { orgSlug: 'study-cases', projectName: 'shopify' };
+const TEST_USER = { email: 'shopper@example.com', password: 'Pass123!', fullName: 'E2E Shopper' };
+
+let token;
 let client;
 
+async function authPost(path, body) {
+  const res = await fetch(`${AUTH_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+
+async function waitForAuth() {
+  for (let i = 0; i < 30; i++) {
+    try {
+      const r = await fetch(`${AUTH_URL.replace('/auth', '')}/healthz`, { signal: AbortSignal.timeout(3000) });
+      if (r.ok) return;
+    } catch (_) {}
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  throw new Error('Auth service not ready');
+}
+
+async function registerAndLogin() {
+  const base = `/${PROJECT.orgSlug}/${PROJECT.projectName}`;
+  const reg = await authPost(`${base}/register`, { email: TEST_USER.email, password: TEST_USER.password, fullName: TEST_USER.fullName });
+  if (reg.status !== 200 && reg.status !== 201 && reg.status !== 409) {
+    throw new Error(`Register failed (${reg.status}): ${JSON.stringify(reg.data)}`);
+  }
+  const login = await authPost(`${base}/login`, { email: TEST_USER.email, password: TEST_USER.password });
+  if (!login.data.accessToken) {
+    throw new Error(`Login failed: ${JSON.stringify(login.data)}`);
+  }
+  return login.data.accessToken;
+}
+
 beforeAll(async () => {
-  await waitForApi(API_URL.replace('/graphql', ''));
-  client = new GraphQLClient(API_URL);
+  await Promise.all([
+    waitForAuth(),
+    waitForApi(GRAPHQL_URL, { maxRetries: 30, delayMs: 3000 }),
+  ]);
+  token = await registerAndLogin();
+  client = new GraphQLClient(GRAPHQL_URL, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
 });
 
 async function restGet(path, headers = {}) {
-  const res = await fetch(`${REST_URL}${path}`, { headers: { 'Accept-Profile': 'shopify', ...headers } });
+  const res = await fetch(`${REST_URL}${path}`, { headers: { 'Accept-Profile': 'shopify', Authorization: `Bearer ${token}`, ...headers } });
   return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
 }
 
 async function restPost(path, body, headers = {}) {
   const res = await fetch(`${REST_URL}${path}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Profile': 'shopify', ...headers },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Profile': 'shopify', Authorization: `Bearer ${token}`, ...headers },
     body: JSON.stringify(body),
   });
   return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
@@ -25,7 +70,7 @@ async function restPost(path, body, headers = {}) {
 
 async function restPatch(path, body, headers = {}) {
   const res = await fetch(`${REST_URL}${path}`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Content-Profile': 'shopify', ...headers },
+    method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Content-Profile': 'shopify', Authorization: `Bearer ${token}`, ...headers },
     body: JSON.stringify(body),
   });
   return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
@@ -33,7 +78,7 @@ async function restPatch(path, body, headers = {}) {
 
 async function restDelete(path, headers = {}) {
   const res = await fetch(`${REST_URL}${path}`, {
-    method: 'DELETE', headers: { 'Content-Profile': 'shopify', ...headers },
+    method: 'DELETE', headers: { 'Content-Profile': 'shopify', Authorization: `Bearer ${token}`, ...headers },
   });
   return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
 }
