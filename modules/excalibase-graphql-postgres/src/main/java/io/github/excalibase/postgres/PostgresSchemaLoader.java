@@ -130,7 +130,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
                        NULL as return_type, NULL as function_name
                 FROM pg_proc p
                 JOIN pg_namespace n ON p.pronamespace = n.oid
-                WHERE n.nspname = ANY(?) AND p.prokind = 'p'
+                WHERE n.nspname = ANY(?) AND p.prokind IN ('f', 'p')
               ),
               computed AS (
                 SELECT 'computed' as kind, n.nspname as table_schema, c.relname as table_name,
@@ -398,7 +398,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
                    pg_get_function_identity_arguments(p.oid) AS args_signature
             FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname = ? AND p.prokind = 'p'
+            WHERE n.nspname = ? AND p.prokind IN ('f', 'p')
             """, rs -> {
             String procName = rs.getString("proc_name");
             String argsSig = rs.getString("args_signature");

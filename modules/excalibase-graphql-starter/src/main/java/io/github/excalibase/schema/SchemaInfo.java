@@ -202,6 +202,7 @@ public class SchemaInfo {
     }
     public FkInfo getForwardFk(String table, String fieldName) { return forwardFks.get(table + "." + fieldName); }
     public Map<String, FkInfo> getAllForwardFks() { return Collections.unmodifiableMap(forwardFks); }
+    public Map<String, ReverseFkInfo> getAllReverseFks() { return Collections.unmodifiableMap(reverseFks); }
     public ReverseFkInfo getReverseFk(String table, String fieldName) { return reverseFks.get(table + "." + fieldName); }
     public String getEnumType(String table, String column) { return columnEnumType.get(table + "." + column); }
     public List<ComputedField> getComputedFields(String table) { return computedFields.get(table); }

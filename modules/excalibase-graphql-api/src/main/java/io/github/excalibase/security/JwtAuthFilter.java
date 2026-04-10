@@ -1,6 +1,7 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.config.datasource.TenantContext;
+import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -15,7 +16,7 @@ import java.io.IOException;
 @ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true")
 public class JwtAuthFilter extends OncePerRequestFilter {
 
-    public static final String JWT_CLAIMS_ATTR = "jwt.claims";
+    public static final String JWT_CLAIMS_ATTR = SecurityConstants.JWT_CLAIMS_ATTR;
 
     private final JwtService jwtService;
 

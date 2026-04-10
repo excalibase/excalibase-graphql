@@ -16,6 +16,10 @@ public interface SqlDialect {
     /** Coalesce null aggregate to empty array. PG: coalesce(expr, '[]'::jsonb) */
     String coalesceArray(String expr);
 
+    default String rowToJson(String alias) {
+        return "row_to_json(" + alias + ")";
+    }
+
     /** Quote an identifier. PG: "id", MySQL: `id` */
     String quoteIdentifier(String id);
 

@@ -1,5 +1,6 @@
 package io.github.excalibase.schema;
 
+import io.github.excalibase.SqlDialect;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.cdc.NatsCDCService;
 import io.github.excalibase.compiler.SqlCompiler;
@@ -30,7 +31,7 @@ import java.util.Map;
  * Produces an immutable {@link EngineState} that the controller snapshots per-request.
  */
 @Component
-public class GraphqlSchemaManager {
+public class GraphqlSchemaManager implements SchemaProvider {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlSchemaManager.class);
 
@@ -131,8 +132,19 @@ public class GraphqlSchemaManager {
             key -> buildTenantEngineState(orgSlug, projectName));
     }
 
+    @Override
     public String getDatabaseType() {
         return databaseType;
+    }
+
+    @Override
+    public SchemaInfo resolveSchemaInfo(JwtClaims claims) {
+        return resolveEngineState(claims).compiler().schemaInfo();
+    }
+
+    @Override
+    public SqlDialect resolveDialect(JwtClaims claims) {
+        return resolveEngineState(claims).compiler().dialect();
     }
 
     /** Reinitialize schema and compiler. Called on DDL events from NatsCDCService. */

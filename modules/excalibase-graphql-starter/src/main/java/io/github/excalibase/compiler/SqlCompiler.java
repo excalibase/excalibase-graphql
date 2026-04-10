@@ -14,6 +14,7 @@ import java.util.*;
  */
 public class SqlCompiler {
 
+    private final SchemaInfo schemaInfo;
     private final QueryBuilder queryBuilder;
     private final MutationBuilder mutationBuilder;
     private final ThreadLocal<Map<String, FragmentDefinition>> fragmentsHolder = new ThreadLocal<>();
@@ -26,12 +27,17 @@ public class SqlCompiler {
     }
 
     public SqlCompiler(SchemaInfo schemaInfo, String dbSchema, int maxRows, SqlDialect dialect, MutationCompiler mutationCompiler, int maxDepth) {
+        this.schemaInfo = schemaInfo;
         this.dialect = dialect;
-        this.maxDepth = maxDepth; // 0 = disabled
+        this.maxDepth = maxDepth;
         FilterBuilder filterBuilder = new FilterBuilder(dialect, maxRows, schemaInfo, dbSchema);
         this.queryBuilder = new QueryBuilder(schemaInfo, dialect, filterBuilder, dbSchema, maxRows, fragmentsHolder);
         this.mutationBuilder = new MutationBuilder(schemaInfo, dialect, filterBuilder, dbSchema, queryBuilder, mutationCompiler);
     }
+
+    public SchemaInfo schemaInfo() { return schemaInfo; }
+
+    public SqlDialect dialect() { return dialect; }
 
     public CompiledQuery compile(String queryString) {
         return compile(queryString, Map.of());

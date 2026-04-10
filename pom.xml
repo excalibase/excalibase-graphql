@@ -34,6 +34,8 @@
         <module>modules/excalibase-graphql-starter</module>
         <module>modules/excalibase-graphql-postgres</module>
         <module>modules/excalibase-graphql-mysql</module>
+        <module>modules/excalibase-rest-api</module>
+        <!-- rest-api before graphql-api: graphql-api depends on rest-api -->
     </modules>
 
     <scm>
@@ -127,6 +129,11 @@
             <dependency>
                 <groupId>io.github.excalibase</groupId>
                 <artifactId>excalibase-graphql-mysql</artifactId>
+                <version>${excalibase.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.excalibase</groupId>
+                <artifactId>excalibase-rest-api</artifactId>
                 <version>${excalibase.version}</version>
             </dependency>
             <dependency>
