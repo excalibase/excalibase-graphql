@@ -437,7 +437,15 @@ public class RestQueryCompiler {
         return neg + col + (not ? NOT_IN : IN) + parens(String.join(COMMA_SEP, ph));
     }
 
-    /** Coerce a value from a JSON body (Object) for binding — wraps ENUM values for JDBC. */
+    /**
+     * Coerce a value from a JSON body (Object) for binding.
+     *
+     * <p>Uses {@code Types.OTHER} for PostgreSQL-specific types so the server — not the
+     * JDBC driver — performs the cast.  Timestamps accept many input formats (ISO-8601,
+     * RFC-2822, "epoch", "now", etc.); binding as {@code Types.OTHER} sends the value as
+     * an untyped text literal and lets PostgreSQL's input function resolve the format,
+     * exactly like {@code '2026-05-01T14:00:00Z'::timestamptz}.
+     */
     private Object coerceParam(String table, String column, Object value) {
         if (value == null) return null;
         if (schemaInfo.getEnumType(table, column) != null) {
@@ -446,13 +454,26 @@ public class RestQueryCompiler {
         String type = schemaInfo.getColumnType(table, column);
         if (type == null) return value;
         return switch (type.toLowerCase()) {
-            case "timestamp", "timestamptz", "timestamp with time zone",
-                 "timestamp without time zone", "date", "time", "timetz",
-                 "time with time zone", "time without time zone", "interval",
-                 "uuid", "_text", "text[]" ->
+            // Temporal types — with/without timezone, short aliases, array forms (_timestamp = pg ARRAY udt_name)
+            case "timestamp", "timestamptz",
+                 "timestamp with time zone", "timestamp without time zone",
+                 "_timestamp", "_timestamptz", "timestamp[]", "timestamptz[]" ->
                 new SqlParameterValue(Types.OTHER, value.toString());
-            // JSONB/JSON: Map/List from JSON body must be serialized to string first
-            case "jsonb", "json" -> {
+            case "date", "_date", "date[]" ->
+                new SqlParameterValue(Types.OTHER, value.toString());
+            case "time", "timetz",
+                 "time with time zone", "time without time zone",
+                 "_time", "_timetz", "time[]", "timetz[]" ->
+                new SqlParameterValue(Types.OTHER, value.toString());
+            case "interval", "_interval", "interval[]" ->
+                new SqlParameterValue(Types.OTHER, value.toString());
+            // Other opaque server types
+            case "uuid", "_uuid", "uuid[]" ->
+                new SqlParameterValue(Types.OTHER, value.toString());
+            case "_text", "text[]" ->
+                new SqlParameterValue(Types.OTHER, value.toString());
+            // JSONB/JSON: Map/List from JSON body must be serialized to a JSON string first
+            case "jsonb", "json", "_jsonb", "_json", "jsonb[]", "json[]" -> {
                 String json = (value instanceof String s) ? s : toJsonString(value);
                 yield new SqlParameterValue(Types.OTHER, json);
             }
@@ -468,7 +489,10 @@ public class RestQueryCompiler {
         }
     }
 
-    /** Coerce a filter value (String) for binding — handles type conversions including ENUMs. */
+    /**
+     * Coerce a filter value (String) for binding — converts to Java type for numeric columns,
+     * delegates PostgreSQL-specific types to server-side casting via {@code Types.OTHER}.
+     */
     private Object convertValue(String value, String table, String column) {
         if (schemaInfo.getEnumType(table, column) != null) {
             return new SqlParameterValue(Types.OTHER, value);
@@ -482,13 +506,25 @@ public class RestQueryCompiler {
                 case "numeric", "decimal", "float8", "double precision" -> Double.parseDouble(value);
                 case "real", "float4" -> Float.parseFloat(value);
                 case "boolean", "bool" -> Boolean.parseBoolean(value);
-                // PostgreSQL-specific types: pass as Types.OTHER so the driver lets the server
-                // handle the cast. Timestamps accept many formats (ISO-8601, RFC-2822, epoch, etc.)
-                // and must not be pre-parsed — the server resolves the format from context.
-                case "timestamp", "timestamptz", "timestamp with time zone",
-                     "timestamp without time zone", "date", "time", "timetz",
-                     "time with time zone", "time without time zone", "interval",
-                     "jsonb", "json", "uuid", "_text", "text[]" ->
+                // Temporal types — server handles all format variations
+                case "timestamp", "timestamptz",
+                     "timestamp with time zone", "timestamp without time zone",
+                     "_timestamp", "_timestamptz", "timestamp[]", "timestamptz[]" ->
+                    new SqlParameterValue(Types.OTHER, value);
+                case "date", "_date", "date[]" ->
+                    new SqlParameterValue(Types.OTHER, value);
+                case "time", "timetz",
+                     "time with time zone", "time without time zone",
+                     "_time", "_timetz", "time[]", "timetz[]" ->
+                    new SqlParameterValue(Types.OTHER, value);
+                case "interval", "_interval", "interval[]" ->
+                    new SqlParameterValue(Types.OTHER, value);
+                // Other opaque server types
+                case "uuid", "_uuid", "uuid[]" ->
+                    new SqlParameterValue(Types.OTHER, value);
+                case "jsonb", "json", "_jsonb", "_json", "jsonb[]", "json[]" ->
+                    new SqlParameterValue(Types.OTHER, value);
+                case "_text", "text[]" ->
                     new SqlParameterValue(Types.OTHER, value);
                 default -> value;
             };
