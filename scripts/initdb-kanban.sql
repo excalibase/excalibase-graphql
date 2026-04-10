@@ -1,4 +1,9 @@
 CREATE SCHEMA kanban;
+GRANT USAGE ON SCHEMA kanban TO app_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA kanban TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA kanban GRANT ALL PRIVILEGES ON TABLES TO app_user;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA kanban TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA kanban GRANT USAGE, SELECT ON SEQUENCES TO app_user;
 
 CREATE TYPE kanban.org_plan AS ENUM ('free', 'pro', 'enterprise');
 CREATE TYPE kanban.user_role AS ENUM ('admin', 'member', 'viewer');

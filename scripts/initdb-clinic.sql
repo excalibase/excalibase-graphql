@@ -1,4 +1,9 @@
 CREATE SCHEMA clinic;
+GRANT USAGE ON SCHEMA clinic TO app_user;
+GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA clinic TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA clinic GRANT ALL PRIVILEGES ON TABLES TO app_user;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA clinic TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA clinic GRANT USAGE, SELECT ON SEQUENCES TO app_user;
 
 CREATE TYPE clinic.gender AS ENUM ('male', 'female', 'other');
 CREATE TYPE clinic.appointment_status AS ENUM ('scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show');
