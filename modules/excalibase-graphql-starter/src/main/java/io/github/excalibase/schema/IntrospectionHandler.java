@@ -135,6 +135,30 @@ public class IntrospectionHandler {
                             .build());
                 }
             }
+            // Forward FK fields: e.g., category_id → ShopifyCategories object
+            for (var fkEntry : schemaInfo.getAllForwardFks().entrySet()) {
+                if (!fkEntry.getKey().startsWith(table + ".")) continue;
+                String fkFieldName = fkEntry.getKey().substring(table.length() + 1);
+                String refTable = fkEntry.getValue().refTable();
+                String refTypeName = typeName(refTable);
+                typeBuilder.field(newFieldDefinition()
+                        .name(fkFieldName)
+                        .type(GraphQLTypeReference.typeRef(refTypeName))
+                        .build());
+            }
+
+            // Reverse FK fields: e.g., products → [ShopifyProductVariants] list
+            for (var revEntry : schemaInfo.getAllReverseFks().entrySet()) {
+                if (!revEntry.getKey().startsWith(table + ".")) continue;
+                String revFieldName = revEntry.getKey().substring(table.length() + 1);
+                String childTable = revEntry.getValue().childTable();
+                String childTypeName = typeName(childTable);
+                typeBuilder.field(newFieldDefinition()
+                        .name(revFieldName)
+                        .type(GraphQLList.list(GraphQLTypeReference.typeRef(childTypeName)))
+                        .build());
+            }
+
             types.put(table, typeBuilder.build());
 
             // Where input type
