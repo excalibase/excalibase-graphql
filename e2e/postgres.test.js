@@ -1069,3 +1069,216 @@ describe('RLS with X-User-Id header', () => {
     expect(overlap).toHaveLength(0);
   });
 });
+
+// ─── REST API (PostgREST-compatible) ─────────────────────────────────────────
+
+const REST_URL = process.env.POSTGRES_API_URL
+  ? process.env.POSTGRES_API_URL.replace('/graphql', '/api/v1')
+  : 'http://localhost:10000/api/v1';
+
+async function restGet(path, headers = {}) {
+  const res = await fetch(`${REST_URL}${path}`, {
+    headers: { 'Content-Type': 'application/json', ...headers },
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
+}
+
+async function restPost(path, body, headers = {}) {
+  const res = await fetch(`${REST_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
+}
+
+async function restPatch(path, body, headers = {}) {
+  const res = await fetch(`${REST_URL}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
+}
+
+async function restDelete(path, headers = {}) {
+  const res = await fetch(`${REST_URL}${path}`, {
+    method: 'DELETE',
+    headers: { ...headers },
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
+}
+
+describe('REST API — Read operations', () => {
+  test('GET /customers returns all customers', async () => {
+    const res = await restGet('/customer');
+    expect(res.status).toBe(200);
+    expect(res.data.data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('GET with select returns only specified columns', async () => {
+    const res = await restGet('/customer?select=id,first_name');
+    expect(res.status).toBe(200);
+    expect(res.data.data[0].first_name).toBeTruthy();
+    expect(res.data.data[0].last_name).toBeUndefined();
+  });
+
+  test('GET with eq filter', async () => {
+    const res = await restGet('/customer?first_name=eq.MARY');
+    expect(res.status).toBe(200);
+    expect(res.data.data.length).toBeGreaterThanOrEqual(1);
+    res.data.data.forEach(r => expect(r.first_name).toBe('MARY'));
+  });
+
+  test('GET with order=first_name.asc', async () => {
+    const res = await restGet('/customer?order=first_name.asc&limit=3');
+    expect(res.status).toBe(200);
+    const names = res.data.data.map(r => r.first_name);
+    expect(names).toEqual([...names].sort());
+  });
+
+  test('GET with limit and offset', async () => {
+    const res = await restGet('/customer?limit=5&offset=2');
+    expect(res.status).toBe(200);
+    expect(res.data.data).toHaveLength(5);
+  });
+
+  test('GET with Prefer: count=exact returns Content-Range', async () => {
+    const res = await restGet('/customer?limit=5', { 'Prefer': 'count=exact' });
+    expect(res.status).toBe(200);
+    expect(res.data.pagination).toBeDefined();
+    expect(res.data.pagination.total).toBeGreaterThan(0);
+    expect(res.headers.get('content-range')).toBeTruthy();
+  });
+
+  test('GET nonexistent table returns 404', async () => {
+    const res = await restGet('/nonexistent_table');
+    expect(res.status).toBe(404);
+  });
+
+  test('GET with is.null filter', async () => {
+    const res = await restGet('/customer?email=is.null');
+    expect(res.status).toBe(200);
+  });
+
+  test('GET with neq filter', async () => {
+    const res = await restGet('/customer?first_name=neq.MARY&limit=5');
+    expect(res.status).toBe(200);
+    res.data.data.forEach(r => expect(r.first_name).not.toBe('MARY'));
+  });
+
+  test('GET with gt filter on numeric column', async () => {
+    const res = await restGet('/customer?customer_id=gt.590&limit=5');
+    expect(res.status).toBe(200);
+    res.data.data.forEach(r => expect(r.customer_id).toBeGreaterThan(590));
+  });
+});
+
+describe('REST API — Cursor pagination', () => {
+  test('GET with first=3 returns 3 records with hasNextPage', async () => {
+    const res = await restGet('/customer?first=3&order=customer_id.asc');
+    expect(res.status).toBe(200);
+    expect(res.data.data).toHaveLength(3);
+    expect(res.data.pageInfo.hasNextPage).toBe(true);
+  });
+});
+
+describe('REST API — Singular object', () => {
+  test('GET with vnd.pgrst.object+json returns single object', async () => {
+    const res = await restGet('/customer?customer_id=eq.1', {
+      'Accept': 'application/vnd.pgrst.object+json',
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.customer_id).toBe(1);
+  });
+
+  test('GET singular with 0 rows returns 406', async () => {
+    const res = await restGet('/customer?customer_id=eq.99999', {
+      'Accept': 'application/vnd.pgrst.object+json',
+    });
+    expect(res.status).toBe(406);
+  });
+});
+
+describe('REST API — CSV response', () => {
+  test('GET with Accept: text/csv returns CSV', async () => {
+    const res = await fetch(`${REST_URL}/customer?select=customer_id,first_name&limit=3&order=customer_id.asc`, {
+      headers: { 'Accept': 'text/csv' },
+    });
+    expect(res.status).toBe(200);
+    const csv = await res.text();
+    expect(csv).toContain('customer_id,first_name');
+    const lines = csv.trim().split('\n');
+    expect(lines.length).toBe(4); // header + 3 data rows
+  });
+});
+
+describe('REST API — Mutations', () => {
+  let createdId;
+
+  test('POST creates a record with Prefer: return=representation', async () => {
+    const res = await restPost('/customer', {
+      first_name: 'REST_TEST',
+      last_name: 'USER',
+      store_id: 1,
+      address_id: 1,
+    }, { 'Prefer': 'return=representation' });
+    expect(res.status).toBe(201);
+    expect(res.data.data.first_name).toBe('REST_TEST');
+    createdId = res.data.data.customer_id;
+  });
+
+  test('PATCH updates the created record', async () => {
+    const res = await restPatch(`/customer?customer_id=eq.${createdId}`, {
+      last_name: 'UPDATED',
+    }, { 'Prefer': 'return=representation' });
+    expect(res.status).toBe(200);
+    expect(res.data.data[0].last_name).toBe('UPDATED');
+  });
+
+  test('DELETE removes the created record', async () => {
+    const res = await restDelete(`/customer?customer_id=eq.${createdId}`, {
+      'Prefer': 'return=representation',
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.data[0].customer_id).toBe(createdId);
+  });
+
+  test('DELETE without filter returns 400', async () => {
+    const res = await restDelete('/customer');
+    expect(res.status).toBe(400);
+  });
+
+  test('PATCH without filter returns 400', async () => {
+    const res = await restPatch('/customer', { first_name: 'X' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('REST API — Prefer: tx=rollback', () => {
+  test('POST with tx=rollback does not persist', async () => {
+    const res = await restPost('/customer', {
+      first_name: 'ROLLBACK_TEST',
+      last_name: 'SHOULD_NOT_EXIST',
+      store_id: 1,
+      address_id: 1,
+    }, { 'Prefer': 'return=representation, tx=rollback' });
+    expect(res.status).toBe(201);
+    expect(res.data.data.first_name).toBe('ROLLBACK_TEST');
+
+    const check = await restGet('/customer?first_name=eq.ROLLBACK_TEST');
+    expect(check.data.data).toHaveLength(0);
+  });
+});
+
+describe('REST API — Accept-Profile', () => {
+  test('Accept-Profile selects schema', async () => {
+    const res = await restGet('/customer', { 'Accept-Profile': 'hana' });
+    expect(res.status).toBe(200);
+  });
+
+  test('unknown Accept-Profile returns 404', async () => {
+    const res = await restGet('/customer', { 'Accept-Profile': 'nonexistent' });
+    expect(res.status).toBe(404);
+  });
+});
