@@ -1,5 +1,7 @@
 package io.github.excalibase.rest.compiler;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.schema.SchemaInfo;
 import org.springframework.jdbc.core.SqlParameterValue;
@@ -17,6 +19,8 @@ public class RestQueryCompiler {
     private static final String CTE_UPD = "upd";
     private static final String CTE_DEL = "del";
     private static final String ALIAS = "c";
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final SchemaInfo schemaInfo;
     private final SqlDialect dialect;
@@ -435,22 +439,33 @@ public class RestQueryCompiler {
 
     /** Coerce a value from a JSON body (Object) for binding — wraps ENUM values for JDBC. */
     private Object coerceParam(String table, String column, Object value) {
-        if (!(value instanceof String s)) return value;
+        if (value == null) return null;
         if (schemaInfo.getEnumType(table, column) != null) {
-            return new SqlParameterValue(Types.OTHER, s);
+            return new SqlParameterValue(Types.OTHER, value.toString());
         }
         String type = schemaInfo.getColumnType(table, column);
-        if (type != null) {
-            return switch (type.toLowerCase()) {
-                case "timestamp", "timestamptz", "timestamp with time zone",
-                     "timestamp without time zone", "date", "time", "timetz",
-                     "time with time zone", "time without time zone", "interval",
-                     "jsonb", "json", "uuid", "_text", "text[]" ->
-                    new SqlParameterValue(Types.OTHER, s);
-                default -> value;
-            };
+        if (type == null) return value;
+        return switch (type.toLowerCase()) {
+            case "timestamp", "timestamptz", "timestamp with time zone",
+                 "timestamp without time zone", "date", "time", "timetz",
+                 "time with time zone", "time without time zone", "interval",
+                 "uuid", "_text", "text[]" ->
+                new SqlParameterValue(Types.OTHER, value.toString());
+            // JSONB/JSON: Map/List from JSON body must be serialized to string first
+            case "jsonb", "json" -> {
+                String json = (value instanceof String s) ? s : toJsonString(value);
+                yield new SqlParameterValue(Types.OTHER, json);
+            }
+            default -> value;
+        };
+    }
+
+    private String toJsonString(Object value) {
+        try {
+            return MAPPER.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            return value.toString();
         }
-        return value;
     }
 
     /** Coerce a filter value (String) for binding — handles type conversions including ENUMs. */
@@ -467,6 +482,14 @@ public class RestQueryCompiler {
                 case "numeric", "decimal", "float8", "double precision" -> Double.parseDouble(value);
                 case "real", "float4" -> Float.parseFloat(value);
                 case "boolean", "bool" -> Boolean.parseBoolean(value);
+                // PostgreSQL-specific types: pass as Types.OTHER so the driver lets the server
+                // handle the cast. Timestamps accept many formats (ISO-8601, RFC-2822, epoch, etc.)
+                // and must not be pre-parsed — the server resolves the format from context.
+                case "timestamp", "timestamptz", "timestamp with time zone",
+                     "timestamp without time zone", "date", "time", "timetz",
+                     "time with time zone", "time without time zone", "interval",
+                     "jsonb", "json", "uuid", "_text", "text[]" ->
+                    new SqlParameterValue(Types.OTHER, value);
                 default -> value;
             };
         } catch (NumberFormatException e) {
