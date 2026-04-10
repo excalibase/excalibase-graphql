@@ -13,6 +13,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql:ro
       - ./scripts/initdb-complex-domain.sql:/docker-entrypoint-initdb.d/02-complex-domain.sql:ro
+      - ./scripts/initdb-ecommerce.sql:/docker-entrypoint-initdb.d/03-ecommerce.sql:ro
+      - ./scripts/initdb-kanban.sql:/docker-entrypoint-initdb.d/04-kanban.sql:ro
+      - ./scripts/initdb-clinic.sql:/docker-entrypoint-initdb.d/05-clinic.sql:ro
     # Enable logical replication for CDC
     command: >
       postgres
@@ -63,7 +66,7 @@ services:
 
       # Application settings
       SERVER_PORT: 10000
-      APP_SCHEMAS: hana,complex
+      APP_SCHEMAS: hana,complex,shopify,kanban,clinic
       APP_DATABASE_TYPE: postgres
       APP_MAX_ROWS: 30
 

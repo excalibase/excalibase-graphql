@@ -9,6 +9,10 @@
     "test:subscription:mysql": "jest subscription.test.js --forceExit --testNamePattern='MySQL'",
     "test:subscription": "jest subscription.test.js --forceExit",
     "test:multi-tenant": "jest multi-tenant/multi-tenant.test.js --forceExit",
+    "test:ecommerce": "jest ecommerce.test.js --forceExit",
+    "test:kanban": "jest kanban.test.js --forceExit",
+    "test:clinic": "jest clinic.test.js --forceExit",
+    "test:study-cases": "jest ecommerce.test.js kanban.test.js clinic.test.js --forceExit",
     "test": "jest --forceExit"
   },
   "dependencies": {
