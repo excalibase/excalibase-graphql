@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "/vault/pki/public-key"
+    "url": "/api/vault/pki/public-key"
   },
   "response": {
     "status": 200,

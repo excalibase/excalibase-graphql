@@ -75,7 +75,7 @@ public class RestApiController {
             @RequestParam Map<String, String> allParams, HttpServletRequest request) {
 
         var ctx = resolveContext(table, acceptProfile, request);
-        if (ctx == null) return jwtEnabled && getClaims(request) == null ? unauthorized() : notFound();
+        if (ctx == null) return notFound();
 
         var parsed = parseSelectParams(select, order, allParams);
         String accept = request.getHeader("Accept");
@@ -131,7 +131,7 @@ public class RestApiController {
             HttpServletRequest request) {
 
         var ctx = resolveContext(table, cp, request);
-        if (ctx == null) return jwtEnabled && getClaims(request) == null ? unauthorized() : notFound();
+        if (ctx == null) return notFound();
         boolean rollback = preferContains(prefer, "tx=rollback");
 
         RestQueryCompiler.CompiledResult compiled;
@@ -206,7 +206,7 @@ public class RestApiController {
             @RequestParam Map<String, String> allParams, HttpServletRequest request) {
 
         var ctx = resolveContext(table, cp, request);
-        if (ctx == null) return jwtEnabled && getClaims(request) == null ? unauthorized() : notFound();
+        if (ctx == null) return notFound();
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return ResponseEntity.badRequest().body(Map.of("error", "At least one filter is required"));
 
@@ -218,7 +218,7 @@ public class RestApiController {
 
     private ResponseEntity<Object> mutate(String table, Map<String, Object> body, String prefer, String cp, Map<String, String> allParams, HttpServletRequest request) {
         var ctx = resolveContext(table, cp, request);
-        if (ctx == null) return jwtEnabled && getClaims(request) == null ? unauthorized() : notFound();
+        if (ctx == null) return notFound();
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return ResponseEntity.badRequest().body(Map.of("error", "At least one filter is required"));
 
@@ -328,7 +328,6 @@ public class RestApiController {
         String schema = resolveSchema(profileHeader);
         if (schema == null) return null;
         var claims = getClaims(request);
-        if (jwtEnabled && claims == null) return null;
         String tableKey = schema + DOT + table;
         var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
         if (!schemaInfo.hasTable(tableKey)) return null;
