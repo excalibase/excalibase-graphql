@@ -945,7 +945,7 @@ describe('Stored Procedures', () => {
 // ─── JWT + RLS Integration Tests ──────────────────────────────────────────────
 
 const AUTH_URL = process.env.AUTH_URL || 'http://localhost:24000';
-const PROJECT_ID = 'e2e-test';
+const PROJECT_ID = 'e2e-org/e2e-test';
 
 async function authPost(path, body) {
   const res = await fetch(`${AUTH_URL}${path}`, {
@@ -1268,6 +1268,19 @@ describe('REST API — Prefer: tx=rollback', () => {
 
     const check = await restGet('/customer?first_name=eq.ROLLBACK_TEST');
     expect(check.data.data).toHaveLength(0);
+  });
+});
+
+describe('REST API — OpenAPI spec', () => {
+  test('GET /api/v1 returns OpenAPI spec', async () => {
+    const res = await fetch(`${REST_URL}`, {
+      headers: { 'Accept': 'application/openapi+json' },
+    });
+    expect(res.status).toBe(200);
+    const spec = await res.json();
+    expect(spec.openapi).toBe('3.0.3');
+    expect(spec.paths).toBeDefined();
+    expect(Object.keys(spec.paths).length).toBeGreaterThan(0);
   });
 });
 

@@ -3,6 +3,7 @@ package io.github.excalibase.rest.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
+import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;
 import io.github.excalibase.rest.parser.OrderParser;
 import io.github.excalibase.rest.parser.SelectParser;
@@ -61,6 +62,14 @@ public class RestApiController {
         String[] parts = schemas.split(",");
         this.defaultSchema = parts[0].trim();
         this.allowedSchemas = Set.copyOf(Arrays.stream(parts).map(String::trim).toList());
+    }
+
+    @GetMapping(produces = "application/openapi+json")
+    public ResponseEntity<Object> openapi(HttpServletRequest request) {
+        var claims = getClaims(request);
+        var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
+        int port = request.getServerPort();
+        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, defaultSchema, port));
     }
 
     @GetMapping("/{table}")
@@ -146,7 +155,7 @@ public class RestApiController {
             return ResponseEntity.badRequest().body(Map.of("error", "Body must be JSON object or array"));
         }
 
-        return executeDml(compiled, ctx.claims(), rollback, null, prefer, HttpStatus.CREATED);
+        return executeDml(compiled, ctx.claims(), rollback, null, prefer, HttpStatus.CREATED, table);
     }
 
     @PostMapping(path = "/rpc/{function}")
@@ -212,7 +221,7 @@ public class RestApiController {
 
         boolean rollback = preferContains(prefer, "tx=rollback");
         Integer maxAffected = parseMaxAffected(prefer);
-        return executeDml(ctx.compiler().compileDelete(ctx.tableKey(), filters), ctx.claims(), rollback, maxAffected, prefer, HttpStatus.OK);
+        return executeDml(ctx.compiler().compileDelete(ctx.tableKey(), filters), ctx.claims(), rollback, maxAffected, prefer, HttpStatus.OK, null);
     }
 
 
@@ -224,7 +233,7 @@ public class RestApiController {
 
         boolean rollback = preferContains(prefer, "tx=rollback");
         Integer maxAffected = parseMaxAffected(prefer);
-        return executeDml(ctx.compiler().compileUpdate(ctx.tableKey(), body, filters), ctx.claims(), rollback, maxAffected, prefer, HttpStatus.OK);
+        return executeDml(ctx.compiler().compileUpdate(ctx.tableKey(), body, filters), ctx.claims(), rollback, maxAffected, prefer, HttpStatus.OK, null);
     }
 
 
@@ -246,7 +255,7 @@ public class RestApiController {
         });
     }
 
-    private ResponseEntity<Object> executeDml(RestQueryCompiler.CompiledResult compiled, JwtClaims claims, boolean rollback, Integer maxAffected, String prefer, HttpStatus successStatus) {
+    private ResponseEntity<Object> executeDml(RestQueryCompiler.CompiledResult compiled, JwtClaims claims, boolean rollback, Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         return txTemplate.execute(status -> {
             try {
                 setRlsContext(claims);
@@ -265,7 +274,11 @@ public class RestApiController {
                 if (rollback) applied.add("tx=rollback");
                 if (preferContains(prefer, "return=representation") && json != null) {
                     applied.add("return=representation");
-                    ResponseEntity<Object> resp = ResponseEntity.status(successStatus).body(Map.of("data", parseJson(json)));
+                    var builder = ResponseEntity.status(successStatus);
+                    if (successStatus == HttpStatus.CREATED && table != null) {
+                        builder.header("Location", "/api/v1/" + table);
+                    }
+                    ResponseEntity<Object> resp = builder.body(Map.of("data", parseJson(json)));
                     return applied.isEmpty() ? resp : withHeader(resp, "Preference-Applied", String.join(", ", applied));
                 }
                 ResponseEntity<Object> resp = ResponseEntity.status(successStatus).body(null);
@@ -320,7 +333,7 @@ public class RestApiController {
             selectResult.columns(),
             parseFilters(allParams),
             parseOrConditions(allParams),
-            selectResult.embeds().stream().map(e -> new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns())).toList(),
+            selectResult.embeds().stream().map(e -> new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns(), e.fkHint())).toList(),
             OrderParser.parse(order).stream().map(o -> new RestQueryCompiler.OrderBySpec(o.column(), o.direction(), o.nulls())).toList());
     }
 

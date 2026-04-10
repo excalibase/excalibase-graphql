@@ -10,7 +10,11 @@ public final class SelectParser {
     private SelectParser() {}
 
     public record SelectResult(List<String> columns, List<EmbedSpec> embeds, Map<String, String> aliases) {}
-    public record EmbedSpec(String relationName, List<String> columns) {}
+    public record EmbedSpec(String relationName, List<String> columns, String fkHint) {
+        public EmbedSpec(String relationName, List<String> columns) {
+            this(relationName, columns, null);
+        }
+    }
 
     public static SelectResult parse(String select) {
         if (select == null || select.isBlank() || "*".equals(select.trim())) {
@@ -25,10 +29,17 @@ public final class SelectParser {
             part = part.trim();
             int parenStart = part.indexOf('(');
             if (parenStart > 0 && part.endsWith(")")) {
-                String relationName = part.substring(0, parenStart).trim();
+                String prefix = part.substring(0, parenStart).trim();
                 String innerCols = part.substring(parenStart + 1, part.length() - 1);
+                String fkHint = null;
+                String relationName = prefix;
+                int bangIdx = prefix.indexOf('!');
+                if (bangIdx > 0) {
+                    relationName = prefix.substring(0, bangIdx);
+                    fkHint = prefix.substring(bangIdx + 1);
+                }
                 embeds.add(new EmbedSpec(relationName,
-                    List.of(innerCols.split(",")).stream().map(String::trim).toList()));
+                    List.of(innerCols.split(",")).stream().map(String::trim).toList(), fkHint));
             } else if (part.contains(":")) {
                 String[] aliasParts = part.split(":", 2);
                 String alias = aliasParts[0].trim();

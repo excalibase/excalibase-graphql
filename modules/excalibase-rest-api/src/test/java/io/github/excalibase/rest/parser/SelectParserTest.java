@@ -109,6 +109,15 @@ class SelectParserTest {
       assertEquals("fullName", r.aliases().get("first_name"));
     }
 
+    @Test @DisplayName("FK disambiguation: select=addresses!billing_address_id(city)")
+    void fkDisambiguation() {
+      var r = SelectParser.parse("id,addresses!billing_address_id(city)");
+      assertEquals(1, r.embeds().size());
+      assertEquals("addresses", r.embeds().get(0).relationName());
+      assertEquals("billing_address_id", r.embeds().get(0).fkHint());
+      assertEquals("city", r.embeds().get(0).columns().get(0));
+    }
+
     @Test @DisplayName("mixed aliases and normal: select=id,displayName:name")
     void mixed() {
       var r = SelectParser.parse("id,displayName:name");

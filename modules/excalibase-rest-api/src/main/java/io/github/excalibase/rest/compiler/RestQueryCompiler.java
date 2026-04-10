@@ -25,7 +25,11 @@ public class RestQueryCompiler {
     public record FilterSpec(String column, String operator, String value, boolean negated) {}
     public record OrderBySpec(String column, String direction, String nulls) {}
     public record OrCondition(List<FilterSpec> conditions) {}
-    public record EmbedSpec(String relationName, List<String> columns) {}
+    public record EmbedSpec(String relationName, List<String> columns, String fkHint) {
+        public EmbedSpec(String relationName, List<String> columns) {
+            this(relationName, columns, null);
+        }
+    }
     public record SelectQuery(
         String table, List<String> columns, List<FilterSpec> filters,
         List<OrCondition> orConditions, List<EmbedSpec> embeds,
@@ -279,10 +283,10 @@ public class RestQueryCompiler {
         for (EmbedSpec embed : embeds) {
             String ia = ALIAS_R + (ac++);
             String oa = ALIAS_R + (ac++);
-            var fwd = findForwardFk(table, embed.relationName());
+            var fwd = findForwardFk(table, embed.relationName(), embed.fkHint());
             if (fwd != null) entries.add(buildForwardEmbed(embed, fwd, ia, oa));
             else {
-                var rev = findReverseFk(table, embed.relationName());
+                var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
                 if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa));
             }
         }
@@ -318,9 +322,10 @@ public class RestQueryCompiler {
         return safe.isEmpty() ? SELECT + alias + DOT + STAR : SELECT + String.join(COMMA_SEP, safe);
     }
 
-    private SchemaInfo.FkInfo findForwardFk(String table, String relName) {
+    private SchemaInfo.FkInfo findForwardFk(String table, String relName, String fkHint) {
         for (var e : schemaInfo.getAllForwardFks().entrySet()) {
             if (!e.getKey().startsWith(table + DOT)) continue;
+            if (fkHint != null && !e.getValue().fkColumn().equals(fkHint)) continue;
             String ref = e.getValue().refTable();
             String raw = ref.contains(DOT) ? ref.substring(ref.indexOf(DOT) + 1) : ref;
             if (raw.equals(relName)) return e.getValue();
@@ -328,9 +333,10 @@ public class RestQueryCompiler {
         return null;
     }
 
-    private SchemaInfo.ReverseFkInfo findReverseFk(String table, String relName) {
+    private SchemaInfo.ReverseFkInfo findReverseFk(String table, String relName, String fkHint) {
         for (var e : schemaInfo.getAllReverseFks().entrySet()) {
             if (!e.getKey().startsWith(table + DOT)) continue;
+            if (fkHint != null && !e.getValue().fkColumn().equals(fkHint)) continue;
             String child = e.getValue().childTable();
             String raw = child.contains(DOT) ? child.substring(child.indexOf(DOT) + 1) : child;
             if (raw.equals(relName)) return e.getValue();
