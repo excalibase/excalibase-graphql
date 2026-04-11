@@ -2,7 +2,11 @@ package io.github.excalibase;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
-import io.jsonwebtoken.Jwts;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -103,17 +107,19 @@ class JwtRlsIntegrationTest {
         return mapper.writeValueAsString(Map.of("query", query));
     }
 
-    private String signJwt(long userId, String projectId, String role, String email) {
-        return Jwts.builder()
+    private String signJwt(long userId, String projectId, String role, String email) throws Exception {
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject(email)
                 .claim("userId", userId)
                 .claim("projectId", projectId)
                 .claim("role", role)
                 .issuer("excalibase")
-                .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + 3600_000))
-                .signWith(privateKey)
-                .compact();
+                .issueTime(new Date())
+                .expirationTime(new Date(System.currentTimeMillis() + 3600_000))
+                .build();
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+        signed.sign(new ECDSASigner(privateKey));
+        return signed.serialize();
     }
 
     @Test

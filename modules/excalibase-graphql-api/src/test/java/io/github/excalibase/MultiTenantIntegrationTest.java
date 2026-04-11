@@ -2,7 +2,6 @@ package io.github.excalibase;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
-import io.jsonwebtoken.Jwts;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -29,6 +28,11 @@ import java.util.Map;
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 
 /**
  * Integration test: Multi-tenant datasource routing via JWT claims + vault credentials.
@@ -161,8 +165,8 @@ class MultiTenantIntegrationTest {
     return mapper.writeValueAsString(Map.of("query", query));
   }
 
-  private String signJwt(String orgSlug, String projectName, long userId) {
-    return Jwts.builder()
+  private String signJwt(String orgSlug, String projectName, long userId) throws Exception {
+    JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .subject("test@test.com")
         .claim("userId", userId)
         .claim("projectId", orgSlug + "/" + projectName)
@@ -170,10 +174,12 @@ class MultiTenantIntegrationTest {
         .claim("projectName", projectName)
         .claim("role", "user")
         .issuer("excalibase")
-        .issuedAt(new Date())
-        .expiration(new Date(System.currentTimeMillis() + 3600_000))
-        .signWith(privateKey)
-        .compact();
+        .issueTime(new Date())
+        .expirationTime(new Date(System.currentTimeMillis() + 3600_000))
+        .build();
+    SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+    signed.sign(new ECDSASigner(privateKey));
+    return signed.serialize();
   }
 
   // ─── Backward Compatibility ──────────────────────────────────────────────────

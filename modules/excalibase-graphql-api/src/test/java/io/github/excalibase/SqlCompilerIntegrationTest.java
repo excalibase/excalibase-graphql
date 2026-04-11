@@ -107,13 +107,13 @@ class SqlCompilerIntegrationTest {
     @Test
     @Order(6)
     void reverseFkRelationship() throws Exception {
-        // Reverse FK field: orders.customer_id FK -> on customer -> field name is "testSchemaCustomerId"
+        // Reverse FK field: orders.customer_id FK -> on customer -> field name is now "testSchemaOrders" (child table name)
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaCustomerId { order_id total_amount } } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaOrders { order_id total_amount } } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaCustomerId", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaOrders", hasSize(2)));
     }
 
     // === Connection ===
@@ -866,10 +866,10 @@ class SqlCompilerIntegrationTest {
     void reverseFkCustomerToTasks() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaAssignedTo { task_id title } } }")))
+                        .content(graphql("{ testSchemaCustomer(where: { customer_id: { eq: 1 } }) { first_name testSchemaTask { task_id title } } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.testSchemaCustomer[0].first_name").value("Alice"))
-                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaAssignedTo", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaCustomer[0].testSchemaTask", hasSize(2)));
     }
 
     // === Connection without totalCount (conditional totalCount) ===

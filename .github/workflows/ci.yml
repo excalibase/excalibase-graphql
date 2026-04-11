@@ -137,3 +137,42 @@ jobs:
         name: jar-artifacts
         path: modules/excalibase-graphql-api/target/*.jar
         retention-days: 7
+
+  build-native:
+    name: Build Native Image
+    needs: test
+    runs-on: ubuntu-latest
+    # Only on push to main — native compile takes ~10 min, skip on PRs
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up GraalVM JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'graalvm'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-native-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-native-
+          ${{ runner.os }}-maven-
+
+    - name: Install native-image prerequisites
+      run: sudo apt-get update && sudo apt-get install -y gcc zlib1g-dev
+
+    - name: Build native image
+      run: mvn -pl modules/excalibase-graphql-api --also-make -Pnative package -DskipTests ${{ env.MAVEN_CLI_OPTS }}
+
+    - name: Upload native binary
+      uses: actions/upload-artifact@v4
+      with:
+        name: native-binary
+        path: modules/excalibase-graphql-api/target/excalibase-graphql-api
+        retention-days: 7

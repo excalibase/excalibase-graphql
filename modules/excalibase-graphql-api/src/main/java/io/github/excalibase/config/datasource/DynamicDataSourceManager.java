@@ -8,16 +8,10 @@ import io.github.excalibase.service.VaultCredentials;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
-
 import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.function.Function;
 
-@Component
-@ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true")
 public class DynamicDataSourceManager {
 
   private static final Logger log = LoggerFactory.getLogger(DynamicDataSourceManager.class);
@@ -26,10 +20,7 @@ public class DynamicDataSourceManager {
   private final TTLCache<String, DataSource> cache;
 
   /** Production constructor — creates real HikariDataSource. */
-  @org.springframework.beans.factory.annotation.Autowired
-  public DynamicDataSourceManager(VaultCredentialService vaultService,
-                                  @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes,
-                                  @Value("${app.hikari.tenant-pool-size:5}") int poolSize) {
+  public DynamicDataSourceManager(VaultCredentialService vaultService, int ttlMinutes, int poolSize) {
     this(vaultService, creds -> createHikariDataSource(creds, poolSize), ttlMinutes);
   }
 

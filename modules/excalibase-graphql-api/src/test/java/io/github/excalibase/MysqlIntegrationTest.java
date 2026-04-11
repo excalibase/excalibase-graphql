@@ -101,9 +101,9 @@ class MysqlIntegrationTest {
     void reverseFkRelationship() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ testCustomer(where: { customer_id: { eq: 1 } }) { first_name testCustomerId { order_id } } }")))
+                        .content(graphql("{ testCustomer(where: { customer_id: { eq: 1 } }) { first_name testOrders { order_id } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testCustomer[0].testCustomerId", hasSize(2)));
+                .andExpect(jsonPath("$.data.testCustomer[0].testOrders", hasSize(2)));
     }
 
     // === Connection ===

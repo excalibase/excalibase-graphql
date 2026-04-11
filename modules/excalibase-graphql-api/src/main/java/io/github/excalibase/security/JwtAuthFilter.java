@@ -6,14 +6,10 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 
-@Component
-@ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true")
 public class JwtAuthFilter extends OncePerRequestFilter {
 
     public static final String JWT_CLAIMS_ATTR = SecurityConstants.JWT_CLAIMS_ATTR;

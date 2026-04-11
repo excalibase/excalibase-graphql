@@ -2,15 +2,12 @@ package io.github.excalibase.security;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.crypto.ECDSAVerifier;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import io.github.excalibase.cache.TTLCache;
-import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jwts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Service;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -21,9 +18,8 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.X509EncodedKeySpec;
 import java.time.Duration;
 import java.util.Base64;
+import java.util.Date;
 
-@Service
-@ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true")
 public class JwtService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
@@ -36,15 +32,11 @@ public class JwtService {
     private final HttpClient httpClient;
 
     /** Production constructor — fetches key from vault on first verify, caches with TTL. */
-    @Autowired
-    public JwtService(
-            @Value("${app.security.provisioning-url:}") String provisioningUrl,
-            @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes) {
+    public JwtService(String provisioningUrl, int ttlMinutes) {
         this.provisioningUrl = provisioningUrl;
         this.keyCache = new TTLCache<>(Duration.ofMinutes(ttlMinutes));
         this.httpClient = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
 
-        // Eagerly load key at startup to fail fast if vault is unreachable
         if (provisioningUrl != null && !provisioningUrl.isBlank()) {
             try {
                 keyCache.put(CACHE_KEY, fetchPublicKey());
@@ -67,17 +59,26 @@ public class JwtService {
     public JwtClaims verify(String token) {
         ECPublicKey key = getPublicKey();
         try {
-            Claims claims = Jwts.parser()
-                    .verifyWith(key)
-                    .build()
-                    .parseSignedClaims(token)
-                    .getPayload();
+            SignedJWT signedJWT = SignedJWT.parse(token);
+            ECDSAVerifier verifier = new ECDSAVerifier(key);
 
-            Long userId = claims.get("userId", Long.class);
-            String projectId = claims.get("projectId", String.class);
-            String orgSlug = claims.get("orgSlug", String.class);
-            String projectName = claims.get("projectName", String.class);
-            String role = claims.get("role", String.class);
+            if (!signedJWT.verify(verifier)) {
+                throw new JwtVerificationException("JWT signature verification failed");
+            }
+
+            JWTClaimsSet claims = signedJWT.getJWTClaimsSet();
+
+            Date expiration = claims.getExpirationTime();
+            if (expiration != null && new Date().after(expiration)) {
+                throw new JwtVerificationException("JWT token expired");
+            }
+
+            Object userIdClaim = claims.getClaim("userId");
+            Long userId = userIdClaim instanceof Number n ? n.longValue() : null;
+            String projectId = (String) claims.getClaim("projectId");
+            String orgSlug = (String) claims.getClaim("orgSlug");
+            String projectName = (String) claims.getClaim("projectName");
+            String role = (String) claims.getClaim("role");
             String email = claims.getSubject();
 
             if (userId == null || projectId == null) {

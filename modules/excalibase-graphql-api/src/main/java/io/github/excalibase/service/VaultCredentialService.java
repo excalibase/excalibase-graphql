@@ -4,10 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Service;
-
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -15,8 +11,6 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.regex.Pattern;
 
-@Service
-@ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true")
 public class VaultCredentialService {
 
   private static final Logger log = LoggerFactory.getLogger(VaultCredentialService.class);
@@ -28,9 +22,7 @@ public class VaultCredentialService {
   private final String provisioningPat;
   private final HttpClient httpClient;
 
-  public VaultCredentialService(
-      @Value("${app.security.provisioning-url:}") String provisioningUrl,
-      @Value("${app.security.provisioning-pat:}") String provisioningPat) {
+  public VaultCredentialService(String provisioningUrl, String provisioningPat) {
     this.provisioningUrl = provisioningUrl;
     this.provisioningPat = provisioningPat;
     this.httpClient = HttpClient.newBuilder()

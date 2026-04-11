@@ -35,12 +35,12 @@ class SchemaInfoFkNamingTest {
         }
 
         @Test
-        @DisplayName("reverse FK field name uses column name from child table")
+        @DisplayName("reverse FK field name uses child table name")
         void reverseFk_usesColumnName() {
             info.addForeignKey("orders", "customer_id", "customer", "id");
 
-            assertNotNull(info.getReverseFk("customer", "customerId"),
-                    "Reverse FK field should be 'customerId' (from child column customer_id)");
+            assertNotNull(info.getReverseFk("customer", "orders"),
+                    "Reverse FK field should be 'orders' (child table name)");
         }
 
         @Test
@@ -82,15 +82,15 @@ class SchemaInfoFkNamingTest {
         }
 
         @Test
-        @DisplayName("reverse FKs from multiple columns to same table are distinct")
+        @DisplayName("reverse FKs from multiple columns to same table are distinct — disambiguated by column suffix")
         void reverseFks_multiColumn_distinct() {
             info.addForeignKey("task", "assignee_id", "employee", "id");
             info.addForeignKey("task", "reporter_id", "employee", "id");
 
-            assertNotNull(info.getReverseFk("employee", "assigneeId"),
-                    "Reverse FK for assignee_id should exist");
-            assertNotNull(info.getReverseFk("employee", "reporterId"),
-                    "Reverse FK for reporter_id should exist");
+            assertNotNull(info.getReverseFk("employee", "taskAssigneeId"),
+                    "Reverse FK for assignee_id should be 'taskAssigneeId'");
+            assertNotNull(info.getReverseFk("employee", "taskReporterId"),
+                    "Reverse FK for reporter_id should be 'taskReporterId'");
         }
     }
 
@@ -99,26 +99,26 @@ class SchemaInfoFkNamingTest {
     class SelfRefFk {
 
         @Test
-        @DisplayName("self-ref FK: employee.manager_id → employee")
+        @DisplayName("self-ref FK: employee.manager_id → employee — reverse uses table name")
         void selfRefFk_singleColumn() {
             info.addForeignKey("employee", "manager_id", "employee", "id");
 
             assertNotNull(info.getForwardFk("employee", "managerId"),
                     "Forward self-ref FK should be 'managerId'");
-            assertNotNull(info.getReverseFk("employee", "managerId"),
-                    "Reverse self-ref FK should also exist");
+            assertNotNull(info.getReverseFk("employee", "employee"),
+                    "Reverse self-ref FK should be 'employee' (child table name)");
         }
 
         @Test
-        @DisplayName("two self-ref FKs: manager_id + mentor_id both to employee")
+        @DisplayName("two self-ref FKs: manager_id + mentor_id — disambiguated by column suffix")
         void selfRefFk_twoColumns() {
             info.addForeignKey("employee", "manager_id", "employee", "id");
             info.addForeignKey("employee", "mentor_id", "employee", "id");
 
             assertNotNull(info.getForwardFk("employee", "managerId"));
             assertNotNull(info.getForwardFk("employee", "mentorId"));
-            assertNotNull(info.getReverseFk("employee", "managerId"));
-            assertNotNull(info.getReverseFk("employee", "mentorId"));
+            assertNotNull(info.getReverseFk("employee", "employeeManagerId"));
+            assertNotNull(info.getReverseFk("employee", "employeeMentorId"));
         }
     }
 

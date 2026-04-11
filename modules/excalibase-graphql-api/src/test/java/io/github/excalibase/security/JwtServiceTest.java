@@ -1,8 +1,12 @@
 package io.github.excalibase.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
-import io.jsonwebtoken.Jwts;
 import org.junit.jupiter.api.*;
 
 import java.net.InetSocketAddress;
@@ -42,8 +46,8 @@ class JwtServiceTest {
         jwtService = new JwtService(publicKey);
     }
 
-    private String signJwt(ECPrivateKey key, long userId, String projectId, String role, String email, Instant exp) {
-        return Jwts.builder()
+    private String signJwt(ECPrivateKey key, long userId, String projectId, String role, String email, Instant exp) throws Exception {
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject(email)
                 .claim("userId", userId)
                 .claim("projectId", projectId)
@@ -51,14 +55,17 @@ class JwtServiceTest {
                 .claim("projectName", "app-a")
                 .claim("role", role)
                 .issuer("excalibase")
-                .issuedAt(Date.from(Instant.now()))
-                .expiration(Date.from(exp))
-                .signWith(key)
-                .compact();
+                .issueTime(Date.from(Instant.now()))
+                .expirationTime(Date.from(exp))
+                .build();
+
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+        signed.sign(new ECDSASigner(key));
+        return signed.serialize();
     }
 
     @Test
-    void validToken_returnsClaims() {
+    void validToken_returnsClaims() throws Exception {
         String token = signJwt(privateKey, 42, "my-project", "user", "alice@test.com",
                 Instant.now().plusSeconds(3600));
 
@@ -73,7 +80,7 @@ class JwtServiceTest {
     }
 
     @Test
-    void expiredToken_throws() {
+    void expiredToken_throws() throws Exception {
         String token = signJwt(privateKey, 1, "p", "user", "a@b.com",
                 Instant.now().minusSeconds(60));
 
@@ -81,7 +88,7 @@ class JwtServiceTest {
     }
 
     @Test
-    void wrongKey_throws() {
+    void wrongKey_throws() throws Exception {
         String token = signJwt(wrongPrivateKey, 1, "p", "user", "a@b.com",
                 Instant.now().plusSeconds(3600));
 
@@ -89,7 +96,7 @@ class JwtServiceTest {
     }
 
     @Test
-    void tamperedToken_throws() {
+    void tamperedToken_throws() throws Exception {
         String token = signJwt(privateKey, 1, "p", "user", "a@b.com",
                 Instant.now().plusSeconds(3600));
         // Flip a character in the payload
@@ -157,23 +164,24 @@ class JwtServiceTest {
 
         @Test
         @DisplayName("verify uses cached key — no additional vault calls")
-        void verify_usesCachedKey_noExtraFetch() {
+        void verify_usesCachedKey_noExtraFetch() throws Exception {
             fetchCount.set(0);
             var svc = new JwtService("http://localhost:" + vaultPort + "/api", 30);
             assertEquals(1, fetchCount.get());
 
             // 3 verify calls — all use cached key
             for (int i = 0; i < 3; i++) {
-                String token = Jwts.builder()
-                    .subject("test@test.com")
-                    .claim("userId", 1L)
-                    .claim("projectId", "test/proj")
-                    .issuer("excalibase")
-                    .issuedAt(Date.from(Instant.now()))
-                    .expiration(Date.from(Instant.now().plusSeconds(3600)))
-                    .signWith(cacheTestPrivateKey)
-                    .compact();
-                svc.verify(token);
+                JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                        .subject("test@test.com")
+                        .claim("userId", 1L)
+                        .claim("projectId", "test/proj")
+                        .issuer("excalibase")
+                        .issueTime(Date.from(Instant.now()))
+                        .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
+                        .build();
+                SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+                signed.sign(new ECDSASigner(cacheTestPrivateKey));
+                svc.verify(signed.serialize());
             }
 
             assertEquals(1, fetchCount.get(), "Should not re-fetch — key is cached");
