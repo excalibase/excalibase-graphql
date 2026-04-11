@@ -100,9 +100,11 @@ public final class SqlKeywords {
     public static final String P_FILTER = "f_";
     public static final String P_FILTER_COUNT = "fc_";
     public static final String P_WHERE_FILTER = "wf_";
+    public static final String P_NESTED_INSERT = "ni_";
     public static final String P_DELETE_FILTER = "df_";
     public static final String AS_BODY = " AS body";
     public static final String AS_TOTAL_COUNT = " AS total_count";
+    public static final String UNION_ALL = " UNION ALL ";
 
     // --- Helper methods ---
 

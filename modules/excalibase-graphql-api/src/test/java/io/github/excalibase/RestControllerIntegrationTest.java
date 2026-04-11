@@ -539,6 +539,18 @@ class RestControllerIntegrationTest {
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.data[0].users.name", is("Alice")));
     }
+
+    @Test
+    @DisplayName("GET users with deep embed: ?select=id,name,orders(*,products(id,name)) — 3-level chain")
+    void deepEmbed_twoLevels() throws Exception {
+      mockMvc.perform(get(BASE + "/users?select=id,name,orders(id,total,products(id,name))&order=id.asc"))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.data[0].name", is("Alice")))
+          .andExpect(jsonPath("$.data[0].orders", hasSize(2)))
+          // Each order has a nested products object (forward FK from orders to products)
+          .andExpect(jsonPath("$.data[0].orders[0].products", notNullValue()))
+          .andExpect(jsonPath("$.data[0].orders[0].products.name", notNullValue()));
+    }
   }
 
   @Nested

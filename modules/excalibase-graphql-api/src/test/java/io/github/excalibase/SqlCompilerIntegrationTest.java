@@ -228,6 +228,68 @@ class SqlCompilerIntegrationTest {
                 .andExpect(jsonPath("$.data.createManyTestSchemaCustomer", hasSize(2)));
     }
 
+    @Test
+    @Order(34)
+    void multiMutation_twoCreatesInSingleRequest() throws Exception {
+        // Two mutations in one request — both must execute and both must be returned
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("""
+                            mutation {
+                              c1: createTestSchemaCustomer(input: { first_name: "MultiMut1", last_name: "Test" }) { customer_id first_name }
+                              c2: createTestSchemaCustomer(input: { first_name: "MultiMut2", last_name: "Test" }) { customer_id first_name }
+                            }
+                            """)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.c1.first_name").value("MultiMut1"))
+                .andExpect(jsonPath("$.data.c2.first_name").value("MultiMut2"))
+                .andExpect(jsonPath("$.data.c1.customer_id").isNumber())
+                .andExpect(jsonPath("$.data.c2.customer_id").isNumber());
+    }
+
+    @Test
+    @Order(35)
+    void multiMutation_createAndUpdate() throws Exception {
+        // Create one row then update another — both in same request
+        // Update email (already changed by order-31 updateCustomer test, not relied on by later tests)
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("""
+                            mutation {
+                              newRow: createTestSchemaCustomer(input: { first_name: "NewRow", last_name: "Test" }) { customer_id first_name }
+                              updated: updateTestSchemaCustomer(where: { customer_id: { eq: 1 } }, input: { email: "multi-updated@test.com" }) { customer_id email }
+                            }
+                            """)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.newRow.first_name").value("NewRow"))
+                .andExpect(jsonPath("$.data.updated[0].email").value("multi-updated@test.com"));
+    }
+
+    @Test
+    @Order(36)
+    void nestedInsert_orderWithItems() throws Exception {
+        // Hasura-style: create order + order_items in one mutation
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("""
+                            mutation {
+                              createTestSchemaOrders(input: {
+                                customer_id: 1
+                                total_amount: 99.99
+                                testSchemaOrderItems: {
+                                  data: [
+                                    { product_id: 101, quantity: 2, price: 49.99 }
+                                    { product_id: 102, quantity: 1, price: 0.01 }
+                                  ]
+                                }
+                              }) { order_id total_amount }
+                            }
+                            """)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.createTestSchemaOrders.order_id").isNumber())
+                .andExpect(jsonPath("$.data.createTestSchemaOrders.total_amount").value(99.99));
+    }
+
     // === Enhanced WHERE filters ===
 
     @Test
@@ -517,7 +579,7 @@ class SqlCompilerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaOrderItems(distinctOn: [\"order_id\"]) { order_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaOrderItems", hasSize(4)));
+                .andExpect(jsonPath("$.data.testSchemaOrderItems", hasSize(5)));
     }
 
     // === Additional filter coverage ===
@@ -650,7 +712,7 @@ class SqlCompilerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaOrders(where: { total_amount: { lt: 100 } }) { order_id total_amount } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaOrders", hasSize(2)));
+                .andExpect(jsonPath("$.data.testSchemaOrders", hasSize(3)));
     }
 
     @Test
@@ -660,7 +722,7 @@ class SqlCompilerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaOrders(where: { total_amount: { lte: 100.50 } }) { order_id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaOrders", hasSize(3)));
+                .andExpect(jsonPath("$.data.testSchemaOrders", hasSize(4)));
     }
 
     @Test

@@ -1295,3 +1295,140 @@ describe('REST API — Accept-Profile', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ─── Phase 2: Multi-Mutation Transaction ─────────────────────────────────────
+
+describe('GraphQL — Multi-Mutation Transaction', () => {
+  test('two creates in single request both execute and return distinct IDs', async () => {
+    const data = await client.request(gql`
+      mutation {
+        c1: createHanaCustomer(input: { first_name: "MultiMut1", last_name: "E2E", email: "multimut1_e2e@test.com", active: true }) { customer_id first_name }
+        c2: createHanaCustomer(input: { first_name: "MultiMut2", last_name: "E2E", email: "multimut2_e2e@test.com", active: true }) { customer_id first_name }
+      }
+    `);
+    expect(data.c1.first_name).toBe('MultiMut1');
+    expect(data.c2.first_name).toBe('MultiMut2');
+    expect(data.c1.customer_id).toBeGreaterThan(0);
+    expect(data.c2.customer_id).toBeGreaterThan(0);
+    expect(data.c1.customer_id).not.toBe(data.c2.customer_id);
+  });
+
+  test('create and update in single request — both execute atomically', async () => {
+    // Create a target customer to update
+    const created = await client.request(gql`
+      mutation {
+        createHanaCustomer(input: { first_name: "MutTarget", last_name: "E2E", email: "muttarget_e2e@test.com", active: true }) { customer_id }
+      }
+    `);
+    const id = created.createHanaCustomer.customer_id;
+
+    const data = await client.request(gql`
+      mutation {
+        newRow: createHanaCustomer(input: { first_name: "MutNew", last_name: "E2E", email: "mutnew_e2e@test.com", active: true }) { customer_id first_name }
+        updated: updateHanaCustomer(where: { customer_id: { eq: ${id} } }, input: { last_name: "MultiUpdated" }) { customer_id last_name }
+      }
+    `);
+    expect(data.newRow.first_name).toBe('MutNew');
+    expect(Array.isArray(data.updated)).toBe(true);
+    expect(data.updated[0].last_name).toBe('MultiUpdated');
+  });
+
+  test('aliases are used as response keys in multi-mutation response', async () => {
+    const data = await client.request(gql`
+      mutation {
+        first: createHanaCustomer(input: { first_name: "AliasA", last_name: "E2E", email: "aliasa_e2e@test.com", active: true }) { customer_id first_name }
+        second: createHanaCustomer(input: { first_name: "AliasB", last_name: "E2E", email: "aliasb_e2e@test.com", active: true }) { customer_id first_name }
+      }
+    `);
+    // Aliases become keys in response
+    expect(data.first).toBeDefined();
+    expect(data.second).toBeDefined();
+    expect(data.first.first_name).toBe('AliasA');
+    expect(data.second.first_name).toBe('AliasB');
+  });
+});
+
+// ─── Phase 3: Nested FK Insert ────────────────────────────────────────────────
+
+describe('GraphQL — Nested FK Insert', () => {
+  test('create order with nested order_items in single mutation', async () => {
+    const data = await client.request(gql`
+      mutation {
+        createHanaOrders(input: {
+          customer_id: 1
+          total_amount: 199.99
+          hanaOrderItems: {
+            data: [
+              { product_id: 1, quantity: 1, price: 99.99 }
+              { product_id: 2, quantity: 2, price: 49.99 }
+            ]
+          }
+        }) { order_id total_amount }
+      }
+    `);
+    expect(data.createHanaOrders.order_id).toBeGreaterThan(0);
+    expect(Number(data.createHanaOrders.total_amount)).toBeCloseTo(199.99, 1);
+  });
+
+  test('nested order_items are persisted and queryable after creation', async () => {
+    const created = await client.request(gql`
+      mutation {
+        createHanaOrders(input: {
+          customer_id: 1
+          total_amount: 59.99
+          hanaOrderItems: {
+            data: [
+              { product_id: 3, quantity: 1, price: 59.99 }
+            ]
+          }
+        }) { order_id }
+      }
+    `);
+    const orderId = created.createHanaOrders.order_id;
+
+    const data = await client.request(gql`
+      { hanaOrderItems(where: { order_id: { eq: ${orderId} } }) { order_id product_id quantity } }
+    `);
+    expect(data.hanaOrderItems.length).toBe(1);
+    expect(data.hanaOrderItems[0].product_id).toBe(3);
+    expect(data.hanaOrderItems[0].order_id).toBe(orderId);
+  });
+});
+
+// ─── Phase 1: Deep REST FK Embedding ─────────────────────────────────────────
+
+describe('REST API — Deep FK Embedding', () => {
+  test('2-level embed: orders with customer (forward FK)', async () => {
+    const res = await restGet('/orders?select=order_id,total_amount,customer(customer_id,first_name)&order=order_id.asc&limit=3');
+    expect(res.status).toBe(200);
+    const rows = res.data.data;
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows[0].customer).toBeDefined();
+    expect(rows[0].customer.first_name).toBeDefined();
+  });
+
+  test('2-level embed: customer with orders (reverse FK)', async () => {
+    const res = await restGet('/customer?select=customer_id,first_name,orders(order_id,total_amount)&customer_id=lte.3&order=customer_id.asc');
+    expect(res.status).toBe(200);
+    const rows = res.data.data;
+    expect(rows.length).toBeGreaterThan(0);
+    const withOrders = rows.filter(r => r.orders && r.orders.length > 0);
+    expect(withOrders.length).toBeGreaterThan(0);
+    expect(withOrders[0].orders[0].total_amount).toBeDefined();
+  });
+
+  test('3-level deep embed: customer -> orders -> order_items', async () => {
+    const res = await restGet('/customer?select=customer_id,first_name,orders(order_id,total_amount,order_items(order_id,product_id,quantity))&customer_id=lte.3&order=customer_id.asc');
+    expect(res.status).toBe(200);
+    const rows = res.data.data;
+    expect(rows.length).toBeGreaterThan(0);
+    // Find a customer that has orders with order_items
+    const customersWithOrders = rows.filter(r => r.orders && r.orders.length > 0);
+    expect(customersWithOrders.length).toBeGreaterThan(0);
+    const ordersWithItems = customersWithOrders
+      .flatMap(c => c.orders)
+      .filter(o => o.order_items && o.order_items.length > 0);
+    expect(ordersWithItems.length).toBeGreaterThan(0);
+    expect(ordersWithItems[0].order_items[0].product_id).toBeGreaterThan(0);
+  });
+});

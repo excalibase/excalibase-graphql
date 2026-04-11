@@ -8,6 +8,7 @@ import org.springframework.jdbc.core.SqlParameterValue;
 
 import java.sql.Types;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
@@ -31,9 +32,12 @@ public class RestQueryCompiler {
     public record FilterSpec(String column, String operator, String value, boolean negated) {}
     public record OrderBySpec(String column, String direction, String nulls) {}
     public record OrCondition(List<FilterSpec> conditions) {}
-    public record EmbedSpec(String relationName, List<String> columns, String fkHint) {
+    public record EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children) {
         public EmbedSpec(String relationName, List<String> columns) {
-            this(relationName, columns, null);
+            this(relationName, columns, null, List.of());
+        }
+        public EmbedSpec(String relationName, List<String> columns, String fkHint) {
+            this(relationName, columns, fkHint, List.of());
         }
     }
     public record SelectQuery(
@@ -283,42 +287,69 @@ public class RestQueryCompiler {
 
 
     private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds) {
+        return buildEmbedEntries(table, embeds, ALIAS, new AtomicInteger());
+    }
+
+    private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, String parentAlias, AtomicInteger counter) {
         if (embeds == null || embeds.isEmpty()) return List.of();
         List<String> entries = new ArrayList<>();
-        int ac = 0;
         for (EmbedSpec embed : embeds) {
-            String ia = ALIAS_R + (ac++);
-            String oa = ALIAS_R + (ac++);
+            String ia = ALIAS_R + counter.getAndIncrement();
+            String oa = ALIAS_R + counter.getAndIncrement();
             var fwd = findForwardFk(table, embed.relationName(), embed.fkHint());
-            if (fwd != null) entries.add(buildForwardEmbed(embed, fwd, ia, oa));
+            if (fwd != null) entries.add(buildForwardEmbed(embed, fwd, ia, oa, parentAlias, counter));
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
-                if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa));
+                if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa, parentAlias, counter));
             }
         }
         return entries;
     }
 
-    private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa) {
+    private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
+                                     String parentAlias, AtomicInteger counter) {
         String refTable = resolveTable(fk.refTable());
-        String sel = buildEmbedSelect(embed, ia, fk.refTable());
+        List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter);
+        String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, fk.refTable()) : SELECT + ia + DOT_STAR;
+        String rowExpr = buildRowExpr(embed, oa, fk.refTable(), childEntries);
         return sqlString(embed.relationName()) + COMMA_SEP + parens(
-            SELECT + dialect.rowToJson(oa + DOT_STAR) + FROM
-            + parens(sel + FROM + refTable + SPACE + ia
+            SELECT + rowExpr + FROM
+            + parens(innerSel + FROM + refTable + SPACE + ia
             + WHERE + ia + DOT + dialect.quoteIdentifier(fk.refColumn())
-            + ASSIGN + ALIAS + DOT + dialect.quoteIdentifier(fk.fkColumn()))
+            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()))
             + SPACE + oa);
     }
 
-    private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa) {
+    private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
+                                     String parentAlias, AtomicInteger counter) {
         String childTable = resolveTable(rev.childTable());
-        String sel = buildEmbedSelect(embed, ia, rev.childTable());
+        List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter);
+        String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, rev.childTable()) : SELECT + ia + DOT_STAR;
+        String rowExpr = buildRowExpr(embed, oa, rev.childTable(), childEntries);
         return sqlString(embed.relationName()) + COMMA_SEP + COALESCE + parens(
-            parens(SELECT + FN_JSON_AGG + parens(dialect.rowToJson(oa + DOT_STAR)) + FROM
-            + parens(sel + FROM + childTable + SPACE + ia
+            parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM
+            + parens(innerSel + FROM + childTable + SPACE + ia
             + WHERE + ia + DOT + dialect.quoteIdentifier(rev.fkColumn())
-            + ASSIGN + ALIAS + DOT + dialect.quoteIdentifier(rev.refColumns().get(0)))
+            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(rev.refColumns().get(0)))
             + SPACE + oa) + COMMA_SEP + EMPTY_JSON_ARRAY);
+    }
+
+    /**
+     * Build the row expression for an embed. When there are no children, use rowToJson for
+     * simplicity. When there are children, build an explicit jsonb_build_object that includes
+     * both the requested columns and the child embed entries.
+     */
+    private String buildRowExpr(EmbedSpec embed, String outerAlias, String table, List<String> childEntries) {
+        if (childEntries.isEmpty()) return dialect.rowToJson(outerAlias + DOT_STAR);
+        List<String> entries = new ArrayList<>();
+        List<String> cols = embed.columns().isEmpty() || embed.columns().contains(STAR)
+            ? new ArrayList<>(schemaInfo.getColumns(table))
+            : embed.columns();
+        for (String col : cols) {
+            entries.add(sqlString(col) + COMMA_SEP + outerAlias + DOT + dialect.quoteIdentifier(col));
+        }
+        entries.addAll(childEntries);
+        return dialect.buildObject(entries);
     }
 
     private String buildEmbedSelect(EmbedSpec embed, String alias, String table) {

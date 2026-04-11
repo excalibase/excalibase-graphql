@@ -382,4 +382,61 @@ class RestQueryCompilerTest {
       assertTrue(r.sql().contains("-|-"));
     }
   }
+
+  @Nested
+  class DeepEmbedding {
+
+    @BeforeEach
+    void addOrderItemsTable() {
+      // order_items FK: order_items.order_id → orders.id (reverse: orders has order_items)
+      schema.addColumn("public.order_items", "id", "integer");
+      schema.addColumn("public.order_items", "order_id", "integer");
+      schema.addColumn("public.order_items", "product_id", "integer");
+      schema.addColumn("public.order_items", "quantity", "integer");
+      schema.addPrimaryKey("public.order_items", "id");
+      schema.setTableSchema("public.order_items", "public");
+      schema.addForeignKey("public.order_items", "order_id", "public.orders", "id");
+      schema.addForeignKey("public.order_items", "product_id", "public.products", "id");
+      // Also need products to have reverse FK to orders (orders.product_id → products)
+      // already set up in setUp()
+    }
+
+    @Test
+    @DisplayName("two-level embed: products(*,orders(*)) produces nested subquery")
+    void twoLevelReverseEmbed() {
+      // products has reverse FK: orders.product_id → products.id
+      var embed = new RestQueryCompiler.EmbedSpec(
+          "orders", List.of("*"), null,
+          List.of(new RestQueryCompiler.EmbedSpec("order_items", List.of("*")))
+      );
+      var r = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(), null, List.of(embed),
+          null, 10, 0, false
+      ));
+      // Should contain a nested subquery for orders inside products
+      assertTrue(r.sql().contains("\"orders\""), "Expected orders subquery in SQL: " + r.sql());
+      assertTrue(r.sql().contains("\"order_items\""), "Expected order_items nested subquery in SQL: " + r.sql());
+    }
+
+    @Test
+    @DisplayName("deep embed SQL uses parent alias (r1) for child FK join, not top-level alias (c)")
+    void deepEmbedUsesCorrectParentAlias() {
+      var embed = new RestQueryCompiler.EmbedSpec(
+          "orders", List.of("*"), null,
+          List.of(new RestQueryCompiler.EmbedSpec("order_items", List.of("*")))
+      );
+      var r = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(), null, List.of(embed),
+          null, 10, 0, false
+      ));
+      String sql = r.sql();
+      // order_items join should use r1 (orders alias), NOT c (products alias)
+      // Pattern: order_items r2 WHERE r2."order_id" = r1."id"
+      assertTrue(sql.contains("\"order_items\""), "Missing order_items in: " + sql);
+      assertTrue(sql.contains("\"orders\""), "Missing orders in: " + sql);
+      // The child order_items join must reference an r-alias (orders outer alias), not c (products)
+      // Since the outer alias for orders is r1, order_items join must be "= r1."
+      assertTrue(sql.contains("= r1."), "order_items join must use orders alias r1, not top-level c, in: " + sql);
+    }
+  }
 }

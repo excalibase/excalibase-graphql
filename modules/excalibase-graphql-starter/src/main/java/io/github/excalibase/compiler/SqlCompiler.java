@@ -72,32 +72,48 @@ public class SqlCompiler {
             Map<String, Object> params = new HashMap<>();
 
             if (isMutation) {
-                for (Selection<?> sel : op.getSelectionSet().getSelections()) {
-                    if (sel instanceof Field field) {
-                        String fieldName = field.getName();
+                // Collect CTE fragments — each non-two-phase mutation contributes one raw CTE
+                List<MutationFragment> mutFragments = new ArrayList<>();
 
-                        // Stored procedure calls — works on both Postgres and MySQL
-                        if (fieldName.startsWith("call")) {
-                            String procNameResolved = mutationBuilder.resolveStoredProcedure(fieldName.substring("call".length()));
-                            if (procNameResolved != null) {
-                                ProcedureCallInfo callInfo = mutationBuilder.buildProcedureCallInfo(
-                                        field, procNameResolved, params, variables);
-                                if (callInfo != null) {
-                                    return new CompiledQuery(null, params, null, null,
-                                            true, fieldName, callInfo);
-                                }
+                for (Selection<?> sel : op.getSelectionSet().getSelections()) {
+                    if (!(sel instanceof Field field)) continue;
+                    String fieldName = field.getName();
+
+                    // Stored procedure calls — single call, return immediately
+                    if (fieldName.startsWith("call")) {
+                        String procNameResolved = mutationBuilder.resolveStoredProcedure(fieldName.substring("call".length()));
+                        if (procNameResolved != null) {
+                            ProcedureCallInfo callInfo = mutationBuilder.buildProcedureCallInfo(
+                                    field, procNameResolved, params, variables);
+                            if (callInfo != null) {
+                                return new CompiledQuery(null, params, null, null, true, fieldName, callInfo);
                             }
                         }
-
-                        // Compile mutation (delegates to PG or MySQL compiler internally)
-                        CompiledQuery mutationResult = mutationBuilder.compileMutation(field, fieldName, params, variables);
-                        if (mutationResult != null) {
-                            return mutationResult;
-                        }
                     }
+
+                    CompiledQuery frag = mutationBuilder.compileMutationFragment(field, fieldName, params, variables);
+                    if (frag == null) continue;
+
+                    // MySQL two-phase mutations cannot be combined — execute immediately (single path)
+                    if (frag.isTwoPhase()) {
+                        return mutationBuilder.compileMutation(field, fieldName, params, variables);
+                    }
+
+                    // Use alias as response key if present (e.g. "c1: createX(...)")
+                    String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
+                    mutFragments.add(new MutationFragment(responseKey, frag.sql()));
                 }
-                String emptyObj = dialect.buildObject(List.of());
-                return new CompiledQuery("SELECT " + emptyObj, params);
+
+                if (mutFragments.isEmpty()) {
+                    return new CompiledQuery("SELECT " + dialect.buildObject(List.of()), params);
+                }
+                if (mutFragments.size() == 1) {
+                    // Single mutation — use existing wrapped path (backward compatible)
+                    String wrapped = dialect.wrapMutationResult(mutFragments.get(0).rawSql(), mutFragments.get(0).fieldName());
+                    return new CompiledQuery(wrapped, params);
+                }
+                // Multi-mutation: combine all CTE fragments into one transaction
+                return combineFragments(mutFragments, params);
             }
 
             List<String> rootResults = new ArrayList<>();
@@ -134,6 +150,41 @@ public class SqlCompiler {
             fragmentsHolder.remove();
         }
     }
+
+    /**
+     * Combines multiple CTE mutation fragments into a single atomic SQL statement.
+     *
+     * <p>Each raw fragment looks like:
+     * {@code WITH "alias" AS (INSERT/UPDATE/DELETE ... RETURNING *) SELECT objectSql FROM "alias"}
+     *
+     * <p>Combined result:
+     * {@code WITH "a1" AS (...), "a2" AS (...) SELECT jsonb_build_object('f1', (...), 'f2', (...))}
+     */
+    private CompiledQuery combineFragments(List<MutationFragment> fragments, Map<String, Object> params) {
+        List<String> cteParts = new ArrayList<>();
+        List<String> objectEntries = new ArrayList<>();
+
+        for (MutationFragment f : fragments) {
+            // Split at last ") SELECT" boundary to separate CTE body from SELECT clause
+            int splitIdx = f.rawSql().lastIndexOf(") SELECT ");
+            if (splitIdx == -1) continue;
+
+            String ctePart = f.rawSql().substring(0, splitIdx + 1); // includes closing ")"
+            String selectPart = f.rawSql().substring(splitIdx + 2);  // "SELECT ..."
+
+            // Strip "WITH " prefix from 2nd+ fragments (chained with comma)
+            if (!cteParts.isEmpty() && ctePart.startsWith("WITH ")) {
+                ctePart = ctePart.substring("WITH ".length());
+            }
+            cteParts.add(ctePart);
+            objectEntries.add("'" + f.fieldName() + "', (" + selectPart + ")");
+        }
+
+        String sql = String.join(", ", cteParts) + " SELECT jsonb_build_object(" + String.join(", ", objectEntries) + ")";
+        return new CompiledQuery(sql, params);
+    }
+
+    private record MutationFragment(String fieldName, String rawSql) {}
 
     private int measureDepth(SelectionSet selectionSet, Map<String, FragmentDefinition> fragments) {
         if (selectionSet == null || selectionSet.getSelections().isEmpty()) return 0;

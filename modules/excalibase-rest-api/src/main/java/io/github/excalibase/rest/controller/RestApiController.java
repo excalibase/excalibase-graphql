@@ -334,7 +334,7 @@ public class RestApiController {
             selectResult.columns(),
             parseFilters(allParams),
             parseOrConditions(allParams),
-            selectResult.embeds().stream().map(e -> new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns(), e.fkHint())).toList(),
+            selectResult.embeds().stream().map(RestApiController::toCompilerEmbed).toList(),
             OrderParser.parse(order).stream().map(o -> new RestQueryCompiler.OrderBySpec(o.column(), o.direction(), o.nulls())).toList());
     }
 
@@ -408,5 +408,10 @@ public class RestApiController {
     private List<?> parseJsonList(Object body) {
         if (body == null) return List.of();
         try { return mapper.readValue(body.toString(), List.class); } catch (Exception e) { return List.of(); }
+    }
+
+    private static RestQueryCompiler.EmbedSpec toCompilerEmbed(SelectParser.EmbedSpec e) {
+        List<RestQueryCompiler.EmbedSpec> children = e.children().stream().map(RestApiController::toCompilerEmbed).toList();
+        return new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns(), e.fkHint(), children);
     }
 }

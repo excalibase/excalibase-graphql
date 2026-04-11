@@ -99,6 +99,61 @@ class SelectParserTest {
   }
 
   @Nested
+  class DeepEmbedding {
+
+    @Test @DisplayName("two-level embed: orders(*,items(*)) produces child embed")
+    void twoLevel() {
+      var r = SelectParser.parse("id,orders(*,items(*))");
+      assertEquals(1, r.columns().size());
+      assertEquals(1, r.embeds().size());
+      var orders = r.embeds().get(0);
+      assertEquals("orders", orders.relationName());
+      assertEquals(1, orders.columns().size());
+      assertEquals("*", orders.columns().get(0));
+      assertEquals(1, orders.children().size());
+      var items = orders.children().get(0);
+      assertEquals("items", items.relationName());
+      assertEquals(1, items.columns().size());
+      assertEquals("*", items.columns().get(0));
+    }
+
+    @Test @DisplayName("three-level embed: orders(*,items(*,products(*)))")
+    void threeLevel() {
+      var r = SelectParser.parse("orders(*,items(*,products(*)))");
+      var orders = r.embeds().get(0);
+      assertEquals("orders", orders.relationName());
+      assertEquals(1, orders.children().size());
+      var items = orders.children().get(0);
+      assertEquals("items", items.relationName());
+      assertEquals(1, items.children().size());
+      var products = items.children().get(0);
+      assertEquals("products", products.relationName());
+      assertTrue(products.children().isEmpty());
+    }
+
+    @Test @DisplayName("deep embed with specific columns: orders(id,total,items(id,quantity))")
+    void deepWithColumns() {
+      var r = SelectParser.parse("orders(id,total,items(id,quantity))");
+      var orders = r.embeds().get(0);
+      assertEquals(2, orders.columns().size());
+      assertEquals("id", orders.columns().get(0));
+      assertEquals("total", orders.columns().get(1));
+      assertEquals(1, orders.children().size());
+      var items = orders.children().get(0);
+      assertEquals(2, items.columns().size());
+      assertEquals("id", items.columns().get(0));
+      assertEquals("quantity", items.columns().get(1));
+    }
+
+    @Test @DisplayName("flat embed has empty children")
+    void flatEmbedHasEmptyChildren() {
+      var r = SelectParser.parse("id,orders(id,total)");
+      var orders = r.embeds().get(0);
+      assertTrue(orders.children().isEmpty());
+    }
+  }
+
+  @Nested
   class Aliases {
 
     @Test @DisplayName("aliased column: select=fullName:first_name")

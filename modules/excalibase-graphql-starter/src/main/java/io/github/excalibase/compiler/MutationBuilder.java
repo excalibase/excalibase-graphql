@@ -61,6 +61,11 @@ public class MutationBuilder {
         return mutationCompiler.compileMutation(field, fieldName, params, variables, this);
     }
 
+    public SqlCompiler.CompiledQuery compileMutationFragment(Field field, String fieldName,
+                                                             Map<String, Object> params, Map<String, Object> variables) {
+        return mutationCompiler.compileMutationFragment(field, fieldName, params, variables, this);
+    }
+
     // === Stored procedure support ===
 
     public SqlCompiler.ProcedureCallInfo buildProcedureCallInfo(Field field, String procName,
