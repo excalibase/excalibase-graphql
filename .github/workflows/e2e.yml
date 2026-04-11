@@ -24,7 +24,6 @@ jobs:
   postgres-e2e:
     name: Postgres E2E Tests
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
     
     steps:
     - name: Checkout code
@@ -93,8 +92,6 @@ jobs:
   postgres-e2e-native:
     name: Postgres E2E Tests (Native)
     runs-on: ubuntu-latest
-    # Native compile ~10 min — skip on PRs, run on push to main and manual dispatch
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
 
     steps:
     - name: Checkout code
@@ -152,7 +149,6 @@ jobs:
   mysql-e2e:
     name: MySQL E2E Tests
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request'
 
     steps:
     - name: Checkout code
