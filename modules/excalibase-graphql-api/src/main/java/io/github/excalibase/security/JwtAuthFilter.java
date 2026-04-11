@@ -41,12 +41,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         if (claims != null && claims.projectId() != null) {
             try {
-                ScopedValue.where(TenantContext.TENANT_ID, claims.projectId())
-                    .call(() -> { chain.doFilter(request, response); return null; });
-            } catch (IOException | ServletException e) {
-                throw e;
-            } catch (Exception e) {
-                throw new ServletException(e);
+                TenantContext.setTenantId(claims.projectId());
+                chain.doFilter(request, response);
+            } finally {
+                TenantContext.clear();
             }
         } else {
             chain.doFilter(request, response);

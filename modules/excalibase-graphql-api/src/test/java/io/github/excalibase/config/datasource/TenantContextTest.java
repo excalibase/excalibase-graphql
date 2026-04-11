@@ -1,5 +1,6 @@
 package io.github.excalibase.config.datasource;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -7,59 +8,60 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class TenantContextTest {
 
-  @Test
-  @DisplayName("getTenantId returns null when not bound")
-  void getTenantId_notBound_returnsNull() {
-    assertNull(TenantContext.getTenantId());
-  }
+    @AfterEach
+    void cleanup() {
+        TenantContext.clear();
+    }
 
-  @Test
-  @DisplayName("ScopedValue is accessible within where().run() scope")
-  void scopedValue_accessibleWithinScope() {
-    ScopedValue.where(TenantContext.TENANT_ID, "duc-corp/app-a").run(() -> {
-      assertEquals("duc-corp/app-a", TenantContext.getTenantId());
-    });
-  }
+    @Test
+    @DisplayName("getTenantId returns null when not set")
+    void getTenantId_notSet_returnsNull() {
+        assertNull(TenantContext.getTenantId());
+    }
 
-  @Test
-  @DisplayName("ScopedValue is not accessible after scope exits")
-  void scopedValue_notAccessibleAfterScope() {
-    ScopedValue.where(TenantContext.TENANT_ID, "duc-corp/app-a").run(() -> {
-      assertNotNull(TenantContext.getTenantId());
-    });
-    assertNull(TenantContext.getTenantId());
-  }
+    @Test
+    @DisplayName("setTenantId makes value accessible via getTenantId")
+    void setTenantId_accessible() {
+        TenantContext.setTenantId("duc-corp/app-a");
+        assertEquals("duc-corp/app-a", TenantContext.getTenantId());
+    }
 
-  @Test
-  @DisplayName("nested scopes see their own value")
-  void scopedValue_nestedScopes() {
-    ScopedValue.where(TenantContext.TENANT_ID, "tenant-a").run(() -> {
-      assertEquals("tenant-a", TenantContext.getTenantId());
+    @Test
+    @DisplayName("clear removes the tenant id")
+    void clear_removesValue() {
+        TenantContext.setTenantId("duc-corp/app-a");
+        TenantContext.clear();
+        assertNull(TenantContext.getTenantId());
+    }
 
-      ScopedValue.where(TenantContext.TENANT_ID, "tenant-b").run(() -> {
+    @Test
+    @DisplayName("set-clear-set round trip works correctly")
+    void setAndClear_roundTrip() {
+        TenantContext.setTenantId("tenant-a");
+        assertEquals("tenant-a", TenantContext.getTenantId());
+
+        TenantContext.setTenantId("tenant-b");
         assertEquals("tenant-b", TenantContext.getTenantId());
-      });
 
-      // outer scope restored
-      assertEquals("tenant-a", TenantContext.getTenantId());
-    });
-  }
+        TenantContext.clear();
+        assertNull(TenantContext.getTenantId());
+    }
 
-  @Test
-  @DisplayName("each virtual thread has its own scoped value")
-  void scopedValue_threadIsolation() throws Exception {
-    var result = new String[1];
+    @Test
+    @DisplayName("each thread has isolated tenant context")
+    void threadLocal_isolation() throws Exception {
+        TenantContext.setTenantId("tenant-main");
+        var result = new String[1];
 
-    ScopedValue.where(TenantContext.TENANT_ID, "tenant-main").run(() -> {
-      Thread thread = Thread.ofVirtual().start(() -> {
-        // child thread does NOT inherit ScopedValue (unlike InheritableThreadLocal)
-        result[0] = TenantContext.getTenantId();
-      });
-      try { thread.join(); } catch (InterruptedException e) { throw new RuntimeException(e); }
+        Thread thread = Thread.ofVirtual().start(() -> {
+            // Plain ThreadLocal — child thread does NOT inherit parent value
+            result[0] = TenantContext.getTenantId();
+        });
+        thread.join();
 
-      assertEquals("tenant-main", TenantContext.getTenantId());
-    });
-
-    assertNull(result[0]);
-  }
+        // Main thread value unaffected
+        assertEquals("tenant-main", TenantContext.getTenantId());
+        // Child thread had no value
+        assertNull(result[0]);
+    }
 }

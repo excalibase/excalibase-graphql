@@ -20,11 +20,11 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
-    - name: Set up JDK 25 (if building from scratch)
+    - name: Set up JDK 21 (if building from scratch)
       if: github.event_name == 'push'
       uses: actions/setup-java@v4
       with:
-        java-version: '25'
+        java-version: '21'
         distribution: 'corretto'
         
     - name: Cache Maven dependencies (if building from scratch)
