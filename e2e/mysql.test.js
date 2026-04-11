@@ -270,17 +270,17 @@ describe('Mutations — CRUD', () => {
   test('update customer', async () => {
     if (!createdId) return;
     const data = await client.request(gql`
-      mutation { updateExcalibaseCustomer(id: ${createdId}, input: { first_name: "E2E_Updated" }) { customer_id first_name } }
+      mutation { updateExcalibaseCustomer(where: { customer_id: { eq: ${createdId} } }, input: { first_name: "E2E_Updated" }) { customer_id first_name } }
     `);
-    expect(data.updateExcalibaseCustomer.first_name).toBe('E2E_Updated');
+    expect(data.updateExcalibaseCustomer[0].first_name).toBe('E2E_Updated');
   });
 
   test('delete customer', async () => {
     if (!createdId) return;
     const data = await client.request(gql`
-      mutation { deleteExcalibaseCustomer(id: ${createdId}) { customer_id } }
+      mutation { deleteExcalibaseCustomer(where: { customer_id: { eq: ${createdId} } }) { customer_id } }
     `);
-    expect(data.deleteExcalibaseCustomer).not.toBeNull();
+    expect(data.deleteExcalibaseCustomer[0]).not.toBeNull();
   });
 
   test('deleted customer is no longer queryable', async () => {
@@ -306,31 +306,31 @@ describe('Mutations — CRUD', () => {
 
 describe('Relationships', () => {
   test('orders with nested customer (forward FK)', async () => {
-    const data = await client.request(gql`{ excalibaseOrders(limit: 3) { order_id customer_id excalibaseCustomer { customer_id first_name last_name } } }`);
+    const data = await client.request(gql`{ excalibaseOrders(limit: 3) { order_id customer_id excalibaseCustomerId { customer_id first_name last_name } } }`);
     expect(data.excalibaseOrders.length).toBeGreaterThanOrEqual(1);
-    expect(data.excalibaseOrders[0].excalibaseCustomer).not.toBeNull();
-    expect(data.excalibaseOrders[0].excalibaseCustomer.first_name.length).toBeGreaterThan(0);
+    expect(data.excalibaseOrders[0].excalibaseCustomerId).not.toBeNull();
+    expect(data.excalibaseOrders[0].excalibaseCustomerId.first_name.length).toBeGreaterThan(0);
   });
 
   test('task with nested customer (forward FK)', async () => {
-    const data = await client.request(gql`{ excalibaseTask(where: { customer_id: { isNotNull: true } }, limit: 3) { task_id title customer_id excalibaseCustomer { customer_id first_name } } }`);
+    const data = await client.request(gql`{ excalibaseTask(where: { customer_id: { isNotNull: true } }, limit: 3) { task_id title customer_id excalibaseCustomerId { customer_id first_name } } }`);
     expect(data.excalibaseTask.length).toBeGreaterThanOrEqual(1);
-    expect(data.excalibaseTask[0].excalibaseCustomer).not.toBeNull();
+    expect(data.excalibaseTask[0].excalibaseCustomerId).not.toBeNull();
   });
 
   test('task with null customer_id has null customer', async () => {
-    const data = await client.request(gql`{ excalibaseTask(where: { customer_id: { isNull: true } }, limit: 3) { task_id customer_id excalibaseCustomer { customer_id } } }`);
+    const data = await client.request(gql`{ excalibaseTask(where: { customer_id: { isNull: true } }, limit: 3) { task_id customer_id excalibaseCustomerId { customer_id } } }`);
     // If any tasks exist with null customer_id, the nested customer field should be null
     if (data.excalibaseTask.length > 0) {
-      data.excalibaseTask.forEach(t => expect(t.excalibaseCustomer ?? null).toBeNull());
+      data.excalibaseTask.forEach(t => expect(t.excalibaseCustomerId ?? null).toBeNull());
     }
   });
 
   test('product_detail with nested product (forward FK)', async () => {
-    const data = await client.request(gql`{ excalibaseProductDetail(limit: 3) { detail_id product_id excalibaseProduct { product_id name } } }`);
+    const data = await client.request(gql`{ excalibaseProductDetail(limit: 3) { detail_id product_id excalibaseProductId { product_id name } } }`);
     expect(data.excalibaseProductDetail.length).toBeGreaterThanOrEqual(1);
-    expect(data.excalibaseProductDetail[0].excalibaseProduct).not.toBeNull();
-    expect(data.excalibaseProductDetail[0].excalibaseProduct.name.length).toBeGreaterThan(0);
+    expect(data.excalibaseProductDetail[0].excalibaseProductId).not.toBeNull();
+    expect(data.excalibaseProductDetail[0].excalibaseProductId.name.length).toBeGreaterThan(0);
   });
 
   test('customer with nested orders (reverse FK)', async () => {
