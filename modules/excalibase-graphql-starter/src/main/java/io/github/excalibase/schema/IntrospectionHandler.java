@@ -21,10 +21,15 @@ import static io.github.excalibase.schema.GraphqlConstants.*;
 public class IntrospectionHandler {
 
     private final GraphQL graphQL;
+    private final GraphQLSchema schema;
 
     public IntrospectionHandler(SchemaInfo schemaInfo) {
-        this.graphQL = GraphQL.newGraphQL(buildSchema(schemaInfo)).build();
+        this.schema = buildSchema(schemaInfo);
+        this.graphQL = GraphQL.newGraphQL(this.schema).build();
     }
+
+    /** Expose the schema for external validation (e.g. graphql-java Validator). */
+    public GraphQLSchema getSchema() { return schema; }
 
     /** Derive the GraphQL type name from a table key. Compound keys always prefix. */
     private static String typeName(String tableKey) {
@@ -64,6 +69,7 @@ public class IntrospectionHandler {
         Map<String, GraphQLObjectType> types = new LinkedHashMap<>();
         Map<String, GraphQLInputObjectType> whereTypes = new LinkedHashMap<>();
         Map<String, GraphQLInputObjectType> createInputs = new LinkedHashMap<>();
+        List<GraphQLInputObjectType> arrRelTypes = new ArrayList<>();
 
         // Build enum types from schema metadata
         Map<String, GraphQLEnumType> enumTypeMap = new LinkedHashMap<>();
@@ -182,6 +188,25 @@ public class IntrospectionHandler {
                         : mapInputType(schemaInfo.getColumnType(table, col));
                 createBuilder.field(GraphQLInputObjectField.newInputObjectField()
                         .name(col).type(inputType).build());
+            }
+            // Reverse FK nested insert fields: e.g., testSchemaOrderItems: { data: [TestSchemaOrderItemsCreateInput!] }
+            for (var revEntry : schemaInfo.getAllReverseFks().entrySet()) {
+                if (!revEntry.getKey().startsWith(table + ".")) continue;
+                String revFieldName = revEntry.getKey().substring(table.length() + 1);
+                String childTypeName = typeName(revEntry.getValue().childTable());
+                String arrRelTypeName = childTypeName + "ArrRelInsertInput";
+                GraphQLInputObjectType arrRelType = GraphQLInputObjectType.newInputObject()
+                        .name(arrRelTypeName)
+                        .field(GraphQLInputObjectField.newInputObjectField()
+                                .name("data")
+                                .type(GraphQLList.list(GraphQLTypeReference.typeRef(childTypeName + CREATE_INPUT_SUFFIX)))
+                                .build())
+                        .build();
+                arrRelTypes.add(arrRelType);
+                createBuilder.field(GraphQLInputObjectField.newInputObjectField()
+                        .name(revFieldName)
+                        .type(arrRelType)
+                        .build());
             }
             createInputs.put(table, createBuilder.build());
         }
@@ -310,6 +335,10 @@ public class IntrospectionHandler {
         // Register enum types as additional types so they're discoverable via __type
         for (GraphQLEnumType enumType : enumTypeMap.values()) {
             schemaBuilder.additionalType(enumType);
+        }
+        // Register ArrRelInsertInput types for nested FK insert validation
+        for (GraphQLInputObjectType arrRelType : arrRelTypes) {
+            schemaBuilder.additionalType(arrRelType);
         }
         // Register composite types as GraphQL object types
         for (var entry : schemaInfo.getCompositeTypes().entrySet()) {
