@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:15-alpine
-    container_name: excalibase-postgres
+    container_name: excalibase-postgres-native
     environment:
       POSTGRES_DB: hana
       POSTGRES_USER: hana001
@@ -10,13 +10,12 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_native_data:/var/lib/postgresql/data
       - ./scripts/initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql:ro
       - ./scripts/initdb-complex-domain.sql:/docker-entrypoint-initdb.d/02-complex-domain.sql:ro
       - ./scripts/initdb-ecommerce.sql:/docker-entrypoint-initdb.d/03-ecommerce.sql:ro
       - ./scripts/initdb-kanban.sql:/docker-entrypoint-initdb.d/04-kanban.sql:ro
       - ./scripts/initdb-clinic.sql:/docker-entrypoint-initdb.d/05-clinic.sql:ro
-    # Enable logical replication for CDC
     command: >
       postgres
       -c wal_level=logical
@@ -30,71 +29,48 @@ services:
       retries: 5
       start_period: 30s
     networks:
-      - excalibase-network
+      - excalibase-native-network
     restart: unless-stopped
 
   excalibase-app:
-    image: excalibase/excalibase-graphql
-    container_name: excalibase-graphql
+    image: excalibase/excalibase-graphql:native
+    container_name: excalibase-graphql-native
     environment:
-      # Database connection
-      # app_user is a non-superuser — required for PostgreSQL RLS to be enforced
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hana
       SPRING_DATASOURCE_USERNAME: app_user
       SPRING_DATASOURCE_PASSWORD: password123
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
 
-      # HikariCP Connection Pool (per data source)
-      # Formula: (target_db_CPU × 2 + 1) / replicas_using_that_db
-      # Dev: PostgreSQL 1 CPU, 1 replica → pool=5
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 5
       SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 2
       SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 10000
       SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT: 300000
       SPRING_DATASOURCE_HIKARI_MAX_LIFETIME: 900000
 
-      # Tomcat (Virtual Threads handle concurrency — this is carrier threads only)
       SERVER_TOMCAT_THREADS_MAX: 200
       SERVER_TOMCAT_THREADS_MIN_SPARE: 10
       SERVER_TOMCAT_MAX_CONNECTIONS: 10000
       SERVER_TOMCAT_ACCEPT_COUNT: 100
       SERVER_TOMCAT_CONNECTION_TIMEOUT: 20000
 
-      # Virtual Threads (enabled by default in application.yaml)
-      # Set to false to test without virtual threads
       SPRING_THREADS_VIRTUAL_ENABLED: true
-
-      # Application settings
       SERVER_PORT: 10000
       APP_SCHEMAS: hana,complex,shopify,kanban,clinic
       APP_DATABASE_TYPE: postgres
       APP_MAX_ROWS: 30
 
-      # User context for RLS (Row Level Security)
       APP_SECURITY_USER_CONTEXT_ENABLED: true
       APP_SECURITY_USER_ID_EXTRACTOR_TYPE: header
       APP_SECURITY_USER_ID_HEADER: X-User-Id
 
-      # JWT verification + multi-tenant vault credentials
       APP_SECURITY_JWT_ENABLED: true
       APP_SECURITY_PROVISIONING_URL: http://mock-vault:8080/api
       APP_SECURITY_PROVISIONING_PAT: test-pat
 
-      # NATS CDC subscription (events from excalibase-watcher)
       APP_NATS_ENABLED: true
       APP_NATS_URL: nats://nats:4222
       APP_NATS_STREAM_NAME: CDC
       APP_NATS_SUBJECT_PREFIX: cdc
-
-      # Observability — send all OTLP signals to the collector
-      # Run with docker-compose.observability.yml to activate the full stack.
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
-      OTEL_TRACES_SAMPLER_ARG: "1.0"
-      # Explicit Spring Boot property bindings for OTLP — needed because
-      # OtlpLoggingAutoConfiguration uses @ConditionalOnProperty directly.
-      MANAGEMENT_OTLP_TRACING_ENDPOINT: http://otel-collector:4318/v1/traces
-      MANAGEMENT_OTLP_METRICS_EXPORT_URL: http://otel-collector:4318/v1/metrics
-      MANAGEMENT_OTLP_LOGGING_ENDPOINT: http://otel-collector:4318/v1/logs
     ports:
       - "10000:10000"
     depends_on:
@@ -107,21 +83,20 @@ services:
       mock-vault:
         condition: service_healthy
     networks:
-      - excalibase-network
+      - excalibase-native-network
     restart: unless-stopped
-    # Resource limits - 1GB RAM, 0.5 CPU (to match 1 CPU AWS m6)
     deploy:
       resources:
         limits:
-          memory: 1024M
+          memory: 256M
           cpus: '0.5'
         reservations:
-          memory: 512M
+          memory: 64M
           cpus: '0.25'
 
   nats:
     image: nats:2.10
-    container_name: excalibase-nats
+    container_name: excalibase-nats-native
     command: ["-js", "-m", "8222"]
     ports:
       - "4222:4222"
@@ -132,14 +107,13 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - excalibase-network
+      - excalibase-native-network
     restart: unless-stopped
 
   excalibase-watcher:
     image: excalibase/excalibase-watcher
-    container_name: excalibase-watcher
+    container_name: excalibase-watcher-native
     environment:
-      # Postgres CDC
       APP_CDC_POSTGRES_URL: jdbc:postgresql://postgres:5432/hana
       APP_CDC_POSTGRES_USERNAME: hana001
       APP_CDC_POSTGRES_PASSWORD: password123
@@ -148,7 +122,6 @@ services:
       APP_CDC_PUBLICATION_NAME: cdc_publication
       APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
       APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
-      # NATS
       APP_NATS_URL: nats://nats:4222
       APP_NATS_STREAM_NAME: CDC
       APP_NATS_SUBJECT_PREFIX: cdc
@@ -165,12 +138,12 @@ services:
       nats:
         condition: service_healthy
     networks:
-      - excalibase-network
+      - excalibase-native-network
     restart: unless-stopped
 
   mock-vault:
     image: wiremock/wiremock:3.10.0
-    container_name: excalibase-mock-vault
+    container_name: excalibase-mock-vault-native
     volumes:
       - ./e2e/wiremock:/home/wiremock
     ports:
@@ -181,12 +154,12 @@ services:
       timeout: 5s
       retries: 10
     networks:
-      - excalibase-network
+      - excalibase-native-network
     restart: unless-stopped
 
   excalibase-auth:
     image: excalibase/excalibase-auth
-    container_name: excalibase-auth
+    container_name: excalibase-auth-native
     build:
       context: ../excalibase-auth
     environment:
@@ -206,26 +179,13 @@ services:
       timeout: 5s
       retries: 15
     networks:
-      - excalibase-network
+      - excalibase-native-network
     restart: unless-stopped
-
-  graphiql:
-    container_name: graphiql
-    image: excalibase/graphiql
-    ports:
-      - 20000:80
-    environment:
-      GRAPHQL_ENDPOINT: http://localhost:10000/graphql
-      GRAPHQL_WS_ENDPOINT: http://localhost:10000/graphql
-    depends_on:
-      - excalibase-app
-    restart: unless-stopped
-
 
 volumes:
-  postgres_data:
+  postgres_native_data:
     driver: local
 
 networks:
-  excalibase-network:
-    driver: bridge 
+  excalibase-native-network:
+    driver: bridge

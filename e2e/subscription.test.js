@@ -86,7 +86,7 @@ describe('Postgres CDC subscriptions', () => {
     expect(insert.data.first_name).toBe('CDC_PG_Insert');
 
     // Clean up
-    await pgClient.request(gql`mutation { deleteHanaCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
+    await pgClient.request(gql`mutation { deleteHanaCustomer(where: { customer_id: { eq: ${cid} } }) { customer_id } }`);
   });
 
   test('receives UPDATE event from GraphQL mutation', async () => {
@@ -107,10 +107,10 @@ describe('Postgres CDC subscriptions', () => {
 
     await pgClient.request(gql`
       mutation {
-        updateHanaCustomer(input: {
-          customer_id: ${cid}
-          first_name: "CDC_PG_Updated"
-        }) { customer_id first_name }
+        updateHanaCustomer(
+          where: { customer_id: { eq: ${cid} } }
+          input: { first_name: "CDC_PG_Updated" }
+        ) { customer_id first_name }
       }
     `);
 
@@ -123,7 +123,7 @@ describe('Postgres CDC subscriptions', () => {
     expect(update.data.new.first_name).toBe('CDC_PG_Updated');
 
     // Clean up
-    await pgClient.request(gql`mutation { deleteHanaCustomer(input: { customer_id: ${cid} }) { customer_id } }`);
+    await pgClient.request(gql`mutation { deleteHanaCustomer(where: { customer_id: { eq: ${cid} } }) { customer_id } }`);
   });
 
   test('receives DELETE event from GraphQL mutation', async () => {
@@ -143,7 +143,7 @@ describe('Postgres CDC subscriptions', () => {
     await sub.ready;
 
     await pgClient.request(gql`
-      mutation { deleteHanaCustomer(input: { customer_id: ${cid} }) { customer_id } }
+      mutation { deleteHanaCustomer(where: { customer_id: { eq: ${cid} } }) { customer_id } }
     `);
 
     await waitFor(sub.events, (e) =>

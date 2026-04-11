@@ -245,6 +245,12 @@
                                 <goals>
                                     <goal>process-aot</goal>
                                 </goals>
+                                <configuration>
+                                    <!-- Tell AOT that JWT beans are active so they're included in the native image.
+                                         @ConditionalOnProperty is evaluated at AOT time; without this the JWT config
+                                         would be excluded because JWT_ENABLED env var is unset during the build. -->
+                                    <jvmArguments>-Dapp.security.jwt-enabled=true</jvmArguments>
+                                </configuration>
                             </execution>
                         </executions>
                     </plugin>

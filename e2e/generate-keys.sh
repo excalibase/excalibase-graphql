@@ -27,8 +27,13 @@ write_json() {
 write_json "$PRIVATE_KEY" "EC-P256" "$WIREMOCK_FILES/private-key-response.json"
 write_json "$PUBLIC_KEY"  "EC-P256" "$WIREMOCK_FILES/public-key-response.json"
 
-# Credentials stub (static, no secrets)
+# Credentials stubs (static, no secrets)
+# excalibase_app user — used by graphql service for tenant datasource routing
 cat > "$WIREMOCK_FILES/credentials-response.json" <<'EOF'
+{"host":"postgres","port":"5432","username":"app_user","password":"password123","database":"hana"}
+EOF
+# auth_admin user — used by auth service for user storage
+cat > "$WIREMOCK_FILES/auth-credentials-response.json" <<'EOF'
 {"host":"postgres","port":"5432","username":"auth_admin","password":"authpass","database":"hana"}
 EOF
 
