@@ -1,0 +1,1 @@
+{"host":"sc-kanban-postgres","port":"5432","username":"excalibase_app","password":"kanban_app_pass","database":"kanban_db"}

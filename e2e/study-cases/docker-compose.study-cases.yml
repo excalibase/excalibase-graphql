@@ -1,0 +1,149 @@
+services:
+  sc-shopify-postgres:
+    image: postgres:16-alpine
+    container_name: sc-shopify-postgres
+    environment:
+      POSTGRES_DB: shopify_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5450:5432"
+    volumes:
+      - ./sql/init-shopify-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
+      - ../../scripts/initdb-ecommerce.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shopify_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - study-cases-network
+
+  sc-kanban-postgres:
+    image: postgres:16-alpine
+    container_name: sc-kanban-postgres
+    environment:
+      POSTGRES_DB: kanban_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5451:5432"
+    volumes:
+      - ./sql/init-kanban-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
+      - ../../scripts/initdb-kanban.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kanban_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - study-cases-network
+
+  sc-clinic-postgres:
+    image: postgres:16-alpine
+    container_name: sc-clinic-postgres
+    environment:
+      POSTGRES_DB: clinic_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5452:5432"
+    volumes:
+      - ./sql/init-clinic-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
+      - ../../scripts/initdb-clinic.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d clinic_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - study-cases-network
+
+  sc-mock-vault:
+    image: wiremock/wiremock:3.10.0
+    container_name: sc-mock-vault
+    volumes:
+      - ./wiremock:/home/wiremock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/__admin/mappings"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - study-cases-network
+
+  sc-excalibase-auth:
+    image: excalibase/excalibase-auth
+    container_name: sc-excalibase-auth
+    environment:
+      PROVISIONING_URL: http://sc-mock-vault:8080/api
+      PROVISIONING_PAT: test-pat
+      PORT: "24000"
+    ports:
+      - "24004:24000"
+    depends_on:
+      sc-shopify-postgres:
+        condition: service_healthy
+      sc-kanban-postgres:
+        condition: service_healthy
+      sc-clinic-postgres:
+        condition: service_healthy
+      sc-mock-vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:24000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks:
+      - study-cases-network
+
+  sc-excalibase-app:
+    image: excalibase/excalibase-graphql
+    container_name: sc-excalibase-graphql
+    environment:
+      # Pure multi-tenant mode — no default datasource, credentials fetched from vault per JWT
+      SPRING_DATASOURCE_URL: ""
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 5
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 1
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 10000
+      SPRING_THREADS_VIRTUAL_ENABLED: "true"
+
+      SERVER_PORT: 10000
+      APP_SCHEMAS: shopify,kanban,clinic
+      APP_DATABASE_TYPE: postgres
+      APP_MAX_ROWS: 30
+
+      APP_SECURITY_JWT_ENABLED: "true"
+      APP_SECURITY_PROVISIONING_URL: http://sc-mock-vault:8080/api
+      APP_SECURITY_PROVISIONING_PAT: test-pat
+
+      APP_NATS_ENABLED: "false"
+    ports:
+      - "10004:10000"
+    depends_on:
+      sc-shopify-postgres:
+        condition: service_healthy
+      sc-kanban-postgres:
+        condition: service_healthy
+      sc-clinic-postgres:
+        condition: service_healthy
+      sc-mock-vault:
+        condition: service_healthy
+      sc-excalibase-auth:
+        condition: service_healthy
+    networks:
+      - study-cases-network
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '0.5'
+
+networks:
+  study-cases-network:
+    driver: bridge

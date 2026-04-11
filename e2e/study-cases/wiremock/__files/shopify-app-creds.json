@@ -1,0 +1,1 @@
+{"host":"sc-shopify-postgres","port":"5432","username":"excalibase_app","password":"shopify_app_pass","database":"shopify_db"}

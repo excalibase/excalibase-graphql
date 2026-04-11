@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/api/vault/secrets/projects/study-cases/kanban/credentials/auth_admin"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "kanban-auth-creds.json"
+  }
+}

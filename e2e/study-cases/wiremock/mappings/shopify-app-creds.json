@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/api/vault/secrets/projects/study-cases/shopify/credentials/excalibase_app"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "shopify-app-creds.json"
+  }
+}

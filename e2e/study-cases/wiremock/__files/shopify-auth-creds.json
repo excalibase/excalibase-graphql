@@ -1,0 +1,1 @@
+{"host":"sc-shopify-postgres","port":"5432","username":"auth_admin","password":"shopify_auth_pass","database":"shopify_db"}

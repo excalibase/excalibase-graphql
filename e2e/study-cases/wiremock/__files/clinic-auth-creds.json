@@ -1,0 +1,1 @@
+{"host":"sc-clinic-postgres","port":"5432","username":"auth_admin","password":"clinic_auth_pass","database":"clinic_db"}

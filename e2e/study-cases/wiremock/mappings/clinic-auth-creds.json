@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/api/vault/secrets/projects/study-cases/clinic/credentials/auth_admin"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "clinic-auth-creds.json"
+  }
+}

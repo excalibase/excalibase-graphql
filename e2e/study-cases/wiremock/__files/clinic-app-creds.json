@@ -1,0 +1,1 @@
+{"host":"sc-clinic-postgres","port":"5432","username":"excalibase_app","password":"clinic_app_pass","database":"clinic_db"}
