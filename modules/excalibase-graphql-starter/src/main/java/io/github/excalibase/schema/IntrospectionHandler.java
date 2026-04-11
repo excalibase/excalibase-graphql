@@ -69,7 +69,7 @@ public class IntrospectionHandler {
         Map<String, GraphQLObjectType> types = new LinkedHashMap<>();
         Map<String, GraphQLInputObjectType> whereTypes = new LinkedHashMap<>();
         Map<String, GraphQLInputObjectType> createInputs = new LinkedHashMap<>();
-        List<GraphQLInputObjectType> arrRelTypes = new ArrayList<>();
+        Map<String, GraphQLInputObjectType> arrRelTypeMap = new LinkedHashMap<>();
 
         // Build enum types from schema metadata
         Map<String, GraphQLEnumType> enumTypeMap = new LinkedHashMap<>();
@@ -195,14 +195,15 @@ public class IntrospectionHandler {
                 String revFieldName = revEntry.getKey().substring(table.length() + 1);
                 String childTypeName = typeName(revEntry.getValue().childTable());
                 String arrRelTypeName = childTypeName + "ArrRelInsertInput";
-                GraphQLInputObjectType arrRelType = GraphQLInputObjectType.newInputObject()
-                        .name(arrRelTypeName)
-                        .field(GraphQLInputObjectField.newInputObjectField()
-                                .name("data")
-                                .type(GraphQLList.list(GraphQLTypeReference.typeRef(childTypeName + CREATE_INPUT_SUFFIX)))
-                                .build())
-                        .build();
-                arrRelTypes.add(arrRelType);
+                // Deduplicate: reuse existing ArrRelInsertInput if the same child type appears across multiple parents
+                GraphQLInputObjectType arrRelType = arrRelTypeMap.computeIfAbsent(arrRelTypeName, name ->
+                        GraphQLInputObjectType.newInputObject()
+                                .name(name)
+                                .field(GraphQLInputObjectField.newInputObjectField()
+                                        .name("data")
+                                        .type(GraphQLList.list(GraphQLTypeReference.typeRef(childTypeName + CREATE_INPUT_SUFFIX)))
+                                        .build())
+                                .build());
                 createBuilder.field(GraphQLInputObjectField.newInputObjectField()
                         .name(revFieldName)
                         .type(arrRelType)
@@ -337,7 +338,7 @@ public class IntrospectionHandler {
             schemaBuilder.additionalType(enumType);
         }
         // Register ArrRelInsertInput types for nested FK insert validation
-        for (GraphQLInputObjectType arrRelType : arrRelTypes) {
+        for (GraphQLInputObjectType arrRelType : arrRelTypeMap.values()) {
             schemaBuilder.additionalType(arrRelType);
         }
         // Register composite types as GraphQL object types
