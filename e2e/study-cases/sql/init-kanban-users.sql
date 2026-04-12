@@ -5,6 +5,8 @@ CREATE SCHEMA IF NOT EXISTS kanban;
 CREATE SCHEMA IF NOT EXISTS auth;
 
 -- App role: used by excalibase-graphql to serve GraphQL/REST queries
+-- app_user is the name expected by initdb-kanban.sql grants
+CREATE USER app_user WITH PASSWORD 'kanban_app_pass';
 CREATE USER excalibase_app WITH PASSWORD 'kanban_app_pass';
 GRANT USAGE ON SCHEMA kanban TO excalibase_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA kanban TO excalibase_app;

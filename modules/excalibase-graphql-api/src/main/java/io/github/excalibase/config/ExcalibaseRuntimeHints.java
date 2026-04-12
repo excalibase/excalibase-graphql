@@ -43,6 +43,9 @@ public class ExcalibaseRuntimeHints implements RuntimeHintsRegistrar {
         registerClass(hints, "io.github.excalibase.security.JwtAuthFilter", all);
         registerClass(hints, "io.github.excalibase.security.JwtService", all);
         registerClass(hints, "io.github.excalibase.security.JwtClaims", all);
+        registerClass(hints, "io.github.excalibase.config.SecurityProperties", all);
+        registerClass(hints, "io.github.excalibase.config.SecurityProperties$Auth", all);
+        registerClass(hints, "io.github.excalibase.config.SecurityProperties$MultiTenant", all);
 
         // Schema + execution
         registerClass(hints, "io.github.excalibase.schema.GraphqlSchemaManager", all);
@@ -77,6 +80,8 @@ public class ExcalibaseRuntimeHints implements RuntimeHintsRegistrar {
         registerClass(hints, "com.nimbusds.jose.crypto.ECDSAVerifier", all);
         registerClass(hints, "com.nimbusds.jose.JWSHeader", all);
         registerClass(hints, "com.nimbusds.jose.util.Base64URL", all);
+        registerClass(hints, "com.nimbusds.jose.jwk.JWKSet", all);
+        registerClass(hints, "com.nimbusds.jose.jwk.ECKey", all);
 
         // JDBC drivers
         registerClass(hints, "org.postgresql.Driver", all);

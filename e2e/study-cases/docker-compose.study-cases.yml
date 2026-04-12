@@ -119,8 +119,9 @@ services:
       APP_MAX_ROWS: 30
 
       APP_SECURITY_JWT_ENABLED: "true"
-      APP_SECURITY_PROVISIONING_URL: http://sc-mock-vault:8080/api
-      APP_SECURITY_PROVISIONING_PAT: test-pat
+      APP_SECURITY_AUTH_JWKS_URL: http://sc-excalibase-auth:24000/.well-known/jwks.json
+      APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: http://sc-mock-vault:8080/api
+      APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT: test-pat
 
       APP_NATS_ENABLED: "false"
     ports:

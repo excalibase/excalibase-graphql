@@ -46,19 +46,16 @@ public class RestApiController {
     private final String defaultSchema;
     private final Set<String> allowedSchemas;
     private final int maxRows;
-    private final boolean jwtEnabled;
 
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
                              @Value("${app.schemas:public}") String schemas,
-                             @Value("${app.max-rows:30}") int maxRows,
-                             @Value("${app.security.jwt-enabled:false}") boolean jwtEnabled) {
+                             @Value("${app.max-rows:30}") int maxRows) {
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
         this.mapper = mapper;
         this.maxRows = maxRows;
-        this.jwtEnabled = jwtEnabled;
         String[] parts = schemas.split(",");
         this.defaultSchema = parts[0].trim();
         this.allowedSchemas = Set.copyOf(Arrays.stream(parts).map(String::trim).toList());
@@ -168,7 +165,6 @@ public class RestApiController {
         String schema = resolveSchema(cp);
         if (schema == null) return notFound();
         var claims = getClaims(request);
-        if (jwtEnabled && claims == null) return unauthorized();
         var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
         if (!schemaInfo.getStoredProcedures().containsKey(schema + DOT + function)) return notFound();
 
@@ -293,9 +289,9 @@ public class RestApiController {
 
     private void setRlsContext(JwtClaims claims) {
         if (claims == null) return;
-        namedJdbc.update(RLS_SET_CONFIG, Map.of("key", RLS_USER_ID, "val", String.valueOf(claims.userId())));
+        namedJdbc.queryForObject(RLS_SET_CONFIG, Map.of("key", RLS_USER_ID, "val", String.valueOf(claims.userId())), String.class);
         if (claims.projectId() != null) {
-            namedJdbc.update(RLS_SET_CONFIG, Map.of("key", RLS_PROJECT_ID, "val", claims.projectId()));
+            namedJdbc.queryForObject(RLS_SET_CONFIG, Map.of("key", RLS_PROJECT_ID, "val", claims.projectId()), String.class);
         }
     }
 
@@ -379,7 +375,6 @@ public class RestApiController {
     }
 
     private static ResponseEntity<Object> notFound() { return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found")); }
-    private static ResponseEntity<Object> unauthorized() { return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", "Authentication required")); }
 
     private JwtClaims getClaims(HttpServletRequest request) { return (JwtClaims) request.getAttribute(SecurityConstants.JWT_CLAIMS_ATTR); }
 

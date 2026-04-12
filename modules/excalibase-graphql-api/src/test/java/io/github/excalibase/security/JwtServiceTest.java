@@ -1,6 +1,5 @@
 package io.github.excalibase.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
@@ -17,9 +16,7 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
-import java.util.Base64;
 import java.util.Date;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -71,7 +68,7 @@ class JwtServiceTest {
 
         JwtClaims claims = jwtService.verify(token);
 
-        assertEquals(42, claims.userId());
+        assertEquals("42", claims.userId());
         assertEquals("my-project", claims.projectId());
         assertEquals("duc-corp", claims.orgSlug());
         assertEquals("app-a", claims.projectName());
@@ -116,14 +113,14 @@ class JwtServiceTest {
     @Nested
     class PublicKeyCacheTest {
 
-        static HttpServer mockVault;
-        static int vaultPort;
+        static HttpServer mockJwks;
+        static int jwksPort;
         static AtomicInteger fetchCount;
         static ECPrivateKey cacheTestPrivateKey;
         static ECPublicKey cacheTestPublicKey;
 
         @BeforeAll
-        static void startVault() throws Exception {
+        static void startMockJwks() throws Exception {
             KeyPairGenerator gen = KeyPairGenerator.getInstance("EC");
             gen.initialize(new ECGenParameterSpec("secp256r1"));
             KeyPair kp = gen.generateKeyPair();
@@ -131,45 +128,42 @@ class JwtServiceTest {
             cacheTestPublicKey = (ECPublicKey) kp.getPublic();
 
             fetchCount = new AtomicInteger(0);
-            mockVault = HttpServer.create(new InetSocketAddress(0), 0);
-            vaultPort = mockVault.getAddress().getPort();
+            mockJwks = HttpServer.create(new InetSocketAddress(0), 0);
+            jwksPort = mockJwks.getAddress().getPort();
 
-            String pubPem = toPem(cacheTestPublicKey);
-            String keyJson = new ObjectMapper().writeValueAsString(
-                Map.of("key", pubPem, "algorithm", "EC-P256"));
+            String jwksJson = buildJwks(cacheTestPublicKey);
 
-            mockVault.createContext("/api/vault/pki/public-key", exchange -> {
+            mockJwks.createContext("/.well-known/jwks.json", exchange -> {
                 fetchCount.incrementAndGet();
-                byte[] body = keyJson.getBytes(StandardCharsets.UTF_8);
+                byte[] body = jwksJson.getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.sendResponseHeaders(200, body.length);
                 exchange.getResponseBody().write(body);
                 exchange.getResponseBody().close();
             });
-            mockVault.start();
+            mockJwks.start();
         }
 
         @AfterAll
-        static void stopVault() {
-            if (mockVault != null) mockVault.stop(0);
+        static void stopMockJwks() {
+            if (mockJwks != null) mockJwks.stop(0);
         }
 
         @Test
-        @DisplayName("constructor eagerly fetches public key from vault")
-        void constructor_fetchesFromVault() {
+        @DisplayName("constructor eagerly fetches JWKS on startup")
+        void constructor_fetchesFromJwks() {
             fetchCount.set(0);
-            new JwtService("http://localhost:" + vaultPort + "/api", 30);
+            new JwtService("http://localhost:" + jwksPort + "/.well-known/jwks.json", 30);
             assertEquals(1, fetchCount.get());
         }
 
         @Test
-        @DisplayName("verify uses cached key — no additional vault calls")
+        @DisplayName("verify uses cached keys — no additional JWKS fetches")
         void verify_usesCachedKey_noExtraFetch() throws Exception {
             fetchCount.set(0);
-            var svc = new JwtService("http://localhost:" + vaultPort + "/api", 30);
+            var svc = new JwtService("http://localhost:" + jwksPort + "/.well-known/jwks.json", 30);
             assertEquals(1, fetchCount.get());
 
-            // 3 verify calls — all use cached key
             for (int i = 0; i < 3; i++) {
                 JWTClaimsSet claims = new JWTClaimsSet.Builder()
                         .subject("test@test.com")
@@ -184,13 +178,17 @@ class JwtServiceTest {
                 svc.verify(signed.serialize());
             }
 
-            assertEquals(1, fetchCount.get(), "Should not re-fetch — key is cached");
+            assertEquals(1, fetchCount.get(), "Should not re-fetch — keys are cached");
         }
 
-        private static String toPem(ECPublicKey key) {
-            byte[] encoded = key.getEncoded();
-            String base64 = Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(encoded);
-            return "-----BEGIN PUBLIC KEY-----\n" + base64 + "\n-----END PUBLIC KEY-----\n";
+        private static String buildJwks(ECPublicKey key) throws Exception {
+            com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(
+                    com.nimbusds.jose.jwk.Curve.P_256, key)
+                    .keyUse(com.nimbusds.jose.jwk.KeyUse.SIGNATURE)
+                    .keyID("test-key")
+                    .build();
+            com.nimbusds.jose.jwk.JWKSet jwkSet = new com.nimbusds.jose.jwk.JWKSet(ecKey);
+            return jwkSet.toString();
         }
     }
 }

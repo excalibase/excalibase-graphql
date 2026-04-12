@@ -21,7 +21,6 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
-import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
 
@@ -65,12 +64,10 @@ class MultiTenantNoDefaultDbTest {
       mockVault = HttpServer.create(new InetSocketAddress(0), 0);
       mockVaultPort = mockVault.getAddress().getPort();
 
-      // PKI public key
-      String pubPem = toPem(publicKey);
-      String keyJson = new ObjectMapper().writeValueAsString(
-          Map.of("key", pubPem, "algorithm", "EC-P256"));
-      mockVault.createContext("/api/vault/pki/public-key", exchange -> {
-        byte[] body = keyJson.getBytes(StandardCharsets.UTF_8);
+      // JWKS endpoint for JWT verification
+      String jwksJson = buildJwks(publicKey);
+      mockVault.createContext("/.well-known/jwks.json", exchange -> {
+        byte[] body = jwksJson.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, body.length);
         exchange.getResponseBody().write(body);
@@ -116,8 +113,9 @@ class MultiTenantNoDefaultDbTest {
     registry.add("app.database-type", () -> "postgres");
     registry.add("app.max-rows", () -> 30);
     registry.add("app.security.jwt-enabled", () -> "true");
-    registry.add("app.security.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
-    registry.add("app.security.provisioning-pat", () -> "test-pat");
+    registry.add("app.security.auth.jwks-url", () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
+    registry.add("app.security.multi-tenant.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
+    registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat");
   }
 
   @Autowired
@@ -199,9 +197,13 @@ class MultiTenantNoDefaultDbTest {
         .andExpect(jsonPath("$.data.createTenantProducts.name", is("New Item")));
   }
 
-  private static String toPem(ECPublicKey key) {
-    byte[] encoded = key.getEncoded();
-    String base64 = Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(encoded);
-    return "-----BEGIN PUBLIC KEY-----\n" + base64 + "\n-----END PUBLIC KEY-----\n";
+  private static String buildJwks(ECPublicKey key) throws Exception {
+    com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(
+        com.nimbusds.jose.jwk.Curve.P_256, key)
+        .keyUse(com.nimbusds.jose.jwk.KeyUse.SIGNATURE)
+        .keyID("test-key")
+        .build();
+    com.nimbusds.jose.jwk.JWKSet jwkSet = new com.nimbusds.jose.jwk.JWKSet(ecKey);
+    return jwkSet.toString();
   }
 }

@@ -6,32 +6,43 @@ import io.github.excalibase.security.JwtService;
 import io.github.excalibase.service.VaultCredentialService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/**
- * Wires all JWT + vault + dynamic datasource beans when jwt-enabled=true.
- *
- * Putting @ConditionalOnProperty here (on a @Configuration) is the correct
- * GraalVM native image pattern — Spring AOT can reason about it at build time.
- * Individual @Service/@Component classes must NOT carry @ConditionalOnProperty.
- */
 @Configuration
 @ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true")
+@EnableConfigurationProperties(SecurityProperties.class)
 public class JwtSecurityConfig {
 
     @Bean
-    public VaultCredentialService vaultCredentialService(
-            @Value("${app.security.provisioning-url:}") String provisioningUrl,
-            @Value("${app.security.provisioning-pat:}") String provisioningPat) {
-        return new VaultCredentialService(provisioningUrl, provisioningPat);
-    }
-
-    @Bean
     public JwtService jwtService(
-            @Value("${app.security.provisioning-url:}") String provisioningUrl,
+            SecurityProperties security,
             @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes) {
-        return new JwtService(provisioningUrl, ttlMinutes);
+
+        SecurityProperties.Auth auth = security.auth();
+        if (auth == null) {
+            throw new IllegalStateException(
+                    "jwt-enabled=true requires app.security.auth.jwks-url or app.security.auth.hmac-secret");
+        }
+
+        boolean hasJwks = auth.hasJwksUrl();
+        boolean hasHmac = auth.hasHmacSecret();
+
+        if (hasJwks && hasHmac) {
+            throw new IllegalStateException(
+                    "app.security.auth: set either jwks-url or hmac-secret, not both");
+        }
+        if (!hasJwks && !hasHmac) {
+            throw new IllegalStateException(
+                    "jwt-enabled=true requires app.security.auth.jwks-url or app.security.auth.hmac-secret");
+        }
+
+        if (hasJwks) {
+            return new JwtService(auth.jwksUrl(), ttlMinutes);
+        }
+
+        return new JwtService(auth.hmacSecret());
     }
 
     @Bean
@@ -39,11 +50,22 @@ public class JwtSecurityConfig {
         return new JwtAuthFilter(jwtService);
     }
 
+    // Multi-tenant beans — only when provisioning-url is configured
     @Bean
+    @ConditionalOnProperty(name = "app.security.multi-tenant.provisioning-url")
+    public VaultCredentialService vaultCredentialService(SecurityProperties security) {
+        SecurityProperties.MultiTenant mt = security.multiTenant();
+        return new VaultCredentialService(mt.provisioningUrl(), mt.provisioningPat());
+    }
+
+    @Bean
+    @ConditionalOnProperty(name = "app.security.multi-tenant.provisioning-url")
     public DynamicDataSourceManager dynamicDataSourceManager(
             VaultCredentialService vaultCredentialService,
             @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes,
             @Value("${app.hikari.tenant-pool-size:5}") int poolSize) {
         return new DynamicDataSourceManager(vaultCredentialService, ttlMinutes, poolSize);
     }
+
+
 }

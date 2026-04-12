@@ -5,6 +5,8 @@ CREATE SCHEMA IF NOT EXISTS clinic;
 CREATE SCHEMA IF NOT EXISTS auth;
 
 -- App role: used by excalibase-graphql to serve GraphQL/REST queries
+-- app_user is the name expected by initdb-clinic.sql grants
+CREATE USER app_user WITH PASSWORD 'clinic_app_pass';
 CREATE USER excalibase_app WITH PASSWORD 'clinic_app_pass';
 GRANT USAGE ON SCHEMA clinic TO excalibase_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA clinic TO excalibase_app;

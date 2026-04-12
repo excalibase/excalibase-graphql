@@ -13,7 +13,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -44,13 +43,10 @@ public class GraphqlController {
     @PostMapping("/graphql")
     public ResponseEntity<Object> graphql(
             @RequestBody Map<String, Object> request,
-            @RequestHeader(value = "X-User-Id", required = false) String userId,
             HttpServletRequest httpRequest) {
 
         var jwtClaims = (JwtClaims) httpRequest.getAttribute(JwtAuthFilter.JWT_CLAIMS_ATTR);
-        if (jwtClaims != null) {
-            userId = String.valueOf(jwtClaims.userId());
-        }
+        String userId = jwtClaims != null ? jwtClaims.userId() : null;
 
         if (!(request.get("query") instanceof String query) || query.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of(

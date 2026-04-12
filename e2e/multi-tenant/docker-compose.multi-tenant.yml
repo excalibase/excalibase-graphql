@@ -100,8 +100,9 @@ services:
 
       # JWT + multi-tenant vault credentials
       APP_SECURITY_JWT_ENABLED: true
-      APP_SECURITY_PROVISIONING_URL: http://mock-vault:8080/api
-      APP_SECURITY_PROVISIONING_PAT: test-pat
+      APP_SECURITY_AUTH_JWKS_URL: http://mock-vault:8080/.well-known/jwks.json
+      APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: http://mock-vault:8080/api
+      APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT: test-pat
 
       # No NATS needed for multi-tenant routing test
       APP_NATS_ENABLED: false

@@ -13,8 +13,6 @@ app:
   allowed-schema: testdb
   database-type: MySQL
   security:
-    role-based-schema: false
-    user-context-enabled: false
   nats:
     enabled: false
 

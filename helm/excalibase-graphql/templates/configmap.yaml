@@ -39,14 +39,20 @@ data:
   APP_SCHEMAS: {{ .Values.app.allowedSchema | quote }}
   APP_DATABASE_TYPE: {{ if $isMysql }}"mysql"{{ else }}"postgres"{{ end }}
 
-  # Security / user context (RLS)
-  APP_SECURITY_USER_CONTEXT_ENABLED: {{ .Values.app.security.userContextEnabled | quote }}
-  APP_SECURITY_USER_ID_HEADER: {{ .Values.app.security.userIdHeader | quote }}
-
-  # JWT + multi-tenant datasource routing
+  # JWT verification
   APP_SECURITY_JWT_ENABLED: {{ .Values.app.security.jwtEnabled | quote }}
-  {{- if .Values.app.security.provisioningUrl }}
-  APP_SECURITY_PROVISIONING_URL: {{ .Values.app.security.provisioningUrl | quote }}
+  {{- if .Values.app.security.auth.jwksUrl }}
+  APP_SECURITY_AUTH_JWKS_URL: {{ .Values.app.security.auth.jwksUrl | quote }}
+  {{- end }}
+  {{- if .Values.app.security.auth.jwksTtlMinutes }}
+  APP_SECURITY_AUTH_JWKS_TTL_MINUTES: {{ .Values.app.security.auth.jwksTtlMinutes | quote }}
+  {{- end }}
+  {{- if .Values.app.security.auth.hmacSecret }}
+  APP_SECURITY_AUTH_HMAC_SECRET: {{ .Values.app.security.auth.hmacSecret | quote }}
+  {{- end }}
+  # Multi-tenant datasource routing (optional)
+  {{- if .Values.app.security.multiTenant.provisioningUrl }}
+  APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: {{ .Values.app.security.multiTenant.provisioningUrl | quote }}
   {{- end }}
 
   # NATS CDC subscription (events from excalibase-watcher)

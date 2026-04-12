@@ -214,11 +214,11 @@ subscription {
 
 ## Row-Level Security (PostgreSQL)
 
-Pass `X-User-Id` in your request headers. Excalibase sets it as a PostgreSQL session variable so RLS policies can filter rows automatically:
+Send a JWT — Excalibase verifies it and sets the `userId` claim as a PostgreSQL session variable so RLS policies filter rows automatically:
 
 ```http
 POST /graphql
-X-User-Id: alice
+Authorization: Bearer eyJhbGciOiJFUzI1NiJ9...
 ```
 
 ```sql
@@ -226,6 +226,8 @@ X-User-Id: alice
 CREATE POLICY user_isolation ON rls_orders
   FOR ALL USING (user_id = current_setting('request.user_id', true));
 ```
+
+Enable with `app.security.jwt-enabled: true` and `app.security.auth.jwks-url`. See [RLS docs →](features/user-context-rls.md).
 
 ---
 

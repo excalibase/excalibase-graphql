@@ -260,7 +260,7 @@ describe('E-Commerce REST — Read', () => {
 
   test('GET /products CSV export', async () => {
     const res = await fetch(`${REST_URL}/products?select=id,name,price&limit=3&order=id.asc`, {
-      headers: { 'Accept': 'text/csv', 'Accept-Profile': 'shopify' },
+      headers: { 'Accept': 'text/csv', 'Accept-Profile': 'shopify', Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
     const csv = await res.text();

@@ -59,13 +59,10 @@ services:
       APP_DATABASE_TYPE: postgres
       APP_MAX_ROWS: 30
 
-      APP_SECURITY_USER_CONTEXT_ENABLED: true
-      APP_SECURITY_USER_ID_EXTRACTOR_TYPE: header
-      APP_SECURITY_USER_ID_HEADER: X-User-Id
-
       APP_SECURITY_JWT_ENABLED: true
-      APP_SECURITY_PROVISIONING_URL: http://mock-vault:8080/api
-      APP_SECURITY_PROVISIONING_PAT: test-pat
+      APP_SECURITY_AUTH_JWKS_URL: http://excalibase-auth:24000/.well-known/jwks.json
+      APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: http://mock-vault:8080/api
+      APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT: test-pat
 
       APP_NATS_ENABLED: true
       APP_NATS_URL: nats://nats:4222
@@ -81,6 +78,8 @@ services:
       excalibase-watcher:
         condition: service_healthy
       mock-vault:
+        condition: service_healthy
+      excalibase-auth:
         condition: service_healthy
     networks:
       - excalibase-native-network

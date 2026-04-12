@@ -1,6 +1,5 @@
 package io.github.excalibase;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -19,16 +18,17 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.io.StringWriter;
 import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
-import java.util.Base64;
 import java.util.Date;
 import java.util.Map;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -65,12 +65,11 @@ class JwtRlsIntegrationTest {
             mockVault = HttpServer.create(new InetSocketAddress(0), 0);
             mockVaultPort = mockVault.getAddress().getPort();
 
-            String pubPem = toPem(publicKey);
-            String keyJson = new ObjectMapper().writeValueAsString(Map.of("key", pubPem, "algorithm", "EC-P256"));
+            String jwksJson = buildJwks(publicKey);
 
-            mockVault.createContext("/vault/pki/public-key", exchange -> {
+            mockVault.createContext("/.well-known/jwks.json", exchange -> {
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
-                byte[] body = keyJson.getBytes();
+                byte[] body = jwksJson.getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(200, body.length);
                 exchange.getResponseBody().write(body);
                 exchange.getResponseBody().close();
@@ -95,7 +94,7 @@ class JwtRlsIntegrationTest {
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.max-rows", () -> 30);
         registry.add("app.security.jwt-enabled", () -> "true");
-        registry.add("app.security.provisioning-url", () -> "http://localhost:" + mockVaultPort);
+        registry.add("app.security.auth.jwks-url", () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
     }
 
     @Autowired
@@ -148,13 +147,13 @@ class JwtRlsIntegrationTest {
 
     @Test
     @Order(3)
-    void noJwt_noRlsFilter() throws Exception {
-        // Without JWT or X-User-Id, RLS context is not set → FORCE RLS blocks all rows
-        // (FORCE ROW LEVEL SECURITY applies even to table owner when no policy matches)
+    void noJwt_noUnauthorized() throws Exception {
+        // Without JWT, the controller no longer blocks with 401
+        // RLS protects the data at the DB level (returns 0 rows or errors when user_id unset)
         mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(graphql("{ testRlsOrders { id product total } }")))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk()); // no 401 — authorization is DB-enforced via RLS
     }
 
     @Test
@@ -165,17 +164,6 @@ class JwtRlsIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(graphql("{ testRlsOrders { id } }")))
                 .andExpect(status().isUnauthorized());
-    }
-
-    @Test
-    @Order(5)
-    void legacyXUserIdHeader_stillWorks() throws Exception {
-        mockMvc.perform(post("/graphql")
-                .header("X-User-Id", "42")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(graphql("{ testRlsOrders { id product } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testRlsOrders", hasSize(2)));
     }
 
     @Test
@@ -205,9 +193,13 @@ class JwtRlsIntegrationTest {
                 .andExpect(jsonPath("$.data.testRlsPayments", hasSize(1)));    // user 99 has 1 payment
     }
 
-    private static String toPem(ECPublicKey key) throws Exception {
-        byte[] encoded = key.getEncoded();
-        String base64 = Base64.getMimeEncoder(64, "\n".getBytes()).encodeToString(encoded);
-        return "-----BEGIN PUBLIC KEY-----\n" + base64 + "\n-----END PUBLIC KEY-----\n";
+    private static String buildJwks(ECPublicKey key) throws Exception {
+        com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(
+                com.nimbusds.jose.jwk.Curve.P_256, key)
+                .keyUse(com.nimbusds.jose.jwk.KeyUse.SIGNATURE)
+                .keyID("test-key")
+                .build();
+        com.nimbusds.jose.jwk.JWKSet jwkSet = new com.nimbusds.jose.jwk.JWKSet(ecKey);
+        return jwkSet.toString();
     }
 }

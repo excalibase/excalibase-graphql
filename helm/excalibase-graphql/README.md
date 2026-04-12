@@ -13,13 +13,23 @@ helm install my-release ./helm/excalibase-graphql \
 
 ## Multi-Tenant Mode
 
-For per-project database routing via JWT + vault credentials:
+For JWT verification with a JWKS endpoint (OIDC-compatible — works with Auth0, Keycloak, excalibase-auth, etc.):
 
 ```bash
 helm install my-release ./helm/excalibase-graphql \
   --set app.security.jwtEnabled=true \
-  --set app.security.provisioningUrl=https://vault.internal/api \
-  --set app.security.provisioningPat=my-vault-pat \
+  --set app.security.auth.jwksUrl=https://auth.example.com/.well-known/jwks.json \
+  --set app.allowedSchema=public
+```
+
+For full multi-tenant mode with per-tenant database routing:
+
+```bash
+helm install my-release ./helm/excalibase-graphql \
+  --set app.security.jwtEnabled=true \
+  --set app.security.auth.jwksUrl=https://auth.example.com/.well-known/jwks.json \
+  --set app.security.multiTenant.provisioningUrl=https://vault.internal/api \
+  --set app.security.multiTenant.provisioningPat=my-vault-pat \
   --set app.allowedSchema=public
 ```
 
@@ -60,13 +70,15 @@ In multi-tenant mode, `database.url` is optional. If omitted, the app starts wit
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `app.security.userContextEnabled` | Enable user context extraction for RLS | `true` |
-| `app.security.userIdHeader` | HTTP header name for user ID (legacy, pre-JWT) | `X-User-Id` |
-| `app.security.jwtEnabled` | Enable JWT verification + multi-tenant datasource routing | `false` |
-| `app.security.provisioningUrl` | Vault/provisioning service base URL (e.g. `https://vault.internal/api`) | `""` |
-| `app.security.provisioningPat` | PAT for vault API authentication (use `existingProvisioningSecret` in production) | `""` |
-| `app.security.existingProvisioningSecret` | Name of existing Secret containing the provisioning PAT | `""` |
-| `app.security.existingProvisioningPatKey` | Key in existing Secret for provisioning PAT | `provisioning-pat` |
+| `app.security.jwtEnabled` | Enable JWT verification. Invalid tokens → 401. Missing tokens are allowed (RLS at DB level). | `false` |
+| `app.security.auth.publicKey` | Inline EC public key PEM (Mode 1a — local dev) | `""` |
+| `app.security.auth.publicKeyFile` | Path to PEM file (Mode 1b — K8s Secret volume mount) | `""` |
+| `app.security.auth.jwksUrl` | JWKS endpoint URL — Auth0, Keycloak, excalibase-auth, any OIDC provider (Mode 2/3) | `""` |
+| `app.security.auth.jwksTtlMinutes` | JWKS key cache TTL in minutes | `60` |
+| `app.security.multiTenant.provisioningUrl` | Provisioning API URL for per-tenant DB credentials (Mode 3 only) | `""` |
+| `app.security.multiTenant.provisioningPat` | PAT for provisioning API (use `multiTenant.existingSecret` in production) | `""` |
+| `app.security.multiTenant.existingSecret` | Name of existing Secret containing the provisioning PAT | `""` |
+| `app.security.multiTenant.existingPatKey` | Key in existing Secret for provisioning PAT | `provisioning-pat` |
 
 ### NATS CDC (Change Data Capture)
 

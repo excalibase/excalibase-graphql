@@ -831,38 +831,10 @@ describe('RLS (Row Level Security)', () => {
     }
   });
 
-  test('no user context blocks all rows', async () => {
+  test('no auth returns 0 rows (RLS blocks all without user context)', async () => {
     if (!rlsAvailable) return;
     const data = await client.request(gql`{ hanaRlsOrders { id user_id product } }`);
     expect(data.hanaRlsOrders.length).toBe(0);
-  });
-
-  test('X-User-Id: alice sees only her rows', async () => {
-    if (!rlsAvailable) return;
-    const aliceClient = createClient(API_URL, { 'X-User-Id': 'alice' });
-    const data = await aliceClient.request(gql`{ hanaRlsOrders { id user_id product } }`);
-    expect(data.hanaRlsOrders.length).toBeGreaterThan(0);
-    data.hanaRlsOrders.forEach(r => expect(r.user_id).toBe('alice'));
-  });
-
-  test('X-User-Id: bob sees only his rows', async () => {
-    if (!rlsAvailable) return;
-    const bobClient = createClient(API_URL, { 'X-User-Id': 'bob' });
-    const data = await bobClient.request(gql`{ hanaRlsOrders { id user_id product } }`);
-    expect(data.hanaRlsOrders.length).toBeGreaterThan(0);
-    data.hanaRlsOrders.forEach(r => expect(r.user_id).toBe('bob'));
-  });
-
-  test('alice and bob see different rows (isolation)', async () => {
-    if (!rlsAvailable) return;
-    const aliceClient = createClient(API_URL, { 'X-User-Id': 'alice' });
-    const bobClient = createClient(API_URL, { 'X-User-Id': 'bob' });
-    // Sequential (not concurrent) to avoid race on session-scoped SET variables
-    const aliceData = await aliceClient.request(gql`{ hanaRlsOrders { id } }`);
-    const bobData = await bobClient.request(gql`{ hanaRlsOrders { id } }`);
-    const aliceIds = aliceData.hanaRlsOrders.map(r => r.id).sort();
-    const bobIds = bobData.hanaRlsOrders.map(r => r.id).sort();
-    expect(aliceIds).not.toEqual(bobIds);
   });
 });
 
@@ -1037,38 +1009,6 @@ describe('JWT Authentication (via excalibase-auth)', () => {
   });
 });
 
-describe('RLS with X-User-Id header', () => {
-  test('alice sees only her RLS orders', async () => {
-    const res = await rawGraphql(
-      '{ hanaRlsOrders(orderBy: { id: ASC }) { id user_id product } }',
-      { 'X-User-Id': 'alice' },
-    );
-    expect(res.status).toBe(200);
-    const orders = res.data.data.hanaRlsOrders;
-    expect(orders).toHaveLength(2);
-    orders.forEach(o => expect(o.user_id).toBe('alice'));
-  });
-
-  test('bob sees only his RLS orders', async () => {
-    const res = await rawGraphql(
-      '{ hanaRlsOrders(orderBy: { id: ASC }) { id user_id product } }',
-      { 'X-User-Id': 'bob' },
-    );
-    expect(res.status).toBe(200);
-    const orders = res.data.data.hanaRlsOrders;
-    expect(orders).toHaveLength(2);
-    orders.forEach(o => expect(o.user_id).toBe('bob'));
-  });
-
-  test('alice and bob see different rows', async () => {
-    const alice = await rawGraphql('{ hanaRlsOrders { id } }', { 'X-User-Id': 'alice' });
-    const bob = await rawGraphql('{ hanaRlsOrders { id } }', { 'X-User-Id': 'bob' });
-    const aliceIds = alice.data.data.hanaRlsOrders.map(o => o.id);
-    const bobIds = bob.data.data.hanaRlsOrders.map(o => o.id);
-    const overlap = aliceIds.filter(id => bobIds.includes(id));
-    expect(overlap).toHaveLength(0);
-  });
-});
 
 // ─── REST API (PostgREST-compatible) ─────────────────────────────────────────
 

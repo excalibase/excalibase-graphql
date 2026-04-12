@@ -454,11 +454,11 @@ mutation {
 
 ## Row-Level Security (PostgreSQL)
 
-Pass `X-User-Id` in the request header. Excalibase sets it as `request.user_id` session variable before executing the query:
+Send a JWT in the `Authorization` header. Excalibase verifies the token and sets the `userId` claim as the `request.user_id` PostgreSQL session variable before executing the query:
 
 ```http
 POST /graphql HTTP/1.1
-X-User-Id: alice
+Authorization: Bearer eyJhbGciOiJFUzI1NiJ9...
 Content-Type: application/json
 ```
 
@@ -469,16 +469,7 @@ CREATE POLICY user_isolation ON rls_orders
   FOR ALL USING (user_id = current_setting('request.user_id', true));
 ```
 
-Alice will only see her own rows — no application-level filtering needed.
-
-Configuration:
-
-```yaml
-app:
-  security:
-    user-context-enabled: true   # default: true
-    user-id-header: X-User-Id    # default: X-User-Id
-```
+Each user sees only their own rows — no application-level filtering needed. Requires `jwt-enabled: true` and a configured `auth.jwks-url` or public key.
 
 See [Row-Level Security →](../features/user-context-rls.md) for full documentation.
 

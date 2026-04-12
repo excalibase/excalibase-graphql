@@ -5,6 +5,8 @@ CREATE SCHEMA IF NOT EXISTS shopify;
 CREATE SCHEMA IF NOT EXISTS auth;
 
 -- App role: used by excalibase-graphql to serve GraphQL/REST queries
+-- app_user is the name expected by initdb-ecommerce.sql grants
+CREATE USER app_user WITH PASSWORD 'shopify_app_pass';
 CREATE USER excalibase_app WITH PASSWORD 'shopify_app_pass';
 GRANT USAGE ON SCHEMA shopify TO excalibase_app;
 GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA shopify TO excalibase_app;

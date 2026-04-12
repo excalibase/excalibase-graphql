@@ -78,20 +78,28 @@ app:
   port: 10000
 
   security:
-    userContextEnabled: true
-    userIdHeader: "X-User-Id"
-
-    # JWT verification + multi-tenant datasource routing
-    # When enabled, fetches EC public key from vault for JWT signature verification.
-    # JWT claims (orgSlug, projectName) are used to fetch per-tenant DB credentials
-    # from the vault endpoint and route requests to tenant-specific databases.
+    # Enable JWT verification. When true, the JWKS endpoint or a static public key is required.
+    # Invalid tokens return 401. Missing tokens are allowed (RLS at the DB level controls access).
     jwtEnabled: false
-    provisioningUrl: ""
-    # PAT for authenticating vault API calls (use existingSecret in production)
-    provisioningPat: ""
-    # Reference an existing Secret for provisioning PAT
-    existingProvisioningSecret: ""
-    existingProvisioningPatKey: "provisioning-pat"
+
+    auth:
+      # Mode 1 — JWKS endpoint (excalibase-auth ES256, Auth0, Keycloak, any OIDC provider)
+      jwksUrl: ""
+      # JWKS key cache TTL in minutes (default: 60)
+      jwksTtlMinutes: 60
+      # Mode 2 — Shared HMAC secret for HS256 (standalone, no auth service)
+      # Must be at least 32 characters. Use existingSecret in production.
+      hmacSecret: ""
+
+    multiTenant:
+      # Optional: excalibase provisioning API for per-tenant DB credential routing
+      # Only needed for full multi-tenant mode (Mode 3)
+      provisioningUrl: ""
+      # PAT for authenticating provisioning API calls (use existingSecret in production)
+      provisioningPat: ""
+      # Reference an existing Secret for provisioning PAT
+      existingSecret: ""
+      existingPatKey: "provisioning-pat"
 
   # NATS CDC subscription (events from excalibase-watcher)
   nats:

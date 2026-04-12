@@ -290,7 +290,7 @@ describe('Clinic REST — Read', () => {
 
   test('GET /lab_results CSV export', async () => {
     const res = await fetch(`${REST_URL}/lab_results?select=id,value,result_status&limit=5`, {
-      headers: { 'Accept': 'text/csv', 'Accept-Profile': 'clinic' },
+      headers: { 'Accept': 'text/csv', 'Accept-Profile': 'clinic', Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
     const csv = await res.text();

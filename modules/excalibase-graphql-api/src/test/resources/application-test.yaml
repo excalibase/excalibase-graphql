@@ -14,9 +14,6 @@ app:
   allowed-schema: public
   database-type: postgres
   security:
-    role-based-schema: true  # Keep enabled for RLS/CLS tests
-    user-context-enabled: true  # Enable user context for RLS tests
-    user-id-header: X-User-Id
 
 # GraphQL Security Configuration for Testing
 graphql:

@@ -76,13 +76,13 @@ app:
     role-privileges-ttl-minutes: 30  # Role privileges cache TTL in minutes (default: 30 minutes)
     graphql-ttl-minutes: 30  # GraphQL cache TTL in minutes (default: 30 minutes)
   security:
-    role-based-schema: true
-    user-context-enabled: true
-    user-id-extractor-type: header
-    user-id-header: X-User-Id
     jwt-enabled: ${JWT_ENABLED:false}
-    provisioning-url: ${PROVISIONING_URL:http://localhost:24005/api}
-    provisioning-pat: ${PROVISIONING_PAT:}
+    auth:
+      jwks-url: ${APP_SECURITY_AUTH_JWKS_URL:}        # JWKS endpoint (excalibase-auth or any OIDC provider)
+      hmac-secret: ${APP_SECURITY_AUTH_HMAC_SECRET:}  # HS256 shared secret (standalone mode)
+    multi-tenant:
+      provisioning-url: ${PROVISIONING_URL:}    # Mode 3 only
+      provisioning-pat: ${PROVISIONING_PAT:}
   nats:
     enabled: false  # Enable NATS CDC subscription from excalibase-watcher (default: false)
     url: nats://localhost:4222  # NATS server URL

@@ -893,15 +893,13 @@ class SqlCompilerIntegrationTest {
                 .andExpect(jsonPath("$.data.testSchemaCustomer[0].last_name").value("Smith"));
     }
 
-    // === RLS path (X-User-Id header triggers RLS in Postgres) ===
+    // === Limit + order sanity check ===
 
     @Test
     @Order(220)
-    void queryWithRlsHeader() throws Exception {
-        // Superuser bypasses RLS, but this tests the RLS code path in the controller
+    void queryWithLimitAndOrder() throws Exception {
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .header("X-User-Id", "alice")
                         .content(graphql("{ testSchemaCustomer(limit: 2, orderBy: { customer_id: ASC }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(2)))
