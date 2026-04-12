@@ -187,8 +187,6 @@ services:
   excalibase-auth:
     image: excalibase/excalibase-auth
     container_name: excalibase-auth
-    build:
-      context: ../excalibase-auth
     environment:
       PROVISIONING_URL: http://mock-vault:8080/api
       PROVISIONING_PAT: test-pat
