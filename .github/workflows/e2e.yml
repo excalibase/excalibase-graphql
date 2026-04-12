@@ -176,6 +176,16 @@ jobs:
     - name: Run MySQL E2E tests
       run: make mysql-e2e
 
+    - name: Upload application logs on failure
+      if: failure()
+      run: |
+        echo "📋 Collecting MySQL application logs..."
+        if docker compose -f docker-compose.mysql.yml -p excalibase-mysql-app logs excalibase-app > app-logs.txt 2>&1; then
+          echo "✅ Logs collected"
+        else
+          echo "⚠️ No logs available or services not running"
+        fi
+
     - name: Upload logs as artifact
       if: failure()
       uses: actions/upload-artifact@v4

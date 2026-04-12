@@ -119,7 +119,23 @@ mysql-up: ## Start MySQL Docker services
 	@echo "$(BLUE)🚀 Starting MySQL services...$(NC)"
 	@docker compose -f $(MYSQL_COMPOSE_FILE) -p $(MYSQL_COMPOSE_PROJECT) down -v --remove-orphans > /dev/null 2>&1 || true
 	@docker compose -f $(MYSQL_COMPOSE_FILE) -p $(MYSQL_COMPOSE_PROJECT) up -d 2>&1 || true
-	@echo "$(GREEN)✓ MySQL services started$(NC)"
+	@$(MAKE) --no-print-directory mysql-wait-ready
+
+.PHONY: mysql-wait-ready
+mysql-wait-ready: ## Wait for MySQL GraphQL API to be ready
+	@echo "$(BLUE)⏳ Waiting for MySQL services...$(NC)"
+	@for i in $$(seq 1 40); do \
+		if curl -s -X POST http://localhost:$(MYSQL_API_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data\|error"; then \
+			echo "$(GREEN)✓ MySQL GraphQL API ready$(NC)"; \
+			break; \
+		fi; \
+		if [ $$i -eq 40 ]; then \
+			echo "$(RED)❌ MySQL application failed to start$(NC)"; \
+			exit 1; \
+		fi; \
+		printf "."; \
+		sleep 3; \
+	done
 
 .PHONY: mysql-down
 down-mysql: ## Stop MySQL Docker services
