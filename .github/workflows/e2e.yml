@@ -146,6 +146,94 @@ jobs:
         retention-days: 3
         if-no-files-found: ignore
 
+  multi-tenant-e2e:
+    name: Multi-Tenant E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 25
+      uses: actions/setup-java@v4
+      with:
+        java-version: '25'
+        distribution: 'corretto'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Run multi-tenant E2E tests
+      run: make multi-tenant-e2e
+
+    - name: Upload application logs on failure
+      if: failure()
+      run: |
+        docker compose -f e2e/multi-tenant/docker-compose.multi-tenant.yml -p excalibase-multi-tenant logs mt-excalibase-graphql > app-logs.txt 2>&1 || true
+
+    - name: Upload logs as artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: multi-tenant-e2e-logs
+        path: app-logs.txt
+        retention-days: 3
+        if-no-files-found: ignore
+
+  study-cases-e2e:
+    name: Study-Cases E2E Tests
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 25
+      uses: actions/setup-java@v4
+      with:
+        java-version: '25'
+        distribution: 'corretto'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Run study-cases E2E tests
+      run: make study-cases-e2e
+
+    - name: Upload application logs on failure
+      if: failure()
+      run: |
+        docker compose -f e2e/study-cases/docker-compose.study-cases.yml -p excalibase-study-cases logs sc-excalibase-graphql > app-logs.txt 2>&1 || true
+
+    - name: Upload logs as artifact
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: study-cases-e2e-logs
+        path: app-logs.txt
+        retention-days: 3
+        if-no-files-found: ignore
+
   mysql-e2e:
     name: MySQL E2E Tests
     runs-on: ubuntu-latest

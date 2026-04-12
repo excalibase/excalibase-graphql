@@ -24,34 +24,7 @@ write_json() {
 write_json "$PRIVATE_KEY" "EC-P256" "$WIREMOCK_FILES/private-key-response.json"
 write_json "$PUBLIC_KEY"  "EC-P256" "$WIREMOCK_FILES/public-key-response.json"
 
-# Generate JWKS response using Node.js (nimbus-compatible format)
-# Extracts the EC public key components and builds a JWK Set JSON
-node - "$SCRIPT_DIR/public.pem" "$WIREMOCK_FILES/jwks-response.json" <<'EOF'
-const fs = require('fs');
-const crypto = require('crypto');
-
-const pemFile = process.argv[2];
-const outFile = process.argv[3];
-
-const pem = fs.readFileSync(pemFile, 'utf8');
-const keyObject = crypto.createPublicKey(pem);
-const jwk = keyObject.export({ format: 'jwk' });
-
-const jwkSet = {
-  keys: [{
-    kty: jwk.kty,
-    crv: jwk.crv,
-    x: jwk.x,
-    y: jwk.y,
-    use: 'sig',
-    kid: 'test-key'
-  }]
-};
-
-fs.writeFileSync(outFile, JSON.stringify(jwkSet));
-EOF
-
 echo "Multi-tenant test keys generated in $SCRIPT_DIR"
-echo "  - private-key-response.json (legacy PEM format)"
-echo "  - public-key-response.json  (legacy PEM format)"
-echo "  - jwks-response.json        (JWKS format for /.well-known/jwks.json)"
+echo "  - private-key-response.json (PEM format for excalibase-auth)"
+echo "  - public-key-response.json  (PEM format, informational)"
+echo "  JWKS served by excalibase-auth at /.well-known/jwks.json"
