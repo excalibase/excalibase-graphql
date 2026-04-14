@@ -17,7 +17,12 @@ public final class FilterParser {
         "jsoncontains", "contains", "jsoncontained", "containedin",
         "jsonpath", "jsonpathexists",
         "arraycontains", "arrayhasany", "arrayhasall", "arraylength",
-        "startswith", "endswith"
+        "startswith", "endswith",
+        // Vector k-NN search. The value is a JSON blob, e.g.
+        //   ?embedding=vector.{"near":[0.1,0.2,0.3],"distance":"L2","limit":10}
+        // The compiler handles this specially — it modifies ORDER BY + LIMIT
+        // instead of adding a WHERE predicate.
+        "vector"
     );
 
     private FilterParser() {}

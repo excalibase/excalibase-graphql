@@ -54,41 +54,71 @@ public class VectorSearchBuilder {
                                         SchemaInfo schemaInfo,
                                         Map<String, Object> params) {
         if (vectorArg == null) return Optional.empty();
+        // Adapter: flatten the GraphQL AST into a plain Map so both GraphQL
+        // and REST compile paths share the same core logic.
+        Map<String, Object> shape = new java.util.HashMap<>();
+        for (ObjectField f : vectorArg.getObjectFields()) {
+            switch (f.getName()) {
+                case "column" -> {
+                    if (f.getValue() instanceof StringValue sv) shape.put("column", sv.getValue());
+                }
+                case "near" -> {
+                    if (f.getValue() instanceof ArrayValue av) {
+                        List<Float> floats = new java.util.ArrayList<>(av.getValues().size());
+                        for (Value<?> v : av.getValues()) floats.add(toFloat(v));
+                        shape.put("near", floats);
+                    }
+                }
+                case "distance" -> {
+                    if (f.getValue() instanceof StringValue sv) shape.put("distance", sv.getValue());
+                    else if (f.getValue() instanceof EnumValue ev) shape.put("distance", ev.getName());
+                }
+                case "limit" -> {
+                    if (f.getValue() instanceof IntValue iv) shape.put("limit", iv.getValue().intValue());
+                }
+            }
+        }
+        return buildFromMap(shape, tableAlias, schemaInfo, params);
+    }
+
+    /**
+     * Core compile path. Accepts a plain Java Map shape so callers that don't
+     * have a GraphQL AST (REST compiler, programmatic clients) can reuse the
+     * same logic without depending on graphql-java. Expected keys:
+     * <ul>
+     *   <li>{@code column} — String, required</li>
+     *   <li>{@code near} — {@code List<? extends Number>}, required and non-empty</li>
+     *   <li>{@code distance} — String, optional (default "L2")</li>
+     *   <li>{@code limit} — Integer, optional</li>
+     * </ul>
+     */
+    @SuppressWarnings("unchecked")
+    public Optional<VectorClause> buildFromMap(Map<String, Object> shape,
+                                               String tableAlias,
+                                               SchemaInfo schemaInfo,
+                                               Map<String, Object> params) {
+        if (shape == null || shape.isEmpty()) return Optional.empty();
         if (schemaInfo != null && !schemaInfo.hasExtension("vector")) {
             // pgvector not installed — silently skip rather than emit invalid SQL.
             return Optional.empty();
         }
 
-        String column = null;
-        List<Float> embedding = null;
-        String distance = "L2";
-        Integer limit = null;
+        Object colObj = shape.get("column");
+        if (!(colObj instanceof String column) || column.isEmpty()) return Optional.empty();
 
-        for (ObjectField f : vectorArg.getObjectFields()) {
-            switch (f.getName()) {
-                case "column" -> {
-                    if (f.getValue() instanceof StringValue sv) column = sv.getValue();
-                }
-                case "near" -> {
-                    if (f.getValue() instanceof ArrayValue av) {
-                        embedding = av.getValues().stream()
-                                .map(VectorSearchBuilder::toFloat)
-                                .toList();
-                    }
-                }
-                case "distance" -> {
-                    if (f.getValue() instanceof StringValue sv) distance = sv.getValue();
-                    else if (f.getValue() instanceof EnumValue ev) distance = ev.getName();
-                }
-                case "limit" -> {
-                    if (f.getValue() instanceof IntValue iv) limit = iv.getValue().intValue();
-                }
+        Object nearObj = shape.get("near");
+        List<Float> embedding = null;
+        if (nearObj instanceof List<?> list && !list.isEmpty()) {
+            embedding = new java.util.ArrayList<>(list.size());
+            for (Object v : list) {
+                if (v instanceof Number n) embedding.add(n.floatValue());
+                else return Optional.empty(); // malformed — skip rather than crash
             }
         }
+        if (embedding == null || embedding.isEmpty()) return Optional.empty();
 
-        if (column == null || embedding == null || embedding.isEmpty()) {
-            return Optional.empty();
-        }
+        String distance = shape.get("distance") instanceof String d ? d : "L2";
+        Integer limit = shape.get("limit") instanceof Number n ? n.intValue() : null;
 
         Optional<String> op = dialect.vectorDistanceOperator(distance);
         if (op.isEmpty()) return Optional.empty();

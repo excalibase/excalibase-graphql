@@ -3,6 +3,7 @@ package io.github.excalibase.rest.compiler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
 import org.springframework.jdbc.core.SqlParameterValue;
 
@@ -75,10 +76,27 @@ public class RestQueryCompiler {
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(q.table()));
         List<String> columns = q.columns().stream().filter(knownCols::contains).toList();
         List<OrderBySpec> orderBy = q.orderBy() != null ? q.orderBy().stream().filter(o -> knownCols.contains(o.column())).toList() : null;
-        List<FilterSpec> filters = q.filters().stream().filter(f -> knownCols.contains(f.column())).toList();
+        List<FilterSpec> allFilters = q.filters().stream().filter(f -> knownCols.contains(f.column())).toList();
 
         String quotedTable = resolveTable(q.table());
         Map<String, Object> params = new LinkedHashMap<>();
+
+        // Extract the (optional) vector filter before WHERE. k-NN search is not
+        // a predicate — it modifies ORDER BY + LIMIT — so the vector FilterSpec
+        // must not land in buildWhere. Only the first vector filter is honored.
+        VectorSearchBuilder.VectorClause vectorClause = null;
+        List<FilterSpec> filters;
+        {
+            List<FilterSpec> remaining = new ArrayList<>(allFilters.size());
+            for (FilterSpec f : allFilters) {
+                if ("vector".equals(f.operator()) && vectorClause == null) {
+                    vectorClause = compileVectorFilter(f, ALIAS, params);
+                    continue;
+                }
+                remaining.add(f);
+            }
+            filters = remaining;
+        }
 
         StringBuilder where = buildWhere(filters, ALIAS, P_FILTER, params, q.table());
         appendOrConditions(where, q.orConditions(), knownCols, params, q.table());
@@ -87,7 +105,21 @@ public class RestQueryCompiler {
             params.put(P_AFTER, convertValue(q.afterCursor(), q.table(), q.orderColumn()));
             where.append(dialect.quoteIdentifier(q.orderColumn())).append(GT).append(PARAM_PREFIX).append(P_AFTER);
         }
-        StringBuilder inner = buildInnerSelect(quotedTable, where, buildOrderBy(orderBy), q.limit(), q.offset());
+
+        // Vector k-NN ordering overrides any user-supplied orderBy entirely —
+        // nearest-neighbor similarity IS the sort, there is no composing.
+        StringBuilder orderBySql;
+        int effectiveLimit = q.limit();
+        if (vectorClause != null) {
+            orderBySql = new StringBuilder(ORDER_BY).append(vectorClause.orderByFragment());
+            if (vectorClause.limitOverride() != null) {
+                effectiveLimit = Math.min(vectorClause.limitOverride(), defaultMaxRows);
+            }
+        } else {
+            orderBySql = buildOrderBy(orderBy);
+        }
+
+        StringBuilder inner = buildInnerSelect(quotedTable, where, orderBySql, effectiveLimit, q.offset());
         String jsonAgg = buildJsonAgg(columns, buildEmbedEntries(q.table(), q.embeds()), knownCols);
 
         StringBuilder sql = new StringBuilder();
@@ -95,6 +127,29 @@ public class RestQueryCompiler {
         if (q.includeCount()) appendCountSubquery(sql, filters, quotedTable, params, q.table());
         sql.append(FROM).append(parens(inner.toString())).append(SPACE).append(ALIAS);
         return new CompiledResult(sql.toString(), params);
+    }
+
+    /**
+     * Compile a {@code vector.{json}} filter into a k-NN ordering clause via
+     * {@link VectorSearchBuilder}. The JSON body is parsed once and delegated
+     * to the Map-based builder API so this code doesn't depend on the graphql
+     * AST. Returns null on malformed input (dropped silently, matching the
+     * graphql side's behavior for absent / invalid _vector arguments).
+     */
+    @SuppressWarnings("unchecked")
+    private VectorSearchBuilder.VectorClause compileVectorFilter(
+            FilterSpec filter, String tableAlias, Map<String, Object> params) {
+        try {
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            Map<String, Object> shape = mapper.readValue(filter.value(), Map.class);
+            // The column name is the URL key (e.g. ?embedding=vector.{...}), not
+            // a field inside the JSON — ensure the shape carries it for the builder.
+            shape.putIfAbsent("column", filter.column());
+            VectorSearchBuilder builder = new VectorSearchBuilder(dialect);
+            return builder.buildFromMap(shape, tableAlias, schemaInfo, params).orElse(null);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     public CompiledResult compileInsert(String table, Map<String, Object> input) {
