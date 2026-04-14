@@ -80,7 +80,7 @@ public interface SqlDialect {
      *   <li>{@code "IP"}     → {@code <#>} (negative inner product)</li>
      * </ul>
      * Returns {@link Optional#empty()} when the dialect doesn't ship a vector
-     * type, allowing callers to silently skip the {@code _vector} operator on
+     * type, allowing callers to silently skip the {@code vector} operator on
      * unsupported backends. Unknown distance names also return empty.
      */
     default Optional<String> vectorDistanceOperator(String distance) {

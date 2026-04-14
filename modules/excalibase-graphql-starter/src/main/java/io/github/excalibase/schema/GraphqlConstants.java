@@ -86,19 +86,21 @@ public final class GraphqlConstants {
     public static final String FILTER_STARTS_WITH = "startsWith";
     public static final String FILTER_ENDS_WITH = "endsWith";
     /**
-     * Full-text search operator. Dispatches via {@link io.github.excalibase.SqlDialect#fullTextSearchSql}
-     * to emit {@code col @@ plainto_tsquery(:p)} against a tsvector column.
+     * Full-text search operator, used inside a column filter on a tsvector
+     * column: {@code where: { search_vec: { search: "query text" } }}.
+     * Dispatches via {@link io.github.excalibase.SqlDialect#fullTextSearchSql}
+     * to emit {@code col @@ plainto_tsquery(:p)}.
      */
-    public static final String FILTER_SEARCH = "_search";
+    public static final String FILTER_SEARCH = "search";
 
     /**
-     * Vector k-NN search argument on a table field. Accepts an input object of
-     * shape {@code { column, near, distance, limit }} and is compiled by
+     * Vector k-NN search argument on a table field:
+     * {@code docs(vector: { column, near, distance, limit })}. Compiled by
      * {@link io.github.excalibase.compiler.VectorSearchBuilder} into an ORDER BY
-     * fragment plus LIMIT override — it takes precedence over any user-supplied
+     * fragment plus LIMIT override — takes precedence over any user-supplied
      * {@code orderBy} / {@code limit} on the same query.
      */
-    public static final String ARG_VECTOR = "_vector";
+    public static final String ARG_VECTOR = "vector";
 
     // --- Logical operators ---
     public static final String LOGICAL_AND = "AND";

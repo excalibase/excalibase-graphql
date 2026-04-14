@@ -20,7 +20,7 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * End-to-end verification that {@link FilterBuilder}'s {@code _search} operator
+ * End-to-end verification that {@link FilterBuilder}'s {@code search} operator
  * produces SQL that executes correctly against a real Postgres tsvector column.
  *
  * <p>This test is the last line of defense between "unit-test says the SQL
@@ -80,11 +80,11 @@ class FtsIntegrationTest {
 
     /**
      * Build the same ObjectValue shape GraphQL's query parser produces for
-     * {@code where: { <column>: { _search: "<query text>" } }}.
+     * {@code where: { <column>: { search: "<query text>" } }}.
      */
     private ObjectValue whereSearch(String column, String query) {
         ObjectValue inner = ObjectValue.newObjectValue()
-                .objectField(new ObjectField("_search", new StringValue(query)))
+                .objectField(new ObjectField("search", new StringValue(query)))
                 .build();
         return ObjectValue.newObjectValue()
                 .objectField(new ObjectField(column, inner))
@@ -113,7 +113,7 @@ class FtsIntegrationTest {
         List<String> conditions = new ArrayList<>();
         fb.buildFilterConditions(whereSearch("search_vec", query), "a", params, conditions, "articles");
 
-        assertFalse(conditions.isEmpty(), "FilterBuilder must emit at least one condition for _search");
+        assertFalse(conditions.isEmpty(), "FilterBuilder must emit at least one condition for search");
         String where = String.join(" AND ", conditions);
         String sql = "SELECT a.title FROM fts_test.articles a WHERE " + where + " ORDER BY a.id";
 
@@ -123,7 +123,7 @@ class FtsIntegrationTest {
     }
 
     @Test
-    @DisplayName("_search matches tsvector column via plainto_tsquery")
+    @DisplayName("search matches tsvector column via plainto_tsquery")
     void searchMatchesTsvectorColumn() {
         // "kubernetes" is a distinctive single-word token that only appears in
         // the k8s article — no stemming ambiguity, clean assertion.
@@ -133,7 +133,7 @@ class FtsIntegrationTest {
     }
 
     @Test
-    @DisplayName("_search returns multiple matches when the term appears in several rows")
+    @DisplayName("search returns multiple matches when the term appears in several rows")
     void searchReturnsMultipleMatches() {
         // "postgres" appears verbatim in one title and should match via the
         // english text search config.
@@ -144,7 +144,7 @@ class FtsIntegrationTest {
     }
 
     @Test
-    @DisplayName("_search uses english stemming — 'indexes' matches 'indexing'")
+    @DisplayName("search uses english stemming — 'indexes' matches 'indexing'")
     void searchUsesLanguageStemming() {
         // Snowball english stemmer maps 'indexing' and 'indexes' to 'index',
         // so either query word should find the seeded 'indexing' and 'indexes'.
@@ -153,14 +153,14 @@ class FtsIntegrationTest {
     }
 
     @Test
-    @DisplayName("_search returns empty when no row matches")
+    @DisplayName("search returns empty when no row matches")
     void searchReturnsEmptyForNoMatch() {
         List<String> hits = executeSearch("xyznomatch");
         assertTrue(hits.isEmpty(), "nonsense query must return zero rows");
     }
 
     @Test
-    @DisplayName("_search binds param — no SQL injection via query text")
+    @DisplayName("search binds param — no SQL injection via query text")
     void searchBindsParameterNotInterpolated() {
         // If the search query were string-interpolated, this would blow up
         // or return more than just the single seeded row. plainto_tsquery

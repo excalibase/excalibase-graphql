@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Runtime integration test — proves that a real GraphQL query containing a
- * {@code _vector: {...}} argument actually flows through
+ * {@code vector: {...}} argument actually flows through
  * {@link SqlCompiler#compile(String, Map)} -> QueryBuilder.compileList ->
  * VectorSearchBuilder -> PostgresDialect -> NamedParameterJdbcTemplate and
  * returns the correct nearest-neighbor ordering.
@@ -109,7 +109,7 @@ class GraphQLVectorRuntimeTest {
 
     private String vectorQuery(String distance, String nearJson, int limit) {
         return """
-            { docs(_vector: {
+            { docs(vector: {
                 column: "embedding",
                 near: %s,
                 distance: "%s",
@@ -121,7 +121,7 @@ class GraphQLVectorRuntimeTest {
     // ── Tests ────────────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("GraphQL _vector runs through SqlCompiler and returns k-NN ordering")
+    @DisplayName("GraphQL vector runs through SqlCompiler and returns k-NN ordering")
     void graphqlVectorL2FromOrigin() {
         var q = compiler.compile(vectorQuery("L2", "[0.0, 0.0, 0.0]", 4), Map.of());
         List<String> titles = titlesOf(q);
@@ -130,7 +130,7 @@ class GraphQLVectorRuntimeTest {
     }
 
     @Test
-    @DisplayName("GraphQL _vector respects the limit field, overriding default maxRows")
+    @DisplayName("GraphQL vector respects the limit field, overriding default maxRows")
     void graphqlVectorLimit() {
         var q = compiler.compile(vectorQuery("L2", "[0.0, 0.0, 0.0]", 2), Map.of());
         List<String> titles = titlesOf(q);
@@ -140,7 +140,7 @@ class GraphQLVectorRuntimeTest {
     }
 
     @Test
-    @DisplayName("GraphQL _vector with cosine distance")
+    @DisplayName("GraphQL vector with cosine distance")
     void graphqlVectorCosine() {
         // (1,1,1) direction — near and mid and far all point the same way,
         // so cosine distance is near-zero for all three. origin is undefined.
@@ -154,7 +154,7 @@ class GraphQLVectorRuntimeTest {
     }
 
     @Test
-    @DisplayName("GraphQL _vector with inner product distance")
+    @DisplayName("GraphQL vector with inner product distance")
     void graphqlVectorInnerProduct() {
         // query (1,1,1) → origin dot = 0, near dot = 3, mid dot = 9, far dot = 30
         // Inner product distance (<#>) is NEGATIVE dot product, so largest dot
@@ -168,12 +168,12 @@ class GraphQLVectorRuntimeTest {
     }
 
     @Test
-    @DisplayName("_vector overrides user-supplied orderBy")
+    @DisplayName("vector overrides user-supplied orderBy")
     void graphqlVectorOverridesOrderBy() {
-        // Send both _vector (k-NN) and orderBy (id DESC). _vector must win.
+        // Send both vector (k-NN) and orderBy (id DESC). vector must win.
         String q = """
             { docs(
-                _vector: { column: "embedding", near: [0.0, 0.0, 0.0], distance: "L2", limit: 4 },
+                vector: { column: "embedding", near: [0.0, 0.0, 0.0], distance: "L2", limit: 4 },
                 orderBy: { id: DESC }
               ) { id title } }
             """;

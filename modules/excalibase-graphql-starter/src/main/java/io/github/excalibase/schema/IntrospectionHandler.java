@@ -97,9 +97,9 @@ public class IntrospectionHandler {
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLString)).build())
                 .build();
 
-        // Tsvector filter input — only field is _search, dispatched via
+        // Tsvector filter input — only field is search, dispatched via
         // SqlDialect.fullTextSearchSql. Separate from StringFilterInput so
-        // plain text columns don't accidentally expose _search (which would
+        // plain text columns don't accidentally expose search (which would
         // emit invalid SQL against a non-tsvector column).
         GraphQLInputObjectType tsvectorFilter = GraphQLInputObjectType.newInputObject()
                 .name("TsvectorFilterInput")

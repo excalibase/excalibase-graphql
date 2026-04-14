@@ -199,38 +199,38 @@ describe('Kanban GraphQL — Issues', () => {
 });
 
 describe('Kanban GraphQL — Full-text search', () => {
-  test('_search finds issues by a distinctive term in the description', async () => {
+  test('search finds issues by a distinctive term in the description', async () => {
     // "stripe" only appears in the payment + webhook issues
     const data = await client.request(gql`{
-      kanbanIssues(where: { search_vec: { _search: "stripe" } }) { id title }
+      kanbanIssues(where: { search_vec: { search: "stripe" } }) { id title }
     }`);
     const titles = data.kanbanIssues.map(i => i.title);
     expect(titles).toEqual(expect.arrayContaining(['Payment integration', 'Stripe webhook handler']));
     expect(titles).not.toContain('Setup JWT auth');
   });
 
-  test('_search matches title terms too (title||description is indexed)', async () => {
+  test('search matches title terms too (title||description is indexed)', async () => {
     // "benchmarks" appears in the title "Performance benchmarks"
     const data = await client.request(gql`{
-      kanbanIssues(where: { search_vec: { _search: "benchmarks" } }) { id title }
+      kanbanIssues(where: { search_vec: { search: "benchmarks" } }) { id title }
     }`);
     expect(data.kanbanIssues.length).toBeGreaterThanOrEqual(1);
     expect(data.kanbanIssues[0].title).toBe('Performance benchmarks');
   });
 
-  test('_search uses english stemming', async () => {
+  test('search uses english stemming', async () => {
     // "query" should stem to match "queries" in the range operators description
     const data = await client.request(gql`{
-      kanbanIssues(where: { search_vec: { _search: "queries" } }) { id title }
+      kanbanIssues(where: { search_vec: { search: "queries" } }) { id title }
     }`);
     expect(data.kanbanIssues.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('_search combines with other filters via implicit AND', async () => {
+  test('search combines with other filters via implicit AND', async () => {
     // high-priority issues that mention "payment"
     const data = await client.request(gql`{
       kanbanIssues(where: {
-        search_vec: { _search: "payment" },
+        search_vec: { search: "payment" },
         priority: { eq: "critical" }
       }) { id title priority }
     }`);
@@ -243,20 +243,20 @@ describe('Kanban GraphQL — Full-text search', () => {
     }
   });
 
-  test('_search returns empty set for unmatched query', async () => {
+  test('search returns empty set for unmatched query', async () => {
     const data = await client.request(gql`{
-      kanbanIssues(where: { search_vec: { _search: "xyznomatch" } }) { id title }
+      kanbanIssues(where: { search_vec: { search: "xyznomatch" } }) { id title }
     }`);
     expect(data.kanbanIssues).toEqual([]);
   });
 });
 
 describe('Kanban GraphQL — Vector k-NN search', () => {
-  test('_vector L2 near payment axis returns the payment cluster', async () => {
+  test('vector L2 near payment axis returns the payment cluster', async () => {
     // Embedding axis 3 = payment. Query near [0,0,1] must rank payment-
     // themed issues ahead of auth/filter issues.
     const data = await client.request(gql`{
-      kanbanIssues(_vector: {
+      kanbanIssues(vector: {
         column: "embedding"
         near: [0.0, 0.0, 1.0]
         distance: "L2"
@@ -271,9 +271,9 @@ describe('Kanban GraphQL — Vector k-NN search', () => {
     expect(titles[2]).toMatch(/Email notifications|Analytics dashboard|Landing page/);
   });
 
-  test('_vector L2 near auth axis returns the auth cluster', async () => {
+  test('vector L2 near auth axis returns the auth cluster', async () => {
     const data = await client.request(gql`{
-      kanbanIssues(_vector: {
+      kanbanIssues(vector: {
         column: "embedding"
         near: [1.0, 0.0, 0.0]
         distance: "L2"
@@ -285,9 +285,9 @@ describe('Kanban GraphQL — Vector k-NN search', () => {
     expect(titles[1]).toBe('User CRUD endpoints');  // [0.9,0.1,0]
   });
 
-  test('_vector limit clamps the result set', async () => {
+  test('vector limit clamps the result set', async () => {
     const data = await client.request(gql`{
-      kanbanIssues(_vector: {
+      kanbanIssues(vector: {
         column: "embedding"
         near: [0.0, 0.0, 1.0]
         distance: "L2"
@@ -298,22 +298,22 @@ describe('Kanban GraphQL — Vector k-NN search', () => {
     expect(data.kanbanIssues[0].title).toBe('Payment integration');
   });
 
-  test('_vector overrides user orderBy — k-NN ordering wins', async () => {
+  test('vector overrides user orderBy — k-NN ordering wins', async () => {
     // id DESC would put 15 first but the payment query puts 12 first.
     const data = await client.request(gql`{
       kanbanIssues(
-        _vector: { column: "embedding", near: [0.0, 0.0, 1.0], distance: "L2", limit: 3 }
+        vector: { column: "embedding", near: [0.0, 0.0, 1.0], distance: "L2", limit: 3 }
         orderBy: { id: DESC }
       ) { id title }
     }`);
     expect(data.kanbanIssues[0].title).toBe('Payment integration');
   });
 
-  test('_vector COSINE distance clusters by direction', async () => {
+  test('vector COSINE distance clusters by direction', async () => {
     // Cosine near [0,0,1] should cluster payment-direction rows regardless
     // of their magnitude.
     const data = await client.request(gql`{
-      kanbanIssues(_vector: {
+      kanbanIssues(vector: {
         column: "embedding"
         near: [0.0, 0.0, 1.0]
         distance: "COSINE"

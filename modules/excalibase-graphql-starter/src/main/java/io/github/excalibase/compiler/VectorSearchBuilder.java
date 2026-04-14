@@ -9,10 +9,10 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * Compiles the {@code _vector} GraphQL argument into an ORDER BY + LIMIT
+ * Compiles the {@code vector} GraphQL argument into an ORDER BY + LIMIT
  * fragment for k-nearest-neighbor queries against pgvector columns.
  *
- * <p><strong>Why this lives outside FilterBuilder:</strong> {@code _vector} is
+ * <p><strong>Why this lives outside FilterBuilder:</strong> {@code vector} is
  * not a WHERE predicate — it modifies row ordering and result size. Threading
  * those through FilterBuilder's return type would force a wide ripple across
  * every WHERE-only call site. This builder is invoked by QueryBuilder after
@@ -20,7 +20,7 @@ import java.util.Optional;
  *
  * <p>Expected GraphQL shape:
  * <pre>{@code
- *   _vector: {
+ *   vector: {
  *     column: "embedding",
  *     near:    [0.1, 0.2, 0.3],
  *     distance: "COSINE",   # L2 | COSINE | IP
@@ -41,9 +41,9 @@ public class VectorSearchBuilder {
     }
 
     /**
-     * Compile a {@code _vector} input into an ordering clause + bind param.
+     * Compile a {@code vector} input into an ordering clause + bind param.
      *
-     * @param vectorArg the GraphQL ObjectValue passed to {@code _vector}
+     * @param vectorArg the GraphQL ObjectValue passed to {@code vector}
      * @param tableAlias the SQL alias for the target table (e.g. {@code "t"})
      * @param schemaInfo schema metadata, used to confirm pgvector is installed
      * @param params mutable bind-parameter map (the embedding is stored here)
@@ -132,7 +132,7 @@ public class VectorSearchBuilder {
         lit.append(']');
 
         String paramName = "p_vector_" + column;
-        // Avoid collision if multiple _vector args exist on the same query.
+        // Avoid collision if multiple vector args exist on the same query.
         int suffix = 0;
         while (params.containsKey(paramName + (suffix == 0 ? "" : "_" + suffix))) suffix++;
         String finalParam = paramName + (suffix == 0 ? "" : "_" + suffix);
@@ -146,7 +146,7 @@ public class VectorSearchBuilder {
     }
 
     /**
-     * Result of compiling a {@code _vector} arg.
+     * Result of compiling a {@code vector} arg.
      *
      * @param orderByFragment SQL to inject at the front of the ORDER BY list
      *                        (k-NN ordering takes precedence over user-supplied sort)

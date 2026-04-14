@@ -52,7 +52,7 @@ public class QueryBuilder {
         // Parse distinctOn argument
         List<String> distinctOnCols = parseDistinctOn(field);
 
-        // Parse _vector argument (k-NN search). When present, it takes precedence
+        // Parse vector argument (k-NN search). When present, it takes precedence
         // over user-supplied orderBy and limit — the embedding similarity order
         // IS the sort. Absent/invalid input returns Optional.empty() and we fall
         // through to the normal ORDER BY / LIMIT path.
@@ -114,7 +114,7 @@ public class QueryBuilder {
     }
 
     /**
-     * Extracts the {@code _vector: {...}} argument from a table field, compiles
+     * Extracts the {@code vector: {...}} argument from a table field, compiles
      * it via {@link VectorSearchBuilder}, and returns the resulting clause.
      * Silently returns empty when the argument is absent, malformed, or the
      * dialect/schema doesn't support vector search — the caller falls through

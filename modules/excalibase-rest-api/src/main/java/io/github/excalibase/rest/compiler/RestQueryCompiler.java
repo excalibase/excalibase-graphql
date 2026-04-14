@@ -134,7 +134,7 @@ public class RestQueryCompiler {
      * {@link VectorSearchBuilder}. The JSON body is parsed once and delegated
      * to the Map-based builder API so this code doesn't depend on the graphql
      * AST. Returns null on malformed input (dropped silently, matching the
-     * graphql side's behavior for absent / invalid _vector arguments).
+     * graphql side's behavior for absent / invalid vector arguments).
      */
     @SuppressWarnings("unchecked")
     private VectorSearchBuilder.VectorClause compileVectorFilter(

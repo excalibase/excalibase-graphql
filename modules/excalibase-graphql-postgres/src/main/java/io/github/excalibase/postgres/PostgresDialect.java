@@ -174,7 +174,7 @@ public class PostgresDialect implements SqlDialect {
 
     /**
      * pgvector distance operators. Returns Optional.empty() for unknown
-     * distance names so the caller can skip the _vector clause on bad input
+     * distance names so the caller can skip the vector clause on bad input
      * rather than emitting invalid SQL.
      */
     @Override
