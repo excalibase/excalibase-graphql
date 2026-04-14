@@ -74,6 +74,67 @@ class JwtServiceTest {
         assertEquals("app-a", claims.projectName());
         assertEquals("user", claims.role());
         assertEquals("alice@test.com", claims.email());
+        // Password tokens never set scope/keyId — those are api-key only.
+        assertNull(claims.scope());
+        assertEquals(0L, claims.keyId());
+    }
+
+    @Test
+    void apiKeyToken_extractsScopeAndKeyId() throws Exception {
+        // Mirror the wire format that excalibase-auth's grant_type=api_key emits.
+        JWTClaimsSet apiKeyClaims = new JWTClaimsSet.Builder()
+                .subject("apikey:7")
+                .claim("userId", 42L)
+                .claim("projectId", "duc-corp/app-a")
+                .claim("orgSlug", "duc-corp")
+                .claim("projectName", "app-a")
+                .claim("role", "service")
+                .claim("scope", "service")
+                .claim("keyId", 7L)
+                .issuer("excalibase")
+                .issueTime(Date.from(Instant.now()))
+                .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
+                .build();
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), apiKeyClaims);
+        signed.sign(new ECDSASigner(privateKey));
+
+        JwtClaims claims = jwtService.verify(signed.serialize());
+
+        assertEquals("apikey:7", claims.email(), "sub should propagate to email field");
+        assertEquals("service", claims.scope());
+        assertEquals(7L, claims.keyId());
+        assertEquals("service", claims.role());
+    }
+
+    @Test
+    void publishableKeyToken_hasPublicScope() throws Exception {
+        JWTClaimsSet pubClaims = new JWTClaimsSet.Builder()
+                .subject("apikey:3")
+                .claim("userId", 1L)
+                .claim("projectId", "duc-corp/app-a")
+                .claim("orgSlug", "duc-corp")
+                .claim("projectName", "app-a")
+                .claim("role", "user")
+                .claim("scope", "public")
+                .claim("keyId", 3L)
+                .issuer("excalibase")
+                .issueTime(Date.from(Instant.now()))
+                .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
+                .build();
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), pubClaims);
+        signed.sign(new ECDSASigner(privateKey));
+
+        JwtClaims claims = jwtService.verify(signed.serialize());
+
+        assertEquals("public", claims.scope());
+        assertEquals(3L, claims.keyId());
+    }
+
+    @Test
+    void factoryOf_defaultsScopeAndKeyId() {
+        JwtClaims claims = JwtClaims.of("u1", "p1", "org", "proj", "user", "u@x.com");
+        assertEquals("authenticated", claims.scope());
+        assertEquals(0L, claims.keyId());
     }
 
     @Test

@@ -107,8 +107,16 @@ public class JwtService {
             String role = claims.getClaim("role") instanceof String r ? r : "user";
             String email = claims.getSubject() != null ? claims.getSubject()
                     : (String) claims.getClaim("email");
+            // Optional claims emitted by excalibase-auth's api-key grant.
+            // Absent on password/refresh tokens — defaulted to null / 0.
+            String scope = claims.getClaim("scope") instanceof String s ? s : null;
+            long keyId = 0L;
+            Object keyIdClaim = claims.getClaim("keyId");
+            if (keyIdClaim instanceof Number n) {
+                keyId = n.longValue();
+            }
 
-            return new JwtClaims(userId, projectId, orgSlug, projectName, role, email);
+            return new JwtClaims(userId, projectId, orgSlug, projectName, role, email, scope, keyId);
 
         } catch (JwtVerificationException e) {
             throw e;
