@@ -97,6 +97,15 @@ public class IntrospectionHandler {
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLString)).build())
                 .build();
 
+        // Tsvector filter input — only field is _search, dispatched via
+        // SqlDialect.fullTextSearchSql. Separate from StringFilterInput so
+        // plain text columns don't accidentally expose _search (which would
+        // emit invalid SQL against a non-tsvector column).
+        GraphQLInputObjectType tsvectorFilter = GraphQLInputObjectType.newInputObject()
+                .name("TsvectorFilterInput")
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_SEARCH).type(GraphQLString).build())
+                .build();
+
         GraphQLInputObjectType intFilter = GraphQLInputObjectType.newInputObject()
                 .name("IntFilterInput")
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLInt).build())
@@ -172,7 +181,14 @@ public class IntrospectionHandler {
                     .name(typeName + WHERE_INPUT_SUFFIX);
             for (String col : columns) {
                 String colType = schemaInfo.getColumnType(table, col);
-                GraphQLInputObjectType filter = isNumericType(colType) ? intFilter : stringFilter;
+                GraphQLInputObjectType filter;
+                if (isNumericType(colType)) {
+                    filter = intFilter;
+                } else if ("tsvector".equalsIgnoreCase(colType)) {
+                    filter = tsvectorFilter;
+                } else {
+                    filter = stringFilter;
+                }
                 whereBuilder.field(GraphQLInputObjectField.newInputObjectField()
                         .name(col).type(filter).build());
             }

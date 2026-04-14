@@ -198,6 +198,58 @@ describe('Kanban GraphQL — Issues', () => {
   });
 });
 
+describe('Kanban GraphQL — Full-text search', () => {
+  test('_search finds issues by a distinctive term in the description', async () => {
+    // "stripe" only appears in the payment + webhook issues
+    const data = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { _search: "stripe" } }) { id title }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    expect(titles).toEqual(expect.arrayContaining(['Payment integration', 'Stripe webhook handler']));
+    expect(titles).not.toContain('Setup JWT auth');
+  });
+
+  test('_search matches title terms too (title||description is indexed)', async () => {
+    // "benchmarks" appears in the title "Performance benchmarks"
+    const data = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { _search: "benchmarks" } }) { id title }
+    }`);
+    expect(data.kanbanIssues.length).toBeGreaterThanOrEqual(1);
+    expect(data.kanbanIssues[0].title).toBe('Performance benchmarks');
+  });
+
+  test('_search uses english stemming', async () => {
+    // "query" should stem to match "queries" in the range operators description
+    const data = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { _search: "queries" } }) { id title }
+    }`);
+    expect(data.kanbanIssues.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('_search combines with other filters via implicit AND', async () => {
+    // high-priority issues that mention "payment"
+    const data = await client.request(gql`{
+      kanbanIssues(where: {
+        search_vec: { _search: "payment" },
+        priority: { eq: "critical" }
+      }) { id title priority }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    expect(titles).toContain('Payment integration');
+    // A non-critical issue that would otherwise match must not appear
+    for (const issue of data.kanbanIssues) {
+      expect(issue.priority).toBe('critical');
+    }
+  });
+
+  test('_search returns empty set for unmatched query', async () => {
+    const data = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { _search: "xyznomatch" } }) { id title }
+    }`);
+    expect(data.kanbanIssues).toEqual([]);
+  });
+});
+
 // ─── GraphQL: Views ──────────────────────────────────────────────────────────
 
 describe('Kanban GraphQL — Views', () => {

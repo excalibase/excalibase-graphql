@@ -68,8 +68,16 @@ CREATE TABLE kanban.issues (
     status kanban.issue_status DEFAULT 'backlog',
     story_points INTEGER,
     created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    -- Full-text search vector: auto-maintained by the DB, indexed by GIN.
+    -- Exposed through the GraphQL _search filter operator so clients can
+    -- query `where: { search_vec: { _search: "payment" } }` without any
+    -- resolver code on the app side.
+    search_vec tsvector GENERATED ALWAYS AS (
+        to_tsvector('english', title || ' ' || coalesce(description, ''))
+    ) STORED
 );
+CREATE INDEX issues_search_idx ON kanban.issues USING GIN(search_vec);
 
 CREATE TABLE kanban.issue_labels (
     issue_id INTEGER NOT NULL REFERENCES kanban.issues(id),
@@ -158,22 +166,22 @@ INSERT INTO kanban.labels (project_id, name, color) VALUES
     (2, 'design', '#0000ff'),
     (3, 'mvp', '#9900ff');
 
-INSERT INTO kanban.issues (project_id, sprint_id, parent_issue_id, assignee_id, reporter_id, title, priority, status, story_points) VALUES
-    (1, 1, NULL, 1, 2, 'Setup JWT auth', 'high', 'done', 5),
-    (1, 1, NULL, 2, 1, 'User CRUD endpoints', 'high', 'done', 8),
-    (1, 2, NULL, 1, 2, 'REST filter operators', 'critical', 'in_progress', 13),
-    (1, 2, 3, 2, 1, 'Implement eq/neq operators', 'high', 'done', 3),
-    (1, 2, 3, 3, 1, 'Implement range operators', 'medium', 'in_progress', 5),
-    (1, 2, NULL, NULL, 2, 'OpenAPI generation', 'medium', 'backlog', 8),
-    (1, NULL, NULL, NULL, 1, 'Performance benchmarks', 'low', 'backlog', NULL),
-    (2, 3, NULL, 2, 1, 'Login screen', 'high', 'in_progress', 5),
-    (2, 3, NULL, 3, 1, 'Dashboard layout', 'medium', 'todo', 8),
-    (2, 3, 8, 2, 1, 'Social login buttons', 'low', 'backlog', 3),
-    (3, 4, NULL, 4, 5, 'Landing page', 'high', 'in_progress', 5),
-    (3, 4, NULL, 5, 4, 'Payment integration', 'critical', 'todo', 13),
-    (3, 4, NULL, 4, 5, 'Email notifications', 'medium', 'backlog', 5),
-    (3, NULL, NULL, NULL, 4, 'Analytics dashboard', 'low', 'backlog', 21),
-    (3, 4, 12, 5, 4, 'Stripe webhook handler', 'high', 'todo', 8);
+INSERT INTO kanban.issues (project_id, sprint_id, parent_issue_id, assignee_id, reporter_id, title, description, priority, status, story_points) VALUES
+    (1, 1, NULL, 1, 2, 'Setup JWT auth',             'Wire JWKS verification and refresh token rotation for the API gateway', 'high', 'done', 5),
+    (1, 1, NULL, 2, 1, 'User CRUD endpoints',        'Create, read, update and delete user records with role-based access', 'high', 'done', 8),
+    (1, 2, NULL, 1, 2, 'REST filter operators',      'Implement PostgREST-compatible filter syntax including eq, neq, and range queries', 'critical', 'in_progress', 13),
+    (1, 2, 3, 2, 1, 'Implement eq/neq operators',    'Equality and inequality predicates for all column types', 'high', 'done', 3),
+    (1, 2, 3, 3, 1, 'Implement range operators',     'Greater-than, less-than, and between operators for numeric and date columns', 'medium', 'in_progress', 5),
+    (1, 2, NULL, NULL, 2, 'OpenAPI generation',      'Auto-generate OpenAPI 3 spec from the GraphQL schema for every tenant', 'medium', 'backlog', 8),
+    (1, NULL, NULL, NULL, 1, 'Performance benchmarks','Benchmark query latency against PostgREST and pg_graphql for comparable workloads', 'low', 'backlog', NULL),
+    (2, 3, NULL, 2, 1, 'Login screen',               'Email + password login with forgot-password flow and OAuth social buttons', 'high', 'in_progress', 5),
+    (2, 3, NULL, 3, 1, 'Dashboard layout',           'Responsive dashboard grid with widgets for recent activity and pending tasks', 'medium', 'todo', 8),
+    (2, 3, 8, 2, 1, 'Social login buttons',          'Google, GitHub, and Apple sign-in buttons on the login screen', 'low', 'backlog', 3),
+    (3, 4, NULL, 4, 5, 'Landing page',               'Marketing landing page with hero, feature grid, pricing table, and footer', 'high', 'in_progress', 5),
+    (3, 4, NULL, 5, 4, 'Payment integration',        'Integrate Stripe checkout for subscription payments and invoice generation', 'critical', 'todo', 13),
+    (3, 4, NULL, 4, 5, 'Email notifications',        'Transactional emails for signup, payment, and password reset events', 'medium', 'backlog', 5),
+    (3, NULL, NULL, NULL, 4, 'Analytics dashboard',  'Real-time analytics dashboard showing signups, MRR, and churn metrics', 'low', 'backlog', 21),
+    (3, 4, 12, 5, 4, 'Stripe webhook handler',       'Verify Stripe webhook signatures and process subscription lifecycle events', 'high', 'todo', 8);
 
 INSERT INTO kanban.issue_labels (issue_id, label_id) VALUES
     (1, 2), (2, 2), (3, 2), (4, 2), (5, 2),
