@@ -215,13 +215,22 @@ public class FilterBuilder {
                             params.put(p, "%" + extractValue(op.getValue()) + "%");
                         }
                         case FILTER_SEARCH -> {
-                            // Full-text search against a tsvector column via
-                            // plainto_tsquery. A dialect that returns
-                            // Optional.empty() (e.g. MySQL today) silently skips
-                            // the operator — the schema generator should avoid
-                            // emitting the field on backends without FTS support.
+                            // Plain FTS — plainto_tsquery. Always safe on any
+                            // user input. A dialect that returns Optional.empty()
+                            // (e.g. MySQL today) silently skips the operator.
                             String p = nextParam("p_" + col + "_search", params);
-                            var sql = dialect.fullTextSearchSql(colRef, ":" + p);
+                            var sql = dialect.fullTextSearchSql(colRef, ":" + p, SqlDialect.FtsVariant.PLAIN);
+                            if (sql.isPresent()) {
+                                conditions.add(sql.get());
+                                params.put(p, extractValue(op.getValue()));
+                            }
+                        }
+                        case FILTER_WEB_SEARCH -> {
+                            // websearch_to_tsquery — Google-style syntax
+                            // ("quoted phrase" / OR / -exclusion). Also safe
+                            // against malformed input.
+                            String p = nextParam("p_" + col + "_websearch", params);
+                            var sql = dialect.fullTextSearchSql(colRef, ":" + p, SqlDialect.FtsVariant.WEB_SEARCH);
                             if (sql.isPresent()) {
                                 conditions.add(sql.get());
                                 params.put(p, extractValue(op.getValue()));

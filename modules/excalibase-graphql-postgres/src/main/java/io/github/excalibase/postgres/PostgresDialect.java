@@ -3,6 +3,7 @@ package io.github.excalibase.postgres;
 import io.github.excalibase.SqlDialect;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -158,18 +159,23 @@ public class PostgresDialect implements SqlDialect {
     }
 
     /**
-     * Postgres FTS — emits {@code col @@ plainto_tsquery(:param)} against a
-     * tsvector column. {@code plainto_tsquery} handles tokenization + stop
-     * words + stemming under the server's default text search config, so
-     * callers can pass a raw user query string without pre-processing.
+     * Postgres FTS dispatch. Both variants assume {@code colRef} is already a
+     * {@code tsvector}. For plain {@code text} columns, use a
+     * {@code GENERATED ALWAYS AS (to_tsvector(...))} column at the DB level.
      *
-     * <p>The column reference must already be a {@code tsvector}. For plain
-     * {@code text} columns, use a {@code GENERATED ALWAYS AS (to_tsvector(...))}
-     * column or an index expression at the DB level.
+     * <ul>
+     *   <li>{@link FtsVariant#PLAIN} → {@code col @@ plainto_tsquery(:param)}
+     *       — stems + stop words + AND, always safe</li>
+     *   <li>{@link FtsVariant#WEB_SEARCH} → {@code col @@ websearch_to_tsquery(:param)}
+     *       — Google-style quotes, OR, minus exclusion, always safe</li>
+     * </ul>
      */
     @Override
-    public java.util.Optional<String> fullTextSearchSql(String colRef, String paramRef) {
-        return java.util.Optional.of(colRef + " @@ plainto_tsquery(" + paramRef + ")");
+    public Optional<String> fullTextSearchSql(String colRef, String paramRef, FtsVariant variant) {
+        return switch (variant) {
+            case PLAIN -> Optional.of(colRef + " @@ plainto_tsquery(" + paramRef + ")");
+            case WEB_SEARCH -> Optional.of(colRef + " @@ websearch_to_tsquery(" + paramRef + ")");
+        };
     }
 
     /**
@@ -178,13 +184,13 @@ public class PostgresDialect implements SqlDialect {
      * rather than emitting invalid SQL.
      */
     @Override
-    public java.util.Optional<String> vectorDistanceOperator(String distance) {
-        if (distance == null) return java.util.Optional.empty();
+    public Optional<String> vectorDistanceOperator(String distance) {
+        if (distance == null) return Optional.empty();
         return switch (distance.toUpperCase()) {
-            case "L2", "EUCLIDEAN" -> java.util.Optional.of("<->");
-            case "COSINE" -> java.util.Optional.of("<=>");
-            case "IP", "INNER_PRODUCT" -> java.util.Optional.of("<#>");
-            default -> java.util.Optional.empty();
+            case "L2", "EUCLIDEAN" -> Optional.of("<->");
+            case "COSINE" -> Optional.of("<=>");
+            case "IP", "INNER_PRODUCT" -> Optional.of("<#>");
+            default -> Optional.empty();
         };
     }
 }

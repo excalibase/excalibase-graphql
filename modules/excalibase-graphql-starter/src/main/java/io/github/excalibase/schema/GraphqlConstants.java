@@ -86,12 +86,22 @@ public final class GraphqlConstants {
     public static final String FILTER_STARTS_WITH = "startsWith";
     public static final String FILTER_ENDS_WITH = "endsWith";
     /**
-     * Full-text search operator, used inside a column filter on a tsvector
-     * column: {@code where: { search_vec: { search: "query text" } }}.
-     * Dispatches via {@link io.github.excalibase.SqlDialect#fullTextSearchSql}
-     * to emit {@code col @@ plainto_tsquery(:p)}.
+     * Plain full-text search operator. Used inside a column filter on a
+     * tsvector column: {@code where: { search_vec: { search: "query text" } }}.
+     * Raw user text goes in, {@code plainto_tsquery} tokenizes, stems, drops
+     * stop words, ANDs everything. Never throws on bad input.
      */
     public static final String FILTER_SEARCH = "search";
+
+    /**
+     * Google-style full-text search operator. Accepts a mini-syntax with
+     * {@code "exact phrase"} for phrase match, {@code OR} for alternation,
+     * and {@code -word} for exclusion. Safe against malformed input
+     * (invalid syntax is quietly ignored rather than throwing). Used inside
+     * a column filter on a tsvector column:
+     * {@code where: { search_vec: { webSearch: "cat OR dog -mouse" } }}.
+     */
+    public static final String FILTER_WEB_SEARCH = "webSearch";
 
     /**
      * Vector k-NN search argument on a table field:

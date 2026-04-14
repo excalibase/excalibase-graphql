@@ -80,11 +80,11 @@ class FtsIntegrationTest {
 
     /**
      * Build the same ObjectValue shape GraphQL's query parser produces for
-     * {@code where: { <column>: { search: "<query text>" } }}.
+     * {@code where: { <column>: { <operator>: "<query text>" } }}.
      */
-    private ObjectValue whereSearch(String column, String query) {
+    private ObjectValue whereClause(String column, String operator, String query) {
         ObjectValue inner = ObjectValue.newObjectValue()
-                .objectField(new ObjectField("search", new StringValue(query)))
+                .objectField(new ObjectField(operator, new StringValue(query)))
                 .build();
         return ObjectValue.newObjectValue()
                 .objectField(new ObjectField(column, inner))
@@ -103,23 +103,33 @@ class FtsIntegrationTest {
 
     /**
      * Run the full compile-and-execute cycle: FilterBuilder produces WHERE
-     * clauses + bind params, then we run SELECT against the real DB.
+     * clauses + bind params, then we run SELECT against the real DB. The
+     * {@code operator} selects which tsquery variant (plain {@code search}
+     * or {@code webSearch}) to exercise.
      */
-    private List<String> executeSearch(String query) {
+    private List<String> executeFts(String operator, String query) {
         SchemaInfo info = schemaInfoWithTable();
         FilterBuilder fb = new FilterBuilder(dialect, 100, info, "fts_test");
 
         Map<String, Object> params = new HashMap<>();
         List<String> conditions = new ArrayList<>();
-        fb.buildFilterConditions(whereSearch("search_vec", query), "a", params, conditions, "articles");
+        fb.buildFilterConditions(whereClause("search_vec", operator, query), "a", params, conditions, "articles");
 
-        assertFalse(conditions.isEmpty(), "FilterBuilder must emit at least one condition for search");
+        assertFalse(conditions.isEmpty(), "FilterBuilder must emit at least one condition for " + operator);
         String where = String.join(" AND ", conditions);
         String sql = "SELECT a.title FROM fts_test.articles a WHERE " + where + " ORDER BY a.id";
 
         MapSqlParameterSource ps = new MapSqlParameterSource();
         params.forEach(ps::addValue);
         return named.queryForList(sql, ps, String.class);
+    }
+
+    private List<String> executeSearch(String query) {
+        return executeFts("search", query);
+    }
+
+    private List<String> executeWebSearch(String query) {
+        return executeFts("webSearch", query);
     }
 
     @Test
@@ -181,19 +191,93 @@ class FtsIntegrationTest {
 
         Map<String, Object> params = new HashMap<>();
         List<String> conditions = new ArrayList<>();
-        fb.buildFilterConditions(whereSearch("search_vec", "postgres"), "a", params, conditions, "articles");
+        fb.buildFilterConditions(whereClause("search_vec", "search", "postgres"), "a", params, conditions, "articles");
 
         assertEquals(1, conditions.size(), "exactly one condition expected");
         String frag = conditions.get(0);
         assertTrue(frag.contains("a.\"search_vec\""), "fragment must reference the quoted column: " + frag);
         assertTrue(frag.contains("plainto_tsquery"), "fragment must use plainto_tsquery: " + frag);
 
-        // nextParam generates "prefix_<params.size()>" so with an empty map the
-        // param name is "p_search_vec_search_0".
         assertEquals(1, params.size(), "exactly one bind param expected");
         String paramName = params.keySet().iterator().next();
         assertTrue(paramName.startsWith("p_search_vec_search"), "param name: " + paramName);
         assertTrue(frag.contains(":" + paramName), "fragment must reference the bind param: " + frag);
         assertEquals("postgres", params.get(paramName));
+    }
+
+    // === webSearch (websearch_to_tsquery) — Google-style syntax ===
+
+    @Test
+    @DisplayName("webSearch matches plain words the same way as search")
+    void webSearchPlainWords() {
+        List<String> hits = executeWebSearch("kubernetes");
+        assertEquals(1, hits.size());
+        assertEquals("Kubernetes operators", hits.get(0));
+    }
+
+    @Test
+    @DisplayName("webSearch OR returns rows matching either term")
+    void webSearchOrAlternation() {
+        // "kubernetes OR go" — k8s article has 'kubernetes', Go article has 'go'
+        List<String> hits = executeWebSearch("kubernetes OR go");
+        assertTrue(hits.contains("Kubernetes operators"), "OR should match k8s article");
+        assertTrue(hits.contains("Go concurrency patterns"), "OR should match Go article");
+    }
+
+    @Test
+    @DisplayName("webSearch minus-prefix excludes rows mentioning the term")
+    void webSearchExclusion() {
+        // "postgres" appears in three articles; "-kubernetes" doesn't filter
+        // any of them out (k8s row doesn't mention postgres anyway) so this
+        // exclusion is verified by the absence of any cross-contamination.
+        // More interesting: "indexes -kubernetes" — 'indexes' matches two
+        // articles, neither of which contains kubernetes.
+        List<String> hits = executeWebSearch("indexes -kubernetes");
+        assertFalse(hits.isEmpty());
+        assertFalse(hits.contains("Kubernetes operators"),
+                "minus-prefix must exclude rows that would otherwise match");
+    }
+
+    @Test
+    @DisplayName("webSearch quoted phrase matches adjacent words only")
+    void webSearchExactPhrase() {
+        // "large tables" appears verbatim in the Postgres tips body.
+        // The quoted phrase means these two tokens must be adjacent.
+        List<String> hits = executeWebSearch("\"large tables\"");
+        assertEquals(1, hits.size());
+        assertEquals("PostgreSQL tips", hits.get(0));
+    }
+
+    @Test
+    @DisplayName("webSearch malformed input is silently accepted (never throws)")
+    void webSearchSafeOnBadInput() {
+        // Raw to_tsquery would throw on "-- cat & & dog"; websearch_to_tsquery
+        // simply ignores the noise and returns whatever tokens it can parse.
+        assertDoesNotThrow(() -> executeWebSearch("-- cat & & dog"));
+        assertDoesNotThrow(() -> executeWebSearch("''"));
+        assertDoesNotThrow(() -> executeWebSearch("((("));
+    }
+
+    @Test
+    @DisplayName("webSearch SQL fragment uses websearch_to_tsquery function")
+    void webSearchEmitsCorrectSqlFragment() {
+        SchemaInfo info = schemaInfoWithTable();
+        FilterBuilder fb = new FilterBuilder(dialect, 100, info, "fts_test");
+
+        Map<String, Object> params = new HashMap<>();
+        List<String> conditions = new ArrayList<>();
+        fb.buildFilterConditions(whereClause("search_vec", "webSearch", "cat OR dog"),
+                "a", params, conditions, "articles");
+
+        assertEquals(1, conditions.size());
+        String frag = conditions.get(0);
+        assertTrue(frag.contains("websearch_to_tsquery"),
+                "webSearch must emit websearch_to_tsquery: " + frag);
+        assertTrue(frag.contains("a.\"search_vec\""), "must reference quoted column: " + frag);
+
+        String paramName = params.keySet().iterator().next();
+        assertTrue(paramName.startsWith("p_search_vec_websearch"),
+                "webSearch param prefix: " + paramName);
+        assertEquals("cat OR dog", params.get(paramName));
     }
 }

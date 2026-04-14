@@ -1,5 +1,6 @@
 package io.github.excalibase.postgres;
 
+import io.github.excalibase.SqlDialect.FtsVariant;
 import org.junit.jupiter.api.Test;
 
 import java.util.Optional;
@@ -7,27 +8,34 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for {@link PostgresDialect#fullTextSearchSql(String, String, boolean)}.
- *
- * <p>End-to-end execution against a real tsvector column lives in
- * {@code FtsIntegrationTest}.
+ * Unit tests for {@link PostgresDialect#fullTextSearchSql} and
+ * {@link PostgresDialect#vectorDistanceOperator}. End-to-end execution
+ * against real Postgres lives in {@code FtsIntegrationTest} and
+ * {@code PgvectorIntegrationTest}.
  */
 class PostgresDialectFTSTest {
 
     private final PostgresDialect dialect = new PostgresDialect();
 
     @Test
-    void tsvectorPath_emitsPlainToTsquery() {
-        Optional<String> sql = dialect.fullTextSearchSql("t.body", ":p_body_search");
+    void plainVariant_emitsPlainToTsquery() {
+        Optional<String> sql = dialect.fullTextSearchSql("t.body", ":p_body_search", FtsVariant.PLAIN);
         assertTrue(sql.isPresent());
         assertEquals("t.body @@ plainto_tsquery(:p_body_search)", sql.get());
+    }
+
+    @Test
+    void webSearchVariant_emitsWebSearchToTsquery() {
+        Optional<String> sql = dialect.fullTextSearchSql("t.body", ":p_body_websearch", FtsVariant.WEB_SEARCH);
+        assertTrue(sql.isPresent());
+        assertEquals("t.body @@ websearch_to_tsquery(:p_body_websearch)", sql.get());
     }
 
     @Test
     void quotedColumnReferenceIsPreserved() {
         // FilterBuilder always passes alias.quoteIdentifier(col), so the dialect
         // must echo the quoted form into the resulting SQL untouched.
-        Optional<String> sql = dialect.fullTextSearchSql("t.\"full-text\"", ":p_search");
+        Optional<String> sql = dialect.fullTextSearchSql("t.\"full-text\"", ":p_search", FtsVariant.PLAIN);
         assertTrue(sql.isPresent());
         assertEquals("t.\"full-text\" @@ plainto_tsquery(:p_search)", sql.get());
     }

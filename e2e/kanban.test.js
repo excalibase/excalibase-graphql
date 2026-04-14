@@ -249,6 +249,54 @@ describe('Kanban GraphQL — Full-text search', () => {
     }`);
     expect(data.kanbanIssues).toEqual([]);
   });
+
+  test('webSearch OR matches either term', async () => {
+    // "stripe" only hits payment issues, "benchmarks" only hits the perf issue
+    const data = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { webSearch: "stripe OR benchmarks" } }) { id title }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    expect(titles).toEqual(expect.arrayContaining([
+      'Payment integration',
+      'Stripe webhook handler',
+      'Performance benchmarks',
+    ]));
+  });
+
+  test('webSearch minus-prefix excludes rows', async () => {
+    // "payment -stripe" → has "payment", does NOT have "stripe".
+    // Issue 12 ("Payment integration") mentions both → excluded.
+    // Issue 13 ("Email notifications") has "payment" but no "stripe" → match.
+    const data = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { webSearch: "payment -stripe" } }) { id title }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    expect(titles).toContain('Email notifications');
+    expect(titles).not.toContain('Payment integration');
+    expect(titles).not.toContain('Stripe webhook handler');
+  });
+
+  test('webSearch exact phrase via quotes', async () => {
+    // "webhook handler" appears adjacent in the title "Stripe webhook handler".
+    // The phrase operator requires adjacency, so rows that mention the two
+    // words in separate places won't match. We use String.raw so the backslash
+    // escape passes through JS untouched — GraphQL itself interprets the
+    // \" as a literal " inside the string literal.
+    const data = await client.request(String.raw`{
+      kanbanIssues(where: { search_vec: { webSearch: "\"webhook handler\"" } }) { id title }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    expect(titles).toContain('Stripe webhook handler');
+  });
+
+  test('webSearch is safe against malformed input', async () => {
+    // websearch_to_tsquery silently tolerates junk that would throw with
+    // raw to_tsquery. Query must not error at the server.
+    const data = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { webSearch: "(((" } }) { id title }
+    }`);
+    expect(data.kanbanIssues).toBeDefined();
+  });
 });
 
 describe('Kanban GraphQL — Vector k-NN search', () => {

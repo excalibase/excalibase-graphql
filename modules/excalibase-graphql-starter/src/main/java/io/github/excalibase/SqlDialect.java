@@ -58,15 +58,32 @@ public interface SqlDialect {
     default String paramCast(String columnType) { return ""; }
 
     /**
+     * Which tsquery function to wrap the bind parameter with. Different
+     * variants accept different input shapes:
+     * <ul>
+     *   <li>{@link #PLAIN} — {@code plainto_tsquery}: raw user text, any order,
+     *       stems and drops stop words, always produces valid output. Use for
+     *       the default search box.</li>
+     *   <li>{@link #WEB_SEARCH} — {@code websearch_to_tsquery}: Google-style
+     *       mini-syntax. Accepts {@code "exact phrase"} for phrase match,
+     *       {@code OR} for alternation, and {@code -word} for exclusion.
+     *       Safe against malformed input — invalid syntax is ignored rather
+     *       than throwing.</li>
+     * </ul>
+     */
+    enum FtsVariant { PLAIN, WEB_SEARCH }
+
+    /**
      * Build the SQL fragment for a full-text search predicate against a
      * tsvector column. {@code colRef} is the qualified column reference
-     * (e.g. {@code "t.search_vec"}) and {@code paramRef} is the bind
-     * parameter (e.g. {@code ":p_search_vec_search_0"}).
+     * (e.g. {@code "t.search_vec"}), {@code paramRef} is the bind parameter
+     * (e.g. {@code ":p_body_search_0"}), and {@code variant} selects the
+     * tsquery function to wrap the bind with.
      *
      * <p>Returns {@link Optional#empty()} when the dialect does not implement
      * FTS — callers should skip the operator on schemas it doesn't support.
      */
-    default Optional<String> fullTextSearchSql(String colRef, String paramRef) {
+    default Optional<String> fullTextSearchSql(String colRef, String paramRef, FtsVariant variant) {
         return Optional.empty();
     }
 
