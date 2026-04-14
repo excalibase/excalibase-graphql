@@ -239,6 +239,21 @@ where: { tax_rate: { eq: 8.25 } }
 ### Date/Time Operations
 - Supports multiple formats: `"2023-12-25"`, `"2023-12-25T14:30:00Z"`, ISO 8601 with timezones
 
+### Full-Text Search on tsvector columns ✅ **NEW**
+- `search` — plain user text via `plainto_tsquery`
+- `webSearch` — Google-style `"phrase"` / `OR` / `-exclusion` via `websearch_to_tsquery`
+
+See the [Full-Text & Vector Search guide](features/search-and-vector.md) for
+how to set up a `tsvector` column, pick between `search` and `webSearch`, and
+use the equivalent REST operators (`plfts`, `phfts`, `wfts`, `fts`).
+
+### Vector k-NN on pgvector columns ✅ **NEW**
+- Top-level `vector` argument (not inside `where`) — k-NN ordering takes
+  precedence over `orderBy` and `limit`.
+- Supports `L2`, `COSINE`, `IP` distance metrics
+- See the [Full-Text & Vector Search guide](features/search-and-vector.md) for
+  the full input shape and REST-side `vector.{json}` syntax.
+
 ## Equality Operations
 
 ```graphql

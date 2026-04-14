@@ -114,6 +114,7 @@ nav:
       - MySQL Support: features/mysql.md
       - Stored Procedures: features/stored-procedures.md
       - Enhanced PostgreSQL Types: features/enhanced-postgresql-types.md
+      - Full-Text & Vector Search: features/search-and-vector.md
       - Real-Time Subscriptions: features/subscriptions.md
       - Row-Level Security: features/user-context-rls.md
   - Filtering: filtering.md

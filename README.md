@@ -29,6 +29,8 @@ Excalibase GraphQL is a powerful Spring Boot application that **automatically ge
 #### PostgreSQL-specific
 - **🎯 Custom Types**: Enums, composite types, domain types with automatic GraphQL mapping
 - **📄 Rich Data Types**: JSON/JSONB, arrays, network types (INET, CIDR), datetime, binary, XML
+- **🔎 Full-Text Search**: `search` / `webSearch` operators on `tsvector` columns (plain and Google-style syntax). REST exposes PostgREST-compatible `plfts` / `phfts` / `wfts` / `fts`. See [guide →](docs/features/search-and-vector.md)
+- **🧭 Vector k-NN Search**: Top-level `vector` argument on tables with `pgvector` columns — L2 / COSINE / inner product distance metrics, available via GraphQL and REST
 - **🔒 Row-Level Security (RLS)**: Automatic enforcement via `request.user_id` session variable
 - **🧮 Computed Fields**: Expose SQL-defined computed columns as GraphQL fields
 - **🗄️ Stored Procedures**: `CALL proc(args)` exposed as `callProcName` mutations with IN/OUT param support

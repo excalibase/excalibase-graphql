@@ -78,6 +78,39 @@ Then open your GraphQL client and start querying:
 
 Available filter operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, `isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`, `like`, `ilike`
 
+### Full-Text Search & Vector k-NN
+
+Tables with a `tsvector` column get plain and Google-style search operators
+automatically:
+
+```graphql
+# Plain search box
+{ kanbanIssues(where: { search_vec: { search: "stripe payment" } }) { id title } }
+
+# Google-style: "phrase" / OR / -exclusion
+{ kanbanIssues(where: { search_vec: { webSearch: "stripe OR \"credit card\" -refund" } }) { id title } }
+```
+
+Tables with a `pgvector` column get a top-level `vector` argument for k-NN
+similarity queries:
+
+```graphql
+# Return the 5 rows whose embedding is closest to the query vector
+{
+  kanbanIssues(vector: {
+    column:   "embedding"
+    near:     [0.12, -0.34, 0.87]
+    distance: "COSINE"
+    limit:    5
+  }) { id title }
+}
+```
+
+Both are available through REST as well (`?col=plfts.term` / `?col=wfts.term`
+for FTS, `?col=vector.{json}` for k-NN). See the
+[Full-Text & Vector Search guide](features/search-and-vector.md) for the
+full input reference, distance metric guide, and setup instructions.
+
 ### Relationships
 
 Foreign keys are automatically resolved — include the FK column to enable relationship traversal:
@@ -257,6 +290,7 @@ docker pull excalibase/excalibase-graphql:native
 - [Filtering →](filtering.md) — All filter operators and examples
 - [MySQL Support →](features/mysql.md) — MySQL-specific guide
 - [Stored Procedures →](features/stored-procedures.md) — IN/OUT params, examples
+- [Full-Text & Vector Search →](features/search-and-vector.md) — FTS on `tsvector`, k-NN on pgvector
 - [Real-Time Subscriptions →](features/subscriptions.md) — CDC setup
 - [Row-Level Security →](features/user-context-rls.md) — Per-user data isolation
 - [Enhanced PostgreSQL Types →](features/enhanced-postgresql-types.md) — JSON, arrays, network types
