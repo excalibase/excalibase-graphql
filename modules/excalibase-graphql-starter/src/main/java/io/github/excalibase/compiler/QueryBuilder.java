@@ -19,6 +19,7 @@ public class QueryBuilder {
     private final SchemaInfo schemaInfo;
     private final SqlDialect dialect;
     private final FilterBuilder filterBuilder;
+    private final VectorSearchBuilder vectorSearchBuilder;
     private final String dbSchema;
     private final int maxRows;
     private final ThreadLocal<Map<String, FragmentDefinition>> fragmentsHolder;
@@ -29,6 +30,7 @@ public class QueryBuilder {
         this.schemaInfo = schemaInfo;
         this.dialect = dialect;
         this.filterBuilder = filterBuilder;
+        this.vectorSearchBuilder = new VectorSearchBuilder(dialect);
         this.dbSchema = dbSchema;
         this.maxRows = maxRows;
         this.fragmentsHolder = fragmentsHolder;
@@ -50,6 +52,12 @@ public class QueryBuilder {
         // Parse distinctOn argument
         List<String> distinctOnCols = parseDistinctOn(field);
 
+        // Parse _vector argument (k-NN search). When present, it takes precedence
+        // over user-supplied orderBy and limit — the embedding similarity order
+        // IS the sort. Absent/invalid input returns Optional.empty() and we fall
+        // through to the normal ORDER BY / LIMIT path.
+        Optional<VectorSearchBuilder.VectorClause> vectorClause = extractVectorClause(field, alias, params);
+
         StringBuilder sql = new StringBuilder();
         sql.append(SELECT).append(dialect.coalesceArray(dialect.aggregateArray(objectSql)));
         sql.append(FROM).append("(").append(SELECT);
@@ -64,8 +72,10 @@ public class QueryBuilder {
         // WHERE from arguments
         filterBuilder.applyWhere(sql, field, alias, params, tableName);
 
-        // ORDER BY — prepend distinct columns if needed
-        if (!distinctOnCols.isEmpty()) {
+        // ORDER BY — vector search overrides user-supplied orderBy entirely
+        if (vectorClause.isPresent()) {
+            sql.append(ORDER_BY).append(vectorClause.get().orderByFragment());
+        } else if (!distinctOnCols.isEmpty()) {
             // DISTINCT ON requires the distinct columns to appear first in ORDER BY
             List<String> orderClauses = new ArrayList<>();
             for (String col : distinctOnCols) {
@@ -89,11 +99,36 @@ public class QueryBuilder {
             filterBuilder.applyOrderBy(sql, field, alias);
         }
 
-        // LIMIT
-        filterBuilder.applyLimit(sql, field, alias, params);
+        // LIMIT — vector.limitOverride takes precedence; otherwise the normal path
+        if (vectorClause.isPresent() && vectorClause.get().limitOverride() != null) {
+            int vlimit = Math.min(vectorClause.get().limitOverride(), maxRows);
+            String paramName = "p_limit_" + params.size();
+            sql.append(LIMIT).append(":").append(paramName);
+            params.put(paramName, vlimit);
+        } else {
+            filterBuilder.applyLimit(sql, field, alias, params);
+        }
 
         sql.append(") ").append(alias);
         return sql.toString();
+    }
+
+    /**
+     * Extracts the {@code _vector: {...}} argument from a table field, compiles
+     * it via {@link VectorSearchBuilder}, and returns the resulting clause.
+     * Silently returns empty when the argument is absent, malformed, or the
+     * dialect/schema doesn't support vector search — the caller falls through
+     * to the normal ORDER BY / LIMIT path.
+     */
+    private Optional<VectorSearchBuilder.VectorClause> extractVectorClause(
+            Field field, String alias, Map<String, Object> params) {
+        Argument vectorArg = field.getArguments().stream()
+                .filter(a -> ARG_VECTOR.equals(a.getName()))
+                .findFirst().orElse(null);
+        if (vectorArg == null || !(vectorArg.getValue() instanceof ObjectValue ov)) {
+            return Optional.empty();
+        }
+        return vectorSearchBuilder.build(ov, alias, schemaInfo, params);
     }
 
     private List<String> parseDistinctOn(Field field) {

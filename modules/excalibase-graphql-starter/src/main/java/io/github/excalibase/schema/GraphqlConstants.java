@@ -91,6 +91,15 @@ public final class GraphqlConstants {
      */
     public static final String FILTER_SEARCH = "_search";
 
+    /**
+     * Vector k-NN search argument on a table field. Accepts an input object of
+     * shape {@code { column, near, distance, limit }} and is compiled by
+     * {@link io.github.excalibase.compiler.VectorSearchBuilder} into an ORDER BY
+     * fragment plus LIMIT override — it takes precedence over any user-supplied
+     * {@code orderBy} / {@code limit} on the same query.
+     */
+    public static final String ARG_VECTOR = "_vector";
+
     // --- Logical operators ---
     public static final String LOGICAL_AND = "AND";
     public static final String LOGICAL_OR = "OR";
