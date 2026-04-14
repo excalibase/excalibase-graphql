@@ -1,6 +1,7 @@
 package io.github.excalibase;
 
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Abstraction for database-specific SQL syntax.
@@ -55,6 +56,20 @@ public interface SqlDialect {
 
     /** Parameter cast suffix for non-standard types. PG: ::uuid, ::jsonb, etc. Empty string if no cast needed. */
     default String paramCast(String columnType) { return ""; }
+
+    /**
+     * Build the SQL fragment for a full-text search predicate, if this dialect
+     * supports one. {@code colRef} is the qualified column reference (e.g.
+     * {@code "t.body"}), {@code paramRef} is the bind parameter (e.g. {@code ":p_body_search"}),
+     * and {@code useBm25} requests the higher-quality pg_search / BM25 path
+     * when the underlying extension is installed.
+     *
+     * <p>Returns {@link Optional#empty()} when the dialect does not implement
+     * FTS — callers should skip the operator on schemas it doesn't support.
+     */
+    default Optional<String> fullTextSearchSql(String colRef, String paramRef, boolean useBm25) {
+        return Optional.empty();
+    }
 
     /** Wrap a boolean expression for use inside JSON object builders.
      *  PG returns native boolean. MySQL needs CAST(IF(expr, 'true', 'false') AS JSON). */

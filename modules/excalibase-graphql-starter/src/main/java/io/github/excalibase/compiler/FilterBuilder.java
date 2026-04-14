@@ -214,6 +214,21 @@ public class FilterBuilder {
                             conditions.add(colRef + LIKE + PARAM_PREFIX + p);
                             params.put(p, "%" + extractValue(op.getValue()) + "%");
                         }
+                        case FILTER_SEARCH -> {
+                            // Full-text search. Picks the BM25 path when pg_search
+                            // is installed on this schema, falls back to vanilla
+                            // tsvector / plainto_tsquery otherwise. A dialect that
+                            // returns Optional.empty() (e.g. MySQL today) silently
+                            // skips this operator instead of erroring — the schema
+                            // generator should not emit the field on those backends.
+                            String p = nextParam("p_" + col + "_search", params);
+                            boolean useBm25 = schemaInfo != null && schemaInfo.hasExtension("pg_search");
+                            var sql = dialect.fullTextSearchSql(colRef, ":" + p, useBm25);
+                            if (sql.isPresent()) {
+                                conditions.add(sql.get());
+                                params.put(p, extractValue(op.getValue()));
+                            }
+                        }
                         case "is" -> {
                             // { is: NULL } or { is: NOT_NULL }
                             String v = op.getValue() instanceof EnumValue ev ? ev.getName() : extractValue(op.getValue()).toString();

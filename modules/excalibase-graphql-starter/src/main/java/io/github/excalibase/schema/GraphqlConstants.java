@@ -85,6 +85,12 @@ public final class GraphqlConstants {
     public static final String FILTER_CONTAINS = "contains";
     public static final String FILTER_STARTS_WITH = "startsWith";
     public static final String FILTER_ENDS_WITH = "endsWith";
+    /**
+     * Full-text search operator. Dispatches via {@link io.github.excalibase.SqlDialect#fullTextSearchSql}
+     * so the same GraphQL surface emits {@code col @@ plainto_tsquery(:p)} on a
+     * vanilla tsvector column or {@code col @@@ :p} when pg_search is installed.
+     */
+    public static final String FILTER_SEARCH = "_search";
 
     // --- Logical operators ---
     public static final String LOGICAL_AND = "AND";
