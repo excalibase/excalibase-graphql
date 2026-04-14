@@ -143,4 +143,40 @@ class PostgresBulkIntrospectionTest {
         assertDoesNotThrow(() -> loader.loadAll(jdbcTemplate, List.of(), perSchema));
         assertTrue(perSchema.isEmpty());
     }
+
+    // === Extension detection ===
+
+    /**
+     * Every PostgreSQL install includes plpgsql by default, so we can assert
+     * its presence without a setup step. The hasExtension() check is what FTS
+     * (Phase 5) and vector (Phase 6) hang their feature detection off.
+     */
+    @Test
+    void loadAll_detectsBuiltinPlpgsqlExtension() {
+        Map<String, SchemaInfo> perSchema = new LinkedHashMap<>();
+        loader.loadAll(jdbcTemplate, List.of("schema_a"), perSchema);
+
+        SchemaInfo a = perSchema.get("schema_a");
+        assertTrue(a.hasExtension("plpgsql"), "plpgsql is a built-in extension and should be detected");
+        assertNotNull(a.getExtensionVersion("plpgsql"));
+    }
+
+    @Test
+    void loadAll_extensionsBroadcastToAllSchemas() {
+        // Extensions are global; both schemas in perSchema must see plpgsql.
+        Map<String, SchemaInfo> perSchema = new LinkedHashMap<>();
+        loader.loadAll(jdbcTemplate, List.of("schema_a", "schema_b"), perSchema);
+
+        assertTrue(perSchema.get("schema_a").hasExtension("plpgsql"));
+        assertTrue(perSchema.get("schema_b").hasExtension("plpgsql"));
+    }
+
+    @Test
+    void loadAll_unknownExtensionReturnsFalse() {
+        Map<String, SchemaInfo> perSchema = new LinkedHashMap<>();
+        loader.loadAll(jdbcTemplate, List.of("schema_a"), perSchema);
+
+        assertFalse(perSchema.get("schema_a").hasExtension("nonexistent_extension"));
+        assertNull(perSchema.get("schema_a").getExtensionVersion("nonexistent_extension"));
+    }
 }

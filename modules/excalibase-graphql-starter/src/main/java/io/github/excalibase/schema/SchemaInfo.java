@@ -36,6 +36,10 @@ public class SchemaInfo {
     private final Map<String, ProcedureInfo> storedProcedures = new LinkedHashMap<>();
     // composite types: typeName → list of fields
     private final Map<String, List<CompositeTypeField>> compositeTypes = new LinkedHashMap<>();
+    // installed Postgres extensions: extname → extversion. Populated by the
+    // bulk introspection query so query-builders can light up FTS / vector /
+    // other extension-gated features without an extra round-trip.
+    private final Map<String, String> extensions = new LinkedHashMap<>();
 
     public void load(JdbcTemplate jdbc, String schema) {
         load(jdbc, schema, "postgres");
@@ -225,6 +229,21 @@ public class SchemaInfo {
     public Map<String, ProcedureInfo> getStoredProcedures() { return Collections.unmodifiableMap(storedProcedures); }
     public Map<String, List<CompositeTypeField>> getCompositeTypes() { return Collections.unmodifiableMap(compositeTypes); }
     public boolean isCompositeType(String typeName) { return compositeTypes.containsKey(typeName); }
+
+    /** Records that a Postgres extension is installed. */
+    public void addExtension(String name, String version) {
+        if (name == null) return;
+        extensions.put(name, version != null ? version : "");
+    }
+
+    /** True if the named extension was reported by pg_extension at introspection time. */
+    public boolean hasExtension(String name) { return extensions.containsKey(name); }
+
+    /** Version string for an installed extension, or null if absent. */
+    public String getExtensionVersion(String name) { return extensions.get(name); }
+
+    /** Read-only snapshot of all installed extensions (extname → extversion). */
+    public Map<String, String> getExtensions() { return Collections.unmodifiableMap(extensions); }
 
     public record FkInfo(List<String> fkColumns, String refTable, List<String> refColumns) {
         /** Convenience for single-column FK */

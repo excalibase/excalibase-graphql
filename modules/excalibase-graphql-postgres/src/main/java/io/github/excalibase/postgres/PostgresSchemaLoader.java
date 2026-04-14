@@ -145,6 +145,18 @@ public class PostgresSchemaLoader implements SchemaLoader {
                 JOIN pg_type t ON p.proargtypes[0] = t.oid
                 JOIN pg_class c ON t.typrelid = c.oid
                 WHERE n.nspname = ANY(?) AND array_length(p.proargtypes, 1) = 1
+              ),
+              extensions AS (
+                -- Extensions are global to the DB, not scoped to a schema.
+                -- table_schema is left NULL and the dispatch broadcasts to all
+                -- per-schema SchemaInfo entries so any of them can answer
+                -- hasExtension() lookups.
+                SELECT 'extension' as kind, NULL as table_schema, extname as table_name, extversion as column_name,
+                       NULL as data_type, NULL as udt_name, NULL::int as character_maximum_length,
+                       NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column,
+                       NULL::bigint as ordinal, NULL as enum_label, NULL::double precision as sort_order,
+                       NULL as proc_name, NULL as args_signature, NULL as return_type, NULL as function_name
+                FROM pg_extension
               )
             SELECT row_to_json(x) FROM cols x
             UNION ALL SELECT row_to_json(x) FROM pkeys x
@@ -156,6 +168,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             UNION ALL SELECT row_to_json(x) FROM composites x
             UNION ALL SELECT row_to_json(x) FROM procs x
             UNION ALL SELECT row_to_json(x) FROM computed x
+            UNION ALL SELECT row_to_json(x) FROM extensions x
             """;
 
     @Override
@@ -168,7 +181,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
         Map<String, String[]> fkTables = new HashMap<>();
 
         jdbc.query(BULK_INTROSPECTION_QUERY, ps -> {
-            // All 10 CTEs use the same parameter — bind it 10 times
+            // 10 CTEs take the schema-array param; the extensions CTE takes none.
             for (int i = 1; i <= 10; i++) {
                 ps.setArray(i, ps.getConnection().createArrayOf("text", schemaArray));
             }
@@ -178,6 +191,20 @@ public class PostgresSchemaLoader implements SchemaLoader {
                 String kind = node.get("kind").asText();
                 String schema = node.has("table_schema") && !node.get("table_schema").isNull()
                         ? node.get("table_schema").asText() : null;
+
+                // Extensions are global; broadcast to every per-schema SchemaInfo
+                // (and to the schemas we know we're loading even if they have no
+                // rows yet) so hasExtension() works regardless of which schema
+                // the caller queries.
+                if ("extension".equals(kind)) {
+                    String extName = node.get("table_name").asText();
+                    String extVer = node.has("column_name") && !node.get("column_name").isNull()
+                            ? node.get("column_name").asText() : null;
+                    for (String s : schemaArray) {
+                        perSchema.computeIfAbsent(s, k -> new SchemaInfo()).addExtension(extName, extVer);
+                    }
+                    return;
+                }
                 if (schema == null) return;
                 SchemaInfo info = perSchema.computeIfAbsent(schema, k -> new SchemaInfo());
 
