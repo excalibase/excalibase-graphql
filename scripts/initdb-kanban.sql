@@ -55,6 +55,11 @@ CREATE TABLE kanban.labels (
     color TEXT DEFAULT '#ccc'
 );
 
+-- pgvector is provided by the pgvector/pgvector:pg16 image. Enabling the
+-- extension here lets the GraphQL _vector and REST vector.{json} operators
+-- surface on any column of type vector(N).
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE kanban.issues (
     id SERIAL PRIMARY KEY,
     project_id INTEGER NOT NULL REFERENCES kanban.projects(id),
@@ -75,7 +80,11 @@ CREATE TABLE kanban.issues (
     -- resolver code on the app side.
     search_vec tsvector GENERATED ALWAYS AS (
         to_tsvector('english', title || ' ' || coalesce(description, ''))
-    ) STORED
+    ) STORED,
+    -- 3-dimensional embedding used to demonstrate k-NN vector search. The
+    -- three axes encode rough category weights (auth, filters/REST, payments)
+    -- so queries near a category axis return the matching cluster of issues.
+    embedding vector(3)
 );
 CREATE INDEX issues_search_idx ON kanban.issues USING GIN(search_vec);
 
@@ -188,6 +197,28 @@ INSERT INTO kanban.issue_labels (issue_id, label_id) VALUES
     (6, 2), (7, 3), (8, 2), (8, 5), (9, 5),
     (10, 2), (11, 6), (12, 6), (13, 6), (14, 6),
     (15, 6), (3, 1), (5, 3), (12, 2), (15, 2);
+
+-- Seed k-NN embeddings. 3-D space with axes = (auth, filter/REST, payment).
+-- Values chosen so that nearest-neighbor queries against each axis return a
+-- cluster of semantically related issues. Example: a query near [0,0,1]
+-- should return the payment / Stripe rows ahead of anything else.
+UPDATE kanban.issues SET embedding = CASE id
+    WHEN 1  THEN '[1.0, 0.0, 0.0]'   -- Setup JWT auth           (pure auth)
+    WHEN 2  THEN '[0.9, 0.1, 0.0]'   -- User CRUD endpoints      (auth+CRUD)
+    WHEN 3  THEN '[0.0, 1.0, 0.0]'   -- REST filter operators    (pure filter)
+    WHEN 4  THEN '[0.0, 0.95, 0.0]'  -- eq/neq operators         (filter)
+    WHEN 5  THEN '[0.0, 0.9, 0.0]'   -- range operators          (filter)
+    WHEN 6  THEN '[0.1, 0.8, 0.0]'   -- OpenAPI generation       (tooling/filter-adjacent)
+    WHEN 7  THEN '[0.2, 0.7, 0.0]'   -- Performance benchmarks   (perf/filter-adjacent)
+    WHEN 8  THEN '[0.7, 0.3, 0.0]'   -- Login screen             (auth UI)
+    WHEN 9  THEN '[0.3, 0.4, 0.1]'   -- Dashboard layout         (generic UI)
+    WHEN 10 THEN '[0.8, 0.2, 0.0]'   -- Social login buttons     (auth UI)
+    WHEN 11 THEN '[0.1, 0.1, 0.5]'   -- Landing page             (marketing/payment-adjacent)
+    WHEN 12 THEN '[0.0, 0.0, 1.0]'   -- Payment integration      (pure payment)
+    WHEN 13 THEN '[0.1, 0.0, 0.7]'   -- Email notifications      (payment notifications)
+    WHEN 14 THEN '[0.0, 0.2, 0.6]'   -- Analytics dashboard      (payment analytics)
+    WHEN 15 THEN '[0.0, 0.0, 0.95]'  -- Stripe webhook handler   (pure payment)
+END::vector;
 
 INSERT INTO kanban.comments (issue_id, author_id, body) VALUES
     (1, 2, 'Using JJWT library for this'),

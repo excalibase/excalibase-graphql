@@ -249,6 +249,12 @@ public class GraphqlSchemaManager implements SchemaProvider {
             SchemaInfo temp = schemaEntry.getValue();
             mergeTablesAndColumns(schemaInfo, schema, temp);
             mergeEnumsProcsAndComposites(schemaInfo, schema, temp);
+            // Extensions are global to the database, so every per-schema temp
+            // carries the same set. Copying once onto the target is enough —
+            // duplicates are harmless since addExtension uses a map put.
+            for (var ext : temp.getExtensions().entrySet()) {
+                schemaInfo.addExtension(ext.getKey(), ext.getValue());
+            }
         }
         mergeForeignKeys(schemaInfo, perSchema, schemaList);
     }

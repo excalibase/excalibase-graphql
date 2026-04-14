@@ -236,9 +236,10 @@ describe('Kanban GraphQL — Full-text search', () => {
     }`);
     const titles = data.kanbanIssues.map(i => i.title);
     expect(titles).toContain('Payment integration');
-    // A non-critical issue that would otherwise match must not appear
+    // A non-critical issue that would otherwise match must not appear.
+    // GraphQL emits enum values uppercase (CRITICAL), REST emits lowercase.
     for (const issue of data.kanbanIssues) {
-      expect(issue.priority).toBe('critical');
+      expect(issue.priority.toLowerCase()).toBe('critical');
     }
   });
 
@@ -247,6 +248,141 @@ describe('Kanban GraphQL — Full-text search', () => {
       kanbanIssues(where: { search_vec: { _search: "xyznomatch" } }) { id title }
     }`);
     expect(data.kanbanIssues).toEqual([]);
+  });
+});
+
+describe('Kanban GraphQL — Vector k-NN search', () => {
+  test('_vector L2 near payment axis returns the payment cluster', async () => {
+    // Embedding axis 3 = payment. Query near [0,0,1] must rank payment-
+    // themed issues ahead of auth/filter issues.
+    const data = await client.request(gql`{
+      kanbanIssues(_vector: {
+        column: "embedding"
+        near: [0.0, 0.0, 1.0]
+        distance: "L2"
+        limit: 3
+      }) { id title }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    expect(titles.length).toBe(3);
+    expect(titles[0]).toBe('Payment integration');  // [0,0,1] — exact match
+    expect(titles[1]).toBe('Stripe webhook handler'); // [0,0,0.95] — next nearest
+    // Third slot is another payment-adjacent issue, not auth or filter
+    expect(titles[2]).toMatch(/Email notifications|Analytics dashboard|Landing page/);
+  });
+
+  test('_vector L2 near auth axis returns the auth cluster', async () => {
+    const data = await client.request(gql`{
+      kanbanIssues(_vector: {
+        column: "embedding"
+        near: [1.0, 0.0, 0.0]
+        distance: "L2"
+        limit: 2
+      }) { id title }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    expect(titles[0]).toBe('Setup JWT auth');       // [1,0,0]
+    expect(titles[1]).toBe('User CRUD endpoints');  // [0.9,0.1,0]
+  });
+
+  test('_vector limit clamps the result set', async () => {
+    const data = await client.request(gql`{
+      kanbanIssues(_vector: {
+        column: "embedding"
+        near: [0.0, 0.0, 1.0]
+        distance: "L2"
+        limit: 1
+      }) { id title }
+    }`);
+    expect(data.kanbanIssues).toHaveLength(1);
+    expect(data.kanbanIssues[0].title).toBe('Payment integration');
+  });
+
+  test('_vector overrides user orderBy — k-NN ordering wins', async () => {
+    // id DESC would put 15 first but the payment query puts 12 first.
+    const data = await client.request(gql`{
+      kanbanIssues(
+        _vector: { column: "embedding", near: [0.0, 0.0, 1.0], distance: "L2", limit: 3 }
+        orderBy: { id: DESC }
+      ) { id title }
+    }`);
+    expect(data.kanbanIssues[0].title).toBe('Payment integration');
+  });
+
+  test('_vector COSINE distance clusters by direction', async () => {
+    // Cosine near [0,0,1] should cluster payment-direction rows regardless
+    // of their magnitude.
+    const data = await client.request(gql`{
+      kanbanIssues(_vector: {
+        column: "embedding"
+        near: [0.0, 0.0, 1.0]
+        distance: "COSINE"
+        limit: 2
+      }) { id title }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    // Both "Payment integration" and "Stripe webhook handler" are on the
+    // [0,0,1] axis so cosine distance is 0 for both.
+    expect(titles).toEqual(expect.arrayContaining(['Payment integration', 'Stripe webhook handler']));
+  });
+});
+
+describe('Kanban REST — Full-text search', () => {
+  test('plfts matches a distinctive term in the description', async () => {
+    const r = await restGet('/issues?select=id,title&description=plfts.stripe');
+    expect(r.status).toBe(200);
+    const titles = r.data.data.map(i => i.title);
+    expect(titles).toEqual(expect.arrayContaining(['Payment integration', 'Stripe webhook handler']));
+  });
+
+  test('plfts combines with an eq filter', async () => {
+    const r = await restGet('/issues?select=id,title,priority&description=plfts.payment&priority=eq.critical');
+    expect(r.status).toBe(200);
+    const titles = r.data.data.map(i => i.title);
+    expect(titles).toContain('Payment integration');
+    for (const issue of r.data.data) expect(issue.priority).toBe('critical');
+  });
+
+  test('plfts returns empty for unmatched term', async () => {
+    const r = await restGet('/issues?select=id,title&description=plfts.xyznomatch');
+    expect(r.status).toBe(200);
+    expect(r.data.data).toEqual([]);
+  });
+});
+
+describe('Kanban REST — Vector k-NN search', () => {
+  // The JSON must be URL-encoded so Jetty can parse the query string cleanly.
+  const vectorParam = (obj) => `embedding=vector.${encodeURIComponent(JSON.stringify(obj))}`;
+
+  test('vector L2 near payment axis returns the payment cluster', async () => {
+    const r = await restGet(`/issues?select=id,title&${vectorParam({ near: [0.0, 0.0, 1.0], distance: 'L2', limit: 3 })}`);
+    expect(r.status).toBe(200);
+    const titles = r.data.data.map(i => i.title);
+    expect(titles.length).toBe(3);
+    expect(titles[0]).toBe('Payment integration');
+    expect(titles[1]).toBe('Stripe webhook handler');
+  });
+
+  test('vector L2 near auth axis returns the auth cluster', async () => {
+    const r = await restGet(`/issues?select=id,title&${vectorParam({ near: [1.0, 0.0, 0.0], distance: 'L2', limit: 2 })}`);
+    expect(r.status).toBe(200);
+    const titles = r.data.data.map(i => i.title);
+    expect(titles[0]).toBe('Setup JWT auth');
+    expect(titles[1]).toBe('User CRUD endpoints');
+  });
+
+  test('vector combines with a WHERE predicate', async () => {
+    const r = await restGet(`/issues?select=id,title,priority&${vectorParam({ near: [0.0, 0.0, 1.0], distance: 'L2', limit: 10 })}&priority=eq.high`);
+    expect(r.status).toBe(200);
+    for (const issue of r.data.data) expect(issue.priority).toBe('high');
+    // First high-priority row near [0,0,1] is Stripe webhook handler.
+    expect(r.data.data[0].title).toBe('Stripe webhook handler');
+  });
+
+  test('vector IP (inner product) ranks by dot product', async () => {
+    const r = await restGet(`/issues?select=id,title&${vectorParam({ near: [1.0, 1.0, 1.0], distance: 'IP', limit: 3 })}`);
+    expect(r.status).toBe(200);
+    expect(r.data.data.length).toBe(3);
   });
 });
 

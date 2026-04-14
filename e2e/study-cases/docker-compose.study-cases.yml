@@ -21,7 +21,10 @@ services:
       - study-cases-network
 
   sc-kanban-postgres:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 is the official upstream build — vanilla Postgres 16
+    # with the pgvector extension pre-installed. Needed so kanban can exercise
+    # both FTS (tsvector) and k-NN vector search in the e2e suite.
+    image: pgvector/pgvector:pg16
     container_name: sc-kanban-postgres
     environment:
       POSTGRES_DB: kanban_db
