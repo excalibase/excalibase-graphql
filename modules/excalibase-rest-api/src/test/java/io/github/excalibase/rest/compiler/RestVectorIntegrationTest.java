@@ -1,5 +1,6 @@
 package io.github.excalibase.rest.compiler;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.postgres.PostgresDialect;
@@ -101,7 +102,7 @@ class RestVectorIntegrationTest {
         r.params().forEach(ps::addValue);
         Object result = named.queryForObject(r.sql(), ps, Object.class);
         try {
-            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var mapper = new ObjectMapper();
             List<Map<String, Object>> rows = mapper.readValue(
                     result == null ? "[]" : result.toString(), List.class);
             return rows.stream().map(row -> (String) row.get("title")).toList();
@@ -158,7 +159,7 @@ class RestVectorIntegrationTest {
         r.params().forEach(ps::addValue);
         Object result = named.queryForObject(r.sql(), ps, Object.class);
         try {
-            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var mapper = new ObjectMapper();
             List<Map<String, Object>> rows = mapper.readValue(result.toString(), List.class);
             List<String> titles = rows.stream().map(row -> (String) row.get("title")).toList();
             // k-NN order wins over id DESC (which would give far, mid, near, origin)
@@ -183,7 +184,7 @@ class RestVectorIntegrationTest {
         r.params().forEach(ps::addValue);
         Object result = named.queryForObject(r.sql(), ps, Object.class);
         try {
-            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var mapper = new ObjectMapper();
             List<Map<String, Object>> rows = mapper.readValue(result.toString(), List.class);
             List<String> titles = rows.stream().map(row -> (String) row.get("title")).toList();
             assertEquals(List.of("origin", "near", "mid"), titles);

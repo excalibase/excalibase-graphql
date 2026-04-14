@@ -1,5 +1,6 @@
 package io.github.excalibase.rest.compiler;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.postgres.PostgresDialect;
@@ -92,7 +93,7 @@ class RestFtsIntegrationTest {
         r.params().forEach(ps::addValue);
         Object result = named.queryForObject(r.sql(), ps, Object.class);
         try {
-            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var mapper = new ObjectMapper();
             Object parsed = mapper.readValue(result == null ? "[]" : result.toString(), Object.class);
             List<Map<String, Object>> rows;
             if (parsed instanceof List<?> list) {

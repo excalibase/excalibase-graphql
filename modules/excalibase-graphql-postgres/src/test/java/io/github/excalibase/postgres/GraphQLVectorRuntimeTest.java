@@ -1,5 +1,6 @@
 package io.github.excalibase.postgres;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.SqlCompiler;
@@ -13,6 +14,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -71,7 +73,7 @@ class GraphQLVectorRuntimeTest {
         // Load the schema via the real loader so extensions get detected the
         // same way as in production.
         PostgresSchemaLoader loader = new PostgresSchemaLoader();
-        var perSchema = new java.util.LinkedHashMap<String, SchemaInfo>();
+        var perSchema = new LinkedHashMap<String, SchemaInfo>();
         loader.loadAll(jdbc, List.of("vec_rt"), perSchema);
         schemaInfo = perSchema.get("vec_rt");
         assertNotNull(schemaInfo, "vec_rt schema must load");
@@ -93,7 +95,7 @@ class GraphQLVectorRuntimeTest {
         // Parse as Map, then extract the "docs" array, then extract titles.
         try {
             String json = result == null ? "{}" : result.toString();
-            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            var mapper = new ObjectMapper();
             Map<String, Object> root = mapper.readValue(json, Map.class);
             List<Object> rows = (List<Object>) root.get("docs");
             if (rows == null) return List.of();

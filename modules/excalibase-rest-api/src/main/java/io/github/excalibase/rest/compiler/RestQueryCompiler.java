@@ -140,8 +140,7 @@ public class RestQueryCompiler {
     private VectorSearchBuilder.VectorClause compileVectorFilter(
             FilterSpec filter, String tableAlias, Map<String, Object> params) {
         try {
-            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-            Map<String, Object> shape = mapper.readValue(filter.value(), Map.class);
+            Map<String, Object> shape = MAPPER.readValue(filter.value(), Map.class);
             // The column name is the URL key (e.g. ?embedding=vector.{...}), not
             // a field inside the JSON — ensure the shape carries it for the builder.
             shape.putIfAbsent("column", filter.column());

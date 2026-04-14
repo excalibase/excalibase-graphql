@@ -4,6 +4,8 @@ import graphql.language.*;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.schema.SchemaInfo;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -56,7 +58,7 @@ public class VectorSearchBuilder {
         if (vectorArg == null) return Optional.empty();
         // Adapter: flatten the GraphQL AST into a plain Map so both GraphQL
         // and REST compile paths share the same core logic.
-        Map<String, Object> shape = new java.util.HashMap<>();
+        Map<String, Object> shape = new HashMap<>();
         for (ObjectField f : vectorArg.getObjectFields()) {
             switch (f.getName()) {
                 case "column" -> {
@@ -64,7 +66,7 @@ public class VectorSearchBuilder {
                 }
                 case "near" -> {
                     if (f.getValue() instanceof ArrayValue av) {
-                        List<Float> floats = new java.util.ArrayList<>(av.getValues().size());
+                        List<Float> floats = new ArrayList<>(av.getValues().size());
                         for (Value<?> v : av.getValues()) floats.add(toFloat(v));
                         shape.put("near", floats);
                     }
@@ -109,7 +111,7 @@ public class VectorSearchBuilder {
         Object nearObj = shape.get("near");
         List<Float> embedding = null;
         if (nearObj instanceof List<?> list && !list.isEmpty()) {
-            embedding = new java.util.ArrayList<>(list.size());
+            embedding = new ArrayList<>(list.size());
             for (Object v : list) {
                 if (v instanceof Number n) embedding.add(n.floatValue());
                 else return Optional.empty(); // malformed — skip rather than crash

@@ -5,6 +5,9 @@ import io.github.excalibase.SqlDialect;
 import io.github.excalibase.schema.SchemaInfo;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -52,15 +55,15 @@ class VectorSearchBuilderTest {
     }
 
     private ObjectValue vectorArg(String column, List<Float> embedding, String distance, Integer limit) {
-        var fields = new java.util.ArrayList<ObjectField>();
+        var fields = new ArrayList<ObjectField>();
         if (column != null) fields.add(new ObjectField("column", new StringValue(column)));
         if (embedding != null) {
-            List<Value> values = new java.util.ArrayList<>();
-            for (Float f : embedding) values.add(new FloatValue(java.math.BigDecimal.valueOf(f)));
+            List<Value> values = new ArrayList<>();
+            for (Float f : embedding) values.add(new FloatValue(BigDecimal.valueOf(f)));
             fields.add(new ObjectField("near", new ArrayValue(values)));
         }
         if (distance != null) fields.add(new ObjectField("distance", new StringValue(distance)));
-        if (limit != null) fields.add(new ObjectField("limit", new IntValue(java.math.BigInteger.valueOf(limit))));
+        if (limit != null) fields.add(new ObjectField("limit", new IntValue(BigInteger.valueOf(limit))));
         return ObjectValue.newObjectValue().objectFields(fields).build();
     }
 
