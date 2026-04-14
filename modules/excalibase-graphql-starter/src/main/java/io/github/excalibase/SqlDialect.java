@@ -58,16 +58,15 @@ public interface SqlDialect {
     default String paramCast(String columnType) { return ""; }
 
     /**
-     * Build the SQL fragment for a full-text search predicate, if this dialect
-     * supports one. {@code colRef} is the qualified column reference (e.g.
-     * {@code "t.body"}), {@code paramRef} is the bind parameter (e.g. {@code ":p_body_search"}),
-     * and {@code useBm25} requests the higher-quality pg_search / BM25 path
-     * when the underlying extension is installed.
+     * Build the SQL fragment for a full-text search predicate against a
+     * tsvector column. {@code colRef} is the qualified column reference
+     * (e.g. {@code "t.search_vec"}) and {@code paramRef} is the bind
+     * parameter (e.g. {@code ":p_search_vec_search_0"}).
      *
      * <p>Returns {@link Optional#empty()} when the dialect does not implement
      * FTS — callers should skip the operator on schemas it doesn't support.
      */
-    default Optional<String> fullTextSearchSql(String colRef, String paramRef, boolean useBm25) {
+    default Optional<String> fullTextSearchSql(String colRef, String paramRef) {
         return Optional.empty();
     }
 

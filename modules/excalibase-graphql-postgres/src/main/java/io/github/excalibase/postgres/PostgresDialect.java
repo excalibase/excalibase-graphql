@@ -158,19 +158,17 @@ public class PostgresDialect implements SqlDialect {
     }
 
     /**
-     * Postgres FTS dispatch:
-     * <ul>
-     *   <li>{@code useBm25=true}  → ParadeDB / pg_search BM25 operator: {@code col @@@ paramRef}</li>
-     *   <li>{@code useBm25=false} → vanilla tsvector match: {@code col @@ plainto_tsquery(paramRef)}</li>
-     * </ul>
-     * The vanilla path expects {@code col} to already be a {@code tsvector};
-     * for plain text columns the caller should pre-cast or wrap the column.
+     * Postgres FTS — emits {@code col @@ plainto_tsquery(:param)} against a
+     * tsvector column. {@code plainto_tsquery} handles tokenization + stop
+     * words + stemming under the server's default text search config, so
+     * callers can pass a raw user query string without pre-processing.
+     *
+     * <p>The column reference must already be a {@code tsvector}. For plain
+     * {@code text} columns, use a {@code GENERATED ALWAYS AS (to_tsvector(...))}
+     * column or an index expression at the DB level.
      */
     @Override
-    public java.util.Optional<String> fullTextSearchSql(String colRef, String paramRef, boolean useBm25) {
-        if (useBm25) {
-            return java.util.Optional.of(colRef + " @@@ " + paramRef);
-        }
+    public java.util.Optional<String> fullTextSearchSql(String colRef, String paramRef) {
         return java.util.Optional.of(colRef + " @@ plainto_tsquery(" + paramRef + ")");
     }
 

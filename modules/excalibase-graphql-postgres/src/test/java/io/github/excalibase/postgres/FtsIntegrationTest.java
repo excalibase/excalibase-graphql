@@ -28,14 +28,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * seeds a real table, invokes FilterBuilder exactly the way SqlCompiler does,
  * and executes the assembled SQL via NamedParameterJdbcTemplate — the same
  * code path used by the data fetchers in production.
- *
- * <p>Uses the vanilla {@code postgres:16-alpine} image (no pg_search extension)
- * so the dispatch takes the {@code @@ plainto_tsquery} branch. A separate
- * paradedb-backed test could cover the BM25 branch but that image is 523 MB
- * and meaningfully slows CI; deferred until pg_search becomes load-bearing.
  */
 @Testcontainers
-class PgSearchIntegrationTest {
+class FtsIntegrationTest {
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
@@ -191,7 +186,7 @@ class PgSearchIntegrationTest {
         assertEquals(1, conditions.size(), "exactly one condition expected");
         String frag = conditions.get(0);
         assertTrue(frag.contains("a.\"search_vec\""), "fragment must reference the quoted column: " + frag);
-        assertTrue(frag.contains("plainto_tsquery"), "fragment must use plainto_tsquery when pg_search absent: " + frag);
+        assertTrue(frag.contains("plainto_tsquery"), "fragment must use plainto_tsquery: " + frag);
 
         // nextParam generates "prefix_<params.size()>" so with an empty map the
         // param name is "p_search_vec_search_0".
