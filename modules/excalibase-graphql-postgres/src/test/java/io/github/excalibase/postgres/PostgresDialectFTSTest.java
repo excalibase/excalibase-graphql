@@ -39,4 +39,33 @@ class PostgresDialectFTSTest {
         assertTrue(sql.isPresent());
         assertEquals("t.\"full-text\" @@ plainto_tsquery(:p_search)", sql.get());
     }
+
+    // === pgvector distance operators (Phase 6) ===
+
+    @Test
+    void vectorOperator_l2() {
+        assertEquals("<->", dialect.vectorDistanceOperator("L2").orElseThrow());
+        assertEquals("<->", dialect.vectorDistanceOperator("EUCLIDEAN").orElseThrow());
+        assertEquals("<->", dialect.vectorDistanceOperator("l2").orElseThrow(),
+                "case-insensitive");
+    }
+
+    @Test
+    void vectorOperator_cosine() {
+        assertEquals("<=>", dialect.vectorDistanceOperator("COSINE").orElseThrow());
+        assertEquals("<=>", dialect.vectorDistanceOperator("cosine").orElseThrow());
+    }
+
+    @Test
+    void vectorOperator_innerProduct() {
+        assertEquals("<#>", dialect.vectorDistanceOperator("IP").orElseThrow());
+        assertEquals("<#>", dialect.vectorDistanceOperator("INNER_PRODUCT").orElseThrow());
+    }
+
+    @Test
+    void vectorOperator_unknownReturnsEmpty() {
+        assertTrue(dialect.vectorDistanceOperator("MANHATTAN").isEmpty());
+        assertTrue(dialect.vectorDistanceOperator(null).isEmpty());
+        assertTrue(dialect.vectorDistanceOperator("").isEmpty());
+    }
 }

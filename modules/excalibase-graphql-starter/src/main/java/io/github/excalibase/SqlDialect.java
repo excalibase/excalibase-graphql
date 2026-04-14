@@ -71,6 +71,23 @@ public interface SqlDialect {
         return Optional.empty();
     }
 
+    /**
+     * Maps a vector distance operator name to the dialect-specific SQL
+     * operator used by {@code ORDER BY col &lt;OP&gt; :embedding}. Postgres
+     * with pgvector exposes:
+     * <ul>
+     *   <li>{@code "L2"}     → {@code <->} (Euclidean / L2 distance)</li>
+     *   <li>{@code "COSINE"} → {@code <=>} (cosine distance)</li>
+     *   <li>{@code "IP"}     → {@code <#>} (negative inner product)</li>
+     * </ul>
+     * Returns {@link Optional#empty()} when the dialect doesn't ship a vector
+     * type, allowing callers to silently skip the {@code _vector} operator on
+     * unsupported backends. Unknown distance names also return empty.
+     */
+    default Optional<String> vectorDistanceOperator(String distance) {
+        return Optional.empty();
+    }
+
     /** Wrap a boolean expression for use inside JSON object builders.
      *  PG returns native boolean. MySQL needs CAST(IF(expr, 'true', 'false') AS JSON). */
     default String jsonBool(String boolExpr) {

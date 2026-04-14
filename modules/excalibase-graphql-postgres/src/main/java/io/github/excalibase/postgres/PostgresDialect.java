@@ -173,4 +173,20 @@ public class PostgresDialect implements SqlDialect {
         }
         return java.util.Optional.of(colRef + " @@ plainto_tsquery(" + paramRef + ")");
     }
+
+    /**
+     * pgvector distance operators. Returns Optional.empty() for unknown
+     * distance names so the caller can skip the _vector clause on bad input
+     * rather than emitting invalid SQL.
+     */
+    @Override
+    public java.util.Optional<String> vectorDistanceOperator(String distance) {
+        if (distance == null) return java.util.Optional.empty();
+        return switch (distance.toUpperCase()) {
+            case "L2", "EUCLIDEAN" -> java.util.Optional.of("<->");
+            case "COSINE" -> java.util.Optional.of("<=>");
+            case "IP", "INNER_PRODUCT" -> java.util.Optional.of("<#>");
+            default -> java.util.Optional.empty();
+        };
+    }
 }
