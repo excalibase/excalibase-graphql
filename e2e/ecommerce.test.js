@@ -216,6 +216,61 @@ describe('E-Commerce GraphQL — JSONB filter (JsonFilterInput)', () => {
   });
 });
 
+describe('E-Commerce GraphQL — Float filter (FloatFilterInput)', () => {
+  test('lt on numeric price returns cheap items', async () => {
+    // Seed has products under $50 (tees at 29.99, 34.99, 9.99)
+    const data = await client.request(gql`{
+      shopifyProducts(where: { price: { lt: 50.0 } }) { id name price }
+    }`);
+    expect(data.shopifyProducts.length).toBeGreaterThan(0);
+    data.shopifyProducts.forEach(p => expect(Number(p.price)).toBeLessThan(50.0));
+  });
+
+  test('gte + lt range narrows to a price window', async () => {
+    const data = await client.request(gql`{
+      shopifyProducts(where: { price: { gte: 20.0, lt: 40.0 } }) { id name price }
+    }`);
+    data.shopifyProducts.forEach(p => {
+      const n = Number(p.price);
+      expect(n).toBeGreaterThanOrEqual(20.0);
+      expect(n).toBeLessThan(40.0);
+    });
+  });
+
+  test('impossible range returns empty', async () => {
+    const data = await client.request(gql`{
+      shopifyProducts(where: { price: { gt: 999999.0 } }) { id }
+    }`);
+    expect(data.shopifyProducts).toHaveLength(0);
+  });
+
+  test('eq on Float matches exact value', async () => {
+    // Alice's Classic Tee is 29.99 — exact float equality
+    const data = await client.request(gql`{
+      shopifyProducts(where: { price: { eq: 29.99 } }) { id name price }
+    }`);
+    expect(data.shopifyProducts.length).toBeGreaterThanOrEqual(1);
+    data.shopifyProducts.forEach(p => expect(Number(p.price)).toBe(29.99));
+  });
+});
+
+describe('E-Commerce GraphQL — DateTime filter (DateTimeFilterInput)', () => {
+  test('isNull: true returns rows where deleted_at is unset', async () => {
+    const live = await client.request(gql`{
+      shopifyProducts(where: { deleted_at: { isNull: true } }) { id name }
+    }`);
+    expect(live.shopifyProducts.length).toBeGreaterThan(0);
+  });
+
+  test('isNull: false returns soft-deleted rows', async () => {
+    const deleted = await client.request(gql`{
+      shopifyProducts(where: { deleted_at: { isNull: false } }) { id name }
+    }`);
+    // At least one soft-deleted product in seed
+    expect(deleted.shopifyProducts.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
 // ─── GraphQL: FK Chains ──────────────────────────────────────────────────────
 
 describe('E-Commerce GraphQL — FK Chains', () => {

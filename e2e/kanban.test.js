@@ -389,6 +389,70 @@ describe('Kanban GraphQL — Regex filter', () => {
   });
 });
 
+describe('Kanban GraphQL — DateTime filter (DateTimeFilterInput)', () => {
+  test('gt filters by timestamp lower bound', async () => {
+    // Seeded rows all have created_at in 2026 — a 2020 lower bound should
+    // return them all, a 2099 lower bound should return empty.
+    const hit = await client.request(gql`{
+      kanbanIssues(where: { created_at: { gt: "2020-01-01" } }) { id }
+    }`);
+    const miss = await client.request(gql`{
+      kanbanIssues(where: { created_at: { gt: "2099-01-01" } }) { id }
+    }`);
+    expect(hit.kanbanIssues.length).toBeGreaterThan(0);
+    expect(miss.kanbanIssues).toHaveLength(0);
+  });
+
+  test('gt + lt range narrows to a window', async () => {
+    // Wide open window — should match every seeded row
+    const wide = await client.request(gql`{
+      kanbanIssues(where: { created_at: { gt: "2020-01-01", lt: "2099-01-01" } }) { id }
+    }`);
+    // Impossible window
+    const none = await client.request(gql`{
+      kanbanIssues(where: { created_at: { gt: "2099-01-01", lt: "2099-12-31" } }) { id }
+    }`);
+    expect(wide.kanbanIssues.length).toBeGreaterThan(0);
+    expect(none.kanbanIssues).toHaveLength(0);
+  });
+
+  test('isNull distinguishes present vs null timestamps', async () => {
+    // Seed rows all have updated_at set, so isNull:true must be empty and
+    // isNull:false must return everything.
+    const nulls = await client.request(gql`{
+      kanbanIssues(where: { updated_at: { isNull: true } }) { id }
+    }`);
+    const notNulls = await client.request(gql`{
+      kanbanIssues(where: { updated_at: { isNull: false } }) { id }
+    }`);
+    expect(nulls.kanbanIssues).toHaveLength(0);
+    expect(notNulls.kanbanIssues.length).toBeGreaterThan(0);
+  });
+});
+
+describe('Kanban GraphQL — Boolean filter (BooleanFilterInput)', () => {
+  test('eq: true returns only active users', async () => {
+    const active = await client.request(gql`{
+      kanbanUsers(where: { active: { eq: true } }) { id email active }
+    }`);
+    const inactive = await client.request(gql`{
+      kanbanUsers(where: { active: { eq: false } }) { id email active }
+    }`);
+    active.kanbanUsers.forEach(u => expect(u.active).toBe(true));
+    inactive.kanbanUsers.forEach(u => expect(u.active).toBe(false));
+    // Falsifiability — the two result sets must be disjoint
+    const activeIds = new Set(active.kanbanUsers.map(u => u.id));
+    inactive.kanbanUsers.forEach(u => expect(activeIds.has(u.id)).toBe(false));
+  });
+
+  test('neq: true flips the selection', async () => {
+    const trueNeq = await client.request(gql`{
+      kanbanUsers(where: { active: { neq: true } }) { id active }
+    }`);
+    trueNeq.kanbanUsers.forEach(u => expect(u.active).toBe(false));
+  });
+});
+
 describe('Kanban GraphQL — Vector k-NN search', () => {
   test('vector L2 near payment axis returns the payment cluster', async () => {
     // Embedding axis 3 = payment. Query near [0,0,1] must rank payment-
