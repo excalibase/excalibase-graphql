@@ -159,7 +159,7 @@ public class PostgresDialect implements SqlDialect {
     }
 
     /**
-     * Postgres FTS dispatch. Both variants assume {@code colRef} is already a
+     * Postgres FTS dispatch. All variants assume {@code colRef} is already a
      * {@code tsvector}. For plain {@code text} columns, use a
      * {@code GENERATED ALWAYS AS (to_tsvector(...))} column at the DB level.
      *
@@ -168,6 +168,11 @@ public class PostgresDialect implements SqlDialect {
      *       — stems + stop words + AND, always safe</li>
      *   <li>{@link FtsVariant#WEB_SEARCH} → {@code col @@ websearch_to_tsquery(:param)}
      *       — Google-style quotes, OR, minus exclusion, always safe</li>
+     *   <li>{@link FtsVariant#PHRASE} → {@code col @@ phraseto_tsquery(:param)}
+     *       — words must be adjacent in the document, always safe</li>
+     *   <li>{@link FtsVariant#RAW} → {@code col @@ to_tsquery(:param)} — raw
+     *       tsquery syntax ({@code foo & bar | baz}), throws on bad input.
+     *       Only use when the input is known-valid.</li>
      * </ul>
      */
     @Override
@@ -175,7 +180,22 @@ public class PostgresDialect implements SqlDialect {
         return switch (variant) {
             case PLAIN -> Optional.of(colRef + " @@ plainto_tsquery(" + paramRef + ")");
             case WEB_SEARCH -> Optional.of(colRef + " @@ websearch_to_tsquery(" + paramRef + ")");
+            case PHRASE -> Optional.of(colRef + " @@ phraseto_tsquery(" + paramRef + ")");
+            case RAW -> Optional.of(colRef + " @@ to_tsquery(" + paramRef + ")");
         };
+    }
+
+    /**
+     * Postgres POSIX regex operators:
+     * {@code col ~ :param} for case-sensitive,
+     * {@code col ~* :param} for case-insensitive. Both accept standard POSIX
+     * regex syntax. Unlike {@code LIKE}, regex predicates cannot use an
+     * ordinary btree index — consider a GIN trigram index
+     * ({@code pg_trgm}) for heavy use.
+     */
+    @Override
+    public Optional<String> regexSql(String colRef, String paramRef, boolean caseInsensitive) {
+        return Optional.of(colRef + (caseInsensitive ? " ~* " : " ~ ") + paramRef);
     }
 
     /**

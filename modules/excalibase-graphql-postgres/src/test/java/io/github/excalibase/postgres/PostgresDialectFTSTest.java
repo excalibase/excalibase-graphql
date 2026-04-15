@@ -32,6 +32,43 @@ class PostgresDialectFTSTest {
     }
 
     @Test
+    void phraseVariant_emitsPhraseToTsquery() {
+        Optional<String> sql = dialect.fullTextSearchSql("t.body", ":p_body_phrase", FtsVariant.PHRASE);
+        assertTrue(sql.isPresent());
+        assertEquals("t.body @@ phraseto_tsquery(:p_body_phrase)", sql.get());
+    }
+
+    @Test
+    void rawVariant_emitsToTsquery() {
+        Optional<String> sql = dialect.fullTextSearchSql("t.body", ":p_body_rawts", FtsVariant.RAW);
+        assertTrue(sql.isPresent());
+        assertEquals("t.body @@ to_tsquery(:p_body_rawts)", sql.get());
+    }
+
+    // === POSIX regex operators ===
+
+    @Test
+    void regex_caseSensitive_emitsTildeOperator() {
+        Optional<String> sql = dialect.regexSql("t.title", ":p_title_regex", false);
+        assertTrue(sql.isPresent());
+        assertEquals("t.title ~ :p_title_regex", sql.get());
+    }
+
+    @Test
+    void regex_caseInsensitive_emitsTildeStarOperator() {
+        Optional<String> sql = dialect.regexSql("t.title", ":p_title_iregex", true);
+        assertTrue(sql.isPresent());
+        assertEquals("t.title ~* :p_title_iregex", sql.get());
+    }
+
+    @Test
+    void regex_quotedColumnReferenceIsPreserved() {
+        Optional<String> sql = dialect.regexSql("t.\"full-text\"", ":p_regex", false);
+        assertTrue(sql.isPresent());
+        assertEquals("t.\"full-text\" ~ :p_regex", sql.get());
+    }
+
+    @Test
     void quotedColumnReferenceIsPreserved() {
         // FilterBuilder always passes alias.quoteIdentifier(col), so the dialect
         // must echo the quoted form into the resulting SQL untouched.

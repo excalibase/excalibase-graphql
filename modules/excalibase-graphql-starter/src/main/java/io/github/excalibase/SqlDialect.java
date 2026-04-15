@@ -71,7 +71,22 @@ public interface SqlDialect {
      *       than throwing.</li>
      * </ul>
      */
-    enum FtsVariant { PLAIN, WEB_SEARCH }
+    /**
+     * FTS variants supported by {@link #fullTextSearchSql(String, String, FtsVariant)}.
+     * <ul>
+     *   <li>{@link #PLAIN} — {@code plainto_tsquery}: raw user text, stems
+     *       and drops stop words, always safe.</li>
+     *   <li>{@link #WEB_SEARCH} — {@code websearch_to_tsquery}: Google-style
+     *       syntax with {@code "phrase"}, {@code OR}, {@code -exclude}.
+     *       Always safe against bad input.</li>
+     *   <li>{@link #PHRASE} — {@code phraseto_tsquery}: words must be
+     *       adjacent in the document in the order given. Safe input.</li>
+     *   <li>{@link #RAW} — {@code to_tsquery}: raw tsquery syntax
+     *       ({@code foo & bar | baz}). Throws on malformed input — only
+     *       use when the caller knows the input is well-formed.</li>
+     * </ul>
+     */
+    enum FtsVariant { PLAIN, WEB_SEARCH, PHRASE, RAW }
 
     /**
      * Build the SQL fragment for a full-text search predicate against a
@@ -84,6 +99,21 @@ public interface SqlDialect {
      * FTS — callers should skip the operator on schemas it doesn't support.
      */
     default Optional<String> fullTextSearchSql(String colRef, String paramRef, FtsVariant variant) {
+        return Optional.empty();
+    }
+
+    /**
+     * Build the SQL fragment for a POSIX regex predicate on a text column.
+     * Postgres uses {@code col ~ :param} (case-sensitive) and
+     * {@code col ~* :param} (case-insensitive). MySQL uses
+     * {@code col REGEXP :param} and {@code col REGEXP BINARY :param}.
+     * Returns {@link Optional#empty()} when the dialect doesn't support
+     * regex predicates so the caller can silently skip the operator.
+     *
+     * @param caseInsensitive {@code true} for the {@code iregex}/{@code imatch}
+     *        variant, {@code false} for the case-sensitive {@code regex}/{@code match} variant
+     */
+    default Optional<String> regexSql(String colRef, String paramRef, boolean caseInsensitive) {
         return Optional.empty();
     }
 
