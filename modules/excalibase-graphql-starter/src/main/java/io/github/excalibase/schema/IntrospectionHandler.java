@@ -87,14 +87,27 @@ public class IntrospectionHandler {
             enumTypeMap.put(entry.getKey(), enumBuilder.build());
         }
 
-        // String filter input
+        // String filter input — the full operator set supported by
+        // FilterBuilder. Keep these in sync with the switch statement in
+        // io.github.excalibase.compiler.FilterBuilder.buildFilterConditions().
+        // Every operator present here MUST be handled there, and vice versa;
+        // otherwise clients see operators the server silently ignores (or
+        // vice versa).
         GraphQLInputObjectType stringFilter = GraphQLInputObjectType.newInputObject()
                 .name("StringFilterInput")
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLString).build())
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLString).build())
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LIKE).type(GraphQLString).build())
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_ILIKE).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_CONTAINS).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_STARTS_WITH).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_ENDS_WITH).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_REGEX).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IREGEX).type(GraphQLString).build())
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLString)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(GraphQLString)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
                 .build();
 
         // Tsvector filter input — two operators, both dispatched via
@@ -107,6 +120,8 @@ public class IntrospectionHandler {
                 .name("TsvectorFilterInput")
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_SEARCH).type(GraphQLString).build())
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_WEB_SEARCH).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_PHRASE_SEARCH).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_RAW_SEARCH).type(GraphQLString).build())
                 .build();
 
         GraphQLInputObjectType intFilter = GraphQLInputObjectType.newInputObject()
@@ -118,7 +133,33 @@ public class IntrospectionHandler {
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LT).type(GraphQLInt).build())
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LTE).type(GraphQLInt).build())
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLInt)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(GraphQLInt)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
                 .build();
+
+        // Per-enum filter input types. Enum columns (e.g. Postgres
+        // `CREATE TYPE issue_status AS ENUM(...)`) were previously filtered
+        // via StringFilterInput, which meant clients had to pass a plain
+        // String and the server relied on the DB to coerce. That silently
+        // accepts any string (losing compile-time safety) and prevents
+        // autocomplete on enum values in codegen-generated clients.
+        // Building a per-enum filter type gives clients enum-narrowed
+        // eq/neq/in/notIn/isNull/isNotNull operators.
+        Map<String, GraphQLInputObjectType> enumFilterMap = new LinkedHashMap<>();
+        for (Map.Entry<String, GraphQLEnumType> entry : enumTypeMap.entrySet()) {
+            GraphQLEnumType enumType = entry.getValue();
+            GraphQLInputObjectType enumFilter = GraphQLInputObjectType.newInputObject()
+                    .name(enumType.getName() + "FilterInput")
+                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(enumType).build())
+                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(enumType).build())
+                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(enumType)).build())
+                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(enumType)).build())
+                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
+                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
+                    .build();
+            enumFilterMap.put(entry.getKey(), enumFilter);
+        }
 
         // Build types for each table
         for (String table : schemaInfo.getTableNames()) {
@@ -184,8 +225,13 @@ public class IntrospectionHandler {
                     .name(typeName + WHERE_INPUT_SUFFIX);
             for (String col : columns) {
                 String colType = schemaInfo.getColumnType(table, col);
+                String enumTypeName = schemaInfo.getEnumType(table, col);
                 GraphQLInputObjectType filter;
-                if (isNumericType(colType)) {
+                if (enumTypeName != null && enumFilterMap.containsKey(enumTypeName)) {
+                    // Enum-backed column — use the per-enum filter so clients
+                    // get narrowed operators (eq accepts only enum members).
+                    filter = enumFilterMap.get(enumTypeName);
+                } else if (isNumericType(colType)) {
                     filter = intFilter;
                 } else if ("tsvector".equalsIgnoreCase(colType)) {
                     filter = tsvectorFilter;

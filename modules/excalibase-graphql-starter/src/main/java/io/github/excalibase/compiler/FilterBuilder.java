@@ -236,6 +236,49 @@ public class FilterBuilder {
                                 params.put(p, extractValue(op.getValue()));
                             }
                         }
+                        case FILTER_PHRASE_SEARCH -> {
+                            // phraseto_tsquery — words must be adjacent in
+                            // the document in the given order. Always safe
+                            // against malformed input.
+                            String p = nextParam("p_" + col + "_phrase", params);
+                            var sql = dialect.fullTextSearchSql(colRef, ":" + p, SqlDialect.FtsVariant.PHRASE);
+                            if (sql.isPresent()) {
+                                conditions.add(sql.get());
+                                params.put(p, extractValue(op.getValue()));
+                            }
+                        }
+                        case FILTER_RAW_SEARCH -> {
+                            // to_tsquery — raw tsquery syntax. Throws on bad
+                            // input, so only use when the input is
+                            // known-valid (e.g. server-side generation).
+                            String p = nextParam("p_" + col + "_rawts", params);
+                            var sql = dialect.fullTextSearchSql(colRef, ":" + p, SqlDialect.FtsVariant.RAW);
+                            if (sql.isPresent()) {
+                                conditions.add(sql.get());
+                                params.put(p, extractValue(op.getValue()));
+                            }
+                        }
+                        case FILTER_REGEX -> {
+                            // POSIX regex match, case-sensitive. Postgres
+                            // uses `~`. Dialects that don't implement regex
+                            // silently drop the operator.
+                            String p = nextParam("p_" + col + "_regex", params);
+                            var sql = dialect.regexSql(colRef, ":" + p, false);
+                            if (sql.isPresent()) {
+                                conditions.add(sql.get());
+                                params.put(p, extractValue(op.getValue()));
+                            }
+                        }
+                        case FILTER_IREGEX -> {
+                            // POSIX regex match, case-insensitive. Postgres
+                            // uses `~*`.
+                            String p = nextParam("p_" + col + "_iregex", params);
+                            var sql = dialect.regexSql(colRef, ":" + p, true);
+                            if (sql.isPresent()) {
+                                conditions.add(sql.get());
+                                params.put(p, extractValue(op.getValue()));
+                            }
+                        }
                         case "is" -> {
                             // { is: NULL } or { is: NOT_NULL }
                             String v = op.getValue() instanceof EnumValue ev ? ev.getName() : extractValue(op.getValue()).toString();

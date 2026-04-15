@@ -85,6 +85,10 @@ public final class GraphqlConstants {
     public static final String FILTER_CONTAINS = "contains";
     public static final String FILTER_STARTS_WITH = "startsWith";
     public static final String FILTER_ENDS_WITH = "endsWith";
+    /** POSIX regex match (case-sensitive). Postgres {@code col ~ :param}. */
+    public static final String FILTER_REGEX = "regex";
+    /** POSIX regex match (case-insensitive). Postgres {@code col ~* :param}. */
+    public static final String FILTER_IREGEX = "iregex";
     /**
      * Plain full-text search operator. Used inside a column filter on a
      * tsvector column: {@code where: { search_vec: { search: "query text" } }}.
@@ -102,6 +106,23 @@ public final class GraphqlConstants {
      * {@code where: { search_vec: { webSearch: "cat OR dog -mouse" } }}.
      */
     public static final String FILTER_WEB_SEARCH = "webSearch";
+
+    /**
+     * Phrase full-text search operator. Words in the query must appear
+     * adjacent in the document in the given order. Backed by
+     * {@code phraseto_tsquery}. Used inside a column filter on a tsvector
+     * column: {@code where: { search_vec: { phraseSearch: "webhook handler" } }}.
+     */
+    public static final String FILTER_PHRASE_SEARCH = "phraseSearch";
+
+    /**
+     * Raw tsquery full-text search operator. Accepts raw tsquery syntax
+     * ({@code foo & bar | baz}). Throws on malformed input — only use when
+     * the caller knows the input is well-formed. Backed by
+     * {@code to_tsquery}. Used inside a column filter on a tsvector column:
+     * {@code where: { search_vec: { rawSearch: "foo & bar" } }}.
+     */
+    public static final String FILTER_RAW_SEARCH = "rawSearch";
 
     /**
      * Vector k-NN search argument on a table field:
