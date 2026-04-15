@@ -457,24 +457,32 @@ public class RestQueryCompiler {
             case "isdistinct" -> { params.put(paramName, convertValue(filter.value(), table, filter.column())); yield neg + colRef + IS_DISTINCT_FROM + PARAM_PREFIX + paramName; }
             case "in" -> buildInSql(filter, colRef, neg, paramName, params, false, table);
             case "notin" -> buildInSql(filter, colRef, neg, paramName, params, true, table);
-            case "haskey" -> jsonFilter(params, paramName, filter, neg, FN_JSONB_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName));
-            case "jsoncontains", "contains", "cs" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINS + PARAM_PREFIX + paramName + CAST_JSONB);
-            case "jsoncontained", "containedin", "cd" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINED_BY + PARAM_PREFIX + paramName + CAST_JSONB);
-            case "jsonpath" -> jsonFilter(params, paramName, filter, neg, colRef + JSONPATH_EXISTS + PARAM_PREFIX + paramName + CAST_JSONPATH);
-            case "jsonpathexists" -> jsonFilter(params, paramName, filter, neg, colRef + MATCH_TSQUERY + PARAM_PREFIX + paramName + CAST_JSONPATH);
-            case "arraycontains" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINS + ARRAY_PREFIX + PARAM_PREFIX + paramName + "]");
-            case "arrayhasany", "ov" -> jsonFilter(params, paramName, filter, neg, colRef + OVERLAPS + PARAM_PREFIX + paramName);
-            case "arrayhasall" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINS + ARRAY_PREFIX + PARAM_PREFIX + paramName + "]");
+            case "haskey" -> jsonFilter(params, paramName, filter, neg, FN_JSONB_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName), table);
+            case "jsoncontains", "contains", "cs" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINS + PARAM_PREFIX + paramName + CAST_JSONB, table);
+            case "jsoncontained", "containedin", "cd" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINED_BY + PARAM_PREFIX + paramName + CAST_JSONB, table);
+            // jsonpath / jsonpathexists — both use the jsonb_path_exists function
+            // form instead of the `@?` operator. The `?` character inside `@?`
+            // collides with JDBC placeholder parsing in Spring's NamedParameterJdbcTemplate,
+            // which refuses to mix named and traditional placeholders. The
+            // function form is semantically identical and parser-safe.
+            case "jsonpath", "jsonpathexists" -> jsonFilter(params, paramName, filter, neg, FN_JSONB_PATH_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName + CAST_JSONPATH), table);
+            // Array operators — bind the raw `{a,b,c}` literal with Types.OTHER
+            // coercion via convertValue (same pattern as eq/neq/in). Postgres
+            // parses the string as the column's array type. Do NOT wrap the
+            // bind in `ARRAY[$1]` — that forces the element type to varchar
+            // and collides with text[] / int[] column types.
+            case "arraycontains", "arrayhasall" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINS + PARAM_PREFIX + paramName, table);
+            case "arrayhasany", "ov" -> jsonFilter(params, paramName, filter, neg, colRef + OVERLAPS + PARAM_PREFIX + paramName, table);
             case "arraylength" -> { params.put(paramName, convertValue(filter.value(), table, filter.column())); yield neg + FN_ARRAY_LENGTH + parens(colRef + COMMA_SEP + "1") + ASSIGN + PARAM_PREFIX + paramName; }
             case "fts" -> tsFilter(params, paramName, filter, neg, colRef, FN_TO_TSQUERY);
             case "plfts" -> tsFilter(params, paramName, filter, neg, colRef, FN_PLAINTO_TSQUERY);
             case "phfts" -> tsFilter(params, paramName, filter, neg, colRef, FN_PHRASETO_TSQUERY);
             case "wfts" -> tsFilter(params, paramName, filter, neg, colRef, FN_WEBSEARCH_TSQUERY);
-            case "sl" -> jsonFilter(params, paramName, filter, neg, colRef + STRICTLY_LEFT + PARAM_PREFIX + paramName);
-            case "sr" -> jsonFilter(params, paramName, filter, neg, colRef + STRICTLY_RIGHT + PARAM_PREFIX + paramName);
-            case "nxl" -> jsonFilter(params, paramName, filter, neg, colRef + NO_EXTEND_LEFT + PARAM_PREFIX + paramName);
-            case "nxr" -> jsonFilter(params, paramName, filter, neg, colRef + NO_EXTEND_RIGHT + PARAM_PREFIX + paramName);
-            case "adj" -> jsonFilter(params, paramName, filter, neg, colRef + ADJACENT + PARAM_PREFIX + paramName);
+            case "sl" -> jsonFilter(params, paramName, filter, neg, colRef + STRICTLY_LEFT + PARAM_PREFIX + paramName, table);
+            case "sr" -> jsonFilter(params, paramName, filter, neg, colRef + STRICTLY_RIGHT + PARAM_PREFIX + paramName, table);
+            case "nxl" -> jsonFilter(params, paramName, filter, neg, colRef + NO_EXTEND_LEFT + PARAM_PREFIX + paramName, table);
+            case "nxr" -> jsonFilter(params, paramName, filter, neg, colRef + NO_EXTEND_RIGHT + PARAM_PREFIX + paramName, table);
+            case "adj" -> jsonFilter(params, paramName, filter, neg, colRef + ADJACENT + PARAM_PREFIX + paramName, table);
             default -> throw new IllegalArgumentException("Unsupported filter operator: " + filter.operator());
         };
     }
@@ -489,8 +497,12 @@ public class RestQueryCompiler {
         return neg + col + op + PARAM_PREFIX + pn;
     }
 
-    private String jsonFilter(Map<String, Object> params, String pn, FilterSpec f, String neg, String expr) {
-        params.put(pn, f.value());
+    private String jsonFilter(Map<String, Object> params, String pn, FilterSpec f, String neg, String expr, String table) {
+        // Route the bind through convertValue so json/jsonb and array columns
+        // get Types.OTHER coercion — Postgres then parses the string against
+        // the actual column type. Without this, raw String binds produce
+        // `varchar` on both sides and lose against `jsonb` / `text[]`.
+        params.put(pn, convertValue(f.value(), table, f.column()));
         return neg + expr;
     }
 

@@ -321,17 +321,24 @@ class RestQueryCompilerTest {
       assertTrue(r.sql().contains("<@"));
     }
 
-    @Test @DisplayName("jsonpath: col @? :param::jsonpath")
+    @Test @DisplayName("jsonpath: jsonb_path_exists(col, :param::jsonpath)")
     void jsonpath() {
+      // Emits the function form rather than `@?` because the `?` character
+      // in the operator clashes with Spring's NamedParameterJdbcTemplate
+      // placeholder parser. Semantics are identical.
       var r = filterQuery("metadata", "jsonpath", "$.name");
-      assertTrue(r.sql().contains("@?"));
+      assertTrue(r.sql().contains("jsonb_path_exists"), "expected function form, got: " + r.sql());
+      assertTrue(r.sql().contains("::jsonpath"));
     }
 
-    @Test @DisplayName("arraycontains: col @> ARRAY[:param]")
+    @Test @DisplayName("arraycontains: col @> :param (no ARRAY[] wrapping)")
     void arraycontains() {
-      var r = filterQuery("tags", "arraycontains", "red");
+      // The ARRAY[$1] wrapper would bind as varchar[] and fail against
+      // text[]/int[] columns — we bind the raw `{a,b,c}` literal instead
+      // and let convertValue pick the column type via Types.OTHER.
+      var r = filterQuery("tags", "arraycontains", "{red,blue}");
       assertTrue(r.sql().contains("@>"));
-      assertTrue(r.sql().contains("ARRAY"));
+      assertFalse(r.sql().contains("ARRAY["), "should not wrap in ARRAY[]: " + r.sql());
     }
 
     @Test @DisplayName("arraylength: array_length(col, 1) = :param")

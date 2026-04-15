@@ -45,6 +45,15 @@ public final class SqlKeywords {
     public static final String FN_PHRASETO_TSQUERY = "phraseto_tsquery";
     public static final String FN_WEBSEARCH_TSQUERY = "websearch_to_tsquery";
     public static final String FN_JSONB_EXISTS = "jsonb_exists";
+    /**
+     * Function form of the {@code @?} jsonpath-exists operator. We use this
+     * instead of the operator because Spring's {@code NamedParameterJdbcTemplate}
+     * treats the {@code ?} character inside {@code @?} as a JDBC placeholder,
+     * which clashes with the surrounding named parameters and raises
+     * "mix named and traditional placeholders". The function form has
+     * identical semantics and avoids the parser ambiguity entirely.
+     */
+    public static final String FN_JSONB_PATH_EXISTS = "jsonb_path_exists";
     public static final String FN_ARRAY_LENGTH = "array_length";
     public static final String REGEX_MATCH = " ~ ";
     public static final String REGEX_IMATCH = " ~* ";
