@@ -286,8 +286,8 @@ docker pull excalibase/excalibase-graphql:native
 ## Learn More
 
 - [Quick Start →](quick-start.md) — Docker setup, sample queries
-- [API Reference →](api/index.md) — Full schema documentation
-- [Filtering →](filtering.md) — All filter operators and examples
+- [API Reference →](graphql/index.md) — Full schema documentation
+- [Filtering →](graphql/filtering.md) — All filter operators and examples
 - [MySQL Support →](features/mysql.md) — MySQL-specific guide
 - [Stored Procedures →](features/stored-procedures.md) — IN/OUT params, examples
 - [Full-Text & Vector Search →](features/search-and-vector.md) — FTS on `tsvector`, k-NN on pgvector

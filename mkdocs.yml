@@ -105,10 +105,18 @@ extra_javascript:
 
 nav:
   - Home: index.md
+  - Choose Your Protocol: choose-your-protocol.md
   - Quick Start:
       - Getting Started: quickstart/index.md
       - Installation Guide: quick-start.md
-  - API Reference: api/index.md
+  - GraphQL:
+      - Overview: graphql/index.md
+      - Filtering: graphql/filtering.md
+  - REST:
+      - Overview: rest/index.md
+      - Filtering: rest/filtering.md
+      - Mutations: rest/mutations.md
+      - Pagination: rest/pagination.md
   - Features:
       - Multi-Schema Support: features/multi-schema.md
       - MySQL Support: features/mysql.md
@@ -117,6 +125,5 @@ nav:
       - Full-Text & Vector Search: features/search-and-vector.md
       - Real-Time Subscriptions: features/subscriptions.md
       - Row-Level Security: features/user-context-rls.md
-  - Filtering: filtering.md
   - Testing: testing.md
   - Contributing: CONTRIBUTING.md

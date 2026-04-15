@@ -226,8 +226,8 @@ ports:
 
 ## Next Steps
 
-- [API Reference →](api/index.md) — full schema documentation
-- [Filtering →](filtering.md) — all filter operators with examples
+- [API Reference →](graphql/index.md) — full schema documentation
+- [Filtering →](graphql/filtering.md) — all filter operators with examples
 - [MySQL Support →](features/mysql.md) — MySQL-specific guide
 - [Stored Procedures →](features/stored-procedures.md) — calling procedures from GraphQL
 - [Subscriptions →](features/subscriptions.md) — real-time CDC subscriptions (PostgreSQL)

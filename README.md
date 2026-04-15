@@ -1125,7 +1125,7 @@ Excalibase GraphQL features a modern, object-based filtering system that provide
 ### 📚 **Comprehensive Documentation**
 
 For detailed filtering documentation, examples, and migration guides, see:
-- **[GraphQL Filtering Guide](docs/filtering.md)** - Complete filtering reference
+- **[GraphQL Filtering Guide](docs/graphql/filtering.md)** - Complete filtering reference
 - **[Test Coverage Documentation](docs/testing.md)** - Comprehensive test suite overview
 
 ## Example Usage

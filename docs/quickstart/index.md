@@ -62,5 +62,5 @@ The Docker stacks initialize with tables, views, stored procedures, and seed dat
 ## Next Steps
 
 - [Installation Guide →](../quick-start.md) — Docker setup, native binary, local dev
-- [API Reference →](../api/index.md) — full schema documentation
-- [Filtering →](../filtering.md) — filter operators and examples
+- [API Reference →](../graphql/index.md) — full schema documentation
+- [Filtering →](../graphql/filtering.md) — filter operators and examples
