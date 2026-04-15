@@ -138,6 +138,52 @@ public class IntrospectionHandler {
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
                 .build();
 
+        // Float filter input — numeric, decimal, real, double precision
+        // columns get this so clients can filter with fractional values.
+        // Previously these fell through to IntFilterInput which forced Int
+        // binds and rejected decimals like `{ lt: 9.99 }`.
+        GraphQLInputObjectType floatFilter = GraphQLInputObjectType.newInputObject()
+                .name("FloatFilterInput")
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLFloat).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLFloat).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GT).type(GraphQLFloat).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GTE).type(GraphQLFloat).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LT).type(GraphQLFloat).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LTE).type(GraphQLFloat).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLFloat)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(GraphQLFloat)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
+                .build();
+
+        // Boolean filter input — boolean columns get this. Only equality and
+        // null checks make sense (there's no "greater than false").
+        GraphQLInputObjectType booleanFilter = GraphQLInputObjectType.newInputObject()
+                .name("BooleanFilterInput")
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLBoolean).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLBoolean).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
+                .build();
+
+        // DateTime filter input — timestamp, timestamptz, date, time, timetz
+        // columns. Values are strings on the wire (ISO 8601 by convention)
+        // and Postgres coerces them via paramCast. Supports the full range +
+        // equality + list suite so users can filter by time windows.
+        GraphQLInputObjectType dateTimeFilter = GraphQLInputObjectType.newInputObject()
+                .name("DateTimeFilterInput")
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GT).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GTE).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LT).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LTE).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLString)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(GraphQLString)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
+                .build();
+
         // JSONB filter input. Each operator maps to a Postgres jsonb op or
         // function — see PostgresDialect.jsonPredicateSql for the full list.
         // The input values use graphql-java's ExtendedScalars.Json so
@@ -251,7 +297,13 @@ public class IntrospectionHandler {
                     filter = enumFilterMap.get(enumTypeName);
                 } else if (isJsonType(colType)) {
                     filter = jsonFilter;
-                } else if (isNumericType(colType)) {
+                } else if (isBooleanType(colType)) {
+                    filter = booleanFilter;
+                } else if (isDateTimeType(colType)) {
+                    filter = dateTimeFilter;
+                } else if (isFloatType(colType)) {
+                    filter = floatFilter;
+                } else if (isIntegerType(colType)) {
                     filter = intFilter;
                 } else if ("tsvector".equalsIgnoreCase(colType)) {
                     filter = tsvectorFilter;
@@ -461,10 +513,52 @@ public class IntrospectionHandler {
         return GraphQLString;
     }
 
+    /**
+     * Kept for compatibility — callers should prefer the narrower
+     * {@link #isIntegerType(String)} and {@link #isFloatType(String)} which
+     * distinguish the two numeric families the new filter input types need.
+     */
     private boolean isNumericType(String dbType) {
+        return isIntegerType(dbType) || isFloatType(dbType);
+    }
+
+    private boolean isIntegerType(String dbType) {
         if (dbType == null) return false;
         String t = dbType.toLowerCase();
-        return t.contains("int") || t.contains("float") || t.contains("double") || t.contains("numeric") || t.contains("decimal") || t.contains("real");
+        // smallint, int2, int, integer, int4, bigint, int8, serial, bigserial
+        return t.equals("smallint") || t.equals("int2")
+                || t.equals("int") || t.equals("integer") || t.equals("int4")
+                || t.equals("bigint") || t.equals("int8")
+                || t.equals("serial") || t.equals("serial4")
+                || t.equals("bigserial") || t.equals("serial8")
+                || t.equals("smallserial") || t.equals("serial2");
+    }
+
+    private boolean isFloatType(String dbType) {
+        if (dbType == null) return false;
+        String t = dbType.toLowerCase();
+        // numeric, decimal, real, float4, double precision, float8, money
+        return t.equals("numeric") || t.equals("decimal")
+                || t.equals("real") || t.equals("float4")
+                || t.equals("double precision") || t.equals("float8")
+                || t.equals("money");
+    }
+
+    private boolean isBooleanType(String dbType) {
+        if (dbType == null) return false;
+        String t = dbType.toLowerCase();
+        return t.equals("bool") || t.equals("boolean");
+    }
+
+    private boolean isDateTimeType(String dbType) {
+        if (dbType == null) return false;
+        String t = dbType.toLowerCase();
+        return t.equals("date")
+                || t.equals("time") || t.equals("timetz")
+                || t.equals("time with time zone") || t.equals("time without time zone")
+                || t.equals("timestamp") || t.equals("timestamptz")
+                || t.equals("timestamp with time zone") || t.equals("timestamp without time zone")
+                || t.equals("interval");
     }
 
     private boolean isJsonType(String dbType) {
