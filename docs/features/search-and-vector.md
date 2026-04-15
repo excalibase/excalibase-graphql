@@ -37,16 +37,18 @@ CREATE INDEX issues_search_idx ON kanban.issues USING GIN(search_vec);
 ```
 
 Excalibase detects the column on schema introspection and exposes it under a
-`TsvectorFilterInput` with two operators.
+`TsvectorFilterInput` with four operators.
 
 ### 2. GraphQL surface
 
-Two operators live inside the column filter:
+Four operators live inside the column filter:
 
-| Operator | Postgres function | Syntax accepted |
-|---|---|---|
-| `search` | `plainto_tsquery` | Raw user text — any order, AND-joined, stems + drops stop words |
-| `webSearch` | `websearch_to_tsquery` | Google-style: `"phrase"`, `OR`, `-exclusion` |
+| Operator | Postgres function | Syntax accepted | Safe on bad input? |
+|---|---|---|---|
+| `search` | `plainto_tsquery` | Raw user text — any order, AND-joined, stems + drops stop words | yes |
+| `webSearch` | `websearch_to_tsquery` | Google-style: `"phrase"`, `OR`, `-exclusion` | yes |
+| `phraseSearch` | `phraseto_tsquery` | Words must be adjacent in the document in the given order | yes |
+| `rawSearch` | `to_tsquery` | Raw tsquery: `foo & bar \| baz`, `!word`, `word:*` | **no — throws on malformed input** |
 
 **Plain search** — default for a search box:
 
@@ -75,25 +77,55 @@ Two operators live inside the column filter:
 { kanbanIssues(where: { search_vec: { webSearch: "cat \"dog house\" OR rat -mouse" } }) { id title } }
 ```
 
+**Phrase search** — words must appear adjacent in the document in the given order:
+
+```graphql
+# Matches "Stripe webhook handler" (adjacent, in order)
+{ kanbanIssues(where: { search_vec: { phraseSearch: "webhook handler" } }) { id title } }
+
+# Returns empty — wrong order
+{ kanbanIssues(where: { search_vec: { phraseSearch: "handler webhook" } }) { id title } }
+```
+
+**Raw tsquery** — when you need full tsquery syntax (power-search expressions
+generated server-side, saved searches, etc.). Throws on malformed input so
+never route untrusted user text here:
+
+```graphql
+# AND
+{ kanbanIssues(where: { search_vec: { rawSearch: "stripe & webhook" } }) { id title } }
+
+# OR alternation
+{ kanbanIssues(where: { search_vec: { rawSearch: "jwt | stripe" } }) { id title } }
+
+# Prefix match — anything starting with "stri"
+{ kanbanIssues(where: { search_vec: { rawSearch: "stri:*" } }) { id title } }
+```
+
 FTS composes with every other `where` predicate via implicit AND:
 
 ```graphql
 {
   kanbanIssues(where: {
     search_vec: { search: "payment" },
-    priority:   { eq: "critical" }
+    priority:   { eq: critical }
   }) { id title }
 }
 ```
 
 **Choosing between them:**
 
-- `search` — always safe, always produces valid output. Use this by default.
-- `webSearch` — also safe against malformed input. Use when users can type
-  power-search syntax (quotes / OR / `-`).
+| Use case | Operator |
+|---|---|
+| Default search box (any user input) | `search` |
+| User can type `"phrase"` / `OR` / `-exclude` | `webSearch` |
+| "Words in this exact order" — quoted phrase only | `phraseSearch` |
+| Server-generated tsquery (saved searches, power users) | `rawSearch` |
 
-Both are dispatched through `SqlDialect.fullTextSearchSql` so no user input
-is ever interpolated into SQL — everything goes through bind parameters.
+All four are dispatched through `SqlDialect.fullTextSearchSql` so no user
+input is ever interpolated into SQL — everything goes through bind
+parameters. Only `rawSearch` can throw at runtime, and only when the caller
+feeds it invalid tsquery syntax.
 
 ### 3. REST surface (PostgREST-compatible)
 
