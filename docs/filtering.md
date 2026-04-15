@@ -223,6 +223,8 @@ where: { tax_rate: { eq: 8.25 } }
 
 ### String Operations
 - `contains`, `startsWith`, `endsWith`, `like`, `ilike`
+- `regex` — POSIX regex, case-sensitive (Postgres `~`)
+- `iregex` — POSIX regex, case-insensitive (Postgres `~*`)
 
 ### Numeric Operations
 - `gt`, `gte`, `lt`, `lte`
@@ -242,10 +244,38 @@ where: { tax_rate: { eq: 8.25 } }
 ### Full-Text Search on tsvector columns ✅ **NEW**
 - `search` — plain user text via `plainto_tsquery`
 - `webSearch` — Google-style `"phrase"` / `OR` / `-exclusion` via `websearch_to_tsquery`
+- `phraseSearch` — adjacency-required phrase match via `phraseto_tsquery`
+- `rawSearch` — raw tsquery syntax (`foo & bar | baz`) via `to_tsquery` — throws on bad input
 
 See the [Full-Text & Vector Search guide](features/search-and-vector.md) for
-how to set up a `tsvector` column, pick between `search` and `webSearch`, and
-use the equivalent REST operators (`plfts`, `phfts`, `wfts`, `fts`).
+how to set up a `tsvector` column, pick between the variants, and use the
+equivalent REST operators (`plfts`, `phfts`, `wfts`, `fts`).
+
+### Enum Column Filters ✅ **NEW**
+
+Columns backed by a Postgres `ENUM` type get a **per-enum filter input**
+(e.g. `IssueStatusFilterInput` for a `status` column of type
+`issue_status`). Supported operators:
+
+- `eq`, `neq` — typed to the enum
+- `in`, `notIn` — list of enum values
+- `isNull`, `isNotNull`
+
+Values must be **bare GraphQL enum literals**, not quoted strings:
+
+```graphql
+# ✅ works — bare enum literals
+{ issues(where: { status: { eq: todo } }) { id title } }
+{ issues(where: { status: { in: [todo, done] } }) { id title } }
+
+# ❌ fails GraphQL validation — status is not a String
+{ issues(where: { status: { eq: "todo" } }) { id title } }
+```
+
+The enum member set is discoverable via standard GraphQL introspection —
+query `__type(name: "IssueStatus") { enumValues { name } }` to get the
+exact case-sensitive names. Code generators (graphql-codegen, etc.) pick
+these up automatically.
 
 ### Vector k-NN on pgvector columns ✅ **NEW**
 - Top-level `vector` argument (not inside `where`) — k-NN ordering takes
@@ -300,7 +330,19 @@ where: { first_name: { like: "J%" } }
 
 # Case-insensitive LIKE pattern
 where: { first_name: { ilike: "john" } }
+
+# POSIX regex, case-sensitive (Postgres ~)
+where: { title: { regex: "^Setup" } }
+
+# POSIX regex, case-insensitive (Postgres ~*)
+where: { description: { iregex: "(webhook|stripe)" } }
 ```
+
+!!! note "Regex vs like/ilike"
+    `like`/`ilike` use SQL pattern syntax (`%` / `_`) and can use a btree
+    index. `regex`/`iregex` use POSIX regex and **cannot** use an ordinary
+    btree index — for heavy use create a GIN trigram index via
+    `CREATE EXTENSION pg_trgm; CREATE INDEX ... USING GIN (col gin_trgm_ops);`.
 
 ## Null Operations
 
@@ -503,7 +545,10 @@ This translates to SQL: `WHERE active = true AND (customer_id < 10 OR customer_i
 ## Filter Types by Data Type
 
 ### String Filters
-- `eq`, `neq`, `contains`, `startsWith`, `endsWith`, `like`, `ilike`, `isNull`, `isNotNull`, `in`, `notIn`
+- `eq`, `neq`, `contains`, `startsWith`, `endsWith`, `like`, `ilike`, `regex`, `iregex`, `isNull`, `isNotNull`, `in`, `notIn`
+
+### Enum Filters ✅ **NEW**
+- `eq`, `neq`, `in`, `notIn`, `isNull`, `isNotNull` — values typed to the column's enum
 
 ### Integer/Numeric Filters
 - `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `isNull`, `isNotNull`, `in`, `notIn`
