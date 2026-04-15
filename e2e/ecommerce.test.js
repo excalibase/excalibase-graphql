@@ -148,6 +148,74 @@ describe('E-Commerce GraphQL — Catalog', () => {
   });
 });
 
+describe('E-Commerce GraphQL — JSONB filter (JsonFilterInput)', () => {
+  test('hasKey: addresses all have a city key', async () => {
+    const data = await client.request(gql`{
+      shopifyCustomers(where: { address: { hasKey: "city" } }) { id email }
+    }`);
+    expect(data.shopifyCustomers.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test('hasKey: filter matches only non-empty addresses', async () => {
+    // Falsifiability — a key that does not exist must return zero rows.
+    const data = await client.request(gql`{
+      shopifyCustomers(where: { address: { hasKey: "nonexistent_key_xyz" } }) { id }
+    }`);
+    expect(data.shopifyCustomers).toHaveLength(0);
+  });
+
+  test('contains (JSONB @>): match exact subset of the jsonb value', async () => {
+    const data = await client.request(gql`{
+      shopifyCustomers(where: { address: { contains: {city: "New York"} } }) { id email }
+    }`);
+    // Exactly one seed row (Alice) has city=New York
+    expect(data.shopifyCustomers).toHaveLength(1);
+    expect(data.shopifyCustomers[0].email).toBe('alice@shop.com');
+  });
+
+  test('contains multi-key: must match all fields', async () => {
+    // Alice is the only customer with BOTH city=New York and zip=10001
+    const data = await client.request(gql`{
+      shopifyCustomers(where: { address: { contains: {city: "New York", zip: "10001"} } }) { id email }
+    }`);
+    expect(data.shopifyCustomers).toHaveLength(1);
+    expect(data.shopifyCustomers[0].email).toBe('alice@shop.com');
+  });
+
+  test('contains with no match returns empty', async () => {
+    const data = await client.request(gql`{
+      shopifyCustomers(where: { address: { contains: {city: "Atlantis"} } }) { id }
+    }`);
+    expect(data.shopifyCustomers).toHaveLength(0);
+  });
+
+  test('hasKeys: requires ALL listed keys', async () => {
+    // Every seeded address has both city AND street
+    const data = await client.request(gql`{
+      shopifyCustomers(where: { address: { hasKeys: ["city", "street"] } }) { id }
+    }`);
+    expect(data.shopifyCustomers.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test('hasAnyKeys: requires at least one listed key', async () => {
+    // "street" is present on all customers, "fake_key" is present on none —
+    // the OR semantic makes this equivalent to "has street"
+    const data = await client.request(gql`{
+      shopifyCustomers(where: { address: { hasAnyKeys: ["street", "fake_key"] } }) { id }
+    }`);
+    expect(data.shopifyCustomers.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test('contains on product.metadata with nested value', async () => {
+    // The iPhone 15 row seeds metadata with brand=Apple
+    const data = await client.request(gql`{
+      shopifyProducts(where: { metadata: { contains: {brand: "Apple"} } }) { id name }
+    }`);
+    expect(data.shopifyProducts.length).toBeGreaterThanOrEqual(1);
+    expect(data.shopifyProducts.find(p => p.name === 'iPhone 15')).toBeTruthy();
+  });
+});
+
 // ─── GraphQL: FK Chains ──────────────────────────────────────────────────────
 
 describe('E-Commerce GraphQL — FK Chains', () => {
