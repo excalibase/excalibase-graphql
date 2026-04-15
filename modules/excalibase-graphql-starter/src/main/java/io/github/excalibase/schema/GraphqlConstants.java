@@ -89,6 +89,20 @@ public final class GraphqlConstants {
     public static final String FILTER_REGEX = "regex";
     /** POSIX regex match (case-insensitive). Postgres {@code col ~* :param}. */
     public static final String FILTER_IREGEX = "iregex";
+
+    /**
+     * JSONB contained-by: {@code col <@ :param::jsonb}. Unique to JsonFilterInput.
+     * Note {@link #FILTER_CONTAINS} ({@code "contains"}) is shared between
+     * StringFilterInput (LIKE %pat%) and JsonFilterInput ({@code @>}) — the
+     * compiler dispatches on column type at SQL-build time.
+     */
+    public static final String FILTER_CONTAINED_BY = "containedBy";
+    /** JSONB key exists: {@code jsonb_exists(col, :key)}. */
+    public static final String FILTER_HAS_KEY = "hasKey";
+    /** JSONB has all of the given keys: {@code jsonb_exists_all(col, :keys)}. */
+    public static final String FILTER_HAS_KEYS = "hasKeys";
+    /** JSONB has any of the given keys: {@code jsonb_exists_any(col, :keys)}. */
+    public static final String FILTER_HAS_ANY_KEYS = "hasAnyKeys";
     /**
      * Plain full-text search operator. Used inside a column filter on a
      * tsvector column: {@code where: { search_vec: { search: "query text" } }}.

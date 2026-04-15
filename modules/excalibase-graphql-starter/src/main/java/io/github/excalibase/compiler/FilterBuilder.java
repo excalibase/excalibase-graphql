@@ -210,9 +210,23 @@ public class FilterBuilder {
                             params.put(p, "%" + extractValue(op.getValue()));
                         }
                         case FILTER_CONTAINS -> {
-                            String p = nextParam("p_" + col + "_ct", params);
-                            conditions.add(colRef + LIKE + PARAM_PREFIX + p);
-                            params.put(p, "%" + extractValue(op.getValue()) + "%");
+                            // `contains` is overloaded: on text columns it's
+                            // LIKE %pat%, on jsonb columns it's the JSONB
+                            // containment operator @>. Dispatch on the
+                            // column's Postgres type.
+                            String colPgType = schemaInfo != null ? schemaInfo.getColumnType(tableName, col) : null;
+                            if (isJsonType(colPgType)) {
+                                String p = nextParam("p_" + col + "_jc", params);
+                                var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.CONTAINS, colRef, ":" + p);
+                                if (sql.isPresent()) {
+                                    conditions.add(sql.get());
+                                    params.put(p, extractValue(op.getValue()));
+                                }
+                            } else {
+                                String p = nextParam("p_" + col + "_ct", params);
+                                conditions.add(colRef + LIKE + PARAM_PREFIX + p);
+                                params.put(p, "%" + extractValue(op.getValue()) + "%");
+                            }
                         }
                         case FILTER_SEARCH -> {
                             // Plain FTS — plainto_tsquery. Always safe on any
@@ -277,6 +291,54 @@ public class FilterBuilder {
                             if (sql.isPresent()) {
                                 conditions.add(sql.get());
                                 params.put(p, extractValue(op.getValue()));
+                            }
+                        }
+                        case FILTER_CONTAINED_BY -> {
+                            String p = nextParam("p_" + col + "_jcb", params);
+                            var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.CONTAINED_BY, colRef, ":" + p);
+                            if (sql.isPresent()) {
+                                conditions.add(sql.get());
+                                params.put(p, extractValue(op.getValue()));
+                            }
+                        }
+                        case FILTER_HAS_KEY -> {
+                            // jsonb_exists(col, :key) — key is a plain String.
+                            String p = nextParam("p_" + col + "_hk", params);
+                            var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.HAS_KEY, colRef, ":" + p);
+                            if (sql.isPresent()) {
+                                conditions.add(sql.get());
+                                params.put(p, extractValue(op.getValue()));
+                            }
+                        }
+                        case FILTER_HAS_KEYS -> {
+                            // jsonb_exists_all(col, ARRAY[:k1, :k2, ...]) —
+                            // expand the ArrayValue to individual binds and
+                            // build a SQL array literal. The dialect gets
+                            // a placeholder expression with the element
+                            // refs already spliced in.
+                            if (op.getValue() instanceof ArrayValue av) {
+                                List<String> elements = new ArrayList<>();
+                                for (int i = 0; i < av.getValues().size(); i++) {
+                                    String p = nextParam("p_" + col + "_hks" + i, params);
+                                    elements.add(":" + p);
+                                    params.put(p, extractValue(av.getValues().get(i)));
+                                }
+                                String arrExpr = "ARRAY[" + joinCols(elements) + "]";
+                                var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.HAS_ALL_KEYS, colRef, arrExpr);
+                                sql.ifPresent(conditions::add);
+                            }
+                        }
+                        case FILTER_HAS_ANY_KEYS -> {
+                            if (op.getValue() instanceof ArrayValue av) {
+                                List<String> elements = new ArrayList<>();
+                                for (int i = 0; i < av.getValues().size(); i++) {
+                                    String p = nextParam("p_" + col + "_hak" + i, params);
+                                    elements.add(":" + p);
+                                    params.put(p, extractValue(av.getValues().get(i)));
+                                }
+                                String arrExpr = "ARRAY[" + joinCols(elements) + "]";
+                                var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.HAS_ANY_KEYS, colRef, arrExpr);
+                                sql.ifPresent(conditions::add);
                             }
                         }
                         case "is" -> {
@@ -464,6 +526,8 @@ public class FilterBuilder {
 
     /**
      * Converts a GraphQL Value to a Java object, resolving variables from the provided map.
+     * ObjectValue and ArrayValue serialize to compact JSON strings so they
+     * can be bound directly to Postgres jsonb columns.
      */
     public Object extractValue(Value<?> value, Map<String, Object> variables) {
         if (value instanceof VariableReference vr && variables.containsKey(vr.getName())) {
@@ -475,7 +539,76 @@ public class FilterBuilder {
         if (value instanceof BooleanValue bv) return bv.isValue();
         if (value instanceof EnumValue ev) return ev.getName().toLowerCase();
         if (value instanceof NullValue) return null;
+        if (value instanceof ObjectValue ov) return jsonString(ov);
+        if (value instanceof ArrayValue av) return jsonString(av);
         return value.toString();
+    }
+
+    /**
+     * Serializes a GraphQL literal value tree to a compact JSON string —
+     * used for binding {@code ObjectValue} / {@code ArrayValue} arguments
+     * to Postgres jsonb columns via the {@code contains} / {@code containedBy}
+     * / {@code eq} / {@code neq} operators on {@link io.github.excalibase.schema.GraphqlConstants#FILTER_JSON_CONTAINS JsonFilterInput}.
+     */
+    private String jsonString(Value<?> value) {
+        if (value instanceof StringValue sv) return quoteJson(sv.getValue());
+        if (value instanceof IntValue iv) return iv.getValue().toString();
+        if (value instanceof FloatValue fv) return fv.getValue().toString();
+        if (value instanceof BooleanValue bv) return Boolean.toString(bv.isValue());
+        if (value instanceof NullValue) return "null";
+        if (value instanceof EnumValue ev) return quoteJson(ev.getName());
+        if (value instanceof ArrayValue av) {
+            StringBuilder sb = new StringBuilder("[");
+            List<Value> items = av.getValues();
+            for (int i = 0; i < items.size(); i++) {
+                if (i > 0) sb.append(',');
+                sb.append(jsonString(items.get(i)));
+            }
+            return sb.append(']').toString();
+        }
+        if (value instanceof ObjectValue ov) {
+            StringBuilder sb = new StringBuilder("{");
+            List<ObjectField> fields = ov.getObjectFields();
+            for (int i = 0; i < fields.size(); i++) {
+                if (i > 0) sb.append(',');
+                sb.append(quoteJson(fields.get(i).getName())).append(':').append(jsonString(fields.get(i).getValue()));
+            }
+            return sb.append('}').toString();
+        }
+        return quoteJson(value.toString());
+    }
+
+    /**
+     * True when {@code pgType} names a JSON-family column type. Used by the
+     * compile-time dispatch of shared operators like {@code contains}, which
+     * have different semantics on text ({@code LIKE}) vs jsonb ({@code @>}).
+     */
+    private static boolean isJsonType(String pgType) {
+        if (pgType == null) return false;
+        String t = pgType.toLowerCase();
+        return t.equals("json") || t.equals("jsonb") || t.equals("_json") || t.equals("_jsonb");
+    }
+
+    private String quoteJson(String s) {
+        StringBuilder sb = new StringBuilder("\"");
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.append('"').toString();
     }
 
     /**

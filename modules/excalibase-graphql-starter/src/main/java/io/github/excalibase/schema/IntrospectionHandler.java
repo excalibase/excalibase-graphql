@@ -138,6 +138,24 @@ public class IntrospectionHandler {
                 .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
                 .build();
 
+        // JSONB filter input. Each operator maps to a Postgres jsonb op or
+        // function — see PostgresDialect.jsonPredicateSql for the full list.
+        // The input values use graphql-java's ExtendedScalars.Json so
+        // ObjectValue / ArrayValue arguments parse correctly; FilterBuilder
+        // serializes them to compact JSON strings for Postgres to parse.
+        GraphQLInputObjectType jsonFilter = GraphQLInputObjectType.newInputObject()
+                .name("JsonFilterInput")
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(ExtendedScalars.Json).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(ExtendedScalars.Json).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_CONTAINS).type(ExtendedScalars.Json).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_CONTAINED_BY).type(ExtendedScalars.Json).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_HAS_KEY).type(GraphQLString).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_HAS_KEYS).type(GraphQLList.list(GraphQLString)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_HAS_ANY_KEYS).type(GraphQLList.list(GraphQLString)).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
+                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
+                .build();
+
         // Per-enum filter input types. Enum columns (e.g. Postgres
         // `CREATE TYPE issue_status AS ENUM(...)`) were previously filtered
         // via StringFilterInput, which meant clients had to pass a plain
@@ -231,6 +249,8 @@ public class IntrospectionHandler {
                     // Enum-backed column — use the per-enum filter so clients
                     // get narrowed operators (eq accepts only enum members).
                     filter = enumFilterMap.get(enumTypeName);
+                } else if (isJsonType(colType)) {
+                    filter = jsonFilter;
                 } else if (isNumericType(colType)) {
                     filter = intFilter;
                 } else if ("tsvector".equalsIgnoreCase(colType)) {
@@ -445,6 +465,12 @@ public class IntrospectionHandler {
         if (dbType == null) return false;
         String t = dbType.toLowerCase();
         return t.contains("int") || t.contains("float") || t.contains("double") || t.contains("numeric") || t.contains("decimal") || t.contains("real");
+    }
+
+    private boolean isJsonType(String dbType) {
+        if (dbType == null) return false;
+        String t = dbType.toLowerCase();
+        return t.equals("json") || t.equals("jsonb");
     }
 
 }
