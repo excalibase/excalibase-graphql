@@ -186,6 +186,180 @@ class IntrospectionHandlerTest {
                 "Should have callHanaTransferFunds — got: " + fieldNames);
     }
 
+    // === Typed filter inputs: DateTime, Boolean, Float ===
+
+    @Test
+    void buildSchema_timestampColumn_usesDateTimeFilterInput() {
+        SchemaInfo info = new SchemaInfo();
+        info.addColumn("events", "id", "integer");
+        info.addColumn("events", "created_at", "timestamptz");
+        info.addColumn("events", "start_date", "date");
+        info.addPrimaryKey("events", "id");
+        info.setTableSchema("events", "public");
+
+        IntrospectionHandler handler = new IntrospectionHandler(info);
+        Map<String, Object> result = handler.execute(
+                "{ __type(name: \"EventsWhereInput\") { inputFields { name type { name } } } }", Map.of());
+
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> inputFields = (java.util.List<Map<String, Object>>)
+                ((Map<String, Object>) ((Map<String, Object>) result.get("data")).get("__type")).get("inputFields");
+
+        Map<String, String> colType = new java.util.HashMap<>();
+        for (Map<String, Object> f : inputFields) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> t = (Map<String, Object>) f.get("type");
+            colType.put((String) f.get("name"), (String) t.get("name"));
+        }
+        assertEquals("DateTimeFilterInput", colType.get("created_at"),
+                "timestamptz column should use DateTimeFilterInput");
+        assertEquals("DateTimeFilterInput", colType.get("start_date"),
+                "date column should use DateTimeFilterInput");
+    }
+
+    @Test
+    void buildSchema_dateTimeFilterInput_advertisesRangeOperators() {
+        SchemaInfo info = new SchemaInfo();
+        info.addColumn("events", "id", "integer");
+        info.addColumn("events", "created_at", "timestamptz");
+        info.addPrimaryKey("events", "id");
+        info.setTableSchema("events", "public");
+
+        IntrospectionHandler handler = new IntrospectionHandler(info);
+        Map<String, Object> result = handler.execute(
+                "{ __type(name: \"DateTimeFilterInput\") { inputFields { name } } }", Map.of());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> type = (Map<String, Object>) ((Map<String, Object>) result.get("data")).get("__type");
+        assertNotNull(type, "DateTimeFilterInput type should be registered in the schema");
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> fields = (java.util.List<Map<String, Object>>) type.get("inputFields");
+        java.util.Set<String> ops = new java.util.HashSet<>();
+        for (Map<String, Object> f : fields) ops.add((String) f.get("name"));
+
+        // Range + equality operators — the ones codegen needs to emit typed accessors
+        for (String op : java.util.List.of("eq", "neq", "gt", "gte", "lt", "lte", "in", "notIn", "isNull", "isNotNull")) {
+            assertTrue(ops.contains(op), "DateTimeFilterInput missing operator: " + op + " — got " + ops);
+        }
+    }
+
+    @Test
+    void buildSchema_booleanColumn_usesBooleanFilterInput() {
+        SchemaInfo info = new SchemaInfo();
+        info.addColumn("users", "id", "integer");
+        info.addColumn("users", "is_active", "boolean");
+        info.addPrimaryKey("users", "id");
+        info.setTableSchema("users", "public");
+
+        IntrospectionHandler handler = new IntrospectionHandler(info);
+        Map<String, Object> result = handler.execute(
+                "{ __type(name: \"UsersWhereInput\") { inputFields { name type { name } } } }", Map.of());
+
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> inputFields = (java.util.List<Map<String, Object>>)
+                ((Map<String, Object>) ((Map<String, Object>) result.get("data")).get("__type")).get("inputFields");
+
+        String activeType = null;
+        for (Map<String, Object> f : inputFields) {
+            if ("is_active".equals(f.get("name"))) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> t = (Map<String, Object>) f.get("type");
+                activeType = (String) t.get("name");
+            }
+        }
+        assertEquals("BooleanFilterInput", activeType, "boolean column should use BooleanFilterInput");
+    }
+
+    @Test
+    void buildSchema_booleanFilterInput_hasEqNeqIsNullIsNotNull() {
+        SchemaInfo info = new SchemaInfo();
+        info.addColumn("users", "id", "integer");
+        info.addColumn("users", "is_active", "boolean");
+        info.addPrimaryKey("users", "id");
+        info.setTableSchema("users", "public");
+
+        IntrospectionHandler handler = new IntrospectionHandler(info);
+        Map<String, Object> result = handler.execute(
+                "{ __type(name: \"BooleanFilterInput\") { inputFields { name type { name kind } } } }", Map.of());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> type = (Map<String, Object>) ((Map<String, Object>) result.get("data")).get("__type");
+        assertNotNull(type, "BooleanFilterInput type should be registered");
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> fields = (java.util.List<Map<String, Object>>) type.get("inputFields");
+        java.util.Set<String> ops = new java.util.HashSet<>();
+        for (Map<String, Object> f : fields) ops.add((String) f.get("name"));
+        assertEquals(java.util.Set.of("eq", "neq", "isNull", "isNotNull"), ops,
+                "BooleanFilterInput must have exactly 4 operators");
+    }
+
+    @Test
+    void buildSchema_floatColumn_usesFloatFilterInput() {
+        SchemaInfo info = new SchemaInfo();
+        info.addColumn("products", "id", "integer");
+        info.addColumn("products", "price", "numeric");
+        info.addColumn("products", "weight", "real");
+        info.addColumn("products", "ratio", "double precision");
+        info.addPrimaryKey("products", "id");
+        info.setTableSchema("products", "public");
+
+        IntrospectionHandler handler = new IntrospectionHandler(info);
+        Map<String, Object> result = handler.execute(
+                "{ __type(name: \"ProductsWhereInput\") { inputFields { name type { name } } } }", Map.of());
+
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> inputFields = (java.util.List<Map<String, Object>>)
+                ((Map<String, Object>) ((Map<String, Object>) result.get("data")).get("__type")).get("inputFields");
+
+        Map<String, String> colType = new java.util.HashMap<>();
+        for (Map<String, Object> f : inputFields) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> t = (Map<String, Object>) f.get("type");
+            colType.put((String) f.get("name"), (String) t.get("name"));
+        }
+        assertEquals("FloatFilterInput", colType.get("price"), "numeric column should use FloatFilterInput");
+        assertEquals("FloatFilterInput", colType.get("weight"), "real column should use FloatFilterInput");
+        assertEquals("FloatFilterInput", colType.get("ratio"), "double precision column should use FloatFilterInput");
+        assertEquals("IntFilterInput", colType.get("id"), "integer column should still use IntFilterInput");
+    }
+
+    @Test
+    void buildSchema_floatFilterInput_advertisesRangeOperatorsWithFloatType() {
+        SchemaInfo info = new SchemaInfo();
+        info.addColumn("products", "id", "integer");
+        info.addColumn("products", "price", "numeric");
+        info.addPrimaryKey("products", "id");
+        info.setTableSchema("products", "public");
+
+        IntrospectionHandler handler = new IntrospectionHandler(info);
+        Map<String, Object> result = handler.execute(
+                "{ __type(name: \"FloatFilterInput\") { inputFields { name type { name ofType { name } } } } }", Map.of());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> type = (Map<String, Object>) ((Map<String, Object>) result.get("data")).get("__type");
+        assertNotNull(type, "FloatFilterInput type should be registered");
+        @SuppressWarnings("unchecked")
+        java.util.List<Map<String, Object>> fields = (java.util.List<Map<String, Object>>) type.get("inputFields");
+        java.util.Map<String, String> opToType = new java.util.HashMap<>();
+        for (Map<String, Object> f : fields) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> t = (Map<String, Object>) f.get("type");
+            String typeName = (String) t.get("name");
+            if (typeName == null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> of = (Map<String, Object>) t.get("ofType");
+                if (of != null) typeName = (String) of.get("name");
+            }
+            opToType.put((String) f.get("name"), typeName);
+        }
+
+        for (String op : java.util.List.of("eq", "neq", "gt", "gte", "lt", "lte")) {
+            assertEquals("Float", opToType.get(op),
+                    "FloatFilterInput." + op + " should be typed Float, was: " + opToType.get(op));
+        }
+        assertEquals("Float", opToType.get("in"), "FloatFilterInput.in element should be Float");
+    }
+
     @Test
     void buildSchema_duplicateProcAcrossSchemas_doesNotCrash() {
         SchemaInfo info = new SchemaInfo();
