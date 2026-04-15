@@ -297,6 +297,96 @@ describe('Kanban GraphQL — Full-text search', () => {
     }`);
     expect(data.kanbanIssues).toBeDefined();
   });
+
+  test('phraseSearch requires adjacent words in order', async () => {
+    // "webhook handler" is adjacent in the title "Stripe webhook handler".
+    const data = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { phraseSearch: "webhook handler" } }) { id title }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    expect(titles).toContain('Stripe webhook handler');
+  });
+
+  test('phraseSearch rejects words out of order', async () => {
+    // "handler stripe" never occurs adjacent + in-order → empty.
+    const data = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { phraseSearch: "handler stripe" } }) { id title }
+    }`);
+    expect(data.kanbanIssues).toHaveLength(0);
+  });
+
+  test('rawSearch supports & and | tsquery operators', async () => {
+    // `stripe & webhook` → only rows matching BOTH stripe AND webhook
+    const and = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { rawSearch: "stripe & webhook" } }) { id title }
+    }`);
+    expect(and.kanbanIssues.map(i => i.title)).toContain('Stripe webhook handler');
+    // Also check that id 12 ("Payment integration") which mentions stripe
+    // but not webhook is NOT in the result.
+    expect(and.kanbanIssues.map(i => i.title)).not.toContain('Payment integration');
+
+    // `jwt | stripe` → rows matching EITHER jwt OR stripe
+    const or = await client.request(gql`{
+      kanbanIssues(where: { search_vec: { rawSearch: "jwt | stripe" } }) { id title }
+    }`);
+    const titles = or.kanbanIssues.map(i => i.title);
+    expect(titles).toEqual(expect.arrayContaining([
+      'Setup JWT auth',
+      'Payment integration',
+      'Stripe webhook handler',
+    ]));
+  });
+});
+
+describe('Kanban GraphQL — Regex filter', () => {
+  test('regex is case-sensitive', async () => {
+    // ^Setup anchors at the start and case matters — "Setup JWT auth" matches.
+    const hit = await client.request(gql`{
+      kanbanIssues(where: { title: { regex: "^Setup" } }) { id title }
+    }`);
+    expect(hit.kanbanIssues.map(i => i.title)).toContain('Setup JWT auth');
+
+    // Same anchor with lowercase should NOT match.
+    const miss = await client.request(gql`{
+      kanbanIssues(where: { title: { regex: "^setup" } }) { id title }
+    }`);
+    expect(miss.kanbanIssues).toHaveLength(0);
+  });
+
+  test('iregex is case-insensitive', async () => {
+    const data = await client.request(gql`{
+      kanbanIssues(where: { title: { iregex: "^setup" } }) { id title }
+    }`);
+    expect(data.kanbanIssues.map(i => i.title)).toContain('Setup JWT auth');
+  });
+
+  test('iregex supports alternation on description', async () => {
+    // (webhook|stripe) matches either token — kanban seeds two issues with
+    // these terms in their descriptions.
+    const data = await client.request(gql`{
+      kanbanIssues(where: { description: { iregex: "(webhook|stripe)" } }) { id title }
+    }`);
+    const titles = data.kanbanIssues.map(i => i.title);
+    expect(titles).toEqual(expect.arrayContaining([
+      'Payment integration',
+      'Stripe webhook handler',
+    ]));
+  });
+
+  test('regex composes with an eq filter', async () => {
+    // iregex AND priority=critical. Only issues whose title matches
+    // "implement" case-insensitive AND are critical priority.
+    const data = await client.request(gql`{
+      kanbanIssues(where: {
+        title: { iregex: "implement" },
+        priority: { eq: critical }
+      }) { id title priority }
+    }`);
+    data.kanbanIssues.forEach(i => {
+      expect(i.title.toLowerCase()).toContain('implement');
+      expect(i.priority.toLowerCase()).toBe('critical');
+    });
+  });
 });
 
 describe('Kanban GraphQL — Vector k-NN search', () => {
