@@ -455,8 +455,8 @@ public class RestQueryCompiler {
             case "is" -> isFilter(neg, colRef, filter.value());
             case "isnotnull" -> neg + colRef + IS_NOT_NULL;
             case "isdistinct" -> { params.put(paramName, convertValue(filter.value(), table, filter.column())); yield neg + colRef + IS_DISTINCT_FROM + PARAM_PREFIX + paramName; }
-            case "in" -> buildInSql(filter, colRef, neg, paramName, params, false);
-            case "notin" -> buildInSql(filter, colRef, neg, paramName, params, true);
+            case "in" -> buildInSql(filter, colRef, neg, paramName, params, false, table);
+            case "notin" -> buildInSql(filter, colRef, neg, paramName, params, true, table);
             case "haskey" -> jsonFilter(params, paramName, filter, neg, FN_JSONB_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName));
             case "jsoncontains", "contains", "cs" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINS + PARAM_PREFIX + paramName + CAST_JSONB);
             case "jsoncontained", "containedin", "cd" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINED_BY + PARAM_PREFIX + paramName + CAST_JSONB);
@@ -508,7 +508,7 @@ public class RestQueryCompiler {
         };
     }
 
-    private String buildInSql(FilterSpec filter, String col, String neg, String pn, Map<String, Object> params, boolean not) {
+    private String buildInSql(FilterSpec filter, String col, String neg, String pn, Map<String, Object> params, boolean not, String table) {
         String inner = filter.value();
         if (inner.startsWith("(") && inner.endsWith(")")) inner = inner.substring(1, inner.length() - 1);
         String[] items = inner.split(",");
@@ -516,7 +516,11 @@ public class RestQueryCompiler {
         List<String> ph = new ArrayList<>();
         for (int i = 0; i < items.length; i++) {
             String p = pn + UNDERSCORE + i;
-            params.put(p, items[i].trim());
+            // Coerce each item through the same type-aware path as eq/neq/gt/…
+            // so int columns get Integer bindings and enum columns get a
+            // Types.OTHER cast. Without this, `?id=in.(1,2,3)` binds three
+            // Strings and Postgres rejects the whole query.
+            params.put(p, convertValue(items[i].trim(), table, filter.column()));
             ph.add(PARAM_PREFIX + p);
         }
         return neg + col + (not ? NOT_IN : IN) + parens(String.join(COMMA_SEP, ph));
