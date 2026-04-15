@@ -247,7 +247,7 @@ where: { tax_rate: { eq: 8.25 } }
 - `phraseSearch` — adjacency-required phrase match via `phraseto_tsquery`
 - `rawSearch` — raw tsquery syntax (`foo & bar | baz`) via `to_tsquery` — throws on bad input
 
-See the [Full-Text & Vector Search guide](features/search-and-vector.md) for
+See the [Full-Text & Vector Search guide](../features/search-and-vector.md) for
 how to set up a `tsvector` column, pick between the variants, and use the
 equivalent REST operators (`plfts`, `phfts`, `wfts`, `fts`).
 
@@ -281,7 +281,7 @@ these up automatically.
 - Top-level `vector` argument (not inside `where`) — k-NN ordering takes
   precedence over `orderBy` and `limit`.
 - Supports `L2`, `COSINE`, `IP` distance metrics
-- See the [Full-Text & Vector Search guide](features/search-and-vector.md) for
+- See the [Full-Text & Vector Search guide](../features/search-and-vector.md) for
   the full input shape and REST-side `vector.{json}` syntax.
 
 ## Equality Operations
@@ -1210,7 +1210,7 @@ Our filtering system includes comprehensive testing with enhanced types support:
 - **Edge case testing** for boundary conditions and enhanced type validations
 - **Integration testing** with real PostgreSQL databases and enhanced types
 
-For detailed testing documentation, see [Testing Documentation](testing.md).
+For detailed testing documentation, see [Testing Documentation](../testing.md).
 
 ## Enhanced Types Support Summary ✅ **NEW**
 

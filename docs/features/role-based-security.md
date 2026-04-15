@@ -357,4 +357,4 @@ This preserves all functionality while disabling role-based filtering.
 
 The role-based security feature flag provides flexible control over Excalibase's advanced security features while maintaining high performance and backward compatibility. Enable it for maximum security, or disable it for simplified deployments during migration periods.
 
-For questions or issues, refer to the [comprehensive RLS/CLS testing documentation](../../tests/GraphqlRlsClsTest.md) and [security best practices guide](./security-best-practices.md). 
+For questions or issues, refer to the the RLS/CLS integration tests in `src/test/java`. 

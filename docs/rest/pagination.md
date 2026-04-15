@@ -146,7 +146,7 @@ const hasNext = response.pagination.offset + response.data.length < response.pag
 
 For the GraphQL way of paginating — with `<Table>Connection(first, after)`
 returning `{ edges { node, cursor }, pageInfo, totalCount }` — see the
-[GraphQL overview](../graphql/index.md#pagination).
+[GraphQL overview](../graphql/index.md).
 
 ## Limits
 
