@@ -118,6 +118,37 @@ public interface SqlDialect {
     }
 
     /**
+     * JSON predicate variants supported by {@link #jsonPredicateSql(JsonPredicate, String, String)}.
+     * Each maps to a Postgres jsonb operator or function:
+     * <ul>
+     *   <li>{@link #EQ} / {@link #NEQ} — direct equality on jsonb with {@code ::jsonb} cast</li>
+     *   <li>{@link #CONTAINS} → {@code @>}</li>
+     *   <li>{@link #CONTAINED_BY} → {@code <@}</li>
+     *   <li>{@link #HAS_KEY} → {@code jsonb_exists(col, :param)} — function form
+     *       avoids the {@code ?} character clash with JDBC placeholder parsing</li>
+     *   <li>{@link #HAS_ALL_KEYS} → {@code jsonb_exists_all(col, :param)} — all
+     *       requested keys must be present</li>
+     *   <li>{@link #HAS_ANY_KEYS} → {@code jsonb_exists_any(col, :param)} — at
+     *       least one requested key must be present</li>
+     * </ul>
+     */
+    enum JsonPredicate { EQ, NEQ, CONTAINS, CONTAINED_BY, HAS_KEY, HAS_ALL_KEYS, HAS_ANY_KEYS }
+
+    /**
+     * Build the SQL fragment for a JSONB predicate. {@code colRef} is the
+     * qualified column reference, {@code paramRef} is the bind parameter
+     * (e.g. {@code ":p_metadata_contains_0"}), and {@code variant} selects
+     * the Postgres operator / function to wrap the bind with.
+     *
+     * <p>Returns {@link Optional#empty()} when the dialect doesn't support
+     * JSONB predicates so callers can silently skip the operator on
+     * backends without json support.
+     */
+    default Optional<String> jsonPredicateSql(JsonPredicate variant, String colRef, String paramRef) {
+        return Optional.empty();
+    }
+
+    /**
      * Maps a vector distance operator name to the dialect-specific SQL
      * operator used by {@code ORDER BY col &lt;OP&gt; :embedding}. Postgres
      * with pgvector exposes:

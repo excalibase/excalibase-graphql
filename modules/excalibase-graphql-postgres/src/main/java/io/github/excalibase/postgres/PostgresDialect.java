@@ -199,6 +199,28 @@ public class PostgresDialect implements SqlDialect {
     }
 
     /**
+     * Postgres JSONB predicates. Operators with a {@code ?} character
+     * ({@code ?}, {@code ?&}, {@code ?|}) use their function-form equivalents
+     * ({@code jsonb_exists}, {@code jsonb_exists_all}, {@code jsonb_exists_any})
+     * to avoid clashing with Spring's {@code NamedParameterJdbcTemplate}
+     * placeholder parser, which treats any {@code ?} in the SQL as a
+     * positional bind and errors out on mixing with named parameters.
+     * Containment and equality operators don't have this issue.
+     */
+    @Override
+    public Optional<String> jsonPredicateSql(JsonPredicate variant, String colRef, String paramRef) {
+        return switch (variant) {
+            case EQ -> Optional.of(colRef + " = " + paramRef + "::jsonb");
+            case NEQ -> Optional.of(colRef + " != " + paramRef + "::jsonb");
+            case CONTAINS -> Optional.of(colRef + " @> " + paramRef + "::jsonb");
+            case CONTAINED_BY -> Optional.of(colRef + " <@ " + paramRef + "::jsonb");
+            case HAS_KEY -> Optional.of("jsonb_exists(" + colRef + ", " + paramRef + ")");
+            case HAS_ALL_KEYS -> Optional.of("jsonb_exists_all(" + colRef + ", " + paramRef + ")");
+            case HAS_ANY_KEYS -> Optional.of("jsonb_exists_any(" + colRef + ", " + paramRef + ")");
+        };
+    }
+
+    /**
      * pgvector distance operators. Returns Optional.empty() for unknown
      * distance names so the caller can skip the vector clause on bad input
      * rather than emitting invalid SQL.
