@@ -1,17 +1,51 @@
-# Excalibase GraphQL
+# Excalibase
 
-**Automatic GraphQL API generation from multiple databases.** Point it at your PostgreSQL or MySQL database and get a full GraphQL API instantly — no code, no schema definitions, no configuration.
+**One schema. Two protocols.** Excalibase reads your PostgreSQL (or MySQL)
+schema and exposes it through both **GraphQL** and **REST**. Each is
+first-class — pick whichever fits your app, or use both from the same
+project. Not sure? See [Choose Your Protocol →](choose-your-protocol.md).
 
-## What You Get
+## The same query, two ways
+
+**GraphQL:**
+
+```graphql
+{
+  kanbanIssues(
+    where: { status: { in: [todo, in_progress] } }
+    orderBy: { id: DESC }
+    limit: 10
+  ) {
+    id title status priority
+  }
+}
+```
+
+**REST:**
+
+```bash
+GET /api/v1/issues?status=in.(todo,in_progress)&order=id.desc&limit=10
+Accept-Profile: kanban
+```
+
+Both hit the same compiled SQL, return the same rows, and share the same
+auth + multi-schema routing. **Pick the protocol that fits the call site.**
+
+---
+
+## What you get
 
 - **Queries** — list, filter, paginate, sort every table
-- **Mutations** — create, update, delete, bulk create
+- **Mutations** — create, update, delete, bulk create (GraphQL + REST)
 - **Relationships** — foreign keys become GraphQL fields automatically
 - **Stored procedures** — call via GraphQL mutations
-- **Computed fields** — PostgreSQL functions exposed as GraphQL fields (PostgreSQL)
+- **Computed fields** — PostgreSQL functions exposed as GraphQL fields
 - **Multi-Schema** — connect to multiple schemas simultaneously with automatic prefix naming
-- **Real-time subscriptions** — live table-change events via [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS
+- **Real-time subscriptions** — live table-change events via
+  [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS (GraphQL)
 - **Row-Level Security** — per-request user context for RLS policies (PostgreSQL)
+- **Typed filter inputs** — `IntFilterInput`, `FloatFilterInput`, `DateTimeFilterInput`,
+  `BooleanFilterInput`, `JsonFilterInput`, per-enum `<EnumType>FilterInput`
 
 ---
 
@@ -39,147 +73,103 @@ docker-compose up -d
 docker-compose -f docker-compose.mysql.yml up -d
 ```
 
-Then open your GraphQL client and start querying:
+Then open your GraphQL client (or curl) and start querying:
 
 ```graphql
-{
-  hanaUsers {
-    id
-    username
-    email
-    role
-  }
-}
+{ hanaUsers { id username email role } }
+```
+
+```bash
+GET /api/v1/users?select=id,username,email,role
+Accept-Profile: public
 ```
 
 ---
 
-## Feature Overview
+## Pick your path
 
-### Queries & Filtering
+- **Using GraphQL** — typed queries, nested projection, co-fetch, subscriptions, schema introspection. [Start here →](graphql/index.md)
+- **Using REST** — PostgREST-compatible endpoints, HTTP-cacheable GETs, `Range` pagination, curl-friendly. [Start here →](rest/index.md)
+- **Help me decide** — feature matrix, tradeoff table, scenario-by-scenario recommendations. [Decision guide →](choose-your-protocol.md)
+
+---
+
+## Quick feature tour
+
+### Filtering
 
 ```graphql
 {
   hanaCustomer(
-    where: { active: { eq: true }, last_name: { startsWith: "S" } }
+    where: {
+      active: { eq: true },
+      last_name: { startsWith: "S" },
+      story_points: { gte: 5 }
+    }
     orderBy: { last_name: ASC }
     limit: 10
-    offset: 0
   ) {
-    customer_id
-    first_name
-    last_name
-    email
-    full_name       # computed field
-    active_label    # computed field
+    customer_id first_name last_name email
   }
 }
 ```
 
-Available filter operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, `isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`, `like`, `ilike`
+Available operators: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`,
+`isNull`, `isNotNull`, `contains`, `startsWith`, `endsWith`, `like`,
+`ilike`, `regex`, `iregex`. JSON columns add `hasKey`, `hasKeys`,
+`hasAnyKeys`, `contains`, `containedBy`. Enum columns get narrowed filter
+types. See [GraphQL filtering →](graphql/filtering.md) or
+[REST filtering →](rest/filtering.md).
 
-### Full-Text Search & Vector k-NN
+### Full-text and vector search
 
-Tables with a `tsvector` column get plain and Google-style search operators
+Tables with a `tsvector` column get plain and Google-style search
 automatically:
 
 ```graphql
-# Plain search box
 { kanbanIssues(where: { search_vec: { search: "stripe payment" } }) { id title } }
-
-# Google-style: "phrase" / OR / -exclusion
 { kanbanIssues(where: { search_vec: { webSearch: "stripe OR \"credit card\" -refund" } }) { id title } }
 ```
 
 Tables with a `pgvector` column get a top-level `vector` argument for k-NN
-similarity queries:
+similarity:
 
 ```graphql
-# Return the 5 rows whose embedding is closest to the query vector
 {
   kanbanIssues(vector: {
-    column:   "embedding"
-    near:     [0.12, -0.34, 0.87]
+    column: "embedding"
+    near: [0.12, -0.34, 0.87]
     distance: "COSINE"
-    limit:    5
+    limit: 5
   }) { id title }
 }
 ```
 
-Both are available through REST as well (`?col=plfts.term` / `?col=wfts.term`
-for FTS, `?col=vector.{json}` for k-NN). See the
-[Full-Text & Vector Search guide](features/search-and-vector.md) for the
-full input reference, distance metric guide, and setup instructions.
-
-### Relationships
-
-Foreign keys are automatically resolved — include the FK column to enable relationship traversal:
-
-```graphql
-{
-  hanaOrders {
-    order_id
-    customer_id       # required for relationship
-    hanaCustomer {
-      first_name
-      last_name
-    }
-    total_amount
-    status
-  }
-}
-```
+Both are available through REST as well (`?col=plfts.term` /
+`?col=wfts.term` for FTS, `?col=vector.{json}` for k-NN). See the
+[Full-Text & Vector Search guide](features/search-and-vector.md).
 
 ### Mutations
 
 ```graphql
-# Create
 mutation {
   createHanaCustomer(input: { first_name: "Alice", last_name: "Smith", email: "alice@example.com" }) {
     customer_id
   }
 }
-
-# Update
-mutation {
-  updateHanaCustomer(input: { customer_id: 1, email: "new@example.com" }) {
-    customer_id
-    email
-  }
-}
-
-# Bulk create
-mutation {
-  createManyHanaCustomer(inputs: [
-    { first_name: "Bob", last_name: "Jones", email: "bob@example.com" }
-    { first_name: "Carol", last_name: "White", email: "carol@example.com" }
-  ]) { customer_id }
-}
-
-# Delete
-mutation {
-  deleteHanaCustomer(input: { customer_id: 1 }) {
-    customer_id
-  }
-}
 ```
 
-### Cursor-Based Pagination
+```bash
+POST /api/v1/customers
+Content-Profile: public
+Content-Type: application/json
 
-```graphql
-{
-  hanaCustomerConnection(first: 10, after: "cursor_value") {
-    edges {
-      node { customer_id first_name last_name }
-      cursor
-    }
-    pageInfo { hasNextPage endCursor }
-    totalCount
-  }
-}
+{"first_name": "Alice", "last_name": "Smith", "email": "alice@example.com"}
 ```
 
-### Aggregate Queries
+See [GraphQL overview](graphql/index.md) and [REST mutations](rest/mutations.md).
+
+### Aggregate queries (GraphQL only)
 
 ```graphql
 {
@@ -193,80 +183,28 @@ mutation {
 }
 ```
 
-### Stored Procedures
+REST has `Prefer: count=exact` for total row counts but no sum/avg/min/max
+in one call — aggregate over the full set is a GraphQL-native feature.
 
-```graphql
-mutation {
-  callHanaTransferFunds(
-    p_from_wallet_id: 1
-    p_to_wallet_id: 2
-    p_amount: 200.00
-  )
-}
-# Returns JSON string: {"p_status":"SUCCESS"}
-```
+### Row-Level Security (PostgreSQL)
 
-### Real-Time Subscriptions
-
-Powered by [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) and NATS JetStream. Works with PostgreSQL and MySQL.
-
-```graphql
-subscription {
-  hanaCustomerChanges {
-    operation   # INSERT, UPDATE, DELETE
-    data {
-      customer_id
-      first_name
-      last_name
-      new { customer_id first_name last_name }
-    }
-  }
-}
-```
-
----
-
-## PostgreSQL Type Support
-
-| Category | Types | GraphQL |
-|----------|-------|---------|
-| Basic | `INTEGER`, `BIGINT`, `REAL`, `TEXT`, `VARCHAR`, `BOOLEAN`, `DATE`, `TIMESTAMP` | `Int`, `Float`, `String`, `Boolean` |
-| JSON | `JSON`, `JSONB` | Custom `JSON` scalar |
-| Arrays | `INTEGER[]`, `TEXT[]`, composite/enum arrays | `[Int]`, `[String]`, etc. |
-| DateTime | `TIMESTAMPTZ`, `TIMETZ`, `INTERVAL` | `String` |
-| Network | `INET`, `CIDR`, `MACADDR`, `MACADDR8` | `String` |
-| Binary | `BYTEA` | `String` (hex) |
-| XML | `XML` | `String` |
-| Bit | `BIT(n)`, `VARBIT(n)` | `String` |
-| Custom Enum | User-defined `ENUM` types | GraphQL `enum` |
-| Custom Composite | User-defined composite types | GraphQL object type |
-| Domain | User-defined `DOMAIN` types | Mapped to base type |
-| Views | `VIEW`, `MATERIALIZED VIEW` | Read-only GraphQL type |
-
----
-
-## Row-Level Security (PostgreSQL)
-
-Send a JWT — Excalibase verifies it and sets the `userId` claim as a PostgreSQL session variable so RLS policies filter rows automatically:
+Send a JWT — Excalibase verifies it and sets the `userId` claim as a
+PostgreSQL session variable so RLS policies filter rows automatically:
 
 ```http
 POST /graphql
 Authorization: Bearer eyJhbGciOiJFUzI1NiJ9...
 ```
 
-```sql
--- Your RLS policy:
-CREATE POLICY user_isolation ON rls_orders
-  FOR ALL USING (user_id = current_setting('request.user_id', true));
-```
-
-Enable with `app.security.jwt-enabled: true` and `app.security.auth.jwks-url`. See [RLS docs →](features/user-context-rls.md).
+Both protocols honor the same JWT + RLS context. See
+[RLS docs →](features/user-context-rls.md).
 
 ---
 
 ## Native Binary
 
-Excalibase ships as a GraalVM native binary for minimal startup time and memory footprint:
+Excalibase ships as a GraalVM native binary for minimal startup time and
+memory footprint:
 
 ```bash
 # ~50ms startup, ~80MB RAM
@@ -277,17 +215,20 @@ docker pull excalibase/excalibase-graphql:native
 
 ## Test Coverage
 
-- **PostgreSQL e2e**: 120+ tests
+- **PostgreSQL unit + integration**: 304 tests
+- **REST module**: 150 tests (incl. 15 JSON/array integration)
+- **GraphQL JSONB filter**: 9 integration tests
+- **PostgreSQL e2e** (live stack): 99+ kanban + ecommerce + clinic tests
 - **MySQL e2e**: 74 tests
-- **Total**: 223+ tests passing on both JVM and native builds
 
 ---
 
 ## Learn More
 
+- [Choose Your Protocol →](choose-your-protocol.md) — when to pick GraphQL vs REST
+- [GraphQL overview →](graphql/index.md) — queries, mutations, filtering, aggregates
+- [REST overview →](rest/index.md) — endpoints, filters, mutations, pagination
 - [Quick Start →](quick-start.md) — Docker setup, sample queries
-- [API Reference →](graphql/index.md) — Full schema documentation
-- [Filtering →](graphql/filtering.md) — All filter operators and examples
 - [MySQL Support →](features/mysql.md) — MySQL-specific guide
 - [Stored Procedures →](features/stored-procedures.md) — IN/OUT params, examples
 - [Full-Text & Vector Search →](features/search-and-vector.md) — FTS on `tsvector`, k-NN on pgvector
