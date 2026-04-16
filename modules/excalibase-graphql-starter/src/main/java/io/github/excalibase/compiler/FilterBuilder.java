@@ -178,17 +178,6 @@ public class FilterBuilder {
                                 conditions.add(colRef + IN + "(" + joinCols(inParams) + ")");
                             }
                         }
-                        case "nin" -> {
-                            if (op.getValue() instanceof ArrayValue av) {
-                                List<String> inParams = new ArrayList<>();
-                                for (int i = 0; i < av.getValues().size(); i++) {
-                                    String p = nextParam("p_" + col + "_nin" + i, params);
-                                    inParams.add(":" + p + paramCast);
-                                    params.put(p, extractValue(av.getValues().get(i)));
-                                }
-                                conditions.add(colRef + " NOT IN (" + joinCols(inParams) + ")");
-                            }
-                        }
                         case FILTER_LIKE -> {
                             String p = nextParam("p_" + col + "_like", params);
                             conditions.add(colRef + LIKE + PARAM_PREFIX + p);
@@ -368,7 +357,7 @@ public class FilterBuilder {
                                 conditions.add(colRef + IS_NULL);
                             }
                         }
-                        case FILTER_NOT_IN -> {
+                        case FILTER_NOT_IN, "nin" -> {
                             if (op.getValue() instanceof ArrayValue av) {
                                 List<String> inParams = new ArrayList<>();
                                 for (int i = 0; i < av.getValues().size(); i++) {
@@ -518,9 +507,6 @@ public class FilterBuilder {
     // === Value extraction ===
 
     /**
-     * Converts a GraphQL Value to a Java object (no variable resolution).
-     */
-    /**
      * ScopedValue holding the current operation's GraphQL variables map.
      * Bound by {@link SqlCompiler#compile(String, Map)} for the duration of
      * compilation so that nested {@link #extractValue}, {@link #resolveIntArg},
@@ -529,7 +515,7 @@ public class FilterBuilder {
      */
     public static final ScopedValue<Map<String, Object>> CURRENT_VARIABLES = ScopedValue.newInstance();
 
-    private static Map<String, Object> boundVariables() {
+    static Map<String, Object> boundVariables() {
         return CURRENT_VARIABLES.isBound() ? CURRENT_VARIABLES.get() : Map.of();
     }
 
@@ -572,7 +558,8 @@ public class FilterBuilder {
         if (value instanceof EnumValue ev) return quoteJson(ev.getName());
         if (value instanceof ArrayValue av) {
             StringBuilder sb = new StringBuilder("[");
-            List<Value> items = av.getValues();
+            @SuppressWarnings("unchecked")
+            List<Value<?>> items = (List<Value<?>>) (List<?>) av.getValues();
             for (int i = 0; i < items.size(); i++) {
                 if (i > 0) sb.append(',');
                 sb.append(jsonString(items.get(i)));

@@ -48,9 +48,8 @@ public class SqlCompiler {
         try {
             return ScopedValue.where(FilterBuilder.CURRENT_VARIABLES, vars)
                     .call(() -> doCompile(queryString, vars));
-        } catch (RuntimeException e) {
-            throw e;
         } catch (Exception e) {
+            if (e instanceof RuntimeException re) throw re;
             throw new RuntimeException(e);
         }
     }
@@ -254,6 +253,6 @@ public class SqlCompiler {
     }
 
     /** Info needed to execute a stored procedure via CALL with CallableStatement */
-    public record ProcedureCallInfo(String qualifiedName, java.util.List<ProcedureCallParam> allParams) {}
+    public record ProcedureCallInfo(String qualifiedName, List<ProcedureCallParam> allParams) {}
     public record ProcedureCallParam(String name, String mode, String type, Object value) {}
 }

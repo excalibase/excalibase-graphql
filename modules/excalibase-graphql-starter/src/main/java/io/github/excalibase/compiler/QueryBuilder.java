@@ -224,7 +224,7 @@ public class QueryBuilder {
         String afterCursor = null, beforeCursor = null;
         for (Argument arg : field.getArguments()) {
             String argName = arg.getName();
-            Map<String, Object> vars = FilterBuilder.CURRENT_VARIABLES.isBound() ? FilterBuilder.CURRENT_VARIABLES.get() : Map.of();
+            Map<String, Object> vars = FilterBuilder.boundVariables();
             if (ARG_FIRST.equals(argName)) {
                 Integer v = filterBuilder.resolveIntArg(arg.getValue(), vars);
                 if (v != null) first = Math.min(v, maxRows);

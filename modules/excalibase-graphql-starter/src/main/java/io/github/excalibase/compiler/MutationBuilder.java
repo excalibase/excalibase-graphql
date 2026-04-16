@@ -6,6 +6,8 @@ import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.spi.MutationCompiler;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.*;
 
 /**
@@ -13,6 +15,8 @@ import java.util.*;
  * implementation for dialect-specific mutation compilation.
  */
 public class MutationBuilder {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final SchemaInfo schemaInfo;
     private final SqlDialect dialect;
@@ -163,7 +167,7 @@ public class MutationBuilder {
         if (value instanceof String s && s.startsWith("{")) {
             try {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> parsed = new com.fasterxml.jackson.databind.ObjectMapper().readValue(s, Map.class);
+                Map<String, Object> parsed = OBJECT_MAPPER.readValue(s, Map.class);
                 return buildTupleString(fields, parsed);
             } catch (Exception e) {
                 return value;
@@ -266,10 +270,10 @@ public class MutationBuilder {
         return sb.toString();
     }
 
-    @SuppressWarnings("rawtypes")
     private static String arrayValueToJson(ArrayValue av, Map<String, Object> variables) {
         StringBuilder sb = new StringBuilder("[");
-        List<Value> values = av.getValues();
+        @SuppressWarnings("unchecked")
+        List<Value<?>> values = (List<Value<?>>) (List<?>) av.getValues();
         for (int i = 0; i < values.size(); i++) {
             if (i > 0) sb.append(",");
             sb.append(valueToJsonString(values.get(i), variables));
