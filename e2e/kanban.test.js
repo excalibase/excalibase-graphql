@@ -196,6 +196,39 @@ describe('Kanban GraphQL — Issues', () => {
     }`);
     expect(data.kanbanIssues[0].issue_age).toBeGreaterThanOrEqual(0);
   });
+
+  test('query variables ($var) resolve in where filter', async () => {
+    const query = gql`
+      query GetById($id: Int!) {
+        kanbanIssues(where: { id: { eq: $id } }) { id title }
+      }
+    `;
+    const data = await client.request(query, { id: 1 });
+    expect(data.kanbanIssues).toHaveLength(1);
+    expect(data.kanbanIssues[0].id).toBe(1);
+  });
+
+  test('query variable resolves in limit', async () => {
+    const query = gql`
+      query Listing($n: Int!) {
+        kanbanIssues(orderBy: { id: ASC }, limit: $n) { id }
+      }
+    `;
+    const data = await client.request(query, { n: 3 });
+    expect(data.kanbanIssues).toHaveLength(3);
+  });
+
+  test('top-level field aliases keep distinct results (Task #22)', async () => {
+    const data = await client.request(gql`{
+      first: kanbanIssues(where: { id: { eq: 1 } }) { id title }
+      second: kanbanIssues(where: { id: { eq: 2 } }) { id title }
+    }`);
+    expect(data.first).toHaveLength(1);
+    expect(data.first[0].id).toBe(1);
+    expect(data.second).toHaveLength(1);
+    expect(data.second[0].id).toBe(2);
+    expect(data.first[0].id).not.toBe(data.second[0].id);
+  });
 });
 
 describe('Kanban GraphQL — Full-text search', () => {

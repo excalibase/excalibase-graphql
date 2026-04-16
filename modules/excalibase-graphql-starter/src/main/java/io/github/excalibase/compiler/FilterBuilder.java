@@ -486,7 +486,7 @@ public class FilterBuilder {
         int limit = maxRows;
         for (Argument arg : field.getArguments()) {
             if (ARG_LIMIT.equals(arg.getName()) || ARG_FIRST.equals(arg.getName())) {
-                Integer v = resolveIntArg(arg.getValue(), Map.of());
+                Integer v = resolveIntArg(arg.getValue(), boundVariables());
                 if (v != null) limit = Math.min(v, maxRows);
             }
         }
@@ -496,7 +496,7 @@ public class FilterBuilder {
 
         for (Argument arg : field.getArguments()) {
             if (ARG_OFFSET.equals(arg.getName())) {
-                Integer v = resolveIntArg(arg.getValue(), Map.of());
+                Integer v = resolveIntArg(arg.getValue(), boundVariables());
                 if (v != null) {
                     String offParam = "offset_" + params.size();
                     sql.append(" OFFSET :").append(offParam);
@@ -520,8 +520,21 @@ public class FilterBuilder {
     /**
      * Converts a GraphQL Value to a Java object (no variable resolution).
      */
+    /**
+     * ScopedValue holding the current operation's GraphQL variables map.
+     * Bound by {@link SqlCompiler#compile(String, Map)} for the duration of
+     * compilation so that nested {@link #extractValue}, {@link #resolveIntArg},
+     * and {@link #resolveStringArg} calls can resolve {@code $var} references
+     * without threading the map through every method signature.
+     */
+    public static final ScopedValue<Map<String, Object>> CURRENT_VARIABLES = ScopedValue.newInstance();
+
+    private static Map<String, Object> boundVariables() {
+        return CURRENT_VARIABLES.isBound() ? CURRENT_VARIABLES.get() : Map.of();
+    }
+
     public Object extractValue(Value<?> value) {
-        return extractValue(value, Map.of());
+        return extractValue(value, boundVariables());
     }
 
     /**
@@ -537,7 +550,7 @@ public class FilterBuilder {
         if (value instanceof StringValue sv) return sv.getValue();
         if (value instanceof FloatValue fv) return fv.getValue().doubleValue();
         if (value instanceof BooleanValue bv) return bv.isValue();
-        if (value instanceof EnumValue ev) return ev.getName().toLowerCase();
+        if (value instanceof EnumValue ev) return ev.getName();
         if (value instanceof NullValue) return null;
         if (value instanceof ObjectValue ov) return jsonString(ov);
         if (value instanceof ArrayValue av) return jsonString(av);

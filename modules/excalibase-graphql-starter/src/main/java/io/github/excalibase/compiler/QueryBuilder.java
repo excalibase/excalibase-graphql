@@ -224,16 +224,17 @@ public class QueryBuilder {
         String afterCursor = null, beforeCursor = null;
         for (Argument arg : field.getArguments()) {
             String argName = arg.getName();
+            Map<String, Object> vars = FilterBuilder.CURRENT_VARIABLES.isBound() ? FilterBuilder.CURRENT_VARIABLES.get() : Map.of();
             if (ARG_FIRST.equals(argName)) {
-                Integer v = filterBuilder.resolveIntArg(arg.getValue(), Map.of());
+                Integer v = filterBuilder.resolveIntArg(arg.getValue(), vars);
                 if (v != null) first = Math.min(v, maxRows);
             } else if (ARG_LAST.equals(argName)) {
-                Integer v = filterBuilder.resolveIntArg(arg.getValue(), Map.of());
+                Integer v = filterBuilder.resolveIntArg(arg.getValue(), vars);
                 if (v != null) last = Math.min(v, maxRows);
             } else if (ARG_AFTER.equals(argName)) {
-                afterCursor = filterBuilder.resolveStringArg(arg.getValue(), Map.of());
+                afterCursor = filterBuilder.resolveStringArg(arg.getValue(), vars);
             } else if (ARG_BEFORE.equals(argName)) {
-                beforeCursor = filterBuilder.resolveStringArg(arg.getValue(), Map.of());
+                beforeCursor = filterBuilder.resolveStringArg(arg.getValue(), vars);
             }
         }
 

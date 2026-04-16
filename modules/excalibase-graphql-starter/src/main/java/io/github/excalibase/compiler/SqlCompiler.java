@@ -44,6 +44,18 @@ public class SqlCompiler {
     }
 
     public CompiledQuery compile(String queryString, Map<String, Object> variables) {
+        Map<String, Object> vars = variables == null ? Map.of() : variables;
+        try {
+            return ScopedValue.where(FilterBuilder.CURRENT_VARIABLES, vars)
+                    .call(() -> doCompile(queryString, vars));
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private CompiledQuery doCompile(String queryString, Map<String, Object> variables) {
         Document doc = Parser.parse(queryString);
         var ops = doc.getDefinitionsOfType(OperationDefinition.class);
         if (ops.isEmpty()) {
@@ -135,7 +147,8 @@ public class SqlCompiler {
                             ? queryBuilder.compileConnection(field, tableName, params)
                             : queryBuilder.compileList(field, tableName, params);
 
-                    rootResults.add("'" + fieldName + "', (" + sql + ")");
+                    String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
+                    rootResults.add("'" + responseKey + "', (" + sql + ")");
                 }
             }
 

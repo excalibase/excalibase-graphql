@@ -247,7 +247,7 @@ public class MutationBuilder {
         if (value instanceof StringValue sv) return sv.getValue();
         if (value instanceof FloatValue fv) return fv.getValue().doubleValue();
         if (value instanceof BooleanValue bv) return bv.isValue();
-        if (value instanceof EnumValue ev) return ev.getName().toLowerCase();
+        if (value instanceof EnumValue ev) return ev.getName();
         if (value instanceof NullValue) return null;
         if (value instanceof ObjectValue ov) return objectValueToJson(ov, variables);
         if (value instanceof ArrayValue av) return arrayValueToJson(av, variables);

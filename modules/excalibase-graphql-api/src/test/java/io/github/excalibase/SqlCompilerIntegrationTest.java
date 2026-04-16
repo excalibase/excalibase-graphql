@@ -1012,4 +1012,63 @@ class SqlCompilerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.updateTestSchemaCustomer[0].first_name").value("Bobby"));
     }
+
+    // === Query-path variable threading ($var resolution) ===
+
+    @Test
+    @Order(290)
+    void queryPathResolvesScalarVariable() throws Exception {
+        // $active passed as a variable, not an inline literal. Before the fix
+        // the query path bound the literal string "$active" which Postgres
+        // rejected with a type error.
+        String query = "query GetActive($active: Boolean!) { testSchemaCustomer(where: { active: { eq: $active } }) { customer_id } }";
+        String body = mapper.writeValueAsString(Map.of(
+                "query", query,
+                "variables", Map.of("active", true)
+        ));
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(greaterThanOrEqualTo(1))))
+                .andExpect(jsonPath("$.errors").doesNotExist());
+    }
+
+    @Test
+    @Order(291)
+    void queryPathResolvesLimitVariable() throws Exception {
+        // $n threaded into LIMIT clause via FilterBuilder.applyLimit
+        String query = "query GetN($n: Int!) { testSchemaCustomer(limit: $n) { customer_id } }";
+        String body = mapper.writeValueAsString(Map.of(
+                "query", query,
+                "variables", Map.of("n", 2)
+        ));
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.testSchemaCustomer", hasSize(2)));
+    }
+
+    // === Top-level field alias preservation ===
+
+    @Test
+    @Order(295)
+    void topLevelAliasesKeepDistinctResults() throws Exception {
+        // Two aliases on the same root field with different filters. Before
+        // the fix both subqueries executed but jsonb_build_object collapsed
+        // the duplicate "testSchemaCustomer" key, dropping the first result.
+        String q = "{ "
+                + "alpha: testSchemaCustomer(where: { customer_id: { eq: 1 } }) { customer_id first_name } "
+                + "bravo: testSchemaCustomer(where: { customer_id: { eq: 2 } }) { customer_id first_name } "
+                + "}";
+        mockMvc.perform(post("/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql(q)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.alpha", hasSize(1)))
+                .andExpect(jsonPath("$.data.alpha[0].customer_id").value(1))
+                .andExpect(jsonPath("$.data.bravo", hasSize(1)))
+                .andExpect(jsonPath("$.data.bravo[0].customer_id").value(2));
+    }
 }
