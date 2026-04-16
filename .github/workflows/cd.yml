@@ -24,7 +24,7 @@ jobs:
       if: github.event_name == 'push'
       uses: actions/setup-java@v4
       with:
-        java-version: '21'
+        java-version: '25'
         distribution: 'corretto'
         
     - name: Cache Maven dependencies (if building from scratch)
