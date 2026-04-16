@@ -245,7 +245,7 @@ describe('Custom types — enums & composite', () => {
   test('create order with OrderStatus enum', async () => {
     const data = await client.request(gql`
       mutation {
-        createHanaOrders(input: { customer_id: 1, status: PENDING, total_amount: 99.99 }) {
+        createHanaOrders(input: { customer_id: 1, status: pending, total_amount: 99.99 }) {
           order_id status total_amount
         }
       }
@@ -256,7 +256,7 @@ describe('Custom types — enums & composite', () => {
 
   test('update order status enum', async () => {
     const data = await client.request(gql`
-      mutation { updateHanaOrders(where: { order_id: { eq: 1 } }, input: { status: SHIPPED }) { order_id status } }
+      mutation { updateHanaOrders(where: { order_id: { eq: 1 } }, input: { status: shipped }) { order_id status } }
     `);
     expect(data.updateHanaOrders[0].status).toBe('SHIPPED');
   });
@@ -265,7 +265,7 @@ describe('Custom types — enums & composite', () => {
     const data = await client.request(gql`
       mutation {
         createHanaOrders(input: {
-          customer_id: 4, status: PENDING, total_amount: 199.99
+          customer_id: 4, status: pending, total_amount: 199.99
           shipping_address: { street: "123 Main St", city: "New York", state: "NY", postal_code: "10001", country: "USA" }
         }) { order_id shipping_address { street city } }
       }
@@ -276,7 +276,7 @@ describe('Custom types — enums & composite', () => {
   test('create custom_types_test with multiple enums', async () => {
     const data = await client.request(gql`
       mutation {
-        createHanaCustomTypesTest(input: { name: "Mixed Test", status: PENDING, role: USER, priority: MEDIUM }) {
+        createHanaCustomTypesTest(input: { name: "Mixed Test", status: pending, role: user, priority: medium }) {
           id status role priority
         }
       }
@@ -704,7 +704,7 @@ describe('Mutations — CRUD', () => {
   test('create task with PriorityLevel enum', async () => {
     const data = await client.request(gql`
       mutation {
-        createHanaTasks(input: { title: "Test Task", priority: HIGH, assigned_user_id: 1 }) { id title priority }
+        createHanaTasks(input: { title: "Test Task", priority: high, assigned_user_id: 1 }) { id title priority }
       }
     `);
     expect(data.createHanaTasks.priority).toBe('HIGH');
