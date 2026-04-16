@@ -21,7 +21,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,7 +36,6 @@ public class GraphqlSchemaManager implements SchemaProvider {
 
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate txTemplate;
-    private final String dbSchema;
     private final int maxRows;
     private final String databaseType;
     private final int maxQueryDepth;
@@ -47,12 +45,12 @@ public class GraphqlSchemaManager implements SchemaProvider {
                               MutationExecutor mutationExecutor) {}
 
     private volatile EngineState engineState;
+    private volatile String defaultSchema;
     private final TTLCache<String, EngineState> tenantEngineStates;
 
     public GraphqlSchemaManager(
             JdbcTemplate jdbcTemplate,
             TransactionTemplate txTemplate,
-            @Value("${app.schemas:public}") String dbSchema,
             @Value("${app.max-rows:30}") int maxRows,
             @Value("${app.database-type:postgres}") String databaseType,
             @Value("${app.max-query-depth:0}") int maxQueryDepth,
@@ -61,7 +59,6 @@ public class GraphqlSchemaManager implements SchemaProvider {
             @Autowired(required = false) DynamicDataSourceManager dataSourceManager) {
         this.jdbcTemplate = jdbcTemplate;
         this.txTemplate = txTemplate;
-        this.dbSchema = dbSchema;
         this.maxRows = maxRows;
         this.databaseType = databaseType;
         this.maxQueryDepth = maxQueryDepth;
@@ -75,7 +72,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
     @PostConstruct
     public void init() {
         SqlEngine engine = SqlEngineFactory.create(databaseType);
-        List<String> schemaList = resolveSchemaList();
+        List<String> schemaList = discoverSchemas();
 
         SchemaInfo schemaInfo = new SchemaInfo();
         try {
@@ -84,7 +81,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
             log.warn("Failed to load database schema — starting with empty schema", e);
         }
 
-        String defaultSchema = schemaList.isEmpty() ? "public" : schemaList.getFirst();
+        this.defaultSchema = resolveDefaultSchema(schemaList, schemaInfo);
         SqlCompiler newCompiler = new SqlCompiler(schemaInfo, defaultSchema, maxRows,
                 engine.dialect(), engine.mutationCompiler(), maxQueryDepth);
 
@@ -147,6 +144,11 @@ public class GraphqlSchemaManager implements SchemaProvider {
         return resolveEngineState(claims).compiler().dialect();
     }
 
+    @Override
+    public String getDefaultSchema() {
+        return defaultSchema;
+    }
+
     /** Reinitialize schema and compiler. Called on DDL events from NatsCDCService. */
     public void reload() {
         EngineState previous = engineState;
@@ -159,28 +161,44 @@ public class GraphqlSchemaManager implements SchemaProvider {
         }
     }
 
-    private List<String> resolveSchemaList() {
-        if ("ALL".equalsIgnoreCase(dbSchema.trim())) {
-            return discoverSchemas();
+    /**
+     * Pick the default schema: first schema that has tables, falling back to "public".
+     */
+    private String resolveDefaultSchema(List<String> schemas, SchemaInfo schemaInfo) {
+        for (String schema : schemas) {
+            for (String tableKey : schemaInfo.getTableNames()) {
+                if (tableKey.startsWith(schema + ".")) {
+                    return schema;
+                }
+            }
         }
-        return Arrays.stream(dbSchema.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
+        return schemas.isEmpty() ? "public" : schemas.getFirst();
     }
 
+    /**
+     * Auto-discover all non-system schemas. Unlike PostgREST which uses a static
+     * db-schemas config, we auto-discover because we serve multiple tenants — each
+     * tenant's database may have different schemas. A static list doesn't work
+     * in multi-tenant mode. REST clients use Accept-Profile header to select schema.
+     */
     private List<String> discoverSchemas() {
+        return discoverSchemas(jdbcTemplate);
+    }
+
+    private List<String> discoverSchemas(JdbcTemplate jdbc) {
         try {
-            return jdbcTemplate.queryForList(
-                    "SELECT schema_name FROM information_schema.schemata " +
-                    "WHERE schema_name NOT IN ('pg_catalog', 'information_schema') " +
-                    "AND schema_name NOT LIKE 'pg_toast%' " +
-                    "AND schema_name NOT LIKE 'pg_temp_%' " +
-                    "ORDER BY schema_name",
-                    String.class);
+            String sql = "mysql".equalsIgnoreCase(databaseType)
+                    ? "SELECT schema_name FROM information_schema.schemata " +
+                      "WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys') " +
+                      "ORDER BY schema_name"
+                    : "SELECT schema_name FROM information_schema.schemata " +
+                      "WHERE schema_name NOT LIKE 'pg_%' " +
+                      "AND schema_name != 'information_schema' " +
+                      "ORDER BY schema_name";
+            return jdbc.queryForList(sql, String.class);
         } catch (Exception e) {
-            log.warn("Failed to discover schemas", e);
-            return List.of();
+            log.warn("Failed to discover schemas — falling back to 'public'", e);
+            return List.of("public");
         }
     }
 
@@ -213,12 +231,12 @@ public class GraphqlSchemaManager implements SchemaProvider {
         JdbcTemplate tenantJdbc = new JdbcTemplate(tenantDs);
 
         SqlEngine engine = SqlEngineFactory.create(databaseType);
-        List<String> schemaList = resolveSchemaList();
+        List<String> tenantSchemas = discoverSchemas(tenantJdbc);
 
         SchemaInfo schemaInfo = new SchemaInfo();
-        loadMultiSchema(schemaInfo, schemaList, engine.schemaLoader(), tenantJdbc);
+        loadMultiSchema(schemaInfo, tenantSchemas, engine.schemaLoader(), tenantJdbc);
 
-        String defaultSchema = schemaList.isEmpty() ? "public" : schemaList.getFirst();
+        String defaultSchema = resolveDefaultSchema(tenantSchemas, schemaInfo);
         SqlCompiler compiler = new SqlCompiler(schemaInfo, defaultSchema, maxRows,
                 engine.dialect(), engine.mutationCompiler(), maxQueryDepth);
 

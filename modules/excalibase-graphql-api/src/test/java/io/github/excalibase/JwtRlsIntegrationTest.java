@@ -90,7 +90,7 @@ class JwtRlsIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", () -> "app_user");
         registry.add("spring.datasource.password", () -> "apppass");
-        registry.add("app.schemas", () -> "test_rls");
+
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.max-rows", () -> 30);
         registry.add("app.security.jwt-enabled", () -> "true");

@@ -32,7 +32,7 @@ class RestControllerIntegrationTest {
     registry.add("spring.datasource.url", postgres::getJdbcUrl);
     registry.add("spring.datasource.username", postgres::getUsername);
     registry.add("spring.datasource.password", postgres::getPassword);
-    registry.add("app.schemas", () -> "rest_test");
+
     registry.add("app.database-type", () -> "postgres");
     registry.add("app.max-rows", () -> 30);
   }
@@ -424,7 +424,7 @@ class RestControllerIntegrationTest {
   class SchemaProfile {
 
     @Test
-    @DisplayName("GET without Accept-Profile uses default schema (rest_test)")
+    @DisplayName("GET without Accept-Profile uses default schema (public)")
     void defaultSchema() throws Exception {
       mockMvc.perform(get(BASE + "/products"))
           .andExpect(status().isOk())
@@ -432,10 +432,10 @@ class RestControllerIntegrationTest {
     }
 
     @Test
-    @DisplayName("GET with Accept-Profile: rest_test explicitly selects schema")
+    @DisplayName("GET with Accept-Profile: public explicitly selects schema")
     void explicitProfile() throws Exception {
       mockMvc.perform(get(BASE + "/products")
-              .header("Accept-Profile", "rest_test"))
+              .header("Accept-Profile", "public"))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.data").isArray());
     }
@@ -471,7 +471,7 @@ class RestControllerIntegrationTest {
     void writeWithProfile() throws Exception {
       mockMvc.perform(post(BASE + "/products")
               .contentType(MediaType.APPLICATION_JSON)
-              .header("Content-Profile", "rest_test")
+              .header("Content-Profile", "public")
               .header("Prefer", "return=representation")
               .content("{\"name\":\"Profile Test\",\"price\":1.00}"))
           .andExpect(status().isCreated())

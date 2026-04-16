@@ -34,7 +34,7 @@ class SqlCompilerIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.schemas", () -> "test_schema");
+
         registry.add("app.max-rows", () -> 30);
     }
 

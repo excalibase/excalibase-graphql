@@ -55,7 +55,6 @@ services:
 
       SPRING_THREADS_VIRTUAL_ENABLED: true
       SERVER_PORT: 10000
-      APP_SCHEMAS: hana,complex,shopify,kanban,clinic
       APP_DATABASE_TYPE: postgres
       APP_MAX_ROWS: 30
 

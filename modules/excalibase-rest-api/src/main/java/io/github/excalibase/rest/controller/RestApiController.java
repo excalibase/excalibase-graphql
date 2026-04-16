@@ -43,22 +43,16 @@ public class RestApiController {
     private final NamedParameterJdbcTemplate namedJdbc;
     private final TransactionTemplate txTemplate;
     private final ObjectMapper mapper;
-    private final String defaultSchema;
-    private final Set<String> allowedSchemas;
     private final int maxRows;
 
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
-                             @Value("${app.schemas:public}") String schemas,
                              @Value("${app.max-rows:30}") int maxRows) {
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
         this.mapper = mapper;
         this.maxRows = maxRows;
-        String[] parts = schemas.split(",");
-        this.defaultSchema = parts[0].trim();
-        this.allowedSchemas = Set.copyOf(Arrays.stream(parts).map(String::trim).toList());
     }
 
     @GetMapping(produces = "application/openapi+json")
@@ -66,7 +60,7 @@ public class RestApiController {
         var claims = getClaims(request);
         var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
         int port = request.getServerPort();
-        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, defaultSchema, port));
+        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.getDefaultSchema(), port));
     }
 
     @GetMapping("/{table}")
@@ -345,9 +339,8 @@ public class RestApiController {
     }
 
     private String resolveSchema(String header) {
-        if (header == null || header.isBlank()) return defaultSchema;
-        String s = header.trim();
-        return allowedSchemas.contains(s) ? s : null;
+        if (header == null || header.isBlank()) return schemaProvider.getDefaultSchema();
+        return header.trim();
     }
 
     private boolean preferContains(String prefer, String token) {

@@ -38,7 +38,7 @@ class MultiSchemaE2ETest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.schemas", () -> "schema_a,schema_b");
+
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.max-rows", () -> 30);
     }

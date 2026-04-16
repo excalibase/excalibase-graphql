@@ -1016,9 +1016,11 @@ const REST_URL = process.env.POSTGRES_API_URL
   ? process.env.POSTGRES_API_URL.replace('/graphql', '/api/v1')
   : 'http://localhost:10000/api/v1';
 
+const REST_SCHEMA = 'hana';
+
 async function restGet(path, headers = {}) {
   const res = await fetch(`${REST_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json', 'Accept-Profile': REST_SCHEMA, ...headers },
   });
   return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
 }
@@ -1026,7 +1028,7 @@ async function restGet(path, headers = {}) {
 async function restPost(path, body, headers = {}) {
   const res = await fetch(`${REST_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json', 'Accept-Profile': REST_SCHEMA, 'Content-Profile': REST_SCHEMA, ...headers },
     body: JSON.stringify(body),
   });
   return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
@@ -1035,7 +1037,7 @@ async function restPost(path, body, headers = {}) {
 async function restPatch(path, body, headers = {}) {
   const res = await fetch(`${REST_URL}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json', 'Accept-Profile': REST_SCHEMA, 'Content-Profile': REST_SCHEMA, ...headers },
     body: JSON.stringify(body),
   });
   return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
@@ -1044,7 +1046,7 @@ async function restPatch(path, body, headers = {}) {
 async function restDelete(path, headers = {}) {
   const res = await fetch(`${REST_URL}${path}`, {
     method: 'DELETE',
-    headers: { ...headers },
+    headers: { 'Accept-Profile': REST_SCHEMA, 'Content-Profile': REST_SCHEMA, ...headers },
   });
   return { status: res.status, data: await res.json().catch(() => ({})), headers: res.headers };
 }
@@ -1143,7 +1145,7 @@ describe('REST API — Singular object', () => {
 describe('REST API — CSV response', () => {
   test('GET with Accept: text/csv returns CSV', async () => {
     const res = await fetch(`${REST_URL}/customer?select=customer_id,first_name&limit=3&order=customer_id.asc`, {
-      headers: { 'Accept': 'text/csv' },
+      headers: { 'Accept': 'text/csv', 'Accept-Profile': REST_SCHEMA },
     });
     expect(res.status).toBe(200);
     const csv = await res.text();

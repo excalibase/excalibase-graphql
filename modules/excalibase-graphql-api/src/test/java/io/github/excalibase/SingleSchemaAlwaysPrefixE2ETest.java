@@ -20,7 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * E2E test: when app.schemas is set (even with a single schema), types are ALWAYS prefixed.
+ * E2E test: when multiple schemas are discovered, types are ALWAYS prefixed.
  * This uses init.sql which creates test_schema with customer, orders, etc.
  */
 @SpringBootTest
@@ -38,8 +38,6 @@ class SingleSchemaAlwaysPrefixE2ETest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
-        // Using app.schemas (plural) with single schema → must prefix
-        registry.add("app.schemas", () -> "test_schema");
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.max-rows", () -> 30);
     }
@@ -53,7 +51,7 @@ class SingleSchemaAlwaysPrefixE2ETest {
         return mapper.writeValueAsString(Map.of("query", query));
     }
 
-    // === Prefixed queries (app.schemas=test_schema → testSchemaCustomer) ===
+    // === Prefixed queries (test_schema → testSchemaCustomer) ===
 
     @Test
     @Order(1)

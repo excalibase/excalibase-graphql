@@ -145,7 +145,7 @@ class MultiTenantIntegrationTest {
     registry.add("spring.datasource.url", defaultDb::getJdbcUrl);
     registry.add("spring.datasource.username", defaultDb::getUsername);
     registry.add("spring.datasource.password", defaultDb::getPassword);
-    registry.add("app.schemas", () -> "tenant");
+
     registry.add("app.database-type", () -> "postgres");
     registry.add("app.max-rows", () -> 30);
     registry.add("app.security.jwt-enabled", () -> "true");

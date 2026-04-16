@@ -15,4 +15,7 @@ public interface SchemaProvider {
     SqlDialect resolveDialect(JwtClaims claims);
 
     String getDatabaseType();
+
+    /** Returns the default schema name (first discovered or configured schema). */
+    String getDefaultSchema();
 }
