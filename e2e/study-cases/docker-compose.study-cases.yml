@@ -15,8 +15,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres -d shopify_db"]
       interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 10s
+      retries: 20
+      start_period: 30s
     networks:
       - study-cases-network
 
@@ -39,8 +39,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres -d kanban_db"]
       interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 10s
+      retries: 20
+      start_period: 30s
     networks:
       - study-cases-network
 
@@ -60,8 +60,8 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres -d clinic_db"]
       interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 10s
+      retries: 20
+      start_period: 30s
     networks:
       - study-cases-network
 

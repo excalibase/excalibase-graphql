@@ -19,10 +19,10 @@ services:
       - ./scripts/mysql-initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "app_user", "-ppassword123"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 20
+      start_period: 60s
     networks:
       - excalibase-mysql-network
     restart: unless-stopped

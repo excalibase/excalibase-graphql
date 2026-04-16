@@ -25,10 +25,10 @@ services:
       -c shared_preload_libraries=''
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hana001 -d hana"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      retries: 20
+      start_period: 60s
     networks:
       - excalibase-network
     restart: unless-stopped
