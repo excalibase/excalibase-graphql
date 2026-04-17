@@ -147,6 +147,46 @@ public class NoSqlController {
         }
     }
 
+    @PostMapping("/{collection}/updateMany")
+    public ResponseEntity<Object> updateMany(@PathVariable String collection,
+                                              @RequestBody Map<String, Object> body) {
+        var schema = resolveCollection(collection);
+        @SuppressWarnings("unchecked")
+        var filter = (Map<String, Object>) body.get("filter");
+        @SuppressWarnings("unchecked")
+        var update = (Map<String, Object>) body.get("update");
+
+        if (filter == null || filter.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "filter required"));
+        }
+        if (update == null || update.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "update required"));
+        }
+
+        schema.validateQuery(filter.keySet(), false);
+
+        var compiled = compiler().compileUpdateMany(collection, filter, update);
+        var results = executionService.executeBulkMutation(compiled);
+        return ResponseEntity.ok(Map.of("data", results, "modified", results.size()));
+    }
+
+    @PostMapping("/{collection}/deleteMany")
+    public ResponseEntity<Object> deleteMany(@PathVariable String collection,
+                                              @RequestBody Map<String, Object> body) {
+        var schema = resolveCollection(collection);
+        @SuppressWarnings("unchecked")
+        var filter = (Map<String, Object>) body.get("filter");
+        if (filter == null || filter.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "filter required"));
+        }
+
+        schema.validateQuery(filter.keySet(), false);
+
+        var compiled = compiler().compileDeleteMany(collection, filter);
+        var results = executionService.executeBulkMutation(compiled);
+        return ResponseEntity.ok(Map.of("data", results, "deleted", results.size()));
+    }
+
     @PostMapping("/{collection}/deleteOne")
     public ResponseEntity<Object> deleteOne(@PathVariable String collection,
                                              @RequestBody Map<String, Object> body) {
@@ -179,6 +219,35 @@ public class NoSqlController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found"));
         }
+    }
+
+    @PostMapping("/{collection}/search")
+    public ResponseEntity<Object> search(@PathVariable String collection,
+                                          @RequestBody Map<String, Object> body) {
+        resolveCollection(collection);
+        String query = (String) body.get("query");
+        if (query == null || query.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "query required"));
+        }
+        int limit = toInt(body.get("limit"), 10);
+        var compiled = compiler().compileSearch(collection, query, limit);
+        var results = executionService.executeQuery(compiled);
+        return ResponseEntity.ok(Map.of("data", results));
+    }
+
+    @SuppressWarnings("unchecked")
+    @PostMapping("/{collection}/vectorSearch")
+    public ResponseEntity<Object> vectorSearch(@PathVariable String collection,
+                                                @RequestBody Map<String, Object> body) {
+        resolveCollection(collection);
+        var embedding = (List<? extends Number>) body.get("embedding");
+        if (embedding == null || embedding.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "embedding required"));
+        }
+        int topK = toInt(body.get("topK"), 5);
+        var compiled = compiler().compileVectorSearch(collection, embedding, topK);
+        var results = executionService.executeQuery(compiled);
+        return ResponseEntity.ok(Map.of("data", results));
     }
 
     @PostMapping("/{collection}/count")

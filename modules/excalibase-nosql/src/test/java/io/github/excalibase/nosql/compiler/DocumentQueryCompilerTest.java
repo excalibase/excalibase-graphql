@@ -197,6 +197,91 @@ class DocumentQueryCompilerTest {
     }
 
     @Nested
+    @DisplayName("compileUpdateMany")
+    class UpdateMany {
+
+        @Test
+        @DisplayName("updates multiple docs matching filter")
+        void updateMany() {
+            var filter = Map.<String, Object>of("status", "draft");
+            var update = Map.<String, Object>of("$set", Map.of("status", "published"));
+            var result = compiler.compileUpdateMany("users", filter, update);
+
+            assertThat(result.sql()).contains("UPDATE nosql.\"users\"");
+            assertThat(result.sql()).contains("data = data || :patch::jsonb");
+            assertThat(result.sql()).contains("(data->>'status') = :p1");
+            assertThat(result.sql()).contains("RETURNING");
+        }
+    }
+
+    @Nested
+    @DisplayName("compileDeleteMany")
+    class DeleteMany {
+
+        @Test
+        @DisplayName("deletes multiple docs matching filter")
+        void deleteMany() {
+            var filter = Map.<String, Object>of("status", "trash");
+            var result = compiler.compileDeleteMany("users", filter);
+
+            assertThat(result.sql()).contains("DELETE FROM nosql.\"users\"");
+            assertThat(result.sql()).contains("(data->>'status') = :p0");
+            assertThat(result.sql()).contains("RETURNING");
+        }
+    }
+
+    @Nested
+    @DisplayName("compileSearch")
+    class Search {
+
+        @Test
+        @DisplayName("FTS search query with ranking")
+        void ftsSearch() {
+            // Need collection with search field
+            collectionInfo.addCollection("articles", new CollectionSchema(
+                    "articles",
+                    Map.of("title", FieldType.STRING, "body", FieldType.STRING),
+                    List.of(new IndexDef(List.of("title"), "string", false)),
+                    Set.of("title"),
+                    "body", null));
+
+            var result = compiler.compileSearch("articles", "hello world", 10);
+
+            assertThat(result.sql()).contains("FROM nosql.\"articles\"");
+            assertThat(result.sql()).contains("search_text @@ websearch_to_tsquery");
+            assertThat(result.sql()).contains("ts_rank");
+            assertThat(result.sql()).contains("ORDER BY");
+            assertThat(result.params()).containsEntry("query", "hello world");
+            assertThat(result.params()).containsEntry("limit", 10);
+        }
+    }
+
+    @Nested
+    @DisplayName("compileVectorSearch")
+    class VectorSearch {
+
+        @Test
+        @DisplayName("vector similarity search with topK")
+        void vectorSearch() {
+            collectionInfo.addCollection("docs", new CollectionSchema(
+                    "docs",
+                    Map.of("title", FieldType.STRING),
+                    List.of(new IndexDef(List.of("title"), "string", false)),
+                    Set.of("title"),
+                    null, new VectorDef("embedding", 3)));
+
+            var embedding = List.of(0.1, 0.2, 0.3);
+            var result = compiler.compileVectorSearch("docs", embedding, 5);
+
+            assertThat(result.sql()).contains("FROM nosql.\"docs\"");
+            assertThat(result.sql()).contains("embedding <=> :embedding::vector");
+            assertThat(result.sql()).contains("ORDER BY");
+            assertThat(result.params()).containsKey("embedding");
+            assertThat(result.params()).containsEntry("topK", 5);
+        }
+    }
+
+    @Nested
     @DisplayName("Comparison operators")
     class Operators {
 

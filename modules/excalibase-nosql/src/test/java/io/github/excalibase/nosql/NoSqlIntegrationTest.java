@@ -45,7 +45,7 @@ class NoSqlIntegrationTest {
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         jdbc = new JdbcTemplate(ds);
         namedJdbc = new NamedParameterJdbcTemplate(ds);
-        schemaManager = new CollectionSchemaManager(jdbc);
+        schemaManager = new CollectionSchemaManager(jdbc, null);
         executionService = new DocumentExecutionService(namedJdbc, new ObjectMapper());
     }
 
@@ -140,6 +140,26 @@ class NoSqlIntegrationTest {
 
         @Test
         @Order(5)
+        @DisplayName("compound index on multiple fields")
+        void syncSchema_compoundIndex() {
+            var schema = Map.<String, Object>of("collections", Map.of(
+                    "events", Map.of(
+                            "indexes", List.of(
+                                    Map.of("fields", List.of("userId", "status"), "type", "string", "unique", false)
+                            )
+                    )
+            ));
+
+            schemaManager.syncSchema(schema);
+
+            var info = schemaManager.getCollectionInfo().getCollection("events").get();
+            assertThat(info.indexes()).hasSize(1);
+            assertThat(info.indexes().getFirst().fields()).containsExactly("userId", "status");
+            assertThat(info.indexedFields()).containsExactlyInAnyOrder("userId", "status");
+        }
+
+        @Test
+        @Order(6)
         @DisplayName("syncSchema rejects > 10 indexes")
         void syncSchema_rejectsTooManyIndexes() {
             var indexes = new ArrayList<Map<String, Object>>();
@@ -265,6 +285,34 @@ class NoSqlIntegrationTest {
             long count = executionService.executeCount(
                     compiler.compileCount("posts", Map.of("status", "new")));
             assertThat(count).isEqualTo(3);
+        }
+
+        @Test
+        @Order(7)
+        @DisplayName("updateMany updates multiple documents")
+        void updateMany() {
+            var results = executionService.executeBulkMutation(
+                    compiler.compileUpdateMany("posts",
+                            Map.of("status", "new"),
+                            Map.of("$set", Map.of("status", "archived"))));
+            assertThat(results).hasSize(3);
+
+            long count = executionService.executeCount(
+                    compiler.compileCount("posts", Map.of("status", "archived")));
+            assertThat(count).isEqualTo(3);
+        }
+
+        @Test
+        @Order(8)
+        @DisplayName("deleteMany removes multiple documents")
+        void deleteMany() {
+            var results = executionService.executeBulkMutation(
+                    compiler.compileDeleteMany("posts", Map.of("status", "archived")));
+            assertThat(results).hasSize(3);
+
+            long count = executionService.executeCount(
+                    compiler.compileCount("posts", Map.of("status", "archived")));
+            assertThat(count).isEqualTo(0);
         }
     }
 

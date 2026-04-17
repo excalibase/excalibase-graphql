@@ -229,6 +229,25 @@ describe('NoSQL — Comparison operators', () => {
   });
 });
 
+describe('NoSQL — Bulk operations', () => {
+  test('updateMany updates multiple documents', async () => {
+    const res = await nosqlPost('/e2e_users/updateMany', {
+      filter: { status: 'active' },
+      update: { '$set': { status: 'paused' } },
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.modified).toBe(2);
+  });
+
+  test('deleteMany removes multiple documents', async () => {
+    const res = await nosqlPost('/e2e_users/deleteMany', {
+      filter: { status: 'paused' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.data.deleted).toBe(2);
+  });
+});
+
 describe('NoSQL — Error handling', () => {
   test('unknown collection returns 404', async () => {
     const res = await nosqlPost('/nonexistent/find', { filter: {} });

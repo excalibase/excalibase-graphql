@@ -111,6 +111,14 @@ public class DocumentQueryCompiler {
         return new CompiledDoc(sql.toString(), params);
     }
 
+    public CompiledDoc compileUpdateMany(String collection, Map<String, Object> filter, Map<String, Object> update) {
+        return compileUpdateOne(collection, filter, update);
+    }
+
+    public CompiledDoc compileDeleteMany(String collection, Map<String, Object> filter) {
+        return compileDeleteOne(collection, filter);
+    }
+
     public CompiledDoc compileDeleteOne(String collection, Map<String, Object> filter) {
         var schema = resolveSchema(collection);
         var params = new LinkedHashMap<String, Object>();
@@ -121,6 +129,41 @@ public class DocumentQueryCompiler {
         sql.append(" RETURNING ").append(returningClause());
 
         return new CompiledDoc(sql.toString(), params);
+    }
+
+    public CompiledDoc compileSearch(String collection, String query, int limit) {
+        var schema = resolveSchema(collection);
+        if (schema.searchField() == null) {
+            throw new IllegalArgumentException("Collection '" + collection + "' has no search field configured");
+        }
+        var params = new LinkedHashMap<String, Object>();
+        params.put("query", query);
+        params.put("limit", Math.min(limit, 1000));
+
+        var sql = selectClause() + ", ts_rank(search_text, websearch_to_tsquery(:query)) AS rank" +
+                " FROM " + qualifiedTable(collection) +
+                " WHERE search_text @@ websearch_to_tsquery(:query)" +
+                " ORDER BY rank DESC" +
+                " LIMIT :limit";
+
+        return new CompiledDoc(sql, params);
+    }
+
+    public CompiledDoc compileVectorSearch(String collection, List<? extends Number> embedding, int topK) {
+        var schema = resolveSchema(collection);
+        if (schema.vector() == null) {
+            throw new IllegalArgumentException("Collection '" + collection + "' has no vector field configured");
+        }
+        var params = new LinkedHashMap<String, Object>();
+        params.put("embedding", embedding.toString());
+        params.put("topK", Math.min(topK, 1000));
+
+        var sql = selectClause() + ", embedding <=> :embedding::vector AS distance" +
+                " FROM " + qualifiedTable(collection) +
+                " ORDER BY embedding <=> :embedding::vector" +
+                " LIMIT :topK";
+
+        return new CompiledDoc(sql, params);
     }
 
     public CompiledDoc compileCount(String collection, Map<String, Object> filter) {

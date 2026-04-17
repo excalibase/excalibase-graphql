@@ -26,7 +26,7 @@ public class NatsCDCService {
 
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
-    private Runnable schemaReloadCallback;
+    private final java.util.List<Runnable> schemaReloadCallbacks = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @Value("${app.nats.enabled:false}")
     private boolean natsEnabled;
@@ -51,10 +51,11 @@ public class NatsCDCService {
     }
 
     /**
-     * Set a callback to be invoked when a DDL event is received (for schema reload).
+     * Add a callback to be invoked when a DDL event is received (for schema reload).
+     * Multiple callbacks are supported (e.g., GraphqlSchemaManager + CollectionSchemaManager).
      */
     public void setSchemaReloadCallback(Runnable callback) {
-        this.schemaReloadCallback = callback;
+        this.schemaReloadCallbacks.add(callback);
     }
 
     @PostConstruct
@@ -121,8 +122,8 @@ public class NatsCDCService {
 
             if ("DDL".equals(event.type())) {
                 log.info("DDL event received - reloading schema");
-                if (schemaReloadCallback != null) {
-                    schemaReloadCallback.run();
+                if (!schemaReloadCallbacks.isEmpty()) {
+                    schemaReloadCallbacks.forEach(Runnable::run);
                 }
                 return;
             }

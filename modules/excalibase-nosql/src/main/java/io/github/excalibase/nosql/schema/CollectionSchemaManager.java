@@ -1,9 +1,11 @@
 package io.github.excalibase.nosql.schema;
 
 import io.github.excalibase.nosql.model.*;
+import io.github.excalibase.cdc.NatsCDCService;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -25,8 +27,21 @@ public class CollectionSchemaManager {
     private final JdbcTemplate jdbc;
     private volatile CollectionInfo collectionInfo = new CollectionInfo();
 
-    public CollectionSchemaManager(JdbcTemplate jdbc) {
+    public CollectionSchemaManager(JdbcTemplate jdbc,
+                                    @Autowired(required = false) NatsCDCService natsCDCService) {
         this.jdbc = jdbc;
+        if (natsCDCService != null) {
+            natsCDCService.setSchemaReloadCallback(this::reload);
+        }
+    }
+
+    public void reload() {
+        try {
+            discoverCollections();
+            log.info("NoSQL collections reloaded via CDC");
+        } catch (Exception e) {
+            log.error("NoSQL collection reload failed", e);
+        }
     }
 
     @PostConstruct
@@ -75,6 +90,18 @@ public class CollectionSchemaManager {
             }
 
             syncIndexes(name, indexDefs);
+
+            String searchField = (String) def.get("search");
+            if (searchField != null) {
+                addSearchColumn(name, searchField);
+            }
+
+            @SuppressWarnings("unchecked")
+            var vectorDef = (Map<String, Object>) def.get("vector");
+            if (vectorDef != null) {
+                addVectorColumn(name, (String) vectorDef.get("field"),
+                        ((Number) vectorDef.get("dimensions")).intValue());
+            }
         }
 
         discoverCollections();
@@ -179,6 +206,32 @@ public class CollectionSchemaManager {
         return indexes;
     }
 
+    private void addSearchColumn(String collection, String field) {
+        String table = NOSQL_SCHEMA + ".\"" + collection + "\"";
+        try {
+            jdbc.execute("ALTER TABLE " + table +
+                    " ADD COLUMN IF NOT EXISTS search_text tsvector" +
+                    " GENERATED ALWAYS AS (to_tsvector('english', coalesce(data->>'" + field + "', ''))) STORED");
+            jdbc.execute("CREATE INDEX IF NOT EXISTS idx_" + collection + "_search ON " + table + " USING gin(search_text)");
+            log.info("Added search column for field '{}' on collection '{}'", field, collection);
+        } catch (Exception e) {
+            log.warn("Failed to add search column on {}: {}", collection, e.getMessage());
+        }
+    }
+
+    private void addVectorColumn(String collection, String field, int dimensions) {
+        String table = NOSQL_SCHEMA + ".\"" + collection + "\"";
+        try {
+            jdbc.execute("ALTER TABLE " + table +
+                    " ADD COLUMN IF NOT EXISTS embedding vector(" + dimensions + ")");
+            jdbc.execute("CREATE INDEX IF NOT EXISTS idx_" + collection + "_vector ON " + table +
+                    " USING hnsw(embedding vector_cosine_ops)");
+            log.info("Added vector column ({} dims) on collection '{}'", dimensions, collection);
+        } catch (Exception e) {
+            log.warn("Failed to add vector column on {}: {}", collection, e.getMessage());
+        }
+    }
+
     private void discoverCollections() {
         var newInfo = new CollectionInfo();
 
@@ -191,13 +244,40 @@ public class CollectionSchemaManager {
                     for (var idx : indexes) {
                         indexedFields.addAll(idx.fields());
                     }
-                    var schema = new CollectionSchema(name, Map.of(), indexes, indexedFields, null, null);
+                    String searchField = detectSearchField(name);
+                    VectorDef vectorDef = detectVectorDef(name);
+                    var schema = new CollectionSchema(name, Map.of(), indexes, indexedFields, searchField, vectorDef);
                     newInfo.addCollection(name, schema);
                 },
                 NOSQL_SCHEMA);
 
         collectionInfo = newInfo;
         log.info("Discovered {} NoSQL collections", newInfo.getCollectionNames().size());
+    }
+
+    private String detectSearchField(String collection) {
+        try {
+            var count = jdbc.queryForObject(
+                    "SELECT count(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND column_name = 'search_text'",
+                    Integer.class, NOSQL_SCHEMA, collection);
+            return (count != null && count > 0) ? "search_text" : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private VectorDef detectVectorDef(String collection) {
+        try {
+            var count = jdbc.queryForObject(
+                    "SELECT count(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND column_name = 'embedding'",
+                    Integer.class, NOSQL_SCHEMA, collection);
+            if (count != null && count > 0) {
+                return new VectorDef("embedding", 0);
+            }
+        } catch (Exception e) {
+            // ignore
+        }
+        return null;
     }
 
     private List<IndexDef> parseIndexes(String collection) {
