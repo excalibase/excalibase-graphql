@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -47,6 +48,7 @@ class GracefulStartupTest {
     @Test
     void appStartsWithoutDatabase() {
         // If we get here, @SpringBootTest context loaded successfully — app started
+        assertThat(mockMvc).isNotNull();
     }
 
     @Test

@@ -134,7 +134,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
         List<String> setClauses = new ArrayList<>();
         for (var entry : inputFields.entrySet()) {
             String paramName = namedParam(P_UPDATE, entry.getKey(), params.size());
-            setClauses.add(assign(shared.dialect().quoteIdentifier(entry.getKey()), paramName));
+            setClauses.add(buildAssign(shared.dialect().quoteIdentifier(entry.getKey()), paramName));
             params.put(paramName, entry.getValue());
         }
         if (setClauses.isEmpty()) return null;

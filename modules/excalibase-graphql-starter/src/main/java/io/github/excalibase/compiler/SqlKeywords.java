@@ -142,7 +142,7 @@ public final class SqlKeywords {
     }
 
     /** Build assignment: "col = :paramName" */
-    public static String assign(String quotedCol, String paramName) {
+    public static String buildAssign(String quotedCol, String paramName) {
         return quotedCol + ASSIGN + PARAM_PREFIX + paramName;
     }
 
