@@ -50,7 +50,7 @@ public class SqlCompiler {
                     .call(() -> doCompile(queryString, vars));
         } catch (Exception e) {
             if (e instanceof RuntimeException re) throw re;
-            throw new RuntimeException(e);
+            throw new SqlCompilationException("GraphQL query compilation failed", e);
         }
     }
 

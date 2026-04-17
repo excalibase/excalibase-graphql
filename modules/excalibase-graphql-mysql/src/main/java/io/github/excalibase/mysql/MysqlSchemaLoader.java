@@ -158,7 +158,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
                     }
                 }
             } catch (Exception e) {
-                throw new RuntimeException("Failed to parse MySQL introspection row", e);
+                throw new io.github.excalibase.spi.SchemaIntrospectionException("Failed to parse MySQL introspection row", e);
             }
         });
 

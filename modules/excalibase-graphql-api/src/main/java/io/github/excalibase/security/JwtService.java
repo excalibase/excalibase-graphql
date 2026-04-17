@@ -129,13 +129,13 @@ public class JwtService {
     // Private helpers
     // -------------------------------------------------------------------------
 
-    private void verifyHmac(SignedJWT jwt) throws Exception {
+    private void verifyHmac(SignedJWT jwt) throws JwtVerificationException, com.nimbusds.jose.JOSEException {
         if (!jwt.verify(new MACVerifier(hmacSecret))) {
             throw new JwtVerificationException("JWT signature verification failed");
         }
     }
 
-    private void verifyEc(SignedJWT jwt) throws Exception {
+    private void verifyEc(SignedJWT jwt) throws JwtVerificationException, com.nimbusds.jose.JOSEException {
         List<ECPublicKey> keys = getKeys();
         for (ECPublicKey key : keys) {
             if (jwt.verify(new ECDSAVerifier(key))) {
@@ -168,15 +168,15 @@ public class JwtService {
         });
     }
 
-    private List<ECPublicKey> fetchKeys() throws Exception {
+    private List<ECPublicKey> fetchKeys() throws java.io.IOException, java.text.ParseException {
         JWKSet jwkSet = JWKSet.load(new URL(jwksUrl));
         List<ECPublicKey> ecKeys = jwkSet.getKeys().stream()
                 .filter(k -> k instanceof ECKey)
                 .map(k -> {
                     try {
                         return ((ECKey) k).toECPublicKey();
-                    } catch (Exception e) {
-                        throw new RuntimeException("Failed to parse EC key from JWKS", e);
+                    } catch (com.nimbusds.jose.JOSEException e) {
+                        throw new JwtVerificationException("Failed to parse EC key from JWKS", e);
                     }
                 })
                 .toList();

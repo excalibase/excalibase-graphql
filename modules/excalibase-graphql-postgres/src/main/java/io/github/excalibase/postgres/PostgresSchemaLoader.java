@@ -7,7 +7,6 @@ import io.github.excalibase.spi.SchemaLoader;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 public class PostgresSchemaLoader implements SchemaLoader {
 
@@ -273,7 +272,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
                     }
                 }
             } catch (Exception e) {
-                throw new RuntimeException("Failed to parse introspection row", e);
+                throw new io.github.excalibase.spi.SchemaIntrospectionException("Failed to parse introspection row", e);
             }
         });
 
@@ -289,8 +288,8 @@ public class PostgresSchemaLoader implements SchemaLoader {
             if (colPairs.size() == 1) {
                 info.addForeignKey(fromTable, colPairs.get(0)[0], toTable, colPairs.get(0)[1]);
             } else {
-                List<String> fkCols = colPairs.stream().map(p -> p[0]).collect(Collectors.toList());
-                List<String> refCols = colPairs.stream().map(p -> p[1]).collect(Collectors.toList());
+                List<String> fkCols = colPairs.stream().map(p -> p[0]).toList();
+                List<String> refCols = colPairs.stream().map(p -> p[1]).toList();
                 info.addCompositeForeignKey(fromTable, fkCols, toTable, refCols);
             }
         }
@@ -379,8 +378,8 @@ public class PostgresSchemaLoader implements SchemaLoader {
             if (colPairs.size() == 1) {
                 info.addForeignKey(fromTable, colPairs.get(0)[0], toTable, colPairs.get(0)[1]);
             } else {
-                List<String> fkCols = colPairs.stream().map(p -> p[0]).collect(Collectors.toList());
-                List<String> refCols = colPairs.stream().map(p -> p[1]).collect(Collectors.toList());
+                List<String> fkCols = colPairs.stream().map(p -> p[0]).toList();
+                List<String> refCols = colPairs.stream().map(p -> p[1]).toList();
                 info.addCompositeForeignKey(fromTable, fkCols, toTable, refCols);
             }
         }

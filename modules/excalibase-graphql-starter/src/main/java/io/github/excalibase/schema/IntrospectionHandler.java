@@ -78,9 +78,9 @@ public class IntrospectionHandler {
             String enumName = typeName(entry.getKey());
             GraphQLEnumType.Builder enumBuilder = newEnum().name(enumName);
             if (entry.getKey().contains(".")) {
-                String schema = entry.getKey().substring(0, entry.getKey().indexOf('.'));
+                String enumSchema = entry.getKey().substring(0, entry.getKey().indexOf('.'));
                 String rawEnum = entry.getKey().substring(entry.getKey().indexOf('.') + 1);
-                enumBuilder.description("Enum " + rawEnum + " from schema " + schema);
+                enumBuilder.description("Enum " + rawEnum + " from schema " + enumSchema);
             }
             for (String label : entry.getValue()) {
                 enumBuilder.value(label);
@@ -512,15 +512,6 @@ public class IntrospectionHandler {
         if (t.contains("float") || t.contains("double") || t.contains("numeric") || t.contains("decimal") || t.contains("real")) return GraphQLFloat;
         if (t.contains("bool")) return GraphQLBoolean;
         return GraphQLString;
-    }
-
-    /**
-     * Kept for compatibility — callers should prefer the narrower
-     * {@link #isIntegerType(String)} and {@link #isFloatType(String)} which
-     * distinguish the two numeric families the new filter input types need.
-     */
-    private boolean isNumericType(String dbType) {
-        return isIntegerType(dbType) || isFloatType(dbType);
     }
 
     private boolean isIntegerType(String dbType) {

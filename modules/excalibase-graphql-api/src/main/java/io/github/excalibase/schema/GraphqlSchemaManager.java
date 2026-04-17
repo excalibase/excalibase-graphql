@@ -207,10 +207,6 @@ public class GraphqlSchemaManager implements SchemaProvider {
         loadMultiSchema(schemaInfo, schemaList, loader, jdbcTemplate);
     }
 
-    private String findCompoundKey(SchemaInfo schemaInfo, String rawTable, List<String> allSchemas) {
-        return findCompoundKey(schemaInfo, rawTable, allSchemas, null);
-    }
-
     private String findCompoundKey(SchemaInfo schemaInfo, String rawTable, List<String> allSchemas, String preferredSchema) {
         if (preferredSchema != null) {
             String candidate = preferredSchema + "." + rawTable;
@@ -237,8 +233,8 @@ public class GraphqlSchemaManager implements SchemaProvider {
         SchemaInfo schemaInfo = new SchemaInfo();
         loadMultiSchema(schemaInfo, tenantSchemas, engine.schemaLoader(), tenantJdbc);
 
-        String defaultSchema = resolveDefaultSchema(tenantSchemas, schemaInfo);
-        SqlCompiler compiler = new SqlCompiler(schemaInfo, defaultSchema, maxRows,
+        String tenantDefaultSchema = resolveDefaultSchema(tenantSchemas, schemaInfo);
+        SqlCompiler compiler = new SqlCompiler(schemaInfo, tenantDefaultSchema, maxRows,
                 engine.dialect(), engine.mutationCompiler(), maxQueryDepth);
 
         IntrospectionHandler handler = null;

@@ -6,7 +6,6 @@ import io.github.excalibase.spi.MutationCompiler;
 import io.github.excalibase.compiler.SqlCompiler;
 
 import java.util.*;
-import java.util.stream.Collectors;
 import static io.github.excalibase.schema.GraphqlConstants.*;
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
@@ -92,7 +91,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
         List<String> colNames = new ArrayList<>(rows.getFirst().keySet());
-        List<String> colsSql = colNames.stream().map(shared.dialect()::quoteIdentifier).collect(Collectors.toList());
+        List<String> colsSql = colNames.stream().map(shared.dialect()::quoteIdentifier).toList();
 
         List<String> valueRows = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
