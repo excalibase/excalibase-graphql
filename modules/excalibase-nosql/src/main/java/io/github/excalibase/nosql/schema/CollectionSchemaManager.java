@@ -35,6 +35,51 @@ public class CollectionSchemaManager {
         }
     }
 
+    public Map<String, Object> getCollectionStats(String collection) {
+        var stats = new LinkedHashMap<String, Object>();
+        stats.put("collection", collection);
+
+        // Row count estimate from pg_class (fast, no seq scan)
+        var rowCount = jdbc.queryForObject(
+                "SELECT GREATEST(reltuples::bigint, 0) FROM pg_class WHERE relname = ? AND relnamespace = " +
+                "(SELECT oid FROM pg_namespace WHERE nspname = ?)",
+                Long.class, collection, NOSQL_SCHEMA);
+        stats.put("rowCount", rowCount != null ? rowCount : 0);
+
+        // Index stats from pg_stat_user_indexes
+        var indexes = new ArrayList<Map<String, Object>>();
+        jdbc.query(
+                "SELECT i.indexrelname, i.idx_scan, i.idx_tup_read, " +
+                "pg_size_pretty(pg_relation_size(i.indexrelid)) AS size " +
+                "FROM pg_stat_user_indexes i " +
+                "WHERE i.schemaname = ? AND i.relname = ? " +
+                "AND i.indexrelname NOT LIKE '%_pkey'",
+                rs -> {
+                    var idx = new LinkedHashMap<String, Object>();
+                    idx.put("name", rs.getString("indexrelname"));
+                    idx.put("scans", rs.getLong("idx_scan"));
+                    idx.put("rowsRead", rs.getLong("idx_tup_read"));
+                    idx.put("size", rs.getString("size"));
+                    indexes.add(idx);
+                },
+                NOSQL_SCHEMA, collection);
+        stats.put("indexes", indexes);
+
+        // Suggestions
+        var suggestions = new ArrayList<String>();
+        for (var idx : indexes) {
+            long scans = (Long) idx.get("scans");
+            if (scans == 0) {
+                suggestions.add("Index '" + idx.get("name") + "' has never been used — consider dropping it");
+            } else if (scans < 10) {
+                suggestions.add("Index '" + idx.get("name") + "' is rarely used (" + scans + " scans)");
+            }
+        }
+        stats.put("suggestions", suggestions);
+
+        return stats;
+    }
+
     public void reload() {
         try {
             discoverCollections();

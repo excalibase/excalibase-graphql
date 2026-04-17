@@ -176,7 +176,7 @@ describe('NoSQL — CRUD', () => {
   });
 
   test('GET with limit', async () => {
-    const res = await nosqlGet('/e2e_users?limit=1&allowScan=true');
+    const res = await nosqlGet('/e2e_users?limit=1');
     expect(res.status).toBe(200);
     expect(res.data.data).toHaveLength(1);
   });
@@ -184,17 +184,40 @@ describe('NoSQL — CRUD', () => {
 
 // ─── Index enforcement ─────────────────────────────────────────────────────────
 
-describe('NoSQL — Index enforcement', () => {
-  test('GET on unindexed field returns 400', async () => {
-    const res = await nosqlGet('/e2e_users?name=eq.Vu');
-    expect(res.status).toBe(400);
-    expect(res.data.error).toContain('not indexed');
-  });
-
-  test('GET on unindexed field with allowScan succeeds', async () => {
-    const res = await nosqlGet('/e2e_users?name=eq.Alice&allowScan=true');
+describe('NoSQL — Unindexed queries (no blocking)', () => {
+  test('GET on unindexed field succeeds (seq scan)', async () => {
+    const res = await nosqlGet('/e2e_users?name=eq.Alice');
     expect(res.status).toBe(200);
     expect(res.data.data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('GET with X-Debug returns warnings for unindexed field', async () => {
+    const res = await fetch(`${NOSQL_URL}/e2e_users?name=eq.Alice`, {
+      headers: { 'X-Debug': 'true' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Warning')).toContain('not indexed');
+    expect(res.headers.get('X-Query-Time')).toBeDefined();
+  });
+
+  test('GET with X-Debug and indexed field has no warnings', async () => {
+    const res = await fetch(`${NOSQL_URL}/e2e_users?status=eq.active`, {
+      headers: { 'X-Debug': 'true' },
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Warning')).toBeNull();
+    expect(res.headers.get('X-Query-Time')).toBeDefined();
+  });
+});
+
+describe('NoSQL — Stats', () => {
+  test('GET ?stats returns index usage stats', async () => {
+    const res = await nosqlGet('/e2e_users?stats');
+    expect(res.status).toBe(200);
+    expect(res.data.data.collection).toBe('e2e_users');
+    expect(res.data.data.rowCount).toBeGreaterThanOrEqual(0);
+    expect(res.data.data.indexes).toBeDefined();
+    expect(Array.isArray(res.data.data.indexes)).toBe(true);
   });
 });
 

@@ -5,6 +5,7 @@ import io.github.excalibase.nosql.compiler.FindOptions;
 import io.github.excalibase.nosql.model.CollectionSchema;
 import io.github.excalibase.nosql.schema.CollectionSchemaManager;
 import io.github.excalibase.nosql.service.DocumentExecutionService;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,7 +17,7 @@ import java.util.*;
 public class NoSqlController {
 
     private static final Set<String> RESERVED_PARAMS = Set.of(
-            "limit", "offset", "sort", "allowScan", "search", "vector", "count");
+            "limit", "offset", "sort", "search", "vector", "count", "stats");
 
     private final CollectionSchemaManager schemaManager;
     private final DocumentExecutionService executionService;
@@ -56,17 +57,25 @@ public class NoSqlController {
 
     @GetMapping("/{collection}")
     public ResponseEntity<Object> find(@PathVariable String collection,
-                                        @RequestParam Map<String, String> allParams) {
+                                        @RequestParam Map<String, String> allParams,
+                                        @RequestHeader(value = "X-Debug", required = false) String debug) {
         var schema = resolveCollection(collection);
 
-        // Special modes via query param
+        // Stats mode
+        if (allParams.containsKey("stats")) {
+            var stats = schemaManager.getCollectionStats(collection);
+            return ResponseEntity.ok(Map.of("data", stats));
+        }
+
+        // Count mode
         if (allParams.containsKey("count")) {
-            var filter = parseFilter(allParams, schema);
+            var filter = parseFilter(allParams);
             var compiled = compiler().compileCount(collection, filter);
             long count = executionService.executeCount(compiled);
             return ResponseEntity.ok(Map.of("data", Map.of("count", count)));
         }
 
+        // Search mode
         if (allParams.containsKey("search")) {
             String query = allParams.get("search");
             int limit = toInt(allParams.get("limit"), 10);
@@ -75,18 +84,30 @@ public class NoSqlController {
             return ResponseEntity.ok(Map.of("data", results));
         }
 
-        // Regular find
-        var filter = parseFilter(allParams, schema);
-        boolean allowScan = "true".equals(allParams.get("allowScan"));
-        schema.validateQuery(filter.keySet(), allowScan);
+        // Regular find — never rejects, warns via headers in debug mode
+        var filter = parseFilter(allParams);
+        var warnings = schema.checkIndexes(filter.keySet());
 
         int limit = toInt(allParams.get("limit"), 30);
         int offset = toInt(allParams.get("offset"), 0);
         var sort = parseSort(allParams.get("sort"));
 
+        long startTime = System.nanoTime();
         var compiled = compiler().compileFind(collection, filter, new FindOptions(limit, offset, sort));
         var results = executionService.executeQuery(compiled);
-        return ResponseEntity.ok(Map.of("data", results));
+        long queryTimeMs = (System.nanoTime() - startTime) / 1_000_000;
+
+        var headers = new HttpHeaders();
+        if ("true".equals(debug)) {
+            headers.add("X-Query-Time", queryTimeMs + "ms");
+            if (!warnings.isEmpty()) {
+                for (String warning : warnings) {
+                    headers.add("X-Warning", warning);
+                }
+            }
+        }
+
+        return ResponseEntity.ok().headers(headers).body(Map.of("data", results));
     }
 
     @GetMapping("/{collection}/{id}")
@@ -108,12 +129,10 @@ public class NoSqlController {
                                           @RequestBody Map<String, Object> body) {
         resolveCollection(collection);
 
-        // POST with ?vector=true → vector search
         if ("true".equals(vector)) {
             return handleVectorSearch(collection, body);
         }
 
-        // Batch insert if "docs" array present
         if (body.containsKey("docs")) {
             @SuppressWarnings("unchecked")
             var docs = (List<Map<String, Object>>) body.get("docs");
@@ -125,7 +144,6 @@ public class NoSqlController {
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("data", results));
         }
 
-        // Single insert
         @SuppressWarnings("unchecked")
         var doc = (Map<String, Object>) body.getOrDefault("doc", body);
         var compiled = compiler().compileInsertOne(collection, doc);
@@ -137,14 +155,12 @@ public class NoSqlController {
     public ResponseEntity<Object> update(@PathVariable String collection,
                                           @RequestParam Map<String, String> allParams,
                                           @RequestBody Map<String, Object> body) {
-        var schema = resolveCollection(collection);
-        var filter = parseFilter(allParams, schema);
+        resolveCollection(collection);
+        var filter = parseFilter(allParams);
 
         if (filter.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "filter required in query params"));
         }
-
-        schema.validateQuery(filter.keySet(), false);
 
         var compiled = compiler().compileUpdateMany(collection, filter, body);
         var results = executionService.executeBulkMutation(compiled);
@@ -154,14 +170,12 @@ public class NoSqlController {
     @DeleteMapping("/{collection}")
     public ResponseEntity<Object> delete(@PathVariable String collection,
                                           @RequestParam Map<String, String> allParams) {
-        var schema = resolveCollection(collection);
-        var filter = parseFilter(allParams, schema);
+        resolveCollection(collection);
+        var filter = parseFilter(allParams);
 
         if (filter.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "filter required in query params"));
         }
-
-        schema.validateQuery(filter.keySet(), false);
 
         var compiled = compiler().compileDeleteMany(collection, filter);
         var results = executionService.executeBulkMutation(compiled);
@@ -195,10 +209,7 @@ public class NoSqlController {
         return ResponseEntity.ok(Map.of("data", results));
     }
 
-    /**
-     * Parse PostgREST-style filter params: status=eq.active, age=gt.25
-     */
-    private Map<String, Object> parseFilter(Map<String, String> params, CollectionSchema schema) {
+    private Map<String, Object> parseFilter(Map<String, String> params) {
         var filter = new LinkedHashMap<String, Object>();
         for (var entry : params.entrySet()) {
             String key = entry.getKey();
@@ -226,9 +237,6 @@ public class NoSqlController {
         return filter;
     }
 
-    /**
-     * Parse sort param: age.desc or age.asc,name.desc
-     */
     private Map<String, Object> parseSort(String sort) {
         if (sort == null || sort.isBlank()) return null;
         var result = new LinkedHashMap<String, Object>();

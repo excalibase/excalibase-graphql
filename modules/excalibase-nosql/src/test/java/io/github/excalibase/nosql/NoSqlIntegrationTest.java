@@ -335,19 +335,20 @@ class NoSqlIntegrationTest {
         }
 
         @Test
-        @DisplayName("query on unindexed field is rejected")
-        void unindexedFieldRejected() {
+        @DisplayName("unindexed field returns warning")
+        void unindexedFieldWarns() {
             var schema = schemaManager.getCollectionInfo().getCollection("enforced").get();
-            assertThatThrownBy(() -> schema.validateQuery(Set.of("not_indexed"), false))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("not indexed");
+            var warnings = schema.checkIndexes(Set.of("not_indexed"));
+            assertThat(warnings).hasSize(1);
+            assertThat(warnings.getFirst()).contains("not indexed");
         }
 
         @Test
-        @DisplayName("query on unindexed field passes with allowScan")
-        void unindexedFieldWithAllowScan() {
+        @DisplayName("indexed field returns no warning")
+        void indexedFieldNoWarning() {
             var schema = schemaManager.getCollectionInfo().getCollection("enforced").get();
-            schema.validateQuery(Set.of("not_indexed"), true);
+            var warnings = schema.checkIndexes(Set.of("indexed_field"));
+            assertThat(warnings).isEmpty();
         }
     }
 }

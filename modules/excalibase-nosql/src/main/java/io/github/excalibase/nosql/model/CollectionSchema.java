@@ -19,15 +19,19 @@ public record CollectionSchema(
         indexedFields = Set.copyOf(indexedFields);
     }
 
-    public void validateQuery(Set<String> filterFields, boolean allowScan) {
-        if (allowScan) return;
+    /**
+     * Check which filter fields lack an index. Returns warnings (never throws).
+     * Queries always execute — unindexed fields use sequential scan.
+     */
+    public List<String> checkIndexes(Set<String> filterFields) {
+        var warnings = new java.util.ArrayList<String>();
         for (String field : filterFields) {
             if ("id".equals(field)) continue;
             if (!indexedFields.contains(field)) {
-                throw new IllegalArgumentException(
-                        "Field '" + field + "' is not indexed on collection '" + name + "'. " +
-                        "Add an index or pass allowScan: true");
+                warnings.add("Field '" + field + "' is not indexed on collection '" + name +
+                        "'. This query will use a sequential scan.");
             }
         }
+        return warnings;
     }
 }

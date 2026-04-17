@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CollectionInfoTest {
 
@@ -91,46 +90,39 @@ class CollectionInfoTest {
         }
 
         @Test
-        @DisplayName("indexed field passes validation")
-        void indexedFieldPasses() {
-            schema.validateQuery(Set.of("email"), false);
-            schema.validateQuery(Set.of("age"), false);
-            schema.validateQuery(Set.of("email", "age"), false);
+        @DisplayName("indexed field returns no warnings")
+        void indexedFieldNoWarnings() {
+            assertThat(schema.checkIndexes(Set.of("email"))).isEmpty();
+            assertThat(schema.checkIndexes(Set.of("age"))).isEmpty();
+            assertThat(schema.checkIndexes(Set.of("email", "age"))).isEmpty();
         }
 
         @Test
-        @DisplayName("unindexed field throws without allowScan")
-        void unindexedFieldThrows() {
-            assertThatThrownBy(() -> schema.validateQuery(Set.of("name"), false))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("name")
-                    .hasMessageContaining("not indexed");
+        @DisplayName("unindexed field returns warning")
+        void unindexedFieldWarns() {
+            var warnings = schema.checkIndexes(Set.of("name"));
+            assertThat(warnings).hasSize(1);
+            assertThat(warnings.getFirst()).contains("name").contains("not indexed");
         }
 
         @Test
-        @DisplayName("unindexed field passes with allowScan")
-        void unindexedFieldPassesWithAllowScan() {
-            schema.validateQuery(Set.of("name"), true);
+        @DisplayName("id field never warns")
+        void idFieldNeverWarns() {
+            assertThat(schema.checkIndexes(Set.of("id"))).isEmpty();
         }
 
         @Test
-        @DisplayName("id field always passes without index")
-        void idFieldAlwaysPasses() {
-            schema.validateQuery(Set.of("id"), false);
+        @DisplayName("mixed indexed and unindexed warns for unindexed only")
+        void mixedWarns() {
+            var warnings = schema.checkIndexes(Set.of("email", "name"));
+            assertThat(warnings).hasSize(1);
+            assertThat(warnings.getFirst()).contains("name");
         }
 
         @Test
-        @DisplayName("mixed indexed and unindexed throws")
-        void mixedThrows() {
-            assertThatThrownBy(() -> schema.validateQuery(Set.of("email", "name"), false))
-                    .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("name");
-        }
-
-        @Test
-        @DisplayName("empty filter passes")
-        void emptyFilterPasses() {
-            schema.validateQuery(Set.of(), false);
+        @DisplayName("empty filter returns no warnings")
+        void emptyFilterNoWarnings() {
+            assertThat(schema.checkIndexes(Set.of())).isEmpty();
         }
     }
 }
