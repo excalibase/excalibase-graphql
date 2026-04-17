@@ -52,6 +52,8 @@
         <tomcat.version>10.1.54</tomcat.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
         <jackson.version>2.21.2</jackson.version>
+        <!-- Pinned to patch Snyk LOW CVE in transitive kotlin-stdlib via okhttp -->
+        <opentelemetry.version>1.52.0</opentelemetry.version>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
         <!-- databases -->
         <postgresql.version>42.7.7</postgresql.version>
@@ -68,7 +70,7 @@
         <groovy-json.version>4.0.24</groovy-json.version>
 
         <!--nats-->
-        <jnats.version>2.17.6</jnats.version>
+        <jnats.version>2.22.0</jnats.version>
 
         <!--testing-->
         <testcontainers.version>1.21.4</testcontainers.version>
@@ -79,6 +81,12 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Pinned to patch Snyk LOW CVE in transitive kotlin-stdlib -->
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-exporter-otlp</artifactId>
+                <version>${opentelemetry.version}</version>
+            </dependency>
             <!-- Pinned to patch Snyk HIGH CVEs in transitive jackson-core -->
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
