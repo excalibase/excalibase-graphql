@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.0</version>
+        <version>3.5.12</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
@@ -48,10 +48,13 @@
 
     <properties>
         <java.version>25</java.version>
-        <springboot.version>3.5.0</springboot.version>
+        <springboot.version>3.5.12</springboot.version>
+        <tomcat.version>10.1.54</tomcat.version>
+        <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
+        <jackson.version>2.21.2</jackson.version>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
         <!-- databases -->
-        <postgresql.version>42.7.4</postgresql.version>
+        <postgresql.version>42.7.7</postgresql.version>
         <mysql.connector.version>9.2.0</mysql.connector.version>
         <!--java graphql-->
         <graphql.java.version>24.0</graphql.java.version>
@@ -76,13 +79,22 @@
 
     <dependencyManagement>
         <dependencies>
-            <!--            <dependency>-->
-            <!--                <groupId>org.springframework.boot</groupId>-->
-            <!--                <artifactId>spring-boot-dependencies</artifactId>-->
-            <!--                <version>${springboot.version}</version>-->
-            <!--                <type>pom</type>-->
-            <!--                <scope>import</scope>-->
-            <!--            </dependency>-->
+            <!-- Pinned to patch Snyk HIGH CVEs in transitive jackson-core -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-annotations</artifactId>
+                <version>${jackson.version}</version>
+            </dependency>
             <!--Springboot-->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
