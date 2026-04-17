@@ -10,6 +10,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -23,9 +24,19 @@ public class CollectionSchemaManager {
             "data\\s*->>\\s*'([^']+)'");
     private static final Pattern CAST_PATTERN = Pattern.compile(
             "::(numeric|boolean|integer|int|float)");
+    // DDL-safe identifier: starts with letter/underscore, max 63 chars (Postgres NAMEDATALEN),
+    // only alphanumerics and underscores. Prevents SQL injection via collection/field names.
+    private static final Pattern IDENT_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]{0,62}$");
+
+    private static String safeIdent(String value, String kind) {
+        if (value == null || !IDENT_PATTERN.matcher(value).matches()) {
+            throw new IllegalArgumentException("Invalid " + kind + ": must match [a-zA-Z_][a-zA-Z0-9_]{0,62}");
+        }
+        return value;
+    }
 
     private final JdbcTemplate jdbc;
-    private volatile CollectionInfo collectionInfo = new CollectionInfo();
+    private final AtomicReference<CollectionInfo> collectionInfo = new AtomicReference<>(new CollectionInfo());
 
     public CollectionSchemaManager(JdbcTemplate jdbc,
                                     @Autowired(required = false) NatsCDCService natsCDCService) {
@@ -99,7 +110,7 @@ public class CollectionSchemaManager {
     }
 
     public CollectionInfo getCollectionInfo() {
-        return collectionInfo;
+        return collectionInfo.get();
     }
 
     public Map<String, Object> syncSchema(Map<String, Object> schemaRequest) {
@@ -152,7 +163,7 @@ public class CollectionSchemaManager {
         discoverCollections();
 
         return Map.of("created", created, "updated", updated,
-                       "collections", collectionInfo.getCollectionNames().size());
+                       "collections", collectionInfo.get().getCollectionNames().size());
     }
 
     private void ensureSchema() {
@@ -181,6 +192,7 @@ public class CollectionSchemaManager {
     }
 
     private void createTable(String collection) {
+        safeIdent(collection, "collection name");
         jdbc.execute("CREATE TABLE IF NOT EXISTS " + NOSQL_SCHEMA + ".\"" + collection + "\" (" +
                 "id UUID PRIMARY KEY DEFAULT gen_random_uuid(), " +
                 "data JSONB NOT NULL, " +
@@ -207,7 +219,8 @@ public class CollectionSchemaManager {
         }
 
         for (String orphan : existing.keySet()) {
-            if (orphan.startsWith("idx_") || orphan.startsWith("uidx_")) {
+            if ((orphan.startsWith("idx_") || orphan.startsWith("uidx_"))
+                    && IDENT_PATTERN.matcher(orphan).matches()) {
                 jdbc.execute("DROP INDEX IF EXISTS " + NOSQL_SCHEMA + ".\"" + orphan + "\"");
                 log.info("Dropped orphan index: {}", orphan);
             }
@@ -216,10 +229,13 @@ public class CollectionSchemaManager {
 
     private void createExpressionIndex(String collection, String indexName,
                                         List<String> fields, String type, boolean unique) {
+        safeIdent(collection, "collection name");
+        safeIdent(indexName, "index name");
         var exprs = new ArrayList<String>();
         var predicates = new ArrayList<String>();
 
         for (String field : fields) {
+            safeIdent(field, "field name");
             String expr = switch (type) {
                 case "number", "numeric" -> "((data->>'" + field + "')::numeric)";
                 case "boolean" -> "((data->>'" + field + "')::boolean)";
@@ -252,6 +268,8 @@ public class CollectionSchemaManager {
     }
 
     private void addSearchColumn(String collection, String field) {
+        safeIdent(collection, "collection name");
+        safeIdent(field, "search field name");
         String table = NOSQL_SCHEMA + ".\"" + collection + "\"";
         try {
             jdbc.execute("ALTER TABLE " + table +
@@ -260,11 +278,17 @@ public class CollectionSchemaManager {
             jdbc.execute("CREATE INDEX IF NOT EXISTS idx_" + collection + "_search ON " + table + " USING gin(search_text)");
             log.info("Added search column for field '{}' on collection '{}'", field, collection);
         } catch (Exception e) {
-            log.warn("Failed to add search column on {}: {}", collection, e.getMessage());
+            throw new IllegalStateException(
+                    "Failed to add search column on '" + collection + "': " + e.getMessage(), e);
         }
     }
 
     private void addVectorColumn(String collection, String field, int dimensions) {
+        safeIdent(collection, "collection name");
+        if (field != null) safeIdent(field, "vector field name");
+        if (dimensions < 1 || dimensions > 16000) {
+            throw new IllegalArgumentException("Vector dimensions must be between 1 and 16000");
+        }
         String table = NOSQL_SCHEMA + ".\"" + collection + "\"";
         try {
             jdbc.execute("ALTER TABLE " + table +
@@ -273,7 +297,8 @@ public class CollectionSchemaManager {
                     " USING hnsw(embedding vector_cosine_ops)");
             log.info("Added vector column ({} dims) on collection '{}'", dimensions, collection);
         } catch (Exception e) {
-            log.warn("Failed to add vector column on {}: {}", collection, e.getMessage());
+            throw new IllegalStateException(
+                    "Failed to add vector column on '" + collection + "': " + e.getMessage(), e);
         }
     }
 
@@ -296,7 +321,7 @@ public class CollectionSchemaManager {
                 },
                 NOSQL_SCHEMA);
 
-        collectionInfo = newInfo;
+        collectionInfo.set(newInfo);
         log.info("Discovered {} NoSQL collections", newInfo.getCollectionNames().size());
     }
 
@@ -320,7 +345,7 @@ public class CollectionSchemaManager {
                 return new VectorDef("embedding", 0);
             }
         } catch (Exception e) {
-            // ignore
+            log.debug("Failed to detect vector column for {}: {}", collection, e.getMessage());
         }
         return null;
     }

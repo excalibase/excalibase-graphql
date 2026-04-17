@@ -282,6 +282,48 @@ class DocumentQueryCompilerTest {
     }
 
     @Nested
+    @DisplayName("SQL injection protection")
+    class InjectionProtection {
+
+        @Test
+        @DisplayName("reject malicious filter field name")
+        void rejectMaliciousFilterField() {
+            var filter = new LinkedHashMap<String, Object>();
+            filter.put("email'; DROP TABLE users; --", "x");
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    compiler.compileFind("users", filter, new FindOptions(30, 0, null)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Invalid filter field");
+        }
+
+        @Test
+        @DisplayName("reject malicious sort field name")
+        void rejectMaliciousSortField() {
+            var sort = Map.<String, Object>of("email') DESC; DROP TABLE users; --", 1);
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    compiler.compileFind("users", Map.of(), new FindOptions(30, 0, sort)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Invalid sort field");
+        }
+
+        @Test
+        @DisplayName("reject malicious collection name")
+        void rejectMaliciousCollection() {
+            collectionInfo.addCollection("users\"; DROP TABLE hana.users; --", new CollectionSchema(
+                    "users\"; DROP TABLE hana.users; --",
+                    Map.of(), List.of(), Set.of(), null, null));
+
+            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
+                    compiler.compileFind("users\"; DROP TABLE hana.users; --", Map.of(),
+                            new FindOptions(30, 0, null)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Invalid collection name");
+        }
+    }
+
+    @Nested
     @DisplayName("Comparison operators")
     class Operators {
 

@@ -2,6 +2,8 @@ package io.github.excalibase.nosql.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.nosql.compiler.DocumentQueryCompiler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -11,6 +13,8 @@ import java.util.*;
 
 @Service
 public class DocumentExecutionService {
+
+    private static final Logger log = LoggerFactory.getLogger(DocumentExecutionService.class);
 
     private final NamedParameterJdbcTemplate namedJdbc;
     private final ObjectMapper mapper;
@@ -69,6 +73,7 @@ public class DocumentExecutionService {
         try {
             return new LinkedHashMap<>(mapper.readValue(json, Map.class));
         } catch (Exception e) {
+            log.warn("Failed to parse JSONB document — returning empty map", e);
             return new LinkedHashMap<>();
         }
     }

@@ -9,11 +9,20 @@ import io.github.excalibase.nosql.model.IndexDef;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 public class DocumentQueryCompiler {
 
     private static final String NOSQL_SCHEMA = "nosql";
     private static final ObjectMapper MAPPER = new ObjectMapper();
+    private static final Pattern IDENT_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+
+    private static String safeIdent(String name, String context) {
+        if (name == null || !IDENT_PATTERN.matcher(name).matches()) {
+            throw new IllegalArgumentException("Invalid " + context + ": " + name);
+        }
+        return name;
+    }
 
     private final CollectionInfo collectionInfo;
 
@@ -194,7 +203,7 @@ public class DocumentQueryCompiler {
     }
 
     private String qualifiedTable(String collection) {
-        return NOSQL_SCHEMA + ".\"" + collection + "\"";
+        return NOSQL_SCHEMA + ".\"" + safeIdent(collection, "collection name") + "\"";
     }
 
     private String selectClause() {
@@ -214,7 +223,7 @@ public class DocumentQueryCompiler {
         int paramIdx = params.size();
 
         for (var entry : filter.entrySet()) {
-            String field = entry.getKey();
+            String field = safeIdent(entry.getKey(), "filter field");
             Object value = entry.getValue();
             String indexType = findIndexType(schema, field);
             String colRef = buildColRef(field, indexType);
@@ -255,7 +264,7 @@ public class DocumentQueryCompiler {
 
         var orders = new java.util.ArrayList<String>();
         for (var entry : sort.entrySet()) {
-            String field = entry.getKey();
+            String field = safeIdent(entry.getKey(), "sort field");
             int direction = entry.getValue() instanceof Number n ? n.intValue() : 1;
             String dir = direction < 0 ? "DESC" : "ASC";
             orders.add("(data->>'" + field + "') " + dir);

@@ -5,6 +5,7 @@ import io.github.excalibase.nosql.compiler.FindOptions;
 import io.github.excalibase.nosql.model.CollectionSchema;
 import io.github.excalibase.nosql.schema.CollectionSchemaManager;
 import io.github.excalibase.nosql.service.DocumentExecutionService;
+import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -134,18 +135,29 @@ public class NoSqlController {
         }
 
         if (body.containsKey("docs")) {
-            @SuppressWarnings("unchecked")
-            var docs = (List<Map<String, Object>>) body.get("docs");
-            if (docs == null || docs.isEmpty()) {
+            if (!(body.get("docs") instanceof List<?> rawList) || rawList.isEmpty()) {
                 return ResponseEntity.badRequest().body(Map.of("error", "docs array required"));
+            }
+            var docs = new ArrayList<Map<String, Object>>();
+            for (Object item : rawList) {
+                if (!(item instanceof Map<?, ?> m)) {
+                    return ResponseEntity.badRequest().body(Map.of("error", "docs must be array of objects"));
+                }
+                @SuppressWarnings("unchecked")
+                var doc = (Map<String, Object>) m;
+                docs.add(doc);
             }
             var compiled = compiler().compileInsertMany(collection, docs);
             var results = executionService.executeBulkMutation(compiled);
             return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("data", results));
         }
 
+        Object rawDoc = body.getOrDefault("doc", body);
+        if (!(rawDoc instanceof Map<?, ?>)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "doc must be an object"));
+        }
         @SuppressWarnings("unchecked")
-        var doc = (Map<String, Object>) body.getOrDefault("doc", body);
+        var doc = (Map<String, Object>) rawDoc;
         var compiled = compiler().compileInsertOne(collection, doc);
         var result = executionService.executeMutation(compiled);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("data", result));
@@ -190,7 +202,7 @@ public class NoSqlController {
         try {
             var result = executionService.executeMutation(compiled);
             return ResponseEntity.ok(Map.of("data", result));
-        } catch (Exception e) {
+        } catch (EmptyResultDataAccessException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found"));
         }
     }
