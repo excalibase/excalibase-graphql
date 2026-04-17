@@ -9,7 +9,6 @@ import io.github.excalibase.compiler.SqlCompiler;
 import java.util.*;
 import static io.github.excalibase.schema.GraphqlConstants.*;
 import static io.github.excalibase.compiler.SqlKeywords.*;
-import static io.github.excalibase.compiler.SqlKeywords.*;
 
 /**
  * PostgreSQL mutation compiler. Uses CTE + RETURNING pattern.

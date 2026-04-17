@@ -471,7 +471,7 @@ public class FilterBuilder {
     /**
      * Appends LIMIT and OFFSET clauses to the SQL builder, capped by maxRows.
      */
-    public void applyLimit(StringBuilder sql, Field field, String alias, Map<String, Object> params) {
+    public void applyLimit(StringBuilder sql, Field field, Map<String, Object> params) {
         int limit = maxRows;
         for (Argument arg : field.getArguments()) {
             if (ARG_LIMIT.equals(arg.getName()) || ARG_FIRST.equals(arg.getName())) {

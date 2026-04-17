@@ -168,10 +168,10 @@ public class JwtService {
         });
     }
 
-    private List<ECPublicKey> fetchKeys() throws java.io.IOException, java.text.ParseException {
-        JWKSet jwkSet = JWKSet.load(new URL(jwksUrl));
+    private List<ECPublicKey> fetchKeys() throws java.io.IOException, java.text.ParseException, java.net.URISyntaxException {
+        JWKSet jwkSet = JWKSet.load(new java.net.URI(jwksUrl).toURL());
         List<ECPublicKey> ecKeys = jwkSet.getKeys().stream()
-                .filter(k -> k instanceof ECKey)
+                .filter(ECKey.class::isInstance)
                 .map(k -> {
                     try {
                         return ((ECKey) k).toECPublicKey();

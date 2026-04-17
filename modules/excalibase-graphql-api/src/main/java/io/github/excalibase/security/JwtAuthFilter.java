@@ -1,7 +1,6 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.config.datasource.TenantContext;
-import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

@@ -8,7 +8,7 @@ public final class OpenApiGenerator {
 
     private OpenApiGenerator() {}
 
-    public static Map<String, Object> generate(SchemaInfo schemaInfo, String defaultSchema, int port) {
+    public static Map<String, Object> generate(SchemaInfo schemaInfo, String defaultSchema) {
         Map<String, Object> spec = new LinkedHashMap<>();
         spec.put("openapi", "3.0.3");
         spec.put("info", Map.of(

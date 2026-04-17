@@ -14,8 +14,10 @@ import java.util.regex.Pattern;
 public class DocumentQueryCompiler {
 
     private static final String NOSQL_SCHEMA = "nosql";
+    private static final String SELECT_CLAUSE = "SELECT id, data, created_at, updated_at";
+    private static final String RETURNING_CLAUSE = "id, data, created_at, updated_at";
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Pattern IDENT_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]*$");
+    private static final Pattern IDENT_PATTERN = Pattern.compile("^[a-zA-Z_]\\w*$");
 
     private static String safeIdent(String name, String context) {
         if (name == null || !IDENT_PATTERN.matcher(name).matches()) {
@@ -37,7 +39,7 @@ public class DocumentQueryCompiler {
         var params = new LinkedHashMap<String, Object>();
         var sql = new StringBuilder();
 
-        sql.append(selectClause());
+        sql.append(SELECT_CLAUSE);
         sql.append(" FROM ").append(qualifiedTable(collection));
 
         appendWhere(sql, filter, schema, params);
@@ -52,7 +54,7 @@ public class DocumentQueryCompiler {
         var params = new LinkedHashMap<String, Object>();
         var sql = new StringBuilder();
 
-        sql.append(selectClause());
+        sql.append(SELECT_CLAUSE);
         sql.append(" FROM ").append(qualifiedTable(collection));
         appendWhere(sql, filter, schema, params);
         sql.append(" LIMIT 1");
@@ -64,7 +66,7 @@ public class DocumentQueryCompiler {
         var params = new LinkedHashMap<String, Object>();
         params.put("id", id);
 
-        var sql = selectClause() +
+        var sql = SELECT_CLAUSE +
                 " FROM " + qualifiedTable(collection) +
                 " WHERE id = :id::uuid LIMIT 1";
 
@@ -77,7 +79,7 @@ public class DocumentQueryCompiler {
 
         var sql = "INSERT INTO " + qualifiedTable(collection) + " (data)" +
                 " VALUES (:data::jsonb)" +
-                " RETURNING " + returningClause();
+                " RETURNING " + RETURNING_CLAUSE;
 
         return new CompiledDoc(sql, params);
     }
@@ -95,7 +97,7 @@ public class DocumentQueryCompiler {
 
         var sql = "INSERT INTO " + qualifiedTable(collection) + " (data)" +
                 " VALUES " + values +
-                " RETURNING " + returningClause();
+                " RETURNING " + RETURNING_CLAUSE;
 
         return new CompiledDoc(sql, params);
     }
@@ -115,7 +117,7 @@ public class DocumentQueryCompiler {
         sql.append("UPDATE ").append(qualifiedTable(collection));
         sql.append(" SET data = data || :patch::jsonb, updated_at = clock_timestamp()");
         appendWhere(sql, filter, schema, params);
-        sql.append(" RETURNING ").append(returningClause());
+        sql.append(" RETURNING ").append(RETURNING_CLAUSE);
 
         return new CompiledDoc(sql.toString(), params);
     }
@@ -134,7 +136,7 @@ public class DocumentQueryCompiler {
 
         var sql = "DELETE FROM " + qualifiedTable(collection) +
                 " WHERE id = :id::uuid" +
-                " RETURNING " + returningClause();
+                " RETURNING " + RETURNING_CLAUSE;
 
         return new CompiledDoc(sql, params);
     }
@@ -146,7 +148,7 @@ public class DocumentQueryCompiler {
         var sql = new StringBuilder();
         sql.append("DELETE FROM ").append(qualifiedTable(collection));
         appendWhere(sql, filter, schema, params);
-        sql.append(" RETURNING ").append(returningClause());
+        sql.append(" RETURNING ").append(RETURNING_CLAUSE);
 
         return new CompiledDoc(sql.toString(), params);
     }
@@ -160,7 +162,7 @@ public class DocumentQueryCompiler {
         params.put("query", query);
         params.put("limit", Math.min(limit, 1000));
 
-        var sql = selectClause() + ", ts_rank(search_text, websearch_to_tsquery(:query)) AS rank" +
+        var sql = SELECT_CLAUSE + ", ts_rank(search_text, websearch_to_tsquery(:query)) AS rank" +
                 " FROM " + qualifiedTable(collection) +
                 " WHERE search_text @@ websearch_to_tsquery(:query)" +
                 " ORDER BY rank DESC" +
@@ -178,7 +180,7 @@ public class DocumentQueryCompiler {
         params.put("embedding", embedding.toString());
         params.put("topK", Math.min(topK, 1000));
 
-        var sql = selectClause() + ", embedding <=> :embedding::vector AS distance" +
+        var sql = SELECT_CLAUSE + ", embedding <=> :embedding::vector AS distance" +
                 " FROM " + qualifiedTable(collection) +
                 " ORDER BY embedding <=> :embedding::vector" +
                 " LIMIT :topK";
@@ -204,14 +206,6 @@ public class DocumentQueryCompiler {
 
     private String qualifiedTable(String collection) {
         return NOSQL_SCHEMA + ".\"" + safeIdent(collection, "collection name") + "\"";
-    }
-
-    private String selectClause() {
-        return "SELECT id, data, created_at, updated_at";
-    }
-
-    private String returningClause() {
-        return "id, data, created_at, updated_at";
     }
 
     @SuppressWarnings("unchecked")

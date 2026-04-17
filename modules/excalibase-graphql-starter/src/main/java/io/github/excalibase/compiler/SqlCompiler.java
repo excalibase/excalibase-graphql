@@ -95,7 +95,7 @@ public class SqlCompiler {
                         String procNameResolved = mutationBuilder.resolveStoredProcedure(fieldName.substring("call".length()));
                         if (procNameResolved != null) {
                             ProcedureCallInfo callInfo = mutationBuilder.buildProcedureCallInfo(
-                                    field, procNameResolved, params, variables);
+                                    field, procNameResolved, variables);
                             if (callInfo != null) {
                                 return new CompiledQuery(null, params, null, null, true, fieldName, callInfo);
                             }
@@ -140,11 +140,14 @@ public class SqlCompiler {
 
                     boolean isConnection = fieldName.endsWith("Connection");
                     boolean isAggregate = fieldName.endsWith("Aggregate");
-                    String sql = isAggregate
-                            ? queryBuilder.compileAggregate(field, tableName, params)
-                            : isConnection
-                            ? queryBuilder.compileConnection(field, tableName, params)
-                            : queryBuilder.compileList(field, tableName, params);
+                    String sql;
+                    if (isAggregate) {
+                        sql = queryBuilder.compileAggregate(field, tableName, params);
+                    } else if (isConnection) {
+                        sql = queryBuilder.compileConnection(field, tableName, params);
+                    } else {
+                        sql = queryBuilder.compileList(field, tableName, params);
+                    }
 
                     String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
                     rootResults.add("'" + responseKey + "', (" + sql + ")");

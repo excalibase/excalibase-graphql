@@ -52,6 +52,7 @@ class WebSocketSubscriptionTest {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
+    @SuppressWarnings("java:S2925") // Poll loop for async subscription registration in integration test
     private void awaitSubscription(String tableName) throws InterruptedException {
         for (int i = 0; i < 50; i++) {
             if (subscriptionService.hasSubscribers(tableName)) return;
@@ -186,6 +187,7 @@ class WebSocketSubscriptionTest {
     @Test
     @Order(4)
     @DisplayName("complete cancels subscription")
+    @SuppressWarnings("java:S2925") // Thread.sleep waits for WebSocket async cancel to propagate
     void complete_cancelsSubscription_noMoreEvents() throws Exception {
         BlockingQueue<String> messages = new LinkedBlockingQueue<>();
         WebSocketSession session = connectWebSocket(messages);

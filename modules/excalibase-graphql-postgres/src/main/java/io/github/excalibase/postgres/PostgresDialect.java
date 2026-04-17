@@ -72,7 +72,7 @@ public class PostgresDialect implements SqlDialect {
                 .map(col -> quoteIdentifier(col) + " = EXCLUDED." + quoteIdentifier(col))
                 .collect(Collectors.joining(", "));
         // If single value looks like a constraint name (contains no spaces), use ON CONSTRAINT syntax
-        if (conflictCols.size() == 1 && conflictCols.getFirst().matches("[a-zA-Z_][a-zA-Z0-9_]*")) {
+        if (conflictCols.size() == 1 && conflictCols.getFirst().matches("[a-zA-Z_]\\w*")) {
             return "ON CONFLICT ON CONSTRAINT " + quoteIdentifier(conflictCols.getFirst()) + " DO UPDATE SET " + sets;
         }
         String cols = conflictCols.stream()

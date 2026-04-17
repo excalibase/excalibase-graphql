@@ -26,11 +26,11 @@ public class CollectionSchemaManager {
             "::(numeric|boolean|integer|int|float)");
     // DDL-safe identifier: starts with letter/underscore, max 63 chars (Postgres NAMEDATALEN),
     // only alphanumerics and underscores. Prevents SQL injection via collection/field names.
-    private static final Pattern IDENT_PATTERN = Pattern.compile("^[a-zA-Z_][a-zA-Z0-9_]{0,62}$");
+    private static final Pattern IDENT_PATTERN = Pattern.compile("^[a-zA-Z_]\\w{0,62}$");
 
     private static String safeIdent(String value, String kind) {
         if (value == null || !IDENT_PATTERN.matcher(value).matches()) {
-            throw new IllegalArgumentException("Invalid " + kind + ": must match [a-zA-Z_][a-zA-Z0-9_]{0,62}");
+            throw new IllegalArgumentException("Invalid " + kind + ": must match [a-zA-Z_]\\w{0,62}");
         }
         return value;
     }

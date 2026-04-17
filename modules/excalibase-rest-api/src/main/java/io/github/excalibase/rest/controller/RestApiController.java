@@ -1,7 +1,6 @@
 package io.github.excalibase.rest.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.excalibase.SqlDialect;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;
@@ -59,8 +58,7 @@ public class RestApiController {
     public ResponseEntity<Object> openapi(HttpServletRequest request) {
         var claims = getClaims(request);
         var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
-        int port = request.getServerPort();
-        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.getDefaultSchema(), port));
+        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.getDefaultSchema()));
     }
 
     @SuppressWarnings("java:S3776") // PostgREST-compatible query handler: count, cursor pagination, CSV, singular object, content negotiation all branch from one entry point
@@ -109,7 +107,8 @@ public class RestApiController {
         limit = Math.min(Math.max(limit, 1), maxRows);
         boolean count = preferContains(prefer, "count=exact");
         var compiled = ctx.compiler().compileSelect(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, limit, offset, count);
-        int finalLimit = limit; int finalOffset = offset;
+        int finalLimit = limit;
+        int finalOffset = offset;
         var resp = executeInTx(compiled, ctx.claims(), rows -> {
             var response = new LinkedHashMap<String, Object>();
             response.put("data", parseJsonList(rows.get("body")));
@@ -255,7 +254,7 @@ public class RestApiController {
                 String json = rows.isEmpty() ? null : rows.get(0);
 
                 if (maxAffected != null && json != null) {
-                    List<?> affected = parseJsonList((Object) json);
+                    List<?> affected = parseJsonList(json);
                     if (affected.size() > maxAffected) {
                         status.setRollbackOnly();
                         return ResponseEntity.badRequest().body(Map.of("error", "Affected rows exceed max-affected limit"));

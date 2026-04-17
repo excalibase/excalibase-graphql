@@ -107,7 +107,7 @@ public class QueryBuilder {
             sql.append(LIMIT).append(":").append(paramName);
             params.put(paramName, vlimit);
         } else {
-            filterBuilder.applyLimit(sql, field, alias, params);
+            filterBuilder.applyLimit(sql, field, params);
         }
 
         sql.append(") ").append(alias);
@@ -221,8 +221,10 @@ public class QueryBuilder {
         }
 
         // Parse pagination args: first, last, after, before
-        Integer first = null, last = null;
-        String afterCursor = null, beforeCursor = null;
+        Integer first = null;
+        Integer last = null;
+        String afterCursor = null;
+        String beforeCursor = null;
         for (Argument arg : field.getArguments()) {
             String argName = arg.getName();
             Map<String, Object> vars = FilterBuilder.boundVariables();
@@ -244,7 +246,8 @@ public class QueryBuilder {
         if (orderCols.isEmpty()) orderCols.add(new String[]{pk, ASC});
 
         boolean isForward = (last == null); // forward pagination by default, backward if "last" is used
-        int limit = isForward ? (first != null ? first : maxRows) : last;
+        int forwardLimit = (first != null) ? first : maxRows;
+        int limit = isForward ? forwardLimit : last;
 
         // === Build CTE-based Connection SQL ===
         StringBuilder sql = new StringBuilder();
@@ -542,9 +545,15 @@ public class QueryBuilder {
     Object decodeCursor(String cursor) {
         String decoded = new String(Base64.getDecoder().decode(cursor));
         // Try to parse as number for proper comparison with PK columns
-        try { return Integer.parseInt(decoded); } catch (NumberFormatException ignored) {}
-        try { return Long.parseLong(decoded); } catch (NumberFormatException ignored) {}
-        return decoded;
+        try {
+            return Integer.parseInt(decoded);
+        } catch (NumberFormatException ignoredInt) {
+            try {
+                return Long.parseLong(decoded);
+            } catch (NumberFormatException ignoredLong) {
+                return decoded;
+            }
+        }
     }
 
     private String getPk(String tableName) {

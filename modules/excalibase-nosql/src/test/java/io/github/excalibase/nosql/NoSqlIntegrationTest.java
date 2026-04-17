@@ -266,7 +266,7 @@ class NoSqlIntegrationTest {
         void count() {
             long count = executionService.executeCount(
                     compiler.compileCount("posts", Map.of("status", "draft")));
-            assertThat(count).isGreaterThanOrEqualTo(0);
+            assertThat(count).isNotNegative();
         }
 
         @Test
@@ -312,7 +312,7 @@ class NoSqlIntegrationTest {
 
             long count = executionService.executeCount(
                     compiler.compileCount("posts", Map.of("status", "archived")));
-            assertThat(count).isEqualTo(0);
+            assertThat(count).isZero();
         }
     }
 

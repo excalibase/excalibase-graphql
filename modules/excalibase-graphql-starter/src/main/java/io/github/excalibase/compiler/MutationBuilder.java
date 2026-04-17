@@ -73,7 +73,7 @@ public class MutationBuilder {
     // === Stored procedure support ===
 
     public SqlCompiler.ProcedureCallInfo buildProcedureCallInfo(Field field, String procName,
-                                                                  Map<String, Object> params, Map<String, Object> variables) {
+                                                                  Map<String, Object> variables) {
         SchemaInfo.ProcedureInfo proc = schemaInfo.getStoredProcedures().get(procName);
         if (proc == null) return null;
 
