@@ -55,7 +55,7 @@
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
         <!-- databases -->
         <postgresql.version>42.7.7</postgresql.version>
-        <mysql.connector.version>9.2.0</mysql.connector.version>
+        <mysql.connector.version>9.3.0</mysql.connector.version>
         <!--java graphql-->
         <graphql.java.version>24.0</graphql.java.version>
 
