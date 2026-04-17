@@ -33,8 +33,6 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0  # Required for SonarQube branch/PR analysis
 
     - name: Set up JDK 21
       uses: actions/setup-java@v4
@@ -50,13 +48,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-maven-
 
-    - name: Cache SonarQube packages
-      uses: actions/cache@v4
-      with:
-        path: ~/.sonar/cache
-        key: ${{ runner.os }}-sonar
-        restore-keys: ${{ runner.os }}-sonar
-
     - name: Run tests with coverage
       run: mvn clean verify ${{ env.MAVEN_CLI_OPTS }}
 
@@ -70,33 +61,6 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
         min-coverage-overall: 40
         min-coverage-changed-files: 60
-
-    - name: SonarQube analysis
-      if: env.SONAR_TOKEN != ''
-      env:
-        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
-        PR_KEY: ${{ github.event.number }}
-        PR_BRANCH: ${{ github.head_ref }}
-        PR_BASE: ${{ github.base_ref }}
-        BRANCH_NAME: ${{ github.ref_name }}
-        REPO: ${{ github.repository }}
-        EVENT_NAME: ${{ github.event_name }}
-      run: |
-        if [ "$EVENT_NAME" = "pull_request" ]; then
-          SONAR_EXTRA="-Dsonar.pullrequest.key=$PR_KEY \
-            -Dsonar.pullrequest.branch=$PR_BRANCH \
-            -Dsonar.pullrequest.base=$PR_BASE \
-            -Dsonar.pullrequest.provider=github \
-            -Dsonar.pullrequest.github.repository=$REPO"
-        else
-          SONAR_EXTRA="-Dsonar.branch.name=$BRANCH_NAME"
-        fi
-        mvn sonar:sonar ${{ env.MAVEN_CLI_OPTS }} \
-          -Dsonar.projectKey=Excalibase-Graphql \
-          "-Dsonar.projectName=Excalibase Graphql" \
-          -Dsonar.coverage.jacoco.xmlReportPaths=${{ github.workspace }}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml \
-          $SONAR_EXTRA
 
     - name: Upload coverage reports
       uses: actions/upload-artifact@v4
