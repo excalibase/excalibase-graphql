@@ -71,7 +71,7 @@ public class QueryExecutionService {
         String callSql = "CALL " + qualifiedName + "(" + placeholders + ")";
 
         try (Connection conn = dataSource.getConnection();
-             CallableStatement cs = conn.prepareCall(callSql)) {
+             CallableStatement cs = conn.prepareCall(callSql)) { // NOSONAR — qualifiedName validated above, args use setObject placeholders
 
             int idx = 1;
             for (SqlCompiler.ProcedureCallParam p : callInfo.allParams()) {

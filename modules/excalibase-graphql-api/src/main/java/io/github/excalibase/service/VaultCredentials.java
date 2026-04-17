@@ -29,7 +29,8 @@ public record VaultCredentials(String host, String port, String database,
 
   @Override
   public String toString() {
+    // NOSONAR: literal "password" is a redaction label, not a hard-coded secret
     return "VaultCredentials[host=" + host + ", port=" + port +
-        ", database=" + database + ", username=" + username + ", password=REDACTED]";
+        ", database=" + database + ", username=" + username + ", password=REDACTED]"; // NOSONAR
   }
 }

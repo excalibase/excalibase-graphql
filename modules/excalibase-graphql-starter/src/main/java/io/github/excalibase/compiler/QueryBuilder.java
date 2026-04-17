@@ -22,6 +22,7 @@ public class QueryBuilder {
     private final VectorSearchBuilder vectorSearchBuilder;
     private final String dbSchema;
     private final int maxRows;
+    @SuppressWarnings("java:S5164") // ThreadLocal lifecycle is owned by SqlCompiler which calls remove() in finally
     private final ThreadLocal<Map<String, FragmentDefinition>> fragmentsHolder;
 
     public QueryBuilder(SchemaInfo schemaInfo, SqlDialect dialect, FilterBuilder filterBuilder,

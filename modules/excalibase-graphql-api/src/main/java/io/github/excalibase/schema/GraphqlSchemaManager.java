@@ -24,6 +24,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Manages database schema introspection, compiler creation, and hot reloads.
@@ -44,7 +45,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
     public record EngineState(SqlCompiler compiler, IntrospectionHandler introspectionHandler,
                               MutationExecutor mutationExecutor) {}
 
-    private volatile EngineState engineState;
+    private final AtomicReference<EngineState> engineState = new AtomicReference<>();
     private volatile String defaultSchema;
     private final TTLCache<String, EngineState> tenantEngineStates;
 
@@ -95,7 +96,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
         MutationExecutor mutationExecutor = SqlEngineFactory.createMutationExecutor(
                 databaseType, jdbcTemplate, txTemplate);
 
-        engineState = new EngineState(newCompiler, newHandler, mutationExecutor);
+        engineState.set(new EngineState(newCompiler, newHandler, mutationExecutor));
     }
 
     /**
@@ -104,7 +105,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
      * instead of returning an empty schema.
      */
     public EngineState getEngineState() {
-        return engineState;
+        return engineState.get();
     }
 
     /**
@@ -116,7 +117,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
         if (claims != null && claims.orgSlug() != null && claims.projectName() != null) {
             return getEngineState(claims.orgSlug(), claims.projectName());
         }
-        return engineState;
+        return engineState.get();
     }
 
     /**
@@ -151,12 +152,12 @@ public class GraphqlSchemaManager implements SchemaProvider {
 
     /** Reinitialize schema and compiler. Called on DDL events from NatsCDCService. */
     public void reload() {
-        EngineState previous = engineState;
+        EngineState previous = engineState.get();
         try {
             init();
             log.info("Schema reloaded");
         } catch (Exception e) {
-            engineState = previous;
+            engineState.set(previous);
             log.error("Schema reload failed — retaining previous state", e);
         }
     }

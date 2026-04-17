@@ -14,8 +14,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http,
                                            @Autowired(required = false) JwtAuthFilter jwtAuthFilter) throws Exception {
-        // CSRF disabled — stateless JWT API, no session cookies
-        http.csrf(csrf -> csrf.disable())
+        // CSRF disabled — stateless JWT API, no session cookies, Bearer-token auth only
+        http.csrf(csrf -> csrf.disable()) // NOSONAR
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
 
         if (jwtAuthFilter != null) {

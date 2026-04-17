@@ -90,6 +90,9 @@ public class NatsCDCService {
             running.set(true);
             log.info("NATS CDC service started - subscribing to '{}' on stream '{}'", subject, streamName);
 
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("Interrupted while starting NATS CDC service", e);
         } catch (Exception e) {
             log.error("Failed to start NATS CDC service", e);
         }

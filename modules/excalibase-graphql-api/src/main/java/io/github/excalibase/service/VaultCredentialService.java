@@ -63,6 +63,10 @@ public class VaultCredentialService {
       );
     } catch (VaultCredentialException e) {
       throw e;
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new VaultCredentialException(
+          "Interrupted while fetching credentials for " + orgSlug + "/" + projectName, e);
     } catch (Exception e) {
       throw new VaultCredentialException(
           "Failed to fetch credentials for " + orgSlug + "/" + projectName, e);

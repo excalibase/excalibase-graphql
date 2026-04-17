@@ -119,7 +119,7 @@ public class RestApiController {
             }
             return ResponseEntity.ok().body((Object) response);
         });
-        return count ? withHeader(resp, "Preference-Applied", "count=exact") : resp;
+        return (count && resp != null) ? withHeader(resp, "Preference-Applied", "count=exact") : resp;
     }
 
     @SuppressWarnings("unchecked")
