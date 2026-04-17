@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "test:postgres": "jest postgres.test.js complex-domain.test.js --forceExit",
+    "test:nosql": "jest nosql.test.js --forceExit",
     "test:mysql": "jest mysql.test.js --forceExit",
     "test:subscription:postgres": "jest subscription.test.js --forceExit --testNamePattern='Postgres'",
     "test:subscription:mysql": "jest subscription.test.js --forceExit --testNamePattern='MySQL'",

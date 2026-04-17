@@ -464,6 +464,8 @@ run-tests-native: ## Execute test suite against native containers
 .PHONY: run-tests
 run-tests: ## Execute the actual test suite (queries/mutations + CDC subscriptions)
 	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Postgres tests failed$(NC)" && exit 1)
+	@echo "$(BLUE)🧪 Running NoSQL tests...$(NC)"
+	@cd e2e && npm run test:nosql || (echo "$(RED)❌ NoSQL tests failed$(NC)" && exit 1)
 	@echo "$(BLUE)🧪 Running CDC subscription tests...$(NC)"
 	@cd e2e && npm run test:subscription:postgres || (echo "$(RED)❌ Subscription tests failed$(NC)" && exit 1)
 

@@ -66,6 +66,10 @@
             <groupId>io.github.excalibase</groupId>
             <artifactId>excalibase-rest-api</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.github.excalibase</groupId>
+            <artifactId>excalibase-nosql</artifactId>
+        </dependency>
 
         <!--Graphql-->
         <dependency>
