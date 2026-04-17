@@ -65,6 +65,7 @@ public class IntrospectionHandler {
         return response;
     }
 
+    @SuppressWarnings("java:S3776") // GraphQL schema assembly is inherently sequential and branchy — splitting into helper methods harms readability of the type-construction flow
     private GraphQLSchema buildSchema(SchemaInfo schemaInfo) {
         Map<String, GraphQLObjectType> types = new LinkedHashMap<>();
         Map<String, GraphQLInputObjectType> whereTypes = new LinkedHashMap<>();

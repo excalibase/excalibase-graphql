@@ -15,6 +15,8 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
  */
 public class PostgresDialect implements SqlDialect {
 
+    private static final String JSONB_CAST = "::jsonb";
+
     @Override
     public String buildObject(List<String> keyValuePairs) {
         return "jsonb_build_object(" + String.join(", ", keyValuePairs) + ")";
@@ -210,10 +212,10 @@ public class PostgresDialect implements SqlDialect {
     @Override
     public Optional<String> jsonPredicateSql(JsonPredicate variant, String colRef, String paramRef) {
         return switch (variant) {
-            case EQ -> Optional.of(colRef + " = " + paramRef + "::jsonb");
-            case NEQ -> Optional.of(colRef + " != " + paramRef + "::jsonb");
-            case CONTAINS -> Optional.of(colRef + " @> " + paramRef + "::jsonb");
-            case CONTAINED_BY -> Optional.of(colRef + " <@ " + paramRef + "::jsonb");
+            case EQ -> Optional.of(colRef + " = " + paramRef + JSONB_CAST);
+            case NEQ -> Optional.of(colRef + " != " + paramRef + JSONB_CAST);
+            case CONTAINS -> Optional.of(colRef + " @> " + paramRef + JSONB_CAST);
+            case CONTAINED_BY -> Optional.of(colRef + " <@ " + paramRef + JSONB_CAST);
             case HAS_KEY -> Optional.of("jsonb_exists(" + colRef + ", " + paramRef + ")");
             case HAS_ALL_KEYS -> Optional.of("jsonb_exists_all(" + colRef + ", " + paramRef + ")");
             case HAS_ANY_KEYS -> Optional.of("jsonb_exists_any(" + colRef + ", " + paramRef + ")");

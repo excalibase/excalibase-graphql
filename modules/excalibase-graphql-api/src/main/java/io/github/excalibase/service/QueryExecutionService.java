@@ -26,6 +26,7 @@ public class QueryExecutionService {
 
     /** Only allows quoted identifiers like "schema"."proc_name" or schema.`proc_name` */
     private static final Pattern SAFE_IDENTIFIER = Pattern.compile("^[a-zA-Z0-9_.\"`]+$");
+    private static final String PROC_PARAM_MODE_INOUT = "INOUT";
 
     private final NamedParameterJdbcTemplate namedJdbc;
     private final DataSource dataSource;
@@ -56,6 +57,7 @@ public class QueryExecutionService {
         return ResponseEntity.ok(Map.of("data", Map.of()));
     }
 
+    @SuppressWarnings("java:S3776") // JDBC CallableStatement handling: IN/OUT/INOUT param registration, OUT value extraction, result set conversion must happen in sequence
     public ResponseEntity<Object> executeProcedureCall(SqlCompiler.CompiledQuery compiled) throws Exception {
         SqlCompiler.ProcedureCallInfo callInfo = compiled.procedureCallInfo();
         String fieldName = compiled.mutationFieldName();
@@ -75,14 +77,14 @@ public class QueryExecutionService {
 
             int idx = 1;
             for (SqlCompiler.ProcedureCallParam p : callInfo.allParams()) {
-                if ("IN".equals(p.mode()) || "INOUT".equals(p.mode())) {
+                if ("IN".equals(p.mode()) || PROC_PARAM_MODE_INOUT.equals(p.mode())) {
                     if (p.value() != null) {
                         cs.setObject(idx, p.value(), SqlUtils.sqlTypeFor(p.type()));
                     } else {
                         cs.setNull(idx, SqlUtils.sqlTypeFor(p.type()));
                     }
                 }
-                if ("OUT".equals(p.mode()) || "INOUT".equals(p.mode())) {
+                if ("OUT".equals(p.mode()) || PROC_PARAM_MODE_INOUT.equals(p.mode())) {
                     cs.registerOutParameter(idx, SqlUtils.sqlTypeFor(p.type()));
                 }
                 idx++;
@@ -92,7 +94,7 @@ public class QueryExecutionService {
             Map<String, Object> result = new HashMap<>();
             idx = 1;
             for (SqlCompiler.ProcedureCallParam p : callInfo.allParams()) {
-                if ("OUT".equals(p.mode()) || "INOUT".equals(p.mode())) {
+                if ("OUT".equals(p.mode()) || PROC_PARAM_MODE_INOUT.equals(p.mode())) {
                     result.put(p.name(), cs.getObject(idx));
                 }
                 idx++;

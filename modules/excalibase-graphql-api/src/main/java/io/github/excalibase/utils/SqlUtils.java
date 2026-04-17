@@ -14,6 +14,7 @@ public class SqlUtils {
 
     public record ResolvedSql(String sql, List<Object> values) {}
 
+    @SuppressWarnings("java:S3776") // Character-by-character SQL parser: quote-awareness, named param extraction, type coercion must coexist in one pass
     public static ResolvedSql resolveNamedParams(String sql, Map<String, Object> params) {
         List<Object> values = new ArrayList<>();
         StringBuilder result = new StringBuilder();

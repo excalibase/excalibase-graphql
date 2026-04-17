@@ -16,7 +16,9 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
  */
 public class PostgresMutationCompiler implements MutationCompiler {
 
-    public PostgresMutationCompiler() {}
+    public PostgresMutationCompiler() {
+        // Stateless compiler — no initialization needed
+    }
 
     @Override
     public SqlCompiler.CompiledQuery compileMutation(Field field, String fieldName,
@@ -37,6 +39,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
         return new SqlCompiler.CompiledQuery(sql, params);
     }
 
+    @SuppressWarnings("java:S3776") // Mutation name router dispatches across create/update/delete/bulk variants — splitting would obscure the routing table
     private String routeMutation(Field field, String fieldName,
                                  Map<String, Object> params, Map<String, Object> variables,
                                  MutationBuilder shared) {

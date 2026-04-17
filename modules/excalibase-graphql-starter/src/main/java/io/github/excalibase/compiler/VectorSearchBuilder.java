@@ -78,6 +78,9 @@ public class VectorSearchBuilder {
                 case "limit" -> {
                     if (f.getValue() instanceof IntValue iv) shape.put("limit", iv.getValue().intValue());
                 }
+                default -> {
+                    // Ignore unknown vector args
+                }
             }
         }
         return buildFromMap(shape, tableAlias, schemaInfo, params);

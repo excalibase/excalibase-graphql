@@ -278,6 +278,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
         mergeForeignKeys(schemaInfo, perSchema, schemaList);
     }
 
+    @SuppressWarnings("java:S3776") // Per-table merging (columns, enums, PKs, views, computed fields) is sequential by necessity
     private void mergeTablesAndColumns(SchemaInfo target, String schema, SchemaInfo source) {
         for (String table : source.getTableNames()) {
             String key = schema + "." + table;

@@ -63,6 +63,7 @@ public class RestApiController {
         return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.getDefaultSchema(), port));
     }
 
+    @SuppressWarnings("java:S3776") // PostgREST-compatible query handler: count, cursor pagination, CSV, singular object, content negotiation all branch from one entry point
     @GetMapping("/{table}")
     public ResponseEntity<Object> list(
             @PathVariable String table, @RequestParam(required = false) String select,
@@ -245,6 +246,7 @@ public class RestApiController {
         });
     }
 
+    @SuppressWarnings("java:S3776") // Unified DML executor handles rollback, max-affected, Prefer representation, RLS, and response shaping in a transactional scope
     private ResponseEntity<Object> executeDml(RestQueryCompiler.CompiledResult compiled, JwtClaims claims, boolean rollback, Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         return txTemplate.execute(status -> {
             try {

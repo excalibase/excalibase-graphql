@@ -153,6 +153,9 @@ public class MysqlSchemaLoader implements SchemaLoader {
                             procParams.putIfAbsent(procName, new ArrayList<>());
                         }
                     }
+                    default -> {
+                        // Ignore unknown introspection row kinds
+                    }
                 }
             } catch (Exception e) {
                 throw new RuntimeException("Failed to parse MySQL introspection row", e);

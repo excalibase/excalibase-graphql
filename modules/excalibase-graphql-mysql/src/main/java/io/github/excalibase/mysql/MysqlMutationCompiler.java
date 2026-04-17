@@ -15,7 +15,9 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
  */
 public class MysqlMutationCompiler implements MutationCompiler {
 
-    public MysqlMutationCompiler() {}
+    public MysqlMutationCompiler() {
+        // Stateless compiler — no initialization needed
+    }
 
     @Override
     public SqlCompiler.CompiledQuery compileMutation(Field field, String fieldName,

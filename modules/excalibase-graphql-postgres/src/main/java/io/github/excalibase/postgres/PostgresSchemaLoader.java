@@ -268,6 +268,9 @@ public class PostgresSchemaLoader implements SchemaLoader {
                     case "computed" -> info.addComputedField(
                             node.get("table_name").asText(), node.get("function_name").asText(),
                             node.get("return_type").asText());
+                    default -> {
+                        // Ignore unknown introspection row kinds
+                    }
                 }
             } catch (Exception e) {
                 throw new RuntimeException("Failed to parse introspection row", e);

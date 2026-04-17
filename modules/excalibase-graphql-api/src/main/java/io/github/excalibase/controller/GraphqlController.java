@@ -27,6 +27,7 @@ import java.util.Map;
 public class GraphqlController {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlController.class);
+    private static final String VARIABLES_KEY = "variables";
 
     private final GraphqlSchemaManager schemaManager;
     private final QueryExecutionService queryExecutor;
@@ -40,6 +41,7 @@ public class GraphqlController {
         this.observability = observability;
     }
 
+    @SuppressWarnings("java:S3776") // Request dispatcher: tenant resolution, introspection, procedure/query routing are coordinated here; splitting hurts traceability
     @PostMapping("/graphql")
     public ResponseEntity<Object> graphql(
             @RequestBody Map<String, Object> request,
@@ -54,8 +56,8 @@ public class GraphqlController {
         }
 
         @SuppressWarnings("unchecked")
-        Map<String, Object> variables = request.containsKey("variables") && request.get("variables") instanceof Map
-                ? (Map<String, Object>) request.get("variables") : Map.of();
+        Map<String, Object> variables = request.containsKey(VARIABLES_KEY) && request.get(VARIABLES_KEY) instanceof Map
+                ? (Map<String, Object>) request.get(VARIABLES_KEY) : Map.of();
 
         final String finalUserId = userId;
         final JwtClaims finalClaims = jwtClaims;
