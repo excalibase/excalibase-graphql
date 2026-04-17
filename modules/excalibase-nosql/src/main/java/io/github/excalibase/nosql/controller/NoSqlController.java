@@ -15,6 +15,9 @@ import java.util.*;
 @RequestMapping("/api/v1/nosql")
 public class NoSqlController {
 
+    private static final Set<String> RESERVED_PARAMS = Set.of(
+            "limit", "offset", "sort", "allowScan", "search", "vector", "count");
+
     private final CollectionSchemaManager schemaManager;
     private final DocumentExecutionService executionService;
 
@@ -28,13 +31,15 @@ public class NoSqlController {
         return new DocumentQueryCompiler(schemaManager.getCollectionInfo());
     }
 
-    @PostMapping("/_schema")
+    // ─── Schema ────────────────────────────────────────────────────────────────
+
+    @PostMapping
     public ResponseEntity<Object> syncSchema(@RequestBody Map<String, Object> schema) {
         var result = schemaManager.syncSchema(schema);
         return ResponseEntity.ok(Map.of("data", result));
     }
 
-    @GetMapping("/_schema")
+    @GetMapping
     public ResponseEntity<Object> getSchema() {
         var names = schemaManager.getCollectionInfo().getCollectionNames();
         var collections = new LinkedHashMap<String, Object>();
@@ -47,41 +52,41 @@ public class NoSqlController {
         return ResponseEntity.ok(Map.of("data", collections));
     }
 
-    @PostMapping("/{collection}/find")
-    public ResponseEntity<Object> find(@PathVariable String collection,
-                                        @RequestBody Map<String, Object> body) {
-        var schema = resolveCollection(collection);
-        @SuppressWarnings("unchecked")
-        var filter = (Map<String, Object>) body.getOrDefault("filter", Map.of());
-        boolean allowScan = Boolean.TRUE.equals(body.get("allowScan"));
+    // ─── Read (GET — cacheable) ────────────────────────────────────────────────
 
+    @GetMapping("/{collection}")
+    public ResponseEntity<Object> find(@PathVariable String collection,
+                                        @RequestParam Map<String, String> allParams) {
+        var schema = resolveCollection(collection);
+
+        // Special modes via query param
+        if (allParams.containsKey("count")) {
+            var filter = parseFilter(allParams, schema);
+            var compiled = compiler().compileCount(collection, filter);
+            long count = executionService.executeCount(compiled);
+            return ResponseEntity.ok(Map.of("data", Map.of("count", count)));
+        }
+
+        if (allParams.containsKey("search")) {
+            String query = allParams.get("search");
+            int limit = toInt(allParams.get("limit"), 10);
+            var compiled = compiler().compileSearch(collection, query, limit);
+            var results = executionService.executeQuery(compiled);
+            return ResponseEntity.ok(Map.of("data", results));
+        }
+
+        // Regular find
+        var filter = parseFilter(allParams, schema);
+        boolean allowScan = "true".equals(allParams.get("allowScan"));
         schema.validateQuery(filter.keySet(), allowScan);
 
-        int limit = toInt(body.get("limit"), 30);
-        int offset = toInt(body.get("offset"), 0);
-        @SuppressWarnings("unchecked")
-        var sort = (Map<String, Object>) body.get("sort");
+        int limit = toInt(allParams.get("limit"), 30);
+        int offset = toInt(allParams.get("offset"), 0);
+        var sort = parseSort(allParams.get("sort"));
 
         var compiled = compiler().compileFind(collection, filter, new FindOptions(limit, offset, sort));
         var results = executionService.executeQuery(compiled);
         return ResponseEntity.ok(Map.of("data", results));
-    }
-
-    @PostMapping("/{collection}/findOne")
-    public ResponseEntity<Object> findOne(@PathVariable String collection,
-                                           @RequestBody Map<String, Object> body) {
-        var schema = resolveCollection(collection);
-        @SuppressWarnings("unchecked")
-        var filter = (Map<String, Object>) body.getOrDefault("filter", Map.of());
-        boolean allowScan = Boolean.TRUE.equals(body.get("allowScan"));
-
-        schema.validateQuery(filter.keySet(), allowScan);
-
-        var compiled = compiler().compileFindOne(collection, filter);
-        var result = executionService.executeSingleQuery(compiled);
-        return result != null
-                ? ResponseEntity.ok(Map.of("data", result))
-                : ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found"));
     }
 
     @GetMapping("/{collection}/{id}")
@@ -95,10 +100,32 @@ public class NoSqlController {
                 : ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found"));
     }
 
-    @PostMapping("/{collection}/insertOne")
-    public ResponseEntity<Object> insertOne(@PathVariable String collection,
-                                             @RequestBody Map<String, Object> body) {
+    // ─── Write (POST/PATCH/DELETE) ─────────────────────────────────────────────
+
+    @PostMapping("/{collection}")
+    public ResponseEntity<Object> insert(@PathVariable String collection,
+                                          @RequestParam(required = false) String vector,
+                                          @RequestBody Map<String, Object> body) {
         resolveCollection(collection);
+
+        // POST with ?vector=true → vector search
+        if ("true".equals(vector)) {
+            return handleVectorSearch(collection, body);
+        }
+
+        // Batch insert if "docs" array present
+        if (body.containsKey("docs")) {
+            @SuppressWarnings("unchecked")
+            var docs = (List<Map<String, Object>>) body.get("docs");
+            if (docs == null || docs.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("error", "docs array required"));
+            }
+            var compiled = compiler().compileInsertMany(collection, docs);
+            var results = executionService.executeBulkMutation(compiled);
+            return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("data", results));
+        }
+
+        // Single insert
         @SuppressWarnings("unchecked")
         var doc = (Map<String, Object>) body.getOrDefault("doc", body);
         var compiled = compiler().compileInsertOne(collection, doc);
@@ -106,78 +133,32 @@ public class NoSqlController {
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("data", result));
     }
 
-    @PostMapping("/{collection}/insertMany")
-    public ResponseEntity<Object> insertMany(@PathVariable String collection,
-                                              @RequestBody Map<String, Object> body) {
-        resolveCollection(collection);
-        @SuppressWarnings("unchecked")
-        var docs = (List<Map<String, Object>>) body.get("docs");
-        if (docs == null || docs.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "docs array required"));
-        }
-        var compiled = compiler().compileInsertMany(collection, docs);
-        var results = executionService.executeBulkMutation(compiled);
-        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("data", results));
-    }
-
-    @PostMapping("/{collection}/updateOne")
-    public ResponseEntity<Object> updateOne(@PathVariable String collection,
-                                             @RequestBody Map<String, Object> body) {
+    @PatchMapping("/{collection}")
+    public ResponseEntity<Object> update(@PathVariable String collection,
+                                          @RequestParam Map<String, String> allParams,
+                                          @RequestBody Map<String, Object> body) {
         var schema = resolveCollection(collection);
-        @SuppressWarnings("unchecked")
-        var filter = (Map<String, Object>) body.get("filter");
-        @SuppressWarnings("unchecked")
-        var update = (Map<String, Object>) body.get("update");
+        var filter = parseFilter(allParams, schema);
 
-        if (filter == null || filter.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "filter required"));
-        }
-        if (update == null || update.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "update required"));
+        if (filter.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "filter required in query params"));
         }
 
         schema.validateQuery(filter.keySet(), false);
 
-        var compiled = compiler().compileUpdateOne(collection, filter, update);
-        try {
-            var result = executionService.executeMutation(compiled);
-            return ResponseEntity.ok(Map.of("data", result));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No matching document"));
-        }
-    }
-
-    @PostMapping("/{collection}/updateMany")
-    public ResponseEntity<Object> updateMany(@PathVariable String collection,
-                                              @RequestBody Map<String, Object> body) {
-        var schema = resolveCollection(collection);
-        @SuppressWarnings("unchecked")
-        var filter = (Map<String, Object>) body.get("filter");
-        @SuppressWarnings("unchecked")
-        var update = (Map<String, Object>) body.get("update");
-
-        if (filter == null || filter.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "filter required"));
-        }
-        if (update == null || update.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "update required"));
-        }
-
-        schema.validateQuery(filter.keySet(), false);
-
-        var compiled = compiler().compileUpdateMany(collection, filter, update);
+        var compiled = compiler().compileUpdateMany(collection, filter, body);
         var results = executionService.executeBulkMutation(compiled);
         return ResponseEntity.ok(Map.of("data", results, "modified", results.size()));
     }
 
-    @PostMapping("/{collection}/deleteMany")
-    public ResponseEntity<Object> deleteMany(@PathVariable String collection,
-                                              @RequestBody Map<String, Object> body) {
+    @DeleteMapping("/{collection}")
+    public ResponseEntity<Object> delete(@PathVariable String collection,
+                                          @RequestParam Map<String, String> allParams) {
         var schema = resolveCollection(collection);
-        @SuppressWarnings("unchecked")
-        var filter = (Map<String, Object>) body.get("filter");
-        if (filter == null || filter.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "filter required"));
+        var filter = parseFilter(allParams, schema);
+
+        if (filter.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "filter required in query params"));
         }
 
         schema.validateQuery(filter.keySet(), false);
@@ -187,32 +168,11 @@ public class NoSqlController {
         return ResponseEntity.ok(Map.of("data", results, "deleted", results.size()));
     }
 
-    @PostMapping("/{collection}/deleteOne")
-    public ResponseEntity<Object> deleteOne(@PathVariable String collection,
-                                             @RequestBody Map<String, Object> body) {
-        var schema = resolveCollection(collection);
-        @SuppressWarnings("unchecked")
-        var filter = (Map<String, Object>) body.get("filter");
-        if (filter == null || filter.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "filter required"));
-        }
-
-        schema.validateQuery(filter.keySet(), false);
-
-        var compiled = compiler().compileDeleteOne(collection, filter);
-        try {
-            var result = executionService.executeMutation(compiled);
-            return ResponseEntity.ok(Map.of("data", result));
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "No matching document"));
-        }
-    }
-
     @DeleteMapping("/{collection}/{id}")
     public ResponseEntity<Object> deleteById(@PathVariable String collection,
                                               @PathVariable String id) {
         resolveCollection(collection);
-        var compiled = compiler().compileDeleteOne(collection, Map.of("id", id));
+        var compiled = compiler().compileDeleteById(collection, id);
         try {
             var result = executionService.executeMutation(compiled);
             return ResponseEntity.ok(Map.of("data", result));
@@ -221,25 +181,10 @@ public class NoSqlController {
         }
     }
 
-    @PostMapping("/{collection}/search")
-    public ResponseEntity<Object> search(@PathVariable String collection,
-                                          @RequestBody Map<String, Object> body) {
-        resolveCollection(collection);
-        String query = (String) body.get("query");
-        if (query == null || query.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "query required"));
-        }
-        int limit = toInt(body.get("limit"), 10);
-        var compiled = compiler().compileSearch(collection, query, limit);
-        var results = executionService.executeQuery(compiled);
-        return ResponseEntity.ok(Map.of("data", results));
-    }
+    // ─── Helpers ───────────────────────────────────────────────────────────────
 
-    @SuppressWarnings("unchecked")
-    @PostMapping("/{collection}/vectorSearch")
-    public ResponseEntity<Object> vectorSearch(@PathVariable String collection,
-                                                @RequestBody Map<String, Object> body) {
-        resolveCollection(collection);
+    private ResponseEntity<Object> handleVectorSearch(String collection, Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
         var embedding = (List<? extends Number>) body.get("embedding");
         if (embedding == null || embedding.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("error", "embedding required"));
@@ -250,20 +195,60 @@ public class NoSqlController {
         return ResponseEntity.ok(Map.of("data", results));
     }
 
-    @PostMapping("/{collection}/count")
-    public ResponseEntity<Object> count(@PathVariable String collection,
-                                         @RequestBody(required = false) Map<String, Object> body) {
-        resolveCollection(collection);
-        @SuppressWarnings("unchecked")
-        var filter = body != null ? (Map<String, Object>) body.getOrDefault("filter", Map.of()) : Map.<String, Object>of();
-        var compiled = compiler().compileCount(collection, filter);
-        long count = executionService.executeCount(compiled);
-        return ResponseEntity.ok(Map.of("data", Map.of("count", count)));
+    /**
+     * Parse PostgREST-style filter params: status=eq.active, age=gt.25
+     */
+    private Map<String, Object> parseFilter(Map<String, String> params, CollectionSchema schema) {
+        var filter = new LinkedHashMap<String, Object>();
+        for (var entry : params.entrySet()) {
+            String key = entry.getKey();
+            if (RESERVED_PARAMS.contains(key)) continue;
+
+            String value = entry.getValue();
+            int dot = value.indexOf('.');
+            if (dot > 0) {
+                String op = value.substring(0, dot);
+                String val = value.substring(dot + 1);
+                switch (op) {
+                    case "eq" -> filter.put(key, val);
+                    case "neq" -> filter.put(key, Map.of("$ne", val));
+                    case "gt" -> filter.put(key, Map.of("$gt", parseNumber(val)));
+                    case "gte" -> filter.put(key, Map.of("$gte", parseNumber(val)));
+                    case "lt" -> filter.put(key, Map.of("$lt", parseNumber(val)));
+                    case "lte" -> filter.put(key, Map.of("$lte", parseNumber(val)));
+                    case "in" -> filter.put(key, Map.of("$in", List.of(val.split(","))));
+                    default -> filter.put(key, val);
+                }
+            } else {
+                filter.put(key, value);
+            }
+        }
+        return filter;
     }
 
-    private CollectionSchema resolveCollection(String collection) {
-        return schemaManager.getCollectionInfo().getCollection(collection)
-                .orElseThrow(() -> new NoSuchElementException("Unknown collection: " + collection));
+    /**
+     * Parse sort param: age.desc or age.asc,name.desc
+     */
+    private Map<String, Object> parseSort(String sort) {
+        if (sort == null || sort.isBlank()) return null;
+        var result = new LinkedHashMap<String, Object>();
+        for (String part : sort.split(",")) {
+            int dot = part.lastIndexOf('.');
+            if (dot > 0) {
+                String field = part.substring(0, dot);
+                String dir = part.substring(dot + 1);
+                result.put(field, "desc".equalsIgnoreCase(dir) ? -1 : 1);
+            } else {
+                result.put(part, 1);
+            }
+        }
+        return result.isEmpty() ? null : result;
+    }
+
+    private Object parseNumber(String val) {
+        try { return Integer.parseInt(val); } catch (NumberFormatException e) {
+            try { return Double.parseDouble(val); } catch (NumberFormatException e2) { return val; }
+        }
     }
 
     private int toInt(Object value, int defaultValue) {
@@ -272,6 +257,11 @@ public class NoSqlController {
             try { return Integer.parseInt(s); } catch (NumberFormatException e) { return defaultValue; }
         }
         return defaultValue;
+    }
+
+    private CollectionSchema resolveCollection(String collection) {
+        return schemaManager.getCollectionInfo().getCollection(collection)
+                .orElseThrow(() -> new NoSuchElementException("Unknown collection: " + collection));
     }
 
     @ExceptionHandler(IllegalArgumentException.class)

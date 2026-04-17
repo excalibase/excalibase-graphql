@@ -119,6 +119,17 @@ public class DocumentQueryCompiler {
         return compileDeleteOne(collection, filter);
     }
 
+    public CompiledDoc compileDeleteById(String collection, String id) {
+        var params = new LinkedHashMap<String, Object>();
+        params.put("id", id);
+
+        var sql = "DELETE FROM " + qualifiedTable(collection) +
+                " WHERE id = :id::uuid" +
+                " RETURNING " + returningClause();
+
+        return new CompiledDoc(sql, params);
+    }
+
     public CompiledDoc compileDeleteOne(String collection, Map<String, Object> filter) {
         var schema = resolveSchema(collection);
         var params = new LinkedHashMap<String, Object>();

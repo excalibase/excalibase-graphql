@@ -14,6 +14,15 @@ async function nosqlGet(path) {
   return { status: res.status, data: await res.json().catch(() => ({})) };
 }
 
+async function nosqlPatch(path, body) {
+  const res = await fetch(`${NOSQL_URL}${path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+
 async function nosqlDelete(path) {
   const res = await fetch(`${NOSQL_URL}${path}`, { method: 'DELETE' });
   return { status: res.status, data: await res.json().catch(() => ({})) };
@@ -22,7 +31,7 @@ async function nosqlDelete(path) {
 async function waitForApi() {
   for (let i = 0; i < 30; i++) {
     try {
-      const res = await fetch(`${NOSQL_URL}/_schema`);
+      const res = await fetch(NOSQL_URL);
       if (res.ok) return;
     } catch (_) {}
     await new Promise(r => setTimeout(r, 1000));
@@ -34,9 +43,11 @@ beforeAll(async () => {
   await waitForApi();
 });
 
+// ─── Schema ────────────────────────────────────────────────────────────────────
+
 describe('NoSQL — Schema sync', () => {
-  test('POST /_schema creates collection with indexes', async () => {
-    const res = await nosqlPost('/_schema', {
+  test('POST /nosql syncs schema', async () => {
+    const res = await nosqlPost('', {
       collections: {
         e2e_users: {
           indexes: [
@@ -51,8 +62,8 @@ describe('NoSQL — Schema sync', () => {
     expect(res.data.data.created).toBe(1);
   });
 
-  test('GET /_schema returns created collection', async () => {
-    const res = await nosqlGet('/_schema');
+  test('GET /nosql returns schema', async () => {
+    const res = await nosqlGet('');
     expect(res.status).toBe(200);
     expect(res.data.data).toHaveProperty('e2e_users');
     expect(res.data.data.e2e_users.indexedFields).toContain('email');
@@ -60,8 +71,8 @@ describe('NoSQL — Schema sync', () => {
     expect(res.data.data.e2e_users.indexedFields).toContain('age');
   });
 
-  test('POST /_schema is idempotent', async () => {
-    const res = await nosqlPost('/_schema', {
+  test('POST /nosql is idempotent', async () => {
+    const res = await nosqlPost('', {
       collections: {
         e2e_users: {
           indexes: [
@@ -78,80 +89,69 @@ describe('NoSQL — Schema sync', () => {
   });
 });
 
+// ─── CRUD ──────────────────────────────────────────────────────────────────────
+
 describe('NoSQL — CRUD', () => {
   let insertedId;
 
-  test('insertOne creates document', async () => {
-    const res = await nosqlPost('/e2e_users/insertOne', {
+  test('POST /nosql/e2e_users inserts document', async () => {
+    const res = await nosqlPost('/e2e_users', {
       doc: { name: 'Vu', email: 'vu@test.com', status: 'active', age: 30 },
     });
     expect(res.status).toBe(201);
     expect(res.data.data.name).toBe('Vu');
-    expect(res.data.data.email).toBe('vu@test.com');
     expect(res.data.data.id).toBeDefined();
-    expect(res.data.data.createdAt).toBeDefined();
     insertedId = res.data.data.id;
   });
 
-  test('getById returns document', async () => {
+  test('GET /nosql/e2e_users/{id} returns document', async () => {
     const res = await nosqlGet(`/e2e_users/${insertedId}`);
     expect(res.status).toBe(200);
     expect(res.data.data.name).toBe('Vu');
     expect(res.data.data.id).toBe(insertedId);
   });
 
-  test('find by indexed field returns results', async () => {
-    const res = await nosqlPost('/e2e_users/find', {
-      filter: { status: 'active' },
-    });
+  test('GET /nosql/e2e_users?status=eq.active finds by indexed field', async () => {
+    const res = await nosqlGet('/e2e_users?status=eq.active');
     expect(res.status).toBe(200);
     expect(res.data.data.length).toBeGreaterThanOrEqual(1);
     expect(res.data.data[0].status).toBe('active');
   });
 
-  test('findOne returns single document', async () => {
-    const res = await nosqlPost('/e2e_users/findOne', {
-      filter: { email: 'vu@test.com' },
-    });
+  test('GET /nosql/e2e_users?email=eq.vu@test.com finds one', async () => {
+    const res = await nosqlGet('/e2e_users?email=eq.vu@test.com&limit=1');
     expect(res.status).toBe(200);
-    expect(res.data.data.name).toBe('Vu');
+    expect(res.data.data[0].name).toBe('Vu');
   });
 
-  test('updateOne with $set', async () => {
-    const res = await nosqlPost('/e2e_users/updateOne', {
-      filter: { email: 'vu@test.com' },
-      update: { '$set': { status: 'inactive' } },
+  test('PATCH /nosql/e2e_users?email=eq.vu@test.com updates', async () => {
+    const res = await nosqlPatch('/e2e_users?email=eq.vu@test.com', {
+      '$set': { status: 'inactive' },
     });
     expect(res.status).toBe(200);
-    expect(res.data.data.status).toBe('inactive');
-    expect(res.data.data.name).toBe('Vu');
+    expect(res.data.modified).toBe(1);
+    expect(res.data.data[0].status).toBe('inactive');
   });
 
-  test('find after update reflects change', async () => {
-    const res = await nosqlPost('/e2e_users/find', {
-      filter: { email: 'vu@test.com' },
-    });
+  test('GET after update reflects change', async () => {
+    const res = await nosqlGet('/e2e_users?email=eq.vu@test.com');
     expect(res.status).toBe(200);
     expect(res.data.data[0].status).toBe('inactive');
   });
 
-  test('deleteOne removes document', async () => {
-    const res = await nosqlPost('/e2e_users/deleteOne', {
-      filter: { email: 'vu@test.com' },
-    });
+  test('DELETE /nosql/e2e_users/{id} removes by ID', async () => {
+    const res = await nosqlDelete(`/e2e_users/${insertedId}`);
     expect(res.status).toBe(200);
-    expect(res.data.data.name).toBe('Vu');
   });
 
-  test('findOne after delete returns 404', async () => {
-    const res = await nosqlPost('/e2e_users/findOne', {
-      filter: { email: 'vu@test.com' },
-    });
-    expect(res.status).toBe(404);
+  test('GET after delete returns empty', async () => {
+    const res = await nosqlGet('/e2e_users?email=eq.vu@test.com');
+    expect(res.status).toBe(200);
+    expect(res.data.data).toHaveLength(0);
   });
 
-  test('insertMany inserts multiple documents', async () => {
-    const res = await nosqlPost('/e2e_users/insertMany', {
+  test('POST batch insert with docs array', async () => {
+    const res = await nosqlPost('/e2e_users', {
       docs: [
         { name: 'Alice', email: 'alice@test.com', status: 'active', age: 25 },
         { name: 'Bob', email: 'bob@test.com', status: 'active', age: 35 },
@@ -159,115 +159,100 @@ describe('NoSQL — CRUD', () => {
       ],
     });
     expect(res.status).toBe(201);
-    expect(res.data.data.length).toBe(3);
+    expect(res.data.data).toHaveLength(3);
   });
 
-  test('count returns correct number', async () => {
-    const res = await nosqlPost('/e2e_users/count', {
-      filter: { status: 'active' },
-    });
+  test('GET /nosql/e2e_users?count returns count', async () => {
+    const res = await nosqlGet('/e2e_users?count&status=eq.active');
     expect(res.status).toBe(200);
     expect(res.data.data.count).toBe(2);
   });
 
-  test('find with sort', async () => {
-    const res = await nosqlPost('/e2e_users/find', {
-      filter: { status: 'active' },
-      sort: { age: -1 },
-    });
+  test('GET with sort', async () => {
+    const res = await nosqlGet('/e2e_users?status=eq.active&sort=age.desc');
     expect(res.status).toBe(200);
     expect(res.data.data[0].name).toBe('Bob');
     expect(res.data.data[1].name).toBe('Alice');
   });
 
-  test('find with limit', async () => {
-    const res = await nosqlPost('/e2e_users/find', {
-      filter: {},
-      limit: 1,
-      allowScan: true,
-    });
+  test('GET with limit', async () => {
+    const res = await nosqlGet('/e2e_users?limit=1&allowScan=true');
     expect(res.status).toBe(200);
-    expect(res.data.data.length).toBe(1);
+    expect(res.data.data).toHaveLength(1);
   });
 });
 
+// ─── Index enforcement ─────────────────────────────────────────────────────────
+
 describe('NoSQL — Index enforcement', () => {
-  test('find on unindexed field returns 400', async () => {
-    const res = await nosqlPost('/e2e_users/find', {
-      filter: { name: 'Vu' },
-    });
+  test('GET on unindexed field returns 400', async () => {
+    const res = await nosqlGet('/e2e_users?name=eq.Vu');
     expect(res.status).toBe(400);
     expect(res.data.error).toContain('not indexed');
   });
 
-  test('find on unindexed field with allowScan succeeds', async () => {
-    const res = await nosqlPost('/e2e_users/find', {
-      filter: { name: 'Alice' },
-      allowScan: true,
-    });
+  test('GET on unindexed field with allowScan succeeds', async () => {
+    const res = await nosqlGet('/e2e_users?name=eq.Alice&allowScan=true');
     expect(res.status).toBe(200);
     expect(res.data.data.length).toBeGreaterThanOrEqual(1);
   });
 });
 
+// ─── Comparison operators ──────────────────────────────────────────────────────
+
 describe('NoSQL — Comparison operators', () => {
-  test('$gt filter', async () => {
-    const res = await nosqlPost('/e2e_users/find', {
-      filter: { age: { '$gt': 30 } },
-    });
+  test('gt filter', async () => {
+    const res = await nosqlGet('/e2e_users?age=gt.30');
     expect(res.status).toBe(200);
     expect(res.data.data.length).toBeGreaterThanOrEqual(1);
     expect(res.data.data[0].name).toBe('Bob');
   });
 
-  test('$ne filter', async () => {
-    const res = await nosqlPost('/e2e_users/find', {
-      filter: { status: { '$ne': 'active' } },
-    });
+  test('neq filter', async () => {
+    const res = await nosqlGet('/e2e_users?status=neq.active');
     expect(res.status).toBe(200);
     expect(res.data.data[0].status).not.toBe('active');
   });
 });
 
+// ─── Bulk operations ───────────────────────────────────────────────────────────
+
 describe('NoSQL — Bulk operations', () => {
-  test('updateMany updates multiple documents', async () => {
-    const res = await nosqlPost('/e2e_users/updateMany', {
-      filter: { status: 'active' },
-      update: { '$set': { status: 'paused' } },
+  test('PATCH updates multiple', async () => {
+    const res = await nosqlPatch('/e2e_users?status=eq.active', {
+      '$set': { status: 'paused' },
     });
     expect(res.status).toBe(200);
     expect(res.data.modified).toBe(2);
   });
 
-  test('deleteMany removes multiple documents', async () => {
-    const res = await nosqlPost('/e2e_users/deleteMany', {
-      filter: { status: 'paused' },
-    });
+  test('DELETE removes multiple', async () => {
+    const res = await nosqlDelete('/e2e_users?status=eq.paused');
     expect(res.status).toBe(200);
     expect(res.data.deleted).toBe(2);
   });
 });
 
+// ─── Error handling ────────────────────────────────────────────────────────────
+
 describe('NoSQL — Error handling', () => {
-  test('unknown collection returns 404', async () => {
-    const res = await nosqlPost('/nonexistent/find', { filter: {} });
+  test('GET unknown collection returns 404', async () => {
+    const res = await nosqlGet('/nonexistent?status=eq.active');
     expect(res.status).toBe(404);
   });
 
-  test('getById with unknown id returns 404', async () => {
+  test('GET unknown id returns 404', async () => {
     const res = await nosqlGet('/e2e_users/00000000-0000-0000-0000-000000000000');
     expect(res.status).toBe(404);
   });
 
-  test('updateOne without filter returns 400', async () => {
-    const res = await nosqlPost('/e2e_users/updateOne', {
-      update: { '$set': { status: 'x' } },
-    });
+  test('PATCH without filter returns 400', async () => {
+    const res = await nosqlPatch('/e2e_users', { '$set': { status: 'x' } });
     expect(res.status).toBe(400);
   });
 
-  test('deleteOne without filter returns 400', async () => {
-    const res = await nosqlPost('/e2e_users/deleteOne', {});
+  test('DELETE without filter returns 400', async () => {
+    const res = await nosqlDelete('/e2e_users');
     expect(res.status).toBe(400);
   });
 
@@ -275,7 +260,7 @@ describe('NoSQL — Error handling', () => {
     const indexes = Array.from({ length: 11 }, (_, i) => ({
       fields: [`field${i}`], type: 'string', unique: false,
     }));
-    const res = await nosqlPost('/_schema', {
+    const res = await nosqlPost('', {
       collections: { too_many: { indexes } },
     });
     expect(res.status).toBe(400);
