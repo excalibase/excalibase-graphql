@@ -35,9 +35,9 @@ public class DocumentExecutionService {
         });
     }
 
-    public Map<String, Object> executeSingleQuery(DocumentQueryCompiler.CompiledDoc compiled) {
+    public Optional<Map<String, Object>> executeSingleQuery(DocumentQueryCompiler.CompiledDoc compiled) {
         var results = executeQuery(compiled);
-        return results.isEmpty() ? null : results.getFirst();
+        return results.isEmpty() ? Optional.empty() : Optional.of(results.getFirst());
     }
 
     public Map<String, Object> executeMutation(DocumentQueryCompiler.CompiledDoc compiled) {

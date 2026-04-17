@@ -116,10 +116,9 @@ public class NoSqlController {
                                            @PathVariable String id) {
         resolveCollection(collection);
         var compiled = compiler().compileGetById(collection, id);
-        var result = executionService.executeSingleQuery(compiled);
-        return result != null
-                ? ResponseEntity.ok(Map.of("data", result))
-                : ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found"));
+        return executionService.executeSingleQuery(compiled)
+                .<ResponseEntity<Object>>map(result -> ResponseEntity.ok(Map.of("data", result)))
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found")));
     }
 
     // ─── Write (POST/PATCH/DELETE) ─────────────────────────────────────────────

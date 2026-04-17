@@ -224,8 +224,8 @@ class NoSqlIntegrationTest {
             String id = (String) inserted.get("id");
 
             var found = executionService.executeSingleQuery(compiler.compileGetById("posts", id));
-            assertThat(found).isNotNull();
-            assertThat(found).containsEntry("title", "ById Test");
+            assertThat(found).isPresent();
+            assertThat(found.get()).containsEntry("title", "ById Test");
         }
 
         @Test
