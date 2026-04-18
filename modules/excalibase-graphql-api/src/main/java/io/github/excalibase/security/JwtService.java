@@ -55,7 +55,6 @@ public class JwtService {
             keyCache.put(CACHE_KEY, fetchKeys());
             log.info("jwt_keys_loaded jwks_url={}", jwksUrl);
         } catch (Exception e) {
-            log.error("failed_to_load_jwks url={}", jwksUrl, e);
             throw new IllegalStateException("Cannot start with jwt-enabled=true — failed to load JWKS from: " + jwksUrl, e);
         }
     }

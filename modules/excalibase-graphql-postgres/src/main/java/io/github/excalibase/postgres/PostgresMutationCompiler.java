@@ -66,7 +66,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
         }
         if (fieldName.startsWith(DELETE_PREFIX)) {
             String tableName = shared.resolveMutationTable(fieldName.substring(DELETE_PREFIX.length()));
-            return tableName != null ? compileDelete(field, tableName, params, variables, shared) : null;
+            return tableName != null ? compileDelete(field, tableName, params, shared) : null;
         }
         return null;
     }
@@ -255,8 +255,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
                 joinCols(setClauses), whereSql.toString(), objectSql);
     }
 
-    String compileDelete(Field field, String tableName, Map<String, Object> params,
-                         Map<String, Object> variables, MutationBuilder shared) {
+    String compileDelete(Field field, String tableName, Map<String, Object> params, MutationBuilder shared) {
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 

@@ -505,13 +505,9 @@ public class IntrospectionHandler {
     }
 
     private GraphQLOutputType mapColumnType(String dbType) {
-        if (dbType == null) return GraphQLString;
-        String t = dbType.toLowerCase();
-        if (t.equals("bigint") || t.equals("int8")) return ExtendedScalars.GraphQLBigInteger;
-        if (t.contains("int")) return GraphQLInt;
-        if (t.contains("float") || t.contains("double") || t.contains("numeric") || t.contains("decimal") || t.contains("real")) return GraphQLFloat;
-        if (t.contains("bool")) return GraphQLBoolean;
-        return GraphQLString;
+        // Scalar types (GraphQLString, GraphQLInt, etc.) implement both
+        // GraphQLInputType and GraphQLOutputType — delegate to avoid duplication.
+        return (GraphQLOutputType) mapInputType(dbType);
     }
 
     private boolean isIntegerType(String dbType) {

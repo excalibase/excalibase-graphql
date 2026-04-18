@@ -1,5 +1,6 @@
 package io.github.excalibase.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.utils.SqlUtils;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component;
 import javax.sql.DataSource;
 import java.sql.CallableStatement;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -48,7 +50,7 @@ public class QueryExecutionService {
 
     public ResponseEntity<Object> executeTwoPhase(SqlCompiler.CompiledQuery compiled,
                                            MapSqlParameterSource params,
-                                           MutationExecutor mutationExecutor) throws Exception {
+                                           MutationExecutor mutationExecutor) throws JsonProcessingException {
         String json = mutationExecutor.execute(compiled, params, namedJdbc);
         if (json != null) {
             Object result = objectMapper.readValue(json, Object.class);
@@ -58,7 +60,7 @@ public class QueryExecutionService {
     }
 
     @SuppressWarnings("java:S3776") // JDBC CallableStatement handling: IN/OUT/INOUT param registration, OUT value extraction, result set conversion must happen in sequence
-    public ResponseEntity<Object> executeProcedureCall(SqlCompiler.CompiledQuery compiled) throws Exception {
+    public ResponseEntity<Object> executeProcedureCall(SqlCompiler.CompiledQuery compiled) throws SQLException, JsonProcessingException {
         SqlCompiler.ProcedureCallInfo callInfo = compiled.procedureCallInfo();
         String fieldName = compiled.mutationFieldName();
 
@@ -156,7 +158,7 @@ public class QueryExecutionService {
     }
 
     private ResponseEntity<Object> wrapResult(String json,
-                                              SqlCompiler.CompiledQuery compiled) throws Exception {
+                                              SqlCompiler.CompiledQuery compiled) throws JsonProcessingException {
         if (json != null) {
             if (compiled.isProcedureCall()) {
                 return ResponseEntity.ok(Map.of("data", Map.of(compiled.mutationFieldName(), json)));

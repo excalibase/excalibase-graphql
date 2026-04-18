@@ -52,14 +52,8 @@ public class DocumentExecutionService {
     }
 
     public List<Map<String, Object>> executeBulkMutation(DocumentQueryCompiler.CompiledDoc compiled) {
-        var params = new MapSqlParameterSource(compiled.params());
-        return namedJdbc.query(compiled.sql(), params, (rs, rowNum) -> {
-            var doc = parseJsonb(rs.getString("data"));
-            doc.put("id", rs.getString("id"));
-            doc.put("createdAt", formatTimestamp(rs.getTimestamp("created_at")));
-            doc.put("updatedAt", formatTimestamp(rs.getTimestamp("updated_at")));
-            return doc;
-        });
+        // Bulk INSERT/UPDATE/DELETE with RETURNING produces a result set identical to a SELECT.
+        return executeQuery(compiled);
     }
 
     public long executeCount(DocumentQueryCompiler.CompiledDoc compiled) {

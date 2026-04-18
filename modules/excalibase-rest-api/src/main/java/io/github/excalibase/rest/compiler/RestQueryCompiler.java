@@ -98,7 +98,7 @@ public class RestQueryCompiler {
             filters = remaining;
         }
 
-        StringBuilder where = buildWhere(filters, ALIAS, P_FILTER, params, q.table());
+        StringBuilder where = buildWhere(filters, P_FILTER, params, q.table());
         appendOrConditions(where, q.orConditions(), knownCols, params, q.table());
         if (q.afterCursor() != null && q.orderColumn() != null && knownCols.contains(q.orderColumn())) {
             if (!where.isEmpty()) where.append(AND);
@@ -246,7 +246,7 @@ public class RestQueryCompiler {
             setClauses.add(dialect.quoteIdentifier(entry.getKey()) + ASSIGN + PARAM_PREFIX + pn);
             params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
         }
-        StringBuilder where = buildWhere(filters, quotedTable, P_WHERE_FILTER, params, table);
+        StringBuilder where = buildWhere(filters, P_WHERE_FILTER, params, table);
         return new CompiledResult(
             WITH + CTE_UPD + AS_OPEN + UPDATE + quotedTable
             + SET + String.join(COMMA_SEP, setClauses) + WHERE + where
@@ -258,7 +258,7 @@ public class RestQueryCompiler {
         if (filters == null || filters.isEmpty()) throw new IllegalArgumentException("Delete requires at least one filter");
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
-        StringBuilder where = buildWhere(filters, quotedTable, P_DELETE_FILTER, params, table);
+        StringBuilder where = buildWhere(filters, P_DELETE_FILTER, params, table);
         return new CompiledResult(
             WITH + CTE_DEL + AS_OPEN + DELETE_FROM + quotedTable
             + WHERE + where + RETURNING_ALL + SPACE
@@ -274,12 +274,12 @@ public class RestQueryCompiler {
         return dialect.qualifiedTable(schema, raw);
     }
 
-    private StringBuilder buildWhere(List<FilterSpec> filters, String ref, String prefix, Map<String, Object> params, String table) {
+    private StringBuilder buildWhere(List<FilterSpec> filters, String prefix, Map<String, Object> params, String table) {
         StringBuilder where = new StringBuilder();
         int fc = 0;
         for (FilterSpec f : filters) {
             if (!where.isEmpty()) where.append(AND);
-            where.append(buildFilterSql(f, ref, prefix + (fc++), params, table));
+            where.append(buildFilterSql(f, prefix + (fc++), params, table));
         }
         return where;
     }
@@ -290,7 +290,7 @@ public class RestQueryCompiler {
             List<String> parts = new ArrayList<>();
             for (int ci = 0; ci < ors.get(oi).conditions().size(); ci++) {
                 var f = ors.get(oi).conditions().get(ci);
-                if (knownCols.contains(f.column())) parts.add(buildFilterSql(f, ALIAS, P_OR + oi + UNDERSCORE + ci, params, table));
+                if (knownCols.contains(f.column())) parts.add(buildFilterSql(f, P_OR + oi + UNDERSCORE + ci, params, table));
             }
             if (!parts.isEmpty()) {
                 if (!where.isEmpty()) where.append(AND);
@@ -335,7 +335,7 @@ public class RestQueryCompiler {
     }
 
     private void appendCountSubquery(StringBuilder sql, List<FilterSpec> filters, String quotedTable, Map<String, Object> params, String table) {
-        StringBuilder cw = buildWhere(filters, quotedTable, P_FILTER_COUNT, params, table);
+        StringBuilder cw = buildWhere(filters, P_FILTER_COUNT, params, table);
         sql.append(COMMA_SEP).append(parens(SELECT + COUNT_ALL + FROM + quotedTable + (cw.isEmpty() ? "" : WHERE + cw))).append(AS_TOTAL_COUNT);
     }
 
@@ -436,55 +436,123 @@ public class RestQueryCompiler {
     }
 
 
-    private String buildFilterSql(FilterSpec filter, String ref, String paramName, Map<String, Object> params, String table) {
+    private String buildFilterSql(FilterSpec filter, String paramName, Map<String, Object> params, String table) {
         String colRef = dialect.quoteIdentifier(filter.column());
         String neg = filter.negated() ? NOT : "";
-        return switch (filter.operator()) {
-            case "eq" -> comparison(params, paramName, filter, neg, colRef, ASSIGN, table);
-            case "neq" -> comparison(params, paramName, filter, neg, colRef, NEQ, table);
-            case "gt" -> comparison(params, paramName, filter, neg, colRef, GT, table);
-            case "gte" -> comparison(params, paramName, filter, neg, colRef, GTE, table);
-            case "lt" -> comparison(params, paramName, filter, neg, colRef, LT, table);
-            case "lte" -> comparison(params, paramName, filter, neg, colRef, LTE, table);
+        String op = filter.operator();
+
+        return switch (op) {
+            case "eq", "neq", "gt", "gte", "lt", "lte" ->
+                    comparisonSql(op, filter, paramName, params, colRef, neg, table);
+            case "like", "ilike", "startswith", "endswith", "match", "imatch" ->
+                    patternSql(op, filter, paramName, params, colRef, neg);
+            case "is", "isnotnull", "isdistinct" ->
+                    nullSql(op, filter, paramName, params, colRef, neg, table);
+            case "in", "notin" ->
+                    buildInSql(filter, colRef, neg, paramName, params, "notin".equals(op), table);
+            case "haskey",
+                 "jsoncontains", "contains", "cs",
+                 "jsoncontained", "containedin", "cd",
+                 "jsonpath", "jsonpathexists",
+                 "arraycontains", "arrayhasall",
+                 "arrayhasany", "ov" ->
+                    jsonOrArraySql(op, filter, paramName, params, colRef, neg, table);
+            case "arraylength" -> {
+                params.put(paramName, convertValue(filter.value(), table, filter.column()));
+                yield neg + FN_ARRAY_LENGTH + parens(colRef + COMMA_SEP + "1") + ASSIGN + PARAM_PREFIX + paramName;
+            }
+            case "fts", "plfts", "phfts", "wfts" ->
+                    tsFilter(params, paramName, filter, neg, colRef, ftsFunction(op));
+            case "sl", "sr", "nxl", "nxr", "adj" ->
+                    rangeSql(op, filter, paramName, params, colRef, neg, table);
+            default -> throw new IllegalArgumentException("Unsupported filter operator: " + op);
+        };
+    }
+
+    private String comparisonSql(String op, FilterSpec filter, String paramName,
+                                  Map<String, Object> params, String colRef, String neg, String table) {
+        String sqlOp = switch (op) {
+            case "eq" -> ASSIGN;
+            case "neq" -> NEQ;
+            case "gt" -> GT;
+            case "gte" -> GTE;
+            case "lt" -> LT;
+            case "lte" -> LTE;
+            default -> throw new IllegalStateException(op);
+        };
+        return comparison(params, paramName, filter, neg, colRef, sqlOp, table);
+    }
+
+    private String patternSql(String op, FilterSpec filter, String paramName,
+                               Map<String, Object> params, String colRef, String neg) {
+        return switch (op) {
             case "like" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value().replace('*', '%'));
-            case "ilike" -> { params.put(paramName, filter.value().replace('*', '%')); yield neg + dialect.ilike(colRef, PARAM_PREFIX + paramName); }
+            case "ilike" -> {
+                params.put(paramName, filter.value().replace('*', '%'));
+                yield neg + dialect.ilike(colRef, PARAM_PREFIX + paramName);
+            }
             case "startswith" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value() + "%");
             case "endswith" -> stringFilter(params, paramName, neg, colRef, LIKE, "%" + filter.value());
             case "match" -> stringFilter(params, paramName, neg, colRef, REGEX_MATCH, filter.value());
             case "imatch" -> stringFilter(params, paramName, neg, colRef, REGEX_IMATCH, filter.value());
+            default -> throw new IllegalStateException(op);
+        };
+    }
+
+    private String nullSql(String op, FilterSpec filter, String paramName,
+                            Map<String, Object> params, String colRef, String neg, String table) {
+        return switch (op) {
             case "is" -> isFilter(neg, colRef, filter.value());
             case "isnotnull" -> neg + colRef + IS_NOT_NULL;
-            case "isdistinct" -> { params.put(paramName, convertValue(filter.value(), table, filter.column())); yield neg + colRef + IS_DISTINCT_FROM + PARAM_PREFIX + paramName; }
-            case "in" -> buildInSql(filter, colRef, neg, paramName, params, false, table);
-            case "notin" -> buildInSql(filter, colRef, neg, paramName, params, true, table);
-            case "haskey" -> jsonFilter(params, paramName, filter, neg, FN_JSONB_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName), table);
-            case "jsoncontains", "contains", "cs" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINS + PARAM_PREFIX + paramName + CAST_JSONB, table);
-            case "jsoncontained", "containedin", "cd" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINED_BY + PARAM_PREFIX + paramName + CAST_JSONB, table);
-            // jsonpath / jsonpathexists — both use the jsonb_path_exists function
-            // form instead of the `@?` operator. The `?` character inside `@?`
-            // collides with JDBC placeholder parsing in Spring's NamedParameterJdbcTemplate,
-            // which refuses to mix named and traditional placeholders. The
-            // function form is semantically identical and parser-safe.
-            case "jsonpath", "jsonpathexists" -> jsonFilter(params, paramName, filter, neg, FN_JSONB_PATH_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName + CAST_JSONPATH), table);
-            // Array operators — bind the raw `{a,b,c}` literal with Types.OTHER
-            // coercion via convertValue (same pattern as eq/neq/in). Postgres
-            // parses the string as the column's array type. Do NOT wrap the
-            // bind in `ARRAY[$1]` — that forces the element type to varchar
-            // and collides with text[] / int[] column types.
-            case "arraycontains", "arrayhasall" -> jsonFilter(params, paramName, filter, neg, colRef + CONTAINS + PARAM_PREFIX + paramName, table);
-            case "arrayhasany", "ov" -> jsonFilter(params, paramName, filter, neg, colRef + OVERLAPS + PARAM_PREFIX + paramName, table);
-            case "arraylength" -> { params.put(paramName, convertValue(filter.value(), table, filter.column())); yield neg + FN_ARRAY_LENGTH + parens(colRef + COMMA_SEP + "1") + ASSIGN + PARAM_PREFIX + paramName; }
-            case "fts" -> tsFilter(params, paramName, filter, neg, colRef, FN_TO_TSQUERY);
-            case "plfts" -> tsFilter(params, paramName, filter, neg, colRef, FN_PLAINTO_TSQUERY);
-            case "phfts" -> tsFilter(params, paramName, filter, neg, colRef, FN_PHRASETO_TSQUERY);
-            case "wfts" -> tsFilter(params, paramName, filter, neg, colRef, FN_WEBSEARCH_TSQUERY);
-            case "sl" -> jsonFilter(params, paramName, filter, neg, colRef + STRICTLY_LEFT + PARAM_PREFIX + paramName, table);
-            case "sr" -> jsonFilter(params, paramName, filter, neg, colRef + STRICTLY_RIGHT + PARAM_PREFIX + paramName, table);
-            case "nxl" -> jsonFilter(params, paramName, filter, neg, colRef + NO_EXTEND_LEFT + PARAM_PREFIX + paramName, table);
-            case "nxr" -> jsonFilter(params, paramName, filter, neg, colRef + NO_EXTEND_RIGHT + PARAM_PREFIX + paramName, table);
-            case "adj" -> jsonFilter(params, paramName, filter, neg, colRef + ADJACENT + PARAM_PREFIX + paramName, table);
-            default -> throw new IllegalArgumentException("Unsupported filter operator: " + filter.operator());
+            case "isdistinct" -> {
+                params.put(paramName, convertValue(filter.value(), table, filter.column()));
+                yield neg + colRef + IS_DISTINCT_FROM + PARAM_PREFIX + paramName;
+            }
+            default -> throw new IllegalStateException(op);
         };
+    }
+
+    /**
+     * jsonpath / jsonpathexists use the jsonb_path_exists function form instead of the {@code @?}
+     * operator — the {@code ?} character collides with JDBC placeholder parsing in Spring's
+     * NamedParameterJdbcTemplate. Array operators bind the raw {@code {a,b,c}} literal via
+     * convertValue so Postgres parses it as the column's array type.
+     */
+    private String jsonOrArraySql(String op, FilterSpec filter, String paramName,
+                                    Map<String, Object> params, String colRef, String neg, String table) {
+        String expr = switch (op) {
+            case "haskey" -> FN_JSONB_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName);
+            case "jsoncontains", "contains", "cs" -> colRef + CONTAINS + PARAM_PREFIX + paramName + CAST_JSONB;
+            case "jsoncontained", "containedin", "cd" -> colRef + CONTAINED_BY + PARAM_PREFIX + paramName + CAST_JSONB;
+            case "jsonpath", "jsonpathexists" -> FN_JSONB_PATH_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName + CAST_JSONPATH);
+            case "arraycontains", "arrayhasall" -> colRef + CONTAINS + PARAM_PREFIX + paramName;
+            case "arrayhasany", "ov" -> colRef + OVERLAPS + PARAM_PREFIX + paramName;
+            default -> throw new IllegalStateException(op);
+        };
+        return jsonFilter(params, paramName, filter, neg, expr, table);
+    }
+
+    private String ftsFunction(String op) {
+        return switch (op) {
+            case "fts" -> FN_TO_TSQUERY;
+            case "plfts" -> FN_PLAINTO_TSQUERY;
+            case "phfts" -> FN_PHRASETO_TSQUERY;
+            case "wfts" -> FN_WEBSEARCH_TSQUERY;
+            default -> throw new IllegalStateException(op);
+        };
+    }
+
+    private String rangeSql(String op, FilterSpec filter, String paramName,
+                             Map<String, Object> params, String colRef, String neg, String table) {
+        String rangeOp = switch (op) {
+            case "sl" -> STRICTLY_LEFT;
+            case "sr" -> STRICTLY_RIGHT;
+            case "nxl" -> NO_EXTEND_LEFT;
+            case "nxr" -> NO_EXTEND_RIGHT;
+            case "adj" -> ADJACENT;
+            default -> throw new IllegalStateException(op);
+        };
+        return jsonFilter(params, paramName, filter, neg, colRef + rangeOp + PARAM_PREFIX + paramName, table);
     }
 
     private String comparison(Map<String, Object> params, String pn, FilterSpec f, String neg, String col, String op, String table) {
@@ -513,10 +581,9 @@ public class RestQueryCompiler {
 
     private String isFilter(String neg, String col, String value) {
         return switch (value.toLowerCase()) {
-            case "null" -> neg + col + IS_NULL;
             case "true" -> neg + col + IS_TRUE;
             case "false" -> neg + col + IS_FALSE;
-            default -> neg + col + IS_NULL;
+            default -> neg + col + IS_NULL; // "null" and anything else → IS NULL check
         };
     }
 

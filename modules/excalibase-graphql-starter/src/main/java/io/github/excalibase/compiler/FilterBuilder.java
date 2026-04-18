@@ -100,7 +100,7 @@ public class FilterBuilder {
             }
 
             // Column-level filter: { column: { op: value } }
-            String col = fieldName;
+            String  col = fieldName;
             if (of.getValue() instanceof ObjectValue filterObj) {
                 // Determine enum cast suffix for this column
                 String enumCast = "";

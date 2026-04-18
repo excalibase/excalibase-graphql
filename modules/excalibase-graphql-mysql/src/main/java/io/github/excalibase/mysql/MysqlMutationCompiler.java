@@ -41,7 +41,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
             if (tableName != null) return compileUpdate(field, fieldName, tableName, params, variables, shared);
         } else if (fieldName.startsWith(DELETE_PREFIX)) {
             String tableName = shared.resolveMutationTable(fieldName.substring(DELETE_PREFIX.length()));
-            if (tableName != null) return compileDelete(field, fieldName, tableName, params, variables, shared);
+            if (tableName != null) return compileDelete(field, fieldName, tableName, params, shared);
         }
         return null;
     }
@@ -158,7 +158,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
     }
 
     private MutationBuilder.MysqlMutationResult compileDelete(Field field, String fieldName, String tableName,
-                                                               Map<String, Object> params, Map<String, Object> variables,
+                                                               Map<String, Object> params,
                                                                MutationBuilder shared) {
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
