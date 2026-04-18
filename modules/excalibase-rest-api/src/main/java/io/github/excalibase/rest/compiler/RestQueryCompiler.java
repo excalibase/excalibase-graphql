@@ -315,13 +315,29 @@ public class RestQueryCompiler {
             sql.append(ORDER_BY);
             List<String> parts = new ArrayList<>();
             for (OrderBySpec o : orderBy) {
-                String part = ALIAS + DOT + dialect.quoteIdentifier(o.column()) + SPACE + o.direction();
-                if (o.nulls() != null) part += SPACE + o.nulls();
+                String part = ALIAS + DOT + dialect.quoteIdentifier(o.column()) + SPACE + validateDirection(o.direction());
+                if (o.nulls() != null) part += SPACE + validateNulls(o.nulls());
                 parts.add(part);
             }
             sql.append(String.join(COMMA_SEP, parts));
         }
         return sql;
+    }
+
+    /**
+     * Defense-in-depth: validate direction at SQL assembly even though parsers
+     * sanitize input. Protects against direct OrderBySpec construction.
+     */
+    private static String validateDirection(String direction) {
+        if ("ASC".equalsIgnoreCase(direction)) return "ASC";
+        if ("DESC".equalsIgnoreCase(direction)) return "DESC";
+        throw new IllegalArgumentException("Invalid ORDER BY direction: " + direction);
+    }
+
+    private static String validateNulls(String nulls) {
+        if ("NULLS FIRST".equalsIgnoreCase(nulls)) return "NULLS FIRST";
+        if ("NULLS LAST".equalsIgnoreCase(nulls)) return "NULLS LAST";
+        throw new IllegalArgumentException("Invalid ORDER BY NULLS clause: " + nulls);
     }
 
     private String buildJsonAgg(List<String> columns, List<String> embedSql, Set<String> knownCols) {

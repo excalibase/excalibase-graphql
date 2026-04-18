@@ -94,9 +94,21 @@ public class JwtService {
 
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
 
+            // Require exp claim for user session tokens; API-key tokens (scope=api-key) may omit.
             Date expiration = claims.getExpirationTime();
+            Object scopeClaim = claims.getClaim("scope");
+            boolean isApiKey = "api-key".equals(scopeClaim);
+            if (expiration == null && !isApiKey) {
+                throw new JwtVerificationException("JWT missing required 'exp' claim");
+            }
             if (expiration != null && new Date().after(expiration)) {
                 throw new JwtVerificationException("JWT token expired");
+            }
+
+            // Reject pre-dated tokens (nbf: not-before).
+            Date notBefore = claims.getNotBeforeTime();
+            if (notBefore != null && new Date().before(notBefore)) {
+                throw new JwtVerificationException("JWT token not yet valid");
             }
 
             String userId = extractUserId(claims);

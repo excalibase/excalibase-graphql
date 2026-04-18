@@ -43,7 +43,7 @@ public class QueryExecutionService {
     }
 
     public ResponseEntity<Object> executeQuery(SqlCompiler.CompiledQuery compiled,
-                                        MapSqlParameterSource params) throws Exception {
+                                        MapSqlParameterSource params) throws JsonProcessingException {
         String json = namedJdbc.queryForObject(compiled.sql(), params, String.class);
         return wrapResult(json, compiled);
     }

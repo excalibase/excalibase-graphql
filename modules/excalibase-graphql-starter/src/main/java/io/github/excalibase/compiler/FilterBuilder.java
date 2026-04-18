@@ -456,13 +456,15 @@ public class FilterBuilder {
      * Parses extended order direction values like AscNullsLast, DescNullsFirst.
      */
     private String parseOrderDirection(String colRef, String dir) {
-        String upper = dir.toUpperCase();
+        String upper = dir == null ? "" : dir.toUpperCase();
         return switch (upper) {
             case "ASCNULLSLAST" -> dialect.orderByNulls(colRef, ASC, "LAST");
             case "ASCNULLSFIRST" -> dialect.orderByNulls(colRef, ASC, "FIRST");
             case "DESCNULLSLAST" -> dialect.orderByNulls(colRef, DESC, "LAST");
             case "DESCNULLSFIRST" -> dialect.orderByNulls(colRef, DESC, "FIRST");
-            default -> colRef + " " + dir;
+            case "ASC" -> colRef + " " + ASC;
+            case "DESC" -> colRef + " " + DESC;
+            default -> throw new IllegalArgumentException("Invalid ORDER BY direction: " + dir);
         };
     }
 

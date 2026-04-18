@@ -1,5 +1,6 @@
 package io.github.excalibase;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -43,7 +44,7 @@ class SqlCompilerIntegrationTest {
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    private String graphql(String query) throws Exception {
+    private String graphql(String query) throws JsonProcessingException {
         return mapper.writeValueAsString(Map.of("query", query));
     }
 
