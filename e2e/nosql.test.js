@@ -290,3 +290,97 @@ describe('NoSQL — Error handling', () => {
     expect(res.data.error).toContain('max is 10');
   });
 });
+
+// ─── Full-text search ──────────────────────────────────────────────────────────
+
+describe('NoSQL — Full-text search', () => {
+  beforeAll(async () => {
+    await nosqlPost('', {
+      collections: {
+        e2e_articles: {
+          indexes: [],
+          search: 'body',
+        },
+      },
+    });
+    await nosqlPost('/e2e_articles', {
+      docs: [
+        { title: 'Postgres FTS', body: 'PostgreSQL tsvector and tsquery power full-text search' },
+        { title: 'MySQL FTS', body: 'MySQL has its own full-text search implementation' },
+        { title: 'Search engines', body: 'Search engines index documents for fast retrieval' },
+        { title: 'Pasta', body: 'Cooking recipes for pasta with tomatoes' },
+      ],
+    });
+  });
+
+  test('search ranks relevant docs first', async () => {
+    const res = await nosqlGet('/e2e_articles?search=tsvector%20tsquery');
+    expect(res.status).toBe(200);
+    expect(res.data.data.length).toBeGreaterThanOrEqual(1);
+    expect(res.data.data[0].title).toBe('Postgres FTS');
+  });
+
+  test('search with no matches returns empty', async () => {
+    const res = await nosqlGet('/e2e_articles?search=nonexistentwordxyz');
+    expect(res.status).toBe(200);
+    expect(res.data.data).toEqual([]);
+  });
+
+  test('search respects limit', async () => {
+    const res = await nosqlGet('/e2e_articles?search=search%20OR%20recipes&limit=2');
+    expect(res.status).toBe(200);
+    expect(res.data.data.length).toBeLessThanOrEqual(2);
+  });
+});
+
+// ─── Vector similarity search ──────────────────────────────────────────────────
+// Notes:
+//   - Populating the embedding column is outside the NoSQL REST surface today
+//     (it is a non-JSONB column written by external pipelines). These tests
+//     verify the search endpoint contract; ordering is exercised in NoSqlVectorIT.
+
+describe('NoSQL — Vector search', () => {
+  beforeAll(async () => {
+    await nosqlPost('', {
+      collections: {
+        e2e_docs: {
+          indexes: [],
+          vector: { field: 'embedding', dimensions: 3 },
+        },
+      },
+    });
+    await nosqlPost('/e2e_docs', { doc: { title: 'doc-1' } });
+    await nosqlPost('/e2e_docs', { doc: { title: 'doc-2' } });
+  });
+
+  test('POST /e2e_docs?vector=true returns 200 with array', async () => {
+    const res = await fetch(`${NOSQL_URL}/e2e_docs?vector=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embedding: [1, 0, 0], topK: 5 }),
+    });
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(Array.isArray(body.data)).toBe(true);
+  });
+
+  test('vector search requires embedding — 400 without it', async () => {
+    const res = await fetch(`${NOSQL_URL}/e2e_docs?vector=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topK: 3 }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test('vector search honors topK limit', async () => {
+    const res = await fetch(`${NOSQL_URL}/e2e_docs?vector=true`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ embedding: [1, 0, 0], topK: 1 }),
+    });
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.data.length).toBeLessThanOrEqual(1);
+  });
+});

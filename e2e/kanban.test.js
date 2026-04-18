@@ -583,6 +583,47 @@ describe('Kanban REST — Full-text search', () => {
     expect(r.status).toBe(200);
     expect(r.data.data).toEqual([]);
   });
+
+  test('fts (raw to_tsquery) supports & and | operators', async () => {
+    const andRes = await restGet('/issues?select=id,title&description=fts.stripe%20%26%20webhook');
+    expect(andRes.status).toBe(200);
+    const andTitles = andRes.data.data.map(i => i.title);
+    expect(andTitles).toContain('Stripe webhook handler');
+    expect(andTitles).not.toContain('Setup JWT auth');
+
+    const orRes = await restGet('/issues?select=id,title&description=fts.jwt%20%7C%20stripe');
+    expect(orRes.status).toBe(200);
+    const orTitles = orRes.data.data.map(i => i.title);
+    expect(orTitles).toEqual(expect.arrayContaining(['Setup JWT auth', 'Payment integration', 'Stripe webhook handler']));
+  });
+
+  test('phfts matches adjacent words in order', async () => {
+    const r = await restGet('/issues?select=id,title&description=phfts.webhook%20handler');
+    expect(r.status).toBe(200);
+    const titles = r.data.data.map(i => i.title);
+    expect(titles).toContain('Stripe webhook handler');
+  });
+
+  test('phfts returns empty for words not adjacent', async () => {
+    const r = await restGet('/issues?select=id,title&description=phfts.handler%20stripe');
+    expect(r.status).toBe(200);
+    expect(r.data.data).toEqual([]);
+  });
+
+  test('wfts (websearch) supports OR and quoted phrases', async () => {
+    const orRes = await restGet('/issues?select=id,title&description=wfts.stripe%20OR%20benchmarks');
+    expect(orRes.status).toBe(200);
+    const titles = orRes.data.data.map(i => i.title);
+    expect(titles).toEqual(expect.arrayContaining([
+      'Payment integration', 'Stripe webhook handler', 'Performance benchmarks',
+    ]));
+  });
+
+  test('wfts silently tolerates malformed input', async () => {
+    const r = await restGet('/issues?select=id,title&description=wfts.(((');
+    expect(r.status).toBe(200);
+    expect(r.data.data).toBeDefined();
+  });
 });
 
 describe('Kanban REST — Vector k-NN search', () => {
