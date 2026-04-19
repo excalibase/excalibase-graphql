@@ -171,6 +171,26 @@ public class DocumentQueryCompiler {
         return new CompiledDoc(sql, params);
     }
 
+    public CompiledDoc compileSetEmbedding(String collection, String id, List<? extends Number> embedding) {
+        var schema = resolveSchema(collection);
+        if (schema.vector() == null) {
+            throw new IllegalArgumentException("Collection '" + collection + "' has no vector field configured");
+        }
+        if (embedding == null || embedding.isEmpty()) {
+            throw new IllegalArgumentException("embedding must be a non-empty numeric array");
+        }
+        var params = new LinkedHashMap<String, Object>();
+        params.put("embedding", embedding.toString());
+        params.put("id", id);
+
+        var sql = "UPDATE " + qualifiedTable(collection) +
+                " SET embedding = :embedding::vector, updated_at = clock_timestamp()" +
+                " WHERE id = :id::uuid" +
+                " RETURNING " + RETURNING_CLAUSE;
+
+        return new CompiledDoc(sql, params);
+    }
+
     public CompiledDoc compileVectorSearch(String collection, List<? extends Number> embedding, int topK) {
         var schema = resolveSchema(collection);
         if (schema.vector() == null) {

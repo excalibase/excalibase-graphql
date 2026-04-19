@@ -334,12 +334,19 @@ describe('NoSQL — Full-text search', () => {
 });
 
 // ─── Vector similarity search ──────────────────────────────────────────────────
-// Notes:
-//   - Populating the embedding column is outside the NoSQL REST surface today
-//     (it is a non-JSONB column written by external pipelines). These tests
-//     verify the search endpoint contract; ordering is exercised in NoSqlVectorIT.
+
+async function nosqlPut(path, body) {
+  const res = await fetch(`${NOSQL_URL}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
 
 describe('NoSQL — Vector search', () => {
+  let originId, nearId, otherId;
+
   beforeAll(async () => {
     await nosqlPost('', {
       collections: {
@@ -349,19 +356,46 @@ describe('NoSQL — Vector search', () => {
         },
       },
     });
-    await nosqlPost('/e2e_docs', { doc: { title: 'doc-1' } });
-    await nosqlPost('/e2e_docs', { doc: { title: 'doc-2' } });
+    const origin = await nosqlPost('/e2e_docs', { doc: { title: 'origin' } });
+    const near = await nosqlPost('/e2e_docs', { doc: { title: 'near' } });
+    const other = await nosqlPost('/e2e_docs', { doc: { title: 'other' } });
+    originId = origin.data.data.id;
+    nearId = near.data.data.id;
+    otherId = other.data.data.id;
+
+    await nosqlPut(`/e2e_docs/${originId}/embedding`, { embedding: [1, 0, 0] });
+    await nosqlPut(`/e2e_docs/${nearId}/embedding`, { embedding: [0.9, 0.1, 0] });
+    await nosqlPut(`/e2e_docs/${otherId}/embedding`, { embedding: [0, 1, 0] });
   });
 
-  test('POST /e2e_docs?vector=true returns 200 with array', async () => {
+  test('PUT /{coll}/{id}/embedding writes vector column', async () => {
+    const res = await nosqlPut(`/e2e_docs/${originId}/embedding`, { embedding: [1, 0, 0] });
+    expect(res.status).toBe(200);
+    expect(res.data.data.id).toBe(originId);
+  });
+
+  test('PUT embedding rejects empty array with 400', async () => {
+    const res = await nosqlPut(`/e2e_docs/${originId}/embedding`, { embedding: [] });
+    expect(res.status).toBe(400);
+  });
+
+  test('PUT embedding on non-vector collection returns 400', async () => {
+    const res = await nosqlPut(`/e2e_users/${originId}/embedding`, { embedding: [1, 0, 0] });
+    expect(res.status).toBe(400);
+  });
+
+  test('vector search orders by cosine distance', async () => {
     const res = await fetch(`${NOSQL_URL}/e2e_docs?vector=true`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ embedding: [1, 0, 0], topK: 5 }),
+      body: JSON.stringify({ embedding: [1, 0, 0], topK: 3 }),
     });
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.data).toHaveLength(3);
+    expect(body.data[0].title).toBe('origin');
+    expect(body.data[1].title).toBe('near');
+    expect(body.data[2].title).toBe('other');
   });
 
   test('vector search requires embedding — 400 without it', async () => {
@@ -381,6 +415,7 @@ describe('NoSQL — Vector search', () => {
     });
     const body = await res.json();
     expect(res.status).toBe(200);
-    expect(body.data.length).toBeLessThanOrEqual(1);
+    expect(body.data).toHaveLength(1);
+    expect(body.data[0].title).toBe('origin');
   });
 });

@@ -78,6 +78,43 @@ class NoSqlVectorIT {
     }
 
     @Test
+    @DisplayName("compileSetEmbedding updates vector column via compiler path")
+    void setEmbedding_updatesVectorColumn() {
+        var inserted = executionService.executeMutation(
+                compiler.compileInsertOne("docs", Map.of("title", "ingest-target")));
+        String id = (String) inserted.get("id");
+
+        executionService.executeMutation(
+                compiler.compileSetEmbedding("docs", id, List.of(0.5, 0.5, 0.0)));
+
+        var stored = jdbc.queryForObject(
+                "SELECT embedding::text FROM nosql.docs WHERE id = ?::uuid",
+                String.class, id);
+        assertThat(stored).contains("0.5").contains("0");
+    }
+
+    @Test
+    @DisplayName("compileSetEmbedding throws on collection without vector field")
+    void setEmbedding_noVectorField_throws() {
+        schemaManager.syncSchema(Map.of("collections", Map.of(
+                "no_vec_ingest", Map.of("indexes", List.of())
+        )));
+        var freshCompiler = new DocumentQueryCompiler(schemaManager.getCollectionInfo());
+
+        assertThatThrownBy(() -> freshCompiler.compileSetEmbedding("no_vec_ingest", "ignored", List.of(0.1, 0.2)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("no vector field");
+    }
+
+    @Test
+    @DisplayName("compileSetEmbedding throws on empty embedding")
+    void setEmbedding_emptyEmbedding_throws() {
+        assertThatThrownBy(() -> compiler.compileSetEmbedding("docs", "any-id", List.of()))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("non-empty");
+    }
+
+    @Test
     @DisplayName("syncSchema creates vector column and HNSW index")
     void syncSchema_createsVectorColumnAndHnswIndex() {
         Integer columnCount = jdbc.queryForObject(

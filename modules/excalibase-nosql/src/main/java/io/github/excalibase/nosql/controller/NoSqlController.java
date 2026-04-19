@@ -193,6 +193,30 @@ public class NoSqlController {
         return ResponseEntity.ok(Map.of("data", results, "deleted", results.size()));
     }
 
+    @PutMapping("/{collection}/{id}/embedding")
+    public ResponseEntity<Object> setEmbedding(@PathVariable String collection,
+                                                @PathVariable String id,
+                                                @RequestBody Map<String, Object> body) {
+        resolveCollection(collection);
+        if (!(body.get("embedding") instanceof List<?> rawList) || rawList.isEmpty()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "embedding must be a non-empty numeric array"));
+        }
+        var embedding = new ArrayList<Number>(rawList.size());
+        for (Object item : rawList) {
+            if (!(item instanceof Number n)) {
+                return ResponseEntity.badRequest().body(Map.of("error", "embedding values must be numeric"));
+            }
+            embedding.add(n);
+        }
+        try {
+            var compiled = compiler().compileSetEmbedding(collection, id, embedding);
+            var result = executionService.executeMutation(compiled);
+            return ResponseEntity.ok(Map.of("data", result));
+        } catch (EmptyResultDataAccessException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found"));
+        }
+    }
+
     @DeleteMapping("/{collection}/{id}")
     public ResponseEntity<Object> deleteById(@PathVariable String collection,
                                               @PathVariable String id) {
