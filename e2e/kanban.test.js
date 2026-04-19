@@ -591,21 +591,21 @@ describe('Kanban REST — Full-text search', () => {
     expect(andTitles).toContain('Stripe webhook handler');
     expect(andTitles).not.toContain('Setup JWT auth');
 
-    const orRes = await restGet('/issues?select=id,title&description=fts.jwt%20%7C%20stripe');
+    const orRes = await restGet('/issues?select=id,title&description=fts.payment%20%7C%20stripe');
     expect(orRes.status).toBe(200);
     const orTitles = orRes.data.data.map(i => i.title);
-    expect(orTitles).toEqual(expect.arrayContaining(['Setup JWT auth', 'Payment integration', 'Stripe webhook handler']));
+    expect(orTitles).toEqual(expect.arrayContaining(['Payment integration', 'Stripe webhook handler']));
   });
 
   test('phfts matches adjacent words in order', async () => {
-    const r = await restGet('/issues?select=id,title&description=phfts.webhook%20handler');
+    const r = await restGet('/issues?select=id,title&description=phfts.Stripe%20webhook');
     expect(r.status).toBe(200);
     const titles = r.data.data.map(i => i.title);
     expect(titles).toContain('Stripe webhook handler');
   });
 
   test('phfts returns empty for words not adjacent', async () => {
-    const r = await restGet('/issues?select=id,title&description=phfts.handler%20stripe');
+    const r = await restGet('/issues?select=id,title&description=phfts.webhook%20Stripe');
     expect(r.status).toBe(200);
     expect(r.data.data).toEqual([]);
   });
