@@ -7,7 +7,7 @@ underlying database has the right columns and extensions:
   stock Postgres with zero extensions.
 - **Vector k-NN search** — built on [pgvector](https://github.com/pgvector/pgvector)
   `vector(N)` columns, works on any Postgres image that ships the `vector`
-  extension (e.g. `pgvector/pgvector:pg16`, `timescale/timescaledb`).
+  extension (e.g. `pgvector/pgvector:pg16`).
 
 Both surfaces are exposed through **GraphQL** and **REST** from the same
 schema — define the column once in SQL and both protocols can query it.
@@ -298,7 +298,6 @@ service for immediate reload in dev.
 |---|---|---|
 | **PostgreSQL (core)** | ✅ stock | ❌ needs pgvector extension |
 | **pgvector/pgvector:pg16** | ✅ stock | ✅ |
-| **timescale/timescaledb** | ✅ stock | ✅ (ships pgvector) |
 | **MySQL** | ❌ not wired yet | ❌ not applicable |
 
 MySQL support for `MATCH ... AGAINST` and MySQL 9+ `VECTOR` type is on the
