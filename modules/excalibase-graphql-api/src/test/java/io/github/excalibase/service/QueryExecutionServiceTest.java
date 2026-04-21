@@ -276,7 +276,7 @@ class QueryExecutionServiceTest {
         verify(configStmt, times(1)).execute();
     }
 
-    private Connection mockConn() throws Exception {
+    private Connection mockConn() {
         return org.mockito.Mockito.mock(Connection.class);
     }
 

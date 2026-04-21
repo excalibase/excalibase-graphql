@@ -169,7 +169,7 @@ public class MutationBuilder {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> parsed = OBJECT_MAPPER.readValue(stringValue, Map.class);
                 return buildTupleString(fields, parsed);
-            } catch (Exception e) {
+            } catch (Exception _) {
                 return value;
             }
         }

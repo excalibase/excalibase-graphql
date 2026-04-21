@@ -197,7 +197,7 @@ class MultiTenantNoDefaultDbTest {
         .andExpect(jsonPath("$.data.createTenantProducts.name", is("New Item")));
   }
 
-  private static String buildJwks(ECPublicKey key) throws Exception {
+  private static String buildJwks(ECPublicKey key) {
     com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(
         com.nimbusds.jose.jwk.Curve.P_256, key)
         .keyUse(com.nimbusds.jose.jwk.KeyUse.SIGNATURE)

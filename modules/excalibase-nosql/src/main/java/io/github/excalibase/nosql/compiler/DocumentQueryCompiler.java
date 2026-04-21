@@ -9,25 +9,18 @@ import io.github.excalibase.nosql.model.IndexDef;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
+
+import static io.github.excalibase.nosql.schema.NoSqlIdentifiers.qualifiedTable;
+import static io.github.excalibase.nosql.schema.NoSqlIdentifiers.safeIdent;
 
 public class DocumentQueryCompiler {
 
-    private static final String NOSQL_SCHEMA = "nosql";
     private static final String SELECT_CLAUSE = "SELECT id, data, created_at, updated_at";
     private static final String RETURNING_CLAUSE = "id, data, created_at, updated_at";
     private static final String SQL_RETURNING = " RETURNING ";
     private static final String SQL_FROM = " FROM ";
     private static final String MSG_COLLECTION_PREFIX = "Collection '";
     private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final Pattern IDENT_PATTERN = Pattern.compile("^[a-zA-Z_]\\w*$");
-
-    private static String safeIdent(String name, String context) {
-        if (name == null || !IDENT_PATTERN.matcher(name).matches()) {
-            throw new IllegalArgumentException("Invalid " + context + ": " + name);
-        }
-        return name;
-    }
 
     private final CollectionInfo collectionInfo;
 
@@ -225,10 +218,6 @@ public class DocumentQueryCompiler {
     private CollectionSchema resolveSchema(String collection) {
         return collectionInfo.getCollection(collection)
                 .orElseThrow(() -> new IllegalArgumentException("Unknown collection: " + collection));
-    }
-
-    private String qualifiedTable(String collection) {
-        return NOSQL_SCHEMA + ".\"" + safeIdent(collection, "collection name") + "\"";
     }
 
     private void appendWhere(StringBuilder sql, Map<String, Object> filter,

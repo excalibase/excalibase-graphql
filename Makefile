@@ -284,10 +284,10 @@ build: ## Build the application with Maven
 	@mvn clean package -DskipTests -q
 	@echo "$(GREEN)✓ Build completed$(NC)"
 
-GRAALVM_HOME ?= $(HOME)/.sdkman/candidates/java/21.0.2-graalce
+GRAALVM_HOME ?= $(HOME)/.sdkman/candidates/java/25.0.2-graalce
 
 .PHONY: build-native
-build-native: ## Build native image (requires GraalVM JDK 21, ~10 min)
+build-native: ## Build native image (requires GraalVM JDK 25, ~10 min)
 	@echo "$(BLUE)🔨 Building native image...$(NC)"
 	@JAVA_HOME=$(GRAALVM_HOME) PATH=$(GRAALVM_HOME)/bin:$(PATH) mvn -pl modules/excalibase-graphql-api -am -Pnative package -DskipTests -q
 	@echo "$(GREEN)✓ Native image built: modules/excalibase-graphql-api/target/excalibase-graphql-api$(NC)"

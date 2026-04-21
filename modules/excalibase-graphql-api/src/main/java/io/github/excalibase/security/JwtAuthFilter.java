@@ -30,7 +30,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             try {
                 claims = jwtService.verify(token);
                 request.setAttribute(JWT_CLAIMS_ATTR, claims);
-            } catch (JwtVerificationException e) {
+            } catch (JwtVerificationException _) {
                 response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                 response.setContentType("application/json");
                 response.getWriter().write("{\"errors\":[{\"message\":\"Invalid or expired token\"}]}");

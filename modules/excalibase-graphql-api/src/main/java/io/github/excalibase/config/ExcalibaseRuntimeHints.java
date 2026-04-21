@@ -101,7 +101,8 @@ public class ExcalibaseRuntimeHints implements RuntimeHintsRegistrar {
     private void registerClass(RuntimeHints hints, String className, MemberCategory[] categories) {
         try {
             hints.reflection().registerType(Class.forName(className), categories);
-        } catch (ClassNotFoundException ignored) {
+        } catch (ClassNotFoundException _) {
+            // optional runtime-only class; skip hint when absent from classpath
         }
     }
 }

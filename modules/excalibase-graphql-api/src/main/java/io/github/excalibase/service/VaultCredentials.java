@@ -15,7 +15,7 @@ public record VaultCredentials(String host, String port, String database,
     int portNum;
     try {
       portNum = Integer.parseInt(port);
-    } catch (NumberFormatException e) {
+    } catch (NumberFormatException _) {
       throw new IllegalArgumentException("Invalid port from vault: not numeric");
     }
     if (portNum < 1 || portNum > 65535) {
