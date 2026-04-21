@@ -71,26 +71,19 @@ public class VectorSearchBuilder {
 
     /** Extract a single GraphQL ObjectField into the flattened shape map. */
     private void extractShapeField(ObjectField field, Map<String, Object> shape) {
-        switch (field.getName()) {
-            case KEY_COLUMN -> {
-                if (field.getValue() instanceof StringValue sv) shape.put(KEY_COLUMN, sv.getValue());
-            }
-            case "near" -> {
-                if (field.getValue() instanceof ArrayValue av) {
-                    List<Float> floats = new ArrayList<>(av.getValues().size());
-                    for (Value<?> elementValue : av.getValues()) floats.add(toFloat(elementValue));
-                    shape.put("near", floats);
-                }
-            }
-            case KEY_DISTANCE -> {
-                if (field.getValue() instanceof StringValue sv) shape.put(KEY_DISTANCE, sv.getValue());
-                else if (field.getValue() instanceof EnumValue ev) shape.put(KEY_DISTANCE, ev.getName());
-            }
-            case KEY_LIMIT -> {
-                if (field.getValue() instanceof IntValue iv) shape.put(KEY_LIMIT, iv.getValue().intValue());
+        String name = field.getName();
+        switch (field.getValue()) {
+            case StringValue sv when KEY_COLUMN.equals(name) -> shape.put(KEY_COLUMN, sv.getValue());
+            case StringValue sv when KEY_DISTANCE.equals(name) -> shape.put(KEY_DISTANCE, sv.getValue());
+            case EnumValue ev when KEY_DISTANCE.equals(name) -> shape.put(KEY_DISTANCE, ev.getName());
+            case IntValue iv when KEY_LIMIT.equals(name) -> shape.put(KEY_LIMIT, iv.getValue().intValue());
+            case ArrayValue av when "near".equals(name) -> {
+                List<Float> floats = new ArrayList<>(av.getValues().size());
+                for (Value<?> elementValue : av.getValues()) floats.add(toFloat(elementValue));
+                shape.put("near", floats);
             }
             default -> {
-                // Ignore unknown vector args
+                // Ignore unknown vector args or mismatched value types
             }
         }
     }
