@@ -48,7 +48,7 @@
 
     <properties>
         <java.version>25</java.version>
-        <springboot.version>3.5.12</springboot.version>
+        <springboot.version>4.0.0</springboot.version>
         <tomcat.version>10.1.54</tomcat.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
         <jackson.version>2.21.2</jackson.version>
