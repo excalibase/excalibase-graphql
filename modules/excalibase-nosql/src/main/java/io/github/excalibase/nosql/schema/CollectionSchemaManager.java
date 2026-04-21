@@ -14,28 +14,21 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static io.github.excalibase.nosql.schema.NoSqlIdentifiers.IDENT_PATTERN;
+import static io.github.excalibase.nosql.schema.NoSqlIdentifiers.NOSQL_SCHEMA;
+import static io.github.excalibase.nosql.schema.NoSqlIdentifiers.qualifiedTable;
+import static io.github.excalibase.nosql.schema.NoSqlIdentifiers.safeIdent;
+
 @Service
 public class CollectionSchemaManager {
 
     private static final Logger log = LoggerFactory.getLogger(CollectionSchemaManager.class);
-    private static final String NOSQL_SCHEMA = "nosql";
-    private static final String KIND_COLLECTION_NAME = "collection name";
     private static final String PREFIX_UNIQUE_INDEX = "uidx_";
     private static final int MAX_INDEXES_PER_COLLECTION = 10;
     private static final Pattern EXPR_PATTERN = Pattern.compile(
             "data\\s*->>\\s*'([^']+)'");
     private static final Pattern CAST_PATTERN = Pattern.compile(
             "::(numeric|boolean|integer|int|float)");
-    // DDL-safe identifier: starts with letter/underscore, max 63 chars (Postgres NAMEDATALEN),
-    // only alphanumerics and underscores. Prevents SQL injection via collection/field names.
-    private static final Pattern IDENT_PATTERN = Pattern.compile("^[a-zA-Z_]\\w{0,62}$");
-
-    private static String safeIdent(String value, String kind) {
-        if (value == null || !IDENT_PATTERN.matcher(value).matches()) {
-            throw new IllegalArgumentException("Invalid " + kind + ": must match [a-zA-Z_]\\w{0,62}");
-        }
-        return value;
-    }
 
     private final JdbcTemplate jdbc;
     private final AtomicReference<CollectionInfo> collectionInfo = new AtomicReference<>(new CollectionInfo());
@@ -194,8 +187,7 @@ public class CollectionSchemaManager {
     }
 
     private void createTable(String collection) {
-        safeIdent(collection, KIND_COLLECTION_NAME);
-        jdbc.execute("CREATE TABLE IF NOT EXISTS " + NOSQL_SCHEMA + ".\"" + collection + "\" (" +
+        jdbc.execute("CREATE TABLE IF NOT EXISTS " + qualifiedTable(collection) + " (" +
                 "id UUID PRIMARY KEY DEFAULT gen_random_uuid(), " +
                 "data JSONB NOT NULL, " +
                 "created_at TIMESTAMPTZ DEFAULT clock_timestamp(), " +
@@ -231,7 +223,6 @@ public class CollectionSchemaManager {
 
     private void createExpressionIndex(String collection, String indexName,
                                         List<String> fields, String type, boolean unique) {
-        safeIdent(collection, KIND_COLLECTION_NAME);
         safeIdent(indexName, "index name");
         var exprs = new ArrayList<String>();
         var predicates = new ArrayList<String>();
@@ -248,7 +239,7 @@ public class CollectionSchemaManager {
         }
 
         String sql = "CREATE " + (unique ? "UNIQUE " : "") + "INDEX IF NOT EXISTS \"" + indexName + "\"" +
-                " ON " + NOSQL_SCHEMA + ".\"" + collection + "\" (" + String.join(", ", exprs) + ")" +
+                " ON " + qualifiedTable(collection) + " (" + String.join(", ", exprs) + ")" +
                 " WHERE " + String.join(" AND ", predicates);
 
         jdbc.execute(sql);
@@ -270,9 +261,8 @@ public class CollectionSchemaManager {
     }
 
     private void addSearchColumn(String collection, String field) {
-        safeIdent(collection, KIND_COLLECTION_NAME);
         safeIdent(field, "search field name");
-        String table = NOSQL_SCHEMA + ".\"" + collection + "\"";
+        String table = qualifiedTable(collection);
         try {
             jdbc.execute("ALTER TABLE " + table +
                     " ADD COLUMN IF NOT EXISTS search_text tsvector" +
@@ -280,18 +270,16 @@ public class CollectionSchemaManager {
             jdbc.execute("CREATE INDEX IF NOT EXISTS idx_" + collection + "_search ON " + table + " USING gin(search_text)");
             log.info("Added search column for field '{}' on collection '{}'", field, collection);
         } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Failed to add search column on '" + collection + "': " + e.getMessage(), e);
+            throw new IllegalStateException("Failed to add search column on '" + collection + "'", e);
         }
     }
 
     private void addVectorColumn(String collection, String field, int dimensions) {
-        safeIdent(collection, KIND_COLLECTION_NAME);
         if (field != null) safeIdent(field, "vector field name");
         if (dimensions < 1 || dimensions > 16000) {
             throw new IllegalArgumentException("Vector dimensions must be between 1 and 16000");
         }
-        String table = NOSQL_SCHEMA + ".\"" + collection + "\"";
+        String table = qualifiedTable(collection);
         try {
             jdbc.execute("ALTER TABLE " + table +
                     " ADD COLUMN IF NOT EXISTS embedding vector(" + dimensions + ")");
@@ -299,8 +287,7 @@ public class CollectionSchemaManager {
                     " USING hnsw(embedding vector_cosine_ops)");
             log.info("Added vector column ({} dims) on collection '{}'", dimensions, collection);
         } catch (Exception e) {
-            throw new IllegalStateException(
-                    "Failed to add vector column on '" + collection + "': " + e.getMessage(), e);
+            throw new IllegalStateException("Failed to add vector column on '" + collection + "'", e);
         }
     }
 
@@ -333,7 +320,7 @@ public class CollectionSchemaManager {
                     "SELECT count(*) FROM information_schema.columns WHERE table_schema = ? AND table_name = ? AND column_name = 'search_text'",
                     Integer.class, NOSQL_SCHEMA, collection);
             return (count != null && count > 0) ? "search_text" : null;
-        } catch (Exception e) {
+        } catch (Exception _) {
             return null;
         }
     }
