@@ -76,8 +76,10 @@
         <!--observability-->
         <opentelemetry-instrumentation.version>2.16.0-alpha</opentelemetry-instrumentation.version>
 
-        <!-- SonarQube — works with local server and SonarCloud. Token via -Dsonar.login=<token> at CLI. -->
-        <sonar.projectKey>excalibase-graphql</sonar.projectKey>
+        <!-- SonarCloud. Token via SONAR_TOKEN env / -Dsonar.token=<token> at CLI. -->
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <sonar.organization>excalibase</sonar.organization>
+        <sonar.projectKey>excalibase_excalibase-graphql</sonar.projectKey>
         <sonar.projectName>Excalibase Graphql</sonar.projectName>
         <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.exclusions>
