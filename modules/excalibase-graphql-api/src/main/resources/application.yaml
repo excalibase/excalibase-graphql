@@ -19,9 +19,9 @@ spring:
     open-in-view: false
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: jdbc:postgresql://localhost:5433/dvdrental
-    username: postgres
-    password: postgres
+    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/dvdrental}
+    username: ${POSTGRES_USER:postgres}
+    password: ${POSTGRES_PASSWORD:postgres}
     hikari:
       maximum-pool-size: 50  # Limit connection pool
       minimum-idle: 2

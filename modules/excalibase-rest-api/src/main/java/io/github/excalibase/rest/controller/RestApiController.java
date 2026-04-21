@@ -11,6 +11,7 @@ import io.github.excalibase.schema.SchemaProvider;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.constraints.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,6 +22,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -29,7 +31,10 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 
 @RestController
 @RequestMapping("/api/v1")
+@Validated
 public class RestApiController {
+
+    private static final String IDENT_REGEX = "^[A-Za-z_][A-Za-z0-9_]{0,62}$";
 
     private static final Logger log = LoggerFactory.getLogger(RestApiController.class);
     private static final Set<String> RESERVED_PARAMS = Set.of("select", "order", "limit", "offset", "or", "first", "after");
@@ -104,7 +109,7 @@ public class RestApiController {
     }
 
     private ResponseEntity<Object> handleCsv(RequestContext ctx, ParsedParams parsed, int limit, int offset) {
-        int clamped = Math.min(Math.max(limit, 1), maxRows);
+        int clamped = Math.clamp(limit, 1, maxRows);
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, false));
         List<String> csvCols = parsed.columns.isEmpty() ? new ArrayList<>(ctx.schemaInfo().getColumns(ctx.tableKey())) : parsed.columns;
         return executeInTx(compiled, ctx.claims(), rows -> buildCsvResponse(rows, csvCols));
@@ -122,7 +127,7 @@ public class RestApiController {
     }
 
     private ResponseEntity<Object> handlePaginated(RequestContext ctx, ParsedParams parsed, int limit, int offset, String prefer) {
-        int clamped = Math.min(Math.max(limit, 1), maxRows);
+        int clamped = Math.clamp(limit, 1, maxRows);
         boolean count = preferContains(prefer, "count=exact");
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, count));
         var resp = executeInTx(compiled, ctx.claims(), rows -> {
@@ -150,24 +155,24 @@ public class RestApiController {
         if (ctx == null) return notFound();
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
 
-        RestQueryCompiler.CompiledResult compiled;
-        if (body instanceof List<?> list) {
-            compiled = ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list);
-        } else if (body instanceof Map<?, ?> map) {
-            var row = (Map<String, Object>) map;
-            compiled = preferContains(prefer, "resolution=merge-duplicates")
-                ? ctx.compiler().compileUpsert(ctx.tableKey(), row, ctx.schemaInfo().getPrimaryKeys(ctx.tableKey()))
-                : ctx.compiler().compileInsert(ctx.tableKey(), row);
-        } else {
-            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Body must be JSON object or array"));
-        }
+        RestQueryCompiler.CompiledResult compiled = switch (body) {
+            case List<?> list -> ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list);
+            case Map<?, ?> map -> {
+                var row = (Map<String, Object>) map;
+                yield preferContains(prefer, "resolution=merge-duplicates")
+                    ? ctx.compiler().compileUpsert(ctx.tableKey(), row, ctx.schemaInfo().getPrimaryKeys(ctx.tableKey()))
+                    : ctx.compiler().compileInsert(ctx.tableKey(), row);
+            }
+            default -> null;
+        };
+        if (compiled == null) return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Body must be JSON object or array"));
 
         return executeDml(compiled, ctx.claims(), rollback, null, prefer, HttpStatus.CREATED, table);
     }
 
     @PostMapping(path = "/rpc/{function}")
     public ResponseEntity<Object> rpc(
-            @PathVariable String function,
+            @PathVariable @Pattern(regexp = IDENT_REGEX) String function,
             @RequestBody(required = false) Map<String, Object> params,
             @RequestHeader(value = "Content-Profile", required = false) String cp,
             HttpServletRequest request) {
@@ -387,7 +392,7 @@ public class RestApiController {
             String trimmed = part.trim();
             if (trimmed.startsWith("max-affected=")) {
                 try { return Integer.parseInt(trimmed.substring("max-affected=".length())); }
-                catch (NumberFormatException e) { return null; }
+                catch (NumberFormatException _) { return null; }
             }
         }
         return null;
@@ -419,13 +424,13 @@ public class RestApiController {
     }
 
     private Object parseJson(String json) {
-        try { return mapper.readValue(json, Object.class); } catch (Exception e) { return json; }
+        try { return mapper.readValue(json, Object.class); } catch (Exception _) { return json; }
     }
 
     @SuppressWarnings("unchecked")
     private List<?> parseJsonList(Object body) {
         if (body == null) return List.of();
-        try { return mapper.readValue(body.toString(), List.class); } catch (Exception e) { return List.of(); }
+        try { return mapper.readValue(body.toString(), List.class); } catch (Exception _) { return List.of(); }
     }
 
     private static RestQueryCompiler.EmbedSpec toCompilerEmbed(SelectParser.EmbedSpec e) {
