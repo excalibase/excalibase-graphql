@@ -34,7 +34,7 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 @Validated
 public class RestApiController {
 
-    private static final String IDENT_REGEX = "^[A-Za-z_][A-Za-z0-9_]{0,62}$";
+    private static final String IDENT_REGEX = "^[A-Za-z_]\\w{0,62}$";
 
     private static final Logger log = LoggerFactory.getLogger(RestApiController.class);
     private static final Set<String> RESERVED_PARAMS = Set.of("select", "order", "limit", "offset", "or", "first", "after");
@@ -375,7 +375,11 @@ public class RestApiController {
 
     private String resolveSchema(String header) {
         if (header == null || header.isBlank()) return schemaProvider.getDefaultSchema();
-        return header.trim();
+        String trimmed = header.trim();
+        if (!trimmed.matches(IDENT_REGEX)) {
+            throw new IllegalArgumentException("Invalid Content-Profile");
+        }
+        return trimmed;
     }
 
     private boolean preferContains(String prefer, String token) {
