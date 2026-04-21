@@ -136,7 +136,7 @@ public class RestQueryCompiler {
             shape.putIfAbsent("column", filter.column());
             VectorSearchBuilder builder = new VectorSearchBuilder(dialect);
             return builder.buildFromMap(shape, tableAlias, schemaInfo, params).orElse(null);
-        } catch (Exception e) {
+        } catch (Exception _) {
             return null;
         }
     }
@@ -668,7 +668,7 @@ public class RestQueryCompiler {
     private String toJsonString(Object value) {
         try {
             return MAPPER.writeValueAsString(value);
-        } catch (JsonProcessingException e) {
+        } catch (JsonProcessingException _) {
             return value.toString();
         }
     }
@@ -712,7 +712,7 @@ public class RestQueryCompiler {
                     new SqlParameterValue(Types.OTHER, value);
                 default -> value;
             };
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException _) {
             return value;
         }
     }

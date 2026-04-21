@@ -67,11 +67,11 @@ public class GraphQLObservabilityInstrumentation {
 
     @SuppressWarnings("unchecked")
     private void countErrors(ResponseEntity<Object> response, String operationType) {
-        if (response.getBody() instanceof Map<?, ?> body && body.get("errors") instanceof List<?> errors) {
-            if (!errors.isEmpty()) {
-                meterRegistry.counter(METRIC_ERRORS, "operation.type", operationType)
-                        .increment(errors.size());
-            }
+        if (response.getBody() instanceof Map<?, ?> body
+                && body.get("errors") instanceof List<?> errors
+                && !errors.isEmpty()) {
+            meterRegistry.counter(METRIC_ERRORS, "operation.type", operationType)
+                    .increment(errors.size());
         }
     }
 

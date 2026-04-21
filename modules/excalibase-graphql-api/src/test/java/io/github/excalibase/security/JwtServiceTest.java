@@ -242,7 +242,7 @@ class JwtServiceTest {
             assertEquals(1, fetchCount.get(), "Should not re-fetch — keys are cached");
         }
 
-        private static String buildJwks(ECPublicKey key) throws Exception {
+        private static String buildJwks(ECPublicKey key) {
             com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(
                     com.nimbusds.jose.jwk.Curve.P_256, key)
                     .keyUse(com.nimbusds.jose.jwk.KeyUse.SIGNATURE)

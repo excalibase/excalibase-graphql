@@ -58,20 +58,6 @@ public interface SqlDialect {
     default String paramCast(String columnType) { return ""; }
 
     /**
-     * Which tsquery function to wrap the bind parameter with. Different
-     * variants accept different input shapes:
-     * <ul>
-     *   <li>{@link #PLAIN} — {@code plainto_tsquery}: raw user text, any order,
-     *       stems and drops stop words, always produces valid output. Use for
-     *       the default search box.</li>
-     *   <li>{@link #WEB_SEARCH} — {@code websearch_to_tsquery}: Google-style
-     *       mini-syntax. Accepts {@code "exact phrase"} for phrase match,
-     *       {@code OR} for alternation, and {@code -word} for exclusion.
-     *       Safe against malformed input — invalid syntax is ignored rather
-     *       than throwing.</li>
-     * </ul>
-     */
-    /**
      * FTS variants supported by {@link #fullTextSearchSql(String, String, FtsVariant)}.
      * <ul>
      *   <li>{@link #PLAIN} — {@code plainto_tsquery}: raw user text, stems

@@ -149,7 +149,7 @@ public class TTLCache<K, V> {
             if (!cleanupExecutor.awaitTermination(1, TimeUnit.SECONDS)) {
                 cleanupExecutor.shutdownNow();
             }
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             cleanupExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }

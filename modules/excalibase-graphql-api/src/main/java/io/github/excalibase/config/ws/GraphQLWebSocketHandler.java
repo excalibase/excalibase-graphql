@@ -118,7 +118,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
 
         // Extract table name and field name from subscription query
         String[] extracted = extractTableAndFieldFromSubscription(query);
-        if (extracted == null) {
+        if (extracted.length == 0) {
             sendError(session, id, "Could not extract table name from subscription query");
             return;
         }
@@ -132,18 +132,10 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         Disposable disposable = subscriptionService.subscribe(tableName)
                 .subscribe(event -> {
                     try {
-                        Object parsedData = "";
-                        if (event.data() != null && !event.data().isBlank()) {
-                            try {
-                                parsedData = objectMapper.readValue(event.data(), Object.class);
-                            } catch (Exception ignored) {
-                                parsedData = event.data();
-                            }
-                        }
                         Map<String, Object> changeData = Map.of(
                                 "operation", event.type(),
                                 "table", event.table(),
-                                "data", parsedData,
+                                "data", parseEventData(event.data()),
                                 "timestamp", event.timestamp()
                         );
                         Map<String, Object> nextMsg = Map.of(
@@ -158,6 +150,15 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                 });
 
         sessionSubs.put(id, disposable);
+    }
+
+    private Object parseEventData(String data) {
+        if (data == null || data.isBlank()) return "";
+        try {
+            return objectMapper.readValue(data, Object.class);
+        } catch (Exception _) {
+            return data;
+        }
     }
 
     private void handleComplete(WebSocketSession session, Map<String, Object> msg) {
@@ -184,7 +185,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
             Document doc = Parser.parse(query);
             List<OperationDefinition> ops = doc.getDefinitionsOfType(OperationDefinition.class);
             if (ops.isEmpty()) {
-                return null;
+                return new String[0];
             }
             OperationDefinition op = ops.getFirst();
             for (Selection<?> sel : op.getSelectionSet().getSelections()) {
@@ -204,7 +205,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         } catch (Exception e) {
             log.error("Failed to parse subscription query: {}", query, e);
         }
-        return null;
+        return new String[0];
     }
 
     private void sendError(WebSocketSession session, String id, String message) {

@@ -106,7 +106,7 @@ public class NatsCDCService {
             if (natsConnection != null) {
                 natsConnection.close();
             }
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
         running.set(false);

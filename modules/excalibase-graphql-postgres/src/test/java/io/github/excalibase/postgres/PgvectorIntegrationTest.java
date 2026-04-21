@@ -165,10 +165,10 @@ class PgvectorIntegrationTest {
     @Test
     @DisplayName("COSINE distance — identical direction ranks first")
     void cosineIdenticalDirection() {
-        // (2,2,2) has the same direction as (1,1,1) so cosine distance is 0
-        // (identical), while (0,0,0) is undefined for cosine but pgvector
-        // handles it by returning a consistent ordering. We assert that
-        // 'near' beats 'far' for a (1,1,1)-direction query.
+        // The 2-2-2 vector shares direction with 1-1-1 so cosine distance is zero
+        // (identical), while the zero vector is undefined for cosine but pgvector
+        // returns a consistent ordering. Assert that 'near' beats 'far' for a
+        // 1-1-1-direction query.
         List<String> hits = runVectorQuery(List.of(2.0f, 2.0f, 2.0f), "COSINE", 2);
         assertEquals(2, hits.size());
         // both 'near' and 'far' point in (1,1,1) direction → cosine ties —

@@ -218,7 +218,7 @@ public class NoSqlController {
             var compiled = compiler().compileSetEmbedding(collection, id, embedding);
             var result = executionService.executeMutation(compiled);
             return ResponseEntity.ok(Map.of("data", result));
-        } catch (EmptyResultDataAccessException e) {
+        } catch (EmptyResultDataAccessException _) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(KEY_ERROR, MSG_NOT_FOUND));
         }
     }
@@ -231,7 +231,7 @@ public class NoSqlController {
         try {
             var result = executionService.executeMutation(compiled);
             return ResponseEntity.ok(Map.of("data", result));
-        } catch (EmptyResultDataAccessException e) {
+        } catch (EmptyResultDataAccessException _) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(KEY_ERROR, MSG_NOT_FOUND));
         }
     }
@@ -295,15 +295,15 @@ public class NoSqlController {
     }
 
     private Object parseNumber(String val) {
-        try { return Integer.parseInt(val); } catch (NumberFormatException e) {
-            try { return Double.parseDouble(val); } catch (NumberFormatException e2) { return val; }
+        try { return Integer.parseInt(val); } catch (NumberFormatException _) {
+            try { return Double.parseDouble(val); } catch (NumberFormatException _) { return val; }
         }
     }
 
     private int toInt(Object value, int defaultValue) {
         if (value instanceof Number number) return number.intValue();
         if (value instanceof String stringValue) {
-            try { return Integer.parseInt(stringValue); } catch (NumberFormatException e) { return defaultValue; }
+            try { return Integer.parseInt(stringValue); } catch (NumberFormatException _) { return defaultValue; }
         }
         return defaultValue;
     }

@@ -615,10 +615,10 @@ public class QueryBuilder {
         // Try to parse as number for proper comparison with PK columns
         try {
             return Integer.parseInt(decoded);
-        } catch (NumberFormatException ignoredInt) {
+        } catch (NumberFormatException _) {
             try {
                 return Long.parseLong(decoded);
-            } catch (NumberFormatException ignoredLong) {
+            } catch (NumberFormatException _) {
                 return decoded;
             }
         }

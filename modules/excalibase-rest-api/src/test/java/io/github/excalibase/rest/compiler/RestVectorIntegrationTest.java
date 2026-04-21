@@ -203,7 +203,7 @@ class RestVectorIntegrationTest {
         // SQL must still be executable — the bad filter is silently dropped.
         MapSqlParameterSource ps = new MapSqlParameterSource();
         result.params().forEach(ps::addValue);
-        Object raw = named.queryForObject(result.sql(), ps, Object.class);
+        named.queryForObject(result.sql(), ps, Object.class);
         assertNotNull(result, "query must still run even when vector filter is malformed");
     }
 }
