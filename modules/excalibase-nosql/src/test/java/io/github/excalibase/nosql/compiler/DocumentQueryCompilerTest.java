@@ -290,9 +290,9 @@ class DocumentQueryCompilerTest {
         void rejectMaliciousFilterField() {
             var filter = new LinkedHashMap<String, Object>();
             filter.put("email'; DROP TABLE users; --", "x");
+            var opts = new FindOptions(30, 0, null);
 
-            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                    compiler.compileFind("users", filter, new FindOptions(30, 0, null)))
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> compiler.compileFind("users", filter, opts))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Invalid filter field");
         }
@@ -301,9 +301,10 @@ class DocumentQueryCompilerTest {
         @DisplayName("reject malicious sort field name")
         void rejectMaliciousSortField() {
             var sort = Map.<String, Object>of("email') DESC; DROP TABLE users; --", 1);
+            var opts = new FindOptions(30, 0, sort);
+            Map<String, Object> emptyFilter = Map.of();
 
-            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                    compiler.compileFind("users", Map.of(), new FindOptions(30, 0, sort)))
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> compiler.compileFind("users", emptyFilter, opts))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Invalid sort field");
         }
@@ -311,13 +312,13 @@ class DocumentQueryCompilerTest {
         @Test
         @DisplayName("reject malicious collection name")
         void rejectMaliciousCollection() {
-            collectionInfo.addCollection("users\"; DROP TABLE hana.users; --", new CollectionSchema(
-                    "users\"; DROP TABLE hana.users; --",
-                    Map.of(), List.of(), Set.of(), null, null));
+            String bad = "users\"; DROP TABLE hana.users; --";
+            collectionInfo.addCollection(bad, new CollectionSchema(
+                    bad, Map.of(), List.of(), Set.of(), null, null));
+            var opts = new FindOptions(30, 0, null);
+            Map<String, Object> emptyFilter = Map.of();
 
-            org.assertj.core.api.Assertions.assertThatThrownBy(() ->
-                    compiler.compileFind("users\"; DROP TABLE hana.users; --", Map.of(),
-                            new FindOptions(30, 0, null)))
+            org.assertj.core.api.Assertions.assertThatThrownBy(() -> compiler.compileFind(bad, emptyFilter, opts))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Invalid collection name");
         }

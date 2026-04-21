@@ -85,10 +85,10 @@ public final class SelectParser {
         int depth = 0;
         int start = 0;
         for (int i = 0; i < input.length(); i++) {
-            char c = input.charAt(i);
-            if (c == '(') depth++;
-            else if (c == ')') depth--;
-            else if (c == ',' && depth == 0) {
+            char ch = input.charAt(i);
+            if (ch == '(') depth++;
+            else if (ch == ')') depth--;
+            else if (ch == ',' && depth == 0) {
                 parts.add(input.substring(start, i));
                 start = i + 1;
             }

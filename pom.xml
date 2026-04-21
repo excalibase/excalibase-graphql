@@ -76,68 +76,15 @@
         <!--observability-->
         <opentelemetry-instrumentation.version>2.16.0-alpha</opentelemetry-instrumentation.version>
 
-        <!-- ─── SonarQube configuration ─────────────────────────────────────── -->
+        <!-- SonarQube — works with local server and SonarCloud. Token via -Dsonar.login=<token> at CLI. -->
         <sonar.projectKey>excalibase-graphql</sonar.projectKey>
         <sonar.projectName>Excalibase Graphql</sonar.projectName>
-        <sonar.sourceEncoding>UTF-8</sonar.sourceEncoding>
-        <sonar.java.source>25</sonar.java.source>
-        <sonar.coverage.jacoco.xmlReportPaths>${project.basedir}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
-
-        <!-- Exclude boilerplate and generated code from analysis -->
+        <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.exclusions>
-            **/target/**,
-            **/generated-sources/**,
-            **/generated-test-sources/**,
-            **/*.sql,
-            docs/**,
-            scripts/**,
-            e2e/**,
-            plan.md,
             **/ExcalibaseGraphqlApplication.java,
             **/config/**,
-            **/constant/**,
-            **/exception/**,
-            **/model/**,
-            **/annotation/**,
-            **/scalar/**,
-            **/RuntimeHints*.java,
-            **/dto/**
+            **/model/**
         </sonar.exclusions>
-        <sonar.coverage.exclusions>
-            **/ExcalibaseGraphqlApplication.java,
-            **/config/**,
-            **/constant/**,
-            **/exception/**,
-            **/model/**,
-            **/annotation/**,
-            **/scalar/**,
-            **/dto/**
-        </sonar.coverage.exclusions>
-
-        <!-- Ignore noisy rules on SQL/GraphQL builder code where SQL fragments repeat by design -->
-        <sonar.issue.ignore.multicriteria>e1,e2,e3,e4,e5,e6,e7,e8,e9,e10</sonar.issue.ignore.multicriteria>
-        <sonar.issue.ignore.multicriteria.e1.ruleKey>java:S1192</sonar.issue.ignore.multicriteria.e1.ruleKey>
-        <sonar.issue.ignore.multicriteria.e1.resourceKey>**/compiler/**/*.java</sonar.issue.ignore.multicriteria.e1.resourceKey>
-        <sonar.issue.ignore.multicriteria.e2.ruleKey>java:S3776</sonar.issue.ignore.multicriteria.e2.ruleKey>
-        <sonar.issue.ignore.multicriteria.e2.resourceKey>**/compiler/**/*.java</sonar.issue.ignore.multicriteria.e2.resourceKey>
-        <sonar.issue.ignore.multicriteria.e3.ruleKey>java:S1192</sonar.issue.ignore.multicriteria.e3.ruleKey>
-        <sonar.issue.ignore.multicriteria.e3.resourceKey>**/nosql/**/*.java</sonar.issue.ignore.multicriteria.e3.resourceKey>
-        <sonar.issue.ignore.multicriteria.e4.ruleKey>java:S3776</sonar.issue.ignore.multicriteria.e4.ruleKey>
-        <sonar.issue.ignore.multicriteria.e4.resourceKey>**/nosql/**/*.java</sonar.issue.ignore.multicriteria.e4.resourceKey>
-        <sonar.issue.ignore.multicriteria.e5.ruleKey>java:S1192</sonar.issue.ignore.multicriteria.e5.ruleKey>
-        <sonar.issue.ignore.multicriteria.e5.resourceKey>**/*SchemaLoader.java</sonar.issue.ignore.multicriteria.e5.resourceKey>
-        <sonar.issue.ignore.multicriteria.e6.ruleKey>java:S3776</sonar.issue.ignore.multicriteria.e6.ruleKey>
-        <sonar.issue.ignore.multicriteria.e6.resourceKey>**/*SchemaLoader.java</sonar.issue.ignore.multicriteria.e6.resourceKey>
-        <sonar.issue.ignore.multicriteria.e7.ruleKey>java:S1192</sonar.issue.ignore.multicriteria.e7.ruleKey>
-        <sonar.issue.ignore.multicriteria.e7.resourceKey>**/rest/**/*.java</sonar.issue.ignore.multicriteria.e7.resourceKey>
-        <sonar.issue.ignore.multicriteria.e8.ruleKey>java:S1192</sonar.issue.ignore.multicriteria.e8.ruleKey>
-        <sonar.issue.ignore.multicriteria.e8.resourceKey>**/OpenApiGenerator.java</sonar.issue.ignore.multicriteria.e8.resourceKey>
-        <!-- IntrospectionHandler has repeated "type name" strings for GraphQL introspection -->
-        <sonar.issue.ignore.multicriteria.e9.ruleKey>java:S1192</sonar.issue.ignore.multicriteria.e9.ruleKey>
-        <sonar.issue.ignore.multicriteria.e9.resourceKey>**/IntrospectionHandler.java</sonar.issue.ignore.multicriteria.e9.resourceKey>
-        <!-- MutationCompiler — similar builder pattern to compiler/ -->
-        <sonar.issue.ignore.multicriteria.e10.ruleKey>java:S1192</sonar.issue.ignore.multicriteria.e10.ruleKey>
-        <sonar.issue.ignore.multicriteria.e10.resourceKey>**/*MutationCompiler.java</sonar.issue.ignore.multicriteria.e10.resourceKey>
     </properties>
 
     <dependencyManagement>
@@ -341,30 +288,12 @@
                 <version>0.8.13</version>
                 <configuration>
                     <excludes>
-                        <!-- Constants / enums -->
-                        <exclude>**/constant/**</exclude>
-                        <!-- Data models / POJOs -->
-                        <exclude>**/model/**</exclude>
-                        <!-- Custom exception classes -->
-                        <exclude>**/exception/**</exclude>
-                        <!-- Marker annotations -->
-                        <exclude>**/annotation/**</exclude>
                         <!-- Spring Boot main class -->
                         <exclude>**/ExcalibaseGraphqlApplication*</exclude>
-                        <!-- Spring / framework configuration -->
+                        <!-- Spring / framework configuration (includes ExcalibaseRuntimeHints) -->
                         <exclude>**/config/**</exclude>
-                        <!-- GraalVM native-image hints -->
-                        <exclude>**/ExcalibaseRuntimeHints*</exclude>
-                        <!-- Starter auto-configuration -->
-                        <exclude>**/ExcalibaseGraphqlStarterConfig*</exclude>
-                        <!-- Custom GraphQL scalars -->
-                        <exclude>**/scalar/**</exclude>
-                        <!-- CLS (Column-Level Security) — to be removed -->
-                        <exclude>**/SchemaFilterService*</exclude>
-                        <exclude>**/RolePrivilegeService*</exclude>
-                        <exclude>**/IRolePrivilegeService*</exclude>
-                        <!-- CDC — handled by excalibase-watcher -->
-                        <exclude>**/PostgresCDCListener*</exclude>
+                        <!-- Data models / POJOs -->
+                        <exclude>**/model/**</exclude>
                     </excludes>
                 </configuration>
                 <executions>

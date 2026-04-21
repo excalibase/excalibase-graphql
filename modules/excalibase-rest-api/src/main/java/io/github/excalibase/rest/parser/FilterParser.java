@@ -18,9 +18,8 @@ public final class FilterParser {
         "jsonpath", "jsonpathexists",
         "arraycontains", "arrayhasany", "arrayhasall", "arraylength",
         "startswith", "endswith",
-        // Vector k-NN search. The value is a JSON blob, e.g.
-        //   ?embedding=vector.{"near":[0.1,0.2,0.3],"distance":"L2","limit":10}
-        // The compiler handles this specially — it modifies ORDER BY + LIMIT
+        // Vector k-NN search -- value is a JSON blob carrying near/distance/limit.
+        // The compiler handles this specially by modifying ORDER BY and LIMIT
         // instead of adding a WHERE predicate.
         "vector"
     );
@@ -73,10 +72,10 @@ public final class FilterParser {
         int depth = 0;
         int start = 0;
         for (int i = 0; i < input.length(); i++) {
-            char c = input.charAt(i);
-            if (c == '(') depth++;
-            else if (c == ')') depth--;
-            else if (c == ',' && depth == 0) {
+            char ch = input.charAt(i);
+            if (ch == '(') depth++;
+            else if (ch == ')') depth--;
+            else if (ch == ',' && depth == 0) {
                 parts.add(input.substring(start, i));
                 start = i + 1;
             }

@@ -76,9 +76,9 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         log.debug("WebSocket closed for session {}: {}", session.getId(), status);
         Map<String, Disposable> subs = sessionSubscriptions.remove(session.getId());
         if (subs != null) {
-            subs.values().forEach(d -> {
+            subs.values().forEach(disposable -> {
                 try {
-                    d.dispose();
+                    disposable.dispose();
                 } catch (Exception e) {
                     log.warn("Error disposing subscription: ", e);
                 }
@@ -164,9 +164,9 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         String id = (String) msg.get("id");
         Map<String, Disposable> sessionSubs = sessionSubscriptions.get(session.getId());
         if (sessionSubs != null) {
-            Disposable d = sessionSubs.remove(id);
-            if (d != null) {
-                d.dispose();
+            Disposable disposable = sessionSubs.remove(id);
+            if (disposable != null) {
+                disposable.dispose();
                 log.debug("Cancelled subscription {} for session {}", id, session.getId());
             }
         }
@@ -188,8 +188,8 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
             }
             OperationDefinition op = ops.getFirst();
             for (Selection<?> sel : op.getSelectionSet().getSelections()) {
-                if (sel instanceof Field f) {
-                    String name = f.getName(); // e.g., "customerChanges"
+                if (sel instanceof Field field) {
+                    String name = field.getName(); // e.g., "customerChanges"
                     if (name.endsWith("Changes")) {
                         String tablePart = name.substring(0, name.length() - "Changes".length());
                         // camelCase -> snake_case (e.g., "testSchemaCustomer" -> "test_schema.customer")

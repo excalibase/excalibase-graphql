@@ -96,15 +96,15 @@ class RestVectorIntegrationTest {
         json.append("}");
 
         var filters = List.of(new RestQueryCompiler.FilterSpec("embedding", "vector", json.toString(), false));
-        var r = compiler.compileSelect("docs", List.of("id", "title"), filters, null, 100, 0, false);
+        var result = compiler.compileSelect("docs", List.of("id", "title"), filters, null, 100, 0, false);
 
         MapSqlParameterSource ps = new MapSqlParameterSource();
-        r.params().forEach(ps::addValue);
-        Object result = named.queryForObject(r.sql(), ps, Object.class);
+        result.params().forEach(ps::addValue);
+        Object raw = named.queryForObject(result.sql(), ps, Object.class);
         try {
             var mapper = new ObjectMapper();
             List<Map<String, Object>> rows = mapper.readValue(
-                    result == null ? "[]" : result.toString(), List.class);
+                    raw == null ? "[]" : raw.toString(), List.class);
             return rows.stream().map(row -> (String) row.get("title")).toList();
         } catch (Exception e) {
             throw new RuntimeException(e);
@@ -153,14 +153,14 @@ class RestVectorIntegrationTest {
         var filters = List.of(new RestQueryCompiler.FilterSpec("embedding", "vector",
                 "{\"near\":[0.0,0.0,0.0],\"distance\":\"L2\",\"limit\":4}", false));
         var orderBy = List.of(new RestQueryCompiler.OrderBySpec("id", "desc", null));
-        var r = compiler.compileSelect("docs", List.of("id", "title"), filters, orderBy, 100, 0, false);
+        var result = compiler.compileSelect("docs", List.of("id", "title"), filters, orderBy, 100, 0, false);
 
         MapSqlParameterSource ps = new MapSqlParameterSource();
-        r.params().forEach(ps::addValue);
-        Object result = named.queryForObject(r.sql(), ps, Object.class);
+        result.params().forEach(ps::addValue);
+        Object raw = named.queryForObject(result.sql(), ps, Object.class);
         try {
             var mapper = new ObjectMapper();
-            List<Map<String, Object>> rows = mapper.readValue(result.toString(), List.class);
+            List<Map<String, Object>> rows = mapper.readValue(raw == null ? "[]" : raw.toString(), List.class);
             List<String> titles = rows.stream().map(row -> (String) row.get("title")).toList();
             // k-NN order wins over id DESC (which would give far, mid, near, origin)
             assertEquals(List.of("origin", "near", "mid", "far"), titles);
@@ -178,14 +178,14 @@ class RestVectorIntegrationTest {
                         "{\"near\":[0.0,0.0,0.0],\"distance\":\"L2\",\"limit\":10}", false),
                 new RestQueryCompiler.FilterSpec("title", "neq", "far", false)
         );
-        var r = compiler.compileSelect("docs", List.of("id", "title"), filters, null, 100, 0, false);
+        var result = compiler.compileSelect("docs", List.of("id", "title"), filters, null, 100, 0, false);
 
         MapSqlParameterSource ps = new MapSqlParameterSource();
-        r.params().forEach(ps::addValue);
-        Object result = named.queryForObject(r.sql(), ps, Object.class);
+        result.params().forEach(ps::addValue);
+        Object raw = named.queryForObject(result.sql(), ps, Object.class);
         try {
             var mapper = new ObjectMapper();
-            List<Map<String, Object>> rows = mapper.readValue(result.toString(), List.class);
+            List<Map<String, Object>> rows = mapper.readValue(raw == null ? "[]" : raw.toString(), List.class);
             List<String> titles = rows.stream().map(row -> (String) row.get("title")).toList();
             assertEquals(List.of("origin", "near", "mid"), titles);
             assertFalse(titles.contains("far"));
@@ -198,12 +198,12 @@ class RestVectorIntegrationTest {
     @DisplayName("REST vector malformed JSON returns empty (dropped silently)")
     void malformedJson() {
         var filters = List.of(new RestQueryCompiler.FilterSpec("embedding", "vector", "{not valid json", false));
-        var r = compiler.compileSelect("docs", List.of("id", "title"), filters, null, 100, 0, false);
+        var result = compiler.compileSelect("docs", List.of("id", "title"), filters, null, 100, 0, false);
 
         // SQL must still be executable — the bad filter is silently dropped.
         MapSqlParameterSource ps = new MapSqlParameterSource();
-        r.params().forEach(ps::addValue);
-        Object result = named.queryForObject(r.sql(), ps, Object.class);
+        result.params().forEach(ps::addValue);
+        Object raw = named.queryForObject(result.sql(), ps, Object.class);
         assertNotNull(result, "query must still run even when vector filter is malformed");
     }
 }

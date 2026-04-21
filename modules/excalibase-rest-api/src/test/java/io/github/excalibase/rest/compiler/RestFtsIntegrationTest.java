@@ -88,13 +88,13 @@ class RestFtsIntegrationTest {
      * result envelope produced by RestQueryCompiler.
      */
     @SuppressWarnings("unchecked")
-    private List<String> titlesOf(RestQueryCompiler.CompiledResult r) {
+    private List<String> titlesOf(RestQueryCompiler.CompiledResult result) {
         MapSqlParameterSource ps = new MapSqlParameterSource();
-        r.params().forEach(ps::addValue);
-        Object result = named.queryForObject(r.sql(), ps, Object.class);
+        result.params().forEach(ps::addValue);
+        Object raw = named.queryForObject(result.sql(), ps, Object.class);
         try {
             var mapper = new ObjectMapper();
-            Object parsed = mapper.readValue(result == null ? "[]" : result.toString(), Object.class);
+            Object parsed = mapper.readValue(raw == null ? "[]" : raw.toString(), Object.class);
             List<Map<String, Object>> rows;
             if (parsed instanceof List<?> list) {
                 rows = (List<Map<String, Object>>) list;
@@ -165,8 +165,8 @@ class RestFtsIntegrationTest {
                 new RestQueryCompiler.FilterSpec("body", "plfts", "indexes", false),
                 new RestQueryCompiler.FilterSpec("title", "eq", "Postgres tips", false)
         );
-        var r = compiler.compileSelect("articles", List.of("id", "title"), filters, null, 100, 0, false);
-        List<String> hits = titlesOf(r);
+        var result = compiler.compileSelect("articles", List.of("id", "title"), filters, null, 100, 0, false);
+        List<String> hits = titlesOf(result);
         assertEquals(1, hits.size());
         assertEquals("Postgres tips", hits.get(0));
     }

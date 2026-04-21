@@ -101,7 +101,8 @@ class NoSqlVectorIT {
         )));
         var freshCompiler = new DocumentQueryCompiler(schemaManager.getCollectionInfo());
 
-        assertThatThrownBy(() -> freshCompiler.compileSetEmbedding("no_vec_ingest", "ignored", List.of(0.1, 0.2)))
+        List<Double> twoDim = List.of(0.1, 0.2);
+        assertThatThrownBy(() -> freshCompiler.compileSetEmbedding("no_vec_ingest", "ignored", twoDim))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no vector field");
     }
@@ -109,7 +110,8 @@ class NoSqlVectorIT {
     @Test
     @DisplayName("compileSetEmbedding throws on empty embedding")
     void setEmbedding_emptyEmbedding_throws() {
-        assertThatThrownBy(() -> compiler.compileSetEmbedding("docs", "any-id", List.of()))
+        List<Double> empty = List.of();
+        assertThatThrownBy(() -> compiler.compileSetEmbedding("docs", "any-id", empty))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("non-empty");
     }
@@ -148,8 +150,8 @@ class NoSqlVectorIT {
         var results = executionService.executeQuery(compiled);
 
         assertThat(results).hasSize(3);
-        assertThat(results.get(0).get("title")).isEqualTo("origin");
-        assertThat(results.get(1).get("title")).isEqualTo("near");
+        assertThat(results.get(0)).containsEntry("title", "origin");
+        assertThat(results.get(1)).containsEntry("title", "near");
     }
 
     @Test
@@ -168,7 +170,8 @@ class NoSqlVectorIT {
         )));
         var freshCompiler = new DocumentQueryCompiler(schemaManager.getCollectionInfo());
 
-        assertThatThrownBy(() -> freshCompiler.compileVectorSearch("no_vector", List.of(0.1, 0.2, 0.3), 5))
+        List<Double> threeDim = List.of(0.1, 0.2, 0.3);
+        assertThatThrownBy(() -> freshCompiler.compileVectorSearch("no_vector", threeDim, 5))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("no vector field");
     }
@@ -176,7 +179,8 @@ class NoSqlVectorIT {
     @Test
     @DisplayName("vectorSearch throws when collection does not exist")
     void vectorSearch_unknownCollection_throws() {
-        assertThatThrownBy(() -> compiler.compileVectorSearch("ghost", List.of(0.1, 0.2, 0.3), 5))
+        List<Double> threeDim = List.of(0.1, 0.2, 0.3);
+        assertThatThrownBy(() -> compiler.compileVectorSearch("ghost", threeDim, 5))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown collection");
     }

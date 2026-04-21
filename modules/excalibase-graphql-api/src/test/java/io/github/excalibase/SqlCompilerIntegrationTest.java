@@ -1059,13 +1059,13 @@ class SqlCompilerIntegrationTest {
         // Two aliases on the same root field with different filters. Before
         // the fix both subqueries executed but jsonb_build_object collapsed
         // the duplicate "testSchemaCustomer" key, dropping the first result.
-        String q = "{ "
+        String query = "{ "
                 + "alpha: testSchemaCustomer(where: { customer_id: { eq: 1 } }) { customer_id first_name } "
                 + "bravo: testSchemaCustomer(where: { customer_id: { eq: 2 } }) { customer_id first_name } "
                 + "}";
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql(q)))
+                        .content(graphql(query)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.alpha", hasSize(1)))
                 .andExpect(jsonPath("$.data.alpha[0].customer_id").value(1))

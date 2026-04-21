@@ -60,9 +60,9 @@ public class PostgresDialect implements SqlDialect {
     @Override
     public String suffixCast(String dataType) {
         if (dataType == null) return "";
-        String t = dataType.toLowerCase();
-        if (t.equals("bigint") || t.equals("int8")) return "::text";
-        if (t.equals("json")) return " #>> '{}'";
+        String type = dataType.toLowerCase();
+        if (type.equals("bigint") || type.equals("int8")) return "::text";
+        if (type.equals("json")) return " #>> '{}'";
         return "";
     }
 
@@ -148,14 +148,14 @@ public class PostgresDialect implements SqlDialect {
     @Override
     public String paramCast(String columnType) {
         if (columnType == null) return "";
-        String t = columnType.toLowerCase();
+        String type = columnType.toLowerCase();
         // Types that need explicit cast when binding via JDBC
-        if (t.equals("uuid") || t.equals("inet") || t.equals("cidr") || t.equals("macaddr") || t.equals("macaddr8")
-                || t.equals("jsonb") || t.equals("json") || t.equals("xml") || t.equals("bytea") || t.equals("interval")
-                || t.startsWith("bit") || t.contains("timestamp") || t.equals("date") || t.equals("time")
-                || t.contains("range") || t.equals("point") || t.equals("line") || t.equals("box") || t.equals("circle")
-                || t.equals("path") || t.equals("polygon") || t.equals("tsvector")) {
-            return "::" + t;
+        if (type.equals("uuid") || type.equals("inet") || type.equals("cidr") || type.equals("macaddr") || type.equals("macaddr8")
+                || type.equals("jsonb") || type.equals("json") || type.equals("xml") || type.equals("bytea") || type.equals("interval")
+                || type.startsWith("bit") || type.contains("timestamp") || type.equals("date") || type.equals("time")
+                || type.contains("range") || type.equals("point") || type.equals("line") || type.equals("box") || type.equals("circle")
+                || type.equals("path") || type.equals("polygon") || type.equals("tsvector")) {
+            return "::" + type;
         }
         return "";
     }

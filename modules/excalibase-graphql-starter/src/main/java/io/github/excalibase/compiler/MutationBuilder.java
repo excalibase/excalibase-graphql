@@ -164,10 +164,10 @@ public class MutationBuilder {
         if (value instanceof Map<?, ?> map) {
             return buildTupleString(fields, map);
         }
-        if (value instanceof String s && s.startsWith("{")) {
+        if (value instanceof String stringValue && stringValue.startsWith("{")) {
             try {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> parsed = OBJECT_MAPPER.readValue(s, Map.class);
+                Map<String, Object> parsed = OBJECT_MAPPER.readValue(stringValue, Map.class);
                 return buildTupleString(fields, parsed);
             } catch (Exception e) {
                 return value;
@@ -217,8 +217,8 @@ public class MutationBuilder {
     public List<Map<String, Object>> extractArrayOfObjects(Value<?> value, Map<String, Object> variables) {
         if (value instanceof ArrayValue av) {
             List<Map<String, Object>> result = new ArrayList<>();
-            for (Value<?> v : av.getValues()) {
-                result.add(extractObjectFields(v, variables));
+            for (Value<?> elementValue : av.getValues()) {
+                result.add(extractObjectFields(elementValue, variables));
             }
             return result;
         }

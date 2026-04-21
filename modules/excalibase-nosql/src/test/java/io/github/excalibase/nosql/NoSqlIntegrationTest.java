@@ -93,8 +93,9 @@ class NoSqlIntegrationTest {
             ));
 
             var result = schemaManager.syncSchema(schema);
-            assertThat(result).containsEntry("updated", 1);
-            assertThat(result).containsEntry("created", 0);
+            assertThat(result)
+                    .containsEntry("updated", 1)
+                    .containsEntry("created", 0);
         }
 
         @Test
@@ -167,8 +168,8 @@ class NoSqlIntegrationTest {
                 indexes.add(Map.of("fields", List.of("field" + i), "type", "string", "unique", false));
             }
 
-            assertThatThrownBy(() -> schemaManager.syncSchema(
-                    Map.of("collections", Map.of("big", Map.of("indexes", indexes)))))
+            Map<String, Object> tooManyIdx = Map.of("collections", Map.of("big", Map.of("indexes", indexes)));
+            assertThatThrownBy(() -> schemaManager.syncSchema(tooManyIdx))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("max is 10");
         }
@@ -201,18 +202,20 @@ class NoSqlIntegrationTest {
             var insertCompiled = compiler.compileInsertOne("posts", doc);
             var inserted = executionService.executeMutation(insertCompiled);
 
-            assertThat(inserted).containsKey("id");
-            assertThat(inserted).containsEntry("title", "Hello");
-            assertThat(inserted).containsEntry("status", "draft");
-            assertThat(inserted).containsKey("createdAt");
+            assertThat(inserted)
+                    .containsKey("id")
+                    .containsEntry("title", "Hello")
+                    .containsEntry("status", "draft")
+                    .containsKey("createdAt");
 
             var findCompiled = compiler.compileFind("posts",
                     Map.of("title", "Hello"), new FindOptions(30, 0, null));
             var found = executionService.executeQuery(findCompiled);
 
             assertThat(found).hasSize(1);
-            assertThat(found.getFirst()).containsEntry("title", "Hello");
-            assertThat(found.getFirst().get("id")).isEqualTo(inserted.get("id"));
+            assertThat(found.getFirst())
+                    .containsEntry("title", "Hello")
+                    .containsEntry("id", inserted.get("id"));
         }
 
         @Test
@@ -240,8 +243,9 @@ class NoSqlIntegrationTest {
                             Map.of("title", "Update Me"),
                             Map.of("$set", Map.of("status", "published"))));
 
-            assertThat(updated).containsEntry("status", "published");
-            assertThat(updated).containsEntry("title", "Update Me");
+            assertThat(updated)
+                    .containsEntry("status", "published")
+                    .containsEntry("title", "Update Me");
         }
 
         @Test

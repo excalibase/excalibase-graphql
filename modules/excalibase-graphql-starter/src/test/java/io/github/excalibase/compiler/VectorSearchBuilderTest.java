@@ -49,9 +49,9 @@ class VectorSearchBuilderTest {
     private final VectorSearchBuilder builder = new VectorSearchBuilder(dialect);
 
     private SchemaInfo schemaWithPgvector() {
-        SchemaInfo s = new SchemaInfo();
-        s.addExtension("vector", "0.6.0");
-        return s;
+        SchemaInfo schema = new SchemaInfo();
+        schema.addExtension("vector", "0.6.0");
+        return schema;
     }
 
     private ObjectValue vectorArg(String column, List<Float> embedding, String distance, Integer limit) {
@@ -59,7 +59,7 @@ class VectorSearchBuilderTest {
         if (column != null) fields.add(new ObjectField("column", new StringValue(column)));
         if (embedding != null) {
             List<Value> values = new ArrayList<>();
-            for (Float f : embedding) values.add(new FloatValue(BigDecimal.valueOf(f)));
+            for (Float floatValue : embedding) values.add(new FloatValue(BigDecimal.valueOf(floatValue)));
             fields.add(new ObjectField("near", new ArrayValue(values)));
         }
         if (distance != null) fields.add(new ObjectField("distance", new StringValue(distance)));

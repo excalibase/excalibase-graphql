@@ -2,6 +2,7 @@ package io.github.excalibase.spi;
 
 import io.github.excalibase.schema.SchemaInfo;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 
 import java.util.List;
 import java.util.Map;
@@ -45,9 +46,7 @@ public interface SchemaLoader {
                 AND tc.table_name = kcu.table_name
             WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = ?
             ORDER BY tc.table_name, kcu.ordinal_position
-            """, rs -> {
-            info.addPrimaryKey(rs.getString("table_name"), rs.getString("column_name"));
-        }, schema);
+            """, (RowCallbackHandler) rs -> info.addPrimaryKey(rs.getString("table_name"), rs.getString("column_name")), schema);
     }
 
     void loadForeignKeys(JdbcTemplate jdbc, String schema, SchemaInfo info);

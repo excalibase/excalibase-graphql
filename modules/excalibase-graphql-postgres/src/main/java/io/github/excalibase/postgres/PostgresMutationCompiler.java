@@ -38,37 +38,48 @@ public class PostgresMutationCompiler implements MutationCompiler {
         return new SqlCompiler.CompiledQuery(sql, params);
     }
 
-    @SuppressWarnings("java:S3776") // Mutation name router dispatches across create/update/delete/bulk variants — splitting would obscure the routing table
     private String routeMutation(Field field, String fieldName,
                                  Map<String, Object> params, Map<String, Object> variables,
                                  MutationBuilder shared) {
-        if (fieldName.startsWith(UPDATE_PREFIX) && fieldName.endsWith(COLLECTION_SUFFIX)) {
-            String typePart = fieldName.substring(UPDATE_PREFIX.length(), fieldName.length() - COLLECTION_SUFFIX.length());
-            String tableName = shared.resolveMutationTable(typePart);
-            return tableName != null ? compileUpdateCollection(field, tableName, params, variables, shared) : null;
-        }
-        if (fieldName.startsWith(DELETE_FROM_PREFIX) && fieldName.endsWith(COLLECTION_SUFFIX)) {
-            String typePart = fieldName.substring(DELETE_FROM_PREFIX.length(), fieldName.length() - COLLECTION_SUFFIX.length());
-            String tableName = shared.resolveMutationTable(typePart);
-            return tableName != null ? compileDeleteFromCollection(field, tableName, params, variables, shared) : null;
-        }
-        if (fieldName.startsWith(CREATE_MANY_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_MANY_PREFIX.length()));
-            return tableName != null ? compileBulkInsert(field, tableName, params, variables, shared) : null;
-        }
-        if (fieldName.startsWith(CREATE_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_PREFIX.length()));
-            return tableName != null ? compileInsert(field, tableName, params, variables, shared) : null;
-        }
-        if (fieldName.startsWith(UPDATE_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(UPDATE_PREFIX.length()));
-            return tableName != null ? compileUpdate(field, tableName, params, variables, shared) : null;
-        }
-        if (fieldName.startsWith(DELETE_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(DELETE_PREFIX.length()));
-            return tableName != null ? compileDelete(field, tableName, params, shared) : null;
-        }
-        return null;
+        // Collection-suffix routes must be checked before plain-prefix routes
+        // because e.g. updateFooCollection also starts with UPDATE_PREFIX.
+        String sql = tryRoute(UPDATE_PREFIX, COLLECTION_SUFFIX, fieldName,
+                (f, t) -> compileUpdateCollection(f, t, params, variables, shared), field, shared);
+        if (sql != null) return sql;
+        sql = tryRoute(DELETE_FROM_PREFIX, COLLECTION_SUFFIX, fieldName,
+                (f, t) -> compileDeleteFromCollection(f, t, params, variables, shared), field, shared);
+        if (sql != null) return sql;
+        sql = tryRoute(CREATE_MANY_PREFIX, "", fieldName,
+                (f, t) -> compileBulkInsert(f, t, params, variables, shared), field, shared);
+        if (sql != null) return sql;
+        sql = tryRoute(CREATE_PREFIX, "", fieldName,
+                (f, t) -> compileInsert(f, t, params, variables, shared), field, shared);
+        if (sql != null) return sql;
+        sql = tryRoute(UPDATE_PREFIX, "", fieldName,
+                (f, t) -> compileUpdate(f, t, params, variables, shared), field, shared);
+        if (sql != null) return sql;
+        return tryRoute(DELETE_PREFIX, "", fieldName,
+                (f, t) -> compileDelete(f, t, params, shared), field, shared);
+    }
+
+    /**
+     * If {@code fieldName} matches {@code prefix + <type> + suffix}, resolves
+     * the type to a table name and invokes {@code fn}. Returns the compiled
+     * SQL, or {@code null} if the name does not match this route or the type
+     * cannot be resolved.
+     */
+    private String tryRoute(String prefix, String suffix, String fieldName,
+                            RouteCompiler fn, Field field, MutationBuilder shared) {
+        if (!fieldName.startsWith(prefix)) return null;
+        if (!suffix.isEmpty() && !fieldName.endsWith(suffix)) return null;
+        String typePart = fieldName.substring(prefix.length(), fieldName.length() - suffix.length());
+        String tableName = shared.resolveMutationTable(typePart);
+        return tableName != null ? fn.compile(field, tableName) : null;
+    }
+
+    @FunctionalInterface
+    private interface RouteCompiler {
+        String compile(Field field, String tableName);
     }
 
     String compileInsert(Field field, String tableName, Map<String, Object> params,
@@ -86,9 +97,9 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (inputArg.getValue() instanceof ObjectValue inputOv) {
             // Process AST fields directly to detect nested FK inserts
             for (ObjectField of : inputOv.getObjectFields()) {
-                List<Map<String, Object>> nestedRows = extractNestedData(of.getValue(), variables, shared);
-                if (nestedRows != null) {
-                    nestedInserts.put(of.getName(), nestedRows);
+                Optional<List<Map<String, Object>>> nestedRows = extractNestedData(of.getValue(), variables, shared);
+                if (nestedRows.isPresent()) {
+                    nestedInserts.put(of.getName(), nestedRows.get());
                     continue;
                 }
                 cols.add(shared.dialect().quoteIdentifier(of.getName()));
@@ -123,17 +134,19 @@ public class PostgresMutationCompiler implements MutationCompiler {
     }
 
     /**
-     * Returns the data rows if this Value is a nested insert pattern: { data: [...] }, else null.
+     * Returns the data rows if this Value is a nested insert pattern (an ObjectValue
+     * carrying a "data" ArrayValue), or Optional.empty() if the Value is a plain
+     * scalar/column argument.
      */
-    private List<Map<String, Object>> extractNestedData(Value<?> value, Map<String, Object> variables,
-                                                         MutationBuilder shared) {
-        if (!(value instanceof ObjectValue ov)) return null;
+    private Optional<List<Map<String, Object>>> extractNestedData(Value<?> value, Map<String, Object> variables,
+                                                                    MutationBuilder shared) {
+        if (!(value instanceof ObjectValue ov)) return Optional.empty();
         ObjectField dataField = ov.getObjectFields().stream()
                 .filter(f -> "data".equals(f.getName())).findFirst().orElse(null);
-        if (dataField == null || !(dataField.getValue() instanceof ArrayValue av)) return null;
-        return av.getValues().stream()
+        if (dataField == null || !(dataField.getValue() instanceof ArrayValue av)) return Optional.empty();
+        return Optional.of(av.getValues().stream()
                 .map(v -> shared.extractObjectFields(v, variables))
-                .toList();
+                .toList());
     }
 
     /**
@@ -153,49 +166,54 @@ public class PostgresMutationCompiler implements MutationCompiler {
         cteParts.add(parentCtePart);
 
         for (var nested : nestedInserts.entrySet()) {
-            String nestedFieldName = nested.getKey();
-            List<Map<String, Object>> rows = nested.getValue();
-            if (rows.isEmpty()) continue;
-
-            SchemaInfo.ReverseFkInfo revFk = shared.schemaInfo().getReverseFk(tableName, nestedFieldName);
-            if (revFk == null) continue;
-
-            String childTable = revFk.childTable();
-            String fkCol = revFk.fkColumn();           // column in child table (e.g. order_id)
-            String refCol = revFk.refColumns().get(0); // column in parent table (e.g. order_id)
-
-            String childAlias = shared.dialect().randAlias();
-            String qualifiedChild = shared.qualifiedTable(childTable);
-
-            // Columns: FK col from parent, then data columns from first row
-            List<String> childCols = new ArrayList<>();
-            childCols.add(shared.dialect().quoteIdentifier(fkCol));
-            List<String> dataCols = new ArrayList<>(rows.get(0).keySet());
-            dataCols.forEach(c -> childCols.add(shared.dialect().quoteIdentifier(c)));
-
-            // One SELECT row per data row, joined with UNION ALL
-            List<String> selectRows = new ArrayList<>();
-            for (int i = 0; i < rows.size(); i++) {
-                Map<String, Object> row = rows.get(i);
-                List<String> rowVals = new ArrayList<>();
-                rowVals.add(alias + DOT + shared.dialect().quoteIdentifier(refCol));
-                for (String col : dataCols) {
-                    String paramName = namedParam(P_NESTED_INSERT, col + "_" + i, params.size());
-                    params.put(paramName, row.get(col));
-                    rowVals.add(param(paramName));
-                }
-                selectRows.add(SELECT + joinCols(rowVals) + FROM + alias);
-            }
-
-            String childCte = childAlias + AS_OPEN
-                    + INSERT_INTO + qualifiedChild + " " + parens(joinCols(childCols))
-                    + " " + String.join(UNION_ALL, selectRows)
-                    + RETURNING_ALL;
-            cteParts.add(childCte);
+            String childCte = buildChildInsertCte(nested.getKey(), nested.getValue(), alias, tableName, params, shared);
+            if (childCte != null) cteParts.add(childCte);
         }
 
         if (cteParts.size() == 1) return parentCte;
         return String.join(", ", cteParts) + " " + finalSelect;
+    }
+
+    /** Build a single child-table INSERT CTE for a nested-FK insert, or null if not applicable. */
+    private String buildChildInsertCte(String nestedFieldName, List<Map<String, Object>> rows,
+                                        String alias, String tableName,
+                                        Map<String, Object> params, MutationBuilder shared) {
+        if (rows.isEmpty()) return null;
+
+        SchemaInfo.ReverseFkInfo revFk = shared.schemaInfo().getReverseFk(tableName, nestedFieldName);
+        if (revFk == null) return null;
+
+        String childTable = revFk.childTable();
+        String fkCol = revFk.fkColumn();           // column in child table (e.g. order_id)
+        String refCol = revFk.refColumns().get(0); // column in parent table (e.g. order_id)
+
+        String childAlias = shared.dialect().randAlias();
+        String qualifiedChild = shared.qualifiedTable(childTable);
+
+        // Columns: FK col from parent, then data columns from first row
+        List<String> childCols = new ArrayList<>();
+        childCols.add(shared.dialect().quoteIdentifier(fkCol));
+        List<String> dataCols = new ArrayList<>(rows.get(0).keySet());
+        dataCols.forEach(col -> childCols.add(shared.dialect().quoteIdentifier(col)));
+
+        // One SELECT row per data row, joined with UNION ALL
+        List<String> selectRows = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Map<String, Object> row = rows.get(i);
+            List<String> rowVals = new ArrayList<>();
+            rowVals.add(alias + DOT + shared.dialect().quoteIdentifier(refCol));
+            for (String col : dataCols) {
+                String paramName = namedParam(P_NESTED_INSERT, col + "_" + i, params.size());
+                params.put(paramName, row.get(col));
+                rowVals.add(param(paramName));
+            }
+            selectRows.add(SELECT + joinCols(rowVals) + FROM + alias);
+        }
+
+        return childAlias + AS_OPEN
+                + INSERT_INTO + qualifiedChild + " " + parens(joinCols(childCols))
+                + " " + String.join(UNION_ALL, selectRows)
+                + RETURNING_ALL;
     }
 
     String compileBulkInsert(Field field, String tableName, Map<String, Object> params,
@@ -327,8 +345,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
             if (ON_CONFLICT_CONSTRAINT.equals(of.getName())) {
                 constraint = shared.filterBuilder().extractValue(of.getValue()).toString();
             } else if (ON_CONFLICT_UPDATE_COLUMNS.equals(of.getName()) && of.getValue() instanceof ArrayValue av) {
-                for (Value<?> v : av.getValues()) {
-                    updateCols.add(shared.filterBuilder().extractValue(v).toString());
+                for (Value<?> elementValue : av.getValues()) {
+                    updateCols.add(shared.filterBuilder().extractValue(elementValue).toString());
                 }
             }
         }
@@ -342,7 +360,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
         Argument atMostArg = shared.findArg(field, ARG_AT_MOST);
         if (atMostArg != null) {
             Object val = MutationBuilder.extractValue(atMostArg.getValue(), variables);
-            if (val instanceof Number n) return n.intValue();
+            if (val instanceof Number number) return number.intValue();
         }
         return 1;
     }

@@ -6,6 +6,18 @@ import java.util.*;
 
 public final class OpenApiGenerator {
 
+    private static final String K_TYPE = "type";
+    private static final String K_DESCRIPTION = "description";
+    private static final String K_SUMMARY = "summary";
+    private static final String K_RESPONSES = "responses";
+    private static final String K_SCHEMA = "schema";
+    private static final String K_CONTENT = "content";
+    private static final String K_FORMAT = "format";
+    private static final String T_STRING = "string";
+    private static final String T_OBJECT = "object";
+    private static final String T_INTEGER = "integer";
+    private static final String MIME_JSON = "application/json";
+
     private OpenApiGenerator() {}
 
     public static Map<String, Object> generate(SchemaInfo schemaInfo, String defaultSchema) {
@@ -14,7 +26,7 @@ public final class OpenApiGenerator {
         spec.put("info", Map.of(
             "title", "Excalibase REST API",
             "version", "1.0.0",
-            "description", "Auto-generated from database schema"
+            K_DESCRIPTION, "Auto-generated from database schema"
         ));
         spec.put("servers", List.of(Map.of("url", "/api/v1")));
 
@@ -34,7 +46,7 @@ public final class OpenApiGenerator {
                 String type = schemaInfo.getColumnType(tableKey, col);
                 properties.put(col, mapColumnType(type));
             }
-            schemas.put(typeName, Map.of("type", "object", "properties", properties));
+            schemas.put(typeName, Map.of(K_TYPE, T_OBJECT, "properties", properties));
 
             Map<String, Object> pathItem = new LinkedHashMap<>();
             pathItem.put("get", buildGetOp(raw, typeName));
@@ -53,18 +65,18 @@ public final class OpenApiGenerator {
 
     private static Map<String, Object> buildGetOp(String table, String typeName) {
         return Map.of(
-            "summary", "List " + table,
+            K_SUMMARY, "List " + table,
             "parameters", List.of(
                 param("select", "Columns to return"),
                 param("order", "Sort order (col.asc/desc)"),
                 param("limit", "Max rows"),
                 param("offset", "Skip rows")
             ),
-            "responses", Map.of("200", Map.of(
-                "description", "OK",
-                "content", Map.of("application/json", Map.of(
-                    "schema", Map.of("type", "object", "properties", Map.of(
-                        "data", Map.of("type", "array", "items", ref(typeName))
+            K_RESPONSES, Map.of("200", Map.of(
+                K_DESCRIPTION, "OK",
+                K_CONTENT, Map.of(MIME_JSON, Map.of(
+                    K_SCHEMA, Map.of(K_TYPE, T_OBJECT, "properties", Map.of(
+                        "data", Map.of(K_TYPE, "array", "items", ref(typeName))
                     ))
                 ))
             ))
@@ -73,29 +85,29 @@ public final class OpenApiGenerator {
 
     private static Map<String, Object> buildPostOp(String table, String typeName) {
         return Map.of(
-            "summary", "Create " + table,
-            "requestBody", Map.of("content", Map.of("application/json", Map.of("schema", ref(typeName)))),
-            "responses", Map.of("201", Map.of("description", "Created"))
+            K_SUMMARY, "Create " + table,
+            "requestBody", Map.of(K_CONTENT, Map.of(MIME_JSON, Map.of(K_SCHEMA, ref(typeName)))),
+            K_RESPONSES, Map.of("201", Map.of(K_DESCRIPTION, "Created"))
         );
     }
 
     private static Map<String, Object> buildPatchOp(String table, String typeName) {
         return Map.of(
-            "summary", "Update " + table,
-            "requestBody", Map.of("content", Map.of("application/json", Map.of("schema", ref(typeName)))),
-            "responses", Map.of("200", Map.of("description", "OK"))
+            K_SUMMARY, "Update " + table,
+            "requestBody", Map.of(K_CONTENT, Map.of(MIME_JSON, Map.of(K_SCHEMA, ref(typeName)))),
+            K_RESPONSES, Map.of("200", Map.of(K_DESCRIPTION, "OK"))
         );
     }
 
     private static Map<String, Object> buildDeleteOp(String table) {
         return Map.of(
-            "summary", "Delete " + table,
-            "responses", Map.of("200", Map.of("description", "OK"))
+            K_SUMMARY, "Delete " + table,
+            K_RESPONSES, Map.of("200", Map.of(K_DESCRIPTION, "OK"))
         );
     }
 
     private static Map<String, Object> param(String name, String desc) {
-        return Map.of("name", name, "in", "query", "required", false, "schema", Map.of("type", "string"), "description", desc);
+        return Map.of("name", name, "in", "query", "required", false, K_SCHEMA, Map.of(K_TYPE, T_STRING), K_DESCRIPTION, desc);
     }
 
     private static Map<String, Object> ref(String typeName) {
@@ -103,25 +115,25 @@ public final class OpenApiGenerator {
     }
 
     private static Map<String, Object> mapColumnType(String pgType) {
-        if (pgType == null) return Map.of("type", "string");
+        if (pgType == null) return Map.of(K_TYPE, T_STRING);
         return switch (pgType.toLowerCase()) {
-            case "integer", "int4", "serial", "smallint", "int2" -> Map.of("type", "integer");
-            case "bigint", "int8", "bigserial" -> Map.of("type", "integer", "format", "int64");
-            case "numeric", "decimal", "float8", "double precision" -> Map.of("type", "number");
-            case "real", "float4" -> Map.of("type", "number", "format", "float");
-            case "boolean", "bool" -> Map.of("type", "boolean");
-            case "jsonb", "json" -> Map.of("type", "object");
-            case "timestamp", "timestamptz" -> Map.of("type", "string", "format", "date-time");
-            case "date" -> Map.of("type", "string", "format", "date");
-            case "uuid" -> Map.of("type", "string", "format", "uuid");
-            default -> Map.of("type", "string");
+            case T_INTEGER, "int4", "serial", "smallint", "int2" -> Map.of(K_TYPE, T_INTEGER);
+            case "bigint", "int8", "bigserial" -> Map.of(K_TYPE, T_INTEGER, K_FORMAT, "int64");
+            case "numeric", "decimal", "float8", "double precision" -> Map.of(K_TYPE, "number");
+            case "real", "float4" -> Map.of(K_TYPE, "number", K_FORMAT, "float");
+            case "boolean", "bool" -> Map.of(K_TYPE, "boolean");
+            case "jsonb", "json" -> Map.of(K_TYPE, T_OBJECT);
+            case "timestamp", "timestamptz" -> Map.of(K_TYPE, T_STRING, K_FORMAT, "date-time");
+            case "date" -> Map.of(K_TYPE, T_STRING, K_FORMAT, "date");
+            case "uuid" -> Map.of(K_TYPE, T_STRING, K_FORMAT, "uuid");
+            default -> Map.of(K_TYPE, T_STRING);
         };
     }
 
-    private static String capitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
+    private static String capitalize(String input) {
+        if (input == null || input.isEmpty()) return input;
         StringBuilder sb = new StringBuilder();
-        for (String part : s.split("_")) {
+        for (String part : input.split("_")) {
             if (!part.isEmpty()) sb.append(Character.toUpperCase(part.charAt(0))).append(part.substring(1));
         }
         return sb.toString();

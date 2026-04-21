@@ -1,5 +1,6 @@
 package io.github.excalibase.controller;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
 import io.github.excalibase.schema.GraphqlSchemaManager;
@@ -11,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+
+import java.sql.SQLException;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,7 +44,6 @@ public class GraphqlController {
         this.observability = observability;
     }
 
-    @SuppressWarnings("java:S3776") // Request dispatcher: tenant resolution, introspection, procedure/query routing are coordinated here; splitting hurts traceability
     @PostMapping("/graphql")
     public ResponseEntity<Object> graphql(
             @RequestBody Map<String, Object> request,
@@ -66,39 +68,42 @@ public class GraphqlController {
         return observability.observe(query, null, () -> {
             try {
                 GraphqlSchemaManager.EngineState state = schemaManager.resolveEngineState(finalClaims);
-
-                // Introspection passthrough to GraphQL-Java
                 if (state.compiler().isIntrospection(finalQuery)) {
-                    if (state.introspectionHandler() != null) {
-                        return ResponseEntity.ok(state.introspectionHandler().execute(finalQuery, variables));
-                    }
-                    return ResponseEntity.ok(Map.of("data", Map.of("__schema", Map.of("queryType", Map.of("name", "Query")))));
+                    return handleIntrospection(state, finalQuery, variables);
                 }
-
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
-                MapSqlParameterSource params = new MapSqlParameterSource(compiled.params());
-
-                if (compiled.isProcedureCall() && compiled.procedureCallInfo() != null) {
-                    return queryExecutor.executeProcedureCall(compiled);
-                }
-
-                if (compiled.isTwoPhase()) {
-                    return queryExecutor.executeTwoPhase(compiled, params, state.mutationExecutor());
-                }
-
-                if (finalUserId != null && !finalUserId.isBlank()
-                        && "postgres".equalsIgnoreCase(schemaManager.getDatabaseType())) {
-                    return queryExecutor.executeWithRlsContext(compiled, finalUserId, finalClaims);
-                }
-
-                return queryExecutor.executeQuery(compiled, params);
-
+                return dispatchCompiled(compiled, state, finalUserId, finalClaims);
             } catch (Exception e) {
                 log.warn("GraphQL request failed", e);
                 return ResponseEntity.ok(Map.of(
                         "errors", List.of(Map.of("message", extractErrorMessage(e)))));
             }
         });
+    }
+
+    private ResponseEntity<Object> handleIntrospection(GraphqlSchemaManager.EngineState state,
+                                                       String query, Map<String, Object> variables) {
+        if (state.introspectionHandler() != null) {
+            return ResponseEntity.ok(state.introspectionHandler().execute(query, variables));
+        }
+        return ResponseEntity.ok(Map.of("data", Map.of("__schema", Map.of("queryType", Map.of("name", "Query")))));
+    }
+
+    private ResponseEntity<Object> dispatchCompiled(SqlCompiler.CompiledQuery compiled,
+                                                    GraphqlSchemaManager.EngineState state,
+                                                    String userId, JwtClaims claims) throws SQLException, JsonProcessingException {
+        MapSqlParameterSource params = new MapSqlParameterSource(compiled.params());
+        if (compiled.isProcedureCall() && compiled.procedureCallInfo() != null) {
+            return queryExecutor.executeProcedureCall(compiled);
+        }
+        if (compiled.isTwoPhase()) {
+            return queryExecutor.executeTwoPhase(compiled, params, state.mutationExecutor());
+        }
+        if (userId != null && !userId.isBlank()
+                && "postgres".equalsIgnoreCase(schemaManager.getDatabaseType())) {
+            return queryExecutor.executeWithRlsContext(compiled, userId, claims);
+        }
+        return queryExecutor.executeQuery(compiled, params);
     }
 
     private static String extractErrorMessage(Exception e) {

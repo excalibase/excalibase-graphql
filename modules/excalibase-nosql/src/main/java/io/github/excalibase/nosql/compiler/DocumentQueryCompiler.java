@@ -16,6 +16,9 @@ public class DocumentQueryCompiler {
     private static final String NOSQL_SCHEMA = "nosql";
     private static final String SELECT_CLAUSE = "SELECT id, data, created_at, updated_at";
     private static final String RETURNING_CLAUSE = "id, data, created_at, updated_at";
+    private static final String SQL_RETURNING = " RETURNING ";
+    private static final String SQL_FROM = " FROM ";
+    private static final String MSG_COLLECTION_PREFIX = "Collection '";
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final Pattern IDENT_PATTERN = Pattern.compile("^[a-zA-Z_]\\w*$");
 
@@ -40,7 +43,7 @@ public class DocumentQueryCompiler {
         var sql = new StringBuilder();
 
         sql.append(SELECT_CLAUSE);
-        sql.append(" FROM ").append(qualifiedTable(collection));
+        sql.append(SQL_FROM).append(qualifiedTable(collection));
 
         appendWhere(sql, filter, schema, params);
         appendOrderBy(sql, opts.sort());
@@ -55,7 +58,7 @@ public class DocumentQueryCompiler {
         var sql = new StringBuilder();
 
         sql.append(SELECT_CLAUSE);
-        sql.append(" FROM ").append(qualifiedTable(collection));
+        sql.append(SQL_FROM).append(qualifiedTable(collection));
         appendWhere(sql, filter, schema, params);
         sql.append(" LIMIT 1");
 
@@ -67,7 +70,7 @@ public class DocumentQueryCompiler {
         params.put("id", id);
 
         var sql = SELECT_CLAUSE +
-                " FROM " + qualifiedTable(collection) +
+                SQL_FROM + qualifiedTable(collection) +
                 " WHERE id = :id::uuid LIMIT 1";
 
         return new CompiledDoc(sql, params);
@@ -79,7 +82,7 @@ public class DocumentQueryCompiler {
 
         var sql = "INSERT INTO " + qualifiedTable(collection) + " (data)" +
                 " VALUES (:data::jsonb)" +
-                " RETURNING " + RETURNING_CLAUSE;
+                SQL_RETURNING + RETURNING_CLAUSE;
 
         return new CompiledDoc(sql, params);
     }
@@ -97,7 +100,7 @@ public class DocumentQueryCompiler {
 
         var sql = "INSERT INTO " + qualifiedTable(collection) + " (data)" +
                 " VALUES " + values +
-                " RETURNING " + RETURNING_CLAUSE;
+                SQL_RETURNING + RETURNING_CLAUSE;
 
         return new CompiledDoc(sql, params);
     }
@@ -117,7 +120,7 @@ public class DocumentQueryCompiler {
         sql.append("UPDATE ").append(qualifiedTable(collection));
         sql.append(" SET data = data || :patch::jsonb, updated_at = clock_timestamp()");
         appendWhere(sql, filter, schema, params);
-        sql.append(" RETURNING ").append(RETURNING_CLAUSE);
+        sql.append(SQL_RETURNING).append(RETURNING_CLAUSE);
 
         return new CompiledDoc(sql.toString(), params);
     }
@@ -136,7 +139,7 @@ public class DocumentQueryCompiler {
 
         var sql = "DELETE FROM " + qualifiedTable(collection) +
                 " WHERE id = :id::uuid" +
-                " RETURNING " + RETURNING_CLAUSE;
+                SQL_RETURNING + RETURNING_CLAUSE;
 
         return new CompiledDoc(sql, params);
     }
@@ -148,7 +151,7 @@ public class DocumentQueryCompiler {
         var sql = new StringBuilder();
         sql.append("DELETE FROM ").append(qualifiedTable(collection));
         appendWhere(sql, filter, schema, params);
-        sql.append(" RETURNING ").append(RETURNING_CLAUSE);
+        sql.append(SQL_RETURNING).append(RETURNING_CLAUSE);
 
         return new CompiledDoc(sql.toString(), params);
     }
@@ -156,14 +159,14 @@ public class DocumentQueryCompiler {
     public CompiledDoc compileSearch(String collection, String query, int limit) {
         var schema = resolveSchema(collection);
         if (schema.searchField() == null) {
-            throw new IllegalArgumentException("Collection '" + collection + "' has no search field configured");
+            throw new IllegalArgumentException(MSG_COLLECTION_PREFIX + collection + "' has no search field configured");
         }
         var params = new LinkedHashMap<String, Object>();
         params.put("query", query);
         params.put("limit", Math.min(limit, 1000));
 
         var sql = SELECT_CLAUSE + ", ts_rank(search_text, websearch_to_tsquery(:query)) AS rank" +
-                " FROM " + qualifiedTable(collection) +
+                SQL_FROM + qualifiedTable(collection) +
                 " WHERE search_text @@ websearch_to_tsquery(:query)" +
                 " ORDER BY rank DESC" +
                 " LIMIT :limit";
@@ -174,7 +177,7 @@ public class DocumentQueryCompiler {
     public CompiledDoc compileSetEmbedding(String collection, String id, List<? extends Number> embedding) {
         var schema = resolveSchema(collection);
         if (schema.vector() == null) {
-            throw new IllegalArgumentException("Collection '" + collection + "' has no vector field configured");
+            throw new IllegalArgumentException(MSG_COLLECTION_PREFIX + collection + "' has no vector field configured");
         }
         if (embedding == null || embedding.isEmpty()) {
             throw new IllegalArgumentException("embedding must be a non-empty numeric array");
@@ -186,7 +189,7 @@ public class DocumentQueryCompiler {
         var sql = "UPDATE " + qualifiedTable(collection) +
                 " SET embedding = :embedding::vector, updated_at = clock_timestamp()" +
                 " WHERE id = :id::uuid" +
-                " RETURNING " + RETURNING_CLAUSE;
+                SQL_RETURNING + RETURNING_CLAUSE;
 
         return new CompiledDoc(sql, params);
     }
@@ -194,14 +197,14 @@ public class DocumentQueryCompiler {
     public CompiledDoc compileVectorSearch(String collection, List<? extends Number> embedding, int topK) {
         var schema = resolveSchema(collection);
         if (schema.vector() == null) {
-            throw new IllegalArgumentException("Collection '" + collection + "' has no vector field configured");
+            throw new IllegalArgumentException(MSG_COLLECTION_PREFIX + collection + "' has no vector field configured");
         }
         var params = new LinkedHashMap<String, Object>();
         params.put("embedding", embedding.toString());
         params.put("topK", Math.min(topK, 1000));
 
         var sql = SELECT_CLAUSE + ", embedding <=> :embedding::vector AS distance" +
-                " FROM " + qualifiedTable(collection) +
+                SQL_FROM + qualifiedTable(collection) +
                 " ORDER BY embedding <=> :embedding::vector" +
                 " LIMIT :topK";
 
@@ -228,49 +231,56 @@ public class DocumentQueryCompiler {
         return NOSQL_SCHEMA + ".\"" + safeIdent(collection, "collection name") + "\"";
     }
 
-    @SuppressWarnings("unchecked")
     private void appendWhere(StringBuilder sql, Map<String, Object> filter,
                               CollectionSchema schema, Map<String, Object> params) {
         if (filter == null || filter.isEmpty()) return;
 
         var conditions = new java.util.ArrayList<String>();
-        int paramIdx = params.size();
+        int[] paramIdx = { params.size() };
 
         for (var entry : filter.entrySet()) {
             String field = safeIdent(entry.getKey(), "filter field");
-            Object value = entry.getValue();
-            String indexType = findIndexType(schema, field);
-            String colRef = buildColRef(field, indexType);
-
-            if (value instanceof Map<?, ?> opMap) {
-                for (var op : ((Map<String, Object>) opMap).entrySet()) {
-                    String paramName = "p" + (paramIdx++);
-                    String operator = switch (op.getKey()) {
-                        case "$gt" -> ">";
-                        case "$gte" -> ">=";
-                        case "$lt" -> "<";
-                        case "$lte" -> "<=";
-                        case "$ne" -> "!=";
-                        case "$in" -> "IN";
-                        default -> "=";
-                    };
-                    if ("IN".equals(operator)) {
-                        conditions.add(colRef + " IN (:" + paramName + ")");
-                    } else {
-                        conditions.add(colRef + " " + operator + " :" + paramName);
-                    }
-                    params.put(paramName, op.getValue());
-                }
-            } else {
-                String paramName = "p" + (paramIdx++);
-                conditions.add(colRef + " = :" + paramName);
-                params.put(paramName, value instanceof Number ? value : String.valueOf(value));
-            }
+            String colRef = buildColRef(field, findIndexType(schema, field));
+            appendFieldConditions(colRef, entry.getValue(), conditions, params, paramIdx);
         }
 
         if (!conditions.isEmpty()) {
             sql.append(" WHERE ").append(String.join(" AND ", conditions));
         }
+    }
+
+    /** Render conditions for a single field — a scalar equality or a map of operator/value pairs. */
+    @SuppressWarnings("unchecked")
+    private void appendFieldConditions(String colRef, Object value, List<String> conditions,
+                                       Map<String, Object> params, int[] paramIdx) {
+        if (value instanceof Map<?, ?> opMap) {
+            for (var op : ((Map<String, Object>) opMap).entrySet()) {
+                String paramName = "p" + (paramIdx[0]++);
+                String operator = mongoOperatorToSql(op.getKey());
+                if ("IN".equals(operator)) {
+                    conditions.add(colRef + " IN (:" + paramName + ")");
+                } else {
+                    conditions.add(colRef + " " + operator + " :" + paramName);
+                }
+                params.put(paramName, op.getValue());
+            }
+            return;
+        }
+        String paramName = "p" + (paramIdx[0]++);
+        conditions.add(colRef + " = :" + paramName);
+        params.put(paramName, value instanceof Number ? value : String.valueOf(value));
+    }
+
+    private String mongoOperatorToSql(String mongoOp) {
+        return switch (mongoOp) {
+            case "$gt" -> ">";
+            case "$gte" -> ">=";
+            case "$lt" -> "<";
+            case "$lte" -> "<=";
+            case "$ne" -> "!=";
+            case "$in" -> "IN";
+            default -> "=";
+        };
     }
 
     private void appendOrderBy(StringBuilder sql, Map<String, Object> sort) {
@@ -279,7 +289,7 @@ public class DocumentQueryCompiler {
         var orders = new java.util.ArrayList<String>();
         for (var entry : sort.entrySet()) {
             String field = safeIdent(entry.getKey(), "sort field");
-            int direction = entry.getValue() instanceof Number n ? n.intValue() : 1;
+            int direction = entry.getValue() instanceof Number number ? number.intValue() : 1;
             String dir = direction < 0 ? "DESC" : "ASC";
             orders.add("(data->>'" + field + "') " + dir);
         }

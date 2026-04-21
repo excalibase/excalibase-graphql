@@ -66,50 +66,40 @@ public class RestQueryCompiler {
         return compileSelect(new SelectQuery(table, columns, filters, null, List.of(), orderBy, limit, offset, includeCount));
     }
 
-    public CompiledResult compileSelect(String table, List<String> columns, List<FilterSpec> filters,
-                                        List<OrCondition> orConditions, List<EmbedSpec> embeds,
-                                        List<OrderBySpec> orderBy, int limit, int offset, boolean includeCount) {
-        return compileSelect(new SelectQuery(table, columns, filters, orConditions, embeds, orderBy, limit, offset, includeCount));
-    }
+    public CompiledResult compileSelect(SelectQuery query) {
+        Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(query.table()));
+        List<String> columns = query.columns().stream().filter(knownCols::contains).toList();
+        List<OrderBySpec> orderBy = query.orderBy() != null ? query.orderBy().stream().filter(o -> knownCols.contains(o.column())).toList() : null;
+        List<FilterSpec> allFilters = query.filters().stream().filter(f -> knownCols.contains(f.column())).toList();
 
-    public CompiledResult compileSelect(SelectQuery q) {
-        Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(q.table()));
-        List<String> columns = q.columns().stream().filter(knownCols::contains).toList();
-        List<OrderBySpec> orderBy = q.orderBy() != null ? q.orderBy().stream().filter(o -> knownCols.contains(o.column())).toList() : null;
-        List<FilterSpec> allFilters = q.filters().stream().filter(f -> knownCols.contains(f.column())).toList();
-
-        String quotedTable = resolveTable(q.table());
+        String quotedTable = resolveTable(query.table());
         Map<String, Object> params = new LinkedHashMap<>();
 
         // Extract the (optional) vector filter before WHERE. k-NN search is not
         // a predicate — it modifies ORDER BY + LIMIT — so the vector FilterSpec
         // must not land in buildWhere. Only the first vector filter is honored.
         VectorSearchBuilder.VectorClause vectorClause = null;
-        List<FilterSpec> filters;
-        {
-            List<FilterSpec> remaining = new ArrayList<>(allFilters.size());
-            for (FilterSpec f : allFilters) {
-                if ("vector".equals(f.operator()) && vectorClause == null) {
-                    vectorClause = compileVectorFilter(f, ALIAS, params);
-                    continue;
-                }
-                remaining.add(f);
+        List<FilterSpec> filters = new ArrayList<>(allFilters.size());
+        for (FilterSpec filter : allFilters) {
+            if ("vector".equals(filter.operator()) && vectorClause == null) {
+                vectorClause = compileVectorFilter(filter, ALIAS, params);
+            } else {
+                filters.add(filter);
             }
-            filters = remaining;
         }
 
-        StringBuilder where = buildWhere(filters, P_FILTER, params, q.table());
-        appendOrConditions(where, q.orConditions(), knownCols, params, q.table());
-        if (q.afterCursor() != null && q.orderColumn() != null && knownCols.contains(q.orderColumn())) {
+        StringBuilder where = buildWhere(filters, P_FILTER, params, query.table());
+        appendOrConditions(where, query.orConditions(), knownCols, params, query.table());
+        if (query.afterCursor() != null && query.orderColumn() != null && knownCols.contains(query.orderColumn())) {
             if (!where.isEmpty()) where.append(AND);
-            params.put(P_AFTER, convertValue(q.afterCursor(), q.table(), q.orderColumn()));
-            where.append(dialect.quoteIdentifier(q.orderColumn())).append(GT).append(PARAM_PREFIX).append(P_AFTER);
+            params.put(P_AFTER, convertValue(query.afterCursor(), query.table(), query.orderColumn()));
+            where.append(dialect.quoteIdentifier(query.orderColumn())).append(GT).append(PARAM_PREFIX).append(P_AFTER);
         }
 
         // Vector k-NN ordering overrides any user-supplied orderBy entirely —
         // nearest-neighbor similarity IS the sort, there is no composing.
         StringBuilder orderBySql;
-        int effectiveLimit = q.limit();
+        int effectiveLimit = query.limit();
         if (vectorClause != null) {
             orderBySql = new StringBuilder(ORDER_BY).append(vectorClause.orderByFragment());
             if (vectorClause.limitOverride() != null) {
@@ -119,12 +109,12 @@ public class RestQueryCompiler {
             orderBySql = buildOrderBy(orderBy);
         }
 
-        StringBuilder inner = buildInnerSelect(quotedTable, where, orderBySql, effectiveLimit, q.offset());
-        String jsonAgg = buildJsonAgg(columns, buildEmbedEntries(q.table(), q.embeds()), knownCols);
+        StringBuilder inner = buildInnerSelect(quotedTable, where, orderBySql, effectiveLimit, query.offset());
+        String jsonAgg = buildJsonAgg(columns, buildEmbedEntries(query.table(), query.embeds()), knownCols);
 
         StringBuilder sql = new StringBuilder();
         sql.append(SELECT).append(jsonAgg).append(AS_BODY);
-        if (q.includeCount()) appendCountSubquery(sql, filters, quotedTable, params, q.table());
+        if (query.includeCount()) appendCountSubquery(sql, filters, quotedTable, params, query.table());
         sql.append(FROM).append(parens(inner.toString())).append(SPACE).append(ALIAS);
         return new CompiledResult(sql.toString(), params);
     }
@@ -184,11 +174,11 @@ public class RestQueryCompiler {
         List<String> colNames = allCols.stream().toList();
 
         List<String> valueRows = new ArrayList<>();
-        for (int r = 0; r < rows.size(); r++) {
+        for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
             List<String> vals = new ArrayList<>();
             for (String col : colNames) {
-                String pn = P_INSERT + r + UNDERSCORE + col;
-                params.put(pn, coerceParam(table, col, rows.get(r).getOrDefault(col, null)));
+                String pn = P_INSERT + rowIndex + UNDERSCORE + col;
+                params.put(pn, coerceParam(table, col, rows.get(rowIndex).getOrDefault(col, null)));
                 vals.add(PARAM_PREFIX + pn);
             }
             valueRows.add(parens(String.join(COMMA_SEP, vals)));
@@ -277,9 +267,9 @@ public class RestQueryCompiler {
     private StringBuilder buildWhere(List<FilterSpec> filters, String prefix, Map<String, Object> params, String table) {
         StringBuilder where = new StringBuilder();
         int fc = 0;
-        for (FilterSpec f : filters) {
+        for (FilterSpec filter : filters) {
             if (!where.isEmpty()) where.append(AND);
-            where.append(buildFilterSql(f, prefix + (fc++), params, table));
+            where.append(buildFilterSql(filter, prefix + (fc++), params, table));
         }
         return where;
     }
@@ -289,8 +279,8 @@ public class RestQueryCompiler {
         for (int oi = 0; oi < ors.size(); oi++) {
             List<String> parts = new ArrayList<>();
             for (int ci = 0; ci < ors.get(oi).conditions().size(); ci++) {
-                var f = ors.get(oi).conditions().get(ci);
-                if (knownCols.contains(f.column())) parts.add(buildFilterSql(f, P_OR + oi + UNDERSCORE + ci, params, table));
+                var filter = ors.get(oi).conditions().get(ci);
+                if (knownCols.contains(filter.column())) parts.add(buildFilterSql(filter, P_OR + oi + UNDERSCORE + ci, params, table));
             }
             if (!parts.isEmpty()) {
                 if (!where.isEmpty()) where.append(AND);
@@ -314,9 +304,9 @@ public class RestQueryCompiler {
         if (orderBy != null && !orderBy.isEmpty()) {
             sql.append(ORDER_BY);
             List<String> parts = new ArrayList<>();
-            for (OrderBySpec o : orderBy) {
-                String part = ALIAS + DOT + dialect.quoteIdentifier(o.column()) + SPACE + validateDirection(o.direction());
-                if (o.nulls() != null) part += SPACE + validateNulls(o.nulls());
+            for (OrderBySpec orderSpec : orderBy) {
+                String part = ALIAS + DOT + dialect.quoteIdentifier(orderSpec.column()) + SPACE + validateDirection(orderSpec.direction());
+                if (orderSpec.nulls() != null) part += SPACE + validateNulls(orderSpec.nulls());
                 parts.add(part);
             }
             sql.append(String.join(COMMA_SEP, parts));
@@ -430,25 +420,35 @@ public class RestQueryCompiler {
     }
 
     private SchemaInfo.FkInfo findForwardFk(String table, String relName, String fkHint) {
+        String tablePrefix = table + DOT;
         for (var e : schemaInfo.getAllForwardFks().entrySet()) {
-            if (!e.getKey().startsWith(table + DOT)) continue;
-            if (fkHint != null && !e.getValue().fkColumn().equals(fkHint)) continue;
-            String ref = e.getValue().refTable();
-            String raw = ref.contains(DOT) ? ref.substring(ref.indexOf(DOT) + 1) : ref;
-            if (raw.equals(relName)) return e.getValue();
+            SchemaInfo.FkInfo fk = e.getValue();
+            if (matchesFk(e.getKey(), tablePrefix, fk.fkColumn(), fkHint, fk.refTable(), relName)) {
+                return fk;
+            }
         }
         return null;
     }
 
     private SchemaInfo.ReverseFkInfo findReverseFk(String table, String relName, String fkHint) {
+        String tablePrefix = table + DOT;
         for (var e : schemaInfo.getAllReverseFks().entrySet()) {
-            if (!e.getKey().startsWith(table + DOT)) continue;
-            if (fkHint != null && !e.getValue().fkColumn().equals(fkHint)) continue;
-            String child = e.getValue().childTable();
-            String raw = child.contains(DOT) ? child.substring(child.indexOf(DOT) + 1) : child;
-            if (raw.equals(relName)) return e.getValue();
+            SchemaInfo.ReverseFkInfo rfk = e.getValue();
+            if (matchesFk(e.getKey(), tablePrefix, rfk.fkColumn(), fkHint, rfk.childTable(), relName)) {
+                return rfk;
+            }
         }
         return null;
+    }
+
+    /** True if the FK entry belongs to {@code tablePrefix}, matches the optional {@code fkHint}, and its target table equals {@code relName}. */
+    private static boolean matchesFk(String entryKey, String tablePrefix,
+                                      String fkColumn, String fkHint,
+                                      String targetTable, String relName) {
+        if (!entryKey.startsWith(tablePrefix)) return false;
+        if (fkHint != null && !fkColumn.equals(fkHint)) return false;
+        String raw = targetTable.contains(DOT) ? targetTable.substring(targetTable.indexOf(DOT) + 1) : targetTable;
+        return raw.equals(relName);
     }
 
 
@@ -571,8 +571,8 @@ public class RestQueryCompiler {
         return jsonFilter(params, paramName, filter, neg, colRef + rangeOp + PARAM_PREFIX + paramName, table);
     }
 
-    private String comparison(Map<String, Object> params, String pn, FilterSpec f, String neg, String col, String op, String table) {
-        params.put(pn, convertValue(f.value(), table, f.column()));
+    private String comparison(Map<String, Object> params, String pn, FilterSpec filter, String neg, String col, String op, String table) {
+        params.put(pn, convertValue(filter.value(), table, filter.column()));
         return neg + col + op + PARAM_PREFIX + pn;
     }
 
@@ -581,18 +581,18 @@ public class RestQueryCompiler {
         return neg + col + op + PARAM_PREFIX + pn;
     }
 
-    private String jsonFilter(Map<String, Object> params, String pn, FilterSpec f, String neg, String expr, String table) {
+    private String jsonFilter(Map<String, Object> params, String pn, FilterSpec filter, String neg, String expr, String table) {
         // Route the bind through convertValue so json/jsonb and array columns
         // get Types.OTHER coercion — Postgres then parses the string against
         // the actual column type. Without this, raw String binds produce
         // `varchar` on both sides and lose against `jsonb` / `text[]`.
-        params.put(pn, convertValue(f.value(), table, f.column()));
+        params.put(pn, convertValue(filter.value(), table, filter.column()));
         return neg + expr;
     }
 
-    private String tsFilter(Map<String, Object> params, String pn, FilterSpec f, String neg, String col, String fn) {
-        params.put(pn, f.value());
-        return neg + FN_TO_TSVECTOR + parens(col) + MATCH_TSQUERY + fn + parens(PARAM_PREFIX + pn);
+    private String tsFilter(Map<String, Object> params, String pn, FilterSpec filter, String neg, String col, String functionName) {
+        params.put(pn, filter.value());
+        return neg + FN_TO_TSVECTOR + parens(col) + MATCH_TSQUERY + functionName + parens(PARAM_PREFIX + pn);
     }
 
     private String isFilter(String neg, String col, String value) {
@@ -610,13 +610,13 @@ public class RestQueryCompiler {
         if (items.length > MAX_IN_LIST) throw new IllegalArgumentException("IN list exceeds maximum of " + MAX_IN_LIST);
         List<String> ph = new ArrayList<>();
         for (int i = 0; i < items.length; i++) {
-            String p = pn + UNDERSCORE + i;
+            String param = pn + UNDERSCORE + i;
             // Coerce each item through the same type-aware path as eq/neq/gt/…
             // so int columns get Integer bindings and enum columns get a
             // Types.OTHER cast. Without this, `?id=in.(1,2,3)` binds three
             // Strings and Postgres rejects the whole query.
-            params.put(p, convertValue(items[i].trim(), table, filter.column()));
-            ph.add(PARAM_PREFIX + p);
+            params.put(param, convertValue(items[i].trim(), table, filter.column()));
+            ph.add(PARAM_PREFIX + param);
         }
         return neg + col + (not ? NOT_IN : IN) + parens(String.join(COMMA_SEP, ph));
     }
@@ -658,7 +658,7 @@ public class RestQueryCompiler {
                 new SqlParameterValue(Types.OTHER, value.toString());
             // JSONB/JSON: Map/List from JSON body must be serialized to a JSON string first
             case "jsonb", "json", "_jsonb", "_json", "jsonb[]", "json[]" -> {
-                String json = (value instanceof String s) ? s : toJsonString(value);
+                String json = (value instanceof String stringValue) ? stringValue : toJsonString(value);
                 yield new SqlParameterValue(Types.OTHER, json);
             }
             default -> value;

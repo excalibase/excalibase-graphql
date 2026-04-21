@@ -17,8 +17,14 @@ import java.util.*;
 @RequestMapping("/api/v1/nosql")
 public class NoSqlController {
 
+    private static final String KEY_ERROR = "error";
+    private static final String MSG_NOT_FOUND = "Not found";
+    private static final String PARAM_SEARCH = "search";
+    private static final String PARAM_LIMIT = "limit";
+    private static final String PARAM_COUNT = "count";
+
     private static final Set<String> RESERVED_PARAMS = Set.of(
-            "limit", "offset", "sort", "search", "vector", "count", "stats");
+            PARAM_LIMIT, "offset", "sort", PARAM_SEARCH, "vector", PARAM_COUNT, "stats");
 
     private final CollectionSchemaManager schemaManager;
     private final DocumentExecutionService executionService;
@@ -46,10 +52,10 @@ public class NoSqlController {
         var names = schemaManager.getCollectionInfo().getCollectionNames();
         var collections = new LinkedHashMap<String, Object>();
         for (String name : names) {
-            schemaManager.getCollectionInfo().getCollection(name).ifPresent(s ->
+            schemaManager.getCollectionInfo().getCollection(name).ifPresent(schema ->
                     collections.put(name, Map.of(
-                            "indexes", s.indexes(),
-                            "indexedFields", s.indexedFields())));
+                            "indexes", schema.indexes(),
+                            "indexedFields", schema.indexedFields())));
         }
         return ResponseEntity.ok(Map.of("data", collections));
     }
@@ -69,17 +75,17 @@ public class NoSqlController {
         }
 
         // Count mode
-        if (allParams.containsKey("count")) {
+        if (allParams.containsKey(PARAM_COUNT)) {
             var filter = parseFilter(allParams);
             var compiled = compiler().compileCount(collection, filter);
             long count = executionService.executeCount(compiled);
-            return ResponseEntity.ok(Map.of("data", Map.of("count", count)));
+            return ResponseEntity.ok(Map.of("data", Map.of(PARAM_COUNT, count)));
         }
 
         // Search mode
-        if (allParams.containsKey("search")) {
-            String query = allParams.get("search");
-            int limit = toInt(allParams.get("limit"), 10);
+        if (allParams.containsKey(PARAM_SEARCH)) {
+            String query = allParams.get(PARAM_SEARCH);
+            int limit = toInt(allParams.get(PARAM_LIMIT), 10);
             var compiled = compiler().compileSearch(collection, query, limit);
             var results = executionService.executeQuery(compiled);
             return ResponseEntity.ok(Map.of("data", results));
@@ -89,7 +95,7 @@ public class NoSqlController {
         var filter = parseFilter(allParams);
         var warnings = schema.checkIndexes(filter.keySet());
 
-        int limit = toInt(allParams.get("limit"), 30);
+        int limit = toInt(allParams.get(PARAM_LIMIT), 30);
         int offset = toInt(allParams.get("offset"), 0);
         var sort = parseSort(allParams.get("sort"));
 
@@ -118,7 +124,7 @@ public class NoSqlController {
         var compiled = compiler().compileGetById(collection, id);
         return executionService.executeSingleQuery(compiled)
                 .<ResponseEntity<Object>>map(result -> ResponseEntity.ok(Map.of("data", result)))
-                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found")));
+                .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(KEY_ERROR, MSG_NOT_FOUND)));
     }
 
     // ─── Write (POST/PATCH/DELETE) ─────────────────────────────────────────────
@@ -135,15 +141,15 @@ public class NoSqlController {
 
         if (body.containsKey("docs")) {
             if (!(body.get("docs") instanceof List<?> rawList) || rawList.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "docs array required"));
+                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "docs array required"));
             }
             var docs = new ArrayList<Map<String, Object>>();
             for (Object item : rawList) {
-                if (!(item instanceof Map<?, ?> m)) {
-                    return ResponseEntity.badRequest().body(Map.of("error", "docs must be array of objects"));
+                if (!(item instanceof Map<?, ?> itemMap)) {
+                    return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "docs must be array of objects"));
                 }
                 @SuppressWarnings("unchecked")
-                var doc = (Map<String, Object>) m;
+                var doc = (Map<String, Object>) itemMap;
                 docs.add(doc);
             }
             var compiled = compiler().compileInsertMany(collection, docs);
@@ -153,7 +159,7 @@ public class NoSqlController {
 
         Object rawDoc = body.getOrDefault("doc", body);
         if (!(rawDoc instanceof Map<?, ?>)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "doc must be an object"));
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "doc must be an object"));
         }
         @SuppressWarnings("unchecked")
         var doc = (Map<String, Object>) rawDoc;
@@ -170,7 +176,7 @@ public class NoSqlController {
         var filter = parseFilter(allParams);
 
         if (filter.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "filter required in query params"));
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "filter required in query params"));
         }
 
         var compiled = compiler().compileUpdateMany(collection, filter, body);
@@ -185,7 +191,7 @@ public class NoSqlController {
         var filter = parseFilter(allParams);
 
         if (filter.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "filter required in query params"));
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "filter required in query params"));
         }
 
         var compiled = compiler().compileDeleteMany(collection, filter);
@@ -199,21 +205,21 @@ public class NoSqlController {
                                                 @RequestBody Map<String, Object> body) {
         resolveCollection(collection);
         if (!(body.get("embedding") instanceof List<?> rawList) || rawList.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "embedding must be a non-empty numeric array"));
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "embedding must be a non-empty numeric array"));
         }
         var embedding = new ArrayList<Number>(rawList.size());
         for (Object item : rawList) {
-            if (!(item instanceof Number n)) {
-                return ResponseEntity.badRequest().body(Map.of("error", "embedding values must be numeric"));
+            if (!(item instanceof Number number)) {
+                return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "embedding values must be numeric"));
             }
-            embedding.add(n);
+            embedding.add(number);
         }
         try {
             var compiled = compiler().compileSetEmbedding(collection, id, embedding);
             var result = executionService.executeMutation(compiled);
             return ResponseEntity.ok(Map.of("data", result));
         } catch (EmptyResultDataAccessException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found"));
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(KEY_ERROR, MSG_NOT_FOUND));
         }
     }
 
@@ -226,7 +232,7 @@ public class NoSqlController {
             var result = executionService.executeMutation(compiled);
             return ResponseEntity.ok(Map.of("data", result));
         } catch (EmptyResultDataAccessException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Not found"));
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(KEY_ERROR, MSG_NOT_FOUND));
         }
     }
 
@@ -236,7 +242,7 @@ public class NoSqlController {
         @SuppressWarnings("unchecked")
         var embedding = (List<? extends Number>) body.get("embedding");
         if (embedding == null || embedding.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "embedding required"));
+            return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "embedding required"));
         }
         int topK = toInt(body.get("topK"), 5);
         var compiled = compiler().compileVectorSearch(collection, embedding, topK);
@@ -273,7 +279,7 @@ public class NoSqlController {
     }
 
     private Map<String, Object> parseSort(String sort) {
-        if (sort == null || sort.isBlank()) return null;
+        if (sort == null || sort.isBlank()) return Map.of();
         var result = new LinkedHashMap<String, Object>();
         for (String part : sort.split(",")) {
             int dot = part.lastIndexOf('.');
@@ -285,7 +291,7 @@ public class NoSqlController {
                 result.put(part, 1);
             }
         }
-        return result.isEmpty() ? null : result;
+        return result;
     }
 
     private Object parseNumber(String val) {
@@ -295,9 +301,9 @@ public class NoSqlController {
     }
 
     private int toInt(Object value, int defaultValue) {
-        if (value instanceof Number n) return n.intValue();
-        if (value instanceof String s) {
-            try { return Integer.parseInt(s); } catch (NumberFormatException e) { return defaultValue; }
+        if (value instanceof Number number) return number.intValue();
+        if (value instanceof String stringValue) {
+            try { return Integer.parseInt(stringValue); } catch (NumberFormatException e) { return defaultValue; }
         }
         return defaultValue;
     }
@@ -309,11 +315,11 @@ public class NoSqlController {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Object> handleBadRequest(IllegalArgumentException e) {
-        return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, e.getMessage()));
     }
 
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Object> handleNotFound(NoSuchElementException e) {
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", e.getMessage()));
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(KEY_ERROR, e.getMessage()));
     }
 }

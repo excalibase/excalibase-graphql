@@ -104,7 +104,7 @@ class NoSqlSearchIT {
         var results = executionService.executeQuery(compiled);
 
         assertThat(results).isNotEmpty();
-        assertThat(results.getFirst().get("title")).isEqualTo("postgres fts");
+        assertThat(results.getFirst()).containsEntry("title", "postgres fts");
     }
 
     @Test

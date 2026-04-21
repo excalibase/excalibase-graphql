@@ -157,8 +157,7 @@ class GraphQLValidatorTest {
     @Order(30)
     void schema_createOrdersInput_currentFields() {
         var type = schema.getTypeMap().get("TestSchemaOrdersCreateInput");
-        assertThat(type).isNotNull();
-        assertThat(type).isInstanceOf(GraphQLInputObjectType.class);
+        assertThat(type).isNotNull().isInstanceOf(GraphQLInputObjectType.class);
 
         var fieldNames = ((GraphQLInputObjectType) type).getFieldDefinitions().stream()
                 .map(f -> f.getName())

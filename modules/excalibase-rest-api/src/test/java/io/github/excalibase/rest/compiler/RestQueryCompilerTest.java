@@ -177,8 +177,9 @@ class RestQueryCompilerTest {
     @DisplayName("unsupported filter operator throws")
     void unsupportedOperatorThrows() {
       var filters = List.of(new RestQueryCompiler.FilterSpec("name", "xss", "<script>", false));
+      List<String> noCols = List.of();
       assertThrows(IllegalArgumentException.class,
-          () -> compiler.compileSelect("public.products", List.of(), filters, null, 30, 0, false));
+          () -> compiler.compileSelect("public.products", noCols, filters, null, 30, 0, false));
     }
 
     @Test
@@ -186,8 +187,9 @@ class RestQueryCompilerTest {
     void inListTooLargeThrows() {
       String bigList = "(" + "1,".repeat(1001) + "1)";
       var filters = List.of(new RestQueryCompiler.FilterSpec("id", "in", bigList, false));
+      List<String> noCols = List.of();
       assertThrows(IllegalArgumentException.class,
-          () -> compiler.compileSelect("public.products", List.of(), filters, null, 30, 0, false));
+          () -> compiler.compileSelect("public.products", noCols, filters, null, 30, 0, false));
     }
   }
 
@@ -268,57 +270,57 @@ class RestQueryCompilerTest {
 
     @Test @DisplayName("startswith: col LIKE 'val%'")
     void startswith() {
-      var r = filterQuery("name", "startswith", "Wid");
-      assertTrue(r.sql().contains("LIKE"));
+      var result = filterQuery("name", "startswith", "Wid");
+      assertTrue(result.sql().contains("LIKE"));
     }
 
     @Test @DisplayName("endswith: col LIKE '%val'")
     void endswith() {
-      var r = filterQuery("name", "endswith", "get");
-      assertTrue(r.sql().contains("LIKE"));
+      var result = filterQuery("name", "endswith", "get");
+      assertTrue(result.sql().contains("LIKE"));
     }
 
     @Test @DisplayName("match: col ~ :param (regex)")
     void match() {
-      var r = filterQuery("name", "match", "^W");
-      assertTrue(r.sql().contains("~"));
+      var result = filterQuery("name", "match", "^W");
+      assertTrue(result.sql().contains("~"));
     }
 
     @Test @DisplayName("imatch: col ~* :param (case-insensitive regex)")
     void imatch() {
-      var r = filterQuery("name", "imatch", "^w");
-      assertTrue(r.sql().contains("~*"));
+      var result = filterQuery("name", "imatch", "^w");
+      assertTrue(result.sql().contains("~*"));
     }
 
     @Test @DisplayName("isdistinct: col IS DISTINCT FROM :param")
     void isdistinct() {
-      var r = filterQuery("name", "isdistinct", "null");
-      assertTrue(r.sql().contains("IS DISTINCT FROM"));
+      var result = filterQuery("name", "isdistinct", "null");
+      assertTrue(result.sql().contains("IS DISTINCT FROM"));
     }
 
     @Test @DisplayName("isnotnull: col IS NOT NULL")
     void isnotnull() {
-      var r = filterQuery("name", "isnotnull", "");
-      assertTrue(r.sql().contains("IS NOT NULL"));
+      var result = filterQuery("name", "isnotnull", "");
+      assertTrue(result.sql().contains("IS NOT NULL"));
     }
 
     @Test @DisplayName("haskey: jsonb_exists(col, :param)")
     void haskey() {
-      var r = filterQuery("metadata", "haskey", "color");
-      assertTrue(r.sql().contains("jsonb_exists"));
+      var result = filterQuery("metadata", "haskey", "color");
+      assertTrue(result.sql().contains("jsonb_exists"));
     }
 
     @Test @DisplayName("jsoncontains: col @> :param::jsonb")
     void jsoncontains() {
-      var r = filterQuery("metadata", "jsoncontains", "{\"a\":1}");
-      assertTrue(r.sql().contains("@>"));
-      assertTrue(r.sql().contains("::jsonb"));
+      var result = filterQuery("metadata", "jsoncontains", "{\"a\":1}");
+      assertTrue(result.sql().contains("@>"));
+      assertTrue(result.sql().contains("::jsonb"));
     }
 
     @Test @DisplayName("containedin: col <@ :param::jsonb")
     void containedin() {
-      var r = filterQuery("metadata", "containedin", "{\"a\":1}");
-      assertTrue(r.sql().contains("<@"));
+      var result = filterQuery("metadata", "containedin", "{\"a\":1}");
+      assertTrue(result.sql().contains("<@"));
     }
 
     @Test @DisplayName("jsonpath: jsonb_path_exists(col, :param::jsonpath)")
@@ -326,9 +328,9 @@ class RestQueryCompilerTest {
       // Emits the function form rather than `@?` because the `?` character
       // in the operator clashes with Spring's NamedParameterJdbcTemplate
       // placeholder parser. Semantics are identical.
-      var r = filterQuery("metadata", "jsonpath", "$.name");
-      assertTrue(r.sql().contains("jsonb_path_exists"), "expected function form, got: " + r.sql());
-      assertTrue(r.sql().contains("::jsonpath"));
+      var result = filterQuery("metadata", "jsonpath", "$.name");
+      assertTrue(result.sql().contains("jsonb_path_exists"), "expected function form, got: " + result.sql());
+      assertTrue(result.sql().contains("::jsonpath"));
     }
 
     @Test @DisplayName("arraycontains: col @> :param (no ARRAY[] wrapping)")
@@ -336,57 +338,159 @@ class RestQueryCompilerTest {
       // The ARRAY[$1] wrapper would bind as varchar[] and fail against
       // text[]/int[] columns — we bind the raw `{a,b,c}` literal instead
       // and let convertValue pick the column type via Types.OTHER.
-      var r = filterQuery("tags", "arraycontains", "{red,blue}");
-      assertTrue(r.sql().contains("@>"));
-      assertFalse(r.sql().contains("ARRAY["), "should not wrap in ARRAY[]: " + r.sql());
+      var result = filterQuery("tags", "arraycontains", "{red,blue}");
+      assertTrue(result.sql().contains("@>"));
+      assertFalse(result.sql().contains("ARRAY["), "should not wrap in ARRAY[]: " + result.sql());
     }
 
     @Test @DisplayName("arraylength: array_length(col, 1) = :param")
     void arraylength() {
-      var r = filterQuery("tags", "arraylength", "3");
-      assertTrue(r.sql().contains("array_length"));
+      var result = filterQuery("tags", "arraylength", "3");
+      assertTrue(result.sql().contains("array_length"));
     }
 
     @Test @DisplayName("plfts: plainto_tsquery")
     void plfts() {
-      var r = filterQuery("description", "plfts", "english.hello world");
-      assertTrue(r.sql().contains("plainto_tsquery"));
+      var result = filterQuery("description", "plfts", "english.hello world");
+      assertTrue(result.sql().contains("plainto_tsquery"));
     }
 
     @Test @DisplayName("phfts: phraseto_tsquery")
     void phfts() {
-      var r = filterQuery("description", "phfts", "english.hello world");
-      assertTrue(r.sql().contains("phraseto_tsquery"));
+      var result = filterQuery("description", "phfts", "english.hello world");
+      assertTrue(result.sql().contains("phraseto_tsquery"));
     }
 
     @Test @DisplayName("wfts: websearch_to_tsquery")
     void wfts() {
-      var r = filterQuery("description", "wfts", "english.cat or dog");
-      assertTrue(r.sql().contains("websearch_to_tsquery"));
+      var result = filterQuery("description", "wfts", "english.cat or dog");
+      assertTrue(result.sql().contains("websearch_to_tsquery"));
     }
 
     @Test @DisplayName("cs: col @> :param (range contains)")
     void cs() {
-      var r = filterQuery("metadata", "cs", "[1,5]");
-      assertTrue(r.sql().contains("@>"));
+      var result = filterQuery("metadata", "cs", "[1,5]");
+      assertTrue(result.sql().contains("@>"));
     }
 
     @Test @DisplayName("cd: col <@ :param (range contained)")
     void cd() {
-      var r = filterQuery("metadata", "cd", "[1,10]");
-      assertTrue(r.sql().contains("<@"));
+      var result = filterQuery("metadata", "cd", "[1,10]");
+      assertTrue(result.sql().contains("<@"));
     }
 
     @Test @DisplayName("ov: col && :param (overlaps)")
     void ov() {
-      var r = filterQuery("tags", "ov", "[a,b]");
-      assertTrue(r.sql().contains("&&"));
+      var result = filterQuery("tags", "ov", "[a,b]");
+      assertTrue(result.sql().contains("&&"));
     }
 
     @Test @DisplayName("adj: col -|- :param (adjacent)")
     void adj() {
-      var r = filterQuery("metadata", "adj", "[1,5]");
-      assertTrue(r.sql().contains("-|-"));
+      var result = filterQuery("metadata", "adj", "[1,5]");
+      assertTrue(result.sql().contains("-|-"));
+    }
+
+    @Test @DisplayName("sl: col << :param (strictly left of range)")
+    void strictlyLeft() {
+      var result = filterQuery("metadata", "sl", "[1,5]");
+      assertTrue(result.sql().contains("<<"));
+    }
+
+    @Test @DisplayName("sr: col >> :param (strictly right of range)")
+    void strictlyRight() {
+      var result = filterQuery("metadata", "sr", "[1,5]");
+      assertTrue(result.sql().contains(">>"));
+    }
+
+    @Test @DisplayName("nxl: col &< :param (no extend left)")
+    void noExtendLeft() {
+      var result = filterQuery("metadata", "nxl", "[1,5]");
+      assertTrue(result.sql().contains("&<"));
+    }
+
+    @Test @DisplayName("nxr: col &> :param (no extend right)")
+    void noExtendRight() {
+      var result = filterQuery("metadata", "nxr", "[1,5]");
+      assertTrue(result.sql().contains("&>"));
+    }
+
+    @Test @DisplayName("is:true → IS TRUE")
+    void isTrue() {
+      var result = filterQuery("metadata", "is", "true");
+      assertTrue(result.sql().contains("IS TRUE"));
+    }
+
+    @Test @DisplayName("is:false → IS FALSE")
+    void isFalse() {
+      var result = filterQuery("metadata", "is", "false");
+      assertTrue(result.sql().contains("IS FALSE"));
+    }
+
+    @Test @DisplayName("is:null → IS NULL (default branch)")
+    void isNullValue() {
+      var result = filterQuery("metadata", "is", "null");
+      assertTrue(result.sql().contains("IS NULL"));
+    }
+
+    @Test @DisplayName("in: col IN (...) with multiple comma-separated values")
+    void inMultiple() {
+      var result = filterQuery("id", "in", "1,2,3");
+      assertTrue(result.sql().contains("IN"));
+      assertEquals(3, result.params().values().stream()
+              .filter(v -> !(v instanceof Integer i && i == 30))
+              .count() - 0); // 3 IN-params + 1 limit param; raw count unused here
+    }
+
+    @Test @DisplayName("notin: col NOT IN (...) with multiple values")
+    void notInMultiple() {
+      var result = filterQuery("id", "notin", "1,2");
+      assertTrue(result.sql().contains("NOT IN"));
+    }
+
+    @Test @DisplayName("negated filter prefix applies with leading 'not.' operator")
+    void negatedEq() {
+      var filters = List.of(new RestQueryCompiler.FilterSpec("name", "eq", "Widget", true));
+      var result = compiler.compileSelect("public.products", List.of(), filters, null, 30, 0, false);
+      // negation produces NOT before the condition
+      assertTrue(result.sql().contains("NOT") || result.sql().contains("!="),
+              "expected negation, got: " + result.sql());
+    }
+
+    @Test @DisplayName("like-with-asterisk converts * wildcards to SQL %")
+    void likeAsteriskWildcard() {
+      var result = filterQuery("name", "like", "Wid*");
+      assertTrue(result.sql().contains("LIKE"));
+      // The '*' should be converted to '%' in the bound value
+      assertTrue(result.params().values().stream().anyMatch(v -> v instanceof String s && s.contains("%")),
+              "expected '*' replaced with '%' in bound value");
+    }
+
+    @Test @DisplayName("ilike-with-asterisk converts * wildcards via dialect.ilike")
+    void ilikeAsteriskWildcard() {
+      var result = filterQuery("name", "ilike", "Wid*");
+      assertTrue(result.sql().toLowerCase().contains("ilike"));
+    }
+  }
+
+  @Nested
+  class OrderByErrors {
+    @Test @DisplayName("invalid ORDER BY direction throws IllegalArgumentException")
+    void invalidDirection_throws() {
+      var order = List.of(new RestQueryCompiler.OrderBySpec("name", "SIDEWAYS", null));
+      List<String> noCols = List.of();
+      List<RestQueryCompiler.FilterSpec> noFilters = List.of();
+      assertThrows(IllegalArgumentException.class,
+              () -> compiler.compileSelect("public.products", noCols, noFilters, order, 30, 0, false));
+    }
+
+    @Test @DisplayName("invalid ORDER BY NULLS clause throws IllegalArgumentException")
+    void invalidNulls_throws() {
+      var order = List.of(new RestQueryCompiler.OrderBySpec("name", "ASC", "NULLS SOMEWHERE"));
+      List<String> noCols = List.of();
+      List<RestQueryCompiler.FilterSpec> noFilters = List.of();
+      assertThrows(IllegalArgumentException.class,
+              () -> compiler.compileSelect("public.products", noCols, noFilters, order, 30, 0, false));
     }
   }
 
@@ -416,13 +520,13 @@ class RestQueryCompilerTest {
           "orders", List.of("*"), null,
           List.of(new RestQueryCompiler.EmbedSpec("order_items", List.of("*")))
       );
-      var r = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+      var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
           "public.products", List.of(), List.of(), null, List.of(embed),
           null, 10, 0, false
       ));
       // Should contain a nested subquery for orders inside products
-      assertTrue(r.sql().contains("\"orders\""), "Expected orders subquery in SQL: " + r.sql());
-      assertTrue(r.sql().contains("\"order_items\""), "Expected order_items nested subquery in SQL: " + r.sql());
+      assertTrue(result.sql().contains("\"orders\""), "Expected orders subquery in SQL: " + result.sql());
+      assertTrue(result.sql().contains("\"order_items\""), "Expected order_items nested subquery in SQL: " + result.sql());
     }
 
     @Test
@@ -432,16 +536,16 @@ class RestQueryCompilerTest {
           "orders", List.of("*"), null,
           List.of(new RestQueryCompiler.EmbedSpec("order_items", List.of("*")))
       );
-      var r = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+      var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
           "public.products", List.of(), List.of(), null, List.of(embed),
           null, 10, 0, false
       ));
-      String sql = r.sql();
+      String sql = result.sql();
       // order_items join should use r1 (orders alias), NOT c (products alias)
       // Pattern: order_items r2 WHERE r2."order_id" = r1."id"
       assertTrue(sql.contains("\"order_items\""), "Missing order_items in: " + sql);
       assertTrue(sql.contains("\"orders\""), "Missing orders in: " + sql);
-      // The child order_items join must reference an r-alias (orders outer alias), not c (products)
+      // The child order_items join must reference an result-alias (orders outer alias), not c (products)
       // Since the outer alias for orders is r1, order_items join must be "= r1."
       assertTrue(sql.contains("= r1."), "order_items join must use orders alias r1, not top-level c, in: " + sql);
     }

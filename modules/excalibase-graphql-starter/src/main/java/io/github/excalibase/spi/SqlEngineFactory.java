@@ -8,9 +8,9 @@ public final class SqlEngineFactory {
     private SqlEngineFactory() {}
 
     public static SqlEngine create(String databaseType) {
-        for (SqlEngineProvider p : ServiceLoader.load(SqlEngineProvider.class)) {
-            if (p.supportedTypes().stream().anyMatch(t -> t.equalsIgnoreCase(databaseType))) {
-                return new SqlEngine(p.createDialect(), p.createSchemaLoader(), p.createMutationCompiler());
+        for (SqlEngineProvider provider : ServiceLoader.load(SqlEngineProvider.class)) {
+            if (provider.supportedTypes().stream().anyMatch(t -> t.equalsIgnoreCase(databaseType))) {
+                return new SqlEngine(provider.createDialect(), provider.createSchemaLoader(), provider.createMutationCompiler());
             }
         }
         throw new IllegalArgumentException("Unsupported database type: " + databaseType
@@ -20,9 +20,9 @@ public final class SqlEngineFactory {
     public static MutationExecutor createMutationExecutor(String databaseType,
                                                           org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
                                                           org.springframework.transaction.support.TransactionTemplate txTemplate) {
-        for (SqlEngineProvider p : ServiceLoader.load(SqlEngineProvider.class)) {
-            if (p.supportedTypes().stream().anyMatch(t -> t.equalsIgnoreCase(databaseType))) {
-                return p.createMutationExecutor(jdbcTemplate, txTemplate);
+        for (SqlEngineProvider provider : ServiceLoader.load(SqlEngineProvider.class)) {
+            if (provider.supportedTypes().stream().anyMatch(t -> t.equalsIgnoreCase(databaseType))) {
+                return provider.createMutationExecutor(jdbcTemplate, txTemplate);
             }
         }
         throw new IllegalArgumentException("Unsupported database type: " + databaseType);

@@ -63,9 +63,9 @@ public class MysqlDialect implements SqlDialect {
     @Override
     public String suffixCast(String dataType) {
         if (dataType == null) return "";
-        String t = dataType.toLowerCase();
+        String type = dataType.toLowerCase();
         // MySQL JSON_OBJECT handles most types natively; bigint needs +0 to force numeric
-        if (t.equals("bigint") || t.equals("int8")) return "+0";
+        if (type.equals("bigint") || type.equals("int8")) return "+0";
         return "";
     }
 

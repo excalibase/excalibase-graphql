@@ -41,7 +41,6 @@ public class NatsCDCService {
     private String subjectPrefix;
 
     private Connection natsConnection;
-    private Dispatcher dispatcher;
     private JetStreamSubscription subscription;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
@@ -75,7 +74,7 @@ public class NatsCDCService {
 
             natsConnection = Nats.connect(options);
             JetStream js = natsConnection.jetStream();
-            dispatcher = natsConnection.createDispatcher();
+            Dispatcher dispatcher = natsConnection.createDispatcher();
 
             String subject = subjectPrefix + ".>";
             ConsumerConfiguration cc = ConsumerConfiguration.builder()
@@ -141,7 +140,7 @@ public class NatsCDCService {
     }
 
     private boolean isDmlEvent(CDCEvent event) {
-        String t = event.type();
-        return "INSERT".equals(t) || "UPDATE".equals(t) || "DELETE".equals(t);
+        String type = event.type();
+        return "INSERT".equals(type) || "UPDATE".equals(type) || "DELETE".equals(type);
     }
 }

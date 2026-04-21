@@ -61,322 +61,319 @@ public class FilterBuilder {
         buildFilterConditions(ov, alias, params, conditions, null);
     }
 
-    public void buildFilterConditions(ObjectValue ov, String alias, Map<String, Object> params, List<String> conditions, String tableName) {
-        for (ObjectField of : ov.getObjectFields()) {
-            String fieldName = of.getName();
+    /**
+     * Handle logical operators (or/and/not) on a single ObjectField.
+     * Returns true if the field was a logical operator and has been consumed.
+     */
+    private boolean applyLogicalOperator(ObjectField of, String alias, Map<String, Object> params,
+                                         List<String> conditions, String tableName) {
+        String fieldName = of.getName();
+        return switch (fieldName) {
+            case "or"  -> applyOrOperator(of, alias, params, conditions, tableName);
+            case "and" -> applyAndOperator(of, alias, params, conditions, tableName);
+            case "not" -> applyNotOperator(of, alias, params, conditions, tableName);
+            default    -> false;
+        };
+    }
 
-            // Logical operators: or, and, not
-            if ("or".equals(fieldName) && of.getValue() instanceof ArrayValue av) {
-                List<String> orParts = new ArrayList<>();
-                for (Value<?> v : av.getValues()) {
-                    if (v instanceof ObjectValue subOv) {
-                        List<String> subConds = new ArrayList<>();
-                        buildFilterConditions(subOv, alias, params, subConds, tableName);
-                        if (!subConds.isEmpty()) {
-                            orParts.add("(" + String.join(AND, subConds) + ")");
-                        }
-                    }
-                }
-                if (!orParts.isEmpty()) {
-                    conditions.add("(" + String.join(OR, orParts) + ")");
-                }
-                continue;
-            }
-            if ("and".equals(fieldName) && of.getValue() instanceof ArrayValue av) {
-                for (Value<?> v : av.getValues()) {
-                    if (v instanceof ObjectValue subOv) {
-                        buildFilterConditions(subOv, alias, params, conditions, tableName);
-                    }
-                }
-                continue;
-            }
-            if ("not".equals(fieldName) && of.getValue() instanceof ObjectValue notOv) {
+    private boolean applyOrOperator(ObjectField of, String alias, Map<String, Object> params,
+                                    List<String> conditions, String tableName) {
+        if (!(of.getValue() instanceof ArrayValue av)) return false;
+        List<String> orParts = new ArrayList<>();
+        for (Value<?> elementValue : av.getValues()) {
+            if (elementValue instanceof ObjectValue subOv) {
                 List<String> subConds = new ArrayList<>();
-                buildFilterConditions(notOv, alias, params, subConds, tableName);
+                buildFilterConditions(subOv, alias, params, subConds, tableName);
                 if (!subConds.isEmpty()) {
-                    conditions.add(NOT + "(" + String.join(AND, subConds) + ")");
-                }
-                continue;
-            }
-
-            // Column-level filter: { column: { op: value } }
-            String  col = fieldName;
-            if (of.getValue() instanceof ObjectValue filterObj) {
-                // Determine enum cast suffix for this column
-                String enumCast = "";
-                if (schemaInfo != null && tableName != null) {
-                    String enumType = schemaInfo.getEnumType(tableName, col);
-                    if (enumType != null) {
-                        String resolvedSchema = schemaInfo.resolveSchema(tableName, dbSchema);
-                        String rawEnum = enumType.contains(".") ? enumType.substring(enumType.indexOf('.') + 1) : enumType;
-                        enumCast = dialect.enumCast(resolvedSchema, rawEnum);
-                    }
-                }
-
-                // Determine type cast suffix for non-standard types (date, timestamp, etc.)
-                String typeCast = "";
-                if (schemaInfo != null && tableName != null) {
-                    String colType = schemaInfo.getColumnType(tableName, col);
-                    if (colType != null) {
-                        typeCast = dialect.paramCast(colType);
-                    }
-                }
-                // Enum cast takes precedence over type cast
-                String paramCast = !enumCast.isEmpty() ? enumCast : typeCast;
-
-                for (ObjectField op : filterObj.getObjectFields()) {
-                    String opName = op.getName();
-                    String colRef = alias + "." + dialect.quoteIdentifier(col);
-
-                    switch (opName) {
-                        case FILTER_EQ -> {
-                            if (op.getValue() instanceof NullValue) {
-                                conditions.add(colRef + IS_NULL);
-                            } else {
-                                String p = nextParam("p_" + col + "_eq", params);
-                                conditions.add(colRef + " = :" + p + paramCast);
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_NEQ -> {
-                            if (op.getValue() instanceof NullValue) {
-                                conditions.add(colRef + IS_NOT_NULL);
-                            } else {
-                                String p = nextParam("p_" + col + "_neq", params);
-                                conditions.add(colRef + " != :" + p + paramCast);
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_GT -> {
-                            String p = nextParam("p_" + col + "_gt", params);
-                            conditions.add(colRef + " > :" + p + paramCast);
-                            params.put(p, extractValue(op.getValue()));
-                        }
-                        case FILTER_GTE -> {
-                            String p = nextParam("p_" + col + "_gte", params);
-                            conditions.add(colRef + " >= :" + p + paramCast);
-                            params.put(p, extractValue(op.getValue()));
-                        }
-                        case FILTER_LT -> {
-                            String p = nextParam("p_" + col + "_lt", params);
-                            conditions.add(colRef + " < :" + p + paramCast);
-                            params.put(p, extractValue(op.getValue()));
-                        }
-                        case FILTER_LTE -> {
-                            String p = nextParam("p_" + col + "_lte", params);
-                            conditions.add(colRef + " <= :" + p + paramCast);
-                            params.put(p, extractValue(op.getValue()));
-                        }
-                        case FILTER_IN -> {
-                            if (op.getValue() instanceof ArrayValue av) {
-                                List<String> inParams = new ArrayList<>();
-                                for (int i = 0; i < av.getValues().size(); i++) {
-                                    String p = nextParam("p_" + col + "_in" + i, params);
-                                    inParams.add(":" + p + paramCast);
-                                    params.put(p, extractValue(av.getValues().get(i)));
-                                }
-                                conditions.add(colRef + IN + "(" + joinCols(inParams) + ")");
-                            }
-                        }
-                        case FILTER_LIKE -> {
-                            String p = nextParam("p_" + col + "_like", params);
-                            conditions.add(colRef + LIKE + PARAM_PREFIX + p);
-                            params.put(p, extractValue(op.getValue()));
-                        }
-                        case FILTER_ILIKE -> {
-                            String p = nextParam("p_" + col + "_ilike", params);
-                            conditions.add(dialect.ilike(colRef, param(p)));
-                            params.put(p, extractValue(op.getValue()));
-                        }
-                        case FILTER_STARTS_WITH -> {
-                            String p = nextParam("p_" + col + "_sw", params);
-                            conditions.add(colRef + LIKE + PARAM_PREFIX + p);
-                            params.put(p, extractValue(op.getValue()) + "%");
-                        }
-                        case FILTER_ENDS_WITH -> {
-                            String p = nextParam("p_" + col + "_ew", params);
-                            conditions.add(colRef + LIKE + PARAM_PREFIX + p);
-                            params.put(p, "%" + extractValue(op.getValue()));
-                        }
-                        case FILTER_CONTAINS -> {
-                            // `contains` is overloaded: on text columns it's
-                            // LIKE %pat%, on jsonb columns it's the JSONB
-                            // containment operator @>. Dispatch on the
-                            // column's Postgres type.
-                            String colPgType = schemaInfo != null ? schemaInfo.getColumnType(tableName, col) : null;
-                            if (isJsonType(colPgType)) {
-                                String p = nextParam("p_" + col + "_jc", params);
-                                var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.CONTAINS, colRef, ":" + p);
-                                if (sql.isPresent()) {
-                                    conditions.add(sql.get());
-                                    params.put(p, extractValue(op.getValue()));
-                                }
-                            } else {
-                                String p = nextParam("p_" + col + "_ct", params);
-                                conditions.add(colRef + LIKE + PARAM_PREFIX + p);
-                                params.put(p, "%" + extractValue(op.getValue()) + "%");
-                            }
-                        }
-                        case FILTER_SEARCH -> {
-                            // Plain FTS — plainto_tsquery. Always safe on any
-                            // user input. A dialect that returns Optional.empty()
-                            // (e.g. MySQL today) silently skips the operator.
-                            String p = nextParam("p_" + col + "_search", params);
-                            var sql = dialect.fullTextSearchSql(colRef, ":" + p, SqlDialect.FtsVariant.PLAIN);
-                            if (sql.isPresent()) {
-                                conditions.add(sql.get());
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_WEB_SEARCH -> {
-                            // websearch_to_tsquery — Google-style syntax
-                            // ("quoted phrase" / OR / -exclusion). Also safe
-                            // against malformed input.
-                            String p = nextParam("p_" + col + "_websearch", params);
-                            var sql = dialect.fullTextSearchSql(colRef, ":" + p, SqlDialect.FtsVariant.WEB_SEARCH);
-                            if (sql.isPresent()) {
-                                conditions.add(sql.get());
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_PHRASE_SEARCH -> {
-                            // phraseto_tsquery — words must be adjacent in
-                            // the document in the given order. Always safe
-                            // against malformed input.
-                            String p = nextParam("p_" + col + "_phrase", params);
-                            var sql = dialect.fullTextSearchSql(colRef, ":" + p, SqlDialect.FtsVariant.PHRASE);
-                            if (sql.isPresent()) {
-                                conditions.add(sql.get());
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_RAW_SEARCH -> {
-                            // to_tsquery — raw tsquery syntax. Throws on bad
-                            // input, so only use when the input is
-                            // known-valid (e.g. server-side generation).
-                            String p = nextParam("p_" + col + "_rawts", params);
-                            var sql = dialect.fullTextSearchSql(colRef, ":" + p, SqlDialect.FtsVariant.RAW);
-                            if (sql.isPresent()) {
-                                conditions.add(sql.get());
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_REGEX -> {
-                            // POSIX regex match, case-sensitive. Postgres
-                            // uses `~`. Dialects that don't implement regex
-                            // silently drop the operator.
-                            String p = nextParam("p_" + col + "_regex", params);
-                            var sql = dialect.regexSql(colRef, ":" + p, false);
-                            if (sql.isPresent()) {
-                                conditions.add(sql.get());
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_IREGEX -> {
-                            // POSIX regex match, case-insensitive. Postgres
-                            // uses `~*`.
-                            String p = nextParam("p_" + col + "_iregex", params);
-                            var sql = dialect.regexSql(colRef, ":" + p, true);
-                            if (sql.isPresent()) {
-                                conditions.add(sql.get());
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_CONTAINED_BY -> {
-                            String p = nextParam("p_" + col + "_jcb", params);
-                            var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.CONTAINED_BY, colRef, ":" + p);
-                            if (sql.isPresent()) {
-                                conditions.add(sql.get());
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_HAS_KEY -> {
-                            // jsonb_exists(col, :key) — key is a plain String.
-                            String p = nextParam("p_" + col + "_hk", params);
-                            var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.HAS_KEY, colRef, ":" + p);
-                            if (sql.isPresent()) {
-                                conditions.add(sql.get());
-                                params.put(p, extractValue(op.getValue()));
-                            }
-                        }
-                        case FILTER_HAS_KEYS -> {
-                            // jsonb_exists_all(col, ARRAY[:k1, :k2, ...]) —
-                            // expand the ArrayValue to individual binds and
-                            // build a SQL array literal. The dialect gets
-                            // a placeholder expression with the element
-                            // refs already spliced in.
-                            if (op.getValue() instanceof ArrayValue av) {
-                                List<String> elements = new ArrayList<>();
-                                for (int i = 0; i < av.getValues().size(); i++) {
-                                    String p = nextParam("p_" + col + "_hks" + i, params);
-                                    elements.add(":" + p);
-                                    params.put(p, extractValue(av.getValues().get(i)));
-                                }
-                                String arrExpr = "ARRAY[" + joinCols(elements) + "]";
-                                var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.HAS_ALL_KEYS, colRef, arrExpr);
-                                sql.ifPresent(conditions::add);
-                            }
-                        }
-                        case FILTER_HAS_ANY_KEYS -> {
-                            if (op.getValue() instanceof ArrayValue av) {
-                                List<String> elements = new ArrayList<>();
-                                for (int i = 0; i < av.getValues().size(); i++) {
-                                    String p = nextParam("p_" + col + "_hak" + i, params);
-                                    elements.add(":" + p);
-                                    params.put(p, extractValue(av.getValues().get(i)));
-                                }
-                                String arrExpr = "ARRAY[" + joinCols(elements) + "]";
-                                var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.HAS_ANY_KEYS, colRef, arrExpr);
-                                sql.ifPresent(conditions::add);
-                            }
-                        }
-                        case "is" -> {
-                            // { is: NULL } or { is: NOT_NULL }
-                            String v = op.getValue() instanceof EnumValue ev ? ev.getName() : extractValue(op.getValue()).toString();
-                            if ("NULL".equalsIgnoreCase(v)) {
-                                conditions.add(colRef + IS_NULL);
-                            } else if ("NOT_NULL".equalsIgnoreCase(v)) {
-                                conditions.add(colRef + IS_NOT_NULL);
-                            }
-                        }
-                        case FILTER_IS_NULL -> {
-                            // { isNull: true } → IS NULL, { isNull: false } → IS NOT NULL
-                            Object v = extractValue(op.getValue());
-                            if (Boolean.TRUE.equals(v) || "true".equals(String.valueOf(v))) {
-                                conditions.add(colRef + IS_NULL);
-                            } else {
-                                conditions.add(colRef + IS_NOT_NULL);
-                            }
-                        }
-                        case FILTER_IS_NOT_NULL -> {
-                            // { isNotNull: true } → IS NOT NULL, { isNotNull: false } → IS NULL
-                            Object v = extractValue(op.getValue());
-                            if (Boolean.TRUE.equals(v) || "true".equals(String.valueOf(v))) {
-                                conditions.add(colRef + IS_NOT_NULL);
-                            } else {
-                                conditions.add(colRef + IS_NULL);
-                            }
-                        }
-                        case FILTER_NOT_IN, "nin" -> {
-                            if (op.getValue() instanceof ArrayValue av) {
-                                List<String> inParams = new ArrayList<>();
-                                for (int i = 0; i < av.getValues().size(); i++) {
-                                    String p = nextParam("p_" + col + "_notin" + i, params);
-                                    inParams.add(":" + p + paramCast);
-                                    params.put(p, extractValue(av.getValues().get(i)));
-                                }
-                                conditions.add(colRef + " NOT IN (" + joinCols(inParams) + ")");
-                            }
-                        }
-                        default -> {
-                            String p = nextParam("p_" + col + "_" + opName, params);
-                            conditions.add(colRef + " = :" + p + paramCast);
-                            params.put(p, extractValue(op.getValue()));
-                        }
-                    }
+                    orParts.add("(" + String.join(AND, subConds) + ")");
                 }
             }
         }
+        if (!orParts.isEmpty()) {
+            conditions.add("(" + String.join(OR, orParts) + ")");
+        }
+        return true;
+    }
+
+    private boolean applyAndOperator(ObjectField of, String alias, Map<String, Object> params,
+                                     List<String> conditions, String tableName) {
+        if (!(of.getValue() instanceof ArrayValue av)) return false;
+        for (Value<?> elementValue : av.getValues()) {
+            if (elementValue instanceof ObjectValue subOv) {
+                buildFilterConditions(subOv, alias, params, conditions, tableName);
+            }
+        }
+        return true;
+    }
+
+    private boolean applyNotOperator(ObjectField of, String alias, Map<String, Object> params,
+                                     List<String> conditions, String tableName) {
+        if (!(of.getValue() instanceof ObjectValue notOv)) return false;
+        List<String> subConds = new ArrayList<>();
+        buildFilterConditions(notOv, alias, params, subConds, tableName);
+        if (!subConds.isEmpty()) {
+            conditions.add(NOT + "(" + String.join(AND, subConds) + ")");
+        }
+        return true;
+    }
+
+    public void buildFilterConditions(ObjectValue ov, String alias, Map<String, Object> params, List<String> conditions, String tableName) {
+        for (ObjectField of : ov.getObjectFields()) {
+            if (applyLogicalOperator(of, alias, params, conditions, tableName)) continue;
+            if (of.getValue() instanceof ObjectValue filterObj) {
+                applyColumnFilter(of.getName(), filterObj, alias, params, conditions, tableName);
+            }
+        }
+    }
+
+    /**
+     * Applies all operators under a single column filter object to the conditions list.
+     * e.g. {@code first_name: { eq: "MARY", neq: "JOHN" }}
+     */
+    private void applyColumnFilter(String col, ObjectValue filterObj, String alias,
+                                   Map<String, Object> params, List<String> conditions, String tableName) {
+        String paramCast = resolveParamCast(col, tableName);
+        String colRef = alias + "." + dialect.quoteIdentifier(col);
+
+        for (ObjectField op : filterObj.getObjectFields()) {
+            dispatchOperator(op, col, colRef, paramCast, params, conditions, tableName);
+        }
+    }
+
+    /** Resolves the parameter cast suffix (enum cast takes precedence over generic type cast). */
+    private String resolveParamCast(String col, String tableName) {
+        if (schemaInfo == null || tableName == null) return "";
+        String enumType = schemaInfo.getEnumType(tableName, col);
+        if (enumType != null) {
+            String resolvedSchema = schemaInfo.resolveSchema(tableName, dbSchema);
+            String rawEnum = enumType.contains(".") ? enumType.substring(enumType.indexOf('.') + 1) : enumType;
+            String enumCast = dialect.enumCast(resolvedSchema, rawEnum);
+            if (!enumCast.isEmpty()) return enumCast;
+        }
+        String colType = schemaInfo.getColumnType(tableName, col);
+        return colType != null ? dialect.paramCast(colType) : "";
+    }
+
+    /** Dispatches a single operator to its matching handler group. */
+    private void dispatchOperator(ObjectField op, String col, String colRef, String paramCast,
+                                  Map<String, Object> params, List<String> conditions, String tableName) {
+        String opName = op.getName();
+        switch (opName) {
+            case FILTER_EQ, FILTER_NEQ, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE ->
+                    applyComparison(opName, op, col, colRef, paramCast, params, conditions);
+            case FILTER_IN, FILTER_NOT_IN, "nin" ->
+                    applyInList(opName, op, col, colRef, paramCast, params, conditions);
+            case FILTER_LIKE, FILTER_ILIKE, FILTER_STARTS_WITH, FILTER_ENDS_WITH, FILTER_CONTAINS ->
+                    applyStringPattern(opName, op, col, colRef, params, conditions, tableName);
+            case FILTER_SEARCH, FILTER_WEB_SEARCH, FILTER_PHRASE_SEARCH, FILTER_RAW_SEARCH ->
+                    applyFullTextSearch(opName, op, col, colRef, params, conditions);
+            case FILTER_REGEX, FILTER_IREGEX ->
+                    applyRegex(opName, op, col, colRef, params, conditions);
+            case FILTER_CONTAINED_BY, FILTER_HAS_KEY, FILTER_HAS_KEYS, FILTER_HAS_ANY_KEYS ->
+                    applyJsonPredicate(opName, op, col, colRef, params, conditions);
+            case "is", FILTER_IS_NULL, FILTER_IS_NOT_NULL ->
+                    applyNullPredicate(opName, op, colRef, conditions);
+            default -> {
+                String paramName = nextParam("p_" + col + "_" + opName, params);
+                conditions.add(colRef + " = :" + paramName + paramCast);
+                params.put(paramName, extractValue(op.getValue()));
+            }
+        }
+    }
+
+    /** Handles eq, neq, gt, gte, lt, lte. eq/neq special-case NULL literal. */
+    private void applyComparison(String opName, ObjectField op, String col, String colRef,
+                                 String paramCast, Map<String, Object> params, List<String> conditions) {
+        if (FILTER_EQ.equals(opName) && op.getValue() instanceof NullValue) {
+            conditions.add(colRef + IS_NULL);
+            return;
+        }
+        if (FILTER_NEQ.equals(opName) && op.getValue() instanceof NullValue) {
+            conditions.add(colRef + IS_NOT_NULL);
+            return;
+        }
+        String sqlOp = switch (opName) {
+            case FILTER_EQ -> " = ";
+            case FILTER_NEQ -> " != ";
+            case FILTER_GT -> " > ";
+            case FILTER_GTE -> " >= ";
+            case FILTER_LT -> " < ";
+            case FILTER_LTE -> " <= ";
+            default -> " = ";
+        };
+        String suffix = switch (opName) {
+            case FILTER_EQ -> "_eq";
+            case FILTER_NEQ -> "_neq";
+            case FILTER_GT -> "_gt";
+            case FILTER_GTE -> "_gte";
+            case FILTER_LT -> "_lt";
+            case FILTER_LTE -> "_lte";
+            default -> "_" + opName;
+        };
+        String paramName = nextParam("p_" + col + suffix, params);
+        conditions.add(colRef + sqlOp + ":" + paramName + paramCast);
+        params.put(paramName, extractValue(op.getValue()));
+    }
+
+    /** Handles FILTER_IN, FILTER_NOT_IN, "nin". */
+    private void applyInList(String opName, ObjectField op, String col, String colRef,
+                             String paramCast, Map<String, Object> params, List<String> conditions) {
+        if (!(op.getValue() instanceof ArrayValue av)) return;
+        boolean negate = FILTER_NOT_IN.equals(opName) || "nin".equals(opName);
+        String suffix = negate ? "_notin" : "_in";
+        List<String> inParams = new ArrayList<>();
+        for (int i = 0; i < av.getValues().size(); i++) {
+            String paramName = nextParam("p_" + col + suffix + i, params);
+            inParams.add(":" + paramName + paramCast);
+            params.put(paramName, extractValue(av.getValues().get(i)));
+        }
+        conditions.add(colRef + (negate ? " NOT IN (" : IN + "(") + joinCols(inParams) + ")");
+    }
+
+    /** Handles LIKE, ILIKE, startsWith, endsWith, contains (text variant). */
+    private void applyStringPattern(String opName, ObjectField op, String col, String colRef,
+                                    Map<String, Object> params, List<String> conditions, String tableName) {
+        Object raw = extractValue(op.getValue());
+        switch (opName) {
+            case FILTER_LIKE -> {
+                String paramName = nextParam("p_" + col + "_like", params);
+                conditions.add(colRef + LIKE + PARAM_PREFIX + paramName);
+                params.put(paramName, raw);
+            }
+            case FILTER_ILIKE -> {
+                String paramName = nextParam("p_" + col + "_ilike", params);
+                conditions.add(dialect.ilike(colRef, param(paramName)));
+                params.put(paramName, raw);
+            }
+            case FILTER_STARTS_WITH -> {
+                String paramName = nextParam("p_" + col + "_sw", params);
+                conditions.add(colRef + LIKE + PARAM_PREFIX + paramName);
+                params.put(paramName, raw + "%");
+            }
+            case FILTER_ENDS_WITH -> {
+                String paramName = nextParam("p_" + col + "_ew", params);
+                conditions.add(colRef + LIKE + PARAM_PREFIX + paramName);
+                params.put(paramName, "%" + raw);
+            }
+            case FILTER_CONTAINS -> applyContains(op, col, colRef, raw, params, conditions, tableName);
+            default -> { /* unreachable */ }
+        }
+    }
+
+    /**
+     * `contains` is overloaded: on text columns it's LIKE %pat%, on jsonb columns
+     * it's the JSONB containment operator @>. Dispatch on the column's Postgres type.
+     */
+    private void applyContains(ObjectField op, String col, String colRef, Object raw,
+                               Map<String, Object> params, List<String> conditions, String tableName) {
+        String colPgType = schemaInfo != null ? schemaInfo.getColumnType(tableName, col) : null;
+        if (isJsonType(colPgType)) {
+            String paramName = nextParam("p_" + col + "_jc", params);
+            var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.CONTAINS, colRef, ":" + paramName);
+            if (sql.isPresent()) {
+                conditions.add(sql.get());
+                params.put(paramName, extractValue(op.getValue()));
+            }
+        } else {
+            String paramName = nextParam("p_" + col + "_ct", params);
+            conditions.add(colRef + LIKE + PARAM_PREFIX + paramName);
+            params.put(paramName, "%" + raw + "%");
+        }
+    }
+
+    /** Handles FILTER_SEARCH/WEB_SEARCH/PHRASE_SEARCH/RAW_SEARCH via dialect.fullTextSearchSql. */
+    private void applyFullTextSearch(String opName, ObjectField op, String col, String colRef,
+                                     Map<String, Object> params, List<String> conditions) {
+        SqlDialect.FtsVariant variant = switch (opName) {
+            case FILTER_SEARCH -> SqlDialect.FtsVariant.PLAIN;
+            case FILTER_WEB_SEARCH -> SqlDialect.FtsVariant.WEB_SEARCH;
+            case FILTER_PHRASE_SEARCH -> SqlDialect.FtsVariant.PHRASE;
+            case FILTER_RAW_SEARCH -> SqlDialect.FtsVariant.RAW;
+            default -> SqlDialect.FtsVariant.PLAIN;
+        };
+        String suffix = switch (opName) {
+            case FILTER_SEARCH -> "_search";
+            case FILTER_WEB_SEARCH -> "_websearch";
+            case FILTER_PHRASE_SEARCH -> "_phrase";
+            case FILTER_RAW_SEARCH -> "_rawts";
+            default -> "_fts";
+        };
+        String paramName = nextParam("p_" + col + suffix, params);
+        var sql = dialect.fullTextSearchSql(colRef, ":" + paramName, variant);
+        if (sql.isPresent()) {
+            conditions.add(sql.get());
+            params.put(paramName, extractValue(op.getValue()));
+        }
+    }
+
+    /** Handles FILTER_REGEX (case-sensitive) and FILTER_IREGEX (case-insensitive) POSIX regex. */
+    private void applyRegex(String opName, ObjectField op, String col, String colRef,
+                            Map<String, Object> params, List<String> conditions) {
+        boolean caseInsensitive = FILTER_IREGEX.equals(opName);
+        String suffix = caseInsensitive ? "_iregex" : "_regex";
+        String paramName = nextParam("p_" + col + suffix, params);
+        var sql = dialect.regexSql(colRef, ":" + paramName, caseInsensitive);
+        if (sql.isPresent()) {
+            conditions.add(sql.get());
+            params.put(paramName, extractValue(op.getValue()));
+        }
+    }
+
+    /** Handles CONTAINED_BY, HAS_KEY, HAS_KEYS, HAS_ANY_KEYS jsonb predicates. */
+    private void applyJsonPredicate(String opName, ObjectField op, String col, String colRef,
+                                    Map<String, Object> params, List<String> conditions) {
+        switch (opName) {
+            case FILTER_CONTAINED_BY -> applyJsonScalar("p_" + col + "_jcb",
+                    SqlDialect.JsonPredicate.CONTAINED_BY, op, colRef, params, conditions);
+            case FILTER_HAS_KEY -> applyJsonScalar("p_" + col + "_hk",
+                    SqlDialect.JsonPredicate.HAS_KEY, op, colRef, params, conditions);
+            case FILTER_HAS_KEYS -> applyJsonKeysArray("p_" + col + "_hks",
+                    SqlDialect.JsonPredicate.HAS_ALL_KEYS, op, colRef, params, conditions);
+            case FILTER_HAS_ANY_KEYS -> applyJsonKeysArray("p_" + col + "_hak",
+                    SqlDialect.JsonPredicate.HAS_ANY_KEYS, op, colRef, params, conditions);
+            default -> { /* unreachable */ }
+        }
+    }
+
+    private void applyJsonScalar(String paramPrefix, SqlDialect.JsonPredicate predicate, ObjectField op,
+                                 String colRef, Map<String, Object> params, List<String> conditions) {
+        String paramName = nextParam(paramPrefix, params);
+        var sql = dialect.jsonPredicateSql(predicate, colRef, ":" + paramName);
+        if (sql.isPresent()) {
+            conditions.add(sql.get());
+            params.put(paramName, extractValue(op.getValue()));
+        }
+    }
+
+    private void applyJsonKeysArray(String paramPrefix, SqlDialect.JsonPredicate predicate, ObjectField op,
+                                    String colRef, Map<String, Object> params, List<String> conditions) {
+        if (!(op.getValue() instanceof ArrayValue av)) return;
+        List<String> elements = new ArrayList<>();
+        for (int i = 0; i < av.getValues().size(); i++) {
+            String paramName = nextParam(paramPrefix + i, params);
+            elements.add(":" + paramName);
+            params.put(paramName, extractValue(av.getValues().get(i)));
+        }
+        String arrExpr = "ARRAY[" + joinCols(elements) + "]";
+        var sql = dialect.jsonPredicateSql(predicate, colRef, arrExpr);
+        sql.ifPresent(conditions::add);
+    }
+
+    /** Handles "is" (enum literal), FILTER_IS_NULL, FILTER_IS_NOT_NULL. */
+    private void applyNullPredicate(String opName, ObjectField op, String colRef, List<String> conditions) {
+        if ("is".equals(opName)) {
+            String enumValue = op.getValue() instanceof EnumValue ev ? ev.getName() : extractValue(op.getValue()).toString();
+            if ("NULL".equalsIgnoreCase(enumValue)) {
+                conditions.add(colRef + IS_NULL);
+            } else if ("NOT_NULL".equalsIgnoreCase(enumValue)) {
+                conditions.add(colRef + IS_NOT_NULL);
+            }
+            return;
+        }
+        Object value = extractValue(op.getValue());
+        boolean truthy = Boolean.TRUE.equals(value) || "true".equals(String.valueOf(value));
+        boolean wantsNull = FILTER_IS_NULL.equals(opName) == truthy;
+        conditions.add(colRef + (wantsNull ? IS_NULL : IS_NOT_NULL));
     }
 
     /**
@@ -477,8 +474,8 @@ public class FilterBuilder {
         int limit = maxRows;
         for (Argument arg : field.getArguments()) {
             if (ARG_LIMIT.equals(arg.getName()) || ARG_FIRST.equals(arg.getName())) {
-                Integer v = resolveIntArg(arg.getValue(), boundVariables());
-                if (v != null) limit = Math.min(v, maxRows);
+                Integer value = resolveIntArg(arg.getValue(), boundVariables());
+                if (value != null) limit = Math.min(value, maxRows);
             }
         }
         String paramName = namedParam(P_LIMIT, params.size());
@@ -487,11 +484,11 @@ public class FilterBuilder {
 
         for (Argument arg : field.getArguments()) {
             if (ARG_OFFSET.equals(arg.getName())) {
-                Integer v = resolveIntArg(arg.getValue(), boundVariables());
-                if (v != null) {
+                Integer value = resolveIntArg(arg.getValue(), boundVariables());
+                if (value != null) {
                     String offParam = "offset_" + params.size();
                     sql.append(" OFFSET :").append(offParam);
-                    params.put(offParam, v);
+                    params.put(offParam, value);
                 }
             }
         }
@@ -558,26 +555,30 @@ public class FilterBuilder {
         if (value instanceof BooleanValue bv) return Boolean.toString(bv.isValue());
         if (value instanceof NullValue) return "null";
         if (value instanceof EnumValue ev) return quoteJson(ev.getName());
-        if (value instanceof ArrayValue av) {
-            StringBuilder sb = new StringBuilder("[");
-            @SuppressWarnings("unchecked")
-            List<Value<?>> items = (List<Value<?>>) (List<?>) av.getValues();
-            for (int i = 0; i < items.size(); i++) {
-                if (i > 0) sb.append(',');
-                sb.append(jsonString(items.get(i)));
-            }
-            return sb.append(']').toString();
-        }
-        if (value instanceof ObjectValue ov) {
-            StringBuilder sb = new StringBuilder("{");
-            List<ObjectField> fields = ov.getObjectFields();
-            for (int i = 0; i < fields.size(); i++) {
-                if (i > 0) sb.append(',');
-                sb.append(quoteJson(fields.get(i).getName())).append(':').append(jsonString(fields.get(i).getValue()));
-            }
-            return sb.append('}').toString();
-        }
+        if (value instanceof ArrayValue av) return jsonStringFromArray(av);
+        if (value instanceof ObjectValue ov) return jsonStringFromObject(ov);
         return quoteJson(value.toString());
+    }
+
+    private String jsonStringFromArray(ArrayValue av) {
+        StringBuilder sb = new StringBuilder("[");
+        @SuppressWarnings("unchecked")
+        List<Value<?>> items = (List<Value<?>>) (List<?>) av.getValues();
+        for (int i = 0; i < items.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(jsonString(items.get(i)));
+        }
+        return sb.append(']').toString();
+    }
+
+    private String jsonStringFromObject(ObjectValue ov) {
+        StringBuilder sb = new StringBuilder("{");
+        List<ObjectField> fields = ov.getObjectFields();
+        for (int i = 0; i < fields.size(); i++) {
+            if (i > 0) sb.append(',');
+            sb.append(quoteJson(fields.get(i).getName())).append(':').append(jsonString(fields.get(i).getValue()));
+        }
+        return sb.append('}').toString();
     }
 
     /**
@@ -587,25 +588,25 @@ public class FilterBuilder {
      */
     private static boolean isJsonType(String pgType) {
         if (pgType == null) return false;
-        String t = pgType.toLowerCase();
-        return t.equals("json") || t.equals("jsonb") || t.equals("_json") || t.equals("_jsonb");
+        String type = pgType.toLowerCase();
+        return type.equals("json") || type.equals("jsonb") || type.equals("_json") || type.equals("_jsonb");
     }
 
-    private String quoteJson(String s) {
+    private String quoteJson(String input) {
         StringBuilder sb = new StringBuilder("\"");
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
+        for (int i = 0; i < input.length(); i++) {
+            char ch = input.charAt(i);
+            switch (ch) {
                 case '"' -> sb.append("\\\"");
                 case '\\' -> sb.append("\\\\");
                 case '\n' -> sb.append("\\n");
                 case '\r' -> sb.append("\\r");
                 case '\t' -> sb.append("\\t");
                 default -> {
-                    if (c < 0x20) {
-                        sb.append(String.format("\\u%04x", (int) c));
+                    if (ch < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) ch));
                     } else {
-                        sb.append(c);
+                        sb.append(ch);
                     }
                 }
             }
@@ -619,7 +620,7 @@ public class FilterBuilder {
     public Integer resolveIntArg(Value<?> value, Map<String, Object> variables) {
         if (value instanceof VariableReference vr && variables.containsKey(vr.getName())) {
             Object resolved = variables.get(vr.getName());
-            if (resolved instanceof Number n) return n.intValue();
+            if (resolved instanceof Number number) return number.intValue();
             return null;
         }
         if (value instanceof IntValue iv) return iv.getValue().intValue();

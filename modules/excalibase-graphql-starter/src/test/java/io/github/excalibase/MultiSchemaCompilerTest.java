@@ -39,56 +39,22 @@ class MultiSchemaCompilerTest {
 
     // === Multi-schema: prefixed field names ===
 
-    @Test
-    void multiSchema_prefixedFieldName_resolvesToCorrectTable() {
+    @org.junit.jupiter.params.ParameterizedTest(name = "{0} resolves to {1}")
+    @org.junit.jupiter.params.provider.CsvSource(delimiter = '|', value = {
+            "{ publicUsers { id name } }                                              | public.\"users\"",
+            "{ salesUsers { id email } }                                              | sales.\"users\"",
+            "{ publicUsersConnection(first: 5) { edges { node { id name } } } }      | public.\"users\"",
+            "{ salesUsersAggregate { count } }                                        | sales.\"users\""
+    })
+    void multiSchema_prefixedFieldResolvesToCorrectTable(String query, String expectedTable) {
         SchemaInfo info = buildMultiSchemaInfo();
-
         SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
 
-        // "publicUsers" should resolve to the users table in public schema
-        SqlCompiler.CompiledQuery result = compiler.compile("{ publicUsers { id name } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(query);
+
         assertNotNull(result);
-        assertTrue(result.sql().contains("public.\"users\""),
-                "Should query public.users — got: " + result.sql());
-    }
-
-    @Test
-    void multiSchema_prefixedFieldName_differentSchema() {
-        SchemaInfo info = buildMultiSchemaInfo();
-
-        SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
-
-        // "salesUsers" should resolve to the users table in sales schema
-        SqlCompiler.CompiledQuery result = compiler.compile("{ salesUsers { id email } }");
-        assertNotNull(result);
-        assertTrue(result.sql().contains("sales.\"users\""),
-                "Should query sales.users — got: " + result.sql());
-    }
-
-    @Test
-    void multiSchema_connectionQuery_prefixed() {
-        SchemaInfo info = buildMultiSchemaInfo();
-
-        SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
-
-        SqlCompiler.CompiledQuery result = compiler.compile(
-                "{ publicUsersConnection(first: 5) { edges { node { id name } } } }");
-        assertNotNull(result);
-        assertTrue(result.sql().contains("public.\"users\""),
-                "Connection should query public.users — got: " + result.sql());
-    }
-
-    @Test
-    void multiSchema_aggregateQuery_prefixed() {
-        SchemaInfo info = buildMultiSchemaInfo();
-
-        SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
-
-        SqlCompiler.CompiledQuery result = compiler.compile(
-                "{ salesUsersAggregate { count } }");
-        assertNotNull(result);
-        assertTrue(result.sql().contains("sales.\"users\""),
-                "Aggregate should query sales.users — got: " + result.sql());
+        assertTrue(result.sql().contains(expectedTable),
+                "Expected " + expectedTable + " in SQL — got: " + result.sql());
     }
 
     @Test

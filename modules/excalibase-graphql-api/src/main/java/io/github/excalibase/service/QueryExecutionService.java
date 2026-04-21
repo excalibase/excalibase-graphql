@@ -16,6 +16,7 @@ import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
@@ -59,60 +60,87 @@ public class QueryExecutionService {
         return ResponseEntity.ok(Map.of("data", Map.of()));
     }
 
-    @SuppressWarnings("java:S3776") // JDBC CallableStatement handling: IN/OUT/INOUT param registration, OUT value extraction, result set conversion must happen in sequence
     public ResponseEntity<Object> executeProcedureCall(SqlCompiler.CompiledQuery compiled) throws SQLException, JsonProcessingException {
         SqlCompiler.ProcedureCallInfo callInfo = compiled.procedureCallInfo();
         String fieldName = compiled.mutationFieldName();
+        String callSql = buildCallSql(callInfo);
+        try (Connection conn = dataSource.getConnection();
+             CallableStatement cs = conn.prepareCall(callSql)) { // NOSONAR — qualifiedName validated in buildCallSql, args use setObject placeholders
+            var params = callInfo.allParams();
+            bindInParams(cs, params);
+            registerOutParams(cs, params);
+            cs.execute();
+            Map<String, Object> result = collectOutParams(cs, params);
+            return wrapProcedureResult(fieldName, result);
+        }
+    }
 
+    private String buildCallSql(SqlCompiler.ProcedureCallInfo callInfo) {
         // qualifiedName comes from schema introspection — validate it only contains safe identifier chars
         String qualifiedName = callInfo.qualifiedName();
         if (!SAFE_IDENTIFIER.matcher(qualifiedName).matches()) {
             throw new IllegalArgumentException("Invalid procedure name: " + qualifiedName);
         }
-
         int paramCount = callInfo.allParams().size();
         String placeholders = paramCount == 0 ? "" : "?,".repeat(paramCount).substring(0, paramCount * 2 - 1);
-        String callSql = "CALL " + qualifiedName + "(" + placeholders + ")";
+        return "CALL " + qualifiedName + "(" + placeholders + ")";
+    }
 
-        try (Connection conn = dataSource.getConnection();
-             CallableStatement cs = conn.prepareCall(callSql)) { // NOSONAR — qualifiedName validated above, args use setObject placeholders
-
-            int idx = 1;
-            for (SqlCompiler.ProcedureCallParam p : callInfo.allParams()) {
-                if ("IN".equals(p.mode()) || PROC_PARAM_MODE_INOUT.equals(p.mode())) {
-                    if (p.value() != null) {
-                        cs.setObject(idx, p.value(), SqlUtils.sqlTypeFor(p.type()));
-                    } else {
-                        cs.setNull(idx, SqlUtils.sqlTypeFor(p.type()));
-                    }
+    private void bindInParams(CallableStatement cs, List<SqlCompiler.ProcedureCallParam> params) throws SQLException {
+        int idx = 1;
+        for (SqlCompiler.ProcedureCallParam param : params) {
+            if (isInput(param)) {
+                if (param.value() != null) {
+                    cs.setObject(idx, param.value(), SqlUtils.sqlTypeFor(param.type()));
+                } else {
+                    cs.setNull(idx, SqlUtils.sqlTypeFor(param.type()));
                 }
-                if ("OUT".equals(p.mode()) || PROC_PARAM_MODE_INOUT.equals(p.mode())) {
-                    cs.registerOutParameter(idx, SqlUtils.sqlTypeFor(p.type()));
-                }
-                idx++;
             }
-            cs.execute();
-
-            Map<String, Object> result = new HashMap<>();
-            idx = 1;
-            for (SqlCompiler.ProcedureCallParam p : callInfo.allParams()) {
-                if ("OUT".equals(p.mode()) || PROC_PARAM_MODE_INOUT.equals(p.mode())) {
-                    result.put(p.name(), cs.getObject(idx));
-                }
-                idx++;
-            }
-
-            if (result.isEmpty()) {
-                return ResponseEntity.ok(Map.of("data", Map.of(fieldName, "{\"result\":\"OK\"}")));
-            }
-            String json = objectMapper.writeValueAsString(result);
-            return ResponseEntity.ok(Map.of("data", Map.of(fieldName, json)));
+            idx++;
         }
+    }
+
+    private void registerOutParams(CallableStatement cs, List<SqlCompiler.ProcedureCallParam> params) throws SQLException {
+        int idx = 1;
+        for (SqlCompiler.ProcedureCallParam param : params) {
+            if (isOutput(param)) {
+                cs.registerOutParameter(idx, SqlUtils.sqlTypeFor(param.type()));
+            }
+            idx++;
+        }
+    }
+
+    private Map<String, Object> collectOutParams(CallableStatement cs, List<SqlCompiler.ProcedureCallParam> params) throws SQLException {
+        Map<String, Object> result = new HashMap<>();
+        int idx = 1;
+        for (SqlCompiler.ProcedureCallParam param : params) {
+            if (isOutput(param)) {
+                result.put(param.name(), cs.getObject(idx));
+            }
+            idx++;
+        }
+        return result;
+    }
+
+    private ResponseEntity<Object> wrapProcedureResult(String fieldName, Map<String, Object> result) throws JsonProcessingException {
+        if (result.isEmpty()) {
+            return ResponseEntity.ok(Map.of("data", Map.of(fieldName, "{\"result\":\"OK\"}")));
+        }
+        String json = objectMapper.writeValueAsString(result);
+        return ResponseEntity.ok(Map.of("data", Map.of(fieldName, json)));
+    }
+
+    private static boolean isInput(SqlCompiler.ProcedureCallParam param) {
+        return "IN".equals(param.mode()) || PROC_PARAM_MODE_INOUT.equals(param.mode());
+    }
+
+    private static boolean isOutput(SqlCompiler.ProcedureCallParam param) {
+        return "OUT".equals(param.mode()) || PROC_PARAM_MODE_INOUT.equals(param.mode());
     }
 
     public ResponseEntity<Object> executeWithRlsContext(SqlCompiler.CompiledQuery compiled,
                                                        String userId,
-                                                       JwtClaims jwtClaims) throws Exception {
+                                                       JwtClaims jwtClaims) throws SQLException, JsonProcessingException {
         try (Connection conn = dataSource.getConnection()) {
             boolean autoCommit = conn.getAutoCommit();
             try {
@@ -148,7 +176,7 @@ public class QueryExecutionService {
                 conn.commit();
                 return wrapResult(json, compiled);
 
-            } catch (Exception e) {
+            } catch (SQLException | JsonProcessingException e) {
                 conn.rollback();
                 throw e;
             } finally {

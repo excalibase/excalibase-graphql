@@ -5,10 +5,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.spi.SchemaLoader;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 
 import java.util.*;
 
 public class PostgresSchemaLoader implements SchemaLoader {
+
+    private static final String COL_TABLE_NAME = "table_name";
+    private static final String COL_COLUMN_NAME = "column_name";
+    private static final String COL_DATA_TYPE = "data_type";
+    private static final String COL_UDT_NAME = "udt_name";
+    private static final String COL_CHARACTER_MAXIMUM_LENGTH = "character_maximum_length";
+    private static final String COL_ARGS_SIGNATURE = "args_signature";
+    private static final String COL_TABLE_SCHEMA = "table_schema";
 
     private static final Set<String> EXCLUDED_VIEWS = Set.of(
             "pg_stat_statements", "pg_stat_statements_info", "pg_buffercache"
@@ -184,99 +193,131 @@ public class PostgresSchemaLoader implements SchemaLoader {
             for (int i = 1; i <= 10; i++) {
                 ps.setArray(i, ps.getConnection().createArrayOf("text", schemaArray));
             }
-        }, rs -> {
-            try {
-                JsonNode node = JSON.readTree(rs.getString(1));
-                String kind = node.get("kind").asText();
-                String schema = node.has("table_schema") && !node.get("table_schema").isNull()
-                        ? node.get("table_schema").asText() : null;
+        }, (RowCallbackHandler) rs -> dispatchIntrospectionRow(rs.getString(1), schemaArray, perSchema, fkTables, fkColumns));
 
-                // Extensions are global; broadcast to every per-schema SchemaInfo
-                // (and to the schemas we know we're loading even if they have no
-                // rows yet) so hasExtension() works regardless of which schema
-                // the caller queries.
-                if ("extension".equals(kind)) {
-                    String extName = node.get("table_name").asText();
-                    String extVer = node.has("column_name") && !node.get("column_name").isNull()
-                            ? node.get("column_name").asText() : null;
-                    for (String s : schemaArray) {
-                        perSchema.computeIfAbsent(s, k -> new SchemaInfo()).addExtension(extName, extVer);
-                    }
-                    return;
-                }
-                if (schema == null) return;
-                SchemaInfo info = perSchema.computeIfAbsent(schema, k -> new SchemaInfo());
+        postProcessForeignKeys(fkColumns, fkTables, perSchema);
+        removeExcludedViews(perSchema);
+    }
 
-                switch (kind) {
-                    case "column" -> {
-                        String table = node.get("table_name").asText();
-                        String col = node.get("column_name").asText();
-                        String type = node.get("data_type").asText();
-                        String udtName = node.has("udt_name") && !node.get("udt_name").isNull()
-                                ? node.get("udt_name").asText() : null;
-                        Integer charMaxLen = node.has("character_maximum_length") && !node.get("character_maximum_length").isNull()
-                                ? node.get("character_maximum_length").asInt() : null;
-                        if ("USER-DEFINED".equals(type) && udtName != null) {
-                            type = udtName;
-                            info.addColumnEnumType(table, col, udtName);
-                        }
-                        if ("ARRAY".equals(type) && udtName != null) {
-                            type = udtName;
-                        }
-                        if (type.equals("bit") && charMaxLen != null) {
-                            type = "bit(" + charMaxLen + ")";
-                        } else if (type.equals("bit varying") && charMaxLen != null) {
-                            type = "bit varying(" + charMaxLen + ")";
-                        }
-                        info.addColumn(table, col, type);
-                        info.setTableSchema(table, schema);
-                    }
-                    case "pk" -> info.addPrimaryKey(node.get("table_name").asText(), node.get("column_name").asText());
-                    case "fk" -> {
-                        String constraintKey = schema + "." + node.get("constraint_name").asText();
-                        String fromTable = node.get("table_name").asText();
-                        String fromCol = node.get("from_column").asText();
-                        String toTable = node.get("to_table").asText();
-                        String toCol = node.get("to_column").asText();
-                        fkTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, schema});
-                        fkColumns.computeIfAbsent(constraintKey, k -> new ArrayList<>())
-                                .add(new String[]{fromCol, toCol});
-                    }
-                    case "view" -> {
-                        String viewName = node.get("table_name").asText();
-                        if (!EXCLUDED_VIEWS.contains(viewName)) {
-                            info.addView(viewName);
-                        }
-                    }
-                    case "matview" -> info.addView(node.get("table_name").asText());
-                    case "matview_col" -> {
-                        info.addColumn(node.get("table_name").asText(),
-                                node.get("column_name").asText(), node.get("data_type").asText());
-                        info.setTableSchema(node.get("table_name").asText(), schema);
-                    }
-                    case "enum" -> info.addEnumValue(node.get("udt_name").asText(), node.get("enum_label").asText());
-                    case "composite" -> info.addCompositeTypeField(
-                            node.get("udt_name").asText(), node.get("column_name").asText(),
-                            node.get("data_type").asText());
-                    case "proc" -> {
-                        String procName = node.get("proc_name").asText();
-                        String argsSig = node.has("args_signature") && !node.get("args_signature").isNull()
-                                ? node.get("args_signature").asText() : "";
-                        info.addStoredProcedure(procName, new SchemaInfo.ProcedureInfo(procName, parseProcArgs(argsSig)));
-                    }
-                    case "computed" -> info.addComputedField(
-                            node.get("table_name").asText(), node.get("function_name").asText(),
-                            node.get("return_type").asText());
-                    default -> {
-                        // Ignore unknown introspection row kinds
-                    }
-                }
-            } catch (Exception e) {
-                throw new io.github.excalibase.spi.SchemaIntrospectionException("Failed to parse introspection row", e);
+    /** Dispatch a single introspection row (one JSON blob) to the appropriate handler. */
+    private void dispatchIntrospectionRow(String rowJson, String[] schemaArray,
+                                          Map<String, SchemaInfo> perSchema,
+                                          Map<String, String[]> fkTables,
+                                          Map<String, List<String[]>> fkColumns) {
+        try {
+            JsonNode node = JSON.readTree(rowJson);
+            String kind = node.get("kind").asText();
+            String schema = node.has(COL_TABLE_SCHEMA) && !node.get(COL_TABLE_SCHEMA).isNull()
+                    ? node.get(COL_TABLE_SCHEMA).asText() : null;
+
+            if ("extension".equals(kind)) {
+                handleExtension(node, schemaArray, perSchema);
+                return;
             }
-        });
+            if (schema == null) return;
+            SchemaInfo info = perSchema.computeIfAbsent(schema, k -> new SchemaInfo());
 
-        // Post-process FKs (grouped by constraint)
+            switch (kind) {
+                case "column", "matview_col" -> handleColumnKind(kind, node, schema, info);
+                case "pk" -> info.addPrimaryKey(node.get(COL_TABLE_NAME).asText(), node.get(COL_COLUMN_NAME).asText());
+                case "fk" -> handleForeignKeyRow(node, schema, fkTables, fkColumns);
+                case "view", "matview" -> handleViewKind(kind, node, info);
+                case "enum" -> info.addEnumValue(node.get(COL_UDT_NAME).asText(), node.get("enum_label").asText());
+                case "composite" -> info.addCompositeTypeField(
+                        node.get(COL_UDT_NAME).asText(), node.get(COL_COLUMN_NAME).asText(),
+                        node.get(COL_DATA_TYPE).asText());
+                case "proc", "computed" -> handleProcOrComputed(kind, node, info);
+                default -> { /* Ignore unknown introspection row kinds */ }
+            }
+        } catch (Exception e) {
+            throw new io.github.excalibase.spi.SchemaIntrospectionException("Failed to parse introspection row", e);
+        }
+    }
+
+    /** Extensions are global; broadcast to every per-schema SchemaInfo. */
+    private void handleExtension(JsonNode node, String[] schemaArray, Map<String, SchemaInfo> perSchema) {
+        String extName = node.get(COL_TABLE_NAME).asText();
+        String extVer = node.has(COL_COLUMN_NAME) && !node.get(COL_COLUMN_NAME).isNull()
+                ? node.get(COL_COLUMN_NAME).asText() : null;
+        for (String schema : schemaArray) {
+            perSchema.computeIfAbsent(schema, k -> new SchemaInfo()).addExtension(extName, extVer);
+        }
+    }
+
+    /** Handles both 'column' (regular table column) and 'matview_col' (materialized view column). */
+    private void handleColumnKind(String kind, JsonNode node, String schema, SchemaInfo info) {
+        String table = node.get(COL_TABLE_NAME).asText();
+        String col = node.get(COL_COLUMN_NAME).asText();
+        String type = node.get(COL_DATA_TYPE).asText();
+        String udtName = node.has(COL_UDT_NAME) && !node.get(COL_UDT_NAME).isNull()
+                ? node.get(COL_UDT_NAME).asText() : null;
+        Integer charMaxLen = node.has(COL_CHARACTER_MAXIMUM_LENGTH) && !node.get(COL_CHARACTER_MAXIMUM_LENGTH).isNull()
+                ? node.get(COL_CHARACTER_MAXIMUM_LENGTH).asInt() : null;
+
+        // The plain column kind performs USER-DEFINED / ARRAY / bit length rewrites,
+        // while matview columns use pg_catalog.format_type and need no rewriting.
+        if ("column".equals(kind)) {
+            type = normalizeColumnType(type, udtName, charMaxLen, table, col, info);
+        }
+        info.addColumn(table, col, type);
+        info.setTableSchema(table, schema);
+    }
+
+    /** Normalizes raw pg type names (USER-DEFINED, ARRAY, bit, bit varying) to their canonical forms. */
+    private String normalizeColumnType(String type, String udtName, Integer charMaxLen,
+                                       String table, String col, SchemaInfo info) {
+        if ("USER-DEFINED".equals(type) && udtName != null) {
+            info.addColumnEnumType(table, col, udtName);
+            return udtName;
+        }
+        if ("ARRAY".equals(type) && udtName != null) {
+            return udtName;
+        }
+        if ("bit".equals(type) && charMaxLen != null) {
+            return "bit(" + charMaxLen + ")";
+        }
+        if ("bit varying".equals(type) && charMaxLen != null) {
+            return "bit varying(" + charMaxLen + ")";
+        }
+        return type;
+    }
+
+    private void handleForeignKeyRow(JsonNode node, String schema,
+                                     Map<String, String[]> fkTables,
+                                     Map<String, List<String[]>> fkColumns) {
+        String constraintKey = schema + "." + node.get("constraint_name").asText();
+        String fromTable = node.get(COL_TABLE_NAME).asText();
+        String fromCol = node.get("from_column").asText();
+        String toTable = node.get("to_table").asText();
+        String toCol = node.get("to_column").asText();
+        fkTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, schema});
+        fkColumns.computeIfAbsent(constraintKey, k -> new ArrayList<>())
+                .add(new String[]{fromCol, toCol});
+    }
+
+    /** Handles 'view' (filters excluded extension views) and 'matview' (always added). */
+    private void handleViewKind(String kind, JsonNode node, SchemaInfo info) {
+        String viewName = node.get(COL_TABLE_NAME).asText();
+        if ("view".equals(kind) && EXCLUDED_VIEWS.contains(viewName)) return;
+        info.addView(viewName);
+    }
+
+    /** Handles 'proc' (stored procedure) and 'computed' (table-input computed function). */
+    private void handleProcOrComputed(String kind, JsonNode node, SchemaInfo info) {
+        if ("proc".equals(kind)) {
+            String procName = node.get("proc_name").asText();
+            String argsSig = node.has(COL_ARGS_SIGNATURE) && !node.get(COL_ARGS_SIGNATURE).isNull()
+                    ? node.get(COL_ARGS_SIGNATURE).asText() : "";
+            info.addStoredProcedure(procName, new SchemaInfo.ProcedureInfo(procName, parseProcArgs(argsSig)));
+        } else {
+            info.addComputedField(node.get(COL_TABLE_NAME).asText(),
+                    node.get("function_name").asText(), node.get("return_type").asText());
+        }
+    }
+
+    private void postProcessForeignKeys(Map<String, List<String[]>> fkColumns,
+                                        Map<String, String[]> fkTables,
+                                        Map<String, SchemaInfo> perSchema) {
         for (var entry : fkColumns.entrySet()) {
             String[] tables = fkTables.get(entry.getKey());
             String fromTable = tables[0];
@@ -293,8 +334,9 @@ public class PostgresSchemaLoader implements SchemaLoader {
                 info.addCompositeForeignKey(fromTable, fkCols, toTable, refCols);
             }
         }
+    }
 
-        // Also exclude extension views from columns (they were loaded by the column CTE)
+    private void removeExcludedViews(Map<String, SchemaInfo> perSchema) {
         for (var entry : perSchema.entrySet()) {
             SchemaInfo info = entry.getValue();
             for (String excluded : EXCLUDED_VIEWS) {
@@ -313,12 +355,12 @@ public class PostgresSchemaLoader implements SchemaLoader {
             WHERE table_schema = ?
             ORDER BY table_name, ordinal_position
             """, rs -> {
-            String table = rs.getString("table_name");
-            String col = rs.getString("column_name");
-            String type = rs.getString("data_type");
-            String udtName = rs.getString("udt_name");
-            Integer charMaxLen = rs.getObject("character_maximum_length") != null
-                    ? rs.getInt("character_maximum_length") : null;
+            String table = rs.getString(COL_TABLE_NAME);
+            String col = rs.getString(COL_COLUMN_NAME);
+            String type = rs.getString(COL_DATA_TYPE);
+            String udtName = rs.getString(COL_UDT_NAME);
+            Integer charMaxLen = rs.getObject(COL_CHARACTER_MAXIMUM_LENGTH) != null
+                    ? rs.getInt(COL_CHARACTER_MAXIMUM_LENGTH) : null;
             if ("USER-DEFINED".equals(type) && udtName != null) {
                 type = udtName;
                 info.addColumnEnumType(table, col, udtName);
@@ -390,9 +432,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
         jdbc.query("""
             SELECT table_name FROM information_schema.views
             WHERE table_schema = ?
-            """, rs -> {
-            info.addView(rs.getString("table_name"));
-        }, schema);
+            """, (RowCallbackHandler) rs -> info.addView(rs.getString(COL_TABLE_NAME)), schema);
 
         // Materialized views
         jdbc.query("""
@@ -400,9 +440,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             FROM pg_class c
             JOIN pg_namespace n ON c.relnamespace = n.oid
             WHERE n.nspname = ? AND c.relkind = 'm'
-            """, rs -> {
-            info.addView(rs.getString("table_name"));
-        }, schema);
+            """, (RowCallbackHandler) rs -> info.addView(rs.getString(COL_TABLE_NAME)), schema);
 
         // Materialized view columns
         jdbc.query("""
@@ -415,8 +453,8 @@ public class PostgresSchemaLoader implements SchemaLoader {
               AND a.attnum > 0 AND NOT a.attisdropped
             ORDER BY c.relname, a.attnum
             """, rs -> {
-            info.addColumn(rs.getString("table_name"), rs.getString("column_name"), rs.getString("data_type"));
-            info.setTableSchema(rs.getString("table_name"), schema);
+            info.addColumn(rs.getString(COL_TABLE_NAME), rs.getString(COL_COLUMN_NAME), rs.getString(COL_DATA_TYPE));
+            info.setTableSchema(rs.getString(COL_TABLE_NAME), schema);
         }, schema);
     }
 
@@ -430,7 +468,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             WHERE n.nspname = ? AND p.prokind IN ('f', 'p')
             """, rs -> {
             String procName = rs.getString("proc_name");
-            String argsSig = rs.getString("args_signature");
+            String argsSig = rs.getString(COL_ARGS_SIGNATURE);
             List<SchemaInfo.ProcParam> params = parseProcArgs(argsSig);
             info.addStoredProcedure(procName, new SchemaInfo.ProcedureInfo(procName, params));
         }, schema);
@@ -445,9 +483,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             JOIN pg_namespace n ON t.typnamespace = n.oid
             WHERE n.nspname = ?
             ORDER BY t.typname, e.enumsortorder
-            """, rs -> {
-            info.addEnumValue(rs.getString("typname"), rs.getString("enumlabel"));
-        }, schema);
+            """, (RowCallbackHandler) rs -> info.addEnumValue(rs.getString("typname"), rs.getString("enumlabel")), schema);
     }
 
     @Override
@@ -460,9 +496,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
             WHERE n.nspname = ? AND t.typtype = 'c' AND c.relkind = 'c'
             ORDER BY t.typname, a.attnum
-            """, rs -> {
-            info.addCompositeTypeField(rs.getString("typname"), rs.getString("attname"), rs.getString("data_type"));
-        }, schema);
+            """, (RowCallbackHandler) rs -> info.addCompositeTypeField(rs.getString("typname"), rs.getString("attname"), rs.getString(COL_DATA_TYPE)), schema);
     }
 
     @Override
@@ -476,9 +510,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             JOIN pg_type t ON p.proargtypes[0] = t.oid
             JOIN pg_class c ON t.typrelid = c.oid
             WHERE n.nspname = ? AND array_length(p.proargtypes, 1) = 1
-            """, rs -> {
-            info.addComputedField(rs.getString("table_name"), rs.getString("function_name"), rs.getString("return_type"));
-        }, schema);
+            """, (RowCallbackHandler) rs -> info.addComputedField(rs.getString(COL_TABLE_NAME), rs.getString("function_name"), rs.getString("return_type")), schema);
     }
 
     private List<SchemaInfo.ProcParam> parseProcArgs(String argsSig) {

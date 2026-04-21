@@ -5,11 +5,17 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.spi.SchemaLoader;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 
 import java.util.*;
 import java.util.Map;
 
 public class MysqlSchemaLoader implements SchemaLoader {
+
+    private static final String COL_TABLE_NAME = "table_name";
+    private static final String COL_COLUMN_NAME = "column_name";
+    private static final String COL_TABLE_SCHEMA = "table_schema";
+    private static final String COL_PARAM_NAME = "param_name";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -113,56 +119,67 @@ public class MysqlSchemaLoader implements SchemaLoader {
         jdbc.query(sql, ps -> {
             int idx = 1;
             for (int i = 0; i < cteCount; i++) {
-                for (String s : schemaArray) {
-                    ps.setString(idx++, s);
+                for (String schema : schemaArray) {
+                    ps.setString(idx++, schema);
                 }
             }
-        }, rs -> {
-            try {
-                JsonNode node = JSON.readTree(rs.getString(1));
-                String kind = node.get("kind").asText();
-                String schema = node.has("table_schema") && !node.get("table_schema").isNull()
-                        ? node.get("table_schema").asText() : null;
-                if (schema == null) return;
-                SchemaInfo info = perSchema.computeIfAbsent(schema, k -> new SchemaInfo());
+        }, (RowCallbackHandler) rs -> dispatchMysqlRow(rs.getString(1), perSchema, schemaProcParams));
 
-                switch (kind) {
-                    case "column" -> {
-                        String table = node.get("table_name").asText();
-                        String type = node.get("data_type").asText();
-                        if ("enum".equalsIgnoreCase(type)) type = "varchar";
-                        info.addColumn(table, node.get("column_name").asText(), type);
-                        info.setTableSchema(table, schema);
-                    }
-                    case "pk" -> info.addPrimaryKey(node.get("table_name").asText(), node.get("column_name").asText());
-                    case "fk" -> info.addForeignKey(
-                            node.get("table_name").asText(), node.get("from_column").asText(),
-                            node.get("to_table").asText(), node.get("to_column").asText());
-                    case "view" -> info.addView(node.get("table_name").asText());
-                    case "proc" -> {
-                        String procName = node.get("proc_name").asText();
-                        String paramName = node.has("param_name") && !node.get("param_name").isNull()
-                                ? node.get("param_name").asText() : null;
-                        Map<String, List<SchemaInfo.ProcParam>> procParams =
-                                schemaProcParams.computeIfAbsent(schema, k -> new LinkedHashMap<>());
-                        if (paramName != null) {
-                            procParams.computeIfAbsent(procName, k -> new ArrayList<>())
-                                    .add(new SchemaInfo.ProcParam(
-                                            node.get("param_mode").asText(), paramName, node.get("param_type").asText()));
-                        } else {
-                            procParams.putIfAbsent(procName, new ArrayList<>());
-                        }
-                    }
-                    default -> {
-                        // Ignore unknown introspection row kinds
-                    }
-                }
-            } catch (Exception e) {
-                throw new io.github.excalibase.spi.SchemaIntrospectionException("Failed to parse MySQL introspection row", e);
+        finalizeStoredProcedures(schemaProcParams, perSchema);
+    }
+
+    /** Dispatch a single MySQL introspection row to its handler. */
+    private void dispatchMysqlRow(String rowJson, Map<String, SchemaInfo> perSchema,
+                                  Map<String, Map<String, List<SchemaInfo.ProcParam>>> schemaProcParams) {
+        try {
+            JsonNode node = JSON.readTree(rowJson);
+            String kind = node.get("kind").asText();
+            String schema = node.has(COL_TABLE_SCHEMA) && !node.get(COL_TABLE_SCHEMA).isNull()
+                    ? node.get(COL_TABLE_SCHEMA).asText() : null;
+            if (schema == null) return;
+            SchemaInfo info = perSchema.computeIfAbsent(schema, k -> new SchemaInfo());
+
+            switch (kind) {
+                case "column" -> handleColumnRow(node, schema, info);
+                case "pk" -> info.addPrimaryKey(node.get(COL_TABLE_NAME).asText(), node.get(COL_COLUMN_NAME).asText());
+                case "fk" -> info.addForeignKey(
+                        node.get(COL_TABLE_NAME).asText(), node.get("from_column").asText(),
+                        node.get("to_table").asText(), node.get("to_column").asText());
+                case "view" -> info.addView(node.get(COL_TABLE_NAME).asText());
+                case "proc" -> handleProcRow(node, schema, schemaProcParams);
+                default -> { /* Ignore unknown introspection row kinds */ }
             }
-        });
+        } catch (Exception e) {
+            throw new io.github.excalibase.spi.SchemaIntrospectionException("Failed to parse MySQL introspection row", e);
+        }
+    }
 
-        // Post-process stored procedures
+    private void handleColumnRow(JsonNode node, String schema, SchemaInfo info) {
+        String table = node.get(COL_TABLE_NAME).asText();
+        String type = node.get("data_type").asText();
+        if ("enum".equalsIgnoreCase(type)) type = "varchar";
+        info.addColumn(table, node.get(COL_COLUMN_NAME).asText(), type);
+        info.setTableSchema(table, schema);
+    }
+
+    private void handleProcRow(JsonNode node, String schema,
+                               Map<String, Map<String, List<SchemaInfo.ProcParam>>> schemaProcParams) {
+        String procName = node.get("proc_name").asText();
+        String paramName = node.has(COL_PARAM_NAME) && !node.get(COL_PARAM_NAME).isNull()
+                ? node.get(COL_PARAM_NAME).asText() : null;
+        Map<String, List<SchemaInfo.ProcParam>> procParams =
+                schemaProcParams.computeIfAbsent(schema, k -> new LinkedHashMap<>());
+        if (paramName != null) {
+            procParams.computeIfAbsent(procName, k -> new ArrayList<>())
+                    .add(new SchemaInfo.ProcParam(
+                            node.get("param_mode").asText(), paramName, node.get("param_type").asText()));
+        } else {
+            procParams.putIfAbsent(procName, new ArrayList<>());
+        }
+    }
+
+    private void finalizeStoredProcedures(Map<String, Map<String, List<SchemaInfo.ProcParam>>> schemaProcParams,
+                                          Map<String, SchemaInfo> perSchema) {
         for (var schemaEntry : schemaProcParams.entrySet()) {
             SchemaInfo info = perSchema.computeIfAbsent(schemaEntry.getKey(), k -> new SchemaInfo());
             for (var procEntry : schemaEntry.getValue().entrySet()) {
@@ -180,8 +197,8 @@ public class MysqlSchemaLoader implements SchemaLoader {
             WHERE table_schema = ?
             ORDER BY table_name, ordinal_position
             """, rs -> {
-            String table = rs.getString("table_name");
-            String col = rs.getString("column_name");
+            String table = rs.getString(COL_TABLE_NAME);
+            String col = rs.getString(COL_COLUMN_NAME);
             String type = rs.getString("data_type");
             // MySQL ENUM is a column constraint, not a separate type system — treat as varchar
             if ("enum".equalsIgnoreCase(type)) type = "varchar";
@@ -197,10 +214,8 @@ public class MysqlSchemaLoader implements SchemaLoader {
                    kcu.REFERENCED_TABLE_NAME AS to_table, kcu.REFERENCED_COLUMN_NAME AS to_column
             FROM information_schema.KEY_COLUMN_USAGE kcu
             WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
-            """, rs -> {
-            info.addForeignKey(rs.getString("from_table"), rs.getString("from_column"),
-                              rs.getString("to_table"), rs.getString("to_column"));
-        }, schema);
+            """, (RowCallbackHandler) rs -> info.addForeignKey(rs.getString("from_table"), rs.getString("from_column"),
+                    rs.getString("to_table"), rs.getString("to_column")), schema);
     }
 
     @Override
@@ -209,9 +224,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
         jdbc.query("""
             SELECT table_name FROM information_schema.views
             WHERE table_schema = ?
-            """, rs -> {
-            info.addView(rs.getString("table_name"));
-        }, schema);
+            """, (RowCallbackHandler) rs -> info.addView(rs.getString(COL_TABLE_NAME)), schema);
     }
 
     @Override
@@ -232,7 +245,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
             ORDER BY r.SPECIFIC_NAME, p.ORDINAL_POSITION
             """, rs -> {
             String procName = rs.getString("proc_name");
-            String paramName = rs.getString("param_name");
+            String paramName = rs.getString(COL_PARAM_NAME);
             String paramMode = rs.getString("param_mode");
             String paramType = rs.getString("param_type");
             if (paramName != null) {

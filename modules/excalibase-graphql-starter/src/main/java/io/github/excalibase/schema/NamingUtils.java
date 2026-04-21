@@ -15,11 +15,11 @@ public final class NamingUtils {
         StringBuilder sb = new StringBuilder();
         boolean nextUpper = false;
         boolean first = true;
-        for (char c : name.toCharArray()) {
-            if (c == '_') { nextUpper = true; }
-            else if (first) { sb.append(Character.toLowerCase(c)); first = false; }
-            else if (nextUpper) { sb.append(Character.toUpperCase(c)); nextUpper = false; }
-            else sb.append(c);
+        for (char ch : name.toCharArray()) {
+            if (ch == '_') { nextUpper = true; }
+            else if (first) { sb.append(Character.toLowerCase(ch)); first = false; }
+            else if (nextUpper) { sb.append(Character.toUpperCase(ch)); nextUpper = false; }
+            else sb.append(ch);
         }
         return sb.toString();
     }
@@ -29,10 +29,10 @@ public final class NamingUtils {
         if (name == null) return null;
         StringBuilder sb = new StringBuilder();
         boolean nextUpper = true;
-        for (char c : name.toCharArray()) {
-            if (c == '_') { nextUpper = true; }
-            else if (nextUpper) { sb.append(Character.toUpperCase(c)); nextUpper = false; }
-            else sb.append(c);
+        for (char ch : name.toCharArray()) {
+            if (ch == '_') { nextUpper = true; }
+            else if (nextUpper) { sb.append(Character.toUpperCase(ch)); nextUpper = false; }
+            else sb.append(ch);
         }
         return sb.toString();
     }

@@ -19,6 +19,8 @@ public class CollectionSchemaManager {
 
     private static final Logger log = LoggerFactory.getLogger(CollectionSchemaManager.class);
     private static final String NOSQL_SCHEMA = "nosql";
+    private static final String KIND_COLLECTION_NAME = "collection name";
+    private static final String PREFIX_UNIQUE_INDEX = "uidx_";
     private static final int MAX_INDEXES_PER_COLLECTION = 10;
     private static final Pattern EXPR_PATTERN = Pattern.compile(
             "data\\s*->>\\s*'([^']+)'");
@@ -192,7 +194,7 @@ public class CollectionSchemaManager {
     }
 
     private void createTable(String collection) {
-        safeIdent(collection, "collection name");
+        safeIdent(collection, KIND_COLLECTION_NAME);
         jdbc.execute("CREATE TABLE IF NOT EXISTS " + NOSQL_SCHEMA + ".\"" + collection + "\" (" +
                 "id UUID PRIMARY KEY DEFAULT gen_random_uuid(), " +
                 "data JSONB NOT NULL, " +
@@ -210,7 +212,7 @@ public class CollectionSchemaManager {
             String type = (String) idxDef.getOrDefault("type", "string");
             boolean unique = Boolean.TRUE.equals(idxDef.get("unique"));
 
-            String indexName = (unique ? "uidx_" : "idx_") + collection + "_" + String.join("_", fields);
+            String indexName = (unique ? PREFIX_UNIQUE_INDEX : "idx_") + collection + "_" + String.join("_", fields);
 
             if (!existing.containsKey(indexName)) {
                 createExpressionIndex(collection, indexName, fields, type, unique);
@@ -219,7 +221,7 @@ public class CollectionSchemaManager {
         }
 
         for (String orphan : existing.keySet()) {
-            if ((orphan.startsWith("idx_") || orphan.startsWith("uidx_"))
+            if ((orphan.startsWith("idx_") || orphan.startsWith(PREFIX_UNIQUE_INDEX))
                     && IDENT_PATTERN.matcher(orphan).matches()) {
                 jdbc.execute("DROP INDEX IF EXISTS " + NOSQL_SCHEMA + ".\"" + orphan + "\"");
                 log.info("Dropped orphan index: {}", orphan);
@@ -229,7 +231,7 @@ public class CollectionSchemaManager {
 
     private void createExpressionIndex(String collection, String indexName,
                                         List<String> fields, String type, boolean unique) {
-        safeIdent(collection, "collection name");
+        safeIdent(collection, KIND_COLLECTION_NAME);
         safeIdent(indexName, "index name");
         var exprs = new ArrayList<String>();
         var predicates = new ArrayList<String>();
@@ -268,7 +270,7 @@ public class CollectionSchemaManager {
     }
 
     private void addSearchColumn(String collection, String field) {
-        safeIdent(collection, "collection name");
+        safeIdent(collection, KIND_COLLECTION_NAME);
         safeIdent(field, "search field name");
         String table = NOSQL_SCHEMA + ".\"" + collection + "\"";
         try {
@@ -284,7 +286,7 @@ public class CollectionSchemaManager {
     }
 
     private void addVectorColumn(String collection, String field, int dimensions) {
-        safeIdent(collection, "collection name");
+        safeIdent(collection, KIND_COLLECTION_NAME);
         if (field != null) safeIdent(field, "vector field name");
         if (dimensions < 1 || dimensions > 16000) {
             throw new IllegalArgumentException("Vector dimensions must be between 1 and 16000");
@@ -360,12 +362,12 @@ public class CollectionSchemaManager {
                     String def = rs.getString("indexdef");
                     if (name.endsWith("_pkey")) return;
 
-                    boolean unique = name.startsWith("uidx_");
-                    Matcher m = EXPR_PATTERN.matcher(def);
+                    boolean unique = name.startsWith(PREFIX_UNIQUE_INDEX);
+                    Matcher matcher = EXPR_PATTERN.matcher(def);
                     var fieldSet = new LinkedHashSet<String>();
                     String type = "string";
-                    while (m.find()) {
-                        fieldSet.add(m.group(1));
+                    while (matcher.find()) {
+                        fieldSet.add(matcher.group(1));
                     }
                     var fields = new ArrayList<>(fieldSet);
                     Matcher castMatcher = CAST_PATTERN.matcher(def);

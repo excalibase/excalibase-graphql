@@ -60,10 +60,10 @@ public class TTLCache<K, V> {
     public TTLCache(Duration ttl, Consumer<V> onEvict) {
         this.ttl = ttl;
         this.onEvict = onEvict;
-        this.cleanupExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "TTLCache-Cleanup");
-            t.setDaemon(true);
-            return t;
+        this.cleanupExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "TTLCache-Cleanup");
+            thread.setDaemon(true);
+            return thread;
         });
         this.cleanupExecutor.scheduleAtFixedRate(this::cleanup, 1, 1, TimeUnit.MINUTES);
     }

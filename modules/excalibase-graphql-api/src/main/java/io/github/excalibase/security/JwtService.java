@@ -10,7 +10,6 @@ import io.github.excalibase.cache.TTLCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.ECPublicKey;
 import java.time.Duration;
@@ -115,16 +114,16 @@ public class JwtService {
             String projectId = (String) claims.getClaim("projectId");
             String orgSlug = (String) claims.getClaim("orgSlug");
             String projectName = (String) claims.getClaim("projectName");
-            String role = claims.getClaim("role") instanceof String r ? r : "user";
+            String role = claims.getClaim("role") instanceof String roleValue ? roleValue : "user";
             String email = claims.getSubject() != null ? claims.getSubject()
                     : (String) claims.getClaim("email");
             // Optional claims emitted by excalibase-auth's api-key grant.
             // Absent on password/refresh tokens — defaulted to null / 0.
-            String scope = claims.getClaim("scope") instanceof String s ? s : null;
+            String scope = claims.getClaim("scope") instanceof String scopeValue ? scopeValue : null;
             long keyId = 0L;
             Object keyIdClaim = claims.getClaim("keyId");
-            if (keyIdClaim instanceof Number n) {
-                keyId = n.longValue();
+            if (keyIdClaim instanceof Number keyIdNumber) {
+                keyId = keyIdNumber.longValue();
             }
 
             return new JwtClaims(userId, projectId, orgSlug, projectName, role, email, scope, keyId);

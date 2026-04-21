@@ -212,9 +212,9 @@ public class GraphqlSchemaManager implements SchemaProvider {
             String candidate = preferredSchema + "." + rawTable;
             if (schemaInfo.hasTable(candidate)) return candidate;
         }
-        for (String s : allSchemas) {
-            if (s.equals(preferredSchema)) continue;
-            String candidate = s + "." + rawTable;
+        for (String schema : allSchemas) {
+            if (schema.equals(preferredSchema)) continue;
+            String candidate = schema + "." + rawTable;
             if (schemaInfo.hasTable(candidate)) return candidate;
         }
         return null;
@@ -259,10 +259,11 @@ public class GraphqlSchemaManager implements SchemaProvider {
         Map<String, SchemaInfo> perSchema = new LinkedHashMap<>();
         loader.loadAll(jdbc, schemaList, perSchema);
 
+        SchemaMerger merger = new SchemaMerger();
         for (var schemaEntry : perSchema.entrySet()) {
             String schema = schemaEntry.getKey();
             SchemaInfo temp = schemaEntry.getValue();
-            mergeTablesAndColumns(schemaInfo, schema, temp);
+            merger.merge(schemaInfo, schema, temp);
             mergeEnumsProcsAndComposites(schemaInfo, schema, temp);
             // Extensions are global to the database, so every per-schema temp
             // carries the same set. Copying once onto the target is enough —
@@ -272,35 +273,6 @@ public class GraphqlSchemaManager implements SchemaProvider {
             }
         }
         mergeForeignKeys(schemaInfo, perSchema, schemaList);
-    }
-
-    @SuppressWarnings("java:S3776") // Per-table merging (columns, enums, PKs, views, computed fields) is sequential by necessity
-    private void mergeTablesAndColumns(SchemaInfo target, String schema, SchemaInfo source) {
-        for (String table : source.getTableNames()) {
-            String key = schema + "." + table;
-            for (String col : source.getColumns(table)) {
-                target.addColumn(key, col, source.getColumnType(table, col));
-                String enumType = source.getEnumType(table, col);
-                if (enumType != null) {
-                    target.addColumnEnumType(key, col, schema + "." + enumType);
-                }
-            }
-            target.setTableSchema(key, schema);
-            if (source.hasPrimaryKey(table)) {
-                for (String pk : source.getPrimaryKeys(table)) {
-                    target.addPrimaryKey(key, pk);
-                }
-            }
-            if (source.isView(table)) {
-                target.addView(key);
-            }
-            var computed = source.getComputedFields(table);
-            if (computed != null) {
-                for (var cf : computed) {
-                    target.addComputedField(key, cf.functionName(), cf.returnType());
-                }
-            }
-        }
     }
 
     private void mergeEnumsProcsAndComposites(SchemaInfo target, String schema, SchemaInfo source) {

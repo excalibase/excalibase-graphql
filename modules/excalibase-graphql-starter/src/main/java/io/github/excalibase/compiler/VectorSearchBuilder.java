@@ -36,6 +36,10 @@ import java.util.Optional;
  */
 public class VectorSearchBuilder {
 
+    private static final String KEY_COLUMN = "column";
+    private static final String KEY_DISTANCE = "distance";
+    private static final String KEY_LIMIT = "limit";
+
     private final SqlDialect dialect;
 
     public VectorSearchBuilder(SqlDialect dialect) {
@@ -59,31 +63,36 @@ public class VectorSearchBuilder {
         // Adapter: flatten the GraphQL AST into a plain Map so both GraphQL
         // and REST compile paths share the same core logic.
         Map<String, Object> shape = new HashMap<>();
-        for (ObjectField f : vectorArg.getObjectFields()) {
-            switch (f.getName()) {
-                case "column" -> {
-                    if (f.getValue() instanceof StringValue sv) shape.put("column", sv.getValue());
-                }
-                case "near" -> {
-                    if (f.getValue() instanceof ArrayValue av) {
-                        List<Float> floats = new ArrayList<>(av.getValues().size());
-                        for (Value<?> v : av.getValues()) floats.add(toFloat(v));
-                        shape.put("near", floats);
-                    }
-                }
-                case "distance" -> {
-                    if (f.getValue() instanceof StringValue sv) shape.put("distance", sv.getValue());
-                    else if (f.getValue() instanceof EnumValue ev) shape.put("distance", ev.getName());
-                }
-                case "limit" -> {
-                    if (f.getValue() instanceof IntValue iv) shape.put("limit", iv.getValue().intValue());
-                }
-                default -> {
-                    // Ignore unknown vector args
-                }
-            }
+        for (ObjectField field : vectorArg.getObjectFields()) {
+            extractShapeField(field, shape);
         }
         return buildFromMap(shape, tableAlias, schemaInfo, params);
+    }
+
+    /** Extract a single GraphQL ObjectField into the flattened shape map. */
+    private void extractShapeField(ObjectField field, Map<String, Object> shape) {
+        switch (field.getName()) {
+            case KEY_COLUMN -> {
+                if (field.getValue() instanceof StringValue sv) shape.put(KEY_COLUMN, sv.getValue());
+            }
+            case "near" -> {
+                if (field.getValue() instanceof ArrayValue av) {
+                    List<Float> floats = new ArrayList<>(av.getValues().size());
+                    for (Value<?> elementValue : av.getValues()) floats.add(toFloat(elementValue));
+                    shape.put("near", floats);
+                }
+            }
+            case KEY_DISTANCE -> {
+                if (field.getValue() instanceof StringValue sv) shape.put(KEY_DISTANCE, sv.getValue());
+                else if (field.getValue() instanceof EnumValue ev) shape.put(KEY_DISTANCE, ev.getName());
+            }
+            case KEY_LIMIT -> {
+                if (field.getValue() instanceof IntValue iv) shape.put(KEY_LIMIT, iv.getValue().intValue());
+            }
+            default -> {
+                // Ignore unknown vector args
+            }
+        }
     }
 
     /**
@@ -97,7 +106,6 @@ public class VectorSearchBuilder {
      *   <li>{@code limit} — Integer, optional</li>
      * </ul>
      */
-    @SuppressWarnings("unchecked")
     public Optional<VectorClause> buildFromMap(Map<String, Object> shape,
                                                String tableAlias,
                                                SchemaInfo schemaInfo,
@@ -108,27 +116,38 @@ public class VectorSearchBuilder {
             return Optional.empty();
         }
 
-        Object colObj = shape.get("column");
+        Object colObj = shape.get(KEY_COLUMN);
         if (!(colObj instanceof String column) || column.isEmpty()) return Optional.empty();
 
-        Object nearObj = shape.get("near");
-        List<Float> embedding = null;
-        if (nearObj instanceof List<?> list && !list.isEmpty()) {
-            embedding = new ArrayList<>(list.size());
-            for (Object v : list) {
-                if (v instanceof Number n) embedding.add(n.floatValue());
-                else return Optional.empty(); // malformed — skip rather than crash
-            }
-        }
-        if (embedding == null || embedding.isEmpty()) return Optional.empty();
+        Optional<List<Float>> embeddingOpt = coerceEmbedding(shape.get("near"));
+        if (embeddingOpt.isEmpty()) return Optional.empty();
+        List<Float> embedding = embeddingOpt.get();
 
-        String distance = shape.get("distance") instanceof String d ? d : "L2";
-        Integer limit = shape.get("limit") instanceof Number n ? n.intValue() : null;
+        String distance = shape.get(KEY_DISTANCE) instanceof String distanceValue ? distanceValue : "L2";
+        Integer limit = shape.get(KEY_LIMIT) instanceof Number limitValue ? limitValue.intValue() : null;
 
         Optional<String> op = dialect.vectorDistanceOperator(distance);
         if (op.isEmpty()) return Optional.empty();
 
-        // Bind the embedding as a Postgres vector literal: '[0.1,0.2,0.3]'
+        String finalParam = bindEmbedding(column, embedding, params);
+        String colRef = tableAlias + "." + dialect.quoteIdentifier(column);
+        String orderBy = colRef + " " + op.get() + " :" + finalParam + "::vector";
+        return Optional.of(new VectorClause(orderBy, limit));
+    }
+
+    /** Coerce the "near" value into a non-empty List<Float>, or Optional.empty() if malformed. */
+    private Optional<List<Float>> coerceEmbedding(Object nearObj) {
+        if (!(nearObj instanceof List<?> list) || list.isEmpty()) return Optional.empty();
+        List<Float> embedding = new ArrayList<>(list.size());
+        for (Object v : list) {
+            if (!(v instanceof Number n)) return Optional.empty();
+            embedding.add(n.floatValue());
+        }
+        return Optional.of(embedding);
+    }
+
+    /** Bind the embedding as a Postgres vector literal ("[0.1,0.2]") with a unique param name. */
+    private String bindEmbedding(String column, List<Float> embedding, Map<String, Object> params) {
         StringBuilder lit = new StringBuilder("[");
         for (int i = 0; i < embedding.size(); i++) {
             if (i > 0) lit.append(',');
@@ -137,17 +156,11 @@ public class VectorSearchBuilder {
         lit.append(']');
 
         String paramName = "p_vector_" + column;
-        // Avoid collision if multiple vector args exist on the same query.
         int suffix = 0;
         while (params.containsKey(paramName + (suffix == 0 ? "" : "_" + suffix))) suffix++;
         String finalParam = paramName + (suffix == 0 ? "" : "_" + suffix);
         params.put(finalParam, lit.toString());
-
-        String colRef = tableAlias + "." + dialect.quoteIdentifier(column);
-        // Cast the bind param to vector so pgvector can parse the JSON-array literal.
-        String orderBy = colRef + " " + op.get() + " :" + finalParam + "::vector";
-
-        return Optional.of(new VectorClause(orderBy, limit));
+        return finalParam;
     }
 
     /**

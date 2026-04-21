@@ -67,7 +67,9 @@ public class SubscriptionService {
         if (sink != null) {
             Sinks.EmitResult result = sink.tryEmitNext(event);
             if (result.isFailure()) {
-                log.warn("Failed to emit CDC event for table '{}': {}", event.table(), result);
+                if (log.isWarnEnabled()) {
+                    log.warn("Failed to emit CDC event for table '{}': {}", event.table(), result);
+                }
                 if (result == Sinks.EmitResult.FAIL_TERMINATED) {
                     tableSinks.remove(key);
                     Sinks.Many<CDCEvent> newSink = getOrCreateSink(key);

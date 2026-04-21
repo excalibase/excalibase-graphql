@@ -206,10 +206,10 @@ class IntrospectionHandlerTest {
                 ((Map<String, Object>) ((Map<String, Object>) result.get("data")).get("__type")).get("inputFields");
 
         Map<String, String> colType = new java.util.HashMap<>();
-        for (Map<String, Object> f : inputFields) {
+        for (Map<String, Object> field : inputFields) {
             @SuppressWarnings("unchecked")
-            Map<String, Object> t = (Map<String, Object>) f.get("type");
-            colType.put((String) f.get("name"), (String) t.get("name"));
+            Map<String, Object> type = (Map<String, Object>) field.get("type");
+            colType.put((String) field.get("name"), (String) type.get("name"));
         }
         assertEquals("DateTimeFilterInput", colType.get("created_at"),
                 "timestamptz column should use DateTimeFilterInput");
@@ -260,11 +260,11 @@ class IntrospectionHandlerTest {
                 ((Map<String, Object>) ((Map<String, Object>) result.get("data")).get("__type")).get("inputFields");
 
         String activeType = null;
-        for (Map<String, Object> f : inputFields) {
-            if ("is_active".equals(f.get("name"))) {
+        for (Map<String, Object> field : inputFields) {
+            if ("is_active".equals(field.get("name"))) {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> t = (Map<String, Object>) f.get("type");
-                activeType = (String) t.get("name");
+                Map<String, Object> type = (Map<String, Object>) field.get("type");
+                activeType = (String) type.get("name");
             }
         }
         assertEquals("BooleanFilterInput", activeType, "boolean column should use BooleanFilterInput");
@@ -312,10 +312,10 @@ class IntrospectionHandlerTest {
                 ((Map<String, Object>) ((Map<String, Object>) result.get("data")).get("__type")).get("inputFields");
 
         Map<String, String> colType = new java.util.HashMap<>();
-        for (Map<String, Object> f : inputFields) {
+        for (Map<String, Object> field : inputFields) {
             @SuppressWarnings("unchecked")
-            Map<String, Object> t = (Map<String, Object>) f.get("type");
-            colType.put((String) f.get("name"), (String) t.get("name"));
+            Map<String, Object> type = (Map<String, Object>) field.get("type");
+            colType.put((String) field.get("name"), (String) type.get("name"));
         }
         assertEquals("FloatFilterInput", colType.get("price"), "numeric column should use FloatFilterInput");
         assertEquals("FloatFilterInput", colType.get("weight"), "real column should use FloatFilterInput");
@@ -341,16 +341,16 @@ class IntrospectionHandlerTest {
         @SuppressWarnings("unchecked")
         java.util.List<Map<String, Object>> fields = (java.util.List<Map<String, Object>>) type.get("inputFields");
         java.util.Map<String, String> opToType = new java.util.HashMap<>();
-        for (Map<String, Object> f : fields) {
+        for (Map<String, Object> field : fields) {
             @SuppressWarnings("unchecked")
-            Map<String, Object> t = (Map<String, Object>) f.get("type");
-            String typeName = (String) t.get("name");
+            Map<String, Object> fieldType = (Map<String, Object>) field.get("type");
+            String typeName = (String) fieldType.get("name");
             if (typeName == null) {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> of = (Map<String, Object>) t.get("ofType");
+                Map<String, Object> of = (Map<String, Object>) fieldType.get("ofType");
                 if (of != null) typeName = (String) of.get("name");
             }
-            opToType.put((String) f.get("name"), typeName);
+            opToType.put((String) field.get("name"), typeName);
         }
 
         for (String op : java.util.List.of("eq", "neq", "gt", "gte", "lt", "lte")) {
