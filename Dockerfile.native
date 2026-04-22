@@ -1,8 +1,14 @@
-FROM debian:bookworm-slim
+FROM debian:bookworm-slim AS libs
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends --only-upgrade zlib1g \
+ && rm -rf /var/lib/apt/lists/*
+
+FROM gcr.io/distroless/base-debian12
+
+COPY --from=libs /lib/x86_64-linux-gnu/libz.so.1* /lib/x86_64-linux-gnu/
+COPY --from=busybox:stable-glibc /bin/busybox /usr/bin/busybox
 
 COPY modules/excalibase-graphql-api/target/excalibase-graphql-api /app/excalibase-graphql-api
-
-RUN chmod +x /app/excalibase-graphql-api
 
 EXPOSE 10000
 

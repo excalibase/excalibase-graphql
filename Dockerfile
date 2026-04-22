@@ -1,12 +1,11 @@
-#### Stage 1: Build the application
-FROM amazoncorretto:25-al2023 AS build
+FROM eclipse-temurin:25-jre-alpine
+
+RUN apk add --no-cache curl
 
 VOLUME /tmp
 
-# Copy the JAR file from the modules/excalibase-graphql-api/target directory
 ADD /modules/excalibase-graphql-api/target/*.jar app.jar
 
-# JVM flags — ZGC (generational, low-latency), percentage-based heap
 ENV JAVA_OPTS="-XX:+UseZGC \
                -XX:+ZGenerational \
                -XX:InitialRAMPercentage=50.0 \

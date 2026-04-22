@@ -69,6 +69,12 @@ services:
       APP_NATS_SUBJECT_PREFIX: cdc
     ports:
       - "10000:10000"
+    healthcheck:
+      test: ["CMD", "/usr/bin/busybox", "wget", "-qO-", "http://localhost:10000/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
     depends_on:
       postgres:
         condition: service_healthy
