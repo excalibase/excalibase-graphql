@@ -23,8 +23,11 @@ public class NoSqlController {
     private static final String PARAM_LIMIT = "limit";
     private static final String PARAM_COUNT = "count";
 
+    private static final String PARAM_CURSOR = "cursor";
+    private static final String PARAM_PAGINATE = "paginate";
     private static final Set<String> RESERVED_PARAMS = Set.of(
-            PARAM_LIMIT, "offset", "sort", PARAM_SEARCH, "vector", PARAM_COUNT, "stats");
+            PARAM_LIMIT, "offset", "sort", PARAM_SEARCH, "vector", PARAM_COUNT, "stats",
+            PARAM_CURSOR, PARAM_PAGINATE);
 
     private final CollectionSchemaManager schemaManager;
     private final DocumentExecutionService executionService;
@@ -98,9 +101,12 @@ public class NoSqlController {
         int limit = toInt(allParams.get(PARAM_LIMIT), 30);
         int offset = toInt(allParams.get("offset"), 0);
         var sort = parseSort(allParams.get("sort"));
+        boolean cursorMode = "cursor".equalsIgnoreCase(allParams.get(PARAM_PAGINATE));
+        String cursorIn = cursorMode ? allParams.get(PARAM_CURSOR) : null;
 
         long startTime = System.nanoTime();
-        var compiled = compiler().compileFind(collection, filter, new FindOptions(limit, offset, sort));
+        var compiled = compiler().compileFind(collection, filter,
+                new FindOptions(limit, offset, sort, cursorIn, cursorMode));
         var results = executionService.executeQuery(compiled);
         long queryTimeMs = (System.nanoTime() - startTime) / 1_000_000;
 
@@ -112,6 +118,20 @@ public class NoSqlController {
                     headers.add("X-Warning", warning);
                 }
             }
+        }
+
+        if (cursorMode) {
+            String nextCursor = null;
+            if (results.size() == limit && !results.isEmpty()) {
+                var last = results.get(results.size() - 1);
+                var createdAt = java.time.Instant.parse((String) last.get("createdAt"));
+                nextCursor = io.github.excalibase.nosql.compiler.CursorCodec
+                        .encode(createdAt, (String) last.get("id"));
+            }
+            var body = new LinkedHashMap<String, Object>();
+            body.put("data", results);
+            body.put("cursor", nextCursor);
+            return ResponseEntity.ok().headers(headers).body(body);
         }
 
         return ResponseEntity.ok().headers(headers).body(Map.of("data", results));

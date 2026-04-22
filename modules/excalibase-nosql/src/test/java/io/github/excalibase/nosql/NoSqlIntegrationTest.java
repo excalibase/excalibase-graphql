@@ -389,6 +389,63 @@ class NoSqlIntegrationTest {
 
     @Nested
     @Order(3)
+    @DisplayName("Cursor pagination")
+    class CursorPaginationTests {
+
+        DocumentQueryCompiler localCompiler;
+
+        @org.junit.jupiter.api.BeforeEach
+        void setupCursorCollection() {
+            schemaManager.syncSchema(Map.of("collections", Map.of(
+                    "cursor_test", Map.of("indexes", List.of())
+            )));
+            localCompiler = new DocumentQueryCompiler(schemaManager.getCollectionInfo());
+            long count = executionService.executeCount(
+                    localCompiler.compileCount("cursor_test", Map.of()));
+            if (count == 0) {
+                for (int i = 0; i < 25; i++) {
+                    executionService.executeMutation(localCompiler.compileInsertOne(
+                            "cursor_test", Map.of("seq", i)));
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("cursor paging walks all rows without overlap or gap")
+        void cursor_walksAllRows() {
+            var seen = new java.util.HashSet<String>();
+            String cursor = null;
+            int pages = 0;
+            while (pages < 10) {
+                var compiled = localCompiler.compileFind("cursor_test", Map.of(),
+                        new FindOptions(10, 0, null, cursor, true));
+                var rows = executionService.executeQuery(compiled);
+                if (rows.isEmpty()) break;
+                for (var row : rows) {
+                    assertThat(seen.add((String) row.get("id")))
+                            .as("duplicate id: %s", row.get("id")).isTrue();
+                }
+                if (rows.size() < 10) break;
+                var last = rows.getLast();
+                cursor = io.github.excalibase.nosql.compiler.CursorCodec.encode(
+                        java.time.Instant.parse((String) last.get("createdAt")),
+                        (String) last.get("id"));
+                pages++;
+            }
+            assertThat(seen).hasSize(25);
+        }
+
+        @Test
+        @DisplayName("bad cursor rejected with clear error")
+        void cursor_malformed_rejects() {
+            assertThatThrownBy(() -> localCompiler.compileFind("cursor_test", Map.of(),
+                    new FindOptions(10, 0, null, "!!!not-base64!!!", true)))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @Order(4)
     @DisplayName("Index enforcement")
     class IndexEnforcementTests {
 

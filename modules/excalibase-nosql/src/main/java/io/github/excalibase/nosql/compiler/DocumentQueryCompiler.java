@@ -39,8 +39,22 @@ public class DocumentQueryCompiler {
         sql.append(SQL_FROM).append(qualifiedTable(collection));
 
         appendWhere(sql, filter, schema, params);
-        appendOrderBy(sql, opts.sort());
-        appendLimit(sql, params, opts.limit(), opts.offset());
+
+        if (opts.cursorMode()) {
+            if (opts.cursor() != null) {
+                var cursor = CursorCodec.decode(opts.cursor());
+                String joiner = sql.indexOf(" WHERE ") >= 0 ? " AND " : " WHERE ";
+                sql.append(joiner).append("(created_at, id) < (:cursorTs, :cursorId::uuid)");
+                params.put("cursorTs", java.sql.Timestamp.from(cursor.createdAt()));
+                params.put("cursorId", cursor.id());
+            }
+            sql.append(" ORDER BY created_at DESC, id DESC");
+            sql.append(" LIMIT :limit");
+            params.put("limit", opts.limit());
+        } else {
+            appendOrderBy(sql, opts.sort());
+            appendLimit(sql, params, opts.limit(), opts.offset());
+        }
 
         return new CompiledDoc(sql.toString(), params);
     }
