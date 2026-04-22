@@ -21,9 +21,12 @@ import org.springframework.web.socket.server.support.WebSocketHttpRequestHandler
 public class WebSocketConfig implements WebSocketConfigurer {
 
     private final GraphQLWebSocketHandler graphQLWebSocketHandler;
+    private final RealtimeWebSocketHandler realtimeWebSocketHandler;
 
-    public WebSocketConfig(GraphQLWebSocketHandler graphQLWebSocketHandler) {
+    public WebSocketConfig(GraphQLWebSocketHandler graphQLWebSocketHandler,
+                           RealtimeWebSocketHandler realtimeWebSocketHandler) {
         this.graphQLWebSocketHandler = graphQLWebSocketHandler;
+        this.realtimeWebSocketHandler = realtimeWebSocketHandler;
     }
 
     @Override
@@ -38,8 +41,12 @@ public class WebSocketConfig implements WebSocketConfigurer {
             protected Object getHandlerInternal(HttpServletRequest request) {
                 String upgrade = request.getHeader("Upgrade");
                 String uri = request.getRequestURI();
-                if ("/graphql".equals(uri) && upgrade != null && "websocket".equalsIgnoreCase(upgrade)) {
+                if (upgrade == null || !"websocket".equalsIgnoreCase(upgrade)) return null;
+                if ("/graphql".equals(uri)) {
                     return new WebSocketHttpRequestHandler(graphQLWebSocketHandler, new DefaultHandshakeHandler());
+                }
+                if ("/api/v1/realtime".equals(uri)) {
+                    return new WebSocketHttpRequestHandler(realtimeWebSocketHandler, new DefaultHandshakeHandler());
                 }
                 return null;
             }
