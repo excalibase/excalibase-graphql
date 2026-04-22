@@ -172,6 +172,37 @@ class NoSqlIntegrationTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("max is 10");
         }
+
+        @Test
+        @Order(7)
+        @DisplayName("array index creates GIN")
+        void syncSchema_arrayIndex_createsGin() {
+            schemaManager.syncSchema(Map.of("collections", Map.of(
+                    "tagged", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("tags"), "type", "array", "unique", false)
+                    ))
+            )));
+
+            String indexDef = jdbc.queryForObject(
+                    "SELECT indexdef FROM pg_indexes WHERE schemaname = 'nosql' " +
+                    "AND tablename = 'tagged' AND indexname = 'idx_tagged_tags'",
+                    String.class);
+            assertThat(indexDef).contains("USING gin").contains("data -> 'tags'");
+        }
+
+        @Test
+        @Order(8)
+        @DisplayName("array index rejects unique")
+        void syncSchema_arrayIndexUnique_rejects() {
+            Map<String, Object> request = Map.of("collections", Map.of(
+                    "bad_array", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("tags"), "type", "array", "unique", true)
+                    ))
+            ));
+            assertThatThrownBy(() -> schemaManager.syncSchema(request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Array indexes cannot be unique");
+        }
     }
 
     @Nested

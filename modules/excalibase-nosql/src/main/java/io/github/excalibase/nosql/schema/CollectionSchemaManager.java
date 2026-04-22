@@ -224,6 +224,23 @@ public class CollectionSchemaManager {
     private void createExpressionIndex(String collection, String indexName,
                                         List<String> fields, String type, boolean unique) {
         safeIdent(indexName, "index name");
+
+        if ("array".equals(type)) {
+            if (unique) {
+                throw new IllegalArgumentException("Array indexes cannot be unique (GIN does not support unique)");
+            }
+            if (fields.size() != 1) {
+                throw new IllegalArgumentException("Array index supports a single field, got " + fields.size());
+            }
+            String field = safeIdent(fields.getFirst(), "field name");
+            String sql = "CREATE INDEX CONCURRENTLY IF NOT EXISTS \"" + indexName + "\"" +
+                    " ON " + qualifiedTable(collection) + " USING gin ((data->'" + field + "'))" +
+                    " WHERE (data->'" + field + "') IS NOT NULL";
+            jdbc.execute(sql);
+            log.info("Created GIN index: {}", indexName);
+            return;
+        }
+
         var exprs = new ArrayList<String>();
         var predicates = new ArrayList<String>();
 
