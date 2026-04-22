@@ -31,11 +31,14 @@ public class CollectionSchemaManager {
             "::(numeric|boolean|integer|int|float)");
 
     private final JdbcTemplate jdbc;
+    private final JsonSchemaValidator jsonSchemaValidator;
     private final AtomicReference<CollectionInfo> collectionInfo = new AtomicReference<>(new CollectionInfo());
 
     public CollectionSchemaManager(JdbcTemplate jdbc,
+                                    JsonSchemaValidator jsonSchemaValidator,
                                     @Autowired(required = false) NatsCDCService natsCDCService) {
         this.jdbc = jdbc;
+        this.jsonSchemaValidator = jsonSchemaValidator;
         if (natsCDCService != null) {
             natsCDCService.setSchemaReloadCallback(this::reload);
         }
@@ -153,6 +156,10 @@ public class CollectionSchemaManager {
                 addVectorColumn(name, (String) vectorDef.get("field"),
                         ((Number) vectorDef.get("dimensions")).intValue());
             }
+
+            @SuppressWarnings("unchecked")
+            var jsonSchema = (Map<String, Object>) def.get("schema");
+            jsonSchemaValidator.registerSchema(name, jsonSchema);
         }
 
         discoverCollections();

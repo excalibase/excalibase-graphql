@@ -258,6 +258,51 @@ describe('NoSQL — Bulk operations', () => {
 
 // ─── Error handling ────────────────────────────────────────────────────────────
 
+describe('NoSQL — JSON Schema validation', () => {
+  beforeAll(async () => {
+    await nosqlPost('', {
+      collections: {
+        e2e_validated: {
+          indexes: [],
+          schema: {
+            type: 'object',
+            required: ['email'],
+            properties: {
+              email: { type: 'string' },
+              age: { type: 'integer' },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  test('valid doc passes', async () => {
+    const res = await nosqlPost('/e2e_validated', {
+      doc: { email: 'ok@test.com', age: 30 },
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test('missing required field returns 400 with issues', async () => {
+    const res = await nosqlPost('/e2e_validated', {
+      doc: { age: 30 },
+    });
+    expect(res.status).toBe(400);
+    expect(res.data.error).toBe('validation');
+    expect(Array.isArray(res.data.issues)).toBe(true);
+    expect(res.data.issues.length).toBeGreaterThan(0);
+  });
+
+  test('wrong type returns 400', async () => {
+    const res = await nosqlPost('/e2e_validated', {
+      doc: { email: 'bad@test.com', age: 'not-a-number' },
+    });
+    expect(res.status).toBe(400);
+    expect(res.data.error).toBe('validation');
+  });
+});
+
 describe('NoSQL — Cursor pagination', () => {
   beforeAll(async () => {
     await nosqlPost('', {

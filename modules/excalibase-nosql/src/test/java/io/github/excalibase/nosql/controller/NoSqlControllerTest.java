@@ -6,6 +6,7 @@ import io.github.excalibase.nosql.model.CollectionSchema;
 import io.github.excalibase.nosql.model.FieldType;
 import io.github.excalibase.nosql.model.IndexDef;
 import io.github.excalibase.nosql.schema.CollectionSchemaManager;
+import io.github.excalibase.nosql.schema.JsonSchemaValidator;
 import io.github.excalibase.nosql.service.DocumentExecutionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,10 +36,11 @@ class NoSqlControllerTest {
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonSchemaValidator jsonSchemaValidator = new JsonSchemaValidator(objectMapper);
 
     @BeforeEach
     void setUp() {
-        NoSqlController controller = new NoSqlController(schemaManager, executionService);
+        NoSqlController controller = new NoSqlController(schemaManager, executionService, jsonSchemaValidator);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 

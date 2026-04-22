@@ -4,6 +4,7 @@ import io.github.excalibase.nosql.compiler.DocumentQueryCompiler;
 import io.github.excalibase.nosql.compiler.FindOptions;
 import io.github.excalibase.nosql.model.CollectionSchema;
 import io.github.excalibase.nosql.schema.CollectionSchemaManager;
+import io.github.excalibase.nosql.schema.JsonSchemaValidator;
 import io.github.excalibase.nosql.service.DocumentExecutionService;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.HttpHeaders;
@@ -31,11 +32,22 @@ public class NoSqlController {
 
     private final CollectionSchemaManager schemaManager;
     private final DocumentExecutionService executionService;
+    private final JsonSchemaValidator jsonSchemaValidator;
 
     public NoSqlController(CollectionSchemaManager schemaManager,
-                           DocumentExecutionService executionService) {
+                           DocumentExecutionService executionService,
+                           JsonSchemaValidator jsonSchemaValidator) {
         this.schemaManager = schemaManager;
         this.executionService = executionService;
+        this.jsonSchemaValidator = jsonSchemaValidator;
+    }
+
+    private ResponseEntity<Object> validateOrBadRequest(String collection, Map<String, Object> doc) {
+        var issues = jsonSchemaValidator.validate(collection, doc);
+        if (issues.isEmpty()) return null;
+        return ResponseEntity.badRequest().body(Map.of(
+                "error", "validation",
+                "issues", issues));
     }
 
     private DocumentQueryCompiler compiler() {
@@ -170,6 +182,8 @@ public class NoSqlController {
                 }
                 @SuppressWarnings("unchecked")
                 var doc = (Map<String, Object>) itemMap;
+                var invalid = validateOrBadRequest(collection, doc);
+                if (invalid != null) return invalid;
                 docs.add(doc);
             }
             var compiled = compiler().compileInsertMany(collection, docs);
@@ -183,6 +197,8 @@ public class NoSqlController {
         }
         @SuppressWarnings("unchecked")
         var doc = (Map<String, Object>) rawDoc;
+        var invalid = validateOrBadRequest(collection, doc);
+        if (invalid != null) return invalid;
         var compiled = compiler().compileInsertOne(collection, doc);
         var result = executionService.executeMutation(compiled);
         return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("data", result));
