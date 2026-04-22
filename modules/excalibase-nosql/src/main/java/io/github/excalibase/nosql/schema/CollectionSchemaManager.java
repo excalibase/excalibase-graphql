@@ -215,7 +215,7 @@ public class CollectionSchemaManager {
         for (String orphan : existing.keySet()) {
             if ((orphan.startsWith("idx_") || orphan.startsWith(PREFIX_UNIQUE_INDEX))
                     && IDENT_PATTERN.matcher(orphan).matches()) {
-                jdbc.execute("DROP INDEX IF EXISTS " + NOSQL_SCHEMA + ".\"" + orphan + "\"");
+                jdbc.execute("DROP INDEX CONCURRENTLY IF EXISTS " + NOSQL_SCHEMA + ".\"" + orphan + "\"");
                 log.info("Dropped orphan index: {}", orphan);
             }
         }
@@ -238,7 +238,7 @@ public class CollectionSchemaManager {
             predicates.add("(data->>'" + field + "') IS NOT NULL");
         }
 
-        String sql = "CREATE " + (unique ? "UNIQUE " : "") + "INDEX IF NOT EXISTS \"" + indexName + "\"" +
+        String sql = "CREATE " + (unique ? "UNIQUE " : "") + "INDEX CONCURRENTLY IF NOT EXISTS \"" + indexName + "\"" +
                 " ON " + qualifiedTable(collection) + " (" + String.join(", ", exprs) + ")" +
                 " WHERE " + String.join(" AND ", predicates);
 
@@ -267,7 +267,7 @@ public class CollectionSchemaManager {
             jdbc.execute("ALTER TABLE " + table +
                     " ADD COLUMN IF NOT EXISTS search_text tsvector" +
                     " GENERATED ALWAYS AS (to_tsvector('english', coalesce(data->>'" + field + "', ''))) STORED");
-            jdbc.execute("CREATE INDEX IF NOT EXISTS idx_" + collection + "_search ON " + table + " USING gin(search_text)");
+            jdbc.execute("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_" + collection + "_search ON " + table + " USING gin(search_text)");
             log.info("Added search column for field '{}' on collection '{}'", field, collection);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to add search column on '" + collection + "'", e);
@@ -283,7 +283,7 @@ public class CollectionSchemaManager {
         try {
             jdbc.execute("ALTER TABLE " + table +
                     " ADD COLUMN IF NOT EXISTS embedding vector(" + dimensions + ")");
-            jdbc.execute("CREATE INDEX IF NOT EXISTS idx_" + collection + "_vector ON " + table +
+            jdbc.execute("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_" + collection + "_vector ON " + table +
                     " USING hnsw(embedding vector_cosine_ops)");
             log.info("Added vector column ({} dims) on collection '{}'", dimensions, collection);
         } catch (Exception e) {
