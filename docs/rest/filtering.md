@@ -5,6 +5,9 @@ shape is always `?<column>=<operator>.<value>`. Filters compose with an
 implicit `AND`. Negate any filter by prefixing `not.`:
 `?<column>=not.<operator>.<value>`.
 
+!!! info "Which operators work on my database?"
+    Operator availability varies by backend. See the **[database compatibility matrix](../database-compatibility.md)** for the canonical list — the same engine drives both REST and GraphQL, so the matrix applies to both.
+
 For the GraphQL equivalent of every operator below, see
 [GraphQL filtering](../graphql/filtering.md). For when to pick one protocol
 over the other, see [Choose Your Protocol](../choose-your-protocol.md).
