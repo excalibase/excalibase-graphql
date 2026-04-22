@@ -206,8 +206,17 @@ public class CollectionSchemaManager {
 
             String indexName = (unique ? PREFIX_UNIQUE_INDEX : "idx_") + collection + "_" + String.join("_", fields);
 
-            if (!existing.containsKey(indexName)) {
+            String existingDef = existing.get(indexName);
+            if (existingDef == null) {
                 createExpressionIndex(collection, indexName, fields, type, unique);
+            } else {
+                String existingType = inferIndexType(existingDef);
+                if (!typesMatch(type, existingType)) {
+                    throw new IllegalArgumentException(
+                            "Cannot change index type on field(s) " + fields +
+                            " (existing: " + existingType + ", declared: " + type +
+                            "). Drop it from declaration and sync, then re-add with new type.");
+                }
             }
             existing.remove(indexName);
         }
@@ -261,6 +270,22 @@ public class CollectionSchemaManager {
 
         jdbc.execute(sql);
         log.info("Created index: {}", indexName);
+    }
+
+    private static String inferIndexType(String indexDef) {
+        if (indexDef == null) return "string";
+        String def = indexDef.toLowerCase();
+        if (def.contains("using gin") && def.contains("data -> '")) return "array";
+        if (def.contains("::numeric") || def.contains("::integer") ||
+            def.contains("::int") || def.contains("::float")) return "number";
+        if (def.contains("::boolean")) return "boolean";
+        return "string";
+    }
+
+    private static boolean typesMatch(String declared, String existing) {
+        String d = (declared == null ? "string" : declared).toLowerCase();
+        if ("numeric".equals(d)) d = "number";
+        return d.equals(existing);
     }
 
     private Map<String, String> getExistingIndexes(String collection) {

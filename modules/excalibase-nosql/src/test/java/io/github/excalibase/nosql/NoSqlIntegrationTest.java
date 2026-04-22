@@ -203,6 +203,43 @@ class NoSqlIntegrationTest {
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Array indexes cannot be unique");
         }
+
+        @Test
+        @Order(9)
+        @DisplayName("syncSchema rejects changing index type on same field")
+        void syncSchema_changeIndexType_rejects() {
+            schemaManager.syncSchema(Map.of("collections", Map.of(
+                    "typed", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("score"), "type", "string", "unique", false)
+                    ))
+            )));
+
+            Map<String, Object> retyped = Map.of("collections", Map.of(
+                    "typed", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("score"), "type", "number", "unique", false)
+                    ))
+            ));
+            assertThatThrownBy(() -> schemaManager.syncSchema(retyped))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Cannot change index type")
+                    .hasMessageContaining("existing: string")
+                    .hasMessageContaining("declared: number");
+        }
+
+        @Test
+        @Order(10)
+        @DisplayName("syncSchema is idempotent for same index type")
+        void syncSchema_sameIndexType_idempotent() {
+            Map<String, Object> sameType = Map.of("collections", Map.of(
+                    "typed", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("score"), "type", "string", "unique", false)
+                    ))
+            ));
+            schemaManager.syncSchema(sameType);
+            // second call must not throw
+            var result = schemaManager.syncSchema(sameType);
+            assertThat(result).isNotNull();
+        }
     }
 
     @Nested
