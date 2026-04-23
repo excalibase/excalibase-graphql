@@ -31,6 +31,7 @@
 | ✅ | **JSON Schema validation** — Draft 2020-12 on NoSQL inserts | [Validation](docs/nosql/validation.md) |
 | 🏢 | **Multi-schema** — all schemas auto-discovered (except `pg_*`, `information_schema`, `nosql`) | [Multi-schema](docs/features/multi-schema.md) |
 | ⚡ | **Native image** — GraalVM 25 AOT, ~134 MB binary, starts in <100 ms | [Install](docs/quickstart/index.md) |
+| 📦 | **TypeScript SDK** *(pre-release)* — auth + GraphQL + REST + NoSQL in one client, codegen types | [SDK](docs/sdk.md) |
 
 ## Quickstart
 

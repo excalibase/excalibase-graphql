@@ -133,5 +133,6 @@ nav:
       - Real-Time Subscriptions: features/subscriptions.md
       - Row-Level Security: features/user-context-rls.md
   - Database Compatibility: database-compatibility.md
+  - SDK (TypeScript): sdk.md
   - Testing: testing.md
   - Contributing: CONTRIBUTING.md
