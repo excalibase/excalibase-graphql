@@ -25,17 +25,22 @@ public class CollectionSchemaManager {
     private static final Logger log = LoggerFactory.getLogger(CollectionSchemaManager.class);
     private static final String PREFIX_UNIQUE_INDEX = "uidx_";
     private static final int MAX_INDEXES_PER_COLLECTION = 10;
+    private static final String TYPE_STRING = "string";
+    private static final String TYPE_NUMBER = "number";
     private static final Pattern EXPR_PATTERN = Pattern.compile(
             "data\\s*->>\\s*'([^']+)'");
     private static final Pattern CAST_PATTERN = Pattern.compile(
             "::(numeric|boolean|integer|int|float)");
 
     private final JdbcTemplate jdbc;
+    private final JsonSchemaValidator jsonSchemaValidator;
     private final AtomicReference<CollectionInfo> collectionInfo = new AtomicReference<>(new CollectionInfo());
 
     public CollectionSchemaManager(JdbcTemplate jdbc,
+                                    JsonSchemaValidator jsonSchemaValidator,
                                     @Autowired(required = false) NatsCDCService natsCDCService) {
         this.jdbc = jdbc;
+        this.jsonSchemaValidator = jsonSchemaValidator;
         if (natsCDCService != null) {
             natsCDCService.setSchemaReloadCallback(this::reload);
         }
@@ -153,6 +158,10 @@ public class CollectionSchemaManager {
                 addVectorColumn(name, (String) vectorDef.get("field"),
                         ((Number) vectorDef.get("dimensions")).intValue());
             }
+
+            @SuppressWarnings("unchecked")
+            var jsonSchema = (Map<String, Object>) def.get("schema");
+            jsonSchemaValidator.registerSchema(name, jsonSchema);
         }
 
         discoverCollections();
@@ -201,13 +210,22 @@ public class CollectionSchemaManager {
 
         for (var idxDef : declaredIndexes) {
             var fields = (List<String>) idxDef.get("fields");
-            String type = (String) idxDef.getOrDefault("type", "string");
+            String type = (String) idxDef.getOrDefault("type", TYPE_STRING);
             boolean unique = Boolean.TRUE.equals(idxDef.get("unique"));
 
             String indexName = (unique ? PREFIX_UNIQUE_INDEX : "idx_") + collection + "_" + String.join("_", fields);
 
-            if (!existing.containsKey(indexName)) {
+            String existingDef = existing.get(indexName);
+            if (existingDef == null) {
                 createExpressionIndex(collection, indexName, fields, type, unique);
+            } else {
+                String existingType = inferIndexType(existingDef);
+                if (!typesMatch(type, existingType)) {
+                    throw new IllegalArgumentException(
+                            "Cannot change index type on field(s) " + fields +
+                            " (existing: " + existingType + ", declared: " + type +
+                            "). Drop it from declaration and sync, then re-add with new type.");
+                }
             }
             existing.remove(indexName);
         }
@@ -215,7 +233,7 @@ public class CollectionSchemaManager {
         for (String orphan : existing.keySet()) {
             if ((orphan.startsWith("idx_") || orphan.startsWith(PREFIX_UNIQUE_INDEX))
                     && IDENT_PATTERN.matcher(orphan).matches()) {
-                jdbc.execute("DROP INDEX IF EXISTS " + NOSQL_SCHEMA + ".\"" + orphan + "\"");
+                jdbc.execute("DROP INDEX CONCURRENTLY IF EXISTS " + NOSQL_SCHEMA + ".\"" + orphan + "\"");
                 log.info("Dropped orphan index: {}", orphan);
             }
         }
@@ -224,13 +242,30 @@ public class CollectionSchemaManager {
     private void createExpressionIndex(String collection, String indexName,
                                         List<String> fields, String type, boolean unique) {
         safeIdent(indexName, "index name");
+
+        if ("array".equals(type)) {
+            if (unique) {
+                throw new IllegalArgumentException("Array indexes cannot be unique (GIN does not support unique)");
+            }
+            if (fields.size() != 1) {
+                throw new IllegalArgumentException("Array index supports a single field, got " + fields.size());
+            }
+            String field = safeIdent(fields.getFirst(), "field name");
+            String sql = "CREATE INDEX CONCURRENTLY IF NOT EXISTS \"" + indexName + "\"" +
+                    " ON " + qualifiedTable(collection) + " USING gin ((data->'" + field + "'))" +
+                    " WHERE (data->'" + field + "') IS NOT NULL";
+            jdbc.execute(sql);
+            log.info("Created GIN index: {}", indexName);
+            return;
+        }
+
         var exprs = new ArrayList<String>();
         var predicates = new ArrayList<String>();
 
         for (String field : fields) {
             safeIdent(field, "field name");
             String expr = switch (type) {
-                case "number", "numeric" -> "((data->>'" + field + "')::numeric)";
+                case TYPE_NUMBER, "numeric" -> "((data->>'" + field + "')::numeric)";
                 case "boolean" -> "((data->>'" + field + "')::boolean)";
                 default -> "(data->>'" + field + "')";
             };
@@ -238,12 +273,28 @@ public class CollectionSchemaManager {
             predicates.add("(data->>'" + field + "') IS NOT NULL");
         }
 
-        String sql = "CREATE " + (unique ? "UNIQUE " : "") + "INDEX IF NOT EXISTS \"" + indexName + "\"" +
+        String sql = "CREATE " + (unique ? "UNIQUE " : "") + "INDEX CONCURRENTLY IF NOT EXISTS \"" + indexName + "\"" +
                 " ON " + qualifiedTable(collection) + " (" + String.join(", ", exprs) + ")" +
                 " WHERE " + String.join(" AND ", predicates);
 
         jdbc.execute(sql);
         log.info("Created index: {}", indexName);
+    }
+
+    private static String inferIndexType(String indexDef) {
+        if (indexDef == null) return TYPE_STRING;
+        String def = indexDef.toLowerCase();
+        if (def.contains("using gin") && def.contains("data -> '")) return "array";
+        if (def.contains("::numeric") || def.contains("::integer") ||
+            def.contains("::int") || def.contains("::float")) return TYPE_NUMBER;
+        if (def.contains("::boolean")) return "boolean";
+        return TYPE_STRING;
+    }
+
+    private static boolean typesMatch(String declared, String existing) {
+        String d = (declared == null ? TYPE_STRING : declared).toLowerCase();
+        if ("numeric".equals(d)) d = TYPE_NUMBER;
+        return d.equals(existing);
     }
 
     private Map<String, String> getExistingIndexes(String collection) {
@@ -267,7 +318,7 @@ public class CollectionSchemaManager {
             jdbc.execute("ALTER TABLE " + table +
                     " ADD COLUMN IF NOT EXISTS search_text tsvector" +
                     " GENERATED ALWAYS AS (to_tsvector('english', coalesce(data->>'" + field + "', ''))) STORED");
-            jdbc.execute("CREATE INDEX IF NOT EXISTS idx_" + collection + "_search ON " + table + " USING gin(search_text)");
+            jdbc.execute("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_" + collection + "_search ON " + table + " USING gin(search_text)");
             log.info("Added search column for field '{}' on collection '{}'", field, collection);
         } catch (Exception e) {
             throw new IllegalStateException("Failed to add search column on '" + collection + "'", e);
@@ -283,7 +334,7 @@ public class CollectionSchemaManager {
         try {
             jdbc.execute("ALTER TABLE " + table +
                     " ADD COLUMN IF NOT EXISTS embedding vector(" + dimensions + ")");
-            jdbc.execute("CREATE INDEX IF NOT EXISTS idx_" + collection + "_vector ON " + table +
+            jdbc.execute("CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_" + collection + "_vector ON " + table +
                     " USING hnsw(embedding vector_cosine_ops)");
             log.info("Added vector column ({} dims) on collection '{}'", dimensions, collection);
         } catch (Exception e) {
@@ -352,7 +403,7 @@ public class CollectionSchemaManager {
                     boolean unique = name.startsWith(PREFIX_UNIQUE_INDEX);
                     Matcher matcher = EXPR_PATTERN.matcher(def);
                     var fieldSet = new LinkedHashSet<String>();
-                    String type = "string";
+                    String type = TYPE_STRING;
                     while (matcher.find()) {
                         fieldSet.add(matcher.group(1));
                     }

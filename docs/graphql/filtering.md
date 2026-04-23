@@ -2,6 +2,9 @@
 
 Excalibase GraphQL now supports modern, object-based GraphQL filtering syntax that provides consistency with industry standards and PostgREST-style APIs, **with comprehensive Enhanced PostgreSQL Types support**.
 
+!!! info "Which operators work on my database?"
+    The schema generated for your server only includes operators your DB supports. See the **[database compatibility matrix](../database-compatibility.md)** for the canonical list (PostgreSQL vs MySQL, operator-by-operator, with side-by-side SQL).
+
 ## Filter Syntax Overview
 
 ### New Syntax (Recommended)

@@ -117,6 +117,13 @@ nav:
       - Filtering: rest/filtering.md
       - Mutations: rest/mutations.md
       - Pagination: rest/pagination.md
+  - NoSQL:
+      - Schema: nosql/schema.md
+      - CRUD: nosql/crud.md
+      - Search & Vector: nosql/search-vector.md
+      - Pagination: nosql/pagination.md
+      - Validation: nosql/validation.md
+      - Realtime: nosql/realtime.md
   - Features:
       - Multi-Schema Support: features/multi-schema.md
       - MySQL Support: features/mysql.md
@@ -125,5 +132,7 @@ nav:
       - Full-Text & Vector Search: features/search-and-vector.md
       - Real-Time Subscriptions: features/subscriptions.md
       - Row-Level Security: features/user-context-rls.md
+  - Database Compatibility: database-compatibility.md
+  - SDK (TypeScript): sdk.md
   - Testing: testing.md
   - Contributing: CONTRIBUTING.md

@@ -6,6 +6,7 @@ import io.github.excalibase.nosql.model.CollectionSchema;
 import io.github.excalibase.nosql.model.FieldType;
 import io.github.excalibase.nosql.model.IndexDef;
 import io.github.excalibase.nosql.schema.CollectionSchemaManager;
+import io.github.excalibase.nosql.schema.JsonSchemaValidator;
 import io.github.excalibase.nosql.service.DocumentExecutionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -35,10 +36,11 @@ class NoSqlControllerTest {
 
     private MockMvc mockMvc;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final JsonSchemaValidator jsonSchemaValidator = new JsonSchemaValidator(objectMapper);
 
     @BeforeEach
     void setUp() {
-        NoSqlController controller = new NoSqlController(schemaManager, executionService);
+        NoSqlController controller = new NoSqlController(schemaManager, executionService, jsonSchemaValidator);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
@@ -443,5 +445,60 @@ class NoSqlControllerTest {
         mockMvc.perform(get("/api/v1/nosql"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.users").exists());
+    }
+
+    // ─── Cursor pagination response shape ──────────────────────────────────────
+
+    @Test
+    @DisplayName("GET ?paginate=cursor returns {data, cursor} with non-null cursor when page full")
+    void find_cursorMode_emitsNextCursor() throws Exception {
+        when(schemaManager.getCollectionInfo()).thenReturn(collectionInfoWithUsers());
+        var page = new java.util.ArrayList<Map<String, Object>>();
+        for (int i = 0; i < 2; i++) {
+            page.add(Map.of("id", "id-" + i, "createdAt", "2026-04-22T12:00:0" + i + "Z"));
+        }
+        when(executionService.executeQuery(any())).thenReturn(page);
+
+        mockMvc.perform(get("/api/v1/nosql/users")
+                        .param("paginate", "cursor")
+                        .param("limit", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.cursor").isNotEmpty());
+    }
+
+    @Test
+    @DisplayName("GET ?paginate=cursor returns null cursor when results < limit")
+    void find_cursorMode_nullCursorAtEnd() throws Exception {
+        when(schemaManager.getCollectionInfo()).thenReturn(collectionInfoWithUsers());
+        when(executionService.executeQuery(any())).thenReturn(List.of(
+                Map.of("id", "last-id", "createdAt", "2026-04-22T12:00:00Z")));
+
+        mockMvc.perform(get("/api/v1/nosql/users")
+                        .param("paginate", "cursor")
+                        .param("limit", "10"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(1))
+                .andExpect(jsonPath("$.cursor").doesNotExist());
+    }
+
+    // ─── JSON Schema validation on insert ──────────────────────────────────────
+
+    @Test
+    @DisplayName("POST with schema-violating doc returns 400 with issues[]")
+    void insert_validationError_returns400WithIssues() throws Exception {
+        when(schemaManager.getCollectionInfo()).thenReturn(collectionInfoWithUsers());
+        jsonSchemaValidator.registerSchema("users", Map.of(
+                "type", "object",
+                "required", List.of("email"),
+                "properties", Map.of("email", Map.of("type", "string"))));
+
+        mockMvc.perform(post("/api/v1/nosql/users")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"doc\":{\"age\":30}}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("validation"))
+                .andExpect(jsonPath("$.issues").isArray());
+        jsonSchemaValidator.clear();
     }
 }

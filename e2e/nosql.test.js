@@ -258,6 +258,89 @@ describe('NoSQL — Bulk operations', () => {
 
 // ─── Error handling ────────────────────────────────────────────────────────────
 
+describe('NoSQL — JSON Schema validation', () => {
+  beforeAll(async () => {
+    await nosqlPost('', {
+      collections: {
+        e2e_validated: {
+          indexes: [],
+          schema: {
+            type: 'object',
+            required: ['email'],
+            properties: {
+              email: { type: 'string' },
+              age: { type: 'integer' },
+            },
+          },
+        },
+      },
+    });
+  });
+
+  test('valid doc passes', async () => {
+    const res = await nosqlPost('/e2e_validated', {
+      doc: { email: 'ok@test.com', age: 30 },
+    });
+    expect(res.status).toBe(201);
+  });
+
+  test('missing required field returns 400 with issues', async () => {
+    const res = await nosqlPost('/e2e_validated', {
+      doc: { age: 30 },
+    });
+    expect(res.status).toBe(400);
+    expect(res.data.error).toBe('validation');
+    expect(Array.isArray(res.data.issues)).toBe(true);
+    expect(res.data.issues.length).toBeGreaterThan(0);
+  });
+
+  test('wrong type returns 400', async () => {
+    const res = await nosqlPost('/e2e_validated', {
+      doc: { email: 'bad@test.com', age: 'not-a-number' },
+    });
+    expect(res.status).toBe(400);
+    expect(res.data.error).toBe('validation');
+  });
+});
+
+describe('NoSQL — Cursor pagination', () => {
+  beforeAll(async () => {
+    await nosqlPost('', {
+      collections: { e2e_cursor: { indexes: [] } },
+    });
+    const docs = [];
+    for (let i = 0; i < 25; i++) docs.push({ seq: i });
+    await nosqlPost('/e2e_cursor', { docs });
+  });
+
+  test('walks all rows in pages of 10 with no overlap or gap', async () => {
+    const seen = new Set();
+    let cursor = '';
+    let pages = 0;
+    while (pages < 10) {
+      const path = cursor
+        ? `/e2e_cursor?paginate=cursor&limit=10&cursor=${cursor}`
+        : `/e2e_cursor?paginate=cursor&limit=10`;
+      const res = await nosqlGet(path);
+      expect(res.status).toBe(200);
+      expect(Array.isArray(res.data.data)).toBe(true);
+      for (const doc of res.data.data) {
+        expect(seen.has(doc.id)).toBe(false);
+        seen.add(doc.id);
+      }
+      if (res.data.data.length < 10) break;
+      cursor = res.data.cursor;
+      pages++;
+    }
+    expect(seen.size).toBe(25);
+  });
+
+  test('malformed cursor returns 400', async () => {
+    const res = await nosqlGet('/e2e_cursor?paginate=cursor&cursor=!!!not-base64!!!');
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('NoSQL — Error handling', () => {
   test('GET unknown collection returns 404', async () => {
     const res = await nosqlGet('/nonexistent?status=eq.active');

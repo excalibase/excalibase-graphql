@@ -48,7 +48,8 @@ class NoSqlSearchIT {
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         jdbc = new JdbcTemplate(ds);
         namedJdbc = new NamedParameterJdbcTemplate(ds);
-        schemaManager = new CollectionSchemaManager(jdbc, null);
+        schemaManager = new CollectionSchemaManager(jdbc,
+                new io.github.excalibase.nosql.schema.JsonSchemaValidator(new ObjectMapper()), null);
         executionService = new DocumentExecutionService(namedJdbc, new ObjectMapper());
 
         schemaManager.syncSchema(Map.of("collections", Map.of(

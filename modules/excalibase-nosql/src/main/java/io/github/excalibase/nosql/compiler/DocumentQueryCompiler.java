@@ -19,6 +19,8 @@ public class DocumentQueryCompiler {
     private static final String RETURNING_CLAUSE = "id, data, created_at, updated_at";
     private static final String SQL_RETURNING = " RETURNING ";
     private static final String SQL_FROM = " FROM ";
+    private static final String SQL_WHERE = " WHERE ";
+    private static final String PARAM_LIMIT = "limit";
     private static final String MSG_COLLECTION_PREFIX = "Collection '";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -39,8 +41,22 @@ public class DocumentQueryCompiler {
         sql.append(SQL_FROM).append(qualifiedTable(collection));
 
         appendWhere(sql, filter, schema, params);
-        appendOrderBy(sql, opts.sort());
-        appendLimit(sql, params, opts.limit(), opts.offset());
+
+        if (opts.cursorMode()) {
+            if (opts.cursor() != null) {
+                var cursor = CursorCodec.decode(opts.cursor());
+                String joiner = sql.indexOf(SQL_WHERE) >= 0 ? " AND " : SQL_WHERE;
+                sql.append(joiner).append("(created_at, id) < (:cursorTs, :cursorId::uuid)");
+                params.put("cursorTs", java.sql.Timestamp.from(cursor.createdAt()));
+                params.put("cursorId", cursor.id());
+            }
+            sql.append(" ORDER BY created_at DESC, id DESC");
+            sql.append(" LIMIT :limit");
+            params.put(PARAM_LIMIT, opts.limit());
+        } else {
+            appendOrderBy(sql, opts.sort());
+            appendLimit(sql, params, opts.limit(), opts.offset());
+        }
 
         return new CompiledDoc(sql.toString(), params);
     }
@@ -156,7 +172,7 @@ public class DocumentQueryCompiler {
         }
         var params = new LinkedHashMap<String, Object>();
         params.put("query", query);
-        params.put("limit", Math.min(limit, 1000));
+        params.put(PARAM_LIMIT, Math.min(limit, 1000));
 
         var sql = SELECT_CLAUSE + ", ts_rank(search_text, websearch_to_tsquery(:query)) AS rank" +
                 SQL_FROM + qualifiedTable(collection) +
@@ -234,7 +250,7 @@ public class DocumentQueryCompiler {
         }
 
         if (!conditions.isEmpty()) {
-            sql.append(" WHERE ").append(String.join(" AND ", conditions));
+            sql.append(SQL_WHERE).append(String.join(" AND ", conditions));
         }
     }
 
@@ -287,7 +303,7 @@ public class DocumentQueryCompiler {
 
     private void appendLimit(StringBuilder sql, Map<String, Object> params, int limit, int offset) {
         sql.append(" LIMIT :limit");
-        params.put("limit", limit);
+        params.put(PARAM_LIMIT, limit);
         if (offset > 0) {
             sql.append(" OFFSET :offset");
             params.put("offset", offset);

@@ -53,7 +53,7 @@ jobs:
 
     - name: Add coverage to PR
       id: jacoco
-      uses: madrapps/jacoco-report@v1.7.2
+      uses: madrapps/jacoco-report@50d3aff4548aa991e6753342d9ba291084e63848 # v1.7.2
       if: github.event_name == 'pull_request'
       with:
         paths: |

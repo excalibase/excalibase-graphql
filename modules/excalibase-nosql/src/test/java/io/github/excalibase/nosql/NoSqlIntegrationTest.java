@@ -44,7 +44,8 @@ class NoSqlIntegrationTest {
                 postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         jdbc = new JdbcTemplate(ds);
         namedJdbc = new NamedParameterJdbcTemplate(ds);
-        schemaManager = new CollectionSchemaManager(jdbc, null);
+        schemaManager = new CollectionSchemaManager(jdbc,
+                new io.github.excalibase.nosql.schema.JsonSchemaValidator(new ObjectMapper()), null);
         executionService = new DocumentExecutionService(namedJdbc, new ObjectMapper());
     }
 
@@ -171,6 +172,74 @@ class NoSqlIntegrationTest {
             assertThatThrownBy(() -> schemaManager.syncSchema(tooManyIdx))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("max is 10");
+        }
+
+        @Test
+        @Order(7)
+        @DisplayName("array index creates GIN")
+        void syncSchema_arrayIndex_createsGin() {
+            schemaManager.syncSchema(Map.of("collections", Map.of(
+                    "tagged", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("tags"), "type", "array", "unique", false)
+                    ))
+            )));
+
+            String indexDef = jdbc.queryForObject(
+                    "SELECT indexdef FROM pg_indexes WHERE schemaname = 'nosql' " +
+                    "AND tablename = 'tagged' AND indexname = 'idx_tagged_tags'",
+                    String.class);
+            assertThat(indexDef).contains("USING gin").contains("data -> 'tags'");
+        }
+
+        @Test
+        @Order(8)
+        @DisplayName("array index rejects unique")
+        void syncSchema_arrayIndexUnique_rejects() {
+            Map<String, Object> request = Map.of("collections", Map.of(
+                    "bad_array", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("tags"), "type", "array", "unique", true)
+                    ))
+            ));
+            assertThatThrownBy(() -> schemaManager.syncSchema(request))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Array indexes cannot be unique");
+        }
+
+        @Test
+        @Order(9)
+        @DisplayName("syncSchema rejects changing index type on same field")
+        void syncSchema_changeIndexType_rejects() {
+            schemaManager.syncSchema(Map.of("collections", Map.of(
+                    "typed", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("score"), "type", "string", "unique", false)
+                    ))
+            )));
+
+            Map<String, Object> retyped = Map.of("collections", Map.of(
+                    "typed", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("score"), "type", "number", "unique", false)
+                    ))
+            ));
+            assertThatThrownBy(() -> schemaManager.syncSchema(retyped))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Cannot change index type")
+                    .hasMessageContaining("existing: string")
+                    .hasMessageContaining("declared: number");
+        }
+
+        @Test
+        @Order(10)
+        @DisplayName("syncSchema is idempotent for same index type")
+        void syncSchema_sameIndexType_idempotent() {
+            Map<String, Object> sameType = Map.of("collections", Map.of(
+                    "typed", Map.of("indexes", List.of(
+                            Map.of("fields", List.of("score"), "type", "string", "unique", false)
+                    ))
+            ));
+            schemaManager.syncSchema(sameType);
+            // second call must not throw
+            var result = schemaManager.syncSchema(sameType);
+            assertThat(result).isNotNull();
         }
     }
 
@@ -321,6 +390,64 @@ class NoSqlIntegrationTest {
 
     @Nested
     @Order(3)
+    @DisplayName("Cursor pagination")
+    class CursorPaginationTests {
+
+        DocumentQueryCompiler localCompiler;
+
+        @org.junit.jupiter.api.BeforeEach
+        void setupCursorCollection() {
+            schemaManager.syncSchema(Map.of("collections", Map.of(
+                    "cursor_test", Map.of("indexes", List.of())
+            )));
+            localCompiler = new DocumentQueryCompiler(schemaManager.getCollectionInfo());
+            long count = executionService.executeCount(
+                    localCompiler.compileCount("cursor_test", Map.of()));
+            if (count == 0) {
+                for (int i = 0; i < 25; i++) {
+                    executionService.executeMutation(localCompiler.compileInsertOne(
+                            "cursor_test", Map.of("seq", i)));
+                }
+            }
+        }
+
+        @Test
+        @DisplayName("cursor paging walks all rows without overlap or gap")
+        void cursor_walksAllRows() {
+            var seen = new java.util.HashSet<String>();
+            String cursor = null;
+            int pages = 0;
+            while (pages < 10) {
+                var compiled = localCompiler.compileFind("cursor_test", Map.of(),
+                        new FindOptions(10, 0, null, cursor, true));
+                var rows = executionService.executeQuery(compiled);
+                if (rows.isEmpty()) break;
+                for (var row : rows) {
+                    assertThat(seen.add((String) row.get("id")))
+                            .as("duplicate id: %s", row.get("id")).isTrue();
+                }
+                if (rows.size() < 10) break;
+                var last = rows.getLast();
+                cursor = io.github.excalibase.nosql.compiler.CursorCodec.encode(
+                        java.time.Instant.parse((String) last.get("createdAt")),
+                        (String) last.get("id"));
+                pages++;
+            }
+            assertThat(seen).hasSize(25);
+        }
+
+        @Test
+        @DisplayName("bad cursor rejected with clear error")
+        void cursor_malformed_rejects() {
+            Map<String, Object> emptyFilter = Map.of();
+            FindOptions opts = new FindOptions(10, 0, null, "!!!not-base64!!!", true);
+            assertThatThrownBy(() -> localCompiler.compileFind("cursor_test", emptyFilter, opts))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
+    @Order(4)
     @DisplayName("Index enforcement")
     class IndexEnforcementTests {
 
