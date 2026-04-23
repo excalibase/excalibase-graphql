@@ -46,7 +46,7 @@ public class NoSqlController {
         var issues = jsonSchemaValidator.validate(collection, doc);
         if (issues.isEmpty()) return null;
         return ResponseEntity.badRequest().body(Map.of(
-                "error", "validation",
+                KEY_ERROR, "validation",
                 "issues", issues));
     }
 
@@ -113,7 +113,7 @@ public class NoSqlController {
         int limit = toInt(allParams.get(PARAM_LIMIT), 30);
         int offset = toInt(allParams.get("offset"), 0);
         var sort = parseSort(allParams.get("sort"));
-        boolean cursorMode = "cursor".equalsIgnoreCase(allParams.get(PARAM_PAGINATE));
+        boolean cursorMode = PARAM_CURSOR.equalsIgnoreCase(allParams.get(PARAM_PAGINATE));
         String cursorIn = cursorMode ? allParams.get(PARAM_CURSOR) : null;
 
         long startTime = System.nanoTime();
@@ -142,7 +142,7 @@ public class NoSqlController {
             }
             var body = new LinkedHashMap<String, Object>();
             body.put("data", results);
-            body.put("cursor", nextCursor);
+            body.put(PARAM_CURSOR, nextCursor);
             return ResponseEntity.ok().headers(headers).body(body);
         }
 

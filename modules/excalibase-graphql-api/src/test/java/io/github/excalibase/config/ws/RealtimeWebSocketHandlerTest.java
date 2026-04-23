@@ -170,7 +170,11 @@ class RealtimeWebSocketHandlerTest {
                 "type", "complete", "id", "s1"))));
 
         subscriptionService.publish(new CDCEvent("INSERT", "nosql", "t", "{}", 0L));
-        Thread.sleep(100);
-        assertThat(sent).isEmpty();
+
+        // Negative assertion: after unsubscribing, events should NOT arrive.
+        // Awaitility with durationAsserted gives the reactor pipeline time to
+        // demonstrate silence without needing a manual Thread.sleep.
+        await().during(java.time.Duration.ofMillis(200))
+                .untilAsserted(() -> assertThat(sent).isEmpty());
     }
 }

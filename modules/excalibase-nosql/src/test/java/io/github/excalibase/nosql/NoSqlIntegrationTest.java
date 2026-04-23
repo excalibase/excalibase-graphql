@@ -439,8 +439,9 @@ class NoSqlIntegrationTest {
         @Test
         @DisplayName("bad cursor rejected with clear error")
         void cursor_malformed_rejects() {
-            assertThatThrownBy(() -> localCompiler.compileFind("cursor_test", Map.of(),
-                    new FindOptions(10, 0, null, "!!!not-base64!!!", true)))
+            Map<String, Object> emptyFilter = Map.of();
+            FindOptions opts = new FindOptions(10, 0, null, "!!!not-base64!!!", true);
+            assertThatThrownBy(() -> localCompiler.compileFind("cursor_test", emptyFilter, opts))
                     .isInstanceOf(IllegalArgumentException.class);
         }
     }

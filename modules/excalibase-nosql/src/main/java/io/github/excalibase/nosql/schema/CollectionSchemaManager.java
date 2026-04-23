@@ -25,6 +25,8 @@ public class CollectionSchemaManager {
     private static final Logger log = LoggerFactory.getLogger(CollectionSchemaManager.class);
     private static final String PREFIX_UNIQUE_INDEX = "uidx_";
     private static final int MAX_INDEXES_PER_COLLECTION = 10;
+    private static final String TYPE_STRING = "string";
+    private static final String TYPE_NUMBER = "number";
     private static final Pattern EXPR_PATTERN = Pattern.compile(
             "data\\s*->>\\s*'([^']+)'");
     private static final Pattern CAST_PATTERN = Pattern.compile(
@@ -208,7 +210,7 @@ public class CollectionSchemaManager {
 
         for (var idxDef : declaredIndexes) {
             var fields = (List<String>) idxDef.get("fields");
-            String type = (String) idxDef.getOrDefault("type", "string");
+            String type = (String) idxDef.getOrDefault("type", TYPE_STRING);
             boolean unique = Boolean.TRUE.equals(idxDef.get("unique"));
 
             String indexName = (unique ? PREFIX_UNIQUE_INDEX : "idx_") + collection + "_" + String.join("_", fields);
@@ -263,7 +265,7 @@ public class CollectionSchemaManager {
         for (String field : fields) {
             safeIdent(field, "field name");
             String expr = switch (type) {
-                case "number", "numeric" -> "((data->>'" + field + "')::numeric)";
+                case TYPE_NUMBER, "numeric" -> "((data->>'" + field + "')::numeric)";
                 case "boolean" -> "((data->>'" + field + "')::boolean)";
                 default -> "(data->>'" + field + "')";
             };
@@ -280,18 +282,18 @@ public class CollectionSchemaManager {
     }
 
     private static String inferIndexType(String indexDef) {
-        if (indexDef == null) return "string";
+        if (indexDef == null) return TYPE_STRING;
         String def = indexDef.toLowerCase();
         if (def.contains("using gin") && def.contains("data -> '")) return "array";
         if (def.contains("::numeric") || def.contains("::integer") ||
-            def.contains("::int") || def.contains("::float")) return "number";
+            def.contains("::int") || def.contains("::float")) return TYPE_NUMBER;
         if (def.contains("::boolean")) return "boolean";
-        return "string";
+        return TYPE_STRING;
     }
 
     private static boolean typesMatch(String declared, String existing) {
-        String d = (declared == null ? "string" : declared).toLowerCase();
-        if ("numeric".equals(d)) d = "number";
+        String d = (declared == null ? TYPE_STRING : declared).toLowerCase();
+        if ("numeric".equals(d)) d = TYPE_NUMBER;
         return d.equals(existing);
     }
 
@@ -401,7 +403,7 @@ public class CollectionSchemaManager {
                     boolean unique = name.startsWith(PREFIX_UNIQUE_INDEX);
                     Matcher matcher = EXPR_PATTERN.matcher(def);
                     var fieldSet = new LinkedHashSet<String>();
-                    String type = "string";
+                    String type = TYPE_STRING;
                     while (matcher.find()) {
                         fieldSet.add(matcher.group(1));
                     }
