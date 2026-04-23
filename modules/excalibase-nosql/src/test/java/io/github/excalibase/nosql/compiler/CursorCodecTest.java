@@ -53,4 +53,21 @@ class CursorCodecTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("malformed");
     }
+
+    @Test
+    @DisplayName("decode rejects non-ISO-8601 createdAt")
+    void decodeBadTimestamp() {
+        String bad = java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("not-a-timestamp|some-id".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertThatThrownBy(() -> CursorCodec.decode(bad))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("ISO-8601");
+    }
+
+    @Test
+    @DisplayName("decode rejects empty string")
+    void decodeEmpty() {
+        assertThatThrownBy(() -> CursorCodec.decode(""))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
 }

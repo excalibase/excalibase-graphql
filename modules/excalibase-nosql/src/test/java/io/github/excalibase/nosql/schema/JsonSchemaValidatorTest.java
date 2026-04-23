@@ -76,4 +76,24 @@ class JsonSchemaValidatorTest {
         var issues = validator.validate("users", Map.of("nothing", 1));
         assertThat(issues).isEmpty();
     }
+
+    @Test
+    @DisplayName("hasSchema tracks registration")
+    void hasSchema_reflectsRegistration() {
+        assertThat(validator.hasSchema("x")).isFalse();
+        validator.registerSchema("x", Map.of("type", "object"));
+        assertThat(validator.hasSchema("x")).isTrue();
+        validator.registerSchema("x", null);
+        assertThat(validator.hasSchema("x")).isFalse();
+    }
+
+    @Test
+    @DisplayName("clear removes all schemas")
+    void clear_removesAll() {
+        validator.registerSchema("a", Map.of("type", "object"));
+        validator.registerSchema("b", Map.of("type", "object"));
+        validator.clear();
+        assertThat(validator.hasSchema("a")).isFalse();
+        assertThat(validator.hasSchema("b")).isFalse();
+    }
 }
