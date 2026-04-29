@@ -202,6 +202,32 @@ public class CollectionSchemaManager {
                 "created_at TIMESTAMPTZ DEFAULT clock_timestamp(), " +
                 "updated_at TIMESTAMPTZ DEFAULT clock_timestamp())");
         log.info("Created collection: {}", collection);
+
+        // Auto-add to the realtime publication so subscribers receive change
+        // events without requiring a separate UI toggle. Soft-fail: if the
+        // publication doesn't exist (legacy project pre-realtime-refactor) or
+        // the connecting role doesn't own it, we log and continue — the table
+        // is still usable, only realtime is missing. Idempotent: ADD TABLE
+        // on an already-included table returns SQLSTATE 42710 which Postgres
+        // reports as a DataAccessException; we swallow it.
+        addToRealtimePublication(collection);
+    }
+
+    private void addToRealtimePublication(String collection) {
+        try {
+            jdbc.execute("ALTER PUBLICATION cdc_watcher_pub ADD TABLE " +
+                    qualifiedTable(collection));
+            log.info("Realtime enabled for collection: {}", collection);
+        } catch (org.springframework.dao.DataAccessException e) {
+            // Already in publication, publication missing, or no permission —
+            // none are blocking conditions for the user's INSERT to succeed.
+            String msg = e.getMessage() == null ? "" : e.getMessage();
+            if (msg.contains("already member")) {
+                // Idempotent re-add — quiet.
+                return;
+            }
+            log.warn("Realtime auto-enable skipped for {}: {}", collection, msg);
+        }
     }
 
     @SuppressWarnings("unchecked")
