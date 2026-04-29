@@ -62,7 +62,7 @@ class RealtimeAutoEnableIT {
         appJdbc = new JdbcTemplate(appDs);
 
         schemaManager = new CollectionSchemaManager(appJdbc,
-                new JsonSchemaValidator(new ObjectMapper()), null);
+                new JsonSchemaValidator(new ObjectMapper()), null, "cdc_watcher_pub");
     }
 
     @BeforeEach

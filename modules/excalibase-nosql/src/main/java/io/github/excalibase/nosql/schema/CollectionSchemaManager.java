@@ -36,11 +36,22 @@ public class CollectionSchemaManager {
     private final JsonSchemaValidator jsonSchemaValidator;
     private final AtomicReference<CollectionInfo> collectionInfo = new AtomicReference<>(new CollectionInfo());
 
+    /**
+     * Publication name to add new NoSQL collections to. Must match what the
+     * watcher daemon is configured to read — they're two ends of the same
+     * pipe. Defaults to the production convention (cdc_watcher_pub) but
+     * overridable per deployment via the spring property to match e2e setups
+     * or operator-chosen names.
+     */
+    private final String publicationName;
+
     public CollectionSchemaManager(JdbcTemplate jdbc,
                                     JsonSchemaValidator jsonSchemaValidator,
-                                    @Autowired(required = false) NatsCDCService natsCDCService) {
+                                    @Autowired(required = false) NatsCDCService natsCDCService,
+                                    @org.springframework.beans.factory.annotation.Value("${app.realtime.publication-name:cdc_watcher_pub}") String publicationName) {
         this.jdbc = jdbc;
         this.jsonSchemaValidator = jsonSchemaValidator;
+        this.publicationName = safeIdent(publicationName, "publication name");
         if (natsCDCService != null) {
             natsCDCService.setSchemaReloadCallback(this::reload);
         }
@@ -215,9 +226,9 @@ public class CollectionSchemaManager {
 
     private void addToRealtimePublication(String collection) {
         try {
-            jdbc.execute("ALTER PUBLICATION cdc_watcher_pub ADD TABLE " +
+            jdbc.execute("ALTER PUBLICATION \"" + publicationName + "\" ADD TABLE " +
                     qualifiedTable(collection));
-            log.info("Realtime enabled for collection: {}", collection);
+            log.info("Realtime enabled for collection: {} (publication={})", collection, publicationName);
         } catch (org.springframework.dao.DataAccessException e) {
             // Already in publication, publication missing, or no permission —
             // none are blocking conditions for the user's INSERT to succeed.
@@ -226,7 +237,7 @@ public class CollectionSchemaManager {
                 // Idempotent re-add — quiet.
                 return;
             }
-            log.warn("Realtime auto-enable skipped for {}: {}", collection, msg);
+            log.warn("Realtime auto-enable skipped for {} (publication={}): {}", collection, publicationName, msg);
         }
     }
 

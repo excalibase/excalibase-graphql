@@ -52,8 +52,7 @@ class NoSqlVectorIT {
         namedJdbc = new NamedParameterJdbcTemplate(ds);
         jdbc.execute("CREATE EXTENSION IF NOT EXISTS vector");
 
-        schemaManager = new CollectionSchemaManager(jdbc,
-                new io.github.excalibase.nosql.schema.JsonSchemaValidator(new ObjectMapper()), null);
+        schemaManager = new CollectionSchemaManager(jdbc, new io.github.excalibase.nosql.schema.JsonSchemaValidator(new ObjectMapper()), null, "cdc_watcher_pub");
         executionService = new DocumentExecutionService(namedJdbc, new ObjectMapper());
 
         schemaManager.syncSchema(Map.of("collections", Map.of(

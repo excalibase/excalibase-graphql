@@ -83,6 +83,10 @@ services:
       APP_NATS_STREAM_NAME: CDC
       APP_NATS_SUBJECT_PREFIX: cdc
 
+      # Realtime publication name — must match watcher's publication_name
+      # so NoSQL auto-create writes to the publication the watcher reads.
+      APP_REALTIME_PUBLICATION_NAME: cdc_publication_go
+
       # Observability — send all OTLP signals to the collector
       # Run with docker-compose.observability.yml to activate the full stack.
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
