@@ -26,7 +26,7 @@ import java.util.List;
  *           Use for standalone deployments without excalibase-auth.
  *
  * Claims extracted (both modes):
- *   userId, projectId, orgSlug, projectName, role, email/sub
+ *   userId, projectId, orgSlug, projectName, orgName, role, email/sub
  */
 public class JwtService {
 
@@ -114,6 +114,11 @@ public class JwtService {
             String projectId = (String) claims.getClaim("projectId");
             String orgSlug = (String) claims.getClaim("orgSlug");
             String projectName = (String) claims.getClaim("projectName");
+            // orgName is a newer claim — older tokens issued before the auth
+            // upgrade won't carry it. Default to empty string for back-compat
+            // so verification still succeeds.
+            String orgNameClaim = (String) claims.getClaim("orgName");
+            String orgName = orgNameClaim != null ? orgNameClaim : "";
             String role = claims.getClaim("role") instanceof String roleValue ? roleValue : "user";
             String email = claims.getSubject() != null ? claims.getSubject()
                     : (String) claims.getClaim("email");
@@ -126,7 +131,7 @@ public class JwtService {
                 keyId = keyIdNumber.longValue();
             }
 
-            return new JwtClaims(userId, projectId, orgSlug, projectName, role, email, scope, keyId);
+            return new JwtClaims(userId, projectId, orgSlug, projectName, orgName, role, email, scope, keyId);
 
         } catch (JwtVerificationException e) {
             throw e;

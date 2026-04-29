@@ -304,6 +304,12 @@ build-image: build ## Build Docker image locally for e2e testing
 	@docker build -t excalibase/excalibase-graphql .
 	@echo "$(GREEN)✓ Docker image built$(NC)"
 
+.PHONY: watcher-go-build
+watcher-go-build: ## Build excalibase-watcher-go:local image from sibling repo
+	@echo "$(BLUE)🐳 Building excalibase-watcher-go:local...$(NC)"
+	@docker build -t excalibase/excalibase-watcher-go:local $(HOME)/Documents/duk/excalibase-watcher-go
+	@echo "$(GREEN)✓ watcher-go image built$(NC)"
+
 .PHONY: build-skip
 build-skip: ## Skip Maven build (for rapid iteration)
 	@echo "$(YELLOW)⚠️  Skipping Maven build$(NC)"

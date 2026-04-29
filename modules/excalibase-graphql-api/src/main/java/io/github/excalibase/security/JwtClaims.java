@@ -17,6 +17,7 @@ public record JwtClaims(
         String projectId,
         String orgSlug,
         String projectName,
+        String orgName,
         String role,
         String email,
         String scope,
@@ -24,10 +25,11 @@ public record JwtClaims(
 ) {
     /**
      * Convenience factory for legacy 6-field call sites that pre-date the
-     * scope/keyId additions. Defaults scope to "authenticated" and keyId to 0.
+     * scope/keyId/orgName additions. Defaults orgName to empty, scope to
+     * "authenticated", and keyId to 0.
      */
     public static JwtClaims of(String userId, String projectId, String orgSlug,
                                 String projectName, String role, String email) {
-        return new JwtClaims(userId, projectId, orgSlug, projectName, role, email, "authenticated", 0L);
+        return new JwtClaims(userId, projectId, orgSlug, projectName, "", role, email, "authenticated", 0L);
     }
 }

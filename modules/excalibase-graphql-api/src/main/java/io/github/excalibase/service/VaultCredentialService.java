@@ -30,11 +30,18 @@ public class VaultCredentialService {
         .build();
   }
 
-  public VaultCredentials fetchCredentials(String orgSlug, String projectName) {
+  /**
+   * Fetch tenant DB credentials from the provisioner's vault.
+   *
+   * <p>{@code projectId} is the opaque {@code proj_XXXXXXXXXX} ref minted by the
+   * provisioner (also accepts any slug-form value matching {@link #SLUG_PATTERN}).
+   * Path shape: {@code /vault/secrets/projects/{orgSlug}/{projectId}/credentials/excalibase_app}.
+   */
+  public VaultCredentials fetchCredentials(String orgSlug, String projectId) {
     validateSlug(orgSlug, "orgSlug");
-    validateSlug(projectName, "projectName");
+    validateSlug(projectId, "projectId");
     String url = provisioningUrl + "/vault/secrets/projects/"
-        + orgSlug + "/" + projectName + "/credentials/excalibase_app";
+        + orgSlug + "/" + projectId + "/credentials/excalibase_app";
     try {
       HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
           .uri(URI.create(url))
@@ -49,7 +56,7 @@ public class VaultCredentialService {
           HttpResponse.BodyHandlers.ofString());
 
       if (resp.statusCode() != 200) {
-        log.error("vault_credential_fetch_failed status={} tenant={}/{}", resp.statusCode(), orgSlug, projectName);
+        log.error("vault_credential_fetch_failed status={} tenant={}/{}", resp.statusCode(), orgSlug, projectId);
         throw new VaultCredentialException("Database not available for the requested project");
       }
 
@@ -66,10 +73,10 @@ public class VaultCredentialService {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new VaultCredentialException(
-          "Interrupted while fetching credentials for " + orgSlug + "/" + projectName, e);
+          "Interrupted while fetching credentials for " + orgSlug + "/" + projectId, e);
     } catch (Exception e) {
       throw new VaultCredentialException(
-          "Failed to fetch credentials for " + orgSlug + "/" + projectName, e);
+          "Failed to fetch credentials for " + orgSlug + "/" + projectId, e);
     }
   }
 

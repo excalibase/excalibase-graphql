@@ -1,0 +1,23 @@
+postgres:
+  enabled: false
+
+mysql:
+  enabled: true
+  host: "mysql:3306"
+  schema: excalibase
+  snapshot_mode: none
+
+nats:
+  enabled: true
+  url: "nats://nats:4222"
+  stream_name: CDC
+  subject_prefix: cdc
+  max_age_minutes: 5
+  storage: memory
+
+health:
+  port: 8080
+  bind_address: "0.0.0.0"
+
+metrics:
+  enabled: true

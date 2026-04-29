@@ -43,38 +43,41 @@ services:
       - excalibase-mysql-network
     restart: unless-stopped
 
+  # Pre-provision the shared CDC stream; watcher-go does not create/mutate streams.
+  nats-init:
+    image: natsio/nats-box:latest
+    container_name: excalibase-nats-init-mysql
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        nats --server=nats://nats:4222 stream add CDC --subjects='cdc.>' --storage=memory --retention=limits --max-age=5m --discard=old --max-msgs=-1 --max-bytes=-1 --max-msg-size=-1 --replicas=1 --dupe-window=2m --no-allow-rollup --no-deny-delete --no-deny-purge --defaults || true
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - excalibase-mysql-network
+    restart: "no"
+
   excalibase-watcher:
-    image: excalibase/excalibase-watcher
+    image: excalibase/excalibase-watcher-go:local
     container_name: excalibase-watcher-mysql
+    command: ["--config", "/config/config.yaml"]
     environment:
-      # Disable Postgres CDC
-      APP_CDC_POSTGRES_ENABLED: false
-      # Enable MySQL CDC
-      APP_CDC_MYSQL_ENABLED: true
-      APP_CDC_MYSQL_URL: jdbc:mysql://mysql:3306/excalibase
-      APP_CDC_MYSQL_USERNAME: root
-      APP_CDC_MYSQL_PASSWORD: rootpassword123
-      # NATS
-      APP_NATS_URL: nats://nats:4222
-      APP_NATS_STREAM_NAME: CDC
-      APP_NATS_SUBJECT_PREFIX: cdc
-      APP_NATS_ENABLED: true
-      # Spring datasource fallback (required by autoconfiguration)
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/excalibase
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: rootpassword123
-      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      WATCHER_MYSQL_HOST: mysql:3306
+      WATCHER_MYSQL_USERNAME: root
+      WATCHER_MYSQL_PASSWORD: rootpassword123
+      WATCHER_NATS_URL: nats://nats:4222
+    volumes:
+      - ./e2e/watcher-go/mysql.yaml:/config/config.yaml:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
+      disable: true
     depends_on:
       mysql:
         condition: service_healthy
       nats:
         condition: service_healthy
+      nats-init:
+        condition: service_completed_successfully
     networks:
       - excalibase-mysql-network
     restart: unless-stopped
@@ -118,7 +121,7 @@ services:
       nats:
         condition: service_healthy
       excalibase-watcher:
-        condition: service_healthy
+        condition: service_started
     networks:
       - excalibase-mysql-network
     restart: unless-stopped

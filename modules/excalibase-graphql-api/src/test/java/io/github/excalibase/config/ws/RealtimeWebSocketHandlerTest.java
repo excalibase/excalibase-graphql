@@ -30,7 +30,14 @@ class RealtimeWebSocketHandlerTest {
     void setUp() {
         subscriptionService = new SubscriptionService();
         mapper = new ObjectMapper();
-        handler = new RealtimeWebSocketHandler(subscriptionService, mapper);
+        org.springframework.beans.factory.ObjectProvider<io.github.excalibase.security.JwtService> noJwt =
+                new org.springframework.beans.factory.ObjectProvider<>() {
+                    @Override public io.github.excalibase.security.JwtService getObject() { return null; }
+                    @Override public io.github.excalibase.security.JwtService getObject(Object... args) { return null; }
+                    @Override public io.github.excalibase.security.JwtService getIfAvailable() { return null; }
+                    @Override public io.github.excalibase.security.JwtService getIfUnique() { return null; }
+                };
+        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, noJwt);
     }
 
     private WebSocketSession session(List<String> sink) throws Exception {
@@ -59,7 +66,7 @@ class RealtimeWebSocketHandlerTest {
                 "collection", "articles"));
         handler.handleTextMessage(session, new TextMessage(subscribeMsg));
 
-        subscriptionService.publish(new CDCEvent(
+        subscriptionService.publish(null, new CDCEvent(
                 "INSERT", "nosql", "articles",
                 "{\"title\":\"hello\"}", 0L));
 
@@ -84,10 +91,10 @@ class RealtimeWebSocketHandlerTest {
                 "filter", Map.of("status", "active")));
         handler.handleTextMessage(session, new TextMessage(subscribeMsg));
 
-        subscriptionService.publish(new CDCEvent(
+        subscriptionService.publish(null, new CDCEvent(
                 "INSERT", "nosql", "orders",
                 "{\"status\":\"cancelled\"}", 0L));
-        subscriptionService.publish(new CDCEvent(
+        subscriptionService.publish(null, new CDCEvent(
                 "INSERT", "nosql", "orders",
                 "{\"status\":\"active\"}", 0L));
 
@@ -109,7 +116,7 @@ class RealtimeWebSocketHandlerTest {
                 "source", "rest", "collection", "customers"));
         handler.handleTextMessage(session, new TextMessage(subscribeMsg));
 
-        subscriptionService.publish(new CDCEvent(
+        subscriptionService.publish(null, new CDCEvent(
                 "UPDATE", "public", "customers",
                 "{\"name\":\"Vu\"}", 0L));
 
@@ -129,9 +136,9 @@ class RealtimeWebSocketHandlerTest {
                 "source", "nosql", "collection", "x"));
         handler.handleTextMessage(session, new TextMessage(subscribeMsg));
 
-        subscriptionService.publish(new CDCEvent("DDL", "nosql", "x", "{}", 0L));
-        subscriptionService.publish(new CDCEvent("HEARTBEAT", "nosql", "x", "{}", 0L));
-        subscriptionService.publish(new CDCEvent("INSERT", "nosql", "x", "{}", 0L));
+        subscriptionService.publish(null, new CDCEvent("DDL", "nosql", "x", "{}", 0L));
+        subscriptionService.publish(null, new CDCEvent("HEARTBEAT", "nosql", "x", "{}", 0L));
+        subscriptionService.publish(null, new CDCEvent("INSERT", "nosql", "x", "{}", 0L));
 
         await().until(() -> !sent.isEmpty());
         assertThat(sent).hasSize(1);
@@ -169,7 +176,7 @@ class RealtimeWebSocketHandlerTest {
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "complete", "id", "s1"))));
 
-        subscriptionService.publish(new CDCEvent("INSERT", "nosql", "t", "{}", 0L));
+        subscriptionService.publish(null, new CDCEvent("INSERT", "nosql", "t", "{}", 0L));
 
         // Negative assertion: after unsubscribing, events should NOT arrive.
         // Awaitility with durationAsserted gives the reactor pipeline time to

@@ -55,7 +55,7 @@ class WebSocketSubscriptionTest {
     @SuppressWarnings("java:S2925") // Poll loop for async subscription registration in integration test
     private void awaitSubscription(String tableName) throws InterruptedException {
         for (int i = 0; i < 50; i++) {
-            if (subscriptionService.hasSubscribers(tableName)) return;
+            if (subscriptionService.hasSubscribers(null, tableName)) return;
             Thread.sleep(100);
         }
         fail("Subscription for '" + tableName + "' not registered within 5 seconds");
@@ -159,7 +159,7 @@ class WebSocketSubscriptionTest {
                     "{\"customer_id\":99,\"first_name\":\"Test\",\"last_name\":\"User\"}",
                     System.currentTimeMillis()
             );
-            subscriptionService.publish(event);
+            subscriptionService.publish(null, event);
 
             // Expect "next" message
             String response = messages.poll(5, TimeUnit.SECONDS);
@@ -220,7 +220,7 @@ class WebSocketSubscriptionTest {
                     "INSERT", "test_schema", "customer",
                     "{\"customer_id\":100}", System.currentTimeMillis()
             );
-            subscriptionService.publish(event);
+            subscriptionService.publish(null, event);
 
             // Should not receive any message
             String response = messages.poll(1, TimeUnit.SECONDS);
@@ -260,7 +260,7 @@ class WebSocketSubscriptionTest {
             awaitSubscription("test_schema_orders");
 
             // Publish order event — only sub-orders should receive
-            subscriptionService.publish(new CDCEvent(
+            subscriptionService.publish(null, new CDCEvent(
                     "UPDATE", "test_schema", "orders",
                     "{\"order_id\":1}", System.currentTimeMillis()
             ));
@@ -297,7 +297,7 @@ class WebSocketSubscriptionTest {
             awaitSubscription("test_schema_order_items");
 
             // Publish event for order_items table
-            subscriptionService.publish(new CDCEvent(
+            subscriptionService.publish(null, new CDCEvent(
                     "DELETE", "test_schema", "order_items",
                     "{\"order_id\":1,\"product_id\":1}", System.currentTimeMillis()
             ));

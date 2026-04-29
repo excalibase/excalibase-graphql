@@ -31,11 +31,9 @@ public class DynamicRoutingDataSource extends AbstractRoutingDataSource {
     @Override
     protected DataSource determineTargetDataSource() {
         String tenantId = TenantContext.getTenantId();
-        if (tenantId != null && dataSourceManager != null) {
-            String[] parts = tenantId.split("/", 2);
-            if (parts.length == 2) {
-                return dataSourceManager.getDataSource(parts[0], parts[1]);
-            }
+        String orgSlug = TenantContext.getOrgSlug();
+        if (tenantId != null && orgSlug != null && dataSourceManager != null) {
+            return dataSourceManager.getDataSource(orgSlug, tenantId);
         }
         return super.determineTargetDataSource();
     }
@@ -45,7 +43,7 @@ public class DynamicRoutingDataSource extends AbstractRoutingDataSource {
         if (!hasDefaultTarget && TenantContext.getTenantId() == null) {
             throw new SQLException(
                 "No default datasource configured and no tenant context set. "
-                + "Provide spring.datasource.url or use a JWT with orgSlug/projectName claims.");
+                + "Provide spring.datasource.url or use a JWT with projectId claim.");
         }
         return super.getConnection();
     }

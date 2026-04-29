@@ -1,10 +1,12 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.config.datasource.TenantContext;
+import io.opentelemetry.api.trace.Span;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.MDC;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -41,9 +43,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (claims != null && claims.projectId() != null) {
             try {
                 TenantContext.setTenantId(claims.projectId());
+                TenantContext.setOrgSlug(claims.orgSlug());
+                MDC.put("tenant", claims.projectId());
+                MDC.put("org", claims.orgSlug());
+                MDC.put("project_name", claims.projectName() != null ? claims.projectName() : "");
+                MDC.put("org_name", claims.orgName() != null ? claims.orgName() : "");
+                Span.current().setAttribute("tenant.id", claims.projectId());
+                Span.current().setAttribute("org.slug", claims.orgSlug());
+                Span.current().setAttribute("project.name", claims.projectName() != null ? claims.projectName() : "");
+                Span.current().setAttribute("org.name", claims.orgName() != null ? claims.orgName() : "");
                 chain.doFilter(request, response);
             } finally {
                 TenantContext.clear();
+                MDC.remove("tenant");
+                MDC.remove("org");
+                MDC.remove("project_name");
+                MDC.remove("org_name");
             }
         } else {
             chain.doFilter(request, response);

@@ -226,7 +226,7 @@ class QueryExecutionServiceTest {
         when(rs.getString(1)).thenReturn("{\"users\":[{\"id\":1}]}");
 
         CompiledQuery compiled = new CompiledQuery("SELECT 1", Map.of(), null, null, false, null);
-        JwtClaims claims = new JwtClaims("42", "p1", "acme", "app", "admin", "u@e.com", null, 0L);
+        JwtClaims claims = new JwtClaims("42", "p1", "acme", "app", "Acme Inc", "admin", "u@e.com", null, 0L);
 
         ResponseEntity<Object> response = service.executeWithRlsContext(compiled, "42", claims);
 

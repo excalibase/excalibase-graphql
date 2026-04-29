@@ -40,6 +40,14 @@ public class NatsCDCService {
     @Value("${app.nats.subject-prefix:cdc}")
     private String subjectPrefix;
 
+    /**
+     * When true, the subject shape is {@code {prefix}.{tenantId}.{schema}.{table}} and the
+     * tenantId is parsed out of each event's subject. When false, subjects are the legacy
+     * single-tenant shape {@code {prefix}.{schema}.{table}} and events publish with null tenant.
+     */
+    @Value("${app.nats.tenant-in-subject:false}")
+    private boolean tenantInSubject;
+
     private Connection natsConnection;
     private JetStreamSubscription subscription;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -131,12 +139,36 @@ public class NatsCDCService {
             }
 
             if (event.table() != null && isDmlEvent(event)) {
-                subscriptionService.publish(event);
+                String tenantId = tenantInSubject ? parseTenantId(msg.getSubject(), event) : null;
+                subscriptionService.publish(tenantId, event);
             }
         } catch (Exception e) {
             log.error("Failed to process NATS CDC message: subject={}", msg.getSubject(), e);
             msg.ack(); // ack to avoid redelivery loop
         }
+    }
+
+    /**
+     * Extract tenantId from a CDC subject. The subject shape is
+     * {@code {prefix}.[tenantTokens...].{schema}.{table}}. Since schema and table are the
+     * last two tokens (watcher guarantee), everything between {@code prefix} and those two
+     * tokens is the tenant identifier. Returns {@code null} when no tenant segment is present.
+     */
+    String parseTenantId(String subject, CDCEvent event) {
+        if (subject == null || event == null) return null;
+        String head = subjectPrefix + ".";
+        if (!subject.startsWith(head)) {
+            return null;
+        }
+        String afterHead = subject.substring(head.length());
+        String schemaTable = event.schema() + "." + event.table();
+        if (!afterHead.endsWith(schemaTable)) {
+            return null;
+        }
+        String middle = afterHead.substring(0, afterHead.length() - schemaTable.length());
+        // middle is either "" (no tenant) or "{tenantTokens}."
+        if (middle.isEmpty()) return null;
+        return middle.endsWith(".") ? middle.substring(0, middle.length() - 1) : middle;
     }
 
     private boolean isDmlEvent(CDCEvent event) {
