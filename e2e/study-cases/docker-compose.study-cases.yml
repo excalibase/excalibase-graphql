@@ -11,6 +11,7 @@ services:
     volumes:
       - ./sql/init-shopify-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
       - ../../scripts/initdb-ecommerce.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+      - ./sql/init-shopify-rls.sql:/docker-entrypoint-initdb.d/03-rls.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d shopify_db"]
       interval: 5s
@@ -35,6 +36,7 @@ services:
     volumes:
       - ./sql/init-kanban-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
       - ../../scripts/initdb-kanban.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+      - ./sql/init-kanban-rls.sql:/docker-entrypoint-initdb.d/03-rls.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d kanban_db"]
       interval: 5s
@@ -125,6 +127,15 @@ services:
       APP_SECURITY_AUTH_JWKS_URL: http://sc-excalibase-auth:24000/.well-known/jwks.json
       APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: http://sc-mock-vault:8080/api
       APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT: test-pat
+
+      # Postgres role switching.
+      # JWT scope=public  → app_anon, scope=authenticated → app_authenticated,
+      # role=app_admin   → app_admin, scope=service → app_service (BYPASSRLS).
+      APP_SECURITY_POSTGRES_ROLE_SWITCHING_ANON_ROLE: app_anon
+      APP_SECURITY_POSTGRES_ROLE_SWITCHING_AUTHENTICATED_DEFAULT_ROLE: app_authenticated
+      APP_SECURITY_POSTGRES_ROLE_SWITCHING_SERVICE_ROLE: app_service
+      # Comma-separated list — Spring's relaxed binding splits this into List<String>.
+      APP_SECURITY_POSTGRES_ROLE_SWITCHING_ALLOWED_ROLES: app_admin
 
       APP_NATS_ENABLED: "false"
     ports:
