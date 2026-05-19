@@ -104,7 +104,7 @@ class MultiTenantIntegrationTest {
         tenantADb.getUsername(),
         tenantADb.getPassword()
     );
-    mockVault.createContext("/api/vault/secrets/projects/acme-corp/proj_appa12345/credentials/excalibase_app",
+    mockVault.createContext("/api/vault/secrets/projects/proj_appa12345/credentials/excalibase_app",
         exchange -> {
           byte[] body = tenantAJson.getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -121,7 +121,7 @@ class MultiTenantIntegrationTest {
         tenantBDb.getUsername(),
         tenantBDb.getPassword()
     );
-    mockVault.createContext("/api/vault/secrets/projects/beta-inc/proj_appb12345/credentials/excalibase_app",
+    mockVault.createContext("/api/vault/secrets/projects/proj_appb12345/credentials/excalibase_app",
         exchange -> {
           byte[] body = tenantBJson.getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().set("Content-Type", "application/json");

@@ -16,7 +16,9 @@ public class VaultCredentialService {
   private static final Logger log = LoggerFactory.getLogger(VaultCredentialService.class);
   private static final ObjectMapper mapper = new ObjectMapper();
   private static final Duration TIMEOUT = Duration.ofSeconds(10);
-  private static final Pattern SLUG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}$");
+  // One or two segments of [A-Za-z0-9_-], each 1-64 chars, separated by '/'.
+  // Bounded length, no '.'/'..' — safe to interpolate into the vault path.
+  private static final Pattern SLUG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}(/[a-zA-Z0-9_-]{1,64})?$");
 
   private final String provisioningUrl;
   private final String provisioningPat;
@@ -31,17 +33,13 @@ public class VaultCredentialService {
   }
 
   /**
-   * Fetch tenant DB credentials from the provisioner's vault.
-   *
-   * <p>{@code projectId} is the opaque {@code proj_XXXXXXXXXX} ref minted by the
-   * provisioner (also accepts any slug-form value matching {@link #SLUG_PATTERN}).
-   * Path shape: {@code /vault/secrets/projects/{orgSlug}/{projectId}/credentials/excalibase_app}.
+   * Fetch tenant DB credentials from the provisioner's vault by {@code projectId}.
+   * {@code orgSlug} is accepted for logging only and is not part of the vault path.
    */
   public VaultCredentials fetchCredentials(String orgSlug, String projectId) {
-    validateSlug(orgSlug, "orgSlug");
     validateSlug(projectId, "projectId");
     String url = provisioningUrl + "/vault/secrets/projects/"
-        + orgSlug + "/" + projectId + "/credentials/excalibase_app";
+        + projectId + "/credentials/excalibase_app";
     try {
       HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
           .uri(URI.create(url))

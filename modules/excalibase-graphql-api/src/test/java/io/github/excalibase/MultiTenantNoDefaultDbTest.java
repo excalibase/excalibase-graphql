@@ -88,7 +88,7 @@ class MultiTenantNoDefaultDbTest {
         tenantDb.getDatabaseName(),
         tenantDb.getUsername(),
         tenantDb.getPassword());
-    mockVault.createContext("/api/vault/secrets/projects/acme-corp/proj_appa12345/credentials/excalibase_app",
+    mockVault.createContext("/api/vault/secrets/projects/proj_appa12345/credentials/excalibase_app",
         exchange -> {
           byte[] body = credsJson.getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().set("Content-Type", "application/json");
