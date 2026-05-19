@@ -22,7 +22,7 @@ import java.util.List;
  * Routes WebSocket upgrade requests:
  * <ul>
  *     <li>{@code /graphql} → {@link GraphQLWebSocketHandler} (CDC subscriptions)</li>
- *     <li>{@code /api/v1/realtime} → {@link RealtimeWebSocketHandler} (NoSQL realtime)</li>
+ *     <li>{@code /api/v1/realtime} → {@link RealtimeWebSocketHandler} (REST CDC stream)</li>
  * </ul>
  * Normal POST /graphql passes through to the REST controller (not an Upgrade request).
  *

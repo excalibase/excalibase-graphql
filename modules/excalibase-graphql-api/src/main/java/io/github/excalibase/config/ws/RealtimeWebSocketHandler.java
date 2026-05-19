@@ -27,22 +27,19 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Unified realtime WebSocket endpoint for REST tables and NoSQL collections.
- * Lightweight JSON protocol — no GraphQL parsing needed.
+ * Realtime WebSocket endpoint for REST tables. Lightweight JSON protocol — no
+ * GraphQL parsing needed.
  *
  * <p>Protocol:
  * <pre>
- * client → {"type":"subscribe","id":"s1","source":"rest"|"nosql","collection":"...","filter":{...},"schema":"..."}
+ * client → {"type":"subscribe","id":"s1","collection":"...","filter":{...},"schema":"..."}
  * server → {"type":"next","id":"s1","op":"insert"|"update"|"delete","doc":{...}}
  * client → {"type":"complete","id":"s1"}
  * server → {"type":"error","id":"s1","message":"..."}
  * </pre>
  *
- * <p>Subscription key mapping:
- * <ul>
- *   <li>{@code source=="nosql"} → key {@code "nosql_{collection}"}</li>
- *   <li>{@code source=="rest"}  → key {@code "{schema|public}_{collection}"}</li>
- * </ul>
+ * <p>Subscription key is {@code "{schema|public}_{collection}"}, matching the
+ * sink key {@link SubscriptionService} publishes under.
  *
  * <p>Filter matching (v1): equality on a single top-level field. Empty/null
  * filter means "all events for this collection".
@@ -108,25 +105,16 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     @SuppressWarnings("unchecked")
     private void handleSubscribe(WebSocketSession session, Map<String, Object> msg) {
         String id = (String) msg.get("id");
-        String source = (String) msg.get("source");
         String collection = (String) msg.get("collection");
         String schema = (String) msg.getOrDefault("schema", null);
         Map<String, Object> filter = (Map<String, Object>) msg.getOrDefault("filter", Map.of());
 
-        if (id == null || source == null || collection == null) {
-            sendError(session, id, "subscribe requires id, source, collection");
+        if (id == null || collection == null) {
+            sendError(session, id, "subscribe requires id and collection");
             return;
         }
 
-        String key = switch (source) {
-            case "nosql" -> "nosql_" + collection;
-            case "rest" -> (schema == null ? "public" : schema) + "_" + collection;
-            default -> null;
-        };
-        if (key == null) {
-            sendError(session, id, "source must be 'rest' or 'nosql'");
-            return;
-        }
+        String key = (schema == null ? "public" : schema) + "_" + collection;
 
         Map<String, Disposable> sessionSubs = sessionSubscriptions.get(session.getId());
         if (sessionSubs == null) {
@@ -160,7 +148,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
      * Optional authentication handshake, mirroring GraphQLWebSocketHandler. If
      * {@link JwtHandshakeInterceptor} already authenticated via HTTP Authorization
      * header, this is a no-op. Otherwise the client may pass the JWT in
-     * {@code payload.Authorization} (Hasura/Apollo convention).
+     * {@code payload.Authorization}.
      */
     @SuppressWarnings("unchecked")
     private void handleConnectionInit(WebSocketSession session, Map<String, Object> msg) {
