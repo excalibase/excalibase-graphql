@@ -3,6 +3,7 @@ package io.github.excalibase.config;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
+import io.github.excalibase.security.PostgresRoleResolver;
 import io.github.excalibase.service.VaultCredentialService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -46,8 +47,8 @@ public class JwtSecurityConfig {
     }
 
     @Bean
-    public JwtAuthFilter jwtAuthFilter(JwtService jwtService) {
-        return new JwtAuthFilter(jwtService);
+    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver) {
+        return new JwtAuthFilter(jwtService, roleResolver);
     }
 
     // Multi-tenant beans — only when provisioning-url is configured

@@ -9,6 +9,7 @@ import io.github.excalibase.rest.parser.SelectParser;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaProvider;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.RoleContext;
 import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Pattern;
@@ -43,6 +44,7 @@ public class RestApiController {
     private static final String RLS_USER_ID = "request.user_id";
     private static final String RLS_PROJECT_ID = "request.project_id";
     private static final String RLS_SET_CONFIG = "SELECT set_config(:key, :val, true)";
+    private static final java.util.regex.Pattern SAFE_PG_ROLE = java.util.regex.Pattern.compile("^[A-Za-z_][A-Za-z0-9_]{0,62}$");
     private static final String KEY_ERROR = "error";
     private static final String PREFER_TX_ROLLBACK = "tx=rollback";
     private static final String HDR_PREFERENCE_APPLIED = "Preference-Applied";
@@ -317,10 +319,19 @@ public class RestApiController {
     }
 
     private void setRlsContext(JwtClaims claims) {
-        if (claims == null) return;
-        namedJdbc.queryForObject(RLS_SET_CONFIG, Map.of("key", RLS_USER_ID, "val", String.valueOf(claims.userId())), String.class);
-        if (claims.projectId() != null) {
-            namedJdbc.queryForObject(RLS_SET_CONFIG, Map.of("key", RLS_PROJECT_ID, "val", claims.projectId()), String.class);
+        if (claims != null) {
+            namedJdbc.queryForObject(RLS_SET_CONFIG, Map.of("key", RLS_USER_ID, "val", String.valueOf(claims.userId())), String.class);
+            if (claims.projectId() != null) {
+                namedJdbc.queryForObject(RLS_SET_CONFIG, Map.of("key", RLS_PROJECT_ID, "val", claims.projectId()), String.class);
+            }
+        }
+        // Postgres role switching — populated by JwtAuthFilter via RoleContext
+        // ThreadLocal. The string was already validated by PostgresRoleResolver
+        // before being stored, but we re-check here as defense-in-depth because
+        // SET ROLE cannot use parameter placeholders.
+        String pgRole = RoleContext.getRole();
+        if (pgRole != null && SAFE_PG_ROLE.matcher(pgRole).matches()) {
+            namedJdbc.getJdbcOperations().execute("SET LOCAL ROLE \"" + pgRole + "\""); // NOSONAR — role validated against SAFE_PG_ROLE above
         }
     }
 

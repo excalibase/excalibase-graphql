@@ -16,9 +16,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     public static final String JWT_CLAIMS_ATTR = SecurityConstants.JWT_CLAIMS_ATTR;
 
     private final JwtService jwtService;
+    private final PostgresRoleResolver roleResolver;
 
-    public JwtAuthFilter(JwtService jwtService) {
+    public JwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver) {
         this.jwtService = jwtService;
+        this.roleResolver = roleResolver;
     }
 
     @Override
@@ -40,8 +42,26 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             }
         }
 
-        if (claims != null && claims.projectId() != null) {
-            try {
+        // Resolve Postgres role once per request — single source of truth, exposed
+        // to both GraphQL and REST controllers via RoleContext (starter ThreadLocal).
+        // RoleNotAllowedException is converted to a 403 here so it surfaces uniformly
+        // for filter-based REST traffic (which @RestControllerAdvice can't reach).
+        String resolvedRole;
+        try {
+            resolvedRole = roleResolver != null ? roleResolver.resolve(claims) : null;
+        } catch (RoleNotAllowedException ex) {
+            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+            response.setContentType("application/json");
+            response.getWriter().write(
+                    "{\"errors\":[{\"message\":\"" + escape(ex.getMessage()) + "\"}]}");
+            return;
+        }
+        if (resolvedRole != null) {
+            RoleContext.setRole(resolvedRole);
+        }
+
+        try {
+            if (claims != null && claims.projectId() != null) {
                 TenantContext.setTenantId(claims.projectId());
                 TenantContext.setOrgSlug(claims.orgSlug());
                 MDC.put("tenant", claims.projectId());
@@ -52,16 +72,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                 Span.current().setAttribute("org.slug", claims.orgSlug());
                 Span.current().setAttribute("project.name", claims.projectName() != null ? claims.projectName() : "");
                 Span.current().setAttribute("org.name", claims.orgName() != null ? claims.orgName() : "");
-                chain.doFilter(request, response);
-            } finally {
+            }
+            chain.doFilter(request, response);
+        } finally {
+            RoleContext.clear();
+            if (claims != null && claims.projectId() != null) {
                 TenantContext.clear();
                 MDC.remove("tenant");
                 MDC.remove("org");
                 MDC.remove("project_name");
                 MDC.remove("org_name");
             }
-        } else {
-            chain.doFilter(request, response);
         }
+    }
+
+    private static String escape(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

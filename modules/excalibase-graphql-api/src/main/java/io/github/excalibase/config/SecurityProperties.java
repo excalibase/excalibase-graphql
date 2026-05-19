@@ -2,6 +2,8 @@ package io.github.excalibase.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+import java.util.List;
+
 /**
  * Security configuration for excalibase-graphql.
  *
@@ -24,12 +26,21 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *   multi-tenant:
  *     provisioning-url: http://provisioning:24005/api
  *     provisioning-pat: ${PROVISIONING_PAT}
+ *
+ * Postgres role switching (opt-in, Postgres-only):
+ *   postgres:
+ *     role-switching:
+ *       anon-role: app_anon
+ *       authenticated-default-role: app_authenticated
+ *       service-role: app_service
+ *       allowed-roles: [app_admin, app_analytics]
  */
 @ConfigurationProperties(prefix = "app.security")
 public record SecurityProperties(
         boolean jwtEnabled,
         Auth auth,
-        MultiTenant multiTenant
+        MultiTenant multiTenant,
+        Postgres postgres
 ) {
 
     public record Auth(
@@ -52,6 +63,33 @@ public record SecurityProperties(
     ) {
         public boolean isConfigured() {
             return provisioningUrl != null && !provisioningUrl.isBlank();
+        }
+    }
+
+    /**
+     * Postgres-specific extensions. Currently only role switching — Postgres-only because
+     * MySQL/MongoDB have no equivalent of {@code SET LOCAL ROLE}.
+     */
+    public record Postgres(
+            RoleSwitching roleSwitching
+    ) {
+        /**
+         * Maps the JWT {@code scope} claim (and optional {@code role} claim) to a Postgres
+         * role that becomes the {@code current_user} for the request via {@code SET LOCAL ROLE}.
+         *
+         * <p>Feature is enabled iff {@link #anonRole()} is non-blank — presence-driven, no
+         * separate boolean flag. When disabled the resolver returns {@code null} and the
+         * data plane skips the role-switch step entirely.
+         */
+        public record RoleSwitching(
+                String anonRole,
+                String authenticatedDefaultRole,
+                String serviceRole,
+                List<String> allowedRoles
+        ) {
+            public boolean isEnabled() {
+                return anonRole != null && !anonRole.isBlank();
+            }
         }
     }
 

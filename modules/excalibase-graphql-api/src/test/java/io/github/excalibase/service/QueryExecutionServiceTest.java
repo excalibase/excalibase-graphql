@@ -47,7 +47,9 @@ class QueryExecutionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new QueryExecutionService(namedJdbc, dataSource, objectMapper);
+        service = new QueryExecutionService(namedJdbc, dataSource, objectMapper,
+                new io.github.excalibase.security.PostgresRoleResolver(
+                        (io.github.excalibase.config.SecurityProperties) null));
     }
 
     private CompiledQuery selectQuery(String sql) {
