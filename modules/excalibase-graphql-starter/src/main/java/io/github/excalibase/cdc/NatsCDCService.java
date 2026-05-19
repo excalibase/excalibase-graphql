@@ -59,7 +59,7 @@ public class NatsCDCService {
 
     /**
      * Add a callback to be invoked when a DDL event is received (for schema reload).
-     * Multiple callbacks are supported (e.g., GraphqlSchemaManager + CollectionSchemaManager).
+     * Multiple callbacks are supported.
      */
     public void setSchemaReloadCallback(Runnable callback) {
         this.schemaReloadCallbacks.add(callback);
