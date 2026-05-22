@@ -181,7 +181,7 @@ services:
     restart: "no"
 
   watcher-tenant-a:
-    image: excalibase/excalibase-watcher-go:local
+    image: excalibase/excalibase-watcher-go:latest
     container_name: mt-watcher-a
     command: ["--config", "/config/config.yaml"]
     environment:
@@ -203,7 +203,7 @@ services:
       - multi-tenant-network
 
   watcher-tenant-b:
-    image: excalibase/excalibase-watcher-go:local
+    image: excalibase/excalibase-watcher-go:latest
     container_name: mt-watcher-b
     command: ["--config", "/config/config.yaml"]
     environment:

@@ -154,7 +154,7 @@ services:
     restart: "no"
 
   excalibase-watcher:
-    image: excalibase/excalibase-watcher-go:local
+    image: excalibase/excalibase-watcher-go:latest
     container_name: excalibase-watcher
     command: ["--config", "/config/config.yaml"]
     environment:
