@@ -28,7 +28,7 @@ class PostgresRoleSwitchingAdviceTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> errors = (List<Map<String, Object>>) body.get("errors");
         assertThat(errors).hasSize(1);
-        assertThat(errors.getFirst().get("message")).isEqualTo("role 'hacker' not allowed");
+        assertThat(errors.getFirst()).containsEntry("message", "role 'hacker' not allowed");
     }
 
     @Test
@@ -42,7 +42,7 @@ class PostgresRoleSwitchingAdviceTest {
         Map<String, Object> body = (Map<String, Object>) response.getBody();
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> errors = (List<Map<String, Object>>) body.get("errors");
-        assertThat(errors.getFirst().get("message"))
-                .isEqualTo("Invalid role: must match [a-zA-Z_][a-zA-Z0-9_]*");
+        assertThat(errors.getFirst())
+                .containsEntry("message", "Invalid role: must match [a-zA-Z_][a-zA-Z0-9_]*");
     }
 }

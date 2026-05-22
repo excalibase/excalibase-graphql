@@ -26,20 +26,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        String authHeader = request.getHeader("Authorization");
-
-        JwtClaims claims = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            try {
-                claims = jwtService.verify(token);
-                request.setAttribute(JWT_CLAIMS_ATTR, claims);
-            } catch (JwtVerificationException _) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.setContentType("application/json");
-                response.getWriter().write("{\"errors\":[{\"message\":\"Invalid or expired token\"}]}");
-                return;
-            }
+        JwtClaims claims;
+        try {
+            claims = verifyClaims(request);
+        } catch (JwtVerificationException _) {
+            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired token");
+            return;
         }
 
         // Resolve Postgres role once per request — single source of truth, exposed
@@ -50,10 +42,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         try {
             resolvedRole = roleResolver != null ? roleResolver.resolve(claims) : null;
         } catch (RoleNotAllowedException ex) {
-            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
-            response.setContentType("application/json");
-            response.getWriter().write(
-                    "{\"errors\":[{\"message\":\"" + escape(ex.getMessage()) + "\"}]}");
+            writeError(response, HttpServletResponse.SC_FORBIDDEN, ex.getMessage());
             return;
         }
         if (resolvedRole != null) {
@@ -61,29 +50,61 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         }
 
         try {
-            if (claims != null && claims.projectId() != null) {
-                TenantContext.setTenantId(claims.projectId());
-                TenantContext.setOrgSlug(claims.orgSlug());
-                MDC.put("tenant", claims.projectId());
-                MDC.put("org", claims.orgSlug());
-                MDC.put("project_name", claims.projectName() != null ? claims.projectName() : "");
-                MDC.put("org_name", claims.orgName() != null ? claims.orgName() : "");
-                Span.current().setAttribute("tenant.id", claims.projectId());
-                Span.current().setAttribute("org.slug", claims.orgSlug());
-                Span.current().setAttribute("project.name", claims.projectName() != null ? claims.projectName() : "");
-                Span.current().setAttribute("org.name", claims.orgName() != null ? claims.orgName() : "");
-            }
+            applyTenantContext(claims);
             chain.doFilter(request, response);
         } finally {
             RoleContext.clear();
-            if (claims != null && claims.projectId() != null) {
-                TenantContext.clear();
-                MDC.remove("tenant");
-                MDC.remove("org");
-                MDC.remove("project_name");
-                MDC.remove("org_name");
-            }
+            clearTenantContext(claims);
         }
+    }
+
+    private JwtClaims verifyClaims(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return null;
+        }
+        JwtClaims claims = jwtService.verify(authHeader.substring(7));
+        request.setAttribute(JWT_CLAIMS_ATTR, claims);
+        return claims;
+    }
+
+    private static void applyTenantContext(JwtClaims claims) {
+        if (claims == null || claims.projectId() == null) {
+            return;
+        }
+        TenantContext.setTenantId(claims.projectId());
+        TenantContext.setOrgSlug(claims.orgSlug());
+        MDC.put("tenant", claims.projectId());
+        MDC.put("org", claims.orgSlug());
+        MDC.put("project_name", orEmpty(claims.projectName()));
+        MDC.put("org_name", orEmpty(claims.orgName()));
+        Span span = Span.current();
+        span.setAttribute("tenant.id", claims.projectId());
+        span.setAttribute("org.slug", claims.orgSlug());
+        span.setAttribute("project.name", orEmpty(claims.projectName()));
+        span.setAttribute("org.name", orEmpty(claims.orgName()));
+    }
+
+    private static void clearTenantContext(JwtClaims claims) {
+        if (claims == null || claims.projectId() == null) {
+            return;
+        }
+        TenantContext.clear();
+        MDC.remove("tenant");
+        MDC.remove("org");
+        MDC.remove("project_name");
+        MDC.remove("org_name");
+    }
+
+    private static void writeError(HttpServletResponse response, int status, String message)
+            throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"errors\":[{\"message\":\"" + escape(message) + "\"}]}");
+    }
+
+    private static String orEmpty(String s) {
+        return s != null ? s : "";
     }
 
     private static String escape(String s) {

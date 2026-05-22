@@ -106,7 +106,8 @@ class PostgresRoleResolverTest {
     @Test
     void resolve_authenticatedScope_roleNotInAllowlist_throws() {
         var resolver = new PostgresRoleResolver(enabled());
-        assertThatThrownBy(() -> resolver.resolve(claims("authenticated", "hacker")))
+        var claims = claims("authenticated", "hacker");
+        assertThatThrownBy(() -> resolver.resolve(claims))
                 .isInstanceOf(RoleNotAllowedException.class)
                 .hasMessageContaining("hacker");
     }
@@ -117,7 +118,8 @@ class PostgresRoleResolverTest {
         // user role still works (mapped to default)
         assertThat(resolver.resolve(claims("authenticated", "user"))).isEqualTo("app_authenticated");
         // but non-default custom role is rejected
-        assertThatThrownBy(() -> resolver.resolve(claims("authenticated", "app_admin")))
+        var customRoleClaims = claims("authenticated", "app_admin");
+        assertThatThrownBy(() -> resolver.resolve(customRoleClaims))
                 .isInstanceOf(RoleNotAllowedException.class);
     }
 
@@ -128,14 +130,16 @@ class PostgresRoleResolverTest {
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "app_anon", "app_authenticated", "app_service", null)));
         var resolver = new PostgresRoleResolver(properties);
-        assertThatThrownBy(() -> resolver.resolve(claims("authenticated", "app_admin")))
+        var customRoleClaims = claims("authenticated", "app_admin");
+        assertThatThrownBy(() -> resolver.resolve(customRoleClaims))
                 .isInstanceOf(RoleNotAllowedException.class);
     }
 
     @Test
     void resolve_unknownScope_throws() {
         var resolver = new PostgresRoleResolver(enabled());
-        assertThatThrownBy(() -> resolver.resolve(claims("hacker_scope", "user")))
+        var claims = claims("hacker_scope", "user");
+        assertThatThrownBy(() -> resolver.resolve(claims))
                 .isInstanceOf(RoleNotAllowedException.class)
                 .hasMessageContaining("scope");
     }
@@ -144,7 +148,8 @@ class PostgresRoleResolverTest {
     void resolve_apiKeyScope_throws() {
         // Legacy "api-key" scope (pre-publishable/secret split) — explicit reject, fail-closed.
         var resolver = new PostgresRoleResolver(enabled());
-        assertThatThrownBy(() -> resolver.resolve(claims("api-key", "user")))
+        var claims = claims("api-key", "user");
+        assertThatThrownBy(() -> resolver.resolve(claims))
                 .isInstanceOf(RoleNotAllowedException.class);
     }
 
@@ -164,7 +169,8 @@ class PostgresRoleResolverTest {
                                 "app_service",
                                 List.of())));
         var resolver = new PostgresRoleResolver(properties);
-        assertThatThrownBy(() -> resolver.resolve(claims("public", "user")))
+        var claims = claims("public", "user");
+        assertThatThrownBy(() -> resolver.resolve(claims))
                 .isInstanceOf(RoleNotAllowedException.class);
     }
 
@@ -178,7 +184,8 @@ class PostgresRoleResolverTest {
                                 "app_service",
                                 List.of())));
         var resolver = new PostgresRoleResolver(properties);
-        assertThatThrownBy(() -> resolver.resolve(claims("authenticated", "user")))
+        var claims = claims("authenticated", "user");
+        assertThatThrownBy(() -> resolver.resolve(claims))
                 .isInstanceOf(RoleNotAllowedException.class);
     }
 
@@ -192,7 +199,8 @@ class PostgresRoleResolverTest {
                                 "  ",  // blank → config error when service scope arrives
                                 List.of())));
         var resolver = new PostgresRoleResolver(properties);
-        assertThatThrownBy(() -> resolver.resolve(claims("service", "user")))
+        var claims = claims("service", "user");
+        assertThatThrownBy(() -> resolver.resolve(claims))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("service-role");
     }
@@ -207,7 +215,8 @@ class PostgresRoleResolverTest {
                                 "app_service",
                                 List.of())));
         var resolver = new PostgresRoleResolver(properties);
-        assertThatThrownBy(() -> resolver.resolve(claims("authenticated", "user")))
+        var claims = claims("authenticated", "user");
+        assertThatThrownBy(() -> resolver.resolve(claims))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("authenticated-default-role");
     }
@@ -224,7 +233,8 @@ class PostgresRoleResolverTest {
                                 "app_service",
                                 List.of("app_admin; --"))));
         var resolver = new PostgresRoleResolver(properties);
-        assertThatThrownBy(() -> resolver.resolve(claims("authenticated", "app_admin; --")))
+        var claims = claims("authenticated", "app_admin; --");
+        assertThatThrownBy(() -> resolver.resolve(claims))
                 .isInstanceOf(RoleNotAllowedException.class);
     }
 

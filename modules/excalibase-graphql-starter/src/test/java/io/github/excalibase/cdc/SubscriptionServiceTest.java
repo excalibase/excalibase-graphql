@@ -5,12 +5,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import reactor.core.Disposable;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.BooleanSupplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.fail;
+import static org.awaitility.Awaitility.await;
 
 class SubscriptionServiceTest {
 
@@ -73,8 +74,9 @@ class SubscriptionServiceTest {
             CDCEvent event = new CDCEvent("INSERT", "public", "customer", "{\"id\":1}", 1L);
             service.publish("tenant-a", event);
 
-            sleep(200);
-            assertThat(nullTenantReceived).isEmpty();
+            await().during(Duration.ofMillis(200))
+                    .atMost(Duration.ofMillis(500))
+                    .untilAsserted(() -> assertThat(nullTenantReceived).isEmpty());
         } finally {
             d.dispose();
         }
@@ -95,19 +97,6 @@ class SubscriptionServiceTest {
     }
 
     private static void awaitTrue(BooleanSupplier cond) {
-        long deadline = System.currentTimeMillis() + 2000;
-        while (System.currentTimeMillis() < deadline) {
-            if (cond.getAsBoolean()) return;
-            sleep(20);
-        }
-        fail("Condition not met within 2 seconds");
-    }
-
-    private static void sleep(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        await().atMost(Duration.ofSeconds(2)).until(cond::getAsBoolean);
     }
 }

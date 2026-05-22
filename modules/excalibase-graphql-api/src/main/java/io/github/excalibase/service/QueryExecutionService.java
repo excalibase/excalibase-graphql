@@ -153,10 +153,7 @@ public class QueryExecutionService {
                 conn.commit();
                 return result;
 
-            } catch (SQLException | JsonProcessingException e) {
-                conn.rollback();
-                throw e;
-            } catch (RuntimeException e) {
+            } catch (SQLException | JsonProcessingException | RuntimeException e) {
                 conn.rollback();
                 throw e;
             } finally {

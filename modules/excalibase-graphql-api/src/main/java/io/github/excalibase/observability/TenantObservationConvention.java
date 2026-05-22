@@ -42,24 +42,32 @@ public class TenantObservationConvention extends DefaultServerRequestObservation
         String orgSlug = TenantContext.getOrgSlug();
         String projectName = null;
         String orgName = null;
-        if (context != null) {
-            HttpServletRequest req = context.getCarrier();
-            if (req != null) {
-                Object attr = req.getAttribute(SecurityConstants.JWT_CLAIMS_ATTR);
-                if (attr instanceof JwtClaims claims) {
-                    if (tenantId == null) {
-                        tenantId = claims.projectId();
-                        orgSlug = claims.orgSlug();
-                    }
-                    projectName = claims.projectName();
-                    orgName = claims.orgName();
-                }
+        JwtClaims claims = claimsFrom(context);
+        if (claims != null) {
+            if (tenantId == null) {
+                tenantId = claims.projectId();
+                orgSlug = claims.orgSlug();
             }
+            projectName = claims.projectName();
+            orgName = claims.orgName();
         }
         return super.getLowCardinalityKeyValues(context)
-                .and(KeyValue.of(TENANT_ID_KEY, tenantId != null ? tenantId : NONE))
-                .and(KeyValue.of(ORG_SLUG_KEY, orgSlug != null ? orgSlug : NONE))
-                .and(KeyValue.of(PROJECT_NAME_KEY, projectName != null && !projectName.isEmpty() ? projectName : NONE))
-                .and(KeyValue.of(ORG_NAME_KEY, orgName != null && !orgName.isEmpty() ? orgName : NONE));
+                .and(KeyValue.of(TENANT_ID_KEY, orNone(tenantId)))
+                .and(KeyValue.of(ORG_SLUG_KEY, orNone(orgSlug)))
+                .and(KeyValue.of(PROJECT_NAME_KEY, orNone(projectName)))
+                .and(KeyValue.of(ORG_NAME_KEY, orNone(orgName)));
+    }
+
+    private static JwtClaims claimsFrom(ServerRequestObservationContext context) {
+        HttpServletRequest req = context.getCarrier();
+        if (req == null) {
+            return null;
+        }
+        Object attr = req.getAttribute(SecurityConstants.JWT_CLAIMS_ATTR);
+        return attr instanceof JwtClaims claims ? claims : null;
+    }
+
+    private static String orNone(String value) {
+        return value != null && !value.isEmpty() ? value : NONE;
     }
 }

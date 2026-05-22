@@ -203,9 +203,7 @@ class NatsCDCServiceTest {
 
         invokeHandleMessage(msg);
 
-        verify(subscriptionService).publish(
-                org.mockito.ArgumentMatchers.eq("proj_abc123"),
-                org.mockito.ArgumentMatchers.eq(event));
+        verify(subscriptionService).publish("proj_abc123", event);
     }
 
     @Test
@@ -219,9 +217,7 @@ class NatsCDCServiceTest {
 
         invokeHandleMessage(msg);
 
-        verify(subscriptionService).publish(
-                org.mockito.ArgumentMatchers.eq("acme-corp.app-a"),
-                org.mockito.ArgumentMatchers.eq(event));
+        verify(subscriptionService).publish("acme-corp.app-a", event);
     }
 
     @Test

@@ -2,7 +2,6 @@ package io.github.excalibase.security;
 
 import io.github.excalibase.config.SecurityProperties;
 import jakarta.servlet.FilterChain;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,8 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -193,7 +190,7 @@ class JwtAuthFilterRoleContextTest {
 
         try {
             filter.doFilter(request, response, throwingChain);
-        } catch (RuntimeException ignored) {
+        } catch (RuntimeException _) {
             // expected
         }
 
