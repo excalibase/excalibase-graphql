@@ -615,18 +615,20 @@ benchmark-db-stats: ## Show enterprise benchmark database statistics
 .PHONY: docker-compose.yml scripts/initdb.sql scripts/docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh
 
 # ─── Demo apps ───────────────────────────────────────────────────────────────
-# UIs live in the SDK repo (excalibase-sdk-js) under examples/ — the schema,
-# RLS policies, docker stack, and JWT signing key live here.
+# UIs live in the SDK repo (excalibase-sdk-js) under examples/. The RLS demo
+# stack (kanban + shopify with row-level security + role switching) lives in
+# e2e/rls-demo/ — separate from the RLS-free jest e2e stack in e2e/study-cases/.
 # Default sibling layout: ../excalibase-sdk-js relative to this repo.
-DEMO_COMPOSE = e2e/study-cases/docker-compose.study-cases.yml
+DEMO_COMPOSE = e2e/rls-demo/docker-compose.rls-demo.yml
+DEMO_PROJECT = excalibase-rls-demo
 JIRA_DIR ?= ../excalibase-sdk-js/examples/jira-board
 SHOP_DIR ?= ../excalibase-sdk-js/examples/storefront
 
 .PHONY: demo-up demo-down demo-jira demo-jira-tokens demo-jira-build demo-shop demo-shop-tokens demo-shop-build
 
-demo-up: ## Bring up the study-cases stack (postgres + auth + graphql, all schemas)
-	@echo "$(BLUE)Starting study-cases stack…$(NC)"
-	@docker compose -f $(DEMO_COMPOSE) up -d sc-mock-vault sc-shopify-postgres sc-kanban-postgres sc-excalibase-auth sc-excalibase-app
+demo-up: ## Bring up the RLS demo stack (kanban + shopify with RLS + role switching)
+	@echo "$(BLUE)Starting RLS demo stack…$(NC)"
+	@docker compose -f $(DEMO_COMPOSE) -p $(DEMO_PROJECT) up -d
 	@echo "$(GREEN)Stack up. Waiting for excalibase-graphql healthcheck…$(NC)"
 	@for i in $$(seq 1 30); do \
 		if curl -sf http://localhost:10004/actuator/health > /dev/null 2>&1; then \
@@ -634,8 +636,8 @@ demo-up: ## Bring up the study-cases stack (postgres + auth + graphql, all schem
 		fi; sleep 2; \
 	done; echo "$(RED)graphql never became ready$(NC)"; exit 1
 
-demo-down: ## Stop the study-cases stack
-	@docker compose -f $(DEMO_COMPOSE) down
+demo-down: ## Stop the RLS demo stack
+	@docker compose -f $(DEMO_COMPOSE) -p $(DEMO_PROJECT) down
 
 # ─── Jira-board (kanban schema, role switching) ──────────────────────────────
 demo-jira-tokens: ## Sign jira-board demo JWTs (run once after demo-up)

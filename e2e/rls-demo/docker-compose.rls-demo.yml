@@ -1,0 +1,144 @@
+# RLS demo stack — kanban + shopify with row-level security and role switching.
+#
+# Separate from e2e/study-cases (the RLS-free jest e2e stack). This stack adds
+# the init-*-rls.sql policies and turns on Postgres role switching so the
+# jira-board / storefront demo UIs exercise anon / authenticated / admin /
+# service identities against real RLS.
+#
+# Base schema + users init scripts and the wiremock vault stubs are shared
+# with e2e/study-cases via relative paths — only the RLS layer lives here.
+services:
+  rls-shopify-postgres:
+    image: postgres:16-alpine
+    container_name: rls-shopify-postgres
+    environment:
+      POSTGRES_DB: shopify_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5460:5432"
+    volumes:
+      - ../study-cases/sql/init-shopify-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
+      - ../../scripts/initdb-ecommerce.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+      - ./sql/init-shopify-rls.sql:/docker-entrypoint-initdb.d/03-rls.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shopify_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - rls-demo-network
+
+  rls-kanban-postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rls-kanban-postgres
+    environment:
+      POSTGRES_DB: kanban_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5461:5432"
+    volumes:
+      - ../study-cases/sql/init-kanban-users.sql:/docker-entrypoint-initdb.d/01-users.sql:ro
+      - ../../scripts/initdb-kanban.sql:/docker-entrypoint-initdb.d/02-schema.sql:ro
+      - ./sql/init-kanban-rls.sql:/docker-entrypoint-initdb.d/03-rls.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kanban_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - rls-demo-network
+
+  rls-mock-vault:
+    image: wiremock/wiremock:3.10.0
+    container_name: rls-mock-vault
+    volumes:
+      - ../study-cases/wiremock:/home/wiremock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/__admin/mappings"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - rls-demo-network
+
+  rls-excalibase-auth:
+    image: excalibase/excalibase-auth
+    container_name: rls-excalibase-auth
+    environment:
+      PROVISIONING_URL: http://rls-mock-vault:8080/api
+      PROVISIONING_PAT: test-pat
+      PORT: "24000"
+    ports:
+      - "24006:24000"
+    depends_on:
+      rls-shopify-postgres:
+        condition: service_healthy
+      rls-kanban-postgres:
+        condition: service_healthy
+      rls-mock-vault:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:24000/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks:
+      - rls-demo-network
+
+  rls-excalibase-app:
+    image: excalibase/excalibase-graphql
+    container_name: rls-excalibase-graphql
+    environment:
+      SPRING_DATASOURCE_URL: ""
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
+      SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 5
+      SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: 1
+      SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: 10000
+      SPRING_THREADS_VIRTUAL_ENABLED: "true"
+
+      SERVER_PORT: 10000
+      APP_SCHEMAS: shopify,kanban
+      APP_DATABASE_TYPE: postgres
+      APP_MAX_ROWS: 30
+
+      APP_SECURITY_JWT_ENABLED: "true"
+      APP_SECURITY_AUTH_JWKS_URL: http://rls-excalibase-auth:24000/.well-known/jwks.json
+      APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: http://rls-mock-vault:8080/api
+      APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT: test-pat
+
+      # Postgres role switching.
+      # JWT scope=public → app_anon, scope=authenticated → app_authenticated,
+      # role=app_admin → app_admin, scope=service → app_service (BYPASSRLS).
+      APP_SECURITY_POSTGRES_ROLE_SWITCHING_ANON_ROLE: app_anon
+      APP_SECURITY_POSTGRES_ROLE_SWITCHING_AUTHENTICATED_DEFAULT_ROLE: app_authenticated
+      APP_SECURITY_POSTGRES_ROLE_SWITCHING_SERVICE_ROLE: app_service
+      # Comma-separated list — Spring's relaxed binding splits this into List<String>.
+      APP_SECURITY_POSTGRES_ROLE_SWITCHING_ALLOWED_ROLES: app_admin
+
+      APP_NATS_ENABLED: "false"
+    ports:
+      - "10004:10000"
+    depends_on:
+      rls-shopify-postgres:
+        condition: service_healthy
+      rls-kanban-postgres:
+        condition: service_healthy
+      rls-mock-vault:
+        condition: service_healthy
+      rls-excalibase-auth:
+        condition: service_healthy
+    networks:
+      - rls-demo-network
+    deploy:
+      resources:
+        limits:
+          memory: 1024M
+          cpus: '0.5'
+
+networks:
+  rls-demo-network:
+    driver: bridge

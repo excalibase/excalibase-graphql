@@ -195,8 +195,8 @@ different product-shaped UIs:
   customers cart and checkout (RLS-scoped to their own `customer_id`),
   admin role unlocks an inventory editor.
 
-Schema, RLS policies, docker stack, and JWT signing key live in this
-repo under `e2e/study-cases/`. Quick start (with `excalibase-sdk-js`
+RLS policies, docker stack, and JWT signing key live in this
+repo under `e2e/rls-demo/`. Quick start (with `excalibase-sdk-js`
 checked out as a sibling repo):
 
 ```bash
