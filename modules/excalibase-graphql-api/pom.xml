@@ -66,10 +66,6 @@
             <groupId>io.github.excalibase</groupId>
             <artifactId>excalibase-rest-api</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.github.excalibase</groupId>
-            <artifactId>excalibase-nosql</artifactId>
-        </dependency>
 
         <!--Graphql-->
         <dependency>
@@ -89,6 +85,11 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-otlp</artifactId>
+        </dependency>
+        <!-- Prometheus scrape endpoint at /actuator/prometheus -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
         <!-- OTLP log export: sends Logback records to OTel Collector via OTLP.
              Spring Boot OtlpLoggingAutoConfiguration picks this up automatically

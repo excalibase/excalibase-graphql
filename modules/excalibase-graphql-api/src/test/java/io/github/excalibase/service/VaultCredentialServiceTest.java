@@ -19,8 +19,8 @@ class VaultCredentialServiceTest {
     mockVault = HttpServer.create(new InetSocketAddress(0), 0);
     port = mockVault.getAddress().getPort();
 
-    // Successful credentials endpoint
-    mockVault.createContext("/api/vault/secrets/projects/duc-corp/app-a/credentials/excalibase_app", exchange -> {
+    // Vault path is projectId-only.
+    mockVault.createContext("/api/vault/secrets/projects/app-a/credentials/excalibase_app", exchange -> {
       String json = """
           {"host":"app-a-postgres-rw.svc.local","port":"5432","database":"app","username":"excalibase_app","password":"secret123"}
           """;
@@ -32,7 +32,7 @@ class VaultCredentialServiceTest {
     });
 
     // 404 for unknown project
-    mockVault.createContext("/api/vault/secrets/projects/unknown-org/unknown-app/credentials/excalibase_app", exchange -> {
+    mockVault.createContext("/api/vault/secrets/projects/unknown-app/credentials/excalibase_app", exchange -> {
       exchange.sendResponseHeaders(404, -1);
       exchange.close();
     });
@@ -94,12 +94,13 @@ class VaultCredentialServiceTest {
   }
 
   // ─── Slug Validation (path traversal prevention) ─────────────────────────────
+  // Only projectId is interpolated into the vault path; orgSlug is unused.
 
   @Test
-  @DisplayName("rejects orgSlug with path traversal")
-  void fetchCredentials_pathTraversal_orgSlug_throws() {
+  @DisplayName("rejects projectId with path traversal")
+  void fetchCredentials_pathTraversal_projectId_throws() {
     assertThrows(VaultCredentialException.class,
-        () -> service.fetchCredentials("../../admin", "app-a"));
+        () -> service.fetchCredentials("org", "../../admin"));
   }
 
   @Test
@@ -110,10 +111,10 @@ class VaultCredentialServiceTest {
   }
 
   @Test
-  @DisplayName("rejects empty orgSlug")
-  void fetchCredentials_emptyOrgSlug_throws() {
+  @DisplayName("rejects empty projectId")
+  void fetchCredentials_emptyProjectId_throws() {
     assertThrows(VaultCredentialException.class,
-        () -> service.fetchCredentials("", "app-a"));
+        () -> service.fetchCredentials("org", ""));
   }
 
   @Test
@@ -124,10 +125,10 @@ class VaultCredentialServiceTest {
   }
 
   @Test
-  @DisplayName("rejects slug longer than 64 characters")
-  void fetchCredentials_tooLongSlug_throws() {
+  @DisplayName("rejects projectId longer than 64 characters")
+  void fetchCredentials_tooLongProjectId_throws() {
     String longSlug = "a".repeat(65);
     assertThrows(VaultCredentialException.class,
-        () -> service.fetchCredentials(longSlug, "app-a"));
+        () -> service.fetchCredentials("org", longSlug));
   }
 }

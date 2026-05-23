@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.12</version>
+        <version>3.5.14</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
@@ -35,7 +35,6 @@
         <module>modules/excalibase-graphql-postgres</module>
         <module>modules/excalibase-graphql-mysql</module>
         <module>modules/excalibase-rest-api</module>
-        <module>modules/excalibase-nosql</module>
         <!-- rest-api before graphql-api: graphql-api depends on rest-api -->
     </modules>
 
@@ -49,12 +48,13 @@
     <properties>
         <java.version>25</java.version>
         <springboot.version>3.5.12</springboot.version>
-        <tomcat.version>10.1.54</tomcat.version>
+        <tomcat.version>10.1.55</tomcat.version>
+        <kotlin.version>2.1.0</kotlin.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
         <jackson.version>2.21.2</jackson.version>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
         <!-- databases -->
-        <postgresql.version>42.7.7</postgresql.version>
+        <postgresql.version>42.7.11</postgresql.version>
         <mysql.connector.version>9.3.0</mysql.connector.version>
         <!--java graphql-->
         <graphql.java.version>24.0</graphql.java.version>
@@ -149,11 +149,6 @@
             <dependency>
                 <groupId>io.github.excalibase</groupId>
                 <artifactId>excalibase-rest-api</artifactId>
-                <version>${excalibase.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.github.excalibase</groupId>
-                <artifactId>excalibase-nosql</artifactId>
                 <version>${excalibase.version}</version>
             </dependency>
             <dependency>

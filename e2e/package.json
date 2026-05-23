@@ -19,7 +19,7 @@
   "dependencies": {
     "graphql": "^16.9.0",
     "graphql-request": "^6.1.0",
-    "ws": "^8.16.0"
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "jest": "^29.7.0"

@@ -81,26 +81,26 @@ class DynamicDataSourceManagerTest {
   }
 
   @Test
-  @DisplayName("evict removes cached datasource")
+  @DisplayName("evict removes cached datasource by projectId")
   void evict_removesCachedEntry() {
     when(vaultService.fetchCredentials("duc-corp", "app-a")).thenReturn(CREDS);
 
     manager.getDataSource("duc-corp", "app-a");
-    manager.evict("duc-corp/app-a");
+    manager.evict("app-a");
     manager.getDataSource("duc-corp", "app-a");
 
     verify(vaultService, times(2)).fetchCredentials("duc-corp", "app-a");
   }
 
   @Test
-  @DisplayName("getDataSource uses projectId as cache key (orgSlug/projectName)")
-  void getDataSource_usesCombinedCacheKey() {
+  @DisplayName("getDataSource keys cache by projectId alone (globally unique opaque ref)")
+  void getDataSource_keysCacheByProjectIdOnly() {
     when(vaultService.fetchCredentials("org-x", "proj-y")).thenReturn(CREDS);
 
     manager.getDataSource("org-x", "proj-y");
 
-    assertTrue(manager.isCached("org-x/proj-y"));
-    assertFalse(manager.isCached("org-x/proj-z"));
+    assertTrue(manager.isCached("proj-y"));
+    assertFalse(manager.isCached("proj-z"));
   }
 
   @Test
@@ -109,10 +109,10 @@ class DynamicDataSourceManagerTest {
     when(vaultService.fetchCredentials("duc-corp", "app-a")).thenReturn(CREDS);
 
     manager.getDataSource("duc-corp", "app-a");
-    assertTrue(manager.isCached("duc-corp/app-a"));
+    assertTrue(manager.isCached("app-a"));
 
     manager.destroy();
 
-    assertFalse(manager.isCached("duc-corp/app-a"));
+    assertFalse(manager.isCached("app-a"));
   }
 }

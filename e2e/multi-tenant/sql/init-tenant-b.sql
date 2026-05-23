@@ -26,3 +26,11 @@ CREATE TABLE tenant.items (
 INSERT INTO tenant.items (title, quantity) VALUES
     ('Item X', 10),
     ('Item Y', 20);
+
+-- shared_counters: same table name on both tenants — used by CDC isolation
+-- tests to prove tenant routing (not table routing) is what isolates events.
+CREATE TABLE tenant.shared_counters (
+    id SERIAL PRIMARY KEY,
+    label TEXT NOT NULL,
+    value INTEGER NOT NULL
+);

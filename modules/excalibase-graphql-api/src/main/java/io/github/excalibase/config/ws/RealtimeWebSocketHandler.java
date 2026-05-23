@@ -6,8 +6,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.JwtService;
+import io.github.excalibase.security.JwtVerificationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -15,27 +20,26 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import reactor.core.Disposable;
 
+import java.io.IOException;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Unified realtime WebSocket endpoint for REST tables and NoSQL collections.
- * Lightweight JSON protocol — no GraphQL parsing needed.
+ * Realtime WebSocket endpoint for REST tables. Lightweight JSON protocol — no
+ * GraphQL parsing needed.
  *
  * <p>Protocol:
  * <pre>
- * client → {"type":"subscribe","id":"s1","source":"rest"|"nosql","collection":"...","filter":{...},"schema":"..."}
+ * client → {"type":"subscribe","id":"s1","collection":"...","filter":{...},"schema":"..."}
  * server → {"type":"next","id":"s1","op":"insert"|"update"|"delete","doc":{...}}
  * client → {"type":"complete","id":"s1"}
  * server → {"type":"error","id":"s1","message":"..."}
  * </pre>
  *
- * <p>Subscription key mapping:
- * <ul>
- *   <li>{@code source=="nosql"} → key {@code "nosql_{collection}"}</li>
- *   <li>{@code source=="rest"}  → key {@code "{schema|public}_{collection}"}</li>
- * </ul>
+ * <p>Subscription key is {@code "{schema|public}_{collection}"}, matching the
+ * sink key {@link SubscriptionService} publishes under.
  *
  * <p>Filter matching (v1): equality on a single top-level field. Empty/null
  * filter means "all events for this collection".
@@ -47,13 +51,23 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
+    private final JwtService jwtService;
+
+    @Value("${app.security.jwt-enabled:false}")
+    private boolean jwtEnabled;
+
+    @Value("${app.nats.tenant-in-subject:false}")
+    private boolean wsAuthRequired;
 
     // sessionId -> (subscriptionId -> Disposable)
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
 
-    public RealtimeWebSocketHandler(SubscriptionService subscriptionService, ObjectMapper objectMapper) {
+    public RealtimeWebSocketHandler(SubscriptionService subscriptionService,
+                                    ObjectMapper objectMapper,
+                                    ObjectProvider<JwtService> jwtServiceProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
+        this.jwtService = jwtServiceProvider.getIfAvailable();
     }
 
     @Override
@@ -70,6 +84,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         if (type == null) return;
 
         switch (type) {
+            case "connection_init" -> handleConnectionInit(session, msg);
             case "subscribe" -> handleSubscribe(session, msg);
             case "complete" -> handleComplete(session, msg);
             default -> log.debug("Unknown realtime message type: {}", type);
@@ -90,25 +105,16 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     @SuppressWarnings("unchecked")
     private void handleSubscribe(WebSocketSession session, Map<String, Object> msg) {
         String id = (String) msg.get("id");
-        String source = (String) msg.get("source");
         String collection = (String) msg.get("collection");
         String schema = (String) msg.getOrDefault("schema", null);
         Map<String, Object> filter = (Map<String, Object>) msg.getOrDefault("filter", Map.of());
 
-        if (id == null || source == null || collection == null) {
-            sendError(session, id, "subscribe requires id, source, collection");
+        if (id == null || collection == null) {
+            sendError(session, id, "subscribe requires id and collection");
             return;
         }
 
-        String key = switch (source) {
-            case "nosql" -> "nosql_" + collection;
-            case "rest" -> (schema == null ? "public" : schema) + "_" + collection;
-            default -> null;
-        };
-        if (key == null) {
-            sendError(session, id, "source must be 'rest' or 'nosql'");
-            return;
-        }
+        String key = (schema == null ? "public" : schema) + "_" + collection;
 
         Map<String, Disposable> sessionSubs = sessionSubscriptions.get(session.getId());
         if (sessionSubs == null) {
@@ -119,7 +125,12 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         Disposable existing = sessionSubs.remove(id);
         if (existing != null) existing.dispose();
 
-        Disposable disposable = subscriptionService.subscribe(key)
+        String tenantId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY);
+        if (jwtEnabled && wsAuthRequired && tenantId == null) {
+            sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
+            return;
+        }
+        Disposable disposable = subscriptionService.subscribe(tenantId, key)
                 .subscribe(event -> dispatchEvent(session, id, filter, event));
         sessionSubs.put(id, disposable);
         log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, key);
@@ -131,6 +142,77 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         if (sessionSubs == null) return;
         Disposable disposable = sessionSubs.remove(id);
         if (disposable != null) disposable.dispose();
+    }
+
+    /**
+     * Optional authentication handshake, mirroring GraphQLWebSocketHandler. If
+     * {@link JwtHandshakeInterceptor} already authenticated via HTTP Authorization
+     * header, this is a no-op. Otherwise the client may pass the JWT in
+     * {@code payload.Authorization}.
+     */
+    @SuppressWarnings("unchecked")
+    private void handleConnectionInit(WebSocketSession session, Map<String, Object> msg) {
+        if (!jwtEnabled || session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY) != null) {
+            sendAck(session);
+            return;
+        }
+        Map<String, Object> payload = (Map<String, Object>) msg.getOrDefault("payload", Map.of());
+        String token = extractBearerToken(payload);
+        if (token != null && jwtService != null) {
+            try {
+                JwtClaims claims = jwtService.verify(token);
+                String tenantId = GraphQLWebSocketHandler.tenantIdFromClaims(claims);
+                if (tenantId != null) {
+                    session.getAttributes().put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, tenantId);
+                    log.info("Realtime session {} authenticated via connection_init for tenant '{}'",
+                            session.getId(), tenantId);
+                }
+            } catch (JwtVerificationException e) {
+                closeWithAuthError(session, "Invalid or expired token");
+                return;
+            }
+        } else if (wsAuthRequired) {
+            closeWithAuthError(session, "Missing Authorization token in connection_init payload");
+            return;
+        }
+        sendAck(session);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractBearerToken(Map<String, Object> payload) {
+        Object direct = payload.get("Authorization");
+        if (direct == null) {
+            Object headers = payload.get("headers");
+            if (headers instanceof Map<?, ?> headerMap) {
+                direct = ((Map<String, Object>) headerMap).get("Authorization");
+            }
+        }
+        if (!(direct instanceof String header) || !header.startsWith("Bearer ")) return null;
+        return header.substring("Bearer ".length()).trim();
+    }
+
+    private void sendAck(WebSocketSession session) {
+        try {
+            if (session.isOpen()) {
+                session.sendMessage(new TextMessage("{\"type\":\"connection_ack\"}"));
+            }
+        } catch (IOException e) {
+            log.warn("Failed to send connection_ack", e);
+        }
+    }
+
+    private void closeWithAuthError(WebSocketSession session, String reason) {
+        try {
+            if (session.isOpen()) {
+                session.sendMessage(new TextMessage(
+                        objectMapper.writeValueAsString(Map.of(
+                                "type", "connection_error",
+                                "payload", Map.of("message", reason)))));
+            }
+            session.close(CloseStatus.POLICY_VIOLATION.withReason(reason));
+        } catch (IOException e) {
+            log.warn("Error closing unauthenticated session", e);
+        }
     }
 
     private void dispatchEvent(WebSocketSession session, String subId,

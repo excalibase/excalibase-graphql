@@ -110,24 +110,24 @@ public class GraphqlSchemaManager implements SchemaProvider {
 
     /**
      * Resolve EngineState based on JWT claims.
-     * If claims have orgSlug/projectName → tenant-specific state.
+     * If claims have a projectId → tenant-specific state.
      * Otherwise → default state.
      */
     public EngineState resolveEngineState(JwtClaims claims) {
-        if (claims != null && claims.orgSlug() != null && claims.projectName() != null) {
-            return getEngineState(claims.orgSlug(), claims.projectName());
+        if (claims != null && claims.projectId() != null && claims.orgSlug() != null) {
+            return getEngineState(claims.orgSlug(), claims.projectId());
         }
         return engineState.get();
     }
 
     /**
-     * Get or build EngineState for a specific tenant.
-     * Introspects the tenant's database on first access, then caches.
+     * Get or build EngineState for a specific tenant, keyed on the opaque {@code projectId}.
+     * {@code orgSlug} is still required to address the vault path at first-access
+     * introspection, but is not part of the cache key (projectId is globally unique).
      */
-    public EngineState getEngineState(String orgSlug, String projectName) {
-        String tenantKey = orgSlug + "/" + projectName;
-        return tenantEngineStates.computeIfAbsent(tenantKey,
-            key -> buildTenantEngineState(orgSlug, projectName));
+    public EngineState getEngineState(String orgSlug, String projectId) {
+        return tenantEngineStates.computeIfAbsent(projectId,
+            key -> buildTenantEngineState(orgSlug, projectId));
     }
 
     @Override
@@ -220,11 +220,11 @@ public class GraphqlSchemaManager implements SchemaProvider {
         return null;
     }
 
-    private EngineState buildTenantEngineState(String orgSlug, String projectName) {
+    private EngineState buildTenantEngineState(String orgSlug, String projectId) {
         if (dataSourceManager == null) {
             throw new IllegalStateException("Multi-tenant not enabled — DynamicDataSourceManager is null");
         }
-        DataSource tenantDs = dataSourceManager.getDataSource(orgSlug, projectName);
+        DataSource tenantDs = dataSourceManager.getDataSource(orgSlug, projectId);
         JdbcTemplate tenantJdbc = new JdbcTemplate(tenantDs);
 
         SqlEngine engine = SqlEngineFactory.create(databaseType);
@@ -241,7 +241,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
         try {
             handler = new IntrospectionHandler(schemaInfo);
         } catch (Exception e) {
-            log.warn("IntrospectionHandler failed for tenant {}/{}", orgSlug, projectName, e);
+            log.warn("IntrospectionHandler failed for tenant {}/{}", orgSlug, projectId, e);
         }
 
         TransactionTemplate tenantTx = new TransactionTemplate(
@@ -250,7 +250,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
                 databaseType, tenantJdbc, tenantTx);
 
         log.info("built_tenant_engine tenant={}/{} tables={}",
-                orgSlug, projectName, schemaInfo.getTableNames().size());
+                orgSlug, projectId, schemaInfo.getTableNames().size());
         return new EngineState(compiler, handler, mutationExecutor);
     }
 

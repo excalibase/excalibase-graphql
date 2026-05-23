@@ -88,6 +88,7 @@ app:
     url: nats://localhost:4222  # NATS server URL
     stream-name: CDC  # JetStream stream name
     subject-prefix: cdc  # Subject prefix (events on cdc.{schema}.{table})
+    tenant-in-subject: false  # When true, subject shape is cdc.{tenantId}.{schema}.{table} (multi-tenant)
 
 # GraphQL Security Configuration - Production Defaults
 # Based on GraphQL.org security recommendations and OWASP guidelines

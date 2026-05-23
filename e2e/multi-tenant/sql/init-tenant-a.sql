@@ -27,3 +27,11 @@ INSERT INTO tenant.products (name, price) VALUES
     ('Widget A', 9.99),
     ('Gadget A', 19.99),
     ('Gizmo A', 29.99);
+
+-- shared_counters: same table name on both tenants — used by CDC isolation
+-- tests to prove tenant routing (not table routing) is what isolates events.
+CREATE TABLE tenant.shared_counters (
+    id SERIAL PRIMARY KEY,
+    label TEXT NOT NULL,
+    value INTEGER NOT NULL
+);

@@ -1,0 +1,27 @@
+postgres:
+  enabled: true
+  url: "postgres://tenant-b-postgres:5432/tenant_b_db?replication=database"
+  slot_name: cdc_slot_tenant_b
+  publication_name: cdc_pub_tenant_b
+  create_slot: true
+  create_publication: true
+  snapshot_mode: none
+  capture_ddl: false
+
+mysql:
+  enabled: false
+
+nats:
+  enabled: true
+  url: "nats://nats:4222"
+  stream_name: CDC
+  subject_prefix: cdc.beta-inc/app-b
+  max_age_minutes: 5
+  storage: memory
+
+health:
+  port: 8080
+  bind_address: "0.0.0.0"
+
+metrics:
+  enabled: true

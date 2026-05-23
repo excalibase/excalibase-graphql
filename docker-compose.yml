@@ -83,6 +83,10 @@ services:
       APP_NATS_STREAM_NAME: CDC
       APP_NATS_SUBJECT_PREFIX: cdc
 
+      # Realtime publication name — must match watcher's publication_name
+      # so NoSQL auto-create writes to the publication the watcher reads.
+      APP_REALTIME_PUBLICATION_NAME: cdc_publication_go
+
       # Observability — send all OTLP signals to the collector
       # Run with docker-compose.observability.yml to activate the full stack.
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
@@ -100,7 +104,7 @@ services:
       nats:
         condition: service_healthy
       excalibase-watcher:
-        condition: service_healthy
+        condition: service_started
       mock-vault:
         condition: service_healthy
       excalibase-auth:
@@ -134,35 +138,40 @@ services:
       - excalibase-network
     restart: unless-stopped
 
+  # Pre-provision the shared CDC stream; watcher-go does not create/mutate streams.
+  nats-init:
+    image: natsio/nats-box:latest
+    container_name: excalibase-nats-init
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        nats --server=nats://nats:4222 stream add CDC --subjects='cdc.>' --storage=memory --retention=limits --max-age=5m --discard=old --max-msgs=-1 --max-bytes=-1 --max-msg-size=-1 --replicas=1 --dupe-window=2m --no-allow-rollup --no-deny-delete --no-deny-purge --defaults || true
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - excalibase-network
+    restart: "no"
+
   excalibase-watcher:
-    image: excalibase/excalibase-watcher
+    image: excalibase/excalibase-watcher-go:latest
     container_name: excalibase-watcher
+    command: ["--config", "/config/config.yaml"]
     environment:
-      # Postgres CDC
-      APP_CDC_POSTGRES_URL: jdbc:postgresql://postgres:5432/hana
-      APP_CDC_POSTGRES_USERNAME: hana001
-      APP_CDC_POSTGRES_PASSWORD: password123
-      APP_CDC_POSTGRES_ENABLED: true
-      APP_CDC_SLOT_NAME: cdc_slot
-      APP_CDC_PUBLICATION_NAME: cdc_publication
-      APP_CDC_CREATE_SLOT_IF_NOT_EXISTS: true
-      APP_CDC_CREATE_PUBLICATION_IF_NOT_EXISTS: true
-      # NATS
-      APP_NATS_URL: nats://nats:4222
-      APP_NATS_STREAM_NAME: CDC
-      APP_NATS_SUBJECT_PREFIX: cdc
-      APP_NATS_ENABLED: true
+      WATCHER_POSTGRES_USERNAME: hana001
+      WATCHER_POSTGRES_PASSWORD: password123
+      WATCHER_NATS_URL: nats://nats:4222
+    volumes:
+      - ./e2e/watcher-go/config.yaml:/config/config.yaml:ro
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 10s
+      disable: true
     depends_on:
       postgres:
         condition: service_healthy
       nats:
         condition: service_healthy
+      nats-init:
+        condition: service_completed_successfully
     networks:
       - excalibase-network
     restart: unless-stopped

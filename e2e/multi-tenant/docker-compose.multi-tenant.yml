@@ -6,6 +6,14 @@ services:
       POSTGRES_DB: tenant_a_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=5
+      - -c
+      - max_wal_senders=5
     ports:
       - "5440:5432"
     volumes:
@@ -26,6 +34,14 @@ services:
       POSTGRES_DB: tenant_b_db
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_replication_slots=5
+      - -c
+      - max_wal_senders=5
     ports:
       - "5441:5432"
     volumes:
@@ -104,8 +120,12 @@ services:
       APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: http://mock-vault:8080/api
       APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT: test-pat
 
-      # No NATS needed for multi-tenant routing test
-      APP_NATS_ENABLED: false
+      # NATS CDC with tenant-in-subject — NatsCDCService parses tenant from subject
+      APP_NATS_ENABLED: true
+      APP_NATS_URL: nats://nats:4222
+      APP_NATS_STREAM_NAME: CDC
+      APP_NATS_SUBJECT_PREFIX: cdc
+      APP_NATS_TENANT_IN_SUBJECT: true
     ports:
       - "10003:10000"
     depends_on:
@@ -117,6 +137,8 @@ services:
         condition: service_healthy
       excalibase-auth:
         condition: service_healthy
+      nats:
+        condition: service_healthy
     networks:
       - multi-tenant-network
     deploy:
@@ -124,6 +146,83 @@ services:
         limits:
           memory: 1024M
           cpus: '0.5'
+
+  # ── CDC infra (shared NATS broker, per-tenant watcher-go) ───────────────────
+  nats:
+    image: nats:2.10
+    container_name: mt-nats
+    command: ["-js", "-m", "8222"]
+    ports:
+      - "4224:4222"
+      - "8224:8222"
+    healthcheck:
+      test: ["CMD", "/nats-server", "--help"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - multi-tenant-network
+
+  # Pre-provision the CDC stream with wildcard subjects. Watcher-go intentionally
+  # does not create/mutate streams — ops own topology so per-tenant watchers
+  # don't fight over the subjects list.
+  nats-init:
+    image: natsio/nats-box:latest
+    container_name: mt-nats-init
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        nats --server=nats://nats:4222 stream add CDC --subjects='cdc.>' --storage=memory --retention=limits --max-age=5m --discard=old --max-msgs=-1 --max-bytes=-1 --max-msg-size=-1 --replicas=1 --dupe-window=2m --no-allow-rollup --no-deny-delete --no-deny-purge --defaults || true
+    depends_on:
+      nats:
+        condition: service_healthy
+    networks:
+      - multi-tenant-network
+    restart: "no"
+
+  watcher-tenant-a:
+    image: excalibase/excalibase-watcher-go:latest
+    container_name: mt-watcher-a
+    command: ["--config", "/config/config.yaml"]
+    environment:
+      WATCHER_POSTGRES_USERNAME: postgres
+      WATCHER_POSTGRES_PASSWORD: postgres
+      WATCHER_NATS_URL: nats://nats:4222
+    volumes:
+      - ./watcher-go-tenant-a.yaml:/config/config.yaml:ro
+    healthcheck:
+      disable: true
+    depends_on:
+      tenant-a-postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      nats-init:
+        condition: service_completed_successfully
+    networks:
+      - multi-tenant-network
+
+  watcher-tenant-b:
+    image: excalibase/excalibase-watcher-go:latest
+    container_name: mt-watcher-b
+    command: ["--config", "/config/config.yaml"]
+    environment:
+      WATCHER_POSTGRES_USERNAME: postgres
+      WATCHER_POSTGRES_PASSWORD: postgres
+      WATCHER_NATS_URL: nats://nats:4222
+    volumes:
+      - ./watcher-go-tenant-b.yaml:/config/config.yaml:ro
+    healthcheck:
+      disable: true
+    depends_on:
+      tenant-b-postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      nats-init:
+        condition: service_completed_successfully
+    networks:
+      - multi-tenant-network
 
 networks:
   multi-tenant-network:

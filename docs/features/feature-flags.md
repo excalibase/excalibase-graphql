@@ -23,21 +23,28 @@ app:
 
 **See:** [Real-Time Subscriptions Documentation](./subscriptions.md)
 
-### Role-Based Security
+### Postgres Role Switching
 
-**Property:** `app.security.role-based-schema`  
-**Type:** `boolean`  
-**Default:** `true`  
+**Property:** `app.security.postgres.role-switching.anon-role`
+**Type:** `string`
+**Default:** unset (feature off)
 
-Controls whether role-based schema filtering and PostgreSQL RLS/CLS support is enabled.
+When set, excalibase issues `SET LOCAL ROLE` per request based on the JWT
+`scope` claim —  Replaces the
+previously-aspirational `app.security.role-based-schema` flag (now archived).
 
 ```yaml
 app:
   security:
-    role-based-schema: true  # Enable role-based security (recommended)
+    postgres:
+      role-switching:
+        anon-role: app_anon
+        authenticated-default-role: app_authenticated
+        service-role: app_service
+        allowed-roles: [app_admin]
 ```
 
-**See:** [Role-Based Security Documentation](./role-based-security.md)
+**See:** [Postgres Role Switching](./postgres-role-switching.md)
 
 ## Configuration Patterns
 

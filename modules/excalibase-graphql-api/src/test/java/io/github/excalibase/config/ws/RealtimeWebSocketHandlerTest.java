@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -30,13 +31,21 @@ class RealtimeWebSocketHandlerTest {
     void setUp() {
         subscriptionService = new SubscriptionService();
         mapper = new ObjectMapper();
-        handler = new RealtimeWebSocketHandler(subscriptionService, mapper);
+        org.springframework.beans.factory.ObjectProvider<io.github.excalibase.security.JwtService> noJwt =
+                new org.springframework.beans.factory.ObjectProvider<>() {
+                    @Override public io.github.excalibase.security.JwtService getObject() { return null; }
+                    @Override public io.github.excalibase.security.JwtService getObject(Object... args) { return null; }
+                    @Override public io.github.excalibase.security.JwtService getIfAvailable() { return null; }
+                    @Override public io.github.excalibase.security.JwtService getIfUnique() { return null; }
+                };
+        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, noJwt);
     }
 
     private WebSocketSession session(List<String> sink) throws Exception {
         WebSocketSession session = mock(WebSocketSession.class);
-        when(session.getId()).thenReturn("test-session");
+        when(session.getId()).thenReturn("test-session-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
+        when(session.getAttributes()).thenReturn(new java.util.concurrent.ConcurrentHashMap<>());
         doAnswer(invocation -> {
             TextMessage msg = invocation.getArgument(0);
             sink.add(msg.getPayload());
@@ -46,75 +55,92 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
-    @DisplayName("nosql INSERT event delivered to matching subscription")
-    void nosqlInsert_delivered() throws Exception {
+    @DisplayName("INSERT on default schema delivered as {op:insert}")
+    void insert_defaultSchema_delivered() throws Exception {
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
-        String subscribeMsg = mapper.writeValueAsString(Map.of(
-                "type", "subscribe",
-                "id", "s1",
-                "source", "nosql",
-                "collection", "articles"));
-        handler.handleTextMessage(session, new TextMessage(subscribeMsg));
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "customers"))));
 
-        subscriptionService.publish(new CDCEvent(
-                "INSERT", "nosql", "articles",
-                "{\"title\":\"hello\"}", 0L));
+        subscriptionService.publish(null, new CDCEvent(
+                "INSERT", "public", "customers",
+                "{\"name\":\"Vu\"}", 0L));
 
-        await().until(() -> !sent.isEmpty());
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         var delivered = mapper.readTree(sent.getFirst());
         assertThat(delivered.get("type").asText()).isEqualTo("next");
         assertThat(delivered.get("id").asText()).isEqualTo("s1");
         assertThat(delivered.get("op").asText()).isEqualTo("insert");
-        assertThat(delivered.get("doc").get("title").asText()).isEqualTo("hello");
+        assertThat(delivered.get("doc").get("name").asText()).isEqualTo("Vu");
     }
 
     @Test
-    @DisplayName("filter rejects non-matching events")
-    void filter_rejectsMismatch() throws Exception {
+    @DisplayName("UPDATE and DELETE are mapped to lowercase ops")
+    void updateAndDelete_mapped() throws Exception {
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
-        String subscribeMsg = mapper.writeValueAsString(Map.of(
-                "type", "subscribe", "id", "s1",
-                "source", "nosql", "collection", "orders",
-                "filter", Map.of("status", "active")));
-        handler.handleTextMessage(session, new TextMessage(subscribeMsg));
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "orders"))));
 
-        subscriptionService.publish(new CDCEvent(
-                "INSERT", "nosql", "orders",
+        subscriptionService.publish(null, new CDCEvent(
+                "UPDATE", "public", "orders", "{\"id\":1}", 0L));
+        subscriptionService.publish(null, new CDCEvent(
+                "DELETE", "public", "orders", "{\"id\":1}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> sent.size() == 2);
+        assertThat(mapper.readTree(sent.get(0)).get("op").asText()).isEqualTo("update");
+        assertThat(mapper.readTree(sent.get(1)).get("op").asText()).isEqualTo("delete");
+    }
+
+    @Test
+    @DisplayName("explicit schema field routes to {schema}_{collection} key")
+    void explicitSchema_routes() throws Exception {
+        var sent = new ArrayList<String>();
+        WebSocketSession session = session(sent);
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1",
+                "collection", "items", "schema", "inventory"))));
+
+        // event on public schema must NOT be delivered
+        subscriptionService.publish(null, new CDCEvent(
+                "INSERT", "public", "items", "{\"sku\":\"A\"}", 0L));
+        // event on the requested schema must be delivered
+        subscriptionService.publish(null, new CDCEvent(
+                "INSERT", "inventory", "items", "{\"sku\":\"B\"}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        assertThat(sent).hasSize(1);
+        assertThat(mapper.readTree(sent.getFirst()).get("doc").get("sku").asText()).isEqualTo("B");
+    }
+
+    @Test
+    @DisplayName("filter rejects non-matching events, accepts matches")
+    void filter_matchesOnlyAcceptedRows() throws Exception {
+        var sent = new ArrayList<String>();
+        WebSocketSession session = session(sent);
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1",
+                "collection", "orders",
+                "filter", Map.of("status", "active")))));
+
+        subscriptionService.publish(null, new CDCEvent(
+                "INSERT", "public", "orders",
                 "{\"status\":\"cancelled\"}", 0L));
-        subscriptionService.publish(new CDCEvent(
-                "INSERT", "nosql", "orders",
+        subscriptionService.publish(null, new CDCEvent(
+                "INSERT", "public", "orders",
                 "{\"status\":\"active\"}", 0L));
 
-        await().until(() -> !sent.isEmpty());
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         assertThat(sent).hasSize(1);
-        var delivered = mapper.readTree(sent.getFirst());
-        assertThat(delivered.get("doc").get("status").asText()).isEqualTo("active");
-    }
-
-    @Test
-    @DisplayName("rest source routes to public_{collection} key")
-    void restSource_usesPublicSchema() throws Exception {
-        var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
-        handler.afterConnectionEstablished(session);
-
-        String subscribeMsg = mapper.writeValueAsString(Map.of(
-                "type", "subscribe", "id", "s1",
-                "source", "rest", "collection", "customers"));
-        handler.handleTextMessage(session, new TextMessage(subscribeMsg));
-
-        subscriptionService.publish(new CDCEvent(
-                "UPDATE", "public", "customers",
-                "{\"name\":\"Vu\"}", 0L));
-
-        await().until(() -> !sent.isEmpty());
-        assertThat(mapper.readTree(sent.getFirst()).get("op").asText()).isEqualTo("update");
+        assertThat(mapper.readTree(sent.getFirst()).get("doc").get("status").asText()).isEqualTo("active");
     }
 
     @Test
@@ -124,57 +150,72 @@ class RealtimeWebSocketHandlerTest {
         WebSocketSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
-        String subscribeMsg = mapper.writeValueAsString(Map.of(
-                "type", "subscribe", "id", "s1",
-                "source", "nosql", "collection", "x"));
-        handler.handleTextMessage(session, new TextMessage(subscribeMsg));
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "x"))));
 
-        subscriptionService.publish(new CDCEvent("DDL", "nosql", "x", "{}", 0L));
-        subscriptionService.publish(new CDCEvent("HEARTBEAT", "nosql", "x", "{}", 0L));
-        subscriptionService.publish(new CDCEvent("INSERT", "nosql", "x", "{}", 0L));
+        subscriptionService.publish(null, new CDCEvent("DDL", "public", "x", "{}", 0L));
+        subscriptionService.publish(null, new CDCEvent("HEARTBEAT", "public", "x", "{}", 0L));
+        subscriptionService.publish(null, new CDCEvent("INSERT", "public", "x", "{}", 0L));
 
-        await().until(() -> !sent.isEmpty());
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         assertThat(sent).hasSize(1);
         assertThat(mapper.readTree(sent.getFirst()).get("op").asText()).isEqualTo("insert");
     }
 
     @Test
-    @DisplayName("invalid source returns error")
-    void invalidSource_error() throws Exception {
+    @DisplayName("subscribe without id or collection returns error")
+    void missingFields_error() throws Exception {
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
-        String subscribeMsg = mapper.writeValueAsString(Map.of(
-                "type", "subscribe", "id", "s1",
-                "source", "bogus", "collection", "x"));
-        handler.handleTextMessage(session, new TextMessage(subscribeMsg));
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1"))));
 
         assertThat(sent).hasSize(1);
         var err = mapper.readTree(sent.getFirst());
         assertThat(err.get("type").asText()).isEqualTo("error");
-        assertThat(err.get("message").asText()).contains("source must be");
+        assertThat(err.get("message").asText()).contains("id and collection");
     }
 
     @Test
-    @DisplayName("complete disposes the subscription")
+    @DisplayName("complete disposes the subscription — no further events delivered")
     void complete_disposes() throws Exception {
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
-                "type", "subscribe", "id", "s1",
-                "source", "nosql", "collection", "t"))));
+                "type", "subscribe", "id", "s1", "collection", "t"))));
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "complete", "id", "s1"))));
 
-        subscriptionService.publish(new CDCEvent("INSERT", "nosql", "t", "{}", 0L));
+        subscriptionService.publish(null, new CDCEvent("INSERT", "public", "t", "{}", 0L));
 
-        // Negative assertion: after unsubscribing, events should NOT arrive.
-        // Awaitility with durationAsserted gives the reactor pipeline time to
-        // demonstrate silence without needing a manual Thread.sleep.
-        await().during(java.time.Duration.ofMillis(200))
+        await().during(Duration.ofMillis(200))
+                .atMost(Duration.ofMillis(500))
+                .untilAsserted(() -> assertThat(sent).isEmpty());
+    }
+
+    @Test
+    @DisplayName("afterConnectionClosed disposes all subscriptions on that session")
+    void connectionClosed_disposesAllSubs() throws Exception {
+        var sent = new ArrayList<String>();
+        WebSocketSession session = session(sent);
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "a"))));
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s2", "collection", "b"))));
+
+        handler.afterConnectionClosed(session, org.springframework.web.socket.CloseStatus.NORMAL);
+
+        subscriptionService.publish(null, new CDCEvent("INSERT", "public", "a", "{}", 0L));
+        subscriptionService.publish(null, new CDCEvent("INSERT", "public", "b", "{}", 0L));
+
+        await().during(Duration.ofMillis(200))
+                .atMost(Duration.ofMillis(500))
                 .untilAsserted(() -> assertThat(sent).isEmpty());
     }
 }

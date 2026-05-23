@@ -5,8 +5,8 @@
     now; npm publish is scheduled with the next platform release.
 
 Official TypeScript client for Excalibase. Single package covers **auth**,
-**GraphQL**, **REST**, and **NoSQL** surfaces with typed helpers and a
-persistent refresh-token session.
+**GraphQL**, **REST**, and **Functions** (typed RPC) surfaces with helpers
+and a persistent refresh-token session.
 
 [:octicons-mark-github-16: excalibase/excalibase-sdk-js](https://github.com/excalibase/excalibase-sdk-js){ .md-button .md-button--primary }
 
@@ -14,8 +14,8 @@ persistent refresh-token session.
 
 - **Auth done right** — password login, refresh-before-expiry, OAuth2 `/token`
   flow, API keys. No manual JWT wrangling.
-- **One client for three protocols** — pick GraphQL, REST, or NoSQL per call;
-  same auth, same headers, same error types.
+- **One client for every protocol** — pick GraphQL, REST, or typed Functions
+  (RPC) per call; same auth, same headers, same error types.
 - **Typed search / vector** — `search`, `webSearch`, `vectorSearch` are
   first-class; autocomplete on the operator shape.
 - **Works in the browser and Node** (≥18). ESM + CJS. Sub-10 KB gzipped core.
@@ -98,51 +98,53 @@ const customers = await db.rest.get("customer", {
 await db.rest.post("customer", { body: { name: "Vu", status: "active" } });
 ```
 
-## NoSQL
+## Functions (typed RPC)
 
-One-time schema sync (typically at deploy time):
+Collections live behind deployed query / mutation functions — schema and
+indexes are declared in your `convex/schema.ts` at deploy time, and every
+read or write is a typed function call from the client. The SDK exposes
+the proxy as `db.functions.<module>.<name>(args)`:
 
 ```ts
-await db.nosql.init({
-  collections: {
-    users: {
-      fields: { email: "string", status: "string" },
-      indexes: [
-        { fields: ["email"], unique: true },
-        { fields: ["status"] },
-      ],
-    },
-    articles: {
-      fields: {},
-      indexes: [],
-      search: "body",
-    },
-    docs: {
-      fields: {},
-      indexes: [],
-      vector: { field: "embedding", dimensions: 1536 },
-    },
-  },
+// convex/users.ts (server-side)
+import { query, mutation, v } from "@excalibase/server";
+
+export const create = mutation({
+  args: v.object({ email: v.string(), status: v.string() }),
+  handler: async (ctx, { email, status }) =>
+    ctx.db.collection("users").insert({ email, status }),
+});
+
+export const listActive = query({
+  args: v.object({ limit: v.number() }),
+  handler: async (ctx, { limit }) =>
+    ctx.db.collection("users").find({ status: "active" }, { limit }),
 });
 ```
 
-Then use collections anywhere in your app:
+Then from the client:
 
 ```ts
-const users = db.collection("users");
-
-await users.insertOne({ email: "vu@acme.com", status: "active" });
-const active = await users.find({ status: "active" }, { limit: 20 });
-
-// Full-text search
-const hits = await db.collection("articles").search("tsvector tsquery", { limit: 10 });
-
-// Vector k-NN
-const nearest = await db.collection("docs").vectorSearch([0.1, 0.2, 0.3], { topK: 5 });
+// Awaitable one-shot HTTP RPC.
+await db.functions.users.create({ email: "vu@acme.com", status: "active" });
+const active = await db.functions.users.listActive({ limit: 20 });
 ```
 
-See [NoSQL pagination](nosql/pagination.md) for cursor mode, and
-[NoSQL validation](nosql/validation.md) for JSON Schema.
+Full-text search and vector k-NN live behind the same RPC surface — wrap
+them in functions that call `ctx.db.collection("...").search(...)` or
+`.vectorSearch(...)` and expose them as `db.functions.articles.search`,
+`db.functions.docs.nearest`, etc. See the [Functions runtime
+docs](https://docs.convex.dev/functions) for the full handler-side API.
+
+Reactive subscriptions ride on the same proxy via `.watch()`:
+
+```ts
+const sub = db.functions.users.listActive({ limit: 20 }).watch();
+const unsub = sub.onUpdate((users) => render(users));
+sub.onError((err) => console.error(err.code, err.message));
+```
+
+One WebSocket per client, multiplexed across every active subscription.
 
 ## Codegen
 
@@ -181,11 +183,9 @@ server exposes `/api/v1/realtime` and GraphQL subscriptions, and any
 `graphql-ws` or browser `WebSocket` client works. SDK-level
 `db.realtime.channel(...).on(...)` helpers are on the roadmap.
 
-See **[Realtime protocol](nosql/realtime.md)** for the wire format meanwhile.
-
 ## Roadmap
 
-- [ ] `db.realtime` helpers (mirrors Supabase's `.channel().on()` shape)
+- [ ] `db.realtime` helpers
 - [ ] Python SDK
 - [ ] Dart SDK (Flutter-first)
 - [ ] Typed filter builder variants per DB (PostgreSQL-only ops gated by `Database` generic)

@@ -1,10 +1,12 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.config.datasource.TenantContext;
+import io.opentelemetry.api.trace.Span;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.MDC;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -14,39 +16,99 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     public static final String JWT_CLAIMS_ATTR = SecurityConstants.JWT_CLAIMS_ATTR;
 
     private final JwtService jwtService;
+    private final PostgresRoleResolver roleResolver;
 
-    public JwtAuthFilter(JwtService jwtService) {
+    public JwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver) {
         this.jwtService = jwtService;
+        this.roleResolver = roleResolver;
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        String authHeader = request.getHeader("Authorization");
-
-        JwtClaims claims = null;
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            try {
-                claims = jwtService.verify(token);
-                request.setAttribute(JWT_CLAIMS_ATTR, claims);
-            } catch (JwtVerificationException _) {
-                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-                response.setContentType("application/json");
-                response.getWriter().write("{\"errors\":[{\"message\":\"Invalid or expired token\"}]}");
-                return;
-            }
+        JwtClaims claims;
+        try {
+            claims = verifyClaims(request);
+        } catch (JwtVerificationException _) {
+            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired token");
+            return;
         }
 
-        if (claims != null && claims.projectId() != null) {
-            try {
-                TenantContext.setTenantId(claims.projectId());
-                chain.doFilter(request, response);
-            } finally {
-                TenantContext.clear();
-            }
-        } else {
+        // Resolve Postgres role once per request — single source of truth, exposed
+        // to both GraphQL and REST controllers via RoleContext (starter ThreadLocal).
+        // RoleNotAllowedException is converted to a 403 here so it surfaces uniformly
+        // for filter-based REST traffic (which @RestControllerAdvice can't reach).
+        String resolvedRole;
+        try {
+            resolvedRole = roleResolver != null ? roleResolver.resolve(claims) : null;
+        } catch (RoleNotAllowedException ex) {
+            writeError(response, HttpServletResponse.SC_FORBIDDEN, ex.getMessage());
+            return;
+        }
+        if (resolvedRole != null) {
+            RoleContext.setRole(resolvedRole);
+        }
+
+        try {
+            applyTenantContext(claims);
             chain.doFilter(request, response);
+        } finally {
+            RoleContext.clear();
+            clearTenantContext(claims);
         }
+    }
+
+    private JwtClaims verifyClaims(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return null;
+        }
+        JwtClaims claims = jwtService.verify(authHeader.substring(7));
+        request.setAttribute(JWT_CLAIMS_ATTR, claims);
+        return claims;
+    }
+
+    private static void applyTenantContext(JwtClaims claims) {
+        if (claims == null || claims.projectId() == null) {
+            return;
+        }
+        TenantContext.setTenantId(claims.projectId());
+        TenantContext.setOrgSlug(claims.orgSlug());
+        MDC.put("tenant", claims.projectId());
+        MDC.put("org", claims.orgSlug());
+        MDC.put("project_name", orEmpty(claims.projectName()));
+        MDC.put("org_name", orEmpty(claims.orgName()));
+        Span span = Span.current();
+        span.setAttribute("tenant.id", claims.projectId());
+        span.setAttribute("org.slug", claims.orgSlug());
+        span.setAttribute("project.name", orEmpty(claims.projectName()));
+        span.setAttribute("org.name", orEmpty(claims.orgName()));
+    }
+
+    private static void clearTenantContext(JwtClaims claims) {
+        if (claims == null || claims.projectId() == null) {
+            return;
+        }
+        TenantContext.clear();
+        MDC.remove("tenant");
+        MDC.remove("org");
+        MDC.remove("project_name");
+        MDC.remove("org_name");
+    }
+
+    private static void writeError(HttpServletResponse response, int status, String message)
+            throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json");
+        response.getWriter().write("{\"errors\":[{\"message\":\"" + escape(message) + "\"}]}");
+    }
+
+    private static String orEmpty(String s) {
+        return s != null ? s : "";
+    }
+
+    private static String escape(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

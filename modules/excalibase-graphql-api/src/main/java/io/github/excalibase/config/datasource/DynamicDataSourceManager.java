@@ -43,11 +43,15 @@ public class DynamicDataSourceManager {
     });
   }
 
-  public DataSource getDataSource(String orgSlug, String projectName) {
-    String cacheKey = orgSlug + "/" + projectName;
-    return cache.computeIfAbsent(cacheKey, key -> {
-      VaultCredentials creds = vaultService.fetchCredentials(orgSlug, projectName);
-      log.info("created_datasource tenant={}/{} url={}", orgSlug, projectName, creds.jdbcUrl());
+  /**
+   * Cache key is the opaque {@code projectId} — globally unique, so no composition with
+   * {@code orgSlug} needed. {@code orgSlug} is still required to address the vault path
+   * {@code projects/{orgSlug}/{projectId}/credentials/...}.
+   */
+  public DataSource getDataSource(String orgSlug, String projectId) {
+    return cache.computeIfAbsent(projectId, key -> {
+      VaultCredentials creds = vaultService.fetchCredentials(orgSlug, projectId);
+      log.info("created_datasource tenant={} url={}", projectId, creds.jdbcUrl());
       return dataSourceFactory.apply(creds);
     });
   }

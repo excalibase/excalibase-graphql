@@ -45,7 +45,7 @@ class NatsCDCServiceTest {
         service.start();
 
         assertThat(service.isRunning()).isFalse();
-        verify(subscriptionService, never()).publish(any());
+        verify(subscriptionService, never()).publish(any(String.class), any(CDCEvent.class));
     }
 
     @Test
@@ -72,14 +72,15 @@ class NatsCDCServiceTest {
     }
 
     @Test
-    @DisplayName("handleMessage publishes INSERT events via SubscriptionService")
+    @DisplayName("handleMessage publishes INSERT events via SubscriptionService (legacy null tenant)")
     void handleMessage_insertEvent_publishes() throws Exception {
         CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1000L);
         Message msg = mockMessage(event);
 
         invokeHandleMessage(msg);
 
-        verify(subscriptionService).publish(event);
+        verify(subscriptionService).publish((String) org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(event));
         verify(msg).ack();
     }
 
@@ -91,7 +92,8 @@ class NatsCDCServiceTest {
 
         invokeHandleMessage(msg);
 
-        verify(subscriptionService).publish(event);
+        verify(subscriptionService).publish((String) org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(event));
     }
 
     @Test
@@ -102,7 +104,8 @@ class NatsCDCServiceTest {
 
         invokeHandleMessage(msg);
 
-        verify(subscriptionService).publish(event);
+        verify(subscriptionService).publish((String) org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(event));
     }
 
     @Test
@@ -113,7 +116,7 @@ class NatsCDCServiceTest {
 
         invokeHandleMessage(msg);
 
-        verify(subscriptionService, never()).publish(any());
+        verify(subscriptionService, never()).publish(any(String.class), any(CDCEvent.class));
         verify(msg).ack();
     }
 
@@ -125,7 +128,7 @@ class NatsCDCServiceTest {
 
         invokeHandleMessage(msg);
 
-        verify(subscriptionService, never()).publish(any());
+        verify(subscriptionService, never()).publish(any(String.class), any(CDCEvent.class));
     }
 
     @Test
@@ -143,7 +146,7 @@ class NatsCDCServiceTest {
 
         assertThat(firstCount).hasValue(1);
         assertThat(secondCount).hasValue(1);
-        verify(subscriptionService, never()).publish(any());
+        verify(subscriptionService, never()).publish(any(String.class), any(CDCEvent.class));
         verify(msg).ack();
     }
 
@@ -168,7 +171,77 @@ class NatsCDCServiceTest {
         invokeHandleMessage(msg);
 
         verify(msg, times(1)).ack();
-        verify(subscriptionService, never()).publish(any());
+        verify(subscriptionService, never()).publish(any(String.class), any(CDCEvent.class));
+    }
+
+    // ─── Tenant parsing from subject ─────────────────────────────────────────
+
+    @Test
+    @DisplayName("handleMessage with tenant-in-subject=false publishes with null tenant (legacy)")
+    void handleMessage_tenantModeOff_publishesWithNullTenant() throws Exception {
+        ReflectionTestUtils.setField(service, "subjectPrefix", "cdc");
+        ReflectionTestUtils.setField(service, "tenantInSubject", false);
+
+        CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1L);
+        // tenant mode off — subject is not parsed, stub not needed
+        Message msg = mockMessage(event);
+
+        invokeHandleMessage(msg);
+
+        verify(subscriptionService).publish((String) org.mockito.ArgumentMatchers.isNull(), org.mockito.ArgumentMatchers.eq(event));
+        verify(msg).ack();
+    }
+
+    @Test
+    @DisplayName("handleMessage with tenant-in-subject=true extracts single-token tenant from subject")
+    void handleMessage_tenantMode_singleTokenTenant() throws Exception {
+        ReflectionTestUtils.setField(service, "subjectPrefix", "cdc");
+        ReflectionTestUtils.setField(service, "tenantInSubject", true);
+
+        CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1L);
+        Message msg = mockMessageWithSubject(event, "cdc.proj_abc123.public.customers");
+
+        invokeHandleMessage(msg);
+
+        verify(subscriptionService).publish("proj_abc123", event);
+    }
+
+    @Test
+    @DisplayName("handleMessage with tenant-in-subject=true extracts multi-token tenant (e.g. org.project)")
+    void handleMessage_tenantMode_multiTokenTenant() throws Exception {
+        ReflectionTestUtils.setField(service, "subjectPrefix", "cdc");
+        ReflectionTestUtils.setField(service, "tenantInSubject", true);
+
+        CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1L);
+        Message msg = mockMessageWithSubject(event, "cdc.acme-corp.app-a.public.customers");
+
+        invokeHandleMessage(msg);
+
+        verify(subscriptionService).publish("acme-corp.app-a", event);
+    }
+
+    @Test
+    @DisplayName("handleMessage with tenant-in-subject=true and no tenant tokens falls back to null tenant")
+    void handleMessage_tenantMode_noTenantTokens_fallsBackToNull() throws Exception {
+        ReflectionTestUtils.setField(service, "subjectPrefix", "cdc");
+        ReflectionTestUtils.setField(service, "tenantInSubject", true);
+
+        CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1L);
+        Message msg = mockMessageWithSubject(event, "cdc.public.customers");
+
+        invokeHandleMessage(msg);
+
+        // Subject has only prefix + schema + table (no tenant segment). Publish with null tenant.
+        verify(subscriptionService).publish(
+                (String) org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(event));
+    }
+
+    private Message mockMessageWithSubject(CDCEvent event, String subject) throws Exception {
+        Message msg = org.mockito.Mockito.mock(Message.class);
+        when(msg.getData()).thenReturn(objectMapper.writeValueAsBytes(event));
+        when(msg.getSubject()).thenReturn(subject);
+        return msg;
     }
 
     private Message mockMessage(CDCEvent event) throws Exception {

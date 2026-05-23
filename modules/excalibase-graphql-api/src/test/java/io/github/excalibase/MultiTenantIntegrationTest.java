@@ -104,7 +104,7 @@ class MultiTenantIntegrationTest {
         tenantADb.getUsername(),
         tenantADb.getPassword()
     );
-    mockVault.createContext("/api/vault/secrets/projects/acme-corp/app-a/credentials/excalibase_app",
+    mockVault.createContext("/api/vault/secrets/projects/proj_appa12345/credentials/excalibase_app",
         exchange -> {
           byte[] body = tenantAJson.getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -121,7 +121,7 @@ class MultiTenantIntegrationTest {
         tenantBDb.getUsername(),
         tenantBDb.getPassword()
     );
-    mockVault.createContext("/api/vault/secrets/projects/beta-inc/app-b/credentials/excalibase_app",
+    mockVault.createContext("/api/vault/secrets/projects/proj_appb12345/credentials/excalibase_app",
         exchange -> {
           byte[] body = tenantBJson.getBytes(StandardCharsets.UTF_8);
           exchange.getResponseHeaders().set("Content-Type", "application/json");
@@ -164,10 +164,13 @@ class MultiTenantIntegrationTest {
   }
 
   private String signJwt(String orgSlug, String projectName, long userId) throws Exception {
+    // Simulate the provisioner's opaque projectId ref. Deterministic per (org, project)
+    // for test stability; real provisioner generates a random ref at provision time.
+    String projectId = "proj_" + projectName.replaceAll("[^a-z0-9]", "") + "12345";
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .subject("test@test.com")
         .claim("userId", userId)
-        .claim("projectId", orgSlug + "/" + projectName)
+        .claim("projectId", projectId)
         .claim("orgSlug", orgSlug)
         .claim("projectName", projectName)
         .claim("role", "user")

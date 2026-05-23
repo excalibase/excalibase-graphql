@@ -5,6 +5,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.JwtService;
+import io.github.excalibase.security.JwtVerificationException;
 import graphql.language.Document;
 import graphql.language.Field;
 import graphql.language.OperationDefinition;
@@ -12,6 +15,8 @@ import graphql.language.Selection;
 import graphql.parser.Parser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.SubProtocolCapable;
@@ -38,16 +43,35 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
 
     private static final Logger log = LoggerFactory.getLogger(GraphQLWebSocketHandler.class);
     private static final String PAYLOAD = "payload";
+    static final String SESSION_TENANT_KEY = "excalibase.tenantId";
 
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
+    private final JwtService jwtService;
+
+    @Value("${app.security.jwt-enabled:false}")
+    private boolean jwtEnabled;
+
+    /**
+     * When true, the WS handler REQUIRES a valid JWT on every connection and
+     * rejects unauthenticated {@code connection_init}. Gated on the same flag
+     * that enables tenant-in-subject parsing, because multi-tenant routing is
+     * meaningless without an authenticated tenant claim. When false, auth is
+     * verified if present and passes through otherwise — matching the HTTP
+     * {@code JwtAuthFilter}'s permissive semantics for legacy single-tenant stacks.
+     */
+    @Value("${app.nats.tenant-in-subject:false}")
+    private boolean wsAuthRequired;
 
     // sessionId -> (subscriptionId -> Disposable)
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
 
-    public GraphQLWebSocketHandler(SubscriptionService subscriptionService, ObjectMapper objectMapper) {
+    public GraphQLWebSocketHandler(SubscriptionService subscriptionService,
+                                   ObjectMapper objectMapper,
+                                   ObjectProvider<JwtService> jwtServiceProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
+        this.jwtService = jwtServiceProvider.getIfAvailable();
     }
 
     @Override
@@ -63,7 +87,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         String type = (String) msg.get("type");
 
         switch (type) {
-            case "connection_init" -> handleConnectionInit(session);
+            case "connection_init" -> handleConnectionInit(session, msg);
             case "ping" -> sendMessage(session, "{\"type\":\"pong\"}");
             case "subscribe" -> handleSubscribe(session, msg);
             case "complete" -> handleComplete(session, msg);
@@ -94,8 +118,83 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
 
     // -- Private handlers --
 
-    private void handleConnectionInit(WebSocketSession session) {
+    @SuppressWarnings("unchecked")
+    private void handleConnectionInit(WebSocketSession session, Map<String, Object> msg) {
+        if (jwtEnabled && session.getAttributes().get(SESSION_TENANT_KEY) == null) {
+            // JwtHandshakeInterceptor did not authenticate at HTTP upgrade (no Authorization
+            // header). Try the connection_init payload next.
+            Map<String, Object> payload = (Map<String, Object>) msg.getOrDefault(PAYLOAD, Map.of());
+            String token = extractBearerToken(payload);
+            if (token != null) {
+                if (jwtService == null) {
+                    log.error("jwt-enabled=true but JwtService bean is not available");
+                    closeWithAuthError(session, "Server misconfigured: JWT enabled but no verifier");
+                    return;
+                }
+                try {
+                    JwtClaims claims = jwtService.verify(token);
+                    String tenantId = tenantIdFromClaims(claims);
+                    if (tenantId == null) {
+                        closeWithAuthError(session, "JWT missing projectId claim");
+                        return;
+                    }
+                    session.getAttributes().put(SESSION_TENANT_KEY, tenantId);
+                    log.info("WS session {} authenticated via connection_init for tenant '{}'",
+                            session.getId(), tenantId);
+                } catch (JwtVerificationException e) {
+                    closeWithAuthError(session, "Invalid or expired token");
+                    return;
+                }
+            } else if (wsAuthRequired) {
+                // Strict mode (tenant-in-subject=true): no token is a hard reject.
+                closeWithAuthError(session, "Missing Authorization token in connection_init payload");
+                return;
+            }
+            // Permissive mode + no token: pass through as null-tenant (matches HTTP filter semantics).
+        }
         sendMessage(session, "{\"type\":\"connection_ack\"}");
+    }
+
+    /**
+     * Tenant key used for NATS subject filtering. Returns the opaque {@code projectId}
+     * claim ({@code proj_XXXXXXXXXX}) minted by the provisioner — same identifier used
+     * for K8s namespace, vault paths, and pgdog database name. Watcher deployments use
+     * {@code WATCHER_NATS_SUBJECT_PREFIX=cdc.{projectId}}.
+     */
+    static String tenantIdFromClaims(JwtClaims claims) {
+        if (claims == null) return null;
+        return claims.projectId();
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractBearerToken(Map<String, Object> payload) {
+        // Accept both payload.Authorization and payload.headers.Authorization (Hasura + Apollo conventions)
+        Object direct = payload.get("Authorization");
+        if (direct == null) {
+            Object headers = payload.get("headers");
+            if (headers instanceof Map<?, ?> headerMap) {
+                direct = ((Map<String, Object>) headerMap).get("Authorization");
+            }
+        }
+        if (!(direct instanceof String header)) return null;
+        if (!header.startsWith("Bearer ")) return null;
+        return header.substring("Bearer ".length()).trim();
+    }
+
+    private void closeWithAuthError(WebSocketSession session, String reason) {
+        try {
+            sendMessage(session, objectMapper.writeValueAsString(Map.of(
+                    "type", "connection_error",
+                    PAYLOAD, Map.of("message", reason)
+            )));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize connection_error", e);
+        }
+        try {
+            session.close(CloseStatus.POLICY_VIOLATION.withReason(reason));
+        } catch (IOException e) {
+            log.warn("Error closing unauthenticated session", e);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -125,11 +224,12 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         String tableName = extracted[0];
         String fieldName = extracted[1];
 
-        log.info("Starting subscription '{}' for table '{}' (field: '{}'), session {}",
-                id, tableName, fieldName, session.getId());
+        String tenantId = (String) session.getAttributes().get(SESSION_TENANT_KEY);
+        log.info("Starting subscription '{}' for tenant '{}' table '{}' (field: '{}'), session {}",
+                id, tenantId, tableName, fieldName, session.getId());
 
-        // Subscribe to the table's event stream
-        Disposable disposable = subscriptionService.subscribe(tableName)
+        // Subscribe to the table's event stream — scoped to the JWT's tenant (null in single-tenant mode)
+        Disposable disposable = subscriptionService.subscribe(tenantId, tableName)
                 .subscribe(event -> {
                     try {
                         Map<String, Object> changeData = Map.of(

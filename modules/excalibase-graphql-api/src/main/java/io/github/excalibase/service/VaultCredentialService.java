@@ -16,7 +16,9 @@ public class VaultCredentialService {
   private static final Logger log = LoggerFactory.getLogger(VaultCredentialService.class);
   private static final ObjectMapper mapper = new ObjectMapper();
   private static final Duration TIMEOUT = Duration.ofSeconds(10);
-  private static final Pattern SLUG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}$");
+  // One or two segments of [A-Za-z0-9_-], each 1-64 chars, separated by '/'.
+  // Bounded length, no '.'/'..' — safe to interpolate into the vault path.
+  private static final Pattern SLUG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}(/[a-zA-Z0-9_-]{1,64})?$");
 
   private final String provisioningUrl;
   private final String provisioningPat;
@@ -30,11 +32,14 @@ public class VaultCredentialService {
         .build();
   }
 
-  public VaultCredentials fetchCredentials(String orgSlug, String projectName) {
-    validateSlug(orgSlug, "orgSlug");
-    validateSlug(projectName, "projectName");
+  /**
+   * Fetch tenant DB credentials from the provisioner's vault by {@code projectId}.
+   * {@code orgSlug} is accepted for logging only and is not part of the vault path.
+   */
+  public VaultCredentials fetchCredentials(String orgSlug, String projectId) {
+    validateSlug(projectId, "projectId");
     String url = provisioningUrl + "/vault/secrets/projects/"
-        + orgSlug + "/" + projectName + "/credentials/excalibase_app";
+        + projectId + "/credentials/excalibase_app";
     try {
       HttpRequest.Builder reqBuilder = HttpRequest.newBuilder()
           .uri(URI.create(url))
@@ -49,7 +54,7 @@ public class VaultCredentialService {
           HttpResponse.BodyHandlers.ofString());
 
       if (resp.statusCode() != 200) {
-        log.error("vault_credential_fetch_failed status={} tenant={}/{}", resp.statusCode(), orgSlug, projectName);
+        log.error("vault_credential_fetch_failed status={} tenant={}/{}", resp.statusCode(), orgSlug, projectId);
         throw new VaultCredentialException("Database not available for the requested project");
       }
 
@@ -66,10 +71,10 @@ public class VaultCredentialService {
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new VaultCredentialException(
-          "Interrupted while fetching credentials for " + orgSlug + "/" + projectName, e);
+          "Interrupted while fetching credentials for " + orgSlug + "/" + projectId, e);
     } catch (Exception e) {
       throw new VaultCredentialException(
-          "Failed to fetch credentials for " + orgSlug + "/" + projectName, e);
+          "Failed to fetch credentials for " + orgSlug + "/" + projectId, e);
     }
   }
 

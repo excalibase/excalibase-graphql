@@ -304,6 +304,12 @@ build-image: build ## Build Docker image locally for e2e testing
 	@docker build -t excalibase/excalibase-graphql .
 	@echo "$(GREEN)✓ Docker image built$(NC)"
 
+.PHONY: watcher-go-build
+watcher-go-build: ## Build excalibase-watcher-go:local image from sibling repo
+	@echo "$(BLUE)🐳 Building excalibase-watcher-go:local...$(NC)"
+	@docker build -t excalibase/excalibase-watcher-go:local $(HOME)/Documents/duk/excalibase-watcher-go
+	@echo "$(GREEN)✓ watcher-go image built$(NC)"
+
 .PHONY: build-skip
 build-skip: ## Skip Maven build (for rapid iteration)
 	@echo "$(YELLOW)⚠️  Skipping Maven build$(NC)"
@@ -464,8 +470,6 @@ run-tests-native: ## Execute test suite against native containers
 .PHONY: run-tests
 run-tests: ## Execute the actual test suite (queries/mutations + CDC subscriptions)
 	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Postgres tests failed$(NC)" && exit 1)
-	@echo "$(BLUE)🧪 Running NoSQL tests...$(NC)"
-	@cd e2e && npm run test:nosql || (echo "$(RED)❌ NoSQL tests failed$(NC)" && exit 1)
 	@echo "$(BLUE)🧪 Running CDC subscription tests...$(NC)"
 	@cd e2e && npm run test:subscription:postgres || (echo "$(RED)❌ Subscription tests failed$(NC)" && exit 1)
 
@@ -609,3 +613,52 @@ benchmark-db-stats: ## Show enterprise benchmark database statistics
 
 # Force targets (ignore file existence)
 .PHONY: docker-compose.yml scripts/initdb.sql scripts/docker-compose.benchmark.yml scripts/benchmark-initdb.sql scripts/e2e-benchmark.sh
+
+# ─── Demo apps ───────────────────────────────────────────────────────────────
+# UIs live in the SDK repo (excalibase-sdk-js) under examples/. The RLS demo
+# stack (kanban + shopify with row-level security + role switching) lives in
+# e2e/rls-demo/ — separate from the RLS-free jest e2e stack in e2e/study-cases/.
+# Default sibling layout: ../excalibase-sdk-js relative to this repo.
+DEMO_COMPOSE = e2e/rls-demo/docker-compose.rls-demo.yml
+DEMO_PROJECT = excalibase-rls-demo
+JIRA_DIR ?= ../excalibase-sdk-js/examples/jira-board
+SHOP_DIR ?= ../excalibase-sdk-js/examples/storefront
+
+.PHONY: demo-up demo-down demo-jira demo-jira-tokens demo-jira-build demo-shop demo-shop-tokens demo-shop-build
+
+demo-up: ## Bring up the RLS demo stack (kanban + shopify with RLS + role switching)
+	@echo "$(BLUE)Starting RLS demo stack…$(NC)"
+	@docker compose -f $(DEMO_COMPOSE) -p $(DEMO_PROJECT) up -d
+	@echo "$(GREEN)Stack up. Waiting for excalibase-graphql healthcheck…$(NC)"
+	@for i in $$(seq 1 30); do \
+		if curl -sf http://localhost:10004/actuator/health > /dev/null 2>&1; then \
+			echo "$(GREEN)Ready at http://localhost:10004$(NC)"; exit 0; \
+		fi; sleep 2; \
+	done; echo "$(RED)graphql never became ready$(NC)"; exit 1
+
+demo-down: ## Stop the RLS demo stack
+	@docker compose -f $(DEMO_COMPOSE) -p $(DEMO_PROJECT) down
+
+# ─── Jira-board (kanban schema, role switching) ──────────────────────────────
+demo-jira-tokens: ## Sign jira-board demo JWTs (run once after demo-up)
+	@test -d $(JIRA_DIR) || (echo "$(RED)$(JIRA_DIR) missing — set JIRA_DIR=… or check out excalibase-sdk-js as a sibling.$(NC)"; exit 1)
+	@cd $(JIRA_DIR) && (test -d node_modules || npm install --no-fund --no-audit) && npm run sign-tokens
+
+demo-jira-build: ## Production-build jira-board
+	@cd $(JIRA_DIR) && (test -d node_modules || npm install --no-fund --no-audit) && npm run build
+
+demo-jira: demo-up demo-jira-tokens ## End-to-end: stack up + tokens + jira-board dev server (port 5175)
+	@echo "$(GREEN)Vite dev server at http://localhost:5175 — Ctrl+C to stop.$(NC)"
+	@cd $(JIRA_DIR) && npm run dev
+
+# ─── Storefront (shopify schema, role switching) ────────────────────────────
+demo-shop-tokens: ## Sign storefront demo JWTs
+	@test -d $(SHOP_DIR) || (echo "$(RED)$(SHOP_DIR) missing — set SHOP_DIR=… or check out excalibase-sdk-js as a sibling.$(NC)"; exit 1)
+	@cd $(SHOP_DIR) && (test -d node_modules || npm install --no-fund --no-audit) && npm run sign-tokens
+
+demo-shop-build: ## Production-build storefront
+	@cd $(SHOP_DIR) && (test -d node_modules || npm install --no-fund --no-audit) && npm run build
+
+demo-shop: demo-up demo-shop-tokens ## End-to-end: stack up + tokens + storefront dev server (port 5176)
+	@echo "$(GREEN)Vite dev server at http://localhost:5176 — Ctrl+C to stop.$(NC)"
+	@cd $(SHOP_DIR) && npm run dev
