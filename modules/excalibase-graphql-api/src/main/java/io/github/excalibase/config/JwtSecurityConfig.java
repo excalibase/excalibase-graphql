@@ -1,11 +1,15 @@
 package io.github.excalibase.config;
 
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
+import io.github.excalibase.rls.InMemoryPolicyProvider;
+import io.github.excalibase.rls.PolicyProvider;
+import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.PostgresRoleResolver;
 import io.github.excalibase.service.VaultCredentialService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -46,9 +50,27 @@ public class JwtSecurityConfig {
         return new JwtService(auth.hmacSecret());
     }
 
+    /**
+     * Default in-process policy source. Empty until policies are pushed in
+     * (NATS consumer / HTTP sync — separate ticket), so the RLS path is a
+     * no-op passthrough out of the box. {@link ConditionalOnMissingBean} lets a
+     * remote-backed provider replace it without touching this config.
+     */
     @Bean
-    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver) {
-        return new JwtAuthFilter(jwtService, roleResolver);
+    @ConditionalOnMissingBean(PolicyProvider.class)
+    public PolicyProvider policyProvider() {
+        return new InMemoryPolicyProvider();
+    }
+
+    @Bean
+    public RlsPolicyEnforcer rlsPolicyEnforcer(PolicyProvider policyProvider) {
+        return new RlsPolicyEnforcer(policyProvider);
+    }
+
+    @Bean
+    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver,
+                                       RlsPolicyEnforcer rlsPolicyEnforcer) {
+        return new JwtAuthFilter(jwtService, roleResolver, rlsPolicyEnforcer);
     }
 
     // Multi-tenant beans — only when provisioning-url is configured

@@ -2,6 +2,8 @@ package io.github.excalibase.compiler;
 
 import graphql.language.*;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.SqlDialect;
 
 import java.util.*;
@@ -48,9 +50,31 @@ public class FilterBuilder {
         Argument whereArg = field.getArguments().stream()
                 .filter(a -> ARG_WHERE.equals(a.getName()) || ARG_FILTER.equals(a.getName()))
                 .findFirst().orElse(null);
-        if (whereArg == null || !(whereArg.getValue() instanceof ObjectValue ov)) return;
+        if (whereArg != null && whereArg.getValue() instanceof ObjectValue ov) {
+            buildFilterConditions(ov, alias, params, conditions, tableName);
+        }
+        // RLS predicate is appended AFTER (and independently of) any user filter,
+        // so a query that omits `where`/`filter` is still restricted. This funnel
+        // is shared by list, connection (records + totalCount), and aggregate
+        // compilation — closing every read path at once.
+        appendRlsConditions(conditions, tableName, params);
+    }
 
-        buildFilterConditions(ov, alias, params, conditions, tableName);
+    /**
+     * Splices the active request's RLS predicate for {@code tableName} (if any)
+     * into the conditions list. No-op when no contributor is registered for the
+     * request or the table is unrestricted. The contribution is already
+     * parameter-namespaced, so its params merge without colliding with the
+     * user-filter params already in the map.
+     */
+    private void appendRlsConditions(List<String> conditions, String tableName, Map<String, Object> params) {
+        if (tableName == null) return;
+        RlsWhereContributor contributor = RlsContext.current();
+        if (contributor == null) return;
+        RlsWhereContributor.Contribution contribution = contributor.contribute(tableName);
+        if (contribution == null || contribution.sql() == null || contribution.sql().isBlank()) return;
+        params.putAll(contribution.params());
+        conditions.add("(" + contribution.sql() + ")");
     }
 
     /**
