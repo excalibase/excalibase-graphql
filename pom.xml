@@ -61,6 +61,7 @@
 
         <!--own module-->
         <excalibase.version>0.0.1-SNAPSHOT</excalibase.version>
+        <excalibase-rls.version>0.1.0-SNAPSHOT</excalibase-rls.version>
 
         <!--groovy & spock-->
         <groovy-all.version>4.0.24</groovy-all.version>
@@ -150,6 +151,17 @@
                 <groupId>io.github.excalibase</groupId>
                 <artifactId>excalibase-rest-api</artifactId>
                 <version>${excalibase.version}</version>
+            </dependency>
+            <!-- Row-level + column-level security engine (multi-backend). -->
+            <dependency>
+                <groupId>io.github.excalibase</groupId>
+                <artifactId>excalibase-rls-core</artifactId>
+                <version>${excalibase-rls.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.excalibase</groupId>
+                <artifactId>excalibase-rls-jdbc</artifactId>
+                <version>${excalibase-rls.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.mysql</groupId>
