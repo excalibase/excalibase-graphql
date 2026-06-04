@@ -14,8 +14,17 @@ import java.util.List;
 public interface PolicyProvider {
 
     /**
-     * Returns the policies scoped to {@code projectId}, or an empty list
-     * when the project is unknown / has no policies. Never {@code null}.
+     * Returns the row-level policies scoped to {@code projectId}, or an empty
+     * list when the project is unknown / has no policies. Never {@code null}.
      */
     List<Policy> policiesFor(String projectId);
+
+    /**
+     * Returns the column-level (masking) policies scoped to {@code projectId},
+     * or an empty list. Never {@code null}. Defaults to empty so providers that
+     * only serve row policies stay source-compatible.
+     */
+    default List<ColumnPolicy> columnPoliciesFor(String projectId) {
+        return List.of();
+    }
 }

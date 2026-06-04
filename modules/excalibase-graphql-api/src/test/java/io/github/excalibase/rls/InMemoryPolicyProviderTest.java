@@ -79,4 +79,40 @@ class InMemoryPolicyProviderTest {
 
         assertThat(provider.policiesFor("proj-a")).hasSize(2);
     }
+
+    private static ColumnPolicy hide(String resource, String column) {
+        return new ColumnPolicy(
+                "cid-" + column, "mask-" + column, resource,
+                java.util.Set.of(column), Operation.ALL, MaskMode.HIDE,
+                null, null, 0, true, List.of(Assignment.all()));
+    }
+
+    @Test
+    @DisplayName("column policies default to empty and are seeded/scoped per project")
+    void columnPoliciesScoped() {
+        var provider = new InMemoryPolicyProvider();
+        assertThat(provider.columnPoliciesFor("proj-a")).isEmpty();
+
+        provider.putColumns("proj-a", List.of(hide("users", "ssn")));
+        provider.putColumns("proj-b", List.of(hide("users", "email")));
+
+        assertThat(provider.columnPoliciesFor("proj-a")).singleElement()
+                .extracting(ColumnPolicy::columns).asInstanceOf(
+                        org.assertj.core.api.InstanceOfAssertFactories.collection(String.class))
+                .containsExactly("ssn");
+        assertThat(provider.columnPoliciesFor("proj-b")).hasSize(1);
+        assertThat(provider.columnPoliciesFor("unknown")).isEmpty();
+        assertThat(provider.columnPoliciesFor(null)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("row and column policy sets are independent")
+    void rowAndColumnIndependent() {
+        var provider = new InMemoryPolicyProvider();
+        provider.put("proj-a", List.of(allow("orders")));
+        provider.putColumns("proj-a", List.of(hide("users", "ssn")));
+
+        assertThat(provider.policiesFor("proj-a")).hasSize(1);
+        assertThat(provider.columnPoliciesFor("proj-a")).hasSize(1);
+    }
 }

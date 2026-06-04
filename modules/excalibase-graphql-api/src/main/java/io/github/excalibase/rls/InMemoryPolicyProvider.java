@@ -17,15 +17,22 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class InMemoryPolicyProvider implements PolicyProvider {
 
     private final Map<String, List<Policy>> byProject = new ConcurrentHashMap<>();
+    private final Map<String, List<ColumnPolicy>> columnsByProject = new ConcurrentHashMap<>();
 
-    /** Replaces the policy set for {@code projectId}. */
+    /** Replaces the row-policy set for {@code projectId}. */
     public void put(String projectId, List<Policy> policies) {
         byProject.put(projectId, List.copyOf(policies));
     }
 
-    /** Drops all policies for {@code projectId} (e.g. on a delete-all signal). */
+    /** Replaces the column-policy set for {@code projectId}. */
+    public void putColumns(String projectId, List<ColumnPolicy> columnPolicies) {
+        columnsByProject.put(projectId, List.copyOf(columnPolicies));
+    }
+
+    /** Drops all policies (row and column) for {@code projectId}. */
     public void evict(String projectId) {
         byProject.remove(projectId);
+        columnsByProject.remove(projectId);
     }
 
     @Override
@@ -34,5 +41,13 @@ public final class InMemoryPolicyProvider implements PolicyProvider {
             return List.of();
         }
         return byProject.getOrDefault(projectId, List.of());
+    }
+
+    @Override
+    public List<ColumnPolicy> columnPoliciesFor(String projectId) {
+        if (projectId == null) {
+            return List.of();
+        }
+        return columnsByProject.getOrDefault(projectId, List.of());
     }
 }

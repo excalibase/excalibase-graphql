@@ -95,6 +95,37 @@ class RlsPolicyEnforcerTest {
                 .isUnrestricted()).isTrue();
     }
 
+    private static io.github.excalibase.rls.jdbc.SqlProjection project(
+            RlsPolicyEnforcer enforcer, String projectId, String table, java.util.List<String> cols) {
+        return enforcer.projectionFor(projectId, table, claims(ALICE, projectId), Operation.SELECT, cols);
+    }
+
+    @Test
+    @DisplayName("HIDE column policy drops the column from the projection")
+    void hideColumnDropsFromProjection() {
+        var provider = new InMemoryPolicyProvider();
+        provider.putColumns("proj-a", List.of(new io.github.excalibase.rls.ColumnPolicy(
+                "c1", "hide-ssn", "users", java.util.Set.of("ssn"),
+                Operation.ALL, io.github.excalibase.rls.MaskMode.HIDE,
+                null, null, 0, true, List.of(Assignment.all()))));
+        var enforcer = new RlsPolicyEnforcer(provider);
+
+        var projection = project(enforcer, "proj-a", "users", List.of("id", "ssn", "name"));
+
+        assertThat(projection.hidden()).contains("ssn");
+        assertThat(projection.selectList()).noneMatch(s -> s.contains("ssn"));
+        assertThat(projection.selectList()).anyMatch(s -> s.contains("id"));
+    }
+
+    @Test
+    @DisplayName("no column policy → all requested columns pass through")
+    void noColumnPolicy_passthrough() {
+        var enforcer = new RlsPolicyEnforcer(new InMemoryPolicyProvider());
+        var projection = project(enforcer, "proj-a", "users", List.of("id", "ssn"));
+        assertThat(projection.hidden()).isEmpty();
+        assertThat(projection.selectList()).hasSize(2);
+    }
+
     @Test
     @DisplayName("operation is honored — INSERT-only policy doesn't filter a SELECT")
     void operationHonored() {

@@ -2,6 +2,7 @@ package io.github.excalibase.rls;
 
 import io.github.excalibase.rls.jdbc.JdbcEvaluator;
 import io.github.excalibase.rls.jdbc.SqlFilter;
+import io.github.excalibase.rls.jdbc.SqlProjection;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtClaimsUserContext;
 
@@ -38,11 +39,29 @@ public final class RlsPolicyEnforcer {
      * for owner-style policies rather than throwing.
      */
     public SqlFilter filterFor(String projectId, String table, JwtClaims claims, Operation op) {
-        List<Policy> policies = policyProvider.policiesFor(projectId);
-        UserContext ctx = claims != null
-                ? new JwtClaimsUserContext(claims)
-                : anonymous(projectId);
-        return new JdbcEvaluator(policies).compile(table, ctx, op);
+        return evaluator(projectId).compile(table, context(projectId, claims), op);
+    }
+
+    /**
+     * Compiles the column-level projection for one table: which of
+     * {@code requestedColumns} are visible, masked, or hidden for this caller.
+     * Hidden columns appear in {@link SqlProjection#hidden()} and are absent
+     * from its select list.
+     */
+    public SqlProjection projectionFor(String projectId, String table, JwtClaims claims,
+                                       Operation op, List<String> requestedColumns) {
+        return evaluator(projectId).project(table, context(projectId, claims), op, requestedColumns);
+    }
+
+    /** One evaluator per call, carrying both the row and column policies for the project. */
+    private JdbcEvaluator evaluator(String projectId) {
+        return new JdbcEvaluator(
+                policyProvider.policiesFor(projectId),
+                policyProvider.columnPoliciesFor(projectId));
+    }
+
+    private UserContext context(String projectId, JwtClaims claims) {
+        return claims != null ? new JwtClaimsUserContext(claims) : anonymous(projectId);
     }
 
     /** Anonymous principal: no user id, project doubles as tenant, no roles. */

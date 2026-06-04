@@ -30,6 +30,10 @@
         </developer>
     </developers>
     <modules>
+        <!-- RLS engine modules (vendored): pure library, no runtime deps.
+             Listed first as graphql-api depends on them. -->
+        <module>modules/excalibase-rls-core</module>
+        <module>modules/excalibase-rls-jdbc</module>
         <module>modules/excalibase-graphql-api</module>
         <module>modules/excalibase-graphql-starter</module>
         <module>modules/excalibase-graphql-postgres</module>
@@ -61,7 +65,6 @@
 
         <!--own module-->
         <excalibase.version>0.0.1-SNAPSHOT</excalibase.version>
-        <excalibase-rls.version>0.1.0-SNAPSHOT</excalibase-rls.version>
 
         <!--groovy & spock-->
         <groovy-all.version>4.0.24</groovy-all.version>
@@ -86,7 +89,9 @@
         <sonar.exclusions>
             **/ExcalibaseGraphqlApplication.java,
             **/config/**,
-            **/model/**
+            **/model/**,
+            modules/excalibase-rls-core/**,
+            modules/excalibase-rls-jdbc/**
         </sonar.exclusions>
     </properties>
 
@@ -152,16 +157,16 @@
                 <artifactId>excalibase-rest-api</artifactId>
                 <version>${excalibase.version}</version>
             </dependency>
-            <!-- Row-level + column-level security engine (multi-backend). -->
+            <!-- Row-level + column-level security engine (vendored reactor modules). -->
             <dependency>
                 <groupId>io.github.excalibase</groupId>
                 <artifactId>excalibase-rls-core</artifactId>
-                <version>${excalibase-rls.version}</version>
+                <version>${excalibase.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.excalibase</groupId>
                 <artifactId>excalibase-rls-jdbc</artifactId>
-                <version>${excalibase-rls.version}</version>
+                <version>${excalibase.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.mysql</groupId>
