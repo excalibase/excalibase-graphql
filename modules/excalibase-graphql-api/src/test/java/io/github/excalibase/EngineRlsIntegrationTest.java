@@ -70,6 +70,7 @@ class EngineRlsIntegrationTest {
     private static final String PROJECT_NO_POLICY = "proj-open";
     private static final String PROJECT_CLS = "proj-cls";
     private static final String PROJECT_CLS_NULL = "proj-cls-null";
+    private static final String PROJECT_NESTED = "proj-nested";
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -164,6 +165,13 @@ class EngineRlsIntegrationTest {
                 "null-title", "null-title", "rls_demo.docs",
                 java.util.Set.of("title"), Operation.ALL, MaskMode.NULL,
                 null, null, 0, true, List.of(Assignment.all()))));
+        // Nested project: owner policy on `book` only (not `shelf`), so the
+        // embedded books under a shelf must be filtered per caller.
+        provider.put(PROJECT_NESTED, List.of(new Policy(
+                "owner-book", "owner-book", "rls_demo.book",
+                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(new Rule("owner_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(Assignment.all()))));
     }
 
     private String body(String query) throws Exception {
@@ -303,6 +311,31 @@ class EngineRlsIntegrationTest {
                 .andExpect(jsonPath("$.data.rlsDemoDocs[0].title").doesNotExist());
     }
 
+
+
+
+    @Test
+    void nested_embeddedRelationIsFiltered_alice() throws Exception {
+        // One shelf, three books (2 Alice, 1 Bob). The book policy filters the
+        // embedded collection: Alice sees her 2 books nested under the shelf.
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_NESTED))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoShelf { id rlsDemoBook { id title } } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoShelf", hasSize(1)))
+                .andExpect(jsonPath("$.data.rlsDemoShelf[0].rlsDemoBook", hasSize(2)));
+    }
+
+    @Test
+    void nested_embeddedRelationIsFiltered_bob() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(BOB, PROJECT_NESTED))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoShelf { id rlsDemoBook { id title } } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoShelf[0].rlsDemoBook", hasSize(1)));
+    }
 
 
 

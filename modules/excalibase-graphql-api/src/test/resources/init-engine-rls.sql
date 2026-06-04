@@ -37,3 +37,24 @@ CREATE TABLE rls_demo.notes (
 INSERT INTO rls_demo.notes (id, owner_id, title) VALUES
     (1, '11111111-1111-1111-1111-111111111111', 'alice-note'),
     (2, '22222222-2222-2222-2222-222222222222', 'bob-note');
+
+-- FK pair for nested-embed RLS (EXC-315): one shared shelf holds books owned
+-- by different users. A policy on `book` (not `shelf`) must filter the embedded
+-- books per caller, proving RLS reaches nested relations.
+CREATE TABLE rls_demo.shelf (
+    id   BIGINT PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE rls_demo.book (
+    id       BIGINT PRIMARY KEY,
+    shelf_id BIGINT NOT NULL REFERENCES rls_demo.shelf(id),
+    owner_id UUID  NOT NULL,
+    title    TEXT  NOT NULL
+);
+
+INSERT INTO rls_demo.shelf (id, name) VALUES (1, 'main');
+INSERT INTO rls_demo.book (id, shelf_id, owner_id, title) VALUES
+    (10, 1, '11111111-1111-1111-1111-111111111111', 'alice-book-1'),
+    (11, 1, '22222222-2222-2222-2222-222222222222', 'bob-book-1'),
+    (12, 1, '11111111-1111-1111-1111-111111111111', 'alice-book-2');
