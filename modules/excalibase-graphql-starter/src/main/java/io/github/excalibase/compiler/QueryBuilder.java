@@ -3,6 +3,8 @@ package io.github.excalibase.compiler;
 import graphql.language.*;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.ColumnMaskContributor;
+import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.SqlDialect;
 
 import java.util.*;
@@ -473,12 +475,31 @@ public class QueryBuilder {
         return dialect.buildObject(pairs);
     }
 
+    /**
+     * Consults the active request's {@link ColumnMaskContributor} for one column,
+     * defaulting to {@link ColumnMaskContributor.Decision#VISIBLE} when no masker
+     * is registered or the table is unknown.
+     */
+    private ColumnMaskContributor.Decision columnMaskDecision(String tableName, String columnName) {
+        ColumnMaskContributor masker = RlsContext.columnMask();
+        if (masker == null || tableName == null) {
+            return ColumnMaskContributor.Decision.VISIBLE;
+        }
+        return masker.decide(tableName, columnName);
+    }
+
     /** Resolve a single selection field into its JSON pair, or null if not recognized. */
     private String buildFieldPair(Field field, String tableName, String alias, Set<String> columns) {
         String name = field.getName();
 
         if (columns.contains(name)) {
-            return buildColumnPair(field, tableName, alias, name);
+            // Column-level security: HIDDEN drops the column from the response
+            // object, NULLED emits a null value, VISIBLE renders normally.
+            return switch (columnMaskDecision(tableName, name)) {
+                case HIDDEN -> null;
+                case NULLED -> "'" + name + "', NULL";
+                case VISIBLE -> buildColumnPair(field, tableName, alias, name);
+            };
         }
 
         SchemaInfo.FkInfo fk = schemaInfo.getForwardFk(tableName, name);

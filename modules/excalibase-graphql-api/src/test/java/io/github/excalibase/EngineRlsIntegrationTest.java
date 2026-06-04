@@ -8,9 +8,11 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
 import io.github.excalibase.rls.Assignment;
+import io.github.excalibase.rls.ColumnPolicy;
 import io.github.excalibase.rls.FieldType;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
 import io.github.excalibase.rls.LogicOperator;
+import io.github.excalibase.rls.MaskMode;
 import io.github.excalibase.rls.Operation;
 import io.github.excalibase.rls.Policy;
 import io.github.excalibase.rls.PolicyEffect;
@@ -66,6 +68,8 @@ class EngineRlsIntegrationTest {
     private static final String BOB = "22222222-2222-2222-2222-222222222222";
     private static final String PROJECT_WITH_POLICY = "proj-rls";
     private static final String PROJECT_NO_POLICY = "proj-open";
+    private static final String PROJECT_CLS = "proj-cls";
+    private static final String PROJECT_CLS_NULL = "proj-cls-null";
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -134,12 +138,32 @@ class EngineRlsIntegrationTest {
                 List.of(Assignment.all()));
     }
 
+    /** Column policy: HIDE the `title` column for everyone. */
+    private static ColumnPolicy hideTitle() {
+        return new ColumnPolicy(
+                "hide-title", "hide-title", "rls_demo.docs",
+                java.util.Set.of("title"), Operation.ALL, MaskMode.HIDE,
+                null, null, 0, true, List.of(Assignment.all()));
+    }
+
     @BeforeEach
     void seedPolicies() {
-        // The bean is the in-memory provider; seed the owner policy for the
-        // policy-bearing project only. The open project stays empty → passthrough.
-        ((InMemoryPolicyProvider) policyProvider).put(PROJECT_WITH_POLICY, List.of(ownerSelect()));
-        ((InMemoryPolicyProvider) policyProvider).evict(PROJECT_NO_POLICY);
+        var provider = (InMemoryPolicyProvider) policyProvider;
+        // Row-policy project: owner filter, no column masking.
+        provider.put(PROJECT_WITH_POLICY, List.of(ownerSelect()));
+        provider.putColumns(PROJECT_WITH_POLICY, List.of());
+        // Open project: nothing seeded → full passthrough.
+        provider.evict(PROJECT_NO_POLICY);
+        // CLS project: no row policy (all rows visible) but `title` is hidden,
+        // isolating column-level security from row-level filtering.
+        provider.put(PROJECT_CLS, List.of());
+        provider.putColumns(PROJECT_CLS, List.of(hideTitle()));
+        // CLS-NULL project: `title` is null-masked (key present, value null).
+        provider.put(PROJECT_CLS_NULL, List.of());
+        provider.putColumns(PROJECT_CLS_NULL, List.of(new ColumnPolicy(
+                "null-title", "null-title", "rls_demo.docs",
+                java.util.Set.of("title"), Operation.ALL, MaskMode.NULL,
+                null, null, 0, true, List.of(Assignment.all()))));
     }
 
     private String body(String query) throws Exception {
@@ -226,6 +250,61 @@ class EngineRlsIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rlsDemoDocsConnection.edges", hasSize(2)));
     }
+
+    @Test
+    void cls_hiddenColumnIsDroppedFromResponse() throws Exception {
+        // No row policy on PROJECT_CLS → all 3 rows; `title` HIDE → key absent.
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id title } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(3)))
+                .andExpect(jsonPath("$.data.rlsDemoDocs[0].id").exists())
+                .andExpect(jsonPath("$.data.rlsDemoDocs[0].title").doesNotExist());
+    }
+
+    @Test
+    void cls_nonHiddenColumnsStillReturned() throws Exception {
+        // Hiding `title` must not affect other columns.
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id owner_id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs[0].id").exists())
+                .andExpect(jsonPath("$.data.rlsDemoDocs[0].owner_id").exists());
+    }
+
+    @Test
+    void cls_projectWithoutColumnPolicy_titleVisible() throws Exception {
+        // The row-policy project has no column policy → title is present.
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_WITH_POLICY))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id title } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs[0].title").exists());
+    }
+
+    @Test
+    void cls_nullMaskedColumnHasNoRealValue() throws Exception {
+        // NULL mask emits `'title', NULL` (engine selectList "NULL AS title"). Postgres
+        // keeps the null, but the GraphQL response serializer strips null fields, so the
+        // key is omitted at the boundary — the real value never leaves the database
+        // (the security property), even though the cosmetic key differs from HIDE.
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS_NULL))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id title } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(3)))
+                .andExpect(jsonPath("$.data.rlsDemoDocs[0].id").exists())
+                .andExpect(jsonPath("$.data.rlsDemoDocs[0].title").doesNotExist());
+    }
+
+
+
 
     private static String buildJwks(ECPublicKey key) {
         com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(

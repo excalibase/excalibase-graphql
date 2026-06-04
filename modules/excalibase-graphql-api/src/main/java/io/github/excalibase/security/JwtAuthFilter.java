@@ -1,6 +1,7 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.config.datasource.TenantContext;
+import io.github.excalibase.rls.EngineColumnMaskContributor;
 import io.github.excalibase.rls.EngineRlsWhereContributor;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.opentelemetry.api.trace.Span;
@@ -81,6 +82,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
         RlsContext.set(new EngineRlsWhereContributor(rlsEnforcer, claims.projectId(), claims));
+        RlsContext.setColumnMask(new EngineColumnMaskContributor(rlsEnforcer, claims.projectId(), claims));
     }
 
     private JwtClaims verifyClaims(HttpServletRequest request) {

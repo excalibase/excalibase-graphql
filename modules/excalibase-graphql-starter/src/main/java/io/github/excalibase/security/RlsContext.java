@@ -17,6 +17,7 @@ package io.github.excalibase.security;
 public final class RlsContext {
 
     private static final ThreadLocal<RlsWhereContributor> CONTRIBUTOR = new ThreadLocal<>();
+    private static final ThreadLocal<ColumnMaskContributor> COLUMN_MASK = new ThreadLocal<>();
 
     private RlsContext() {}
 
@@ -28,7 +29,17 @@ public final class RlsContext {
         CONTRIBUTOR.set(contributor);
     }
 
+    public static ColumnMaskContributor columnMask() {
+        return COLUMN_MASK.get();
+    }
+
+    public static void setColumnMask(ColumnMaskContributor contributor) {
+        COLUMN_MASK.set(contributor);
+    }
+
+    /** Clears both the row-filter and column-mask contributors for this thread. */
     public static void clear() {
         CONTRIBUTOR.remove();
+        COLUMN_MASK.remove();
     }
 }

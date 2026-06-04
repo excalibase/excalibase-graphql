@@ -85,13 +85,11 @@
         <sonar.organization>excalibase</sonar.organization>
         <sonar.projectKey>excalibase_excalibase-graphql</sonar.projectKey>
         <sonar.projectName>Excalibase Graphql</sonar.projectName>
-        <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+        <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-rls-core/target/site/jacoco/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-rls-jdbc/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.exclusions>
             **/ExcalibaseGraphqlApplication.java,
             **/config/**,
-            **/model/**,
-            modules/excalibase-rls-core/**,
-            modules/excalibase-rls-jdbc/**
+            **/model/**
         </sonar.exclusions>
     </properties>
 

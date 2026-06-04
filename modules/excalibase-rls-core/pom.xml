@@ -16,4 +16,16 @@
     <description>Backend-agnostic row/column-level security policy model and evaluation core.</description>
 
     <!-- Pure JDK library: no runtime dependencies. -->
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
 </project>
