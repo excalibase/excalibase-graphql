@@ -58,3 +58,17 @@ INSERT INTO rls_demo.book (id, shelf_id, owner_id, title) VALUES
     (10, 1, '11111111-1111-1111-1111-111111111111', 'alice-book-1'),
     (11, 1, '22222222-2222-2222-2222-222222222222', 'bob-book-1'),
     (12, 1, '11111111-1111-1111-1111-111111111111', 'alice-book-2');
+
+-- NUMERIC + TIMESTAMPTZ table for type-precise bind tests (EXC-317): policies
+-- compare against exact decimal and temporal values, so the bound RLS params
+-- must carry BigDecimal / OffsetDateTime rather than lossy double / string.
+CREATE TABLE rls_demo.ledger (
+    id         BIGINT PRIMARY KEY,
+    amount     NUMERIC(12,2) NOT NULL,
+    created_at TIMESTAMPTZ   NOT NULL
+);
+
+INSERT INTO rls_demo.ledger (id, amount, created_at) VALUES
+    (1, 100.00, now() - interval '10 days'),
+    (2, 250.50, now()),
+    (3,  99.99, now());

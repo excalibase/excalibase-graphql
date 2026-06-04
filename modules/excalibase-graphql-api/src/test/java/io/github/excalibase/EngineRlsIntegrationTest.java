@@ -71,6 +71,8 @@ class EngineRlsIntegrationTest {
     private static final String PROJECT_CLS = "proj-cls";
     private static final String PROJECT_CLS_NULL = "proj-cls-null";
     private static final String PROJECT_NESTED = "proj-nested";
+    private static final String PROJECT_NUMERIC = "proj-numeric";
+    private static final String PROJECT_TEMPORAL = "proj-temporal";
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -171,6 +173,18 @@ class EngineRlsIntegrationTest {
                 "owner-book", "owner-book", "rls_demo.book",
                 PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
                 List.of(new Rule("owner_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(Assignment.all()))));
+        // Numeric project: DECIMAL rule binds as BigDecimal → exact NUMERIC compare.
+        provider.put(PROJECT_NUMERIC, List.of(new Policy(
+                "min-amount", "min-amount", "rls_demo.ledger",
+                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(new Rule("amount", FieldType.DECIMAL, RuleOperator.GTE, "100.00")),
+                List.of(Assignment.all()))));
+        // Temporal project: DATETIME rule binds as OffsetDateTime → TIMESTAMPTZ compare.
+        provider.put(PROJECT_TEMPORAL, List.of(new Policy(
+                "recent", "recent", "rls_demo.ledger",
+                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(new Rule("created_at", FieldType.DATETIME, RuleOperator.GTE, "{{daysAgo:1}}")),
                 List.of(Assignment.all()))));
     }
 
@@ -338,6 +352,30 @@ class EngineRlsIntegrationTest {
     }
 
 
+
+    @Test
+    void typePrecise_decimalThresholdFiltersExactly() throws Exception {
+        // amount >= 100.00 → rows 1 (100.00) and 2 (250.50); excludes 3 (99.99).
+        // A lossy double bind would risk boundary errors; BigDecimal is exact.
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_NUMERIC))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoLedger { id amount } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoLedger", hasSize(2)));
+    }
+
+    @Test
+    void typePrecise_timestamptzFilters() throws Exception {
+        // created_at >= (now - 1 day) → rows 2 and 3 (created now); excludes row 1
+        // (10 days old). Proves DATETIME binds as a real timestamptz operand.
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_TEMPORAL))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoLedger { id created_at } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoLedger", hasSize(2)));
+    }
 
     private static String buildJwks(ECPublicKey key) {
         com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(

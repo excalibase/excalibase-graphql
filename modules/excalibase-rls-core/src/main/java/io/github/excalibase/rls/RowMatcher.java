@@ -179,6 +179,8 @@ public class RowMatcher {
             case LONG -> (value instanceof Long) ? value : Long.parseLong(value.toString());
             case BOOLEAN -> (value instanceof Boolean) ? value : Boolean.parseBoolean(value.toString());
             case DOUBLE -> (value instanceof Double) ? value : Double.parseDouble(value.toString());
+            case DECIMAL -> (value instanceof java.math.BigDecimal) ? value
+                    : new java.math.BigDecimal(value.toString());
             case DATE -> (value instanceof LocalDate) ? value : LocalDate.parse(value.toString());
             case DATETIME -> {
                 if (value instanceof Instant) yield value;

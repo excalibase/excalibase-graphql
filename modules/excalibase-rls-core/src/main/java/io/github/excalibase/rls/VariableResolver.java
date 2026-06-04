@@ -1,5 +1,6 @@
 package io.github.excalibase.rls;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -87,6 +88,7 @@ public class VariableResolver {
             case LONG -> Long.parseLong(value);
             case BOOLEAN -> Boolean.parseBoolean(value);
             case DOUBLE -> Double.parseDouble(value);
+            case DECIMAL -> new BigDecimal(value);
             case DATE -> LocalDate.parse(value);
             case DATETIME -> parseDatetime(value);
         };
