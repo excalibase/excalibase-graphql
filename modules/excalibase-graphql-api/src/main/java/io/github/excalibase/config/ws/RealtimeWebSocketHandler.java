@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.rls.Operation;
+import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.JwtVerificationException;
@@ -52,6 +54,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
     private final JwtService jwtService;
+    private final RlsPolicyEnforcer rlsEnforcer;
 
     @Value("${app.security.jwt-enabled:false}")
     private boolean jwtEnabled;
@@ -64,10 +67,12 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     public RealtimeWebSocketHandler(SubscriptionService subscriptionService,
                                     ObjectMapper objectMapper,
-                                    ObjectProvider<JwtService> jwtServiceProvider) {
+                                    ObjectProvider<JwtService> jwtServiceProvider,
+                                    ObjectProvider<RlsPolicyEnforcer> rlsEnforcerProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.jwtService = jwtServiceProvider.getIfAvailable();
+        this.rlsEnforcer = rlsEnforcerProvider.getIfAvailable();
     }
 
     @Override
@@ -130,8 +135,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
             return;
         }
+        // Resource the CDC events belong to, matching how policies are keyed
+        // (schema-qualified table) so column masking can be applied per subscriber.
+        String resource = (schema == null ? "public" : schema) + "." + collection;
         Disposable disposable = subscriptionService.subscribe(tenantId, key)
-                .subscribe(event -> dispatchEvent(session, id, filter, event));
+                .subscribe(event -> dispatchEvent(session, id, filter, resource, event));
         sessionSubs.put(id, disposable);
         log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, key);
     }
@@ -164,6 +172,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                 String tenantId = GraphQLWebSocketHandler.tenantIdFromClaims(claims);
                 if (tenantId != null) {
                     session.getAttributes().put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, tenantId);
+                    session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
                     log.info("Realtime session {} authenticated via connection_init for tenant '{}'",
                             session.getId(), tenantId);
                 }
@@ -216,7 +225,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void dispatchEvent(WebSocketSession session, String subId,
-                                Map<String, Object> filter, CDCEvent event) {
+                                Map<String, Object> filter, String resource, CDCEvent event) {
         String op = switch (event.type() == null ? "" : event.type().toUpperCase()) {
             case "INSERT" -> "insert";
             case "UPDATE" -> "update";
@@ -235,18 +244,37 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
+        // Filter matching runs on the raw row (a masked column must not change
+        // which events the subscriber receives), then column-level security
+        // masks the payload per subscriber before it leaves the server.
         if (!matchesFilter(doc, filter)) return;
+        Object payloadDoc = maskDoc(session, resource, doc);
 
         try {
             var payload = new LinkedHashMap<String, Object>();
             payload.put("type", "next");
             payload.put("id", subId);
             payload.put("op", op);
-            payload.put("doc", doc);
+            payload.put("doc", payloadDoc);
             sendMessage(session, objectMapper.writeValueAsString(payload));
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize realtime event for sub {}", subId, e);
         }
+    }
+
+    /**
+     * Applies column-level security to a CDC row for the session's subscriber.
+     * Returns the original {@code doc} unchanged when masking can't apply (engine
+     * not wired, or an unauthenticated session with no claims); otherwise returns
+     * a map with hidden columns dropped and NULL-masked columns nulled.
+     */
+    private Object maskDoc(WebSocketSession session, String resource, JsonNode doc) {
+        JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
+        if (rlsEnforcer == null || claims == null || claims.projectId() == null) {
+            return doc;
+        }
+        Map<String, Object> row = objectMapper.convertValue(doc, new TypeReference<>() {});
+        return rlsEnforcer.maskRow(claims.projectId(), resource, claims, Operation.SELECT, row);
     }
 
     private boolean matchesFilter(JsonNode doc, Map<String, Object> filter) {

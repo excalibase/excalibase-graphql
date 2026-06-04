@@ -44,6 +44,8 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     private static final Logger log = LoggerFactory.getLogger(GraphQLWebSocketHandler.class);
     private static final String PAYLOAD = "payload";
     static final String SESSION_TENANT_KEY = "excalibase.tenantId";
+    /** Verified JWT claims for the session — used by realtime column masking. */
+    static final String SESSION_CLAIMS_KEY = "excalibase.jwtClaims";
 
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;

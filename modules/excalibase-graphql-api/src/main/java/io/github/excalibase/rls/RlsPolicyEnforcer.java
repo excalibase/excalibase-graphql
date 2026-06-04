@@ -66,6 +66,20 @@ public final class RlsPolicyEnforcer {
                 .matches(table, row, context(projectId, claims), op);
     }
 
+    /**
+     * Applies column masking to an already-fetched row in place — the non-SQL
+     * path used by realtime fan-out, where rows arrive from CDC rather than a
+     * SELECT. Hidden columns are removed and NULL-masked columns nulled, per the
+     * caller's column policies. Returns the same map for chaining.
+     */
+    public java.util.Map<String, Object> maskRow(String projectId, String resource, JwtClaims claims,
+                                                  Operation op, java.util.Map<String, Object> row) {
+        new ColumnMasker(policyProvider.columnPoliciesFor(projectId))
+                .plan(resource, context(projectId, claims), op)
+                .apply(row);
+        return row;
+    }
+
     /** One evaluator per call, carrying both the row and column policies for the project. */
     private JdbcEvaluator evaluator(String projectId) {
         return new JdbcEvaluator(

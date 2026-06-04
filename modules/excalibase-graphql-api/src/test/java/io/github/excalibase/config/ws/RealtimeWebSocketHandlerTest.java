@@ -38,7 +38,14 @@ class RealtimeWebSocketHandlerTest {
                     @Override public io.github.excalibase.security.JwtService getIfAvailable() { return null; }
                     @Override public io.github.excalibase.security.JwtService getIfUnique() { return null; }
                 };
-        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, noJwt);
+        org.springframework.beans.factory.ObjectProvider<io.github.excalibase.rls.RlsPolicyEnforcer> noRls =
+                new org.springframework.beans.factory.ObjectProvider<>() {
+                    @Override public io.github.excalibase.rls.RlsPolicyEnforcer getObject() { return null; }
+                    @Override public io.github.excalibase.rls.RlsPolicyEnforcer getObject(Object... args) { return null; }
+                    @Override public io.github.excalibase.rls.RlsPolicyEnforcer getIfAvailable() { return null; }
+                    @Override public io.github.excalibase.rls.RlsPolicyEnforcer getIfUnique() { return null; }
+                };
+        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, noJwt, noRls);
     }
 
     private WebSocketSession session(List<String> sink) throws Exception {
@@ -160,6 +167,46 @@ class RealtimeWebSocketHandlerTest {
         await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         assertThat(sent).hasSize(1);
         assertThat(mapper.readTree(sent.getFirst()).get("op").asText()).isEqualTo("insert");
+    }
+
+    private static <T> org.springframework.beans.factory.ObjectProvider<T> provider(T value) {
+        return new org.springframework.beans.factory.ObjectProvider<>() {
+            @Override public T getObject() { return value; }
+            @Override public T getObject(Object... args) { return value; }
+            @Override public T getIfAvailable() { return value; }
+            @Override public T getIfUnique() { return value; }
+        };
+    }
+
+    @Test
+    @DisplayName("column HIDE policy masks the field in the realtime payload")
+    void columnMasking_dropsHiddenField() throws Exception {
+        var policyProvider = new io.github.excalibase.rls.InMemoryPolicyProvider();
+        policyProvider.putColumns("p1", List.of(new io.github.excalibase.rls.ColumnPolicy(
+                "h", "h", "public.things", java.util.Set.of("secret"),
+                io.github.excalibase.rls.Operation.ALL, io.github.excalibase.rls.MaskMode.HIDE,
+                null, null, 0, true, List.of(io.github.excalibase.rls.Assignment.all()))));
+        var enforcer = new io.github.excalibase.rls.RlsPolicyEnforcer(policyProvider);
+        var masking = new RealtimeWebSocketHandler(subscriptionService, mapper,
+                provider((io.github.excalibase.security.JwtService) null), provider(enforcer));
+
+        var sent = new ArrayList<String>();
+        WebSocketSession session = session(sent);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
+                io.github.excalibase.security.JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com"));
+        masking.afterConnectionEstablished(session);
+
+        masking.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "things"))));
+
+        subscriptionService.publish(null, new CDCEvent(
+                "INSERT", "public", "things", "{\"id\":1,\"secret\":\"x\",\"name\":\"n\"}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        var doc = mapper.readTree(sent.getFirst()).get("doc");
+        assertThat(doc.has("secret")).isFalse();               // HIDE → column dropped
+        assertThat(doc.get("name").asText()).isEqualTo("n");   // others untouched
+        assertThat(doc.get("id").asInt()).isEqualTo(1);
     }
 
     @Test

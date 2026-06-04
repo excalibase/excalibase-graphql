@@ -59,6 +59,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
                 return false;
             }
             attributes.put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, tenantId);
+            attributes.put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
             log.info("WS handshake authenticated via Authorization header for tenant '{}'", tenantId);
             return true;
         } catch (JwtVerificationException e) {
