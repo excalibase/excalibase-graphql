@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "/api/vault/secrets/projects/study-cases/shopify/credentials/excalibase_app"
+    "url": "/api/vault/secrets/projects/shopify/credentials/excalibase_app"
   },
   "response": {
     "status": 200,

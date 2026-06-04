@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "/api/vault/secrets/projects/beta-inc/app-b/credentials/auth_admin"
+    "url": "/api/vault/secrets/projects/app-b/credentials/auth_admin"
   },
   "response": {
     "status": 200,

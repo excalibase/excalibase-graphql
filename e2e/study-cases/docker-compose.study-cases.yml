@@ -96,11 +96,6 @@ services:
         condition: service_healthy
       sc-mock-vault:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:24000/healthz"]
-      interval: 5s
-      timeout: 5s
-      retries: 15
     networks:
       - study-cases-network
 
@@ -139,7 +134,7 @@ services:
       sc-mock-vault:
         condition: service_healthy
       sc-excalibase-auth:
-        condition: service_healthy
+        condition: service_started
     networks:
       - study-cases-network
     deploy:

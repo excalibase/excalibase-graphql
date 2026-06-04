@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "/api/vault/secrets/projects/study-cases/kanban/credentials/excalibase_app"
+    "url": "/api/vault/secrets/projects/kanban/credentials/excalibase_app"
   },
   "response": {
     "status": 200,

@@ -15,7 +15,7 @@ nats:
   enabled: true
   url: "nats://nats:4222"
   stream_name: CDC
-  subject_prefix: cdc.acme-corp/app-a
+  subject_prefix: cdc.app-a
   max_age_minutes: 5
   storage: memory
 

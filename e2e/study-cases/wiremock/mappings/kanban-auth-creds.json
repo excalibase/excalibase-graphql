@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "/api/vault/secrets/projects/study-cases/kanban/credentials/auth_admin"
+    "url": "/api/vault/secrets/projects/kanban/credentials/auth_admin"
   },
   "response": {
     "status": 200,

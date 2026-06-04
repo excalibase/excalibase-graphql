@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "/api/vault/secrets/projects/study-cases/shopify/credentials/auth_admin"
+    "url": "/api/vault/secrets/projects/shopify/credentials/auth_admin"
   },
   "response": {
     "status": 200,
