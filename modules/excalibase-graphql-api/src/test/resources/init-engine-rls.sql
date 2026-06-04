@@ -23,3 +23,17 @@ INSERT INTO rls_demo.docs (id, owner_id, title) VALUES
     (1, '11111111-1111-1111-1111-111111111111', 'alice-1'),
     (2, '11111111-1111-1111-1111-111111111111', 'alice-2'),
     (3, '22222222-2222-2222-2222-222222222222', 'bob-1');
+
+-- A writable sibling table for mutation RLS tests (UPDATE/DELETE/INSERT
+-- WITH-CHECK), kept separate from `docs` so mutation state never perturbs the
+-- exact row-count assertions in the read tests. id is caller-supplied (no
+-- sequence) so inserts use explicit, collision-free ids.
+CREATE TABLE rls_demo.notes (
+    id        BIGINT PRIMARY KEY,
+    owner_id  UUID  NOT NULL,
+    title     TEXT  NOT NULL
+);
+
+INSERT INTO rls_demo.notes (id, owner_id, title) VALUES
+    (1, '11111111-1111-1111-1111-111111111111', 'alice-note'),
+    (2, '22222222-2222-2222-2222-222222222222', 'bob-note');

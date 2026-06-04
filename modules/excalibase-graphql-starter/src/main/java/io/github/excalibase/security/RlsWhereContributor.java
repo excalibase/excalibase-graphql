@@ -18,9 +18,12 @@ public interface RlsWhereContributor {
 
     /**
      * @param tableName the (possibly schema-qualified) table being filtered
+     * @param op        the operation the filter is for (SELECT for reads,
+     *                  UPDATE/DELETE for those mutations) — drives which
+     *                  policies apply and the default-deny outcome
      * @return a ready-to-splice predicate, or {@code null} if unrestricted
      */
-    Contribution contribute(String tableName);
+    Contribution contribute(String tableName, RlsOp op);
 
     /**
      * A self-contained WHERE predicate plus its bind parameters. The {@code sql}

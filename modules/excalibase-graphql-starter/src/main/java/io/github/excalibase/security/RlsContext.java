@@ -18,6 +18,7 @@ public final class RlsContext {
 
     private static final ThreadLocal<RlsWhereContributor> CONTRIBUTOR = new ThreadLocal<>();
     private static final ThreadLocal<ColumnMaskContributor> COLUMN_MASK = new ThreadLocal<>();
+    private static final ThreadLocal<RowCheckContributor> ROW_CHECK = new ThreadLocal<>();
 
     private RlsContext() {}
 
@@ -37,9 +38,18 @@ public final class RlsContext {
         COLUMN_MASK.set(contributor);
     }
 
-    /** Clears both the row-filter and column-mask contributors for this thread. */
+    public static RowCheckContributor rowCheck() {
+        return ROW_CHECK.get();
+    }
+
+    public static void setRowCheck(RowCheckContributor contributor) {
+        ROW_CHECK.set(contributor);
+    }
+
+    /** Clears all RLS contributors (row-filter, column-mask, row-check) for this thread. */
     public static void clear() {
         CONTRIBUTOR.remove();
         COLUMN_MASK.remove();
+        ROW_CHECK.remove();
     }
 }

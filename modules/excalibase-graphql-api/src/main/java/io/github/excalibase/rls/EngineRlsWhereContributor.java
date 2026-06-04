@@ -2,6 +2,7 @@ package io.github.excalibase.rls;
 
 import io.github.excalibase.rls.jdbc.SqlFilter;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 
 import java.util.ArrayList;
@@ -44,12 +45,21 @@ public final class EngineRlsWhereContributor implements RlsWhereContributor {
     }
 
     @Override
-    public Contribution contribute(String tableName) {
-        SqlFilter filter = enforcer.filterFor(projectId, tableName, claims, Operation.SELECT);
+    public Contribution contribute(String tableName, RlsOp op) {
+        SqlFilter filter = enforcer.filterFor(projectId, tableName, claims, toOperation(op));
         if (filter.isUnrestricted()) {
             return null;
         }
         return namespace(filter, "rls_c" + counter.getAndIncrement() + "_");
+    }
+
+    private static Operation toOperation(RlsOp op) {
+        return switch (op) {
+            case SELECT -> Operation.SELECT;
+            case INSERT -> Operation.INSERT;
+            case UPDATE -> Operation.UPDATE;
+            case DELETE -> Operation.DELETE;
+        };
     }
 
     /** Re-keys the filter's params with {@code prefix}, rewriting the SQL to match. */

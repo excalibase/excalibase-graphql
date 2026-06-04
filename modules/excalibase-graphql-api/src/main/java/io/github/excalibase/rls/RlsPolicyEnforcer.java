@@ -53,6 +53,19 @@ public final class RlsPolicyEnforcer {
         return evaluator(projectId).project(table, context(projectId, claims), op, requestedColumns);
     }
 
+    /**
+     * WITH-CHECK validation for a candidate row (INSERT, or an UPDATE's new
+     * image): returns {@code true} iff the row satisfies the project's row
+     * policies for {@code op}, using the engine's in-memory {@link RowMatcher}.
+     * When no ALLOW policy targets the resource/op, the matcher's default-deny
+     * semantics apply.
+     */
+    public boolean permitsRow(String projectId, String table, JwtClaims claims,
+                              Operation op, java.util.Map<String, Object> row) {
+        return new RowMatcher(policyProvider.policiesFor(projectId))
+                .matches(table, row, context(projectId, claims), op);
+    }
+
     /** One evaluator per call, carrying both the row and column policies for the project. */
     private JdbcEvaluator evaluator(String projectId) {
         return new JdbcEvaluator(

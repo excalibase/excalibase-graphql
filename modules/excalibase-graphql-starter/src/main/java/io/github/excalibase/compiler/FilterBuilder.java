@@ -3,6 +3,7 @@ package io.github.excalibase.compiler;
 import graphql.language.*;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.SqlDialect;
 
@@ -47,6 +48,16 @@ public class FilterBuilder {
      * with table name for enum type casting.
      */
     public void buildWhereConditions(Field field, String alias, Map<String, Object> params, List<String> conditions, String tableName) {
+        buildWhereConditions(field, alias, params, conditions, tableName, RlsOp.SELECT);
+    }
+
+    /**
+     * As above, but for a specific operation — UPDATE/DELETE mutations pass their
+     * own op so the engine applies the matching policies and default-deny outcome
+     * (a SELECT-only policy must not authorise an UPDATE).
+     */
+    public void buildWhereConditions(Field field, String alias, Map<String, Object> params,
+                                     List<String> conditions, String tableName, RlsOp op) {
         Argument whereArg = field.getArguments().stream()
                 .filter(a -> ARG_WHERE.equals(a.getName()) || ARG_FILTER.equals(a.getName()))
                 .findFirst().orElse(null);
@@ -57,21 +68,24 @@ public class FilterBuilder {
         // so a query that omits `where`/`filter` is still restricted. This funnel
         // is shared by list, connection (records + totalCount), and aggregate
         // compilation — closing every read path at once.
-        appendRlsConditions(conditions, tableName, params);
+        appendRlsConditions(conditions, tableName, params, op);
     }
 
     /**
-     * Splices the active request's RLS predicate for {@code tableName} (if any)
-     * into the conditions list. No-op when no contributor is registered for the
-     * request or the table is unrestricted. The contribution is already
-     * parameter-namespaced, so its params merge without colliding with the
-     * user-filter params already in the map.
+     * Splices the active request's RLS predicate for {@code (tableName, op)} (if
+     * any) into the conditions list. No-op when no contributor is registered for
+     * the request or the table is unrestricted. Public so mutation compilers that
+     * build their own condition lists (e.g. collection update/delete filters) can
+     * enforce RLS on the same footing as the read path. The contribution is
+     * already parameter-namespaced, so its params merge without colliding with
+     * the user-filter params already in the map.
      */
-    private void appendRlsConditions(List<String> conditions, String tableName, Map<String, Object> params) {
+    public void appendRlsConditions(List<String> conditions, String tableName,
+                                    Map<String, Object> params, RlsOp op) {
         if (tableName == null) return;
         RlsWhereContributor contributor = RlsContext.current();
         if (contributor == null) return;
-        RlsWhereContributor.Contribution contribution = contributor.contribute(tableName);
+        RlsWhereContributor.Contribution contribution = contributor.contribute(tableName, op);
         if (contribution == null || contribution.sql() == null || contribution.sql().isBlank()) return;
         params.putAll(contribution.params());
         conditions.add("(" + contribution.sql() + ")");
@@ -408,11 +422,21 @@ public class FilterBuilder {
     }
 
     /**
-     * Appends a WHERE clause with table name for enum type casting.
+     * Appends a WHERE clause with table name for enum type casting. Reads use
+     * this SELECT-scoped form; mutations call the {@link RlsOp} overload.
      */
     public void applyWhere(StringBuilder sql, Field field, String alias, Map<String, Object> params, String tableName) {
+        applyWhere(sql, field, alias, params, tableName, RlsOp.SELECT);
+    }
+
+    /**
+     * Appends a WHERE clause for a specific operation so UPDATE/DELETE mutations
+     * get RLS compiled for that operation rather than SELECT.
+     */
+    public void applyWhere(StringBuilder sql, Field field, String alias, Map<String, Object> params,
+                           String tableName, RlsOp op) {
         List<String> conditions = new ArrayList<>();
-        buildWhereConditions(field, alias, params, conditions, tableName);
+        buildWhereConditions(field, alias, params, conditions, tableName, op);
         if (!conditions.isEmpty()) {
             sql.append(WHERE).append(String.join(AND, conditions));
         }

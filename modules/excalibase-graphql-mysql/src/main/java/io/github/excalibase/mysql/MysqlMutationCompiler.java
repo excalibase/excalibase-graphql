@@ -2,6 +2,10 @@ package io.github.excalibase.mysql;
 
 import graphql.language.*;
 import io.github.excalibase.compiler.MutationBuilder;
+import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.RlsViolationException;
+import io.github.excalibase.security.RowCheckContributor;
 import io.github.excalibase.spi.MutationCompiler;
 import io.github.excalibase.compiler.SqlCompiler;
 
@@ -53,6 +57,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
         if (inputArg == null) return null;
 
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
+        requireRowAllowed(tableName, inputFields);
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
@@ -96,6 +101,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
         List<String> valueRows = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
             Map<String, Object> row = rows.get(i);
+            requireRowAllowed(tableName, row);
             List<String> vals = new ArrayList<>();
             for (String col : colNames) {
                 String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
@@ -142,7 +148,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
 
         // Build WHERE from where argument (filter-based)
         StringBuilder whereSql = new StringBuilder();
-        shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName);
+        shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName, RlsOp.UPDATE);
         if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table update
 
         // MySQL two-phase: DML first, then SELECT affected rows
@@ -164,7 +170,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
         StringBuilder whereSql = new StringBuilder();
-        shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName);
+        shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName, RlsOp.DELETE);
         if (whereSql.isEmpty()) return null;
 
         String innerSelect = SELECT + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
@@ -176,5 +182,13 @@ public class MysqlMutationCompiler implements MutationCompiler {
                 whereSql.toString(), objectSql);
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, MutationBuilder.MUTATION_DELETE);
+    }
+
+    private void requireRowAllowed(String tableName, Map<String, Object> row) {
+        RowCheckContributor check = RlsContext.rowCheck();
+        if (check != null && !check.permits(tableName, row, RlsOp.INSERT)) {
+            throw new RlsViolationException(
+                    "Row violates row-level security policy for INSERT on " + tableName);
+        }
     }
 }

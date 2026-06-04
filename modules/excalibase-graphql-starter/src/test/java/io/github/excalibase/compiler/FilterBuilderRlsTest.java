@@ -61,7 +61,7 @@ class FilterBuilderRlsTest {
 
     /** Contributor that restricts exactly one table with a fixed namespaced predicate. */
     private static RlsWhereContributor restrict(String table) {
-        return tableName -> table.equals(tableName)
+        return (tableName, op) -> table.equals(tableName)
                 ? new RlsWhereContributor.Contribution(
                         "\"user_id\" = :rls_c0_p0", Map.of("rls_c0_p0", "alice"))
                 : null;
