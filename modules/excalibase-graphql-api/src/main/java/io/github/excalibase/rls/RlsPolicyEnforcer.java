@@ -1,6 +1,7 @@
 package io.github.excalibase.rls;
 
 import io.github.excalibase.rls.jdbc.JdbcEvaluator;
+import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.rls.jdbc.SqlFilter;
 import io.github.excalibase.rls.jdbc.SqlProjection;
 import io.github.excalibase.security.JwtClaims;
@@ -27,9 +28,21 @@ import java.util.Set;
 public final class RlsPolicyEnforcer {
 
     private final PolicyProvider policyProvider;
+    private final QuoteStyle quoteStyle;
 
     public RlsPolicyEnforcer(PolicyProvider policyProvider) {
+        this(policyProvider, QuoteStyle.ANSI);
+    }
+
+    /**
+     * @param quoteStyle identifier quoting for emitted RLS SQL — {@link
+     *                   QuoteStyle#BACKTICK} for MySQL, {@link QuoteStyle#ANSI}
+     *                   (default) for Postgres. Wrong quoting silently mis-filters,
+     *                   so this is keyed off the deployment's database type.
+     */
+    public RlsPolicyEnforcer(PolicyProvider policyProvider, QuoteStyle quoteStyle) {
         this.policyProvider = Objects.requireNonNull(policyProvider, "policyProvider");
+        this.quoteStyle = (quoteStyle == null) ? QuoteStyle.ANSI : quoteStyle;
     }
 
     /**
@@ -84,7 +97,8 @@ public final class RlsPolicyEnforcer {
     private JdbcEvaluator evaluator(String projectId) {
         return new JdbcEvaluator(
                 policyProvider.policiesFor(projectId),
-                policyProvider.columnPoliciesFor(projectId));
+                policyProvider.columnPoliciesFor(projectId),
+                quoteStyle);
     }
 
     private UserContext context(String projectId, JwtClaims claims) {

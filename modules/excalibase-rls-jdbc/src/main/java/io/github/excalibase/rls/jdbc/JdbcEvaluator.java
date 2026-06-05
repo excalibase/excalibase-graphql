@@ -47,14 +47,29 @@ public class JdbcEvaluator {
 
     private final List<Policy> policies;
     private final ColumnMasker columnMasker;
+    private final QuoteStyle quoteStyle;
 
     public JdbcEvaluator(List<Policy> policies) {
         this(policies, List.of());
     }
 
     public JdbcEvaluator(List<Policy> policies, List<ColumnPolicy> columnPolicies) {
+        this(policies, columnPolicies, QuoteStyle.ANSI);
+    }
+
+    /**
+     * @param quoteStyle how column identifiers are quoted in emitted SQL —
+     *                   {@link QuoteStyle#ANSI} for Postgres (default),
+     *                   {@link QuoteStyle#BACKTICK} for MySQL.
+     */
+    public JdbcEvaluator(List<Policy> policies, List<ColumnPolicy> columnPolicies, QuoteStyle quoteStyle) {
         this.policies = (policies == null) ? List.of() : List.copyOf(policies);
         this.columnMasker = new ColumnMasker(columnPolicies);
+        this.quoteStyle = (quoteStyle == null) ? QuoteStyle.ANSI : quoteStyle;
+    }
+
+    private String quote(String validatedIdentifier) {
+        return quoteStyle.quote(validatedIdentifier);
     }
 
     public SqlFilter compile(String resource, UserContext ctx, Operation op) {
@@ -103,7 +118,7 @@ public class JdbcEvaluator {
             if (plan.hidden().contains(safe)) continue;
             MaskMode mode = plan.masked().get(safe);
             if (mode == null) {
-                selectList.add(SqlIdentifier.quote(safe));
+                selectList.add(quote(safe));
             } else {
                 selectList.add(renderMaskedColumn(safe, mode, plan));
             }
@@ -111,9 +126,9 @@ public class JdbcEvaluator {
         return new SqlProjection(selectList, Map.of(), Set.copyOf(plan.hidden()));
     }
 
-    private static String renderMaskedColumn(String column, MaskMode mode, MaskingPlan plan) {
+    private String renderMaskedColumn(String column, MaskMode mode, MaskingPlan plan) {
         return switch (mode) {
-            case NULL -> "NULL AS " + SqlIdentifier.quote(column);
+            case NULL -> "NULL AS " + quote(column);
             case PARTIAL -> throw new UnsupportedOperationException(
                 "MaskMode PARTIAL SQL emission not implemented in v1.6 (RFC 0007 v1.7)");
             case HASH -> throw new UnsupportedOperationException(
@@ -160,7 +175,7 @@ public class JdbcEvaluator {
         return false;
     }
 
-    private static String renderPolicy(Policy policy, VariableResolver resolver, ParamSink sink) {
+    private String renderPolicy(Policy policy, VariableResolver resolver, ParamSink sink) {
         if (policy.rules().isEmpty()) return null;
         List<String> ruleSqls = new ArrayList<>(policy.rules().size());
         for (Rule r : policy.rules()) {
@@ -171,8 +186,8 @@ public class JdbcEvaluator {
         return "(" + String.join(joiner, ruleSqls) + ")";
     }
 
-    private static String renderRule(Rule rule, VariableResolver resolver, ParamSink sink) {
-        String col = SqlIdentifier.quote(SqlIdentifier.checkColumn(rule.field()));
+    private String renderRule(Rule rule, VariableResolver resolver, ParamSink sink) {
+        String col = quote(SqlIdentifier.checkColumn(rule.field()));
 
         return switch (rule.operator()) {
             case IS_NULL -> col + " IS NULL";

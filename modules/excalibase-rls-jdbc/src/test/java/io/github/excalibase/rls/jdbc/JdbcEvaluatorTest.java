@@ -392,4 +392,27 @@ class JdbcEvaluatorTest {
             return new Policy(id, name, resource, effect, operations, ruleLogic, priority, enabled, rules, assignments);
         }
     }
+
+    @Nested
+    @DisplayName("identifier quoting dialect")
+    class Quoting {
+
+        private final Rule ownerRule = new Rule("user_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}");
+
+        @Test
+        @DisplayName("ANSI (default) quotes identifiers with double quotes — Postgres")
+        void ansiDoubleQuotes() {
+            SqlFilter f = single("orders", ownerRule).compile("orders", aliceAuth(), Operation.SELECT);
+            assertThat(f.sql()).contains("\"user_id\"").doesNotContain("`user_id`");
+        }
+
+        @Test
+        @DisplayName("BACKTICK quotes identifiers — MySQL")
+        void backtickForMysql() {
+            SqlFilter f = new JdbcEvaluator(List.of(policyBuilder().rules(ownerRule)
+                    .assignments(Assignment.all()).build()), List.of(), QuoteStyle.BACKTICK)
+                    .compile("orders", aliceAuth(), Operation.SELECT);
+            assertThat(f.sql()).contains("`user_id`").doesNotContain("\"user_id\"");
+        }
+    }
 }

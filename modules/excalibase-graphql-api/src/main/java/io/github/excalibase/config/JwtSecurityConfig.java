@@ -4,6 +4,7 @@ import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
 import io.github.excalibase.rls.PolicyProvider;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
+import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.PostgresRoleResolver;
@@ -63,8 +64,15 @@ public class JwtSecurityConfig {
     }
 
     @Bean
-    public RlsPolicyEnforcer rlsPolicyEnforcer(PolicyProvider policyProvider) {
-        return new RlsPolicyEnforcer(policyProvider);
+    public RlsPolicyEnforcer rlsPolicyEnforcer(PolicyProvider policyProvider,
+            @Value("${app.database-type:postgres}") String databaseType) {
+        // MySQL/MariaDB quote identifiers with backticks; everything else uses
+        // ANSI double quotes. Mis-quoting silently mis-filters, so it's keyed
+        // off the configured database type rather than guessed at query time.
+        QuoteStyle quoteStyle = "mysql".equalsIgnoreCase(databaseType)
+                ? QuoteStyle.BACKTICK
+                : QuoteStyle.ANSI;
+        return new RlsPolicyEnforcer(policyProvider, quoteStyle);
     }
 
     @Bean
