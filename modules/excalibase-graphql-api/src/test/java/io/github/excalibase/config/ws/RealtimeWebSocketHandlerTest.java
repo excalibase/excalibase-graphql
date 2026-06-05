@@ -45,7 +45,7 @@ class RealtimeWebSocketHandlerTest {
                     @Override public io.github.excalibase.rls.RlsPolicyEnforcer getIfAvailable() { return null; }
                     @Override public io.github.excalibase.rls.RlsPolicyEnforcer getIfUnique() { return null; }
                 };
-        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, noJwt, noRls);
+        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, noJwt, noRls, new WebSocketHeartbeat(0));
     }
 
     private WebSocketSession session(List<String> sink) throws Exception {
@@ -188,7 +188,7 @@ class RealtimeWebSocketHandlerTest {
                 null, null, 0, true, List.of(io.github.excalibase.rls.Assignment.all()))));
         var enforcer = new io.github.excalibase.rls.RlsPolicyEnforcer(policyProvider);
         var masking = new RealtimeWebSocketHandler(subscriptionService, mapper,
-                provider((io.github.excalibase.security.JwtService) null), provider(enforcer));
+                provider((io.github.excalibase.security.JwtService) null), provider(enforcer), new WebSocketHeartbeat(0));
 
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);

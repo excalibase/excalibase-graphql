@@ -64,20 +64,24 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     // sessionId -> (subscriptionId -> Disposable)
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
+    private final WebSocketHeartbeat heartbeat;
 
     public RealtimeWebSocketHandler(SubscriptionService subscriptionService,
                                     ObjectMapper objectMapper,
                                     ObjectProvider<JwtService> jwtServiceProvider,
-                                    ObjectProvider<RlsPolicyEnforcer> rlsEnforcerProvider) {
+                                    ObjectProvider<RlsPolicyEnforcer> rlsEnforcerProvider,
+                                    WebSocketHeartbeat heartbeat) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.jwtService = jwtServiceProvider.getIfAvailable();
         this.rlsEnforcer = rlsEnforcerProvider.getIfAvailable();
+        this.heartbeat = heartbeat;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         sessionSubscriptions.put(session.getId(), new ConcurrentHashMap<>());
+        heartbeat.register(session);
         log.debug("Realtime WS connected: {}", session.getId());
     }
 
@@ -98,6 +102,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        heartbeat.unregister(session);
         Map<String, Disposable> subs = sessionSubscriptions.remove(session.getId());
         if (subs != null) {
             subs.values().forEach(d -> {
@@ -201,23 +206,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void sendAck(WebSocketSession session) {
-        try {
-            if (session.isOpen()) {
-                session.sendMessage(new TextMessage("{\"type\":\"connection_ack\"}"));
-            }
-        } catch (IOException e) {
-            log.warn("Failed to send connection_ack", e);
-        }
+        sendMessage(session, "{\"type\":\"connection_ack\"}");
     }
 
     private void closeWithAuthError(WebSocketSession session, String reason) {
         try {
-            if (session.isOpen()) {
-                session.sendMessage(new TextMessage(
-                        objectMapper.writeValueAsString(Map.of(
-                                "type", "connection_error",
-                                "payload", Map.of("message", reason)))));
-            }
+            sendMessage(session, objectMapper.writeValueAsString(Map.of(
+                    "type", "connection_error",
+                    "payload", Map.of("message", reason))));
             session.close(CloseStatus.POLICY_VIOLATION.withReason(reason));
         } catch (IOException e) {
             log.warn("Error closing unauthenticated session", e);
@@ -301,8 +297,13 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     private void sendMessage(WebSocketSession session, String payload) {
         try {
-            if (session.isOpen()) {
-                session.sendMessage(new TextMessage(payload));
+            // Serialise on the session monitor: CDC events fan out from multiple
+            // Reactor threads onto one session, and the heartbeat pings on another
+            // — a raw WebSocketSession is not safe for concurrent sends.
+            synchronized (session) {
+                if (session.isOpen()) {
+                    session.sendMessage(new TextMessage(payload));
+                }
             }
         } catch (Exception e) {
             log.debug("Send failed on session {}: {}", session.getId(), e.getMessage());
