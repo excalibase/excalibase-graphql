@@ -60,6 +60,28 @@ ServiceAccount name
 {{- end }}
 
 {{/*
+Pod anti-affinity preset — spreads replicas across nodes by hostname.
+Driven by .Values.podAntiAffinity: "soft" (preferred) or "hard" (required).
+*/}}
+{{- define "excalibase-graphql.podAntiAffinity" -}}
+{{- if eq .Values.podAntiAffinity "hard" -}}
+requiredDuringSchedulingIgnoredDuringExecution:
+  - labelSelector:
+      matchLabels:
+        {{- include "excalibase-graphql.selectorLabels" . | nindent 8 }}
+    topologyKey: kubernetes.io/hostname
+{{- else if eq .Values.podAntiAffinity "soft" -}}
+preferredDuringSchedulingIgnoredDuringExecution:
+  - weight: 100
+    podAffinityTerm:
+      labelSelector:
+        matchLabels:
+          {{- include "excalibase-graphql.selectorLabels" . | nindent 10 }}
+      topologyKey: kubernetes.io/hostname
+{{- end }}
+{{- end }}
+
+{{/*
 Name of the secret that holds DB credentials.
 Uses existingSecret if provided, otherwise the chart-managed secret.
 */}}

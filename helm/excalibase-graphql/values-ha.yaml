@@ -1,0 +1,57 @@
+# HA preset — 3-node bare-metal cluster (e.g. 3× OVH VPS).
+# Usage: helm install excalibase ./helm/excalibase-graphql -f values-ha.yaml \
+#          --set database.url=jdbc:postgresql://... --set ...
+#
+# Prerequisites on the cluster (one-time, NOT created by this chart):
+#   1. Gateway API CRDs:   kubectl apply -f \
+#        https://github.com/kubernetes-sigs/gateway-api/releases/latest/download/standard-install.yaml
+#   2. Envoy Gateway:      helm install eg oci://docker.io/envoyproxy/gateway-helm \
+#        -n envoy-gateway-system --create-namespace
+#   3. MetalLB for the external VIP (bare metal has no cloud LB):
+#        helm install metallb metallb/metallb -n metallb-system --create-namespace
+#        + an IPAddressPool with your floating public IP and an L2Advertisement.
+
+replicaCount: 3
+
+# Spread the 3 replicas across the 3 nodes; require it (nodes >= replicas).
+podAntiAffinity: hard
+
+# Keep 2 of 3 pods up during node drain / cluster upgrades.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
+
+gatewayApi:
+  enabled: true
+  gatewayClassName: eg          # Envoy Gateway's default class
+  createGateway: true
+  hostnames:
+    - api.example.com
+  listener:
+    name: https
+    port: 443
+    protocol: HTTPS
+    tls:
+      mode: Terminate
+      certificateRefs:
+        - name: excalibase-tls
+  envoyGateway:
+    clientTrafficPolicy:
+      enabled: true
+      timeout:
+        http:
+          idleTimeout: 1h
+
+# Size HikariCP per the formula in values.yaml: (db_CPU × 2 + 1) / replicas.
+# Example for a 4-CPU Postgres across 3 replicas: (4×2+1)/3 ≈ 3 → 4 for headroom.
+hikari:
+  maximumPoolSize: 4
+  minimumIdle: 2
+
+resources:
+  limits:
+    cpu: "2"
+    memory: 2Gi
+  requests:
+    cpu: "1"
+    memory: 1Gi

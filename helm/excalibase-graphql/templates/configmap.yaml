@@ -34,6 +34,15 @@ data:
   # Virtual threads
   SPRING_THREADS_VIRTUAL_ENABLED: {{ .Values.virtualThreads.enabled | quote }}
 
+  # Realtime WebSocket heartbeat (keeps idle sockets alive through proxies/LBs)
+  APP_WEBSOCKET_HEARTBEAT_SECONDS: {{ .Values.websocket.heartbeatSeconds | quote }}
+
+  # Graceful shutdown — drain in-flight work before the pod exits
+  {{- if .Values.lifecycle.gracefulShutdown }}
+  SERVER_SHUTDOWN: "graceful"
+  SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE: {{ .Values.lifecycle.shutdownPhaseTimeout | quote }}
+  {{- end }}
+
   # Application
   SERVER_PORT: {{ .Values.app.port | quote }}
   APP_SCHEMAS: {{ .Values.app.allowedSchema | quote }}

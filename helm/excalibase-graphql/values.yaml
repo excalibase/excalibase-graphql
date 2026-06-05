@@ -43,6 +43,53 @@ ingress:
   #     - excalibase.local
 
 # ---------------------------------------------------------------------------
+# Gateway API (recommended over Ingress — the community ingress-nginx is being
+# retired; Gateway API is its CNCF successor, e.g. Envoy Gateway).
+# Renders an HTTPRoute and, optionally, the Gateway itself. WebSocket upgrades
+# are handled automatically; the only knob that matters for long-lived sockets
+# is the client idle timeout (envoyGateway.clientTrafficPolicy below).
+# ---------------------------------------------------------------------------
+gatewayApi:
+  enabled: false
+
+  # GatewayClass to use. Must already exist — created by your Gateway API
+  # controller install (Envoy Gateway's default class is "eg").
+  gatewayClassName: eg
+
+  # true  → this chart creates the Gateway.
+  # false → attach the HTTPRoute to an existing shared Gateway (set parentRef).
+  createGateway: true
+
+  parentRef:
+    name: ""          # blank → chart fullname (the Gateway created above)
+    namespace: ""     # blank → release namespace
+    sectionName: ""   # listener name; blank → all listeners
+
+  hostnames:
+    - excalibase.local
+
+  listener:
+    name: http
+    port: 80
+    protocol: HTTP    # HTTPS + tls below to terminate TLS at the gateway
+    tls: {}
+      # mode: Terminate
+      # certificateRefs:
+      #   - name: excalibase-tls
+
+  # Envoy Gateway-specific CRD. Only valid when your controller IS Envoy Gateway.
+  # On other implementations leave disabled and use their own timeout mechanism.
+  envoyGateway:
+    clientTrafficPolicy:
+      enabled: false
+      # Rendered verbatim under ClientTrafficPolicy.spec.timeout. With the app
+      # heartbeat (25s) the Envoy default (300s) already survives — raise this
+      # only if you disable the heartbeat.
+      timeout:
+        http:
+          idleTimeout: 1h
+
+# ---------------------------------------------------------------------------
 # Database connection
 # ---------------------------------------------------------------------------
 database:
@@ -148,6 +195,53 @@ virtualThreads:
   enabled: true
 
 # ---------------------------------------------------------------------------
+# Realtime / WebSocket keepalive
+# Sends a native PING to every open socket on this interval so idle proxies,
+# load balancers, and NAT gateways don't reap long-lived subscriptions. Keep it
+# below every idle timeout in the request path. 0 disables.
+# ---------------------------------------------------------------------------
+websocket:
+  heartbeatSeconds: 25
+
+# ---------------------------------------------------------------------------
+# Graceful shutdown & rollout — matters most with long-lived WebSockets, so a
+# deploy or node drain doesn't sever sockets mid-message.
+# ---------------------------------------------------------------------------
+lifecycle:
+  # Spring Boot graceful shutdown: stop accepting new work, drain in-flight.
+  gracefulShutdown: true
+  shutdownPhaseTimeout: "30s"
+  # Seconds the preStop hook waits so the Gateway/Service stops routing new
+  # connections to this pod before SIGTERM reaches the app. Uses the native
+  # k8s `sleep` lifecycle action (requires k8s >= 1.30; 0 disables).
+  preStopSleepSeconds: 5
+
+# Must exceed preStopSleepSeconds + shutdownPhaseTimeout.
+terminationGracePeriodSeconds: 45
+
+# Rolling update — keep realtime capacity up during a deploy.
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+# Spread replicas across nodes:
+#   ""     → off (correct for single-node — nothing to spread across)
+#   "soft" → preferred (best-effort)
+#   "hard" → required (only when nodes >= replicas, e.g. 3-node HA)
+# Ignored when `affinity` below is set explicitly.
+podAntiAffinity: ""
+
+# PodDisruptionBudget — keep N pods up during voluntary disruptions (node drain,
+# cluster upgrades). LEAVE DISABLED ON SINGLE-NODE: a PDB over a single replica
+# makes the only pod non-evictable and blocks node drain forever.
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1   # set one or the other, not both
+
+# ---------------------------------------------------------------------------
 # Resources
 # ---------------------------------------------------------------------------
 resources:
@@ -167,6 +261,13 @@ autoscaling:
   maxReplicas: 5
   targetCPUUtilizationPercentage: 70
   # targetMemoryUtilizationPercentage: 80
+  # WebSocket sockets are pinned to a pod, so scaling DOWN churns live
+  # connections (clients must reconnect). Hold a long stabilization window
+  # before removing a pod. Scaling UP only helps new clients — existing
+  # sockets stay on their original pod.
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 600
 
 # ---------------------------------------------------------------------------
 # Liveness / readiness probes

@@ -1,7 +1,15 @@
 Excalibase GraphQL has been deployed!
 
 1. Get the application URL:
-{{- if .Values.ingress.enabled }}
+{{- if .Values.gatewayApi.enabled }}
+{{- range $h := .Values.gatewayApi.hostnames }}
+  http{{ if $.Values.gatewayApi.listener.tls }}s{{ end }}://{{ $h }}/graphql   (via Gateway API, class "{{ $.Values.gatewayApi.gatewayClassName }}")
+{{- end }}
+  WebSocket subscriptions: ws{{ if $.Values.gatewayApi.listener.tls }}s{{ end }}://{{ (first .Values.gatewayApi.hostnames) }}/graphql
+  NOTE (bare metal): the Gateway needs an external IP. With Envoy Gateway, the
+  provisioned Envoy Service is type LoadBalancer — install MetalLB (single VIP
+  on one node, or a floating VIP across 3 nodes) so it gets your VPS public IP.
+{{- else if .Values.ingress.enabled }}
 {{- range $host := .Values.ingress.hosts }}
   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}/graphql
 {{- end }}

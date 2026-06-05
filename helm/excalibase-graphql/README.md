@@ -35,6 +35,56 @@ helm install my-release ./helm/excalibase-graphql \
 
 In multi-tenant mode, `database.url` is optional. If omitted, the app starts with no default database and routes all requests via JWT claims to tenant-specific databases.
 
+## Deployment topology (bare metal)
+
+The chart is single-node-safe by default and ships an HA preset (`values-ha.yaml`).
+WebSocket subscriptions are long-lived, so the chart includes a heartbeat
+(`websocket.heartbeatSeconds`), graceful shutdown + preStop drain, a rolling
+strategy that keeps capacity up, and opt-in PDB / pod anti-affinity for HA.
+
+### Ingress vs Gateway API
+
+The community `ingress-nginx` is being retired; **Gateway API** is its CNCF
+successor. Set `gatewayApi.enabled=true` to render an `HTTPRoute` (+ optional
+`Gateway` and, for Envoy Gateway, a `ClientTrafficPolicy` for the WS idle
+timeout). The classic `ingress.*` path still works for controllers that consume
+the `Ingress` resource (Traefik, HAProxy, Contour). WebSocket upgrades work
+automatically on all of them; with the 25s heartbeat you survive the default
+idle timeout on every common controller — only raise it where the path is short
+(GKE BackendConfig 30s, AWS ALB 60s).
+
+### Single node (e.g. one OVH dedicated server)
+
+```bash
+helm install excalibase ./helm/excalibase-graphql \
+  --set database.url=jdbc:postgresql://postgres:5432/mydb \
+  --set database.existingSecret=excalibase-db \
+  --set gatewayApi.enabled=true \
+  --set gatewayApi.hostnames[0]=api.example.com
+```
+
+Leave `podDisruptionBudget` and `podAntiAffinity` off — a PDB over a single
+replica makes the pod non-evictable and blocks node drain.
+
+### 3-node HA
+
+```bash
+helm install excalibase ./helm/excalibase-graphql -f values-ha.yaml \
+  --set database.url=jdbc:postgresql://postgres:5432/mydb \
+  --set database.existingSecret=excalibase-db
+```
+
+### Cluster prerequisites (one-time, NOT created by this chart)
+
+Bare metal has no cloud load balancer, so external traffic needs:
+
+1. **Gateway API CRDs** —
+   `kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/latest/download/standard-install.yaml`
+2. **A Gateway controller** — e.g. Envoy Gateway
+   (`helm install eg oci://docker.io/envoyproxy/gateway-helm -n envoy-gateway-system --create-namespace`)
+3. **MetalLB** to give the Envoy Service an external IP — your VPS public IP on
+   a single node, or a floating VIP across the 3-node cluster.
+
 ## Parameters
 
 ### Image

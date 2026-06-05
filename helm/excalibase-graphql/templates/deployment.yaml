@@ -8,6 +8,10 @@ spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
   {{- end }}
+  {{- with .Values.updateStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   selector:
     matchLabels:
       {{- include "excalibase-graphql.selectorLabels" . | nindent 6 }}
@@ -26,6 +30,7 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -78,6 +83,15 @@ spec:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          {{- if gt (int .Values.lifecycle.preStopSleepSeconds) 0 }}
+          lifecycle:
+            preStop:
+              # Native sleep action (k8s >= 1.30) — no shell needed, so it works
+              # with the distroless native image. Lets the Gateway/Service drop
+              # this pod from rotation before SIGTERM hits the app.
+              sleep:
+                seconds: {{ .Values.lifecycle.preStopSleepSeconds }}
+          {{- end }}
           {{- with .Values.extraVolumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}
@@ -90,9 +104,13 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- if .Values.affinity }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- else if .Values.podAntiAffinity }}
+      affinity:
+        podAntiAffinity:
+          {{- include "excalibase-graphql.podAntiAffinity" . | nindent 10 }}
       {{- end }}
       {{- with .Values.tolerations }}
       tolerations:
