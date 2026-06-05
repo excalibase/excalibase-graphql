@@ -11,7 +11,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 public class VariableResolver {
 
@@ -22,7 +21,7 @@ public class VariableResolver {
     public VariableResolver(UserContext context) {
         this.context = context;
         this.nowSnapshot = Instant.now();
-        this.todaySnapshot = LocalDate.now();
+        this.todaySnapshot = LocalDate.now(ZoneOffset.UTC);
     }
 
     public Object resolve(String value, FieldType fieldType) {
@@ -44,8 +43,8 @@ public class VariableResolver {
         }
         return Arrays.stream(value.split(","))
             .map(String::trim)
-            .map(v -> (Object) cast(v, fieldType))
-            .collect(Collectors.toList());
+            .map(v -> cast(v, fieldType))
+            .toList();
     }
 
     private static boolean isVariable(String value) {
@@ -99,7 +98,7 @@ public class VariableResolver {
         // LocalDateTime ("yyyy-MM-ddTHH:mm:ss[.fff]"); coerce to Instant.
         try {
             return Instant.parse(s);
-        } catch (java.time.format.DateTimeParseException ignored) {
+        } catch (java.time.format.DateTimeParseException _) {
             return LocalDateTime.parse(s).toInstant(ZoneOffset.UTC);
         }
     }

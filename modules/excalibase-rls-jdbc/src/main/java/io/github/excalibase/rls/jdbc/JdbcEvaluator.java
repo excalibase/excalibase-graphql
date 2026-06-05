@@ -120,13 +120,13 @@ public class JdbcEvaluator {
             if (mode == null) {
                 selectList.add(quote(safe));
             } else {
-                selectList.add(renderMaskedColumn(safe, mode, plan));
+                selectList.add(renderMaskedColumn(safe, mode));
             }
         }
         return new SqlProjection(selectList, Map.of(), Set.copyOf(plan.hidden()));
     }
 
-    private String renderMaskedColumn(String column, MaskMode mode, MaskingPlan plan) {
+    private String renderMaskedColumn(String column, MaskMode mode) {
         return switch (mode) {
             case NULL -> "NULL AS " + quote(column);
             case PARTIAL -> throw new UnsupportedOperationException(

@@ -29,12 +29,12 @@ public class ColumnMasker {
         String userId = ctx.userId();
 
         for (ColumnPolicy p : policies) {
-            if (!p.enabled()) continue;
-            if (!p.resource().equals(resource)) continue;
-            if (!p.appliesTo(op)) continue;
-            if (!assignmentMatches(p, userId, roles, groups)) continue;
+            if (!p.enabled() || !p.resource().equals(resource) || !p.appliesTo(op)
+                    || !assignmentMatches(p, userId, roles, groups)) {
+                continue;
+            }
             for (String column : p.columns()) {
-                b.put(column, p.mode(), p.partialSpec(), p.customMaskerKey());
+                b.put(column, p.mode(), p.partialSpec());
             }
         }
         return b.build();

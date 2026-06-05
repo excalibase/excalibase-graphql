@@ -25,7 +25,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class SqlProjectionTest {
 
-    private static final UUID ALICE = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     @Nested
     @DisplayName("composition / selectList shape")
@@ -126,8 +125,8 @@ class SqlProjectionTest {
         @Test @DisplayName("requested column with unsafe name rejected")
         void unsafeRequestedColumn_rejected() {
             JdbcEvaluator e = new JdbcEvaluator(List.of(), List.of());
-            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT,
-                List.of("id; DROP TABLE users")))
+            List<String> requestedColumns = List.of("id; DROP TABLE users");
+            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, requestedColumns))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Rejected");
         }
@@ -145,7 +144,8 @@ class SqlProjectionTest {
                 new io.github.excalibase.rls.PartialMaskSpec.KeepLast(4, '*'),
                 null, 0, true, List.of(Assignment.all()));
             JdbcEvaluator e = new JdbcEvaluator(List.of(), List.of(partial));
-            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, List.of("email")))
+            List<String> requestedColumns = List.of("email");
+            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, requestedColumns))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("PARTIAL");
         }
@@ -156,7 +156,8 @@ class SqlProjectionTest {
                 UUID.randomUUID().toString(), "hash", "users", Set.of("email"),
                 Operation.ALL, MaskMode.HASH, null, null, 0, true, List.of(Assignment.all()));
             JdbcEvaluator e = new JdbcEvaluator(List.of(), List.of(hash));
-            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, List.of("email")))
+            List<String> requestedColumns = List.of("email");
+            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, requestedColumns))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("HASH");
         }
@@ -167,7 +168,8 @@ class SqlProjectionTest {
                 UUID.randomUUID().toString(), "custom", "users", Set.of("email"),
                 Operation.ALL, MaskMode.CUSTOM, null, "my-masker", 0, true, List.of(Assignment.all()));
             JdbcEvaluator e = new JdbcEvaluator(List.of(), List.of(custom));
-            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, List.of("email")))
+            List<String> requestedColumns = List.of("email");
+            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, requestedColumns))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("CUSTOM");
         }

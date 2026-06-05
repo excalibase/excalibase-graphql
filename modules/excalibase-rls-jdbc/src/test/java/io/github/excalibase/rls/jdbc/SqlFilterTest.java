@@ -89,9 +89,10 @@ class SqlFilterTest {
     @Test
     @DisplayName("params() returns an unmodifiable view")
     void params_areImmutable() {
+        Map<String, Object> params = HAS_RLS.params();
         org.junit.jupiter.api.Assertions.assertThrows(
             UnsupportedOperationException.class,
-            () -> HAS_RLS.params().put("evil", "value")
+            () -> params.put("evil", "value")
         );
     }
 }

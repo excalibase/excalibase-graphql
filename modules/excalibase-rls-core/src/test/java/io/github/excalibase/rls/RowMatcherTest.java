@@ -18,7 +18,6 @@ class RowMatcherTest {
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
     private final UserContext alice = userContext(ALICE, TENANT, Set.of("authenticated"));
-    private final UserContext bob = userContext(BOB, TENANT, Set.of("authenticated"));
 
     @Nested
     @DisplayName("composition rule")

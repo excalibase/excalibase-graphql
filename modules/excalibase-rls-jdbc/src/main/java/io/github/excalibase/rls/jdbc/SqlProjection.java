@@ -4,7 +4,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -48,14 +47,5 @@ public record SqlProjection(
 
     public static SqlProjection empty() {
         return new SqlProjection(List.of(), Map.of(), Set.of());
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof SqlProjection that)) return false;
-        return Objects.equals(selectList, that.selectList)
-            && Objects.equals(params, that.params)
-            && Objects.equals(hidden, that.hidden);
     }
 }

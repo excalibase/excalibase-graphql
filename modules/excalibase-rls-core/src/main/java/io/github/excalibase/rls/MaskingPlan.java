@@ -85,7 +85,7 @@ public final class MaskingPlan {
          * Add (or replace) a per-column entry, applying the most-restrictive
          * precedence: HIDE > NULL > HASH > PARTIAL > none.
          */
-        void put(String column, MaskMode mode, PartialMaskSpec spec, String customKey) {
+        void put(String column, MaskMode mode, PartialMaskSpec spec) {
             if (mode == MaskMode.HIDE) {
                 hidden.add(column);
                 masked.remove(column);

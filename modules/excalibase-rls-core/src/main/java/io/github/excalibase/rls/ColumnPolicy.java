@@ -32,34 +32,32 @@ public record ColumnPolicy(
     public ColumnPolicy {
         Objects.requireNonNull(resource, "resource");
         Objects.requireNonNull(mode, "mode");
-        columns = (columns == null || columns.isEmpty())
-            ? Set.of()
-            : Set.copyOf(columns);
+        columns = (columns == null || columns.isEmpty()) ? Set.of() : Set.copyOf(columns);
         if (columns.isEmpty()) {
             throw new IllegalArgumentException("ColumnPolicy must target at least one column");
         }
         operations = (operations == null || operations.isEmpty()) ? Operation.ALL : Set.copyOf(operations);
         assignments = (assignments == null) ? List.of() : List.copyOf(assignments);
+        validateMaskInputs(mode, partialSpec, customMaskerKey);
+    }
 
+    /** Ensures the optional mask inputs are present/absent as each mode requires. */
+    private static void validateMaskInputs(MaskMode mode, PartialMaskSpec spec, String customKey) {
+        boolean hasSpec = spec != null;
+        boolean hasKey = customKey != null && !customKey.isBlank();
         switch (mode) {
-            case PARTIAL -> {
-                if (partialSpec == null) {
-                    throw new IllegalArgumentException("PARTIAL mode requires partialSpec");
-                }
-            }
-            case CUSTOM -> {
-                if (customMaskerKey == null || customMaskerKey.isBlank()) {
-                    throw new IllegalArgumentException("CUSTOM mode requires customMaskerKey");
-                }
-            }
+            case PARTIAL -> require(hasSpec, "PARTIAL mode requires partialSpec");
+            case CUSTOM -> require(hasKey, "CUSTOM mode requires customMaskerKey");
             case HIDE, NULL, HASH -> {
-                if (partialSpec != null) {
-                    throw new IllegalArgumentException(mode + " mode does not use partialSpec");
-                }
-                if (customMaskerKey != null) {
-                    throw new IllegalArgumentException(mode + " mode does not use customMaskerKey");
-                }
+                require(!hasSpec, mode + " mode does not use partialSpec");
+                require(customKey == null, mode + " mode does not use customMaskerKey");
             }
+        }
+    }
+
+    private static void require(boolean condition, String message) {
+        if (!condition) {
+            throw new IllegalArgumentException(message);
         }
     }
 

@@ -59,7 +59,7 @@ class RlsPolicyEnforcerTest {
         assertThat(f.isUnrestricted()).isFalse();
         assertThat(f.sql()).contains("user_id");
         assertThat(f.params()).isNotEmpty();
-        assertThat(f.params().values()).contains(UUID.fromString(ALICE));
+        assertThat(f.params()).containsValue(UUID.fromString(ALICE));
     }
 
     @Test

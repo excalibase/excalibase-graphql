@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.time.LocalDate;
-import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -34,7 +33,7 @@ class VariableResolverCoverageTest {
 
     @Test @DisplayName("DATE literal")
     void dateCast() {
-        assertThat(r.resolve("2026-05-31", FieldType.DATE)).isEqualTo(LocalDate.of(2026, 5, 31));
+        assertThat(r.resolve("2026-05-31", FieldType.DATE)).isEqualTo(LocalDate.of(2026, java.time.Month.MAY, 31));
     }
 
     @Test @DisplayName("DATETIME literal — LocalDateTime shape")

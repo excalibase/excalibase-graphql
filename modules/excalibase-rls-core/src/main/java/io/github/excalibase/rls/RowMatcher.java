@@ -32,8 +32,9 @@ public class RowMatcher {
             }
         }
 
-        // ALLOW path: if no ALLOW exists for (resource, op) anywhere, RLS is off
-        // and the row passes (DENY has already been checked). Otherwise RLS is on
+        // ALLOW path: when no ALLOW exists for this resource and operation
+        // anywhere, RLS is off and the row passes after the earlier DENY check.
+        // Otherwise RLS is on
         // and the subscriber needs at least one in-scope ALLOW that matches.
         if (!rlsEnabledFor(resource, op)) return true;
 
@@ -189,7 +190,7 @@ public class RowMatcher {
                 // Try ISO_INSTANT first (what Instant.toString() emits), then fall
                 // back to LocalDateTime (no zone). Either is acceptable in rows.
                 try { yield Instant.parse(s); }
-                catch (java.time.format.DateTimeParseException ignored) {
+                catch (java.time.format.DateTimeParseException _) {
                     yield LocalDateTime.parse(s).toInstant(ZoneOffset.UTC);
                 }
             }

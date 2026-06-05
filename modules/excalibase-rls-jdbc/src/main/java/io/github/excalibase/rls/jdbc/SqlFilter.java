@@ -28,11 +28,11 @@ public record SqlFilter(String sql, Map<String, Object> params) {
 
     public SqlFilter {
         sql = Objects.requireNonNullElse(sql, "");
-        // Use HashMap-backed unmodifiable view because Map.copyOf rejects
-        // null values, and bind params may legitimately be null (e.g. when
-        // {{currentUserId}} resolves to null for an unauthenticated context;
-        // the resulting "col = NULL" SQL evaluates to UNKNOWN and matches
-        // zero rows, which is the correct safety behavior).
+        // A HashMap-backed unmodifiable view is used instead of Map.copyOf,
+        // which rejects null values. A bind parameter may legitimately be null:
+        // an unauthenticated context resolves the current user id to null, and a
+        // NULL comparison evaluates to UNKNOWN and matches zero rows — the
+        // correct fail-closed behaviour.
         params = (params == null || params.isEmpty())
             ? Map.of()
             : Collections.unmodifiableMap(new HashMap<>(params));

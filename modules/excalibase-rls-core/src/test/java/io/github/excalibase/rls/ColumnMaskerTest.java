@@ -211,8 +211,7 @@ class ColumnMaskerTest {
             Map<String, Object> row = new HashMap<>(Map.of(
                 "id", 1, "email", "x@y.com", "ssn", "123-45-6789"));
             plan.apply(row);
-            assertThat(row).doesNotContainKey("ssn");
-            assertThat(row).containsKeys("id", "email");
+            assertThat(row).doesNotContainKey("ssn").containsKeys("id", "email");
         }
 
         @Test
@@ -226,8 +225,7 @@ class ColumnMaskerTest {
             Map<String, Object> row = new HashMap<>(Map.of(
                 "id", 1, "email", "x@y.com"));
             plan.apply(row);
-            assertThat(row).containsEntry("email", null);
-            assertThat(row).containsEntry("id", 1);
+            assertThat(row).containsEntry("email", null).containsEntry("id", 1);
         }
 
         @Test
@@ -281,7 +279,8 @@ class ColumnMaskerTest {
             MaskingPlan plan = new ColumnMasker(List.of(hash))
                 .plan("users", anon(), Operation.SELECT);
 
-            assertThatThrownBy(() -> plan.apply(new HashMap<>(Map.of("email", "x@y.com"))))
+            Map<String, Object> row = new HashMap<>(Map.of("email", "x@y.com"));
+            assertThatThrownBy(() -> plan.apply(row))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("HASH");
         }
@@ -296,7 +295,8 @@ class ColumnMaskerTest {
             MaskingPlan plan = new ColumnMasker(List.of(custom))
                 .plan("users", anon(), Operation.SELECT);
 
-            assertThatThrownBy(() -> plan.apply(new HashMap<>(Map.of("email", "x@y.com"))))
+            Map<String, Object> row = new HashMap<>(Map.of("email", "x@y.com"));
+            assertThatThrownBy(() -> plan.apply(row))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("CUSTOM");
         }
@@ -314,35 +314,44 @@ class ColumnMaskerTest {
 
         @Test @DisplayName("ColumnPolicy with no columns rejected at construction")
         void emptyColumns_rejected() {
+            Set<String> columns = Set.of();
+            List<Assignment> assignments = List.of(Assignment.all());
             assertThatThrownBy(() -> new ColumnPolicy(
-                "id", "p", "users", Set.of(), Operation.ALL, MaskMode.HIDE,
-                null, null, 0, true, List.of(Assignment.all())))
+                "id", "p", "users", columns, Operation.ALL, MaskMode.HIDE,
+                null, null, 0, true, assignments))
                 .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test @DisplayName("PARTIAL mode without spec rejected at construction")
         void partialNoSpec_rejected() {
+            Set<String> columns = Set.of("c");
+            List<Assignment> assignments = List.of(Assignment.all());
             assertThatThrownBy(() -> new ColumnPolicy(
-                "id", "p", "users", Set.of("c"), Operation.ALL, MaskMode.PARTIAL,
-                null, null, 0, true, List.of(Assignment.all())))
+                "id", "p", "users", columns, Operation.ALL, MaskMode.PARTIAL,
+                null, null, 0, true, assignments))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("PARTIAL");
         }
 
         @Test @DisplayName("CUSTOM mode without key rejected at construction")
         void customNoKey_rejected() {
+            Set<String> columns = Set.of("c");
+            List<Assignment> assignments = List.of(Assignment.all());
             assertThatThrownBy(() -> new ColumnPolicy(
-                "id", "p", "users", Set.of("c"), Operation.ALL, MaskMode.CUSTOM,
-                null, null, 0, true, List.of(Assignment.all())))
+                "id", "p", "users", columns, Operation.ALL, MaskMode.CUSTOM,
+                null, null, 0, true, assignments))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("CUSTOM");
         }
 
         @Test @DisplayName("HIDE/NULL/HASH with non-null partialSpec rejected")
         void wrongMode_withPartialSpec_rejected() {
+            Set<String> columns = Set.of("c");
+            PartialMaskSpec spec = new PartialMaskSpec.KeepFirst(3, '*');
+            List<Assignment> assignments = List.of(Assignment.all());
             assertThatThrownBy(() -> new ColumnPolicy(
-                "id", "p", "users", Set.of("c"), Operation.ALL, MaskMode.HIDE,
-                new PartialMaskSpec.KeepFirst(3, '*'), null, 0, true, List.of(Assignment.all())))
+                "id", "p", "users", columns, Operation.ALL, MaskMode.HIDE,
+                spec, null, 0, true, assignments))
                 .isInstanceOf(IllegalArgumentException.class);
         }
     }

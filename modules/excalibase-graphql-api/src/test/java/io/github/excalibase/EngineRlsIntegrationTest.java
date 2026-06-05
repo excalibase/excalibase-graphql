@@ -40,7 +40,6 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -199,8 +198,8 @@ class EngineRlsIntegrationTest {
                 .claim("projectId", projectId)
                 .claim("role", "app_authenticated")
                 .issuer("excalibase")
-                .issueTime(new Date())
-                .expirationTime(new Date(System.currentTimeMillis() + 3600_000))
+                .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z")))
+                .expirationTime(java.util.Date.from(java.time.Instant.parse("2099-01-01T00:00:00Z")))
                 .build();
         SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
         signed.sign(new ECDSASigner(privateKey));

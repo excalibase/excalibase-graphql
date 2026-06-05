@@ -28,7 +28,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JdbcEvaluatorTest {
 
     private static final UUID ALICE = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    private static final UUID BOB = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private static final UUID TENANT = UUID.fromString("11111111-1111-1111-1111-111111111111");
 
     private static UserContext aliceAuth() {

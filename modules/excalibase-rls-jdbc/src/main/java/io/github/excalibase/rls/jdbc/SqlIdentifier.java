@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
  */
 public final class SqlIdentifier {
 
-    private static final Pattern SAFE = Pattern.compile("^[A-Za-z_][A-Za-z0-9_]{0,62}$");
+    private static final Pattern SAFE = Pattern.compile("^[A-Za-z_]\\w{0,62}$");
 
     private SqlIdentifier() {}
 
