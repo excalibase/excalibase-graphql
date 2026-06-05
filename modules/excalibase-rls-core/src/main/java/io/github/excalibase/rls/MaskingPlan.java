@@ -18,28 +18,16 @@ import java.util.Set;
  * throw {@link UnsupportedOperationException} when {@link #apply(Map)}
  * encounters them, until v1.7 ships dialect-aware rendering.
  */
-public final class MaskingPlan {
+public record MaskingPlan(
+        Set<String> hidden,
+        Map<String, MaskMode> masked,
+        Map<String, PartialMaskSpec> partialSpecs) {
 
-    private final Set<String> hidden;
-    private final Map<String, MaskMode> masked;
-    private final Map<String, PartialMaskSpec> partialSpecs;
-
-    public MaskingPlan(Set<String> hidden,
-                       Map<String, MaskMode> masked,
-                       Map<String, PartialMaskSpec> partialSpecs) {
-        this.hidden = (hidden == null) ? Set.of() : Set.copyOf(hidden);
-        this.masked = (masked == null) ? Map.of() : Map.copyOf(masked);
-        this.partialSpecs = (partialSpecs == null) ? Map.of() : Map.copyOf(partialSpecs);
+    public MaskingPlan {
+        hidden = (hidden == null) ? Set.of() : Set.copyOf(hidden);
+        masked = (masked == null) ? Map.of() : Map.copyOf(masked);
+        partialSpecs = (partialSpecs == null) ? Map.of() : Map.copyOf(partialSpecs);
     }
-
-    /** Columns that must be excluded from result projections / response shapes. */
-    public Set<String> hidden() { return hidden; }
-
-    /** Columns whose value is transformed at read time, keyed by the transformation mode. */
-    public Map<String, MaskMode> masked() { return masked; }
-
-    /** Per-column partial-mask spec when the mode is {@link MaskMode#PARTIAL}. */
-    public Map<String, PartialMaskSpec> partialSpecs() { return partialSpecs; }
 
     /**
      * Mutates {@code row} in place: removes hidden columns, applies value

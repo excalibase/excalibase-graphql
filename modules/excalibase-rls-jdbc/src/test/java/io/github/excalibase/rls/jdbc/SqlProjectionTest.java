@@ -126,7 +126,8 @@ class SqlProjectionTest {
         void unsafeRequestedColumn_rejected() {
             JdbcEvaluator e = new JdbcEvaluator(List.of(), List.of());
             List<String> requestedColumns = List.of("id; DROP TABLE users");
-            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, requestedColumns))
+            var anonCtx = anon();
+            assertThatThrownBy(() -> e.project("users", anonCtx, Operation.SELECT, requestedColumns))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Rejected");
         }
@@ -145,7 +146,8 @@ class SqlProjectionTest {
                 null, 0, true, List.of(Assignment.all()));
             JdbcEvaluator e = new JdbcEvaluator(List.of(), List.of(partial));
             List<String> requestedColumns = List.of("email");
-            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, requestedColumns))
+            var anonCtx = anon();
+            assertThatThrownBy(() -> e.project("users", anonCtx, Operation.SELECT, requestedColumns))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("PARTIAL");
         }
@@ -157,7 +159,8 @@ class SqlProjectionTest {
                 Operation.ALL, MaskMode.HASH, null, null, 0, true, List.of(Assignment.all()));
             JdbcEvaluator e = new JdbcEvaluator(List.of(), List.of(hash));
             List<String> requestedColumns = List.of("email");
-            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, requestedColumns))
+            var anonCtx = anon();
+            assertThatThrownBy(() -> e.project("users", anonCtx, Operation.SELECT, requestedColumns))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("HASH");
         }
@@ -169,7 +172,8 @@ class SqlProjectionTest {
                 Operation.ALL, MaskMode.CUSTOM, null, "my-masker", 0, true, List.of(Assignment.all()));
             JdbcEvaluator e = new JdbcEvaluator(List.of(), List.of(custom));
             List<String> requestedColumns = List.of("email");
-            assertThatThrownBy(() -> e.project("users", anon(), Operation.SELECT, requestedColumns))
+            var anonCtx = anon();
+            assertThatThrownBy(() -> e.project("users", anonCtx, Operation.SELECT, requestedColumns))
                 .isInstanceOf(UnsupportedOperationException.class)
                 .hasMessageContaining("CUSTOM");
         }
