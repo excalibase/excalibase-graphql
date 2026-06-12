@@ -1,0 +1,39 @@
+name: Slack — stale PR reminder
+
+on:
+  schedule:
+    - cron: "0 2 * * 1-5"   # 09:00 ICT (UTC+7), Mon–Fri. cron is in UTC.
+  workflow_dispatch:          # allow manual runs from the Actions tab
+
+jobs:
+  remind:
+    name: Nudge unreviewed PRs in #team-prs
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Find open PRs not yet approved
+        id: prs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          msg=$(gh pr list --repo "$GITHUB_REPOSITORY" \
+            --state open --json number,title,url,reviewDecision,isDraft \
+            --jq '[.[] | select(.isDraft == false and .reviewDecision != "APPROVED")]
+                   | map(":hourglass_flowing_sand: <\(.url)|#\(.number) \(.title)>")
+                   | join("\n")')
+          {
+            echo "text<<SLACK_EOF"
+            echo "$msg"
+            echo "SLACK_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Post reminder to Slack
+        if: steps.prs.outputs.text != ''
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: "*PRs still waiting for review in `${{ github.repository }}`:*\n${{ steps.prs.outputs.text }}"

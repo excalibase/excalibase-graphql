@@ -1,0 +1,22 @@
+name: Slack — PR reviewed
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  notify:
+    name: Post review result to #team-prs
+    runs-on: ubuntu-latest
+    # review.state is one of: approved | changes_requested | commented.
+    # Skip plain "commented" reviews to cut noise; drop this line to post all.
+    if: github.event.review.state != 'commented'
+    steps:
+      - name: Post to Slack
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            text: ":white_check_mark: ${{ github.event.review.user.login }} *${{ github.event.review.state }}* — <${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }} ${{ github.event.pull_request.title }}>"
