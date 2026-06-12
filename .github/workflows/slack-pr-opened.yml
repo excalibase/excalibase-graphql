@@ -17,5 +17,5 @@ jobs:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
-            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            channel: "${{ secrets.SLACK_CHANNEL_ID }}"
             text: ":eyes: *Review needed* — <${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }} ${{ github.event.pull_request.title }}> by ${{ github.event.pull_request.user.login }} in `${{ github.repository }}`"

@@ -35,5 +35,5 @@ jobs:
           method: chat.postMessage
           token: ${{ secrets.SLACK_BOT_TOKEN }}
           payload: |
-            channel: ${{ secrets.SLACK_CHANNEL_ID }}
+            channel: "${{ secrets.SLACK_CHANNEL_ID }}"
             text: "*PRs still waiting for review in `${{ github.repository }}`:*\n${{ steps.prs.outputs.text }}"
