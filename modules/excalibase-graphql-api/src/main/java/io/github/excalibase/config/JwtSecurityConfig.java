@@ -44,11 +44,13 @@ public class JwtSecurityConfig {
                     "jwt-enabled=true requires app.security.auth.jwks-url or app.security.auth.hmac-secret");
         }
 
+        String expectedIssuer = auth.expectedIssuerOrDefault();
+
         if (hasJwks) {
-            return new JwtService(auth.jwksUrl(), ttlMinutes);
+            return new JwtService(auth.jwksUrl(), ttlMinutes, expectedIssuer);
         }
 
-        return new JwtService(auth.hmacSecret());
+        return new JwtService(auth.hmacSecret(), expectedIssuer);
     }
 
     /**

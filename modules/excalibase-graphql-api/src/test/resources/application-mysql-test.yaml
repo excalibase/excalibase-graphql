@@ -12,18 +12,10 @@ spring:
 app:
   allowed-schema: testdb
   database-type: MySQL
+  max-query-depth: 0   # disabled in tests; production defaults to 10
   security:
   nats:
     enabled: false
-
-graphql:
-  security:
-    max-query-depth: 10
-    max-query-complexity: 1000
-    max-query-tokens: 5000
-    max-query-characters: 50000
-    max-whitespace-tokens: 5000
-    max-rule-depth: 30
 
 spring.graphql:
   graphiql:

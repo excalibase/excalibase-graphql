@@ -232,6 +232,13 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         String fieldName = extracted[1];
 
         String tenantId = (String) session.getAttributes().get(SESSION_TENANT_KEY);
+        // Fail-closed: when JWT is enabled, an unauthenticated session (no verified
+        // tenant) may not subscribe. Single-tenant deploys (jwt-disabled) stay
+        // permissive by design.
+        if (jwtEnabled && tenantId == null) {
+            sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
+            return;
+        }
         log.info("Starting subscription '{}' for tenant '{}' table '{}' (field: '{}'), session {}",
                 id, tenantId, tableName, fieldName, session.getId());
 

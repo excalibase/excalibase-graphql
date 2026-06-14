@@ -13,17 +13,8 @@ spring:
 app:
   allowed-schema: public
   database-type: postgres
+  max-query-depth: 0   # disabled in tests (some E2E queries nest deeply); production defaults to 10
   security:
-
-# GraphQL Security Configuration for Testing
-graphql:
-  security:
-    max-query-depth: 8        # Lower limit for testing deep queries
-    max-query-complexity: 500  # Lower limit for testing complexity
-    max-query-tokens: 2000    # Lower limit for testing token limits
-    max-query-characters: 10000  # 10KB limit for testing
-    max-whitespace-tokens: 5000
-    max-rule-depth: 30
 
 logging:
   level:

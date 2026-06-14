@@ -46,7 +46,8 @@ public record SecurityProperties(
     public record Auth(
             String jwksUrl,
             String hmacSecret,
-            String jwksTtlMinutes
+            String jwksTtlMinutes,
+            String expectedIssuer
     ) {
         public boolean hasJwksUrl() {
             return jwksUrl != null && !jwksUrl.isBlank();
@@ -54,6 +55,14 @@ public record SecurityProperties(
 
         public boolean hasHmacSecret() {
             return hmacSecret != null && !hmacSecret.isBlank();
+        }
+
+        /**
+         * Expected JWT {@code iss} claim. Defaults to {@code "excalibase"} (matching the
+         * auth service) when not configured. Set to blank to opt out of issuer validation.
+         */
+        public String expectedIssuerOrDefault() {
+            return expectedIssuer == null ? "excalibase" : expectedIssuer;
         }
     }
 

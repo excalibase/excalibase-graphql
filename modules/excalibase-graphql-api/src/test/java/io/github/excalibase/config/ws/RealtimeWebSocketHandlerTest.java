@@ -210,6 +210,31 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
+    @DisplayName("jwt-enabled + no authenticated tenant → subscribe rejected as unauthenticated")
+    void jwtEnabled_nullTenant_subscribeRejected() throws Exception {
+        // Fail-closed: when jwt-enabled=true, a session with no verified tenant must
+        // not be allowed to subscribe — independent of tenant-in-subject.
+        var field = RealtimeWebSocketHandler.class.getDeclaredField("jwtEnabled");
+        field.setAccessible(true);
+        field.setBoolean(handler, true);
+
+        var sent = new ArrayList<String>();
+        WebSocketSession session = session(sent);
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "customers"))));
+
+        // No event must be delivered (no subscription created); an error is returned.
+        subscriptionService.publish(null, new CDCEvent("INSERT", "public", "customers", "{}", 0L));
+
+        assertThat(sent).hasSize(1);
+        var err = mapper.readTree(sent.getFirst());
+        assertThat(err.get("type").asText()).isEqualTo("error");
+        assertThat(err.get("message").asText().toLowerCase()).contains("unauthenticated");
+    }
+
+    @Test
     @DisplayName("subscribe without id or collection returns error")
     void missingFields_error() throws Exception {
         var sent = new ArrayList<String>();

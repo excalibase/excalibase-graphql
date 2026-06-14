@@ -40,15 +40,25 @@ public class JwtService {
     // HMAC mode
     private final byte[] hmacSecret;
 
+    // Expected token issuer (iss). When null/blank, issuer validation is skipped
+    // so deployments that never set an issuer keep working unchanged.
+    private final String expectedIssuer;
+
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------
 
     /** JWKS mode — fetches EC public keys from the given URL, caches with TTL. */
     public JwtService(String jwksUrl, int ttlMinutes) {
+        this(jwksUrl, ttlMinutes, null);
+    }
+
+    /** JWKS mode with an expected issuer. {@code expectedIssuer} may be null/blank to skip iss validation. */
+    public JwtService(String jwksUrl, int ttlMinutes, String expectedIssuer) {
         this.jwksUrl = jwksUrl;
         this.keyCache = new TTLCache<>(Duration.ofMinutes(ttlMinutes));
         this.hmacSecret = null;
+        this.expectedIssuer = blankToNull(expectedIssuer);
 
         try {
             keyCache.put(CACHE_KEY, fetchKeys());
@@ -60,21 +70,37 @@ public class JwtService {
 
     /** HMAC mode — verifies HS256 tokens using the given secret. */
     public JwtService(String hmacSecret) {
+        this(hmacSecret, (String) null);
+    }
+
+    /** HMAC mode with an expected issuer. {@code expectedIssuer} may be null/blank to skip iss validation. */
+    public JwtService(String hmacSecret, String expectedIssuer) {
         if (hmacSecret == null || hmacSecret.length() < 32) {
             throw new IllegalStateException("app.security.auth.hmac-secret must be at least 32 characters");
         }
         this.hmacSecret = hmacSecret.getBytes(StandardCharsets.UTF_8);
         this.jwksUrl = null;
         this.keyCache = null;
+        this.expectedIssuer = blankToNull(expectedIssuer);
         log.info("jwt_service_mode=hmac");
     }
 
     /** Test constructor — inject EC key directly, no remote fetch. */
     public JwtService(ECPublicKey publicKey) {
+        this(publicKey, null);
+    }
+
+    /** Test constructor with an expected issuer — inject EC key directly, no remote fetch. */
+    public JwtService(ECPublicKey publicKey, String expectedIssuer) {
         this.jwksUrl = "test";
         this.keyCache = new TTLCache<>(Duration.ofHours(24));
         this.keyCache.put(CACHE_KEY, List.of(publicKey));
         this.hmacSecret = null;
+        this.expectedIssuer = blankToNull(expectedIssuer);
+    }
+
+    private static String blankToNull(String value) {
+        return (value == null || value.isBlank()) ? null : value;
     }
 
     // -------------------------------------------------------------------------
@@ -92,6 +118,13 @@ public class JwtService {
             }
 
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
+
+            // Validate issuer (iss) against the configured expected issuer. Skipped
+            // when no expected issuer is configured so existing deployments that
+            // never set one keep working.
+            if (expectedIssuer != null && !expectedIssuer.equals(claims.getIssuer())) {
+                throw new JwtVerificationException("JWT issuer mismatch");
+            }
 
             // Require exp claim for user session tokens; API-key tokens (scope=api-key) may omit.
             Date expiration = claims.getExpirationTime();

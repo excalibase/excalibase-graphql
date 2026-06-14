@@ -147,13 +147,13 @@ class JwtRlsIntegrationTest {
 
     @Test
     @Order(3)
-    void noJwt_noUnauthorized() throws Exception {
-        // Without JWT, the controller no longer blocks with 401
-        // RLS protects the data at the DB level (returns 0 rows or errors when user_id unset)
+    void noJwt_returns401() throws Exception {
+        // Fail-closed: with jwt-enabled=true a request carrying no token is rejected
+        // at the security layer (401) rather than passing through unauthenticated.
         mockMvc.perform(post("/graphql")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(graphql("{ testRlsOrders { id product total } }")))
-                .andExpect(status().isOk()); // no 401 — authorization is DB-enforced via RLS
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

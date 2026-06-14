@@ -187,14 +187,15 @@ class MultiTenantIntegrationTest {
 
   @Test
   @Order(1)
-  @DisplayName("No JWT → 200 with default datasource (no 401, no tenant routing)")
-  void noJwt_usesDefaultDatasource() throws Exception {
-    // Without JWT, no tenant routing — uses default Spring datasource
-    // Returns 200 (no 401); the RLS/tenant enforcement is handled by the DB, not the controller
+  @DisplayName("No JWT → 401 (fail-closed; multi-tenant must be authenticated)")
+  void noJwt_returns401() throws Exception {
+    // Fail-closed: a multi-tenant deployment (jwt-enabled=true) must reject
+    // unauthenticated requests at the security layer rather than silently
+    // serving the default datasource.
     mockMvc.perform(post("/graphql")
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantProducts { id name price } }")))
-        .andExpect(status().isOk());
+        .andExpect(status().isUnauthorized());
   }
 
   // ─── Multi-Tenant Routing ────────────────────────────────────────────────────

@@ -169,6 +169,54 @@ class JwtServiceTest {
         assertThrows(JwtVerificationException.class, () -> jwtService.verify("not.a.jwt"));
     }
 
+    // ─── Issuer Validation ───────────────────────────────────────────────────────
+
+    private String signJwtWithIssuer(String issuer) throws Exception {
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .subject("alice@test.com")
+                .claim("userId", 1L)
+                .claim("projectId", "p")
+                .claim("role", "user")
+                .issuer(issuer)
+                .issueTime(Date.from(Instant.now()))
+                .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
+                .build();
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+        signed.sign(new ECDSASigner(privateKey));
+        return signed.serialize();
+    }
+
+    @Test
+    @DisplayName("verify rejects a token whose iss does not match the expected issuer")
+    void wrongIssuer_throws() throws Exception {
+        JwtService svc = new JwtService(publicKey, "excalibase");
+        String token = signJwtWithIssuer("evil-issuer");
+
+        JwtVerificationException ex = assertThrows(JwtVerificationException.class,
+                () -> svc.verify(token));
+        assertTrue(ex.getMessage().toLowerCase().contains("issuer"));
+    }
+
+    @Test
+    @DisplayName("verify accepts a token whose iss matches the expected issuer")
+    void matchingIssuer_passes() throws Exception {
+        JwtService svc = new JwtService(publicKey, "excalibase");
+        String token = signJwtWithIssuer("excalibase");
+
+        JwtClaims claims = svc.verify(token);
+        assertEquals("1", claims.userId());
+    }
+
+    @Test
+    @DisplayName("verify skips issuer validation when no expected issuer is configured")
+    void noExpectedIssuer_skipsValidation() throws Exception {
+        JwtService svc = new JwtService(publicKey, null);
+        String token = signJwtWithIssuer("anything-goes");
+
+        JwtClaims claims = svc.verify(token);
+        assertEquals("1", claims.userId());
+    }
+
     // ─── Public Key Cache Tests ──────────────────────────────────────────────────
 
     @Nested

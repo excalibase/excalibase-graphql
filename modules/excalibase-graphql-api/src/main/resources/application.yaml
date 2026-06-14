@@ -70,7 +70,7 @@ app:
   schemas: ${APP_SCHEMAS:public}
   database-type: postgres
   max-rows: 30
-  max-query-depth: 0
+  max-query-depth: 10  # Reject GraphQL queries nested deeper than this (DoS guard). 0 disables.
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
     role-privileges-ttl-minutes: 30  # Role privileges cache TTL in minutes (default: 30 minutes)
@@ -90,16 +90,9 @@ app:
     subject-prefix: cdc  # Subject prefix (events on cdc.{schema}.{table})
     tenant-in-subject: false  # When true, subject shape is cdc.{tenantId}.{schema}.{table} (multi-tenant)
 
-# GraphQL Security Configuration - Production Defaults
-# Based on GraphQL.org security recommendations and OWASP guidelines
-graphql:
-  security:
-    max-query-depth: 20       # Prevent deeply nested queries (default: 20)
-    max-query-complexity: 10000 # Prevent expensive operations (default: 1000)
-    max-query-tokens: 5000    # Prevent parser DoS (default: 5000)
-    max-query-characters: 50000 # 50KB query size limit (default: 50KB)
-    max-whitespace-tokens: 10000
-    max-rule-depth: 50
+# NOTE: The former `graphql.security:` block was removed — it had no
+# @ConfigurationProperties binding and was never read (dead config). The active
+# query-depth guard is `app.max-query-depth` above, enforced in SqlCompiler.
 logging:
   level:
     root: ${log.level.root:info}

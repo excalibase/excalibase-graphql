@@ -136,7 +136,10 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         if (existing != null) existing.dispose();
 
         String tenantId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY);
-        if (jwtEnabled && wsAuthRequired && tenantId == null) {
+        // Fail-closed: when JWT is enabled, an unauthenticated session (no verified
+        // tenant) may not subscribe — regardless of tenant-in-subject. Single-tenant
+        // deploys (jwt-disabled) stay permissive by design.
+        if (jwtEnabled && tenantId == null) {
             sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
             return;
         }

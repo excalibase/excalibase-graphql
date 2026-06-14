@@ -11,9 +11,13 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.MDC;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.AuthorityUtils;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.List;
 
 public class JwtAuthFilter extends OncePerRequestFilter {
 
@@ -60,6 +64,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             RoleContext.setRole(resolvedRole);
         }
 
+        // Populate the Spring Security context so authorization rules
+        // (anyRequest().authenticated() when jwt-enabled) accept verified tokens
+        // and reject requests that carry none. A null claims means no/blank
+        // Authorization header — left unauthenticated so the filter chain's rule
+        // decides (permitAll for single-tenant, 401 for jwt-enabled).
+        if (claims != null) {
+            setAuthentication(claims, resolvedRole);
+        }
+
         try {
             applyTenantContext(claims);
             applyRlsContext(claims);
@@ -68,7 +81,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             RlsContext.clear();
             RoleContext.clear();
             clearTenantContext(claims);
+            SecurityContextHolder.clearContext();
         }
+    }
+
+    private static void setAuthentication(JwtClaims claims, String resolvedRole) {
+        String principal = claims.userId() != null ? claims.userId() : claims.email();
+        List<? extends org.springframework.security.core.GrantedAuthority> authorities =
+                resolvedRole != null
+                        ? AuthorityUtils.createAuthorityList("ROLE_" + resolvedRole.toUpperCase())
+                        : AuthorityUtils.NO_AUTHORITIES;
+        var authentication = new UsernamePasswordAuthenticationToken(principal, null, authorities);
+        SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 
     /**
