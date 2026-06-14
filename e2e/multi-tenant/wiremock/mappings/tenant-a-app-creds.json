@@ -1,7 +1,7 @@
 {
   "request": {
     "method": "GET",
-    "url": "/api/vault/secrets/projects/acme-corp/app-a/credentials/excalibase_app"
+    "url": "/api/vault/secrets/projects/app-a/credentials/excalibase_app"
   },
   "response": {
     "status": 200,

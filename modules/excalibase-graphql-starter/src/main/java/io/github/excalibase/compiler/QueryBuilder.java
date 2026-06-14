@@ -3,6 +3,9 @@ package io.github.excalibase.compiler;
 import graphql.language.*;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.ColumnMaskContributor;
+import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.SqlDialect;
 
 import java.util.*;
@@ -50,7 +53,7 @@ public class QueryBuilder {
 
     public String compileList(Field field, String tableName, Map<String, Object> params) {
         String alias = dialect.randAlias();
-        String objectSql = buildObject(field.getSelectionSet(), tableName, alias);
+        String objectSql = buildObject(field.getSelectionSet(), tableName, alias, params);
 
         // Parse distinctOn argument
         List<String> distinctOnCols = parseDistinctOn(field);
@@ -416,7 +419,7 @@ public class QueryBuilder {
             edgeParts.add("'cursor', " + dialect.encodeCursor(pageBlock + "." + dialect.quoteIdentifier(pk)));
         }
         String nodeObj = sel.edgesNodeSS != null
-                ? buildObject(sel.edgesNodeSS, tableName, pageBlock)
+                ? buildObject(sel.edgesNodeSS, tableName, pageBlock, params)
                 : dialect.buildObject(List.of());
         edgeParts.add("'node', " + nodeObj);
         String edgeObj = dialect.buildObject(edgeParts);
@@ -460,35 +463,65 @@ public class QueryBuilder {
     // === JSON object builder (recursive with FK traversal) ===
 
     public String buildObject(SelectionSet selectionSet, String tableName, String alias) {
+        return buildObject(selectionSet, tableName, alias, null);
+    }
+
+    /**
+     * As above, but threads the query's bind-param map so nested FK sub-selects
+     * can splice their own RLS predicate (which carries bind parameters). Read
+     * paths pass the live map; callers that don't (some mutation result objects)
+     * pass {@code null}, which simply skips nested RLS for that object.
+     */
+    public String buildObject(SelectionSet selectionSet, String tableName, String alias, Map<String, Object> params) {
         if (selectionSet == null) return dialect.buildObject(List.of());
 
         List<String> pairs = new ArrayList<>();
         Set<String> columns = schemaInfo.getColumns(tableName);
 
         for (Field field : flattenSelections(selectionSet, fragmentsHolder.get())) {
-            String pair = buildFieldPair(field, tableName, alias, columns);
+            String pair = buildFieldPair(field, tableName, alias, columns, params);
             if (pair != null) pairs.add(pair);
         }
 
         return dialect.buildObject(pairs);
     }
 
+    /**
+     * Consults the active request's {@link ColumnMaskContributor} for one column,
+     * defaulting to {@link ColumnMaskContributor.Decision#VISIBLE} when no masker
+     * is registered or the table is unknown.
+     */
+    private ColumnMaskContributor.Decision columnMaskDecision(String tableName, String columnName) {
+        ColumnMaskContributor masker = RlsContext.columnMask();
+        if (masker == null || tableName == null) {
+            return ColumnMaskContributor.Decision.VISIBLE;
+        }
+        return masker.decide(tableName, columnName);
+    }
+
     /** Resolve a single selection field into its JSON pair, or null if not recognized. */
-    private String buildFieldPair(Field field, String tableName, String alias, Set<String> columns) {
+    private String buildFieldPair(Field field, String tableName, String alias, Set<String> columns,
+                                  Map<String, Object> params) {
         String name = field.getName();
 
         if (columns.contains(name)) {
-            return buildColumnPair(field, tableName, alias, name);
+            // Column-level security: HIDDEN drops the column from the response
+            // object, NULLED emits a null value, VISIBLE renders normally.
+            return switch (columnMaskDecision(tableName, name)) {
+                case HIDDEN -> null;
+                case NULLED -> "'" + name + "', NULL";
+                case VISIBLE -> buildColumnPair(field, tableName, alias, name);
+            };
         }
 
         SchemaInfo.FkInfo fk = schemaInfo.getForwardFk(tableName, name);
         if (fk != null) {
-            return buildForwardFkPair(field, alias, name, fk);
+            return buildForwardFkPair(field, alias, name, fk, params);
         }
 
         SchemaInfo.ReverseFkInfo rfk = schemaInfo.getReverseFk(tableName, name);
         if (rfk != null) {
-            return buildReverseFkPair(field, alias, name, rfk);
+            return buildReverseFkPair(field, alias, name, rfk, params);
         }
 
         return buildComputedFieldPair(tableName, alias, name);
@@ -519,32 +552,49 @@ public class QueryBuilder {
         return "'" + name + "', " + colRef;
     }
 
-    private String buildForwardFkPair(Field field, String alias, String name, SchemaInfo.FkInfo fk) {
+    private String buildForwardFkPair(Field field, String alias, String name, SchemaInfo.FkInfo fk,
+                                      Map<String, Object> params) {
         String subAlias = dialect.randAlias();
-        String subObj = buildObject(field.getSelectionSet(), fk.refTable(), subAlias);
+        String subObj = buildObject(field.getSelectionSet(), fk.refTable(), subAlias, params);
         // Build multi-column WHERE join for composite FKs
         List<String> joinConds = new ArrayList<>();
         for (int i = 0; i < fk.fkColumns().size(); i++) {
             joinConds.add(subAlias + "." + dialect.quoteIdentifier(fk.refColumns().get(i))
                     + " = " + alias + "." + dialect.quoteIdentifier(fk.fkColumns().get(i)));
         }
+        appendNestedRls(joinConds, fk.refTable(), params);
         return "'" + name + "', (" + SELECT + subObj
                 + FROM + qualifiedTable(fk.refTable()) + " " + subAlias
                 + WHERE + String.join(AND, joinConds) + ")";
     }
 
-    private String buildReverseFkPair(Field field, String alias, String name, SchemaInfo.ReverseFkInfo rfk) {
+    private String buildReverseFkPair(Field field, String alias, String name, SchemaInfo.ReverseFkInfo rfk,
+                                      Map<String, Object> params) {
         String subAlias = dialect.randAlias();
-        String subObj = buildObject(field.getSelectionSet(), rfk.childTable(), subAlias);
+        String subObj = buildObject(field.getSelectionSet(), rfk.childTable(), subAlias, params);
         // Build multi-column WHERE join for composite FKs
         List<String> joinConds = new ArrayList<>();
         for (int i = 0; i < rfk.fkColumns().size(); i++) {
             joinConds.add(subAlias + "." + dialect.quoteIdentifier(rfk.fkColumns().get(i))
                     + " = " + alias + "." + dialect.quoteIdentifier(rfk.refColumns().get(i)));
         }
+        appendNestedRls(joinConds, rfk.childTable(), params);
         return "'" + name + "', (" + SELECT + dialect.coalesceArray(dialect.aggregateArray(subObj))
                 + FROM + qualifiedTable(rfk.childTable()) + " " + subAlias
                 + WHERE + String.join(AND, joinConds) + ")";
+    }
+
+    /**
+     * Splices the related table's RLS predicate into a nested FK sub-select's
+     * WHERE, so embedded relations are filtered on the same footing as top-level
+     * tables (EXC-315 multi-table threading). The engine's predicate references
+     * unqualified columns, which resolve to the sub-select's own table — the
+     * innermost scope in the correlated subquery. No-op without a live param map
+     * (nothing to bind into) or a registered contributor.
+     */
+    private void appendNestedRls(List<String> joinConds, String relatedTable, Map<String, Object> params) {
+        if (params == null) return;
+        filterBuilder.appendRlsConditions(joinConds, relatedTable, params, RlsOp.SELECT);
     }
 
     private String buildComputedFieldPair(String tableName, String alias, String name) {

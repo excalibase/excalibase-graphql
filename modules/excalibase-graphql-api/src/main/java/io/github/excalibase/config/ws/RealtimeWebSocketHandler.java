@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.rls.Operation;
+import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.JwtVerificationException;
@@ -52,6 +54,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
     private final JwtService jwtService;
+    private final RlsPolicyEnforcer rlsEnforcer;
 
     @Value("${app.security.jwt-enabled:false}")
     private boolean jwtEnabled;
@@ -61,18 +64,24 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     // sessionId -> (subscriptionId -> Disposable)
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
+    private final WebSocketHeartbeat heartbeat;
 
     public RealtimeWebSocketHandler(SubscriptionService subscriptionService,
                                     ObjectMapper objectMapper,
-                                    ObjectProvider<JwtService> jwtServiceProvider) {
+                                    ObjectProvider<JwtService> jwtServiceProvider,
+                                    ObjectProvider<RlsPolicyEnforcer> rlsEnforcerProvider,
+                                    WebSocketHeartbeat heartbeat) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.jwtService = jwtServiceProvider.getIfAvailable();
+        this.rlsEnforcer = rlsEnforcerProvider.getIfAvailable();
+        this.heartbeat = heartbeat;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         sessionSubscriptions.put(session.getId(), new ConcurrentHashMap<>());
+        heartbeat.register(session);
         log.debug("Realtime WS connected: {}", session.getId());
     }
 
@@ -93,6 +102,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        heartbeat.unregister(session);
         Map<String, Disposable> subs = sessionSubscriptions.remove(session.getId());
         if (subs != null) {
             subs.values().forEach(d -> {
@@ -130,8 +140,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
             return;
         }
+        // Resource the CDC events belong to, matching how policies are keyed
+        // (schema-qualified table) so column masking can be applied per subscriber.
+        String resource = (schema == null ? "public" : schema) + "." + collection;
         Disposable disposable = subscriptionService.subscribe(tenantId, key)
-                .subscribe(event -> dispatchEvent(session, id, filter, event));
+                .subscribe(event -> dispatchEvent(session, id, filter, resource, event));
         sessionSubs.put(id, disposable);
         log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, key);
     }
@@ -164,6 +177,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                 String tenantId = GraphQLWebSocketHandler.tenantIdFromClaims(claims);
                 if (tenantId != null) {
                     session.getAttributes().put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, tenantId);
+                    session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
                     log.info("Realtime session {} authenticated via connection_init for tenant '{}'",
                             session.getId(), tenantId);
                 }
@@ -192,23 +206,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void sendAck(WebSocketSession session) {
-        try {
-            if (session.isOpen()) {
-                session.sendMessage(new TextMessage("{\"type\":\"connection_ack\"}"));
-            }
-        } catch (IOException e) {
-            log.warn("Failed to send connection_ack", e);
-        }
+        sendMessage(session, "{\"type\":\"connection_ack\"}");
     }
 
     private void closeWithAuthError(WebSocketSession session, String reason) {
         try {
-            if (session.isOpen()) {
-                session.sendMessage(new TextMessage(
-                        objectMapper.writeValueAsString(Map.of(
-                                "type", "connection_error",
-                                "payload", Map.of("message", reason)))));
-            }
+            sendMessage(session, objectMapper.writeValueAsString(Map.of(
+                    "type", "connection_error",
+                    "payload", Map.of("message", reason))));
             session.close(CloseStatus.POLICY_VIOLATION.withReason(reason));
         } catch (IOException e) {
             log.warn("Error closing unauthenticated session", e);
@@ -216,7 +221,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     }
 
     private void dispatchEvent(WebSocketSession session, String subId,
-                                Map<String, Object> filter, CDCEvent event) {
+                                Map<String, Object> filter, String resource, CDCEvent event) {
         String op = switch (event.type() == null ? "" : event.type().toUpperCase()) {
             case "INSERT" -> "insert";
             case "UPDATE" -> "update";
@@ -235,18 +240,37 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
+        // Filter matching runs on the raw row (a masked column must not change
+        // which events the subscriber receives), then column-level security
+        // masks the payload per subscriber before it leaves the server.
         if (!matchesFilter(doc, filter)) return;
+        Object payloadDoc = maskDoc(session, resource, doc);
 
         try {
             var payload = new LinkedHashMap<String, Object>();
             payload.put("type", "next");
             payload.put("id", subId);
             payload.put("op", op);
-            payload.put("doc", doc);
+            payload.put("doc", payloadDoc);
             sendMessage(session, objectMapper.writeValueAsString(payload));
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize realtime event for sub {}", subId, e);
         }
+    }
+
+    /**
+     * Applies column-level security to a CDC row for the session's subscriber.
+     * Returns the original {@code doc} unchanged when masking can't apply (engine
+     * not wired, or an unauthenticated session with no claims); otherwise returns
+     * a map with hidden columns dropped and NULL-masked columns nulled.
+     */
+    private Object maskDoc(WebSocketSession session, String resource, JsonNode doc) {
+        JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
+        if (rlsEnforcer == null || claims == null || claims.projectId() == null) {
+            return doc;
+        }
+        Map<String, Object> row = objectMapper.convertValue(doc, new TypeReference<>() {});
+        return rlsEnforcer.maskRow(claims.projectId(), resource, claims, Operation.SELECT, row);
     }
 
     private boolean matchesFilter(JsonNode doc, Map<String, Object> filter) {
@@ -273,8 +297,13 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     private void sendMessage(WebSocketSession session, String payload) {
         try {
-            if (session.isOpen()) {
-                session.sendMessage(new TextMessage(payload));
+            // Serialise on the session monitor: CDC events fan out from multiple
+            // Reactor threads onto one session, and the heartbeat pings on another
+            // — a raw WebSocketSession is not safe for concurrent sends.
+            synchronized (session) {
+                if (session.isOpen()) {
+                    session.sendMessage(new TextMessage(payload));
+                }
             }
         } catch (Exception e) {
             log.debug("Send failed on session {}: {}", session.getId(), e.getMessage());

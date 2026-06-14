@@ -1,0 +1,67 @@
+{{- if .Values.gatewayApi.enabled }}
+{{- $fullName := include "excalibase-graphql.fullname" . }}
+{{- $parentName := .Values.gatewayApi.parentRef.name | default $fullName }}
+{{- if .Values.gatewayApi.createGateway }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "excalibase-graphql.labels" . | nindent 4 }}
+spec:
+  gatewayClassName: {{ .Values.gatewayApi.gatewayClassName }}
+  listeners:
+    - name: {{ .Values.gatewayApi.listener.name }}
+      port: {{ .Values.gatewayApi.listener.port }}
+      protocol: {{ .Values.gatewayApi.listener.protocol }}
+      allowedRoutes:
+        namespaces:
+          from: Same
+      {{- with .Values.gatewayApi.listener.tls }}
+      tls:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "excalibase-graphql.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ $parentName }}
+      {{- with .Values.gatewayApi.parentRef.namespace }}
+      namespace: {{ . }}
+      {{- end }}
+      {{- with .Values.gatewayApi.parentRef.sectionName }}
+      sectionName: {{ . }}
+      {{- end }}
+  {{- with .Values.gatewayApi.hostnames }}
+  hostnames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  rules:
+    # No matches block → matches every path (PathPrefix "/"), which covers
+    # /graphql, the WebSocket upgrade endpoints, and /api/v1/*.
+    - backendRefs:
+        - name: {{ $fullName }}
+          port: {{ .Values.service.port }}
+{{- if .Values.gatewayApi.envoyGateway.clientTrafficPolicy.enabled }}
+---
+apiVersion: gateway.envoyproxy.io/v1alpha1
+kind: ClientTrafficPolicy
+metadata:
+  name: {{ $fullName }}-ws
+  labels:
+    {{- include "excalibase-graphql.labels" . | nindent 4 }}
+spec:
+  targetRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ $parentName }}
+  timeout:
+    {{- toYaml .Values.gatewayApi.envoyGateway.clientTrafficPolicy.timeout | nindent 4 }}
+{{- end }}
+{{- end }}

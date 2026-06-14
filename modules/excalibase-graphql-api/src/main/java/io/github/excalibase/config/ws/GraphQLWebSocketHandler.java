@@ -44,6 +44,8 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     private static final Logger log = LoggerFactory.getLogger(GraphQLWebSocketHandler.class);
     private static final String PAYLOAD = "payload";
     static final String SESSION_TENANT_KEY = "excalibase.tenantId";
+    /** Verified JWT claims for the session — used by realtime column masking. */
+    static final String SESSION_CLAIMS_KEY = "excalibase.jwtClaims";
 
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
@@ -65,19 +67,23 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
 
     // sessionId -> (subscriptionId -> Disposable)
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
+    private final WebSocketHeartbeat heartbeat;
 
     public GraphQLWebSocketHandler(SubscriptionService subscriptionService,
                                    ObjectMapper objectMapper,
-                                   ObjectProvider<JwtService> jwtServiceProvider) {
+                                   ObjectProvider<JwtService> jwtServiceProvider,
+                                   WebSocketHeartbeat heartbeat) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.jwtService = jwtServiceProvider.getIfAvailable();
+        this.heartbeat = heartbeat;
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         log.debug("WebSocket connection established: {}", session.getId());
         sessionSubscriptions.put(session.getId(), new ConcurrentHashMap<>());
+        heartbeat.register(session);
     }
 
     @Override
@@ -98,6 +104,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         log.debug("WebSocket closed for session {}: {}", session.getId(), status);
+        heartbeat.unregister(session);
         Map<String, Disposable> subs = sessionSubscriptions.remove(session.getId());
         if (subs != null) {
             subs.values().forEach(disposable -> {
@@ -323,10 +330,15 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
 
     private void sendMessage(WebSocketSession session, String message) {
         try {
-            if (session.isOpen()) {
-                session.sendMessage(new TextMessage(message));
-            } else {
-                log.warn("Attempted to send message to closed session {}", session.getId());
+            // Serialise on the session monitor: subscription results fan out from
+            // multiple Reactor threads onto one session, and the heartbeat pings on
+            // another — a raw WebSocketSession is not safe for concurrent sends.
+            synchronized (session) {
+                if (session.isOpen()) {
+                    session.sendMessage(new TextMessage(message));
+                } else {
+                    log.warn("Attempted to send message to closed session {}", session.getId());
+                }
             }
         } catch (IOException e) {
             log.error("Failed to send WebSocket message to session {}: ", session.getId(), e);

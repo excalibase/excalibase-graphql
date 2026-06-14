@@ -1,6 +1,10 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.config.datasource.TenantContext;
+import io.github.excalibase.rls.EngineColumnMaskContributor;
+import io.github.excalibase.rls.EngineRlsWhereContributor;
+import io.github.excalibase.rls.EngineRowCheckContributor;
+import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.opentelemetry.api.trace.Span;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -17,10 +21,17 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtService jwtService;
     private final PostgresRoleResolver roleResolver;
+    private final RlsPolicyEnforcer rlsEnforcer;
 
     public JwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver) {
+        this(jwtService, roleResolver, null);
+    }
+
+    public JwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver,
+                         RlsPolicyEnforcer rlsEnforcer) {
         this.jwtService = jwtService;
         this.roleResolver = roleResolver;
+        this.rlsEnforcer = rlsEnforcer;
     }
 
     @Override
@@ -51,11 +62,29 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
         try {
             applyTenantContext(claims);
+            applyRlsContext(claims);
             chain.doFilter(request, response);
         } finally {
+            RlsContext.clear();
             RoleContext.clear();
             clearTenantContext(claims);
         }
+    }
+
+    /**
+     * Registers the query-first RLS contributor for this request. A no-op when
+     * the engine isn't wired or the request carries no project context. Safe to
+     * always call: with no policies for the project the contributor yields no
+     * predicate, so existing deploys see zero behaviour change until a policy
+     * is authored.
+     */
+    private void applyRlsContext(JwtClaims claims) {
+        if (rlsEnforcer == null || claims == null || claims.projectId() == null) {
+            return;
+        }
+        RlsContext.set(new EngineRlsWhereContributor(rlsEnforcer, claims.projectId(), claims));
+        RlsContext.setColumnMask(new EngineColumnMaskContributor(rlsEnforcer, claims.projectId(), claims));
+        RlsContext.setRowCheck(new EngineRowCheckContributor(rlsEnforcer, claims.projectId(), claims));
     }
 
     private JwtClaims verifyClaims(HttpServletRequest request) {

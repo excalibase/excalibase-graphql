@@ -30,6 +30,10 @@
         </developer>
     </developers>
     <modules>
+        <!-- RLS engine modules (vendored): pure library, no runtime deps.
+             Listed first as graphql-api depends on them. -->
+        <module>modules/excalibase-rls-core</module>
+        <module>modules/excalibase-rls-jdbc</module>
         <module>modules/excalibase-graphql-api</module>
         <module>modules/excalibase-graphql-starter</module>
         <module>modules/excalibase-graphql-postgres</module>
@@ -81,7 +85,7 @@
         <sonar.organization>excalibase</sonar.organization>
         <sonar.projectKey>excalibase_excalibase-graphql</sonar.projectKey>
         <sonar.projectName>Excalibase Graphql</sonar.projectName>
-        <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+        <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-rls-core/target/site/jacoco/jacoco.xml,${maven.multiModuleProjectDirectory}/modules/excalibase-rls-jdbc/target/site/jacoco/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
         <sonar.exclusions>
             **/ExcalibaseGraphqlApplication.java,
             **/config/**,
@@ -149,6 +153,17 @@
             <dependency>
                 <groupId>io.github.excalibase</groupId>
                 <artifactId>excalibase-rest-api</artifactId>
+                <version>${excalibase.version}</version>
+            </dependency>
+            <!-- Row-level + column-level security engine (vendored reactor modules). -->
+            <dependency>
+                <groupId>io.github.excalibase</groupId>
+                <artifactId>excalibase-rls-core</artifactId>
+                <version>${excalibase.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.excalibase</groupId>
+                <artifactId>excalibase-rls-jdbc</artifactId>
                 <version>${excalibase.version}</version>
             </dependency>
             <dependency>

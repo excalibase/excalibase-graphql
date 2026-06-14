@@ -86,11 +86,6 @@ services:
         condition: service_healthy
       mock-vault:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:24000/healthz"]
-      interval: 5s
-      timeout: 5s
-      retries: 15
     networks:
       - multi-tenant-network
 
@@ -136,7 +131,7 @@ services:
       mock-vault:
         condition: service_healthy
       excalibase-auth:
-        condition: service_healthy
+        condition: service_started
       nats:
         condition: service_healthy
     networks:
