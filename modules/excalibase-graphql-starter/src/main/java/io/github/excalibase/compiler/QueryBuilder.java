@@ -56,7 +56,7 @@ public class QueryBuilder {
         String objectSql = buildObject(field.getSelectionSet(), tableName, alias, params);
 
         // Parse distinctOn argument
-        List<String> distinctOnCols = parseDistinctOn(field);
+        List<String> distinctOnCols = parseDistinctOn(field, tableName);
 
         // Parse vector argument (k-NN search). When present, it takes precedence
         // over user-supplied orderBy and limit — the embedding similarity order
@@ -149,7 +149,7 @@ public class QueryBuilder {
         return vectorSearchBuilder.build(ov, alias, schemaInfo, params);
     }
 
-    private List<String> parseDistinctOn(Field field) {
+    private List<String> parseDistinctOn(Field field, String tableName) {
         List<String> cols = new ArrayList<>();
         for (Argument arg : field.getArguments()) {
             if (ARG_DISTINCT_ON.equals(arg.getName()) && arg.getValue() instanceof ArrayValue av) {
@@ -160,7 +160,27 @@ public class QueryBuilder {
                 }
             }
         }
+        validateDistinctOnColumns(cols, tableName);
         return cols;
+    }
+
+    /**
+     * Rejects distinctOn entries that are not real columns of the table before
+     * they reach {@code quoteIdentifier}. Without this, an unknown name is quoted
+     * and spliced into the SQL, turning the database error into an oracle that
+     * echoes arbitrary attacker strings. Skipped only when the table's column set
+     * is unknown (no introspected metadata), to preserve existing behaviour.
+     */
+    private void validateDistinctOnColumns(List<String> cols, String tableName) {
+        if (cols.isEmpty()) return;
+        Set<String> known = schemaInfo.getColumns(tableName);
+        if (known.isEmpty()) return;
+        for (String col : cols) {
+            if (!known.contains(col)) {
+                throw new IllegalArgumentException(
+                        "Unknown column in distinctOn for table " + tableName + ": " + col);
+            }
+        }
     }
 
     // === Aggregates ===

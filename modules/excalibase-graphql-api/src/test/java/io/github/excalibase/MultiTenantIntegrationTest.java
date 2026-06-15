@@ -149,6 +149,9 @@ class MultiTenantIntegrationTest {
     registry.add("app.database-type", () -> "postgres");
     registry.add("app.max-rows", () -> 30);
     registry.add("app.security.jwt-enabled", () -> "true");
+    // Surface the underlying fail-closed message ("Database not available") to
+    // the client so this test can assert on it; production defaults to false.
+    registry.add("app.security.verbose-errors", () -> "true");
     registry.add("app.security.auth.jwks-url", () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
     registry.add("app.security.multi-tenant.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
     registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat-token");

@@ -1,6 +1,7 @@
 package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariDataSource;
+import io.github.excalibase.config.SecurityProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
@@ -23,7 +24,7 @@ import java.util.Map;
  * gracefully until a live DataSource is available (or after a schema reload).
  */
 @Configuration
-@EnableConfigurationProperties(DataSourceProperties.class)
+@EnableConfigurationProperties({DataSourceProperties.class, SecurityProperties.class})
 public class DataSourceConfig {
 
     private static final Logger log = LoggerFactory.getLogger(DataSourceConfig.class);

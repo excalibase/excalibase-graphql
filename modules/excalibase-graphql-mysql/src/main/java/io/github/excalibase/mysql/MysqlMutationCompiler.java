@@ -135,6 +135,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
         if (inputArg == null) return null;
 
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
+        requireUpdateAllowed(tableName, inputFields);
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
@@ -189,6 +190,20 @@ public class MysqlMutationCompiler implements MutationCompiler {
         if (check != null && !check.permits(tableName, row, RlsOp.INSERT)) {
             throw new RlsViolationException(
                     "Row violates row-level security policy for INSERT on " + tableName);
+        }
+    }
+
+    /**
+     * Rejects an UPDATE whose new image (the SET columns) would move the row out
+     * of the caller's UPDATE policies — the WITH-CHECK half for updates. A no-op
+     * when no row-check contributor is registered or no UPDATE policy governs a
+     * changed column.
+     */
+    private void requireUpdateAllowed(String tableName, Map<String, Object> changedColumns) {
+        RowCheckContributor check = RlsContext.rowCheck();
+        if (check != null && !check.permitsUpdate(tableName, changedColumns)) {
+            throw new RlsViolationException(
+                    "Row violates row-level security policy for UPDATE on " + tableName);
         }
     }
 }

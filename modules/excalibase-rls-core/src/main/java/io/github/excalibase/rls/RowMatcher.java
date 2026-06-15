@@ -47,6 +47,85 @@ public class RowMatcher {
     }
 
     /**
+     * WITH-CHECK for an UPDATE's partial new image — {@code changedRow} holds
+     * only the columns the caller is setting, not the full post-update row.
+     *
+     * <p>Native RLS evaluates WITH-CHECK over the complete new row; here we only
+     * have the changed columns, so we enforce the half we can prove: a changed
+     * column whose new value violates a policy is rejected. Rules that reference
+     * columns the caller did not touch are treated as still satisfied, because
+     * the UPDATE's USING predicate already validated the pre-update row for
+     * those columns — this keeps legitimate partial updates working while still
+     * blocking the real attack (reassigning an ownership/tenant column out of
+     * policy). DENY policies veto on any changed value they match.
+     *
+     * @return {@code true} if the changed image is permitted (or no UPDATE
+     *         policy exists for the resource); {@code false} if it must be rejected
+     */
+    public boolean matchesUpdate(String resource, Map<String, Object> changedRow, UserContext ctx) {
+        VariableResolver resolver = new VariableResolver(ctx);
+        List<Policy> applicable = inScope(resource, ctx, Operation.UPDATE);
+
+        for (Policy p : applicable) {
+            if (p.effect() == PolicyEffect.DENY
+                    && referencesAnyChangedColumn(p, changedRow)
+                    && matchesPresentRules(p, changedRow, resolver)) {
+                return false;
+            }
+        }
+
+        if (!rlsEnabledFor(resource, Operation.UPDATE)) return true;
+
+        // The new image is permitted unless a changed column it actually sets
+        // violates every ALLOW policy that governs that column. An ALLOW that
+        // does not reference any changed column imposes no constraint here (its
+        // columns are unchanged and already validated by USING).
+        boolean anyAllowGovernsChange = false;
+        for (Policy p : applicable) {
+            if (p.effect() != PolicyEffect.ALLOW) continue;
+            if (!referencesAnyChangedColumn(p, changedRow)) continue;
+            anyAllowGovernsChange = true;
+            if (matchesPresentRules(p, changedRow, resolver)) return true;
+        }
+        return !anyAllowGovernsChange;
+    }
+
+    /** True if any of the policy's rules targets a column present in {@code changedRow}. */
+    private static boolean referencesAnyChangedColumn(Policy policy, Map<String, Object> changedRow) {
+        for (Rule r : policy.rules()) {
+            if (changedRow.containsKey(rootField(r.field()))) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Evaluates only the rules whose field is present in {@code changedRow},
+     * honouring the policy's AND/OR logic. Rules on absent (unchanged) columns
+     * are skipped — they are validated by the UPDATE's USING predicate, not here.
+     */
+    private static boolean matchesPresentRules(Policy policy, Map<String, Object> changedRow, VariableResolver resolver) {
+        List<Rule> present = policy.rules().stream()
+                .filter(r -> changedRow.containsKey(rootField(r.field())))
+                .toList();
+        if (present.isEmpty()) return true;
+        if (policy.ruleLogic() == LogicOperator.AND) {
+            for (Rule r : present) {
+                if (!matchesRule(r, changedRow, resolver)) return false;
+            }
+            return true;
+        }
+        for (Rule r : present) {
+            if (matchesRule(r, changedRow, resolver)) return true;
+        }
+        return false;
+    }
+
+    private static String rootField(String field) {
+        int dot = field.indexOf('.');
+        return dot < 0 ? field : field.substring(0, dot);
+    }
+
+    /**
      * True iff at least one enabled ALLOW policy targets this resource and
      * declares this operation in its {@code operations} set. The "RLS is on"
      * test from RFC 0001's composition rule; computed without reference to the

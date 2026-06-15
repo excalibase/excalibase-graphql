@@ -52,7 +52,7 @@ class JwtAuthFilterRoleContextTest {
     }
 
     private static SecurityProperties propsWithRoleSwitching() {
-        return new SecurityProperties(true, null, null,
+        return new SecurityProperties(true, false, null, null,
                 new SecurityProperties.Postgres(
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "app_anon",

@@ -210,6 +210,68 @@ class RowMatcherTest {
         }
     }
 
+    @Nested
+    @DisplayName("UPDATE WITH-CHECK (partial new-image)")
+    class UpdateWithCheck {
+
+        private Policy ownerUpdateAllow() {
+            return policyBuilder()
+                .name("owner update")
+                .resource("orders")
+                .effect(PolicyEffect.ALLOW)
+                .operations(Set.of(Operation.UPDATE))
+                .rules(new Rule("user_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}"))
+                .assignments(Assignment.all())
+                .build();
+        }
+
+        @Test
+        @DisplayName("no policies → any changed image is permitted")
+        void noPolicies_permitted() {
+            RowMatcher matcher = new RowMatcher(List.of());
+            assertThat(matcher.matchesUpdate("orders", Map.of("user_id", BOB.toString()), alice)).isTrue();
+        }
+
+        @Test
+        @DisplayName("changing a policy column to a violating value → rejected")
+        void changesPolicyColumnToViolatingValue_rejected() {
+            RowMatcher matcher = new RowMatcher(List.of(ownerUpdateAllow()));
+            // Alice tries to reassign her order to Bob — escapes her own visibility
+            assertThat(matcher.matchesUpdate("orders", Map.of("user_id", BOB.toString()), alice)).isFalse();
+        }
+
+        @Test
+        @DisplayName("changing a policy column to a compliant value → permitted")
+        void changesPolicyColumnToCompliantValue_permitted() {
+            RowMatcher matcher = new RowMatcher(List.of(ownerUpdateAllow()));
+            assertThat(matcher.matchesUpdate("orders", Map.of("user_id", ALICE.toString()), alice)).isTrue();
+        }
+
+        @Test
+        @DisplayName("partial update that does NOT touch the policy column → permitted (USING already validated the row)")
+        void doesNotTouchPolicyColumn_permitted() {
+            RowMatcher matcher = new RowMatcher(List.of(ownerUpdateAllow()));
+            // Only changing a non-policy column; absent user_id must not be treated as a violation
+            assertThat(matcher.matchesUpdate("orders", Map.of("title", "renamed"), alice)).isTrue();
+        }
+
+        @Test
+        @DisplayName("DENY matching a changed value vetoes the update")
+        void denyMatchingChangedValue_vetoes() {
+            Policy hideDrafts = policyBuilder()
+                .name("hide drafts")
+                .resource("orders")
+                .effect(PolicyEffect.DENY)
+                .operations(Set.of(Operation.UPDATE))
+                .rules(new Rule("status", FieldType.STRING, RuleOperator.EQ, "draft"))
+                .assignments(Assignment.all())
+                .build();
+            RowMatcher matcher = new RowMatcher(List.of(ownerUpdateAllow(), hideDrafts));
+            assertThat(matcher.matchesUpdate("orders",
+                Map.of("user_id", ALICE.toString(), "status", "draft"), alice)).isFalse();
+        }
+    }
+
     // ---------- helpers ----------
 
     private static UserContext userContext(UUID userId, UUID tenantId, Set<String> roles) {

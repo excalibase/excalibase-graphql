@@ -38,6 +38,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "app.security")
 public record SecurityProperties(
         boolean jwtEnabled,
+        boolean verboseErrors,
         Auth auth,
         MultiTenant multiTenant,
         Postgres postgres

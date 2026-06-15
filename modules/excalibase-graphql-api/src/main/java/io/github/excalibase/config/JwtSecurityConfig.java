@@ -9,6 +9,9 @@ import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.PostgresRoleResolver;
 import io.github.excalibase.service.VaultCredentialService;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,6 +23,32 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true")
 @EnableConfigurationProperties(SecurityProperties.class)
 public class JwtSecurityConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtSecurityConfig.class);
+
+    private final SecurityProperties securityProperties;
+
+    public JwtSecurityConfig(SecurityProperties securityProperties) {
+        this.securityProperties = securityProperties;
+    }
+
+    /**
+     * Warns when JWT auth is on but no multi-tenant provisioning URL is set:
+     * every authenticated user then shares one datasource, so there is NO
+     * row-level isolation between users unless RLS policies are authored. This
+     * is a soft warning, not a failure — single-datasource + RLS is a valid
+     * deployment, but an operator must opt into it knowingly.
+     */
+    @PostConstruct
+    void warnIfSingleDatasourceWithoutIsolation() {
+        boolean multiTenant = securityProperties != null
+                && securityProperties.isMultiTenantEnabled();
+        if (!multiTenant) {
+            log.warn("app.security.jwt-enabled=true but app.security.multi-tenant.provisioning-url "
+                    + "is not configured: multi-user single-datasource mode has no row-level "
+                    + "isolation between users unless RLS policies are authored.");
+        }
+    }
 
     @Bean
     public JwtService jwtService(

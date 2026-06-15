@@ -126,6 +126,50 @@ class RlsPolicyEnforcerTest {
         assertThat(projection.selectList()).hasSize(2);
     }
 
+    private static Policy ownerUpdate(String resource) {
+        return new Policy(
+                "upd-" + resource, "owner-upd-" + resource, resource,
+                PolicyEffect.ALLOW, java.util.Set.of(Operation.UPDATE), LogicOperator.AND, 0, true,
+                List.of(new Rule("user_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(Assignment.all()));
+    }
+
+    @Test
+    @DisplayName("permitsRowUpdate: reassigning owner column to another user is rejected")
+    void permitsRowUpdate_reassignOwner_rejected() {
+        var enforcer = enforcerWith("proj-a", List.of(ownerUpdate("orders")));
+        boolean ok = enforcer.permitsRowUpdate("proj-a", "orders", claims(ALICE, "proj-a"),
+                java.util.Map.of("user_id", "22222222-2222-2222-2222-222222222222"));
+        assertThat(ok).isFalse();
+    }
+
+    @Test
+    @DisplayName("permitsRowUpdate: setting owner column to self is permitted")
+    void permitsRowUpdate_keepOwner_permitted() {
+        var enforcer = enforcerWith("proj-a", List.of(ownerUpdate("orders")));
+        boolean ok = enforcer.permitsRowUpdate("proj-a", "orders", claims(ALICE, "proj-a"),
+                java.util.Map.of("user_id", ALICE));
+        assertThat(ok).isTrue();
+    }
+
+    @Test
+    @DisplayName("permitsRowUpdate: partial update not touching the policy column is permitted")
+    void permitsRowUpdate_untouchedPolicyColumn_permitted() {
+        var enforcer = enforcerWith("proj-a", List.of(ownerUpdate("orders")));
+        boolean ok = enforcer.permitsRowUpdate("proj-a", "orders", claims(ALICE, "proj-a"),
+                java.util.Map.of("title", "renamed"));
+        assertThat(ok).isTrue();
+    }
+
+    @Test
+    @DisplayName("permitsRowUpdate: no UPDATE policy → permissive")
+    void permitsRowUpdate_noPolicy_permissive() {
+        var enforcer = new RlsPolicyEnforcer(new InMemoryPolicyProvider());
+        boolean ok = enforcer.permitsRowUpdate("proj-a", "orders", claims(ALICE, "proj-a"),
+                java.util.Map.of("user_id", "22222222-2222-2222-2222-222222222222"));
+        assertThat(ok).isTrue();
+    }
+
     @Test
     @DisplayName("operation is honored — INSERT-only policy doesn't filter a SELECT")
     void operationHonored() {

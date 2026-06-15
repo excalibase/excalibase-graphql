@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class PostgresRoleResolverTest {
 
     private static SecurityProperties enabled(List<String> allowedRoles) {
-        return new SecurityProperties(true, null, null,
+        return new SecurityProperties(true, false, null, null,
                 new SecurityProperties.Postgres(
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "app_anon",
@@ -29,7 +29,7 @@ class PostgresRoleResolverTest {
     }
 
     private static SecurityProperties disabled() {
-        return new SecurityProperties(true, null, null, null);
+        return new SecurityProperties(true, false, null, null, null);
     }
 
     private static JwtClaims claims(String scope, String role) {
@@ -47,7 +47,7 @@ class PostgresRoleResolverTest {
 
     @Test
     void resolve_disabledFeature_blankAnonRole_returnsNull() {
-        var properties = new SecurityProperties(true, null, null,
+        var properties = new SecurityProperties(true, false, null, null,
                 new SecurityProperties.Postgres(
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "  ",  // blank → disabled
@@ -125,7 +125,7 @@ class PostgresRoleResolverTest {
 
     @Test
     void resolve_authenticatedScope_nullAllowlist_customRoleThrows() {
-        var properties = new SecurityProperties(true, null, null,
+        var properties = new SecurityProperties(true, false, null, null,
                 new SecurityProperties.Postgres(
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "app_anon", "app_authenticated", "app_service", null)));
@@ -161,7 +161,7 @@ class PostgresRoleResolverTest {
 
     @Test
     void resolve_malformedAnonRole_throws() {
-        var properties = new SecurityProperties(true, null, null,
+        var properties = new SecurityProperties(true, false, null, null,
                 new SecurityProperties.Postgres(
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "drop-table; --",  // malformed identifier — still triggers feature (non-blank)
@@ -176,7 +176,7 @@ class PostgresRoleResolverTest {
 
     @Test
     void resolve_malformedAuthenticatedDefaultRole_throws() {
-        var properties = new SecurityProperties(true, null, null,
+        var properties = new SecurityProperties(true, false, null, null,
                 new SecurityProperties.Postgres(
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "app_anon",
@@ -191,7 +191,7 @@ class PostgresRoleResolverTest {
 
     @Test
     void resolve_blankServiceRole_thrownAsConfigError() {
-        var properties = new SecurityProperties(true, null, null,
+        var properties = new SecurityProperties(true, false, null, null,
                 new SecurityProperties.Postgres(
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "app_anon",
@@ -207,7 +207,7 @@ class PostgresRoleResolverTest {
 
     @Test
     void resolve_blankAuthenticatedDefaultRole_thrownAsConfigError() {
-        var properties = new SecurityProperties(true, null, null,
+        var properties = new SecurityProperties(true, false, null, null,
                 new SecurityProperties.Postgres(
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "app_anon",
@@ -225,7 +225,7 @@ class PostgresRoleResolverTest {
     void resolve_allowlistedRoleStillValidatedForSafety() {
         // Even an allowlisted role must pass the SAFE_ROLE_NAME check — defense in depth
         // against an operator who copy-pastes a hostile string into config.
-        var properties = new SecurityProperties(true, null, null,
+        var properties = new SecurityProperties(true, false, null, null,
                 new SecurityProperties.Postgres(
                         new SecurityProperties.Postgres.RoleSwitching(
                                 "app_anon",

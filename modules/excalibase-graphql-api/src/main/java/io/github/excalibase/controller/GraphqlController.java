@@ -3,12 +3,14 @@ package io.github.excalibase.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
+import io.github.excalibase.config.SecurityProperties;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.RoleNotAllowedException;
 import io.github.excalibase.service.QueryExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.lang.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -36,13 +38,16 @@ public class GraphqlController {
     private final GraphqlSchemaManager schemaManager;
     private final QueryExecutionService queryExecutor;
     private final GraphQLObservabilityInstrumentation observability;
+    private final boolean verboseErrors;
 
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
-                             GraphQLObservabilityInstrumentation observability) {
+                             GraphQLObservabilityInstrumentation observability,
+                             @Nullable SecurityProperties securityProperties) {
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;
+        this.verboseErrors = securityProperties != null && securityProperties.verboseErrors();
     }
 
     @PostMapping("/graphql")
@@ -81,7 +86,7 @@ public class GraphqlController {
             } catch (Exception e) {
                 log.warn("GraphQL request failed", e);
                 return ResponseEntity.ok(Map.of(
-                        "errors", List.of(Map.of("message", extractErrorMessage(e)))));
+                        "errors", List.of(Map.of("message", clientErrorMessage(e)))));
             }
         });
     }
@@ -119,6 +124,21 @@ public class GraphqlController {
             return queryExecutor.executeTwoPhase(compiled, params, state.mutationExecutor());
         }
         return queryExecutor.executeQuery(compiled, params);
+    }
+
+    /**
+     * Message surfaced to the client for a failed request. The full detail is
+     * always logged server-side (see the catch block). By default
+     * ({@code app.security.verbose-errors=false}) clients get a generic message
+     * so raw database errors — column, type, and constraint names — never leak
+     * and can't be used as a schema-probing oracle. Operators may set
+     * {@code verbose-errors=true} in dev to keep the detailed message.
+     */
+    private String clientErrorMessage(Exception e) {
+        if (verboseErrors) {
+            return extractErrorMessage(e);
+        }
+        return "query execution error";
     }
 
     private static String extractErrorMessage(Exception e) {
