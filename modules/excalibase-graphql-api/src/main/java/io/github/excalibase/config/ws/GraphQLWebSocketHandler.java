@@ -175,7 +175,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
 
     @SuppressWarnings("unchecked")
     private String extractBearerToken(Map<String, Object> payload) {
-        // Accept both payload.Authorization and payload.headers.Authorization (Hasura + Apollo conventions)
+        // Accept both payload.Authorization and payload.headers.Authorization (Apollo and common conventions)
         Object direct = payload.get("Authorization");
         if (direct == null) {
             Object headers = payload.get("headers");

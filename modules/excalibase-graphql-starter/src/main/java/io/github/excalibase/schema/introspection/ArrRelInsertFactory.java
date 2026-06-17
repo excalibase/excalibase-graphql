@@ -13,7 +13,7 @@ import static io.github.excalibase.schema.GraphqlConstants.CREATE_INPUT_SUFFIX;
 
 /**
  * Builds the nested-insert wrapper input objects (one per unique child
- * type referenced via a reverse FK) used to drive Hasura-style
+ * type referenced via a reverse FK) used to drive nested
  * {@code data: [ChildCreateInput]} mutations.
  *
  * <p>The produced {@code TypeArrRelInsertInput} types reference the
