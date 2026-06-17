@@ -1,0 +1,21 @@
+name: Slack — PR opened
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+jobs:
+  notify:
+    name: Post new PR to #team-prs
+    runs-on: ubuntu-latest
+    # Skip drafts — only ping once a PR is actually ready for review
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Post to Slack
+        uses: slackapi/slack-github-action@v2.0.0
+        with:
+          method: chat.postMessage
+          token: ${{ secrets.SLACK_BOT_TOKEN }}
+          payload: |
+            channel: "${{ secrets.SLACK_CHANNEL_ID }}"
+            text: ":eyes: *Review needed* — <${{ github.event.pull_request.html_url }}|#${{ github.event.pull_request.number }} ${{ github.event.pull_request.title }}> by ${{ github.event.pull_request.user.login }} in `${{ github.repository }}`"
