@@ -21,9 +21,10 @@ import java.util.function.LongSupplier;
 /**
  * {@link PolicyProvider} backed by the provisioning service's policy API.
  *
- * <p>Row policies are read from {@code GET {base}/api/provision/{projectId}/rls-policies/}
- * and column policies from {@code .../column-policies/}, authenticated with a
- * service PAT. Results are cached per project for {@code ttlMillis} so the hot
+ * <p>Row policies are read from {@code GET {base}/provision/{projectId}/rls-policies/}
+ * and column policies from {@code .../column-policies/} (where {@code base} is the
+ * provisioning API root, e.g. {@code https://provisioning/api}), authenticated with
+ * a service PAT. Results are cached per project for {@code ttlMillis} so the hot
  * query path stays in-process; a NATS {@code policies.{projectId}.changed}
  * consumer can later call {@link #evict(String)} for instant invalidation, but
  * the TTL alone keeps staleness bounded without it.
@@ -69,13 +70,13 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
     @Override
     public List<Policy> policiesFor(String projectId) {
         return cachedFetch(projectId, rowCache,
-                "/api/provision/" + projectId + "/rls-policies/", this::parsePolicies);
+                "/provision/" + projectId + "/rls-policies/", this::parsePolicies);
     }
 
     @Override
     public List<ColumnPolicy> columnPoliciesFor(String projectId) {
         return cachedFetch(projectId, columnCache,
-                "/api/provision/" + projectId + "/column-policies/", this::parseColumnPolicies);
+                "/provision/" + projectId + "/column-policies/", this::parseColumnPolicies);
     }
 
     /** Drops the cached policies for one project — the write side a NATS consumer calls. */

@@ -110,8 +110,9 @@ class ProvisioningPolicyProviderTest {
     }
 
     private ProvisioningPolicyProvider provider(long ttlMillis) {
+        // base is the provisioning API root (includes /api), mirroring deployment config
         return new ProvisioningPolicyProvider(
-                "http://localhost:" + port,
+                "http://localhost:" + port + "/api",
                 "test-pat",
                 ttlMillis,
                 () -> now[0]);

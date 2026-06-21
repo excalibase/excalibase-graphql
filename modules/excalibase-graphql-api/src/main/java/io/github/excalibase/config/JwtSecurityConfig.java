@@ -3,6 +3,7 @@ package io.github.excalibase.config;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
 import io.github.excalibase.rls.PolicyProvider;
+import io.github.excalibase.rls.ProvisioningPolicyProvider;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.security.JwtAuthFilter;
@@ -52,10 +53,26 @@ public class JwtSecurityConfig {
     }
 
     /**
-     * Default in-process policy source. Empty until policies are pushed in
-     * (NATS consumer / HTTP sync — separate ticket), so the RLS path is a
-     * no-op passthrough out of the box. {@link ConditionalOnMissingBean} lets a
-     * remote-backed provider replace it without touching this config.
+     * Remote policy source: fetches a project's RLS/CLS policies from the
+     * provisioning service over HTTP and caches them per project. Enabled by
+     * setting {@code app.security.rls.policy-url} (the provisioning API root).
+     * When unset, the in-memory fallback below is used instead, so single-tenant
+     * / standalone deployments and tests are unaffected.
+     */
+    @Bean
+    @ConditionalOnProperty(name = "app.security.rls.policy-url")
+    public PolicyProvider provisioningPolicyProvider(
+            @Value("${app.security.rls.policy-url}") String policyUrl,
+            @Value("${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}") String policyPat,
+            @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs) {
+        return new ProvisioningPolicyProvider(policyUrl, policyPat, policyTtlMs);
+    }
+
+    /**
+     * Default in-process policy source. Empty until policies are pushed in, so
+     * the RLS path is a no-op passthrough out of the box. {@link
+     * ConditionalOnMissingBean} lets the provisioning-backed provider above
+     * replace it when {@code app.security.rls.policy-url} is configured.
      */
     @Bean
     @ConditionalOnMissingBean(PolicyProvider.class)
