@@ -139,7 +139,7 @@ Any OIDC-compatible provider that exposes a `/.well-known/jwks.json` (or equival
 - **excalibase-auth** — lightweight companion auth service
 - **Auth0** — `https://your-tenant.auth0.com/.well-known/jwks.json`
 - **Keycloak** — `https://keycloak.example.com/realms/myrealm/protocol/openid-connect/certs`
-- **Supabase** — configured via JWKS URL
+- **OIDC providers** — configured via JWKS URL
 - **Any OIDC provider** — point `auth.jwks-url` at the JWKS endpoint
 
 ## Security Notes
