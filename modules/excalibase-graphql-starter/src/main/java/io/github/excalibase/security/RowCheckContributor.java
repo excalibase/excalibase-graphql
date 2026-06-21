@@ -22,4 +22,20 @@ public interface RowCheckContributor {
      *         this resource/op); {@code false} if it must be rejected
      */
     boolean permits(String tableName, Map<String, Object> row, RlsOp op);
+
+    /**
+     * WITH-CHECK for an UPDATE's partial new image: {@code changedColumns} holds
+     * only the columns the mutation is setting. Returns {@code false} when those
+     * changes would move the row out of the caller's UPDATE policies (e.g.
+     * reassigning an ownership column), in which case the mutation must be
+     * rejected before any SQL runs. Returns {@code true} when no UPDATE policy
+     * governs a changed column, preserving the engine's permissive default.
+     *
+     * <p>Default-implemented over {@link #permits} so existing contributors keep
+     * compiling; the engine-backed implementation overrides it with new-image
+     * semantics that do not falsely reject untouched policy columns.
+     */
+    default boolean permitsUpdate(String tableName, Map<String, Object> changedColumns) {
+        return permits(tableName, changedColumns, RlsOp.UPDATE);
+    }
 }

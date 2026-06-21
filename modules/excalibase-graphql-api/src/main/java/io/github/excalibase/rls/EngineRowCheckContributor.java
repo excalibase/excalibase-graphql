@@ -30,6 +30,11 @@ public final class EngineRowCheckContributor implements RowCheckContributor {
         return enforcer.permitsRow(projectId, tableName, claims, toOperation(op), row);
     }
 
+    @Override
+    public boolean permitsUpdate(String tableName, Map<String, Object> changedColumns) {
+        return enforcer.permitsRowUpdate(projectId, tableName, claims, changedColumns);
+    }
+
     private static Operation toOperation(RlsOp op) {
         return switch (op) {
             case SELECT -> Operation.SELECT;
