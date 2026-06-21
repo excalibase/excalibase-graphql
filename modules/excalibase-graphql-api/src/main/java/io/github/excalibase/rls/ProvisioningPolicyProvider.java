@@ -19,23 +19,14 @@ import java.util.function.Function;
 import java.util.function.LongSupplier;
 
 /**
- * {@link PolicyProvider} backed by the provisioning service's policy API.
+ * {@link PolicyProvider} that reads a project's RLS/CLS policies from the
+ * provisioning API ({@code GET {base}/provision/{projectId}/rls-policies/} and
+ * {@code .../column-policies/}) and caches them per project for {@code ttlMillis}.
  *
- * <p>Row policies are read from {@code GET {base}/provision/{projectId}/rls-policies/}
- * and column policies from {@code .../column-policies/} (where {@code base} is the
- * provisioning API root, e.g. {@code https://provisioning/api}), authenticated with
- * a service PAT. Results are cached per project for {@code ttlMillis} so the hot
- * query path stays in-process; a NATS {@code policies.{projectId}.changed}
- * consumer can later call {@link #evict(String)} for instant invalidation, but
- * the TTL alone keeps staleness bounded without it.
- *
- * <h2>Fail-closed</h2>
- * If a fetch fails and there is <em>no</em> cached copy, this throws
- * {@link PolicyFetchException} rather than returning an empty list — an empty
- * list is read by the engine as {@code UNRESTRICTED}, so swallowing the error
- * would silently disable RLS. If a fetch fails but a previous good copy exists,
- * that stale copy is served (stale-while-error) so a transient provisioning
- * outage degrades to bounded staleness, not an outage of the data plane.
+ * <p>On a fetch failure it serves the last good copy if one is cached, else it
+ * throws {@link PolicyFetchException}. It must never return an empty list on
+ * error: the engine reads empty as {@code UNRESTRICTED}, which would silently
+ * disable RLS.
  */
 public final class ProvisioningPolicyProvider implements PolicyProvider {
 
@@ -51,13 +42,11 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
 
     private record Cached<T>(T value, long fetchedAt) {}
 
-    /** Production constructor: wall-clock time, default HTTP client. */
     public ProvisioningPolicyProvider(String baseUrl, String pat, long ttlMillis) {
         this(baseUrl, pat, ttlMillis, System::currentTimeMillis);
     }
 
-    /** Test-friendly constructor with an injectable clock for deterministic TTL. */
-    public ProvisioningPolicyProvider(String baseUrl, String pat, long ttlMillis, LongSupplier clock) {
+    ProvisioningPolicyProvider(String baseUrl, String pat, long ttlMillis, LongSupplier clock) {
         this.baseUrl = stripTrailingSlash(Objects.requireNonNull(baseUrl, "baseUrl"));
         this.pat = Objects.requireNonNull(pat, "pat");
         this.ttlMillis = ttlMillis;
@@ -129,9 +118,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
         }
     }
 
-    // ------------------------------------------------------------------------
-    // JSON -> engine record mapping (1:1 with provisioning's domain/rls.go).
-    // ------------------------------------------------------------------------
+    // JSON shape is 1:1 with provisioning's domain/rls.go.
 
     private List<Policy> parsePolicies(JsonNode root) {
         List<Policy> out = new ArrayList<>();
@@ -195,7 +182,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
         for (JsonNode op : arrayOf(arr)) {
             ops.add(Operation.valueOf(op.asText()));
         }
-        return ops;   // empty -> Policy/ColumnPolicy canonicalise to Operation.ALL
+        return ops;
     }
 
     private static Set<String> stringSet(JsonNode arr) {

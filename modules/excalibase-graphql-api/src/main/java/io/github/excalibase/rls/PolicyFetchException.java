@@ -1,13 +1,9 @@
 package io.github.excalibase.rls;
 
 /**
- * Thrown when the engine cannot obtain a project's policies from the
- * provisioning service and has no cached copy to fall back on.
- *
- * <p>This is deliberately fatal to the request: returning an empty policy
- * list would be read by the engine as {@code UNRESTRICTED} (no row/column
- * filtering), which on a fetch failure would silently disable RLS and expose
- * data. Failing the request instead keeps the system fail-closed.
+ * Thrown when policies cannot be fetched from provisioning and nothing is
+ * cached. Fatal by design: failing the request keeps RLS fail-closed rather
+ * than letting an empty (UNRESTRICTED) policy set leak data.
  */
 public class PolicyFetchException extends RuntimeException {
 
