@@ -3,9 +3,6 @@ package io.github.excalibase.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
-import io.github.excalibase.security.JwtClaims;
-import io.github.excalibase.security.PostgresRoleResolver;
-import io.github.excalibase.security.RoleContext;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.utils.SqlUtils;
 import org.springframework.http.ResponseEntity;
@@ -25,20 +22,15 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 /**
- * Executes compiled SQL against the database. Two paths:
+ * Executes compiled SQL against the database. Row/column security is already
+ * baked into the compiled SQL by the engine, so this layer only runs it.
  *
  * <ul>
- *   <li>{@link #executeInContext} — Postgres path. Single connection + transaction.
- *       Sets {@code request.user_id/project_id/role} session vars and (when role
- *       switching is enabled) issues {@code SET LOCAL ROLE} before dispatching to
- *       the right query / two-phase mutation / procedure call branch.</li>
- *   <li>Legacy {@link #executeQuery} / {@link #executeTwoPhase} / {@link #executeProcedureCall} —
- *       used for MySQL / Mongo or single-tenant Postgres deploys with no JWT and
- *       role switching disabled. No transaction, no RLS context.</li>
+ *   <li>{@link #executeInContext} — Postgres path: one connection + transaction
+ *       so procedure / two-phase mutation / plain branches share atomicity.</li>
+ *   <li>{@link #executeQuery} / {@link #executeTwoPhase} / {@link #executeProcedureCall} —
+ *       MySQL / Mongo or single-tenant Postgres with no JWT. No transaction.</li>
  * </ul>
- *
- * <p>The legacy {@link #executeWithRlsContext} entry point is preserved as a
- * thin delegation to {@link #executeInContext} for backward compatibility.
  */
 @Component
 public class QueryExecutionService {
@@ -50,25 +42,17 @@ public class QueryExecutionService {
     private final NamedParameterJdbcTemplate namedJdbc;
     private final DataSource dataSource;
     private final ObjectMapper objectMapper;
-    private final PostgresRoleResolver roleResolver;
 
     public QueryExecutionService(NamedParameterJdbcTemplate namedJdbc,
                                  DataSource dataSource,
-                                 ObjectMapper objectMapper,
-                                 PostgresRoleResolver roleResolver) {
+                                 ObjectMapper objectMapper) {
         this.namedJdbc = namedJdbc;
         this.dataSource = dataSource;
         this.objectMapper = objectMapper;
-        this.roleResolver = roleResolver;
-    }
-
-    /** Whether Postgres role switching is enabled (driven by config). */
-    public boolean isRoleSwitchingEnabled() {
-        return roleResolver != null && roleResolver.isEnabled();
     }
 
     // ------------------------------------------------------------------------
-    // Legacy paths — used only when feature is off AND no JWT (MySQL / Mongo).
+    // Legacy paths — used for MySQL / Mongo or single-tenant Postgres, no JWT.
     // ------------------------------------------------------------------------
 
     public ResponseEntity<Object> executeQuery(SqlCompiler.CompiledQuery compiled,
@@ -90,69 +74,20 @@ public class QueryExecutionService {
         }
     }
 
-    // ------------------------------------------------------------------------
-    // Backward-compat: pre-existing callers used (compiled, userId, claims).
-    // The userId always equalled claims.userId() in practice — we drop it.
-    // ------------------------------------------------------------------------
-
-    public ResponseEntity<Object> executeWithRlsContext(SqlCompiler.CompiledQuery compiled,
-                                                        String userId,
-                                                        JwtClaims jwtClaims) throws SQLException, JsonProcessingException {
-        JwtClaims effective = jwtClaims;
-        if (effective == null && userId != null && !userId.isBlank()) {
-            // Legacy contract: when caller passes only userId (no claims), set just
-            // request.user_id and skip request.project_id / request.role.
-            effective = new JwtClaims(userId, null, null, null, null, null, null, null, 0L);
-        }
-        return executeInContext(compiled, null, null, effective);
-    }
-
-    // ------------------------------------------------------------------------
-    // New consolidated path — Postgres role-switching aware.
-    // ------------------------------------------------------------------------
-
     /**
-     * Executes a compiled query inside one connection + manual transaction.
-     *
-     * <ol>
-     *   <li>Sets {@code request.user_id/project_id/role} session vars from the
-     *       claims (legacy RLS contract).</li>
-     *   <li>If role switching is enabled, resolves the JWT to a Postgres role and
-     *       issues {@code SET LOCAL ROLE "<role>"}. The role string is post-validated
-     *       by {@link PostgresRoleResolver}; {@code SET ROLE} cannot use parameter
-     *       placeholders so app-side allowlisting is mandatory.</li>
-     *   <li>Dispatches to procedure / two-phase / plain branches sharing the same
-     *       connection — closes the pre-existing gap where these branches bypassed
-     *       RLS context entirely.</li>
-     * </ol>
+     * Runs a compiled query inside one connection + manual transaction so the
+     * procedure / two-phase mutation / plain branches share atomicity.
      */
     public ResponseEntity<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
                                                    MapSqlParameterSource params,
-                                                   MutationExecutor mutationExecutor,
-                                                   JwtClaims claims) throws SQLException, JsonProcessingException {
-        // RoleContext is populated by JwtAuthFilter (single source of truth across
-        // GraphQL + REST surfaces). When the filter didn't run (mocked unit tests,
-        // direct calls), fall back to running the resolver here so behaviour is
-        // identical regardless of entry point.
-        String pgRole = RoleContext.getRole();
-        if (pgRole == null && roleResolver != null) {
-            pgRole = roleResolver.resolve(claims);
-        }
-
+                                                   MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
         try (Connection conn = dataSource.getConnection()) {
             boolean autoCommit = conn.getAutoCommit();
             try {
                 conn.setAutoCommit(false);
-
-                applyRequestContext(conn, claims);
-                if (pgRole != null) {
-                    applySetLocalRole(conn, pgRole);
-                }
-
                 ResponseEntity<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor);
                 conn.commit();
                 return result;
-
             } catch (SQLException | JsonProcessingException | RuntimeException e) {
                 conn.rollback();
                 throw e;
@@ -218,48 +153,6 @@ public class QueryExecutionService {
             cs.execute();
             Map<String, Object> result = collectOutParams(cs, params);
             return wrapProcedureResult(fieldName, result);
-        }
-    }
-
-    // ------------------------------------------------------------------------
-    // Session-var + role-switch helpers.
-    // ------------------------------------------------------------------------
-
-    private static void applyRequestContext(Connection conn, JwtClaims claims) throws SQLException {
-        if (claims == null) {
-            return;
-        }
-        if (claims.userId() != null && !claims.userId().isBlank()) {
-            setLocalConfig(conn, "request.user_id", claims.userId());
-        }
-        if (claims.projectId() != null) {
-            setLocalConfig(conn, "request.project_id", claims.projectId());
-        }
-        if (claims.role() != null) {
-            setLocalConfig(conn, "request.role", claims.role());
-        }
-    }
-
-    private static void setLocalConfig(Connection conn, String key, String value) throws SQLException {
-        try (PreparedStatement pstmt = conn.prepareStatement("SELECT set_config(?, ?, true)")) {
-            pstmt.setString(1, key);
-            pstmt.setString(2, value);
-            pstmt.execute();
-        }
-    }
-
-    /**
-     * Issues {@code SET LOCAL ROLE "<role>"}. The role string MUST already be
-     * validated by {@link PostgresRoleResolver} (matches {@link PostgresRoleResolver#SAFE_ROLE_NAME})
-     * — Postgres does not accept parameter placeholders for {@code SET ROLE}.
-     */
-    private static void applySetLocalRole(Connection conn, String role) throws SQLException {
-        if (!PostgresRoleResolver.SAFE_ROLE_NAME.matcher(role).matches()) {
-            // Defense in depth — should already have been rejected upstream.
-            throw new IllegalStateException("Role identifier rejected at execution layer: " + role);
-        }
-        try (PreparedStatement pstmt = conn.prepareStatement("SET LOCAL ROLE \"" + role + "\"")) { // NOSONAR — role validated against SAFE_ROLE_NAME above
-            pstmt.execute();
         }
     }
 

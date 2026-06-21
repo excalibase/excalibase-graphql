@@ -7,9 +7,8 @@ package io.github.excalibase.security;
  * builds each table's WHERE clause, and cleared in a {@code finally} so the
  * ThreadLocal never leaks across pooled request threads.
  *
- * <p>Lives in the starter module — alongside {@link RoleContext} — so the
- * generic compiler can consult it without depending on the api module or the
- * RLS engine.
+ * <p>Lives in the starter module so the generic compiler can consult it
+ * without depending on the api module or the RLS engine.
  *
  * <p>{@code null} means "no RLS for this request": the feature is off, or the
  * request shape doesn't carry a project context.

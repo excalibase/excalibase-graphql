@@ -8,7 +8,6 @@ import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
-import io.github.excalibase.security.PostgresRoleResolver;
 import io.github.excalibase.service.VaultCredentialService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -93,9 +92,8 @@ public class JwtSecurityConfig {
     }
 
     @Bean
-    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver,
-                                       RlsPolicyEnforcer rlsPolicyEnforcer) {
-        return new JwtAuthFilter(jwtService, roleResolver, rlsPolicyEnforcer);
+    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, RlsPolicyEnforcer rlsPolicyEnforcer) {
+        return new JwtAuthFilter(jwtService, rlsPolicyEnforcer);
     }
 
     // Multi-tenant beans — only when provisioning-url is configured

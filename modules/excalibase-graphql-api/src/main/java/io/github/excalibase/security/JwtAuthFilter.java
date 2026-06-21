@@ -20,17 +20,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     public static final String JWT_CLAIMS_ATTR = SecurityConstants.JWT_CLAIMS_ATTR;
 
     private final JwtService jwtService;
-    private final PostgresRoleResolver roleResolver;
     private final RlsPolicyEnforcer rlsEnforcer;
 
-    public JwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver) {
-        this(jwtService, roleResolver, null);
+    public JwtAuthFilter(JwtService jwtService) {
+        this(jwtService, null);
     }
 
-    public JwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver,
-                         RlsPolicyEnforcer rlsEnforcer) {
+    public JwtAuthFilter(JwtService jwtService, RlsPolicyEnforcer rlsEnforcer) {
         this.jwtService = jwtService;
-        this.roleResolver = roleResolver;
         this.rlsEnforcer = rlsEnforcer;
     }
 
@@ -45,28 +42,12 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Resolve Postgres role once per request — single source of truth, exposed
-        // to both GraphQL and REST controllers via RoleContext (starter ThreadLocal).
-        // RoleNotAllowedException is converted to a 403 here so it surfaces uniformly
-        // for filter-based REST traffic (which @RestControllerAdvice can't reach).
-        String resolvedRole;
-        try {
-            resolvedRole = roleResolver != null ? roleResolver.resolve(claims) : null;
-        } catch (RoleNotAllowedException ex) {
-            writeError(response, HttpServletResponse.SC_FORBIDDEN, ex.getMessage());
-            return;
-        }
-        if (resolvedRole != null) {
-            RoleContext.setRole(resolvedRole);
-        }
-
         try {
             applyTenantContext(claims);
             applyRlsContext(claims);
             chain.doFilter(request, response);
         } finally {
             RlsContext.clear();
-            RoleContext.clear();
             clearTenantContext(claims);
         }
     }
