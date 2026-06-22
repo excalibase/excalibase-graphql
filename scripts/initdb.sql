@@ -742,6 +742,17 @@ INSERT INTO rls_orders (user_id, product, amount) VALUES
 GRANT SELECT, INSERT, UPDATE, DELETE ON rls_orders TO app_user;
 GRANT USAGE, SELECT ON SEQUENCE rls_orders_id_seq TO app_user;
 
+-- Engine RLS table (no native RLS): the provisioning policy mock serves an
+-- owner_id = {{currentUserId}} rule for hana.rls_notes, so the app composes the
+-- WHERE clause from the fetched policy. Seeded per-test with the caller's userId.
+CREATE TABLE rls_notes (
+    id        SERIAL PRIMARY KEY,
+    owner_id  TEXT NOT NULL,
+    body      TEXT NOT NULL
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON rls_notes TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE rls_notes_id_seq TO app_user;
+
 -- ====================
 -- ANALYZE TABLES FOR QUERY OPTIMIZATION
 -- ====================

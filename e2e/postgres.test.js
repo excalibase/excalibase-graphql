@@ -1009,6 +1009,51 @@ describe('JWT Authentication (via excalibase-auth)', () => {
   });
 });
 
+// ─── Engine RLS (policy fetched from the provisioning mock over HTTP) ─────────
+
+describe('Engine RLS (policy from provisioning mock)', () => {
+  const { psql } = require('./client');
+  let token;
+  let userId;
+  let decoded;
+
+  function decodeJwt(t) {
+    return JSON.parse(Buffer.from(t.split('.')[1], 'base64').toString('utf-8'));
+  }
+
+  beforeAll(async () => {
+    await authPost(`/auth/${PROJECT_ID}/register`, {
+      email: 'alice-e2e@test.com', password: 'secret123', fullName: 'Alice E2E',
+    });
+    const login = await authPost(`/auth/${PROJECT_ID}/login`, {
+      email: 'alice-e2e@test.com', password: 'secret123',
+    });
+    token = login.data.accessToken;
+    decoded = decodeJwt(token);
+    // Mirror the app's extractUserId: prefer the userId claim, fall back to sub.
+    userId = decoded.userId != null ? String(decoded.userId) : decoded.sub;
+
+    // Two rows owned by the caller, one owned by someone else.
+    psql('DELETE FROM hana.rls_notes;');
+    psql(`INSERT INTO hana.rls_notes (owner_id, body) VALUES ('${userId}','mine-1'),('${userId}','mine-2'),('someone-else','theirs');`);
+  });
+
+  test('JWT carries userId + projectId (engine needs both for RLS context)', () => {
+    expect(userId).toBeTruthy();
+    expect(decoded.projectId).toBeTruthy();
+  });
+
+  test('authenticated caller sees only their own rows — policy filtered the query', async () => {
+    const res = await rawGraphql('{ hanaRlsNotes { id owner_id body } }', { Authorization: `Bearer ${token}` });
+    expect(res.status).toBe(200);
+    expect(res.data.errors).toBeUndefined();
+    expect(res.data.data.hanaRlsNotes).toHaveLength(2);
+    for (const note of res.data.data.hanaRlsNotes) {
+      expect(note.owner_id).toBe(userId);
+    }
+  });
+});
+
 
 // ─── REST API (PostgREST-compatible) ─────────────────────────────────────────
 

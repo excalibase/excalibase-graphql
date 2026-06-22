@@ -1,0 +1,17 @@
+[
+  {
+    "id": "e2e-owner-notes",
+    "projectId": "e2e",
+    "name": "owner-notes",
+    "resource": "hana.rls_notes",
+    "effect": "ALLOW",
+    "operations": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+    "ruleLogic": "AND",
+    "priority": 0,
+    "enabled": true,
+    "rules": [
+      { "field": "owner_id", "fieldType": "STRING", "operator": "EQ", "value": "{{currentUserId}}" }
+    ],
+    "assignments": [{ "targetType": "ALL" }]
+  }
+]
