@@ -75,6 +75,23 @@ class ProvisioningPolicyProviderTest {
             ]
             """;
 
+    // One column policy per mask mode + every partialSpec variant, so the
+    // JSON -> ColumnPolicy mapping (modes + all PartialMaskSpec kinds) is exercised.
+    private static final String COL_VARIANTS_BODY = """
+            [
+              {"id":"m1","name":"hide","resource":"t","columns":["a"],"operations":["SELECT"],"mode":"HIDE","enabled":true,"assignments":[{"targetType":"ALL"}]},
+              {"id":"m2","name":"null","resource":"t","columns":["b"],"operations":["SELECT"],"mode":"NULL","enabled":true,"assignments":[{"targetType":"ALL"}]},
+              {"id":"m3","name":"hash","resource":"t","columns":["c"],"operations":["SELECT"],"mode":"HASH","enabled":true,"assignments":[{"targetType":"ALL"}]},
+              {"id":"m4","name":"custom","resource":"t","columns":["d"],"operations":["SELECT"],"mode":"CUSTOM","customMaskerKey":"k","enabled":true,"assignments":[{"targetType":"ALL"}]},
+              {"id":"m5","name":"kf","resource":"t","columns":["e"],"operations":["SELECT"],"mode":"PARTIAL","partialSpec":{"kind":"KEEP_FIRST","n":3,"maskChar":"*"},"enabled":true,"assignments":[{"targetType":"ALL"}]},
+              {"id":"m6","name":"kl","resource":"t","columns":["f"],"operations":["SELECT"],"mode":"PARTIAL","partialSpec":{"kind":"KEEP_LAST","n":4,"maskChar":"#"},"enabled":true,"assignments":[{"targetType":"ALL"}]},
+              {"id":"m7","name":"kb","resource":"t","columns":["g"],"operations":["SELECT"],"mode":"PARTIAL","partialSpec":{"kind":"KEEP_BOTH","first":2,"last":2,"maskChar":"*"},"enabled":true,"assignments":[{"targetType":"ALL"}]},
+              {"id":"m8","name":"mr","resource":"t","columns":["h"],"operations":["SELECT"],"mode":"PARTIAL","partialSpec":{"kind":"MASK_RANGE","start":1,"end":5,"maskChar":"X"},"enabled":true,"assignments":[{"targetType":"ALL"}]},
+              {"id":"m9","name":"ss","resource":"t","columns":["i"],"operations":["SELECT"],"mode":"PARTIAL","partialSpec":{"kind":"SUBSTRING","start":0,"length":3,"maskChar":"*"},"enabled":true,"assignments":[{"targetType":"ALL"}]},
+              {"id":"m10","name":"rx","resource":"t","columns":["j"],"operations":["SELECT"],"mode":"PARTIAL","partialSpec":{"kind":"REGEX","pattern":".","replacement":"*"},"enabled":true,"assignments":[{"targetType":"ALL"}]}
+            ]
+            """;
+
     @BeforeEach
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
@@ -88,6 +105,8 @@ class ProvisioningPolicyProviderTest {
             colHits.incrementAndGet();
             respond(exchange, COL_BODY);
         });
+        server.createContext("/api/provision/proj2/rls-policies/", exchange -> respond(exchange, "[]"));
+        server.createContext("/api/provision/proj2/column-policies/", exchange -> respond(exchange, COL_VARIANTS_BODY));
         server.start();
     }
 
@@ -107,6 +126,36 @@ class ProvisioningPolicyProviderTest {
     @AfterEach
     void stopServer() {
         if (server != null) server.stop(0);
+    }
+
+    @Test
+    @DisplayName("evict drops the cached policies so the next read re-fetches")
+    void evictForcesRefetch() {
+        ProvisioningPolicyProvider p = provider(60_000);
+        p.policiesFor("proj1");
+        p.evict("proj1");
+        p.policiesFor("proj1");
+        assertThat(rlsHits.get()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("maps every column mask mode and partialSpec kind")
+    void mapsColumnPolicyVariants() {
+        List<ColumnPolicy> cols = provider(60_000).columnPoliciesFor("proj2");
+
+        assertThat(cols).hasSize(10);
+        assertThat(cols.get(0).mode()).isEqualTo(MaskMode.HIDE);
+        assertThat(cols.get(1).mode()).isEqualTo(MaskMode.NULL);
+        assertThat(cols.get(2).mode()).isEqualTo(MaskMode.HASH);
+        assertThat(cols.get(3).mode()).isEqualTo(MaskMode.CUSTOM);
+        assertThat(cols.get(3).customMaskerKey()).isEqualTo("k");
+        assertThat(cols.get(4).partialSpec()).isInstanceOf(PartialMaskSpec.KeepFirst.class);
+        assertThat(((PartialMaskSpec.KeepFirst) cols.get(4).partialSpec()).n()).isEqualTo(3);
+        assertThat(cols.get(5).partialSpec()).isInstanceOf(PartialMaskSpec.KeepLast.class);
+        assertThat(cols.get(6).partialSpec()).isInstanceOf(PartialMaskSpec.KeepBoth.class);
+        assertThat(cols.get(7).partialSpec()).isInstanceOf(PartialMaskSpec.MaskRange.class);
+        assertThat(cols.get(8).partialSpec()).isInstanceOf(PartialMaskSpec.Substring.class);
+        assertThat(cols.get(9).partialSpec()).isInstanceOf(PartialMaskSpec.Regex.class);
     }
 
     private ProvisioningPolicyProvider provider(long ttlMillis) {
