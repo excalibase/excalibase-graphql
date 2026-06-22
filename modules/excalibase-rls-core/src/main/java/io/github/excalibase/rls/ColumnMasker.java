@@ -29,7 +29,7 @@ public class ColumnMasker {
         String userId = ctx.userId();
 
         for (ColumnPolicy p : policies) {
-            if (!p.enabled() || !p.resource().equals(resource) || !p.appliesTo(op)
+            if (!p.enabled() || !ResourceMatcher.matches(p.resource(), resource) || !p.appliesTo(op)
                     || !assignmentMatches(p, userId, roles, groups)) {
                 continue;
             }

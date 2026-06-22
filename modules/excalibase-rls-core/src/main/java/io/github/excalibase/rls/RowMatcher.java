@@ -135,7 +135,7 @@ public class RowMatcher {
         for (Policy p : policies) {
             if (p.enabled()
                 && p.effect() == PolicyEffect.ALLOW
-                && p.resource().equals(resource)
+                && ResourceMatcher.matches(p.resource(), resource)
                 && p.appliesTo(op)) {
                 return true;
             }
@@ -149,7 +149,7 @@ public class RowMatcher {
         String userId = ctx.userId();
         return policies.stream()
             .filter(Policy::enabled)
-            .filter(p -> p.resource().equals(resource))
+            .filter(p -> ResourceMatcher.matches(p.resource(), resource))
             .filter(p -> p.appliesTo(op))
             .filter(p -> assignmentMatches(p, userId, roles, groups))
             .toList();

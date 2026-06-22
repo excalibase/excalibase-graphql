@@ -3,7 +3,7 @@
     "id": "e2e-owner-notes",
     "projectId": "e2e",
     "name": "owner-notes",
-    "resource": "hana.rls_notes",
+    "resource": "rls_notes",
     "effect": "ALLOW",
     "operations": ["SELECT", "INSERT", "UPDATE", "DELETE"],
     "ruleLogic": "AND",
