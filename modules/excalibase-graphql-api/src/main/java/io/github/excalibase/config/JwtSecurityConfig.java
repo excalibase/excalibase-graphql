@@ -3,14 +3,13 @@ package io.github.excalibase.config;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
 import io.github.excalibase.rls.PolicyProvider;
+import io.github.excalibase.rls.ProvisioningPolicyProvider;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
-import io.github.excalibase.security.PostgresRoleResolver;
 import io.github.excalibase.service.VaultCredentialService;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -52,14 +51,21 @@ public class JwtSecurityConfig {
     }
 
     /**
-     * Default in-process policy source. Empty until policies are pushed in
-     * (NATS consumer / HTTP sync — separate ticket), so the RLS path is a
-     * no-op passthrough out of the box. {@link ConditionalOnMissingBean} lets a
-     * remote-backed provider replace it without touching this config.
+     * RLS/CLS policy source. When {@code app.security.rls.policy-url} is set,
+     * policies are fetched from the provisioning service over HTTP and cached per
+     * project; otherwise an empty in-memory provider is used (RLS is a no-op until
+     * policies are pushed in). The choice is made at runtime rather than via
+     * {@code @ConditionalOnProperty} so it survives GraalVM AOT, which evaluates
+     * build-time conditions when the property may be absent.
      */
     @Bean
-    @ConditionalOnMissingBean(PolicyProvider.class)
-    public PolicyProvider policyProvider() {
+    public PolicyProvider policyProvider(
+            @Value("${app.security.rls.policy-url:}") String policyUrl,
+            @Value("${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}") String policyPat,
+            @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs) {
+        if (policyUrl != null && !policyUrl.isBlank()) {
+            return new ProvisioningPolicyProvider(policyUrl, policyPat, policyTtlMs);
+        }
         return new InMemoryPolicyProvider();
     }
 
@@ -76,9 +82,8 @@ public class JwtSecurityConfig {
     }
 
     @Bean
-    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver,
-                                       RlsPolicyEnforcer rlsPolicyEnforcer) {
-        return new JwtAuthFilter(jwtService, roleResolver, rlsPolicyEnforcer);
+    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, RlsPolicyEnforcer rlsPolicyEnforcer) {
+        return new JwtAuthFilter(jwtService, rlsPolicyEnforcer);
     }
 
     // Multi-tenant beans — only when provisioning-url is configured

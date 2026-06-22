@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler.CompiledQuery;
 import io.github.excalibase.compiler.SqlCompiler.ProcedureCallInfo;
 import io.github.excalibase.compiler.SqlCompiler.ProcedureCallParam;
-import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.spi.MutationExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -19,8 +18,6 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import javax.sql.DataSource;
 import java.sql.CallableStatement;
 import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
 import java.sql.Types;
 import java.util.List;
 import java.util.Map;
@@ -32,7 +29,6 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -47,9 +43,7 @@ class QueryExecutionServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new QueryExecutionService(namedJdbc, dataSource, objectMapper,
-                new io.github.excalibase.security.PostgresRoleResolver(
-                        (io.github.excalibase.config.SecurityProperties) null));
+        service = new QueryExecutionService(namedJdbc, dataSource, objectMapper);
     }
 
     private CompiledQuery selectQuery(String sql) {
@@ -212,81 +206,11 @@ class QueryExecutionServiceTest {
         verify(cs).execute();
     }
 
-    @Test
-    @DisplayName("executeWithRlsContext sets config, runs query, commits, and wraps result")
-    void executeWithRlsContext_setsConfigAndCommits() throws Exception {
-        Connection conn = mockConn();
-        PreparedStatement configStmt = mockPs();
-        PreparedStatement querySt = mockPs();
-        ResultSet rs = org.mockito.Mockito.mock(ResultSet.class);
-        when(dataSource.getConnection()).thenReturn(conn);
-        when(conn.getAutoCommit()).thenReturn(true);
-        when(conn.prepareStatement(anyString()))
-                .thenReturn(configStmt, configStmt, configStmt, querySt);
-        when(querySt.executeQuery()).thenReturn(rs);
-        when(rs.next()).thenReturn(true);
-        when(rs.getString(1)).thenReturn("{\"users\":[{\"id\":1}]}");
-
-        CompiledQuery compiled = new CompiledQuery("SELECT 1", Map.of(), null, null, false, null);
-        JwtClaims claims = new JwtClaims("42", "p1", "acme", "app", "Acme Inc", "admin", "u@e.com", null, 0L);
-
-        ResponseEntity<Object> response = service.executeWithRlsContext(compiled, "42", claims);
-
-        verify(configStmt, times(3)).execute();
-        verify(conn).commit();
-        verify(conn).setAutoCommit(false);
-        verify(conn).setAutoCommit(true);
-        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-    }
-
-    @Test
-    @DisplayName("executeWithRlsContext rolls back when execution fails")
-    void executeWithRlsContext_sqlError_rollsBack() throws Exception {
-        Connection conn = mockConn();
-        PreparedStatement configStmt = mockPs();
-        when(dataSource.getConnection()).thenReturn(conn);
-        when(conn.getAutoCommit()).thenReturn(true);
-        when(conn.prepareStatement(anyString())).thenReturn(configStmt);
-        when(configStmt.execute()).thenThrow(new java.sql.SQLException("boom"));
-
-        CompiledQuery compiled = new CompiledQuery("SELECT 1", Map.of(), null, null, false, null);
-
-        assertThatThrownBy(() -> service.executeWithRlsContext(compiled, "42", null))
-                .isInstanceOf(java.sql.SQLException.class)
-                .hasMessageContaining("boom");
-        verify(conn).rollback();
-        verify(conn).setAutoCommit(true);
-    }
-
-    @Test
-    @DisplayName("executeWithRlsContext skips project/role set_config when jwtClaims is null")
-    void executeWithRlsContext_nullClaims_skipsProjectAndRole() throws Exception {
-        Connection conn = mockConn();
-        PreparedStatement configStmt = mockPs();
-        PreparedStatement querySt = mockPs();
-        ResultSet rs = org.mockito.Mockito.mock(ResultSet.class);
-        when(dataSource.getConnection()).thenReturn(conn);
-        when(conn.getAutoCommit()).thenReturn(false);
-        when(conn.prepareStatement(anyString())).thenReturn(configStmt, querySt);
-        when(querySt.executeQuery()).thenReturn(rs);
-        when(rs.next()).thenReturn(false);
-
-        CompiledQuery compiled = new CompiledQuery("SELECT 1", Map.of(), null, null, false, null);
-
-        service.executeWithRlsContext(compiled, "42", null);
-
-        verify(configStmt, times(1)).execute();
-    }
-
     private Connection mockConn() {
         return org.mockito.Mockito.mock(Connection.class);
     }
 
     private CallableStatement mockCs() {
         return org.mockito.Mockito.mock(CallableStatement.class);
-    }
-
-    private PreparedStatement mockPs() {
-        return org.mockito.Mockito.mock(PreparedStatement.class);
     }
 }

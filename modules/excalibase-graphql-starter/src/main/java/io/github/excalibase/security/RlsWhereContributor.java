@@ -7,7 +7,7 @@ import java.util.Map;
  * clause during SQL compilation. Implemented in {@code excalibase-graphql-api}
  * (which owns the RLS engine dependency) and consulted by the compiler in
  * the starter module via {@link RlsContext} — dependency inversion keeps the
- * generic compiler free of any RLS-engine coupling, mirroring {@link RoleContext}.
+ * generic compiler free of any RLS-engine coupling.
  *
  * <p>The returned {@link Contribution} is already parameter-namespaced and
  * ready to splice: the compiler appends {@code (sql)} as one more WHERE

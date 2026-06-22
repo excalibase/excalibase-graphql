@@ -9,6 +9,7 @@ import io.github.excalibase.rls.MaskMode;
 import io.github.excalibase.rls.MaskingPlan;
 import io.github.excalibase.rls.Operation;
 import io.github.excalibase.rls.Policy;
+import io.github.excalibase.rls.ResourceMatcher;
 import io.github.excalibase.rls.PolicyEffect;
 import io.github.excalibase.rls.Rule;
 import io.github.excalibase.rls.UserContext;
@@ -145,7 +146,7 @@ public class JdbcEvaluator {
         for (Policy p : policies) {
             if (p.enabled()
                 && p.effect() == PolicyEffect.ALLOW
-                && p.resource().equals(resource)
+                && ResourceMatcher.matches(p.resource(), resource)
                 && p.appliesTo(op)) return true;
         }
         return false;
@@ -157,7 +158,7 @@ public class JdbcEvaluator {
         String userId = ctx.userId();
         return policies.stream()
             .filter(Policy::enabled)
-            .filter(p -> p.resource().equals(resource))
+            .filter(p -> ResourceMatcher.matches(p.resource(), resource))
             .filter(p -> p.appliesTo(op))
             .filter(p -> assignmentMatches(p, userId, roles, groups))
             .toList();

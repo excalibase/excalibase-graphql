@@ -6,7 +6,6 @@ import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtClaims;
-import io.github.excalibase.security.RoleNotAllowedException;
 import io.github.excalibase.service.QueryExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -74,10 +73,6 @@ public class GraphqlController {
                 }
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
                 return dispatchCompiled(compiled, state, finalUserId, finalClaims);
-            } catch (RoleNotAllowedException e) {
-                // Let the @RestControllerAdvice translate this to HTTP 403 — do NOT
-                // fall through to the catch-all that re-wraps as 200 with errors body.
-                throw e;
             } catch (Exception e) {
                 log.warn("GraphQL request failed", e);
                 return ResponseEntity.ok(Map.of(
@@ -100,15 +95,11 @@ public class GraphqlController {
         MapSqlParameterSource params = new MapSqlParameterSource(compiled.params());
         boolean isPostgres = "postgres".equalsIgnoreCase(schemaManager.getDatabaseType());
 
-        // Postgres path: consolidate procedure / two-phase / plain through executeInContext
-        // so they all share one transaction with RLS context + (optional) SET LOCAL ROLE.
-        // Triggers when JWT is present OR role switching is configured (anon traffic).
+        // Postgres + JWT: run procedure / two-phase / plain through one transaction.
         boolean useContextPath = isPostgres
-                && ((userId != null && !userId.isBlank())
-                    || claims != null
-                    || queryExecutor.isRoleSwitchingEnabled());
+                && ((userId != null && !userId.isBlank()) || claims != null);
         if (useContextPath) {
-            return queryExecutor.executeInContext(compiled, params, state.mutationExecutor(), claims);
+            return queryExecutor.executeInContext(compiled, params, state.mutationExecutor());
         }
 
         // Legacy paths for non-Postgres or feature-disabled, no-JWT requests.

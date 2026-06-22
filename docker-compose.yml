@@ -77,6 +77,10 @@ services:
       APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: http://mock-vault:8080/api
       APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT: test-pat
 
+      # RLS/CLS policies fetched from provisioning (mocked by mock-vault in e2e)
+      APP_SECURITY_RLS_POLICY_URL: http://mock-vault:8080/api
+      APP_SECURITY_RLS_POLICY_PAT: test-pat
+
       # NATS CDC subscription (events from excalibase-watcher)
       APP_NATS_ENABLED: true
       APP_NATS_URL: nats://nats:4222

@@ -46,6 +46,16 @@ class VariableResolverTest {
     }
 
     @Test
+    @DisplayName("{{currentUserId}}/{{currentTenantId}} bind per declared fieldType — non-UUID ids work")
+    void resolve_identity_respectsNonUuidFieldType() {
+        VariableResolver r = new VariableResolver(
+            new TestUserContext("1", "e2e-test", Set.of(), Set.of(), name -> null));
+        assertThat(r.resolve("{{currentUserId}}", FieldType.STRING)).isEqualTo("1");
+        assertThat(r.resolve("{{currentUserId}}", FieldType.INTEGER)).isEqualTo(1);
+        assertThat(r.resolve("{{currentTenantId}}", FieldType.STRING)).isEqualTo("e2e-test");
+    }
+
+    @Test
     @DisplayName("{{currentTenantId}} resolves to UserContext.tenantId() as UUID")
     void resolve_currentTenantId_returnsUuid() {
         assertThat(resolver.resolve("{{currentTenantId}}", FieldType.UUID)).isEqualTo(TID);

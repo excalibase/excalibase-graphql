@@ -269,7 +269,7 @@ class SqlCompilerIntegrationTest {
     @Test
     @Order(36)
     void nestedInsert_orderWithItems() throws Exception {
-        // Hasura-style: create order + order_items in one mutation
+        // Nested insert: create order + order_items in one mutation
         mockMvc.perform(post("/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("""

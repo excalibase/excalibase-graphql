@@ -80,6 +80,20 @@ public final class RlsPolicyEnforcer {
     }
 
     /**
+     * WITH-CHECK for an UPDATE's partial new image: {@code changedRow} carries
+     * only the columns the caller is setting. Returns {@code true} iff those
+     * changes keep the row within the project's UPDATE policies (or no UPDATE
+     * policy targets the table), {@code false} if the update must be rejected —
+     * e.g. moving an ownership/tenant column out of policy. Unchanged columns
+     * are not re-validated here; the UPDATE's USING predicate already did.
+     */
+    public boolean permitsRowUpdate(String projectId, String table, JwtClaims claims,
+                                    java.util.Map<String, Object> changedRow) {
+        return new RowMatcher(policyProvider.policiesFor(projectId))
+                .matchesUpdate(table, changedRow, context(projectId, claims));
+    }
+
+    /**
      * Applies column masking to an already-fetched row in place — the non-SQL
      * path used by realtime fan-out, where rows arrive from CDC rather than a
      * SELECT. Hidden columns are removed and NULL-masked columns nulled, per the

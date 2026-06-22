@@ -463,7 +463,7 @@ test-only-native: ## Run e2e tests against native containers
 
 .PHONY: run-tests-native
 run-tests-native: ## Execute test suite against native containers
-	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Postgres tests failed$(NC)" && exit 1)
+	@cd e2e && npm install --silent && PG_CONTAINER=excalibase-postgres-native npm run test:postgres || (echo "$(RED)❌ Postgres tests failed$(NC)" && exit 1)
 	@echo "$(BLUE)🧪 Running CDC subscription tests (native)...$(NC)"
 	@cd e2e && PG_CONTAINER=excalibase-postgres-native npm run test:subscription:postgres || (echo "$(RED)❌ Subscription tests failed$(NC)" && exit 1)
 
