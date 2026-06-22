@@ -107,6 +107,10 @@ class ProvisioningPolicyProviderTest {
         });
         server.createContext("/api/provision/proj2/rls-policies/", exchange -> respond(exchange, "[]"));
         server.createContext("/api/provision/proj2/column-policies/", exchange -> respond(exchange, COL_VARIANTS_BODY));
+        server.createContext("/api/provision/proj3/column-policies/", exchange -> respond(exchange,
+                "[{\"id\":\"bad\",\"resource\":\"t\",\"columns\":[\"a\"],\"operations\":[\"SELECT\"],"
+                        + "\"mode\":\"PARTIAL\",\"partialSpec\":{\"kind\":\"BOGUS\"},\"enabled\":true,"
+                        + "\"assignments\":[{\"targetType\":\"ALL\"}]}]"));
         server.start();
     }
 
@@ -126,6 +130,23 @@ class ProvisioningPolicyProviderTest {
     @AfterEach
     void stopServer() {
         if (server != null) server.stop(0);
+    }
+
+    @Test
+    @DisplayName("fail-closed on a network error (connection refused)")
+    void failsClosedOnNetworkError() {
+        server.stop(0);
+        server = null;
+        ProvisioningPolicyProvider p = new ProvisioningPolicyProvider(
+                "http://localhost:" + port + "/api", "test-pat", 60_000);
+        assertThatThrownBy(() -> p.policiesFor("proj1")).isInstanceOf(PolicyFetchException.class);
+    }
+
+    @Test
+    @DisplayName("unknown partialSpec kind is rejected")
+    void unknownPartialSpecKindThrows() {
+        assertThatThrownBy(() -> provider(60_000).columnPoliciesFor("proj3"))
+                .isInstanceOf(PolicyFetchException.class);
     }
 
     @Test

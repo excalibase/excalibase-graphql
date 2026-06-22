@@ -10,7 +10,6 @@ import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.service.VaultCredentialService;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -52,30 +51,21 @@ public class JwtSecurityConfig {
     }
 
     /**
-     * Remote policy source: fetches a project's RLS/CLS policies from the
-     * provisioning service over HTTP and caches them per project. Enabled by
-     * setting {@code app.security.rls.policy-url} (the provisioning API root).
-     * When unset, the in-memory fallback below is used instead, so single-tenant
-     * / standalone deployments and tests are unaffected.
+     * RLS/CLS policy source. When {@code app.security.rls.policy-url} is set,
+     * policies are fetched from the provisioning service over HTTP and cached per
+     * project; otherwise an empty in-memory provider is used (RLS is a no-op until
+     * policies are pushed in). The choice is made at runtime rather than via
+     * {@code @ConditionalOnProperty} so it survives GraalVM AOT, which evaluates
+     * build-time conditions when the property may be absent.
      */
     @Bean
-    @ConditionalOnProperty(name = "app.security.rls.policy-url")
-    public PolicyProvider provisioningPolicyProvider(
-            @Value("${app.security.rls.policy-url}") String policyUrl,
+    public PolicyProvider policyProvider(
+            @Value("${app.security.rls.policy-url:}") String policyUrl,
             @Value("${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}") String policyPat,
             @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs) {
-        return new ProvisioningPolicyProvider(policyUrl, policyPat, policyTtlMs);
-    }
-
-    /**
-     * Default in-process policy source. Empty until policies are pushed in, so
-     * the RLS path is a no-op passthrough out of the box. {@link
-     * ConditionalOnMissingBean} lets the provisioning-backed provider above
-     * replace it when {@code app.security.rls.policy-url} is configured.
-     */
-    @Bean
-    @ConditionalOnMissingBean(PolicyProvider.class)
-    public PolicyProvider policyProvider() {
+        if (policyUrl != null && !policyUrl.isBlank()) {
+            return new ProvisioningPolicyProvider(policyUrl, policyPat, policyTtlMs);
+        }
         return new InMemoryPolicyProvider();
     }
 
