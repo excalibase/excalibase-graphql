@@ -92,6 +92,33 @@ class ProvisioningPolicyProviderTest {
             ]
             """;
 
+    private static final String RLS_RELATIONS_BODY = """
+            [
+              {
+                "id": "pr",
+                "name": "org_membership",
+                "resource": "orders",
+                "effect": "ALLOW",
+                "operations": ["SELECT"],
+                "ruleLogic": "AND",
+                "enabled": true,
+                "rules": [],
+                "relations": [
+                  {
+                    "relatedResource": "members",
+                    "foreignKey": "org_id",
+                    "parentKey": "org_id",
+                    "subLogic": "AND",
+                    "subRules": [
+                      {"field": "user_id", "fieldType": "STRING", "operator": "EQ", "value": "{{currentUserId}}"}
+                    ]
+                  }
+                ],
+                "assignments": [{"targetType": "ALL"}]
+              }
+            ]
+            """;
+
     @BeforeEach
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
@@ -107,6 +134,8 @@ class ProvisioningPolicyProviderTest {
         });
         server.createContext("/api/provision/proj2/rls-policies/", exchange -> respond(exchange, "[]"));
         server.createContext("/api/provision/proj2/column-policies/", exchange -> respond(exchange, COL_VARIANTS_BODY));
+        server.createContext("/api/provision/proj4/rls-policies/", exchange -> respond(exchange, RLS_RELATIONS_BODY));
+        server.createContext("/api/provision/proj4/column-policies/", exchange -> respond(exchange, "[]"));
         server.createContext("/api/provision/proj3/column-policies/", exchange -> respond(exchange,
                 "[{\"id\":\"bad\",\"resource\":\"t\",\"columns\":[\"a\"],\"operations\":[\"SELECT\"],"
                         + "\"mode\":\"PARTIAL\",\"partialSpec\":{\"kind\":\"BOGUS\"},\"enabled\":true,"
@@ -177,6 +206,29 @@ class ProvisioningPolicyProviderTest {
         assertThat(cols.get(7).partialSpec()).isInstanceOf(PartialMaskSpec.MaskRange.class);
         assertThat(cols.get(8).partialSpec()).isInstanceOf(PartialMaskSpec.Substring.class);
         assertThat(cols.get(9).partialSpec()).isInstanceOf(PartialMaskSpec.Regex.class);
+    }
+
+    @Test
+    @DisplayName("parses a relationship (EXISTS) predicate from the policy contract")
+    void mapsRelationshipPredicate() {
+        List<Policy> policies = provider(60_000).policiesFor("proj4");
+
+        assertThat(policies).hasSize(1);
+        assertThat(policies.get(0).relations()).hasSize(1);
+        RelationPredicate rel = policies.get(0).relations().get(0);
+        assertThat(rel.relatedResource()).isEqualTo("members");
+        assertThat(rel.foreignKey()).isEqualTo("org_id");
+        assertThat(rel.parentKey()).isEqualTo("org_id");
+        assertThat(rel.subLogic()).isEqualTo(LogicOperator.AND);
+        assertThat(rel.subRules()).hasSize(1);
+        assertThat(rel.subRules().get(0).field()).isEqualTo("user_id");
+        assertThat(rel.subRules().get(0).value()).isEqualTo("{{currentUserId}}");
+    }
+
+    @Test
+    @DisplayName("a policy without a relations field parses to an empty relation list")
+    void noRelationsFieldDefaultsEmpty() {
+        assertThat(provider(60_000).policiesFor("proj1").get(0).relations()).isEmpty();
     }
 
     private ProvisioningPolicyProvider provider(long ttlMillis) {

@@ -11,6 +11,7 @@ import io.github.excalibase.rls.Operation;
 import io.github.excalibase.rls.Policy;
 import io.github.excalibase.rls.ResourceMatcher;
 import io.github.excalibase.rls.PolicyEffect;
+import io.github.excalibase.rls.RelationPredicate;
 import io.github.excalibase.rls.Rule;
 import io.github.excalibase.rls.UserContext;
 import io.github.excalibase.rls.VariableResolver;
@@ -91,12 +92,13 @@ public class JdbcEvaluator {
     private SqlFilter compileForOp(String resource, UserContext ctx, Operation op,
                                    VariableResolver resolver, ParamSink sink) {
         List<Policy> inScope = inScope(resource, ctx, op);
+        String outerTable = unqualified(resource);
 
         List<String> allowSqls = new ArrayList<>();
         List<String> denySqls = new ArrayList<>();
 
         for (Policy p : inScope) {
-            String pSql = renderPolicy(p, resolver, sink);
+            String pSql = renderPolicy(p, outerTable, resolver, sink);
             if (pSql == null) continue;
             if (p.effect() == PolicyEffect.ALLOW) allowSqls.add(pSql);
             else denySqls.add(pSql);
@@ -198,19 +200,57 @@ public class JdbcEvaluator {
         return false;
     }
 
-    private String renderPolicy(Policy policy, VariableResolver resolver, ParamSink sink) {
-        if (policy.rules().isEmpty()) return null;
-        List<String> ruleSqls = new ArrayList<>(policy.rules().size());
+    private String renderPolicy(Policy policy, String outerTable, VariableResolver resolver, ParamSink sink) {
+        List<String> parts = new ArrayList<>(policy.rules().size() + policy.relations().size());
         for (Rule r : policy.rules()) {
-            ruleSqls.add(renderRule(r, resolver, sink));
+            parts.add(renderRule("", r, resolver, sink));
         }
-        if (ruleSqls.size() == 1) return ruleSqls.get(0);
+        for (RelationPredicate rel : policy.relations()) {
+            parts.add(renderRelation(rel, outerTable, resolver, sink));
+        }
+        if (parts.isEmpty()) return null;
+        if (parts.size() == 1) return parts.get(0);
         String joiner = policy.ruleLogic() == LogicOperator.AND ? " AND " : " OR ";
-        return "(" + String.join(joiner, ruleSqls) + ")";
+        return "(" + String.join(joiner, parts) + ")";
     }
 
-    private String renderRule(Rule rule, VariableResolver resolver, ParamSink sink) {
-        String col = quote(SqlIdentifier.checkColumn(rule.field()));
+    /**
+     * {@code EXISTS (SELECT 1 FROM related rel WHERE rel.fk = outer.pk [AND/OR subRules])}
+     * — portable across Postgres and MySQL via the active quote style. Sub-rules
+     * are scalar rules over the related table, qualified with the subquery alias.
+     */
+    private String renderRelation(RelationPredicate rel, String outerTable,
+                                  VariableResolver resolver, ParamSink sink) {
+        String alias = sink.nextAlias();
+        String related = quoteTable(rel.relatedResource());
+        String fk = alias + "." + quote(SqlIdentifier.checkColumn(rel.foreignKey()));
+        String pk = quote(SqlIdentifier.checkColumn(outerTable))
+            + "." + quote(SqlIdentifier.checkColumn(rel.parentKey()));
+
+        StringBuilder sql = new StringBuilder("EXISTS (SELECT 1 FROM ")
+            .append(related).append(" ").append(alias)
+            .append(" WHERE ").append(fk).append(" = ").append(pk);
+        if (!rel.subRules().isEmpty()) {
+            List<String> subs = new ArrayList<>(rel.subRules().size());
+            for (Rule r : rel.subRules()) {
+                subs.add(renderRule(alias + ".", r, resolver, sink));
+            }
+            String joiner = rel.subLogic() == LogicOperator.AND ? " AND " : " OR ";
+            sql.append(" AND (").append(String.join(joiner, subs)).append(")");
+        }
+        return sql.append(")").toString();
+    }
+
+    /** Quotes a table name with optional schema qualifier using the active quote style. */
+    private String quoteTable(String name) {
+        int dot = name.indexOf('.');
+        if (dot < 0) return quote(SqlIdentifier.checkColumn(name));
+        return quote(SqlIdentifier.checkColumn(name.substring(0, dot)))
+            + "." + quote(SqlIdentifier.checkColumn(name.substring(dot + 1)));
+    }
+
+    private String renderRule(String qualifier, Rule rule, VariableResolver resolver, ParamSink sink) {
+        String col = qualifier + quote(SqlIdentifier.checkColumn(rule.field()));
 
         return switch (rule.operator()) {
             case IS_NULL -> col + " IS NULL";
@@ -241,11 +281,25 @@ public class JdbcEvaluator {
         return String.join(" OR ", clauses);
     }
 
+    /** Table name without its schema qualifier, for correlating a subquery back
+     *  to the outer table ({@code public.orders} → {@code orders}). */
+    private static String unqualified(String resource) {
+        if (resource == null) return null;
+        int dot = resource.lastIndexOf('.');
+        return dot < 0 ? resource : resource.substring(dot + 1);
+    }
+
     /** Allocates namespaced param keys ({@code rls_p0}, {@code rls_p1}, …) and
      *  collects the bound values for the final {@link SqlFilter}. */
     private static final class ParamSink {
         private final Map<String, Object> params = new LinkedHashMap<>();
         private int next = 0;
+        private int aliasSeq = 0;
+
+        /** Unique subquery alias per relationship predicate (self-join safe). */
+        String nextAlias() {
+            return "rls_rel" + aliasSeq++;
+        }
 
         String bind(Object value) {
             String key = "rls_p" + next++;

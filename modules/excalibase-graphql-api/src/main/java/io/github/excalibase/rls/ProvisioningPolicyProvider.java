@@ -133,9 +133,23 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
                     node.path("priority").asInt(0),
                     node.path("enabled").asBoolean(true),
                     rules(node.get("rules")),
+                    relations(node.get("relations")),
                     assignments(node.get("assignments"))));
         }
         return List.copyOf(out);
+    }
+
+    private static List<RelationPredicate> relations(JsonNode arr) {
+        List<RelationPredicate> out = new ArrayList<>();
+        for (JsonNode r : arrayOf(arr)) {
+            out.add(new RelationPredicate(
+                    text(r, "relatedResource"),
+                    text(r, "foreignKey"),
+                    text(r, "parentKey"),
+                    LogicOperator.valueOf(textOr(r, "subLogic", "AND")),
+                    rules(r.get("subRules"))));
+        }
+        return out;
     }
 
     private List<ColumnPolicy> parseColumnPolicies(JsonNode root) {

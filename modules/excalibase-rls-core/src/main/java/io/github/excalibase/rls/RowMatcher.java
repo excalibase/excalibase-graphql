@@ -168,6 +168,16 @@ public class RowMatcher {
     }
 
     private static boolean matchesPolicy(Policy policy, Map<String, Object> row, VariableResolver resolver) {
+        if (!policy.relations().isEmpty()) {
+            // Relationship (EXISTS) predicates probe another table — the in-memory
+            // matcher has no database to probe. These are evaluated by the SQL
+            // query path (JdbcEvaluator); realtime relation evaluation needs a DB
+            // lookup and is a separate feature. Fail loud rather than silently
+            // grant or hide a row on an unevaluable predicate.
+            throw new UnsupportedOperationException(
+                "Policy '" + policy.name() + "' uses relationship predicates, which the in-memory "
+                    + "RowMatcher cannot evaluate; use the SQL query path (JdbcEvaluator).");
+        }
         if (policy.rules().isEmpty()) return true;
         if (policy.ruleLogic() == LogicOperator.AND) {
             for (Rule r : policy.rules()) {
