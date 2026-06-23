@@ -75,9 +75,23 @@ public class JdbcEvaluator {
 
     public SqlFilter compile(String resource, UserContext ctx, Operation op) {
         VariableResolver resolver = new VariableResolver(ctx);
+        ParamSink sink = new ParamSink();
+        SqlFilter base = compileForOp(resource, ctx, op, resolver, sink);
+
+        // A row must be SELECT-visible to be modified: the read filter is AND'd
+        // into UPDATE/DELETE so a caller can never modify a row it cannot see.
+        // Enforced in the emitted SQL, so it holds on any backing database.
+        if (op == Operation.UPDATE || op == Operation.DELETE) {
+            SqlFilter read = compileForOp(resource, ctx, Operation.SELECT, resolver, sink);
+            return andVisibility(base, read, sink);
+        }
+        return base;
+    }
+
+    private SqlFilter compileForOp(String resource, UserContext ctx, Operation op,
+                                   VariableResolver resolver, ParamSink sink) {
         List<Policy> inScope = inScope(resource, ctx, op);
 
-        ParamSink sink = new ParamSink();
         List<String> allowSqls = new ArrayList<>();
         List<String> denySqls = new ArrayList<>();
 
@@ -100,6 +114,14 @@ public class JdbcEvaluator {
         String allowClause = joinOr(allowSqls);
         String sql = denyClause == null ? allowClause : "(" + allowClause + ") AND " + denyClause;
         return new SqlFilter(sql, sink.snapshot());
+    }
+
+    /** AND the read-visibility filter into a write (UPDATE/DELETE) filter. */
+    private static SqlFilter andVisibility(SqlFilter write, SqlFilter read, ParamSink sink) {
+        if (write.equals(SqlFilter.DENY_ALL) || read.equals(SqlFilter.DENY_ALL)) return SqlFilter.DENY_ALL;
+        if (write.equals(SqlFilter.UNRESTRICTED)) return read;
+        if (read.equals(SqlFilter.UNRESTRICTED)) return write;
+        return new SqlFilter("(" + write.sql() + ") AND (" + read.sql() + ")", sink.snapshot());
     }
 
     /**
