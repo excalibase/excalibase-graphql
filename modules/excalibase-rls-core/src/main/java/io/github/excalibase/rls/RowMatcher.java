@@ -192,10 +192,7 @@ public class RowMatcher {
             case NEQ -> !equalsCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType());
             case IN -> inCollection(rowVal, resolver.resolveList(rule.value(), rule.fieldType()), rule.fieldType());
             case NOT_IN -> !inCollection(rowVal, resolver.resolveList(rule.value(), rule.fieldType()), rule.fieldType());
-            case GT -> compareCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType()) > 0;
-            case GTE -> compareCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType()) >= 0;
-            case LT -> compareCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType()) < 0;
-            case LTE -> compareCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType()) <= 0;
+            case GT, GTE, LT, LTE -> compare(rowVal, rule, resolver);
             case LIKE -> matchesLike(rowVal, (String) resolver.resolve(rule.value(), FieldType.STRING));
             case NOT_LIKE -> !matchesLike(rowVal, (String) resolver.resolve(rule.value(), FieldType.STRING));
         };
@@ -228,11 +225,27 @@ public class RowMatcher {
         return false;
     }
 
+    /**
+     * GT/GTE/LT/LTE with SQL three-valued logic: a comparison involving NULL
+     * yields NULL, so the row is excluded (returns {@code false}) — it never
+     * throws. This keeps the in-memory matcher in lockstep with the emitted SQL
+     * (and native Postgres), which simply drop the row.
+     */
+    private static boolean compare(Object rowVal, Rule rule, VariableResolver resolver) {
+        Object policyVal = resolver.resolve(rule.value(), rule.fieldType());
+        if (rowVal == null || policyVal == null) return false;
+        int c = compareCoerced(rowVal, policyVal, rule.fieldType());
+        return switch (rule.operator()) {
+            case GT -> c > 0;
+            case GTE -> c >= 0;
+            case LT -> c < 0;
+            case LTE -> c <= 0;
+            default -> throw new IllegalStateException("compare() called for non-comparison operator " + rule.operator());
+        };
+    }
+
     @SuppressWarnings({"unchecked", "rawtypes"})
     private static int compareCoerced(Object rowVal, Object policyVal, FieldType fieldType) {
-        if (rowVal == null || policyVal == null) {
-            throw new IllegalArgumentException("comparison operators require non-null operands");
-        }
         Comparable left = (Comparable) coerce(rowVal, fieldType);
         Comparable right = (Comparable) coerce(policyVal, fieldType);
         return left.compareTo(right);
