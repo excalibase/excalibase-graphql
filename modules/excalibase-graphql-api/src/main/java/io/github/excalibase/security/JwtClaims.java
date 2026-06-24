@@ -21,8 +21,19 @@ public record JwtClaims(
         String role,
         String email,
         String scope,
-        long keyId
+        long keyId,
+        java.util.Map<String, Object> extraClaims
 ) {
+    public JwtClaims {
+        extraClaims = (extraClaims == null) ? java.util.Map.of() : java.util.Map.copyOf(extraClaims);
+    }
+
+    /** Back-compatible constructor for call sites that carry no extra claims. */
+    public JwtClaims(String userId, String projectId, String orgSlug, String projectName,
+                     String orgName, String role, String email, String scope, long keyId) {
+        this(userId, projectId, orgSlug, projectName, orgName, role, email, scope, keyId, java.util.Map.of());
+    }
+
     /**
      * Convenience factory for legacy 6-field call sites that pre-date the
      * scope/keyId/orgName additions. Defaults orgName to empty, scope to

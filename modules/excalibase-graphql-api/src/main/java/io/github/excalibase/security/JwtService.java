@@ -131,7 +131,13 @@ public class JwtService {
                 keyId = keyIdNumber.longValue();
             }
 
-            return new JwtClaims(userId, projectId, orgSlug, projectName, orgName, role, email, scope, keyId);
+            // Expose every JWT claim so RLS policies can reference arbitrary
+            // custom claims ({{region}}, {{plan}}, …) — the Postgres-RLS
+            // equivalent of current_setting('jwt.claims.x'). Known fields above
+            // still take precedence in JwtClaimsUserContext.
+            java.util.Map<String, Object> extraClaims = new java.util.HashMap<>(claims.getClaims());
+
+            return new JwtClaims(userId, projectId, orgSlug, projectName, orgName, role, email, scope, keyId, extraClaims);
 
         } catch (JwtVerificationException e) {
             throw e;

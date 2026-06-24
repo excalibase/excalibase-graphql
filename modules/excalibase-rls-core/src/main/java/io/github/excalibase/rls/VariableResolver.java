@@ -68,8 +68,12 @@ public class VariableResolver {
                     int days = Integer.parseInt(name.substring("daysAgo:".length()));
                     yield nowSnapshot.minus(days, ChronoUnit.DAYS);
                 }
+                // Arbitrary session/JWT claim exposed by the UserContext (e.g.
+                // {{region}}, {{plan}}). A string claim is cast to the rule's
+                // declared field type so it binds correctly in SQL; already-typed
+                // claims (Number/Boolean from JSON) pass through unchanged.
                 Object custom = context.resolveVariable(name);
-                if (custom != null) yield custom;
+                if (custom != null) yield custom instanceof String s ? cast(s, fieldType) : custom;
                 throw new IllegalArgumentException("Unknown variable: {{" + name + "}}");
             }
         };
