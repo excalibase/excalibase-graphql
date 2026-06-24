@@ -250,7 +250,7 @@ public class JdbcEvaluator {
     }
 
     private String renderRule(String qualifier, Rule rule, VariableResolver resolver, ParamSink sink) {
-        String col = qualifier + quote(SqlIdentifier.checkColumn(rule.field()));
+        String col = colExpr(qualifier, rule);
 
         return switch (rule.operator()) {
             case IS_NULL -> col + " IS NULL";
@@ -265,6 +265,64 @@ public class JdbcEvaluator {
             case NOT_LIKE -> col + " NOT LIKE :" + sink.bind(resolver.resolve(rule.value(), FieldType.STRING));
             case IN -> renderInList(col, true, resolver.resolveList(rule.value(), rule.fieldType()), sink);
             case NOT_IN -> renderInList(col, false, resolver.resolveList(rule.value(), rule.fieldType()), sink);
+        };
+    }
+
+    /**
+     * Column expression for a rule's field. A plain column is quoted as-is; a
+     * dotted field is a JSON path ({@code meta.region}), cast to the rule's
+     * declared field type — the SQL equivalent of the in-memory matcher's
+     * nested-map navigation. Postgres ({@code "meta"->>'region'}) and MySQL
+     * ({@code `meta`->>'$.region'}) JSON syntaxes differ, selected by quote style.
+     */
+    private String colExpr(String qualifier, Rule rule) {
+        String field = rule.field();
+        if (field.indexOf('.') < 0) {
+            return qualifier + quote(SqlIdentifier.checkColumn(field));
+        }
+        String[] parts = field.split("\\.");
+        String base = qualifier + quote(SqlIdentifier.checkColumn(parts[0]));
+
+        if (quoteStyle == QuoteStyle.BACKTICK) {
+            StringBuilder path = new StringBuilder("$");
+            for (int i = 1; i < parts.length; i++) {
+                path.append('.').append(SqlIdentifier.checkColumn(parts[i]));
+            }
+            String expr = base + "->>'" + path + "'";
+            String cast = mysqlJsonCast(rule.fieldType());
+            return cast == null ? expr : "CAST(" + expr + " AS " + cast + ")";
+        }
+
+        StringBuilder expr = new StringBuilder(base);
+        for (int i = 1; i < parts.length; i++) {
+            String key = SqlIdentifier.checkColumn(parts[i]);
+            expr.append(i == parts.length - 1 ? "->>'" : "->'").append(key).append("'");
+        }
+        String cast = pgJsonCast(rule.fieldType());
+        return cast == null ? expr.toString() : "(" + expr + ")::" + cast;
+    }
+
+    private static String pgJsonCast(FieldType type) {
+        return switch (type) {
+            case STRING -> null;
+            case UUID -> "uuid";
+            case INTEGER -> "integer";
+            case LONG -> "bigint";
+            case BOOLEAN -> "boolean";
+            case DOUBLE -> "double precision";
+            case DECIMAL -> "numeric";
+            case DATE -> "date";
+            case DATETIME -> "timestamptz";
+        };
+    }
+
+    private static String mysqlJsonCast(FieldType type) {
+        return switch (type) {
+            case INTEGER, LONG -> "SIGNED";
+            case DOUBLE, DECIMAL -> "DECIMAL(38,10)";
+            case DATE -> "DATE";
+            case DATETIME -> "DATETIME";
+            case STRING, UUID, BOOLEAN -> null;
         };
     }
 
