@@ -73,6 +73,54 @@ class ProvisioningRlsIntegrationTest {
                   {"field": "owner_id", "fieldType": "UUID", "operator": "EQ", "value": "{{currentUserId}}"}
                 ],
                 "assignments": [{"targetType": "ALL"}]
+              },
+              {
+                "id": "orders-membership",
+                "name": "orders-membership",
+                "resource": "rls_demo.orders",
+                "effect": "ALLOW",
+                "operations": ["SELECT"],
+                "ruleLogic": "AND",
+                "enabled": true,
+                "rules": [],
+                "relations": [
+                  {
+                    "relatedResource": "rls_demo.members",
+                    "foreignKey": "org_id",
+                    "parentKey": "org_id",
+                    "subLogic": "AND",
+                    "subRules": [
+                      {"field": "member_user", "fieldType": "UUID", "operator": "EQ", "value": "{{currentUserId}}"}
+                    ]
+                  }
+                ],
+                "assignments": [{"targetType": "ALL"}]
+              },
+              {
+                "id": "profiles-json-owner",
+                "name": "profiles-json-owner",
+                "resource": "rls_demo.profiles",
+                "effect": "ALLOW",
+                "operations": ["SELECT"],
+                "ruleLogic": "AND",
+                "enabled": true,
+                "rules": [
+                  {"field": "meta.owner", "fieldType": "UUID", "operator": "EQ", "value": "{{currentUserId}}"}
+                ],
+                "assignments": [{"targetType": "ALL"}]
+              },
+              {
+                "id": "regional-claim",
+                "name": "regional-claim",
+                "resource": "rls_demo.regional",
+                "effect": "ALLOW",
+                "operations": ["SELECT"],
+                "ruleLogic": "AND",
+                "enabled": true,
+                "rules": [
+                  {"field": "region", "fieldType": "STRING", "operator": "EQ", "value": "{{region}}"}
+                ],
+                "assignments": [{"targetType": "ALL"}]
               }
             ]
             """;
@@ -160,21 +208,74 @@ class ProvisioningRlsIntegrationTest {
                 .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(0)));
     }
 
+    @Test
+    void relationshipPolicyFiltersOrdersByMembership() throws Exception {
+        // Alice ∈ orgA → sees the two orgA orders; correlated EXISTS subquery must
+        // resolve against the compiler's aliased outer table.
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoOrders { id org_id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoOrders", hasSize(2)));
+
+        // Bob ∈ orgB → sees the one orgB order.
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(BOB))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoOrders { id org_id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoOrders", hasSize(1)));
+    }
+
+    @Test
+    void jsonPathPolicyFiltersProfilesByOwner() throws Exception {
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoProfiles { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoProfiles", hasSize(2)));
+    }
+
+    @Test
+    void customClaimPolicyFiltersByRegion() throws Exception {
+        // region=west claim → two west rows
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwtWithClaims(ALICE, Map.of("region", "west")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoRegional { id region } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoRegional", hasSize(2)));
+
+        // region=east claim → one east row, same query/user shape
+        mockMvc.perform(post("/graphql")
+                        .header("Authorization", "Bearer " + jwtWithClaims(BOB, Map.of("region", "east")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoRegional { id region } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoRegional", hasSize(1)));
+    }
+
     private String body(String query) throws Exception {
         return mapper.writeValueAsString(Map.of("query", query));
     }
 
     private String jwt(String userId) throws Exception {
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        return jwtWithClaims(userId, Map.of());
+    }
+
+    private String jwtWithClaims(String userId, Map<String, Object> extra) throws Exception {
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
                 .subject("user@test.com")
                 .claim("userId", userId)
                 .claim("projectId", PROJECT)
                 .claim("role", "app_authenticated")
                 .issuer("excalibase")
                 .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z")))
-                .expirationTime(java.util.Date.from(java.time.Instant.parse("2099-01-01T00:00:00Z")))
-                .build();
-        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+                .expirationTime(java.util.Date.from(java.time.Instant.parse("2099-01-01T00:00:00Z")));
+        extra.forEach(builder::claim);
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), builder.build());
         signed.sign(new ECDSASigner(privateKey));
         return signed.serialize();
     }

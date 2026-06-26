@@ -26,6 +26,19 @@ public interface RlsWhereContributor {
     Contribution contribute(String tableName, RlsOp op);
 
     /**
+     * As {@link #contribute(String, RlsOp)}, but with the alias the compiler
+     * gave the outer table in its {@code FROM} clause. Relationship/EXISTS
+     * predicates must correlate their subquery back to that alias — once a table
+     * is aliased, its name no longer resolves. Default delegates to the
+     * alias-less form for implementations that emit no correlated subqueries.
+     *
+     * @param outerAlias the outer table's alias as it appears in the query
+     */
+    default Contribution contribute(String tableName, String outerAlias, RlsOp op) {
+        return contribute(tableName, op);
+    }
+
+    /**
      * A self-contained WHERE predicate plus its bind parameters. The {@code sql}
      * references only keys present in {@code params}, and those keys are unique
      * across all contributions within a single compiled query (the implementation

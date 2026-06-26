@@ -52,7 +52,18 @@ public final class RlsPolicyEnforcer {
      * for owner-style policies rather than throwing.
      */
     public SqlFilter filterFor(String projectId, String table, JwtClaims claims, Operation op) {
-        return evaluator(projectId).compile(table, context(projectId, claims), op);
+        return filterFor(projectId, table, claims, op, null);
+    }
+
+    /**
+     * As {@link #filterFor(String, String, JwtClaims, Operation)}, but with the
+     * alias the calling query gives the outer table. Relationship/EXISTS
+     * predicates correlate a subquery back to the outer row; since the compiler
+     * aliases tables, the engine must reference that alias rather than the table
+     * name. Null falls back to the table name (correct for un-aliased callers).
+     */
+    public SqlFilter filterFor(String projectId, String table, JwtClaims claims, Operation op, String outerAlias) {
+        return evaluator(projectId).compile(table, context(projectId, claims), op, outerAlias);
     }
 
     /**

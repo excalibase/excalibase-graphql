@@ -75,30 +75,47 @@ public class JdbcEvaluator {
     }
 
     public SqlFilter compile(String resource, UserContext ctx, Operation op) {
+        return compile(resource, ctx, op, null);
+    }
+
+    /**
+     * @param outerAlias the alias (or name) the calling query gives the outer
+     *                   table — used to correlate relationship/EXISTS subqueries
+     *                   back to it. The compiler aliases tables, so the table
+     *                   name alone won't resolve; pass that alias here. Null
+     *                   falls back to the unqualified resource name (correct for
+     *                   un-aliased callers like the differential tests).
+     */
+    public SqlFilter compile(String resource, UserContext ctx, Operation op, String outerAlias) {
         VariableResolver resolver = new VariableResolver(ctx);
         ParamSink sink = new ParamSink();
-        SqlFilter base = compileForOp(resource, ctx, op, resolver, sink);
+        SqlFilter base = compileForOp(resource, ctx, op, resolver, sink, outerAlias);
 
         // A row must be SELECT-visible to be modified: the read filter is AND'd
         // into UPDATE/DELETE so a caller can never modify a row it cannot see.
         // Enforced in the emitted SQL, so it holds on any backing database.
         if (op == Operation.UPDATE || op == Operation.DELETE) {
-            SqlFilter read = compileForOp(resource, ctx, Operation.SELECT, resolver, sink);
+            SqlFilter read = compileForOp(resource, ctx, Operation.SELECT, resolver, sink, outerAlias);
             return andVisibility(base, read, sink);
         }
         return base;
     }
 
     private SqlFilter compileForOp(String resource, UserContext ctx, Operation op,
-                                   VariableResolver resolver, ParamSink sink) {
+                                   VariableResolver resolver, ParamSink sink, String outerAlias) {
         List<Policy> inScope = inScope(resource, ctx, op);
-        String outerTable = unqualified(resource);
+        // Reference used to correlate EXISTS subqueries back to the outer table.
+        // The compiler aliases tables (already-quoted alias), so prefer that;
+        // else quote the bare table name for un-aliased callers.
+        String outerRef = (outerAlias != null && !outerAlias.isBlank())
+            ? outerAlias
+            : quote(SqlIdentifier.checkColumn(unqualified(resource)));
 
         List<String> allowSqls = new ArrayList<>();
         List<String> denySqls = new ArrayList<>();
 
         for (Policy p : inScope) {
-            String pSql = renderPolicy(p, outerTable, resolver, sink);
+            String pSql = renderPolicy(p, outerRef, resolver, sink);
             if (pSql == null) continue;
             if (p.effect() == PolicyEffect.ALLOW) allowSqls.add(pSql);
             else denySqls.add(pSql);
@@ -219,13 +236,14 @@ public class JdbcEvaluator {
      * — portable across Postgres and MySQL via the active quote style. Sub-rules
      * are scalar rules over the related table, qualified with the subquery alias.
      */
-    private String renderRelation(RelationPredicate rel, String outerTable,
+    private String renderRelation(RelationPredicate rel, String outerRef,
                                   VariableResolver resolver, ParamSink sink) {
         String alias = sink.nextAlias();
         String related = quoteTable(rel.relatedResource());
         String fk = alias + "." + quote(SqlIdentifier.checkColumn(rel.foreignKey()));
-        String pk = quote(SqlIdentifier.checkColumn(outerTable))
-            + "." + quote(SqlIdentifier.checkColumn(rel.parentKey()));
+        // outerRef is a ready table reference (an already-quoted alias, or a
+        // quoted bare table name) — use it directly, do not re-quote.
+        String pk = outerRef + "." + quote(SqlIdentifier.checkColumn(rel.parentKey()));
 
         StringBuilder sql = new StringBuilder("EXISTS (SELECT 1 FROM ")
             .append(related).append(" ").append(alias)

@@ -67,8 +67,9 @@ public class FilterBuilder {
         // RLS predicate is appended AFTER (and independently of) any user filter,
         // so a query that omits `where`/`filter` is still restricted. This funnel
         // is shared by list, connection (records + totalCount), and aggregate
-        // compilation — closing every read path at once.
-        appendRlsConditions(conditions, tableName, params, op);
+        // compilation — closing every read path at once. The alias is passed so
+        // relationship/EXISTS predicates can correlate back to the outer table.
+        appendRlsConditions(conditions, tableName, alias, params, op);
     }
 
     /**
@@ -82,10 +83,20 @@ public class FilterBuilder {
      */
     public void appendRlsConditions(List<String> conditions, String tableName,
                                     Map<String, Object> params, RlsOp op) {
+        appendRlsConditions(conditions, tableName, null, params, op);
+    }
+
+    /**
+     * As above, with the outer table's alias so relationship/EXISTS predicates
+     * can correlate their subquery back to it. Mutation compilers that have no
+     * alias (or emit no correlated predicates) can use the alias-less overload.
+     */
+    public void appendRlsConditions(List<String> conditions, String tableName, String alias,
+                                    Map<String, Object> params, RlsOp op) {
         if (tableName == null) return;
         RlsWhereContributor contributor = RlsContext.current();
         if (contributor == null) return;
-        RlsWhereContributor.Contribution contribution = contributor.contribute(tableName, op);
+        RlsWhereContributor.Contribution contribution = contributor.contribute(tableName, alias, op);
         if (contribution == null || contribution.sql() == null || contribution.sql().isBlank()) return;
         params.putAll(contribution.params());
         conditions.add("(" + contribution.sql() + ")");

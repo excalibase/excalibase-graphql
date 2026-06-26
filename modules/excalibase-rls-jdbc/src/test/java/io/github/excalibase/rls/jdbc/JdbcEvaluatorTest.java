@@ -6,6 +6,7 @@ import io.github.excalibase.rls.LogicOperator;
 import io.github.excalibase.rls.Operation;
 import io.github.excalibase.rls.Policy;
 import io.github.excalibase.rls.PolicyEffect;
+import io.github.excalibase.rls.RelationPredicate;
 import io.github.excalibase.rls.Rule;
 import io.github.excalibase.rls.RuleOperator;
 import io.github.excalibase.rls.UserContext;
@@ -412,6 +413,39 @@ class JdbcEvaluatorTest {
                     .assignments(Assignment.all()).build()), List.of(), QuoteStyle.BACKTICK)
                     .compile("orders", aliceAuth(), Operation.SELECT);
             assertThat(f.sql()).contains("`user_id`").doesNotContain("\"user_id\"");
+        }
+    }
+
+    @Nested
+    @DisplayName("relationship/EXISTS correlation")
+    class RelationCorrelation {
+
+        private Policy membershipPolicy() {
+            RelationPredicate rel = new RelationPredicate(
+                "members", "org_id", "org_id", LogicOperator.AND,
+                List.of(new Rule("user_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")));
+            return new Policy("p", "p", "orders", PolicyEffect.ALLOW,
+                Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(), List.of(rel), List.of(Assignment.all()));
+        }
+
+        @Test
+        @DisplayName("correlates to the given outer alias, not the table name")
+        void correlatesToAlias() {
+            SqlFilter f = new JdbcEvaluator(List.of(membershipPolicy()))
+                .compile("orders", aliceAuth(), Operation.SELECT, "\"t_outer\"");
+            assertThat(f.sql())
+                .contains("EXISTS (SELECT 1 FROM \"members\"")
+                .contains("= \"t_outer\".\"org_id\"")
+                .doesNotContain("\"orders\".\"org_id\"");
+        }
+
+        @Test
+        @DisplayName("falls back to the quoted table name when no alias is given")
+        void fallsBackToTableName() {
+            SqlFilter f = new JdbcEvaluator(List.of(membershipPolicy()))
+                .compile("orders", aliceAuth(), Operation.SELECT);
+            assertThat(f.sql()).contains("= \"orders\".\"org_id\"");
         }
     }
 

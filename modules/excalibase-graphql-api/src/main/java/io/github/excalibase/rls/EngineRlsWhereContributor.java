@@ -46,7 +46,12 @@ public final class EngineRlsWhereContributor implements RlsWhereContributor {
 
     @Override
     public Contribution contribute(String tableName, RlsOp op) {
-        SqlFilter filter = enforcer.filterFor(projectId, tableName, claims, toOperation(op));
+        return contribute(tableName, null, op);
+    }
+
+    @Override
+    public Contribution contribute(String tableName, String outerAlias, RlsOp op) {
+        SqlFilter filter = enforcer.filterFor(projectId, tableName, claims, toOperation(op), outerAlias);
         if (filter.isUnrestricted()) {
             return null;
         }

@@ -72,3 +72,44 @@ INSERT INTO rls_demo.ledger (id, amount, created_at) VALUES
     (1, 100.00, now() - interval '10 days'),
     (2, 250.50, now()),
     (3,  99.99, now());
+
+-- Relationship/EXISTS RLS: visibility of `orders` depends on a row existing in
+-- `members` for the caller in the order's org. Proves correlated-subquery
+-- policies survive the compiler's table aliasing.
+CREATE TABLE rls_demo.members (
+    member_user UUID NOT NULL,
+    org_id      TEXT NOT NULL
+);
+INSERT INTO rls_demo.members (member_user, org_id) VALUES
+    ('11111111-1111-1111-1111-111111111111', 'orgA'),
+    ('22222222-2222-2222-2222-222222222222', 'orgB');
+
+CREATE TABLE rls_demo.orders (
+    id     BIGINT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    title  TEXT NOT NULL
+);
+INSERT INTO rls_demo.orders (id, org_id, title) VALUES
+    (1, 'orgA', 'a-order-1'),
+    (2, 'orgA', 'a-order-2'),
+    (3, 'orgB', 'b-order-1');
+
+-- JSON-path RLS: ownership lives inside a jsonb column.
+CREATE TABLE rls_demo.profiles (
+    id   BIGINT PRIMARY KEY,
+    meta JSONB NOT NULL
+);
+INSERT INTO rls_demo.profiles (id, meta) VALUES
+    (1, '{"owner":"11111111-1111-1111-1111-111111111111"}'),
+    (2, '{"owner":"11111111-1111-1111-1111-111111111111"}'),
+    (3, '{"owner":"22222222-2222-2222-2222-222222222222"}');
+
+-- Custom-claim RLS: filter by a region claim carried in the JWT.
+CREATE TABLE rls_demo.regional (
+    id     BIGINT PRIMARY KEY,
+    region TEXT NOT NULL
+);
+INSERT INTO rls_demo.regional (id, region) VALUES
+    (1, 'west'),
+    (2, 'west'),
+    (3, 'east');
