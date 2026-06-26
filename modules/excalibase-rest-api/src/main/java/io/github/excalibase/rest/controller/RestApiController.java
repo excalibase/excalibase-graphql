@@ -30,7 +30,10 @@ import java.util.*;
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
 @RestController
-@RequestMapping("/api/v1")
+// Project-scoped (`/{projectId}/api/v1/…`, project from the path → RLS applies
+// even for anonymous) and legacy unscoped (`/api/v1/…`, project from the token).
+// JwtAuthFilter reads the projectId from the path; controller methods don't bind it.
+@RequestMapping({"/api/v1", "/{projectId}/api/v1"})
 @Validated
 public class RestApiController {
 

@@ -209,6 +209,38 @@ class ProvisioningRlsIntegrationTest {
     }
 
     @Test
+    void projectScopedUrl_authenticated_filtersByUser() throws Exception {
+        // /{projectId}/graphql — project from the path, user from the token
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id owner_id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
+    }
+
+    @Test
+    void projectScopedUrl_anonymous_failsClosed() throws Exception {
+        // No token, project from the path → RLS still applies → owner policy
+        // matches nothing for an anonymous user → zero rows (not all rows).
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(0)));
+    }
+
+    @Test
+    void projectScopedUrl_tokenProjectMismatch_rejected() throws Exception {
+        // token is for PROJECT; the path names a different project → 403
+        mockMvc.perform(post("/some-other-project/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void relationshipPolicyFiltersOrdersByMembership() throws Exception {
         // Alice ∈ orgA → sees the two orgA orders; correlated EXISTS subquery must
         // resolve against the compiler's aliased outer table.

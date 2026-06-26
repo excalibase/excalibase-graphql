@@ -14,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
 import java.sql.SQLException;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -44,6 +45,24 @@ public class GraphqlController {
         this.observability = observability;
     }
 
+    /**
+     * Project-scoped endpoint — the project lives in the URL path
+     * ({@code /{projectId}/graphql}), mirroring auth ({@code /auth/{projectId}/…})
+     * and functions ({@code /functions/v1/{projectId}/…}). {@link JwtAuthFilter}
+     * has already read {@code projectId} from the path and applied the RLS
+     * context, so this just delegates. The {@code projectId} variable is bound
+     * only to make the route match.
+     */
+    @PostMapping("/{projectId}/graphql")
+    public ResponseEntity<Object> graphqlScoped(
+            @PathVariable String projectId,
+            @RequestBody Map<String, Object> request,
+            HttpServletRequest httpRequest) {
+        return graphql(request, httpRequest);
+    }
+
+    /** Legacy unscoped endpoint — project comes from the token only (no RLS for
+     *  anonymous). Kept for back-compat; prefer {@code /{projectId}/graphql}. */
     @PostMapping("/graphql")
     public ResponseEntity<Object> graphql(
             @RequestBody Map<String, Object> request,

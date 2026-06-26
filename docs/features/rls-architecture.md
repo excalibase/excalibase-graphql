@@ -22,31 +22,31 @@ A request must declare **which project** it targets, so the engine knows which
 policy set to load. `projectId` is a single **opaque id** that provisioning
 emits (e.g. `proj-237qoqksdb`). (`{org}/{project}` slash-form is legacy.)
 
-The SDK (`createClient({ url, projectId })`, `excalibase-sdk-js`) already
-project-scopes most surfaces in the URL — **GraphQL is the current exception**:
+Every platform surface carries the project in its URL. The app exposes both a
+project-scoped route (preferred) and a legacy unscoped route (project from the
+token only — kept for back-compat):
 
-| Surface       | URL the SDK builds                          | Project in URL? |
-|---------------|---------------------------------------------|-----------------|
-| Auth          | `{url}/auth/{orgSlug}/{projectName}/token`   | yes |
-| Functions     | `{url}/functions/v1/{projectId}/{mod}.{fn}`  | yes |
-| Storage       | uses `{projectId}`                           | yes |
-| Provisioning  | `{base}/provision/{projectId}/rls-policies/` | yes |
-| REST          | `{url}/api/v1/{path}`                        | no  |
-| **GraphQL**   | `{url}/graphql` (`graphqlEndpoint()`)        | **no — to fix** |
+| Surface       | Project-scoped (preferred)        | Legacy (token-derived) |
+|---------------|-----------------------------------|------------------------|
+| Auth          | `/auth/{projectId}/token`         | — |
+| Functions     | `/functions/v1/{projectId}/{mod}.{fn}` | — |
+| Provisioning  | `/provision/{projectId}/rls-policies/` | — |
+| **GraphQL**   | `/{projectId}/graphql`            | `/graphql` |
+| **REST**      | `/{projectId}/api/v1/{table}`     | `/api/v1/{table}` |
 
-**Target:** GraphQL becomes project-scoped, mirroring functions —
-`/graphql/v1/{projectId}` (or `/{projectId}/graphql`). This is a **two-repo**
-change: the app exposes the project-scoped route, and the SDK's
-`graphqlEndpoint()` includes `${this.projectId}` (a one-line change; the SDK
-already holds the projectId).
+`projectId` is a single opaque segment (e.g. `proj-237qoqksdb`).
 
-**There is no bare, project-less `localhost:.../graphql`.** A project-less route
-cannot determine which policies apply, so it cannot enforce RLS. *How* a request
-is routed to the app (ingress, host, gateway) is an infrastructure concern; the
-app's job is only to read `projectId` from the path and enforce.
+`JwtAuthFilter.extractProjectId` reads it from the path; the controllers don't
+bind it. *How* a request reaches the app (ingress, host, gateway) is infra; the
+app's only job is to read `projectId` from the path and enforce.
 
 The token (when present) also carries `projectId`. When both the path and a
-token are present, they **must match** — defence in depth.
+token are present and **disagree, the request is rejected (403)** — a token
+cannot reach another project.
+
+**SDK alignment (separate repo, `excalibase-sdk-js`):** `graphqlEndpoint()` /
+`restEndpoint()` should include `${this.projectId}` to call the project-scoped
+routes (the SDK already holds the projectId; auth/functions already do this).
 
 ## RLS applies on every request
 
@@ -87,10 +87,13 @@ fails with *missing FROM-clause entry*). The alias is threaded
 
 ## Open items
 
-- **Anonymous enforcement** depends on the project-in-URL routing above: until
-  GraphQL is project-scoped, a token-less request has no project and engine RLS
-  is skipped (tables with engine-only policies are exposed). Closing this is the
-  motivation for `/{projectId}/graphql`.
+- **Anonymous enforcement** — DONE for the project-scoped routes: a token-less
+  request to `/{projectId}/graphql` (or `/{projectId}/api/v1/…`) resolves the
+  project from the path and applies RLS with an anonymous context (fail-closed).
+  The legacy unscoped `/graphql` / `/api/v1` routes still have no project for a
+  token-less caller, so engine-RLS-only tables remain exposed there — migrate
+  clients (incl. the SDK) to the project-scoped routes, then retire the legacy
+  ones.
 - **Missing custom claim**: currently throws (typo protection). Postgres
   `current_setting(x, true)` returns NULL (fail-closed). Decide whether an absent
   *custom* claim should resolve to null to match Postgres.
