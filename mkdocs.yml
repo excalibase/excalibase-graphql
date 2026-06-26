@@ -125,6 +125,7 @@ nav:
       - Full-Text & Vector Search: features/search-and-vector.md
       - Real-Time Subscriptions: features/subscriptions.md
       - Row-Level Security: features/user-context-rls.md
+      - RLS Engine Architecture: features/rls-architecture.md
       - Postgres Role Switching: features/postgres-role-switching.md
   - Database Compatibility: database-compatibility.md
   - SDK (TypeScript): sdk.md
