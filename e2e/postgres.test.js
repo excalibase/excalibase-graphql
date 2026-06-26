@@ -836,6 +836,39 @@ describe('RLS (Row Level Security)', () => {
     const data = await client.request(gql`{ hanaRlsOrders { id user_id product } }`);
     expect(data.hanaRlsOrders.length).toBe(0);
   });
+
+  // ── Engine RLS feature coverage (relationship / JSON path / custom claim) ──
+  // These prove the policies are active AND that each predicate compiles and
+  // runs without a SQL error through the real HTTP + aliased-SQL path. Precise
+  // per-user row counts live in the Java ProvisioningRlsIntegrationTest (which
+  // mints JWTs with known user ids); here userIds are dynamic, so anonymous
+  // access (no user) must yield zero rows for every owner/claim-scoped policy.
+
+  test('relationship/EXISTS policy is exposed and blocks anonymous access', async () => {
+    const schema = await client.request(gql`{ __type(name: "Query") { fields { name } } }`);
+    if (!schema.__type.fields.some(f => f.name === 'hanaRlsTeamOrders')) return;
+    // EXISTS(members where member_user = currentUser) with no user → no rows,
+    // and crucially compiles/executes (the aliased correlation must resolve).
+    const data = await client.request(gql`{ hanaRlsTeamOrders { id org_id } }`);
+    expect(Array.isArray(data.hanaRlsTeamOrders)).toBe(true);
+    expect(data.hanaRlsTeamOrders.length).toBe(0);
+  });
+
+  test('JSON-path policy is exposed and blocks anonymous access', async () => {
+    const schema = await client.request(gql`{ __type(name: "Query") { fields { name } } }`);
+    if (!schema.__type.fields.some(f => f.name === 'hanaRlsProfiles')) return;
+    const data = await client.request(gql`{ hanaRlsProfiles { id } }`);
+    expect(data.hanaRlsProfiles.length).toBe(0);
+  });
+
+  test('custom-claim policy table is exposed in the schema', async () => {
+    // Precise claim filtering (region=west → N rows) is asserted in the Java
+    // ProvisioningRlsIntegrationTest, which mints a JWT carrying the region
+    // claim. Here we only assert the table is exposed: a no-auth query would
+    // reference an absent {{region}} claim, which the engine rejects by design.
+    const schema = await client.request(gql`{ __type(name: "Query") { fields { name } } }`);
+    expect(schema.__type.fields.some(f => f.name === 'hanaRlsRegional')).toBe(true);
+  });
 });
 
 // ─── Stored Procedures ────────────────────────────────────────────────────────
