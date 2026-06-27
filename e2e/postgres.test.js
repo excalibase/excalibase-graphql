@@ -7,6 +7,7 @@ const { gql } = require('graphql-request');
 const { waitForApi, createClient } = require('./client');
 
 const API_URL = process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql';
+const API_BASE = API_URL.replace(/\/graphql$/, ''); // e.g. http://localhost:10000
 let client;
 
 beforeAll(async () => {
@@ -849,6 +850,24 @@ describe('RLS (Row Level Security)', () => {
     const names = schema.__type.fields.map(f => f.name);
     for (const t of ['hanaRlsTeamOrders', 'hanaRlsProfiles', 'hanaRlsRegional']) {
       expect(names).toContain(t);
+    }
+  });
+
+  test('project-scoped URL applies RLS to anonymous (fail-closed)', async () => {
+    // POST /{projectId}/graphql with NO token. The project comes from the path,
+    // so RLS still applies with an anonymous context → the relationship policy
+    // matches nothing → zero rows. (The legacy /graphql route would skip RLS for
+    // an anonymous caller and return rows.)
+    const res = await fetch(`${API_BASE}/e2e/graphql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '{ hanaRlsTeamOrders { id } }' }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    if (json.data && json.data.hanaRlsTeamOrders !== undefined) {
+      expect(json.errors).toBeUndefined();
+      expect(json.data.hanaRlsTeamOrders.length).toBe(0);
     }
   });
 });
