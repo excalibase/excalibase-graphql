@@ -65,6 +65,26 @@ decides *which rows match*; absence of a user is not absence of RLS.
 So a token-less or unauthorised caller never sees protected rows, and tables
 without a policy stay public.
 
+## Enforcement coverage per surface
+
+RLS must apply on **every** data path, not just GraphQL. Status:
+
+| Path                                   | Read (visibility) | Write (WITH-CHECK) |
+|----------------------------------------|-------------------|--------------------|
+| GraphQL query                          | ✅                | n/a |
+| GraphQL mutation (insert/update/delete)| ✅ (coupling)     | ✅ `RlsContext.rowCheck()` |
+| REST `GET /{table}` + `totalCount`     | ✅                | n/a |
+| REST embeds `?select=*,fk(*)`          | ✅                | n/a |
+| REST `PATCH`/`DELETE`                  | ✅ (where + coupling) | ❌ new-image not validated |
+| REST `POST` (insert)                   | n/a               | ❌ no WITH-CHECK — can insert policy-violating rows |
+| REST `POST /rpc/{fn}` (stored proc)    | ❌ bypasses RLS (EXC-25) | ❌ |
+| Realtime WS subscriptions              | ❌ no per-row RLS (EXC-19) | n/a |
+
+The **read** leaks are closed (REST previously skipped engine RLS entirely —
+`RestQueryCompiler` now splices the predicate into selects, counts, and embeds,
+exactly like GraphQL's `FilterBuilder`). **Remaining gaps** are writes/RPC/
+realtime — fix order: REST insert/update WITH-CHECK → RPC → realtime.
+
 ## Engine capabilities (Postgres-RLS parity)
 
 The engine matches native Postgres RLS for the policy classes it supports,
