@@ -22,23 +22,25 @@ A request must declare **which project** it targets, so the engine knows which
 policy set to load. `projectId` is a single **opaque id** that provisioning
 emits (e.g. `proj-237qoqksdb`). (`{org}/{project}` slash-form is legacy.)
 
-Every platform surface carries the project in its URL. The app exposes both a
-project-scoped route (preferred) and a legacy unscoped route (project from the
-token only — kept for back-compat):
+Every platform surface carries the project in its URL — there is **no unscoped
+route**. A request without a project in the path cannot resolve which policies
+apply, so it could not enforce RLS; such routes simply don't exist.
 
-| Surface       | Project-scoped (preferred)        | Legacy (token-derived) |
-|---------------|-----------------------------------|------------------------|
-| Auth          | `/auth/{projectId}/token`         | — |
-| Functions     | `/functions/v1/{projectId}/{mod}.{fn}` | — |
-| Provisioning  | `/provision/{projectId}/rls-policies/` | — |
-| **GraphQL**   | `/{projectId}/graphql`            | `/graphql` |
-| **REST**      | `/{projectId}/api/v1/{table}`     | `/api/v1/{table}` |
+| Surface       | Route                                   |
+|---------------|-----------------------------------------|
+| Auth          | `/auth/{projectId}/token`               |
+| Functions     | `/functions/v1/{projectId}/{mod}.{fn}`  |
+| Provisioning  | `/provision/{projectId}/rls-policies/`  |
+| **GraphQL**   | `/{projectId}/graphql`                  |
+| **REST**      | `/{projectId}/api/v1/{table}`           |
 
 `projectId` is a single opaque segment (e.g. `proj-237qoqksdb`).
 
-`JwtAuthFilter.extractProjectId` reads it from the path; the controllers don't
-bind it. *How* a request reaches the app (ingress, host, gateway) is infra; the
-app's only job is to read `projectId` from the path and enforce.
+`JwtAuthFilter.extractProjectId` reads it from the path; the controllers bind it
+only to make the route match. *How* a request reaches the app (ingress, host,
+gateway) is infra; the app's only job is to read `projectId` from the path and
+enforce. There is intentionally no fallback to a token-derived project — the
+path is the single source of truth.
 
 The token (when present) also carries `projectId`. When both the path and a
 token are present and **disagree, the request is rejected (403)** — a token
@@ -87,13 +89,15 @@ fails with *missing FROM-clause entry*). The alias is threaded
 
 ## Open items
 
-- **Anonymous enforcement** — DONE for the project-scoped routes: a token-less
-  request to `/{projectId}/graphql` (or `/{projectId}/api/v1/…`) resolves the
-  project from the path and applies RLS with an anonymous context (fail-closed).
-  The legacy unscoped `/graphql` / `/api/v1` routes still have no project for a
-  token-less caller, so engine-RLS-only tables remain exposed there — migrate
-  clients (incl. the SDK) to the project-scoped routes, then retire the legacy
-  ones.
+- **SDK alignment** (`excalibase-sdk-js`, separate repo): `graphqlEndpoint()` /
+  `restEndpoint()` must include the project segment (use `this.projectName`,
+  which equals the token's `projectId`) — the unscoped routes are gone, so a
+  client that calls `/graphql` or `/api/v1` now gets a 404. Auth/functions
+  already build project-scoped URLs.
+- **WebSocket subscriptions** still upgrade at `/graphql` (separate handler;
+  realtime per-row RLS is its own epic) — scope + enforce there too later.
+- **OpenAPI** `servers[].url` still emits `/api/v1` (cosmetic) — should reflect
+  the scoped base.
 - **Missing custom claim**: currently throws (typo protection). Postgres
   `current_setting(x, true)` returns NULL (fail-closed). Decide whether an absent
   *custom* claim should resolve to null to match Postgres.

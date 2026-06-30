@@ -30,6 +30,7 @@ import java.security.spec.ECGenParameterSpec;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.hasSize;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -180,7 +181,7 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void aliceSeesOnlyOwnDocs() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id owner_id } }")))
@@ -190,7 +191,7 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void bobSeesOnlyOwnDocs() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt(BOB))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id owner_id } }")))
@@ -200,7 +201,7 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void userFilterCannotEscapeProvisioningPolicy() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs(where: { id: { eq: 3 } }) { id } }")))
@@ -244,7 +245,7 @@ class ProvisioningRlsIntegrationTest {
     void relationshipPolicyFiltersOrdersByMembership() throws Exception {
         // Alice ∈ orgA → sees the two orgA orders; correlated EXISTS subquery must
         // resolve against the compiler's aliased outer table.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoOrders { id org_id } }")))
@@ -252,7 +253,7 @@ class ProvisioningRlsIntegrationTest {
                 .andExpect(jsonPath("$.data.rlsDemoOrders", hasSize(2)));
 
         // Bob ∈ orgB → sees the one orgB order.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt(BOB))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoOrders { id org_id } }")))
@@ -262,7 +263,7 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void jsonPathPolicyFiltersProfilesByOwner() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoProfiles { id } }")))
@@ -273,7 +274,7 @@ class ProvisioningRlsIntegrationTest {
     @Test
     void customClaimPolicyFiltersByRegion() throws Exception {
         // region=west claim → two west rows
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwtWithClaims(ALICE, Map.of("region", "west")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoRegional { id region } }")))
@@ -281,12 +282,44 @@ class ProvisioningRlsIntegrationTest {
                 .andExpect(jsonPath("$.data.rlsDemoRegional", hasSize(2)));
 
         // region=east claim → one east row, same query/user shape
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwtWithClaims(BOB, Map.of("region", "east")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoRegional { id region } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rlsDemoRegional", hasSize(1)));
+    }
+
+    @Test
+    void rest_anonymous_failsClosed() throws Exception {
+        // REST must enforce engine RLS exactly like GraphQL: anonymous → 0 rows
+        // on an owner-policied table (the bug was REST bypassing RLS entirely).
+        mockMvc.perform(get("/" + PROJECT + "/api/v1/docs").header("Accept-Profile", "rls_demo"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(0)));
+    }
+
+    @Test
+    void rest_authenticated_filtersByOwner() throws Exception {
+        mockMvc.perform(get("/" + PROJECT + "/api/v1/docs")
+                        .header("Authorization", "Bearer " + jwt(ALICE))
+                        .header("Accept-Profile", "rls_demo"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(2)));
+    }
+
+    @Test
+    void rest_relationshipPolicy_filtersByMembership() throws Exception {
+        // anonymous → EXISTS(members …) matches nothing → 0 rows (REST relationship RLS)
+        mockMvc.perform(get("/" + PROJECT + "/api/v1/orders").header("Accept-Profile", "rls_demo"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(0)));
+        // alice ∈ orgA → her two orgA orders
+        mockMvc.perform(get("/" + PROJECT + "/api/v1/orders")
+                        .header("Authorization", "Bearer " + jwt(ALICE))
+                        .header("Accept-Profile", "rls_demo"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(2)));
     }
 
     private String body(String query) throws Exception {

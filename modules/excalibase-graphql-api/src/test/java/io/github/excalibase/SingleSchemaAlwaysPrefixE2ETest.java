@@ -56,7 +56,7 @@ class SingleSchemaAlwaysPrefixE2ETest {
     @Test
     @Order(1)
     void listQuery_prefixedWithSchemaName() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaCustomer(orderBy: { customer_id: ASC }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
@@ -67,7 +67,7 @@ class SingleSchemaAlwaysPrefixE2ETest {
     @Test
     @Order(2)
     void connectionQuery_prefixed() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaCustomerConnection(first: 2) { edges { node { customer_id first_name } } pageInfo { hasNextPage } } }")))
                 .andExpect(status().isOk())
@@ -78,7 +78,7 @@ class SingleSchemaAlwaysPrefixE2ETest {
     @Test
     @Order(3)
     void aggregateQuery_prefixed() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaCustomerAggregate { count } }")))
                 .andExpect(status().isOk())
@@ -88,7 +88,7 @@ class SingleSchemaAlwaysPrefixE2ETest {
     @Test
     @Order(4)
     void introspection_showsPrefixedFieldNames() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ __schema { queryType { fields { name } } } }")))
                 .andExpect(status().isOk())
@@ -99,7 +99,7 @@ class SingleSchemaAlwaysPrefixE2ETest {
     @Test
     @Order(5)
     void unprefixedFieldName_returnsError() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ customer { customer_id } }")))
                 .andExpect(status().isOk())
@@ -109,7 +109,7 @@ class SingleSchemaAlwaysPrefixE2ETest {
     @Test
     @Order(6)
     void fkTraversal_prefixed() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaOrders(orderBy: { order_id: ASC }) { order_id testSchemaCustomerId { first_name } } }")))
                 .andExpect(status().isOk())
@@ -119,7 +119,7 @@ class SingleSchemaAlwaysPrefixE2ETest {
     @Test
     @Order(7)
     void createMutation_prefixed() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("mutation { createTestSchemaCustomer(input: { first_name: \"New\", last_name: \"User\" }) { customer_id first_name } }")))
                 .andExpect(status().isOk())

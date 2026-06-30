@@ -5,6 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.RlsWhereContributor;
 import org.springframework.jdbc.core.SqlParameterValue;
 
 import java.sql.Types;
@@ -95,6 +98,10 @@ public class RestQueryCompiler {
             params.put(P_AFTER, convertValue(query.afterCursor(), query.table(), query.orderColumn()));
             where.append(dialect.quoteIdentifier(query.orderColumn())).append(GT).append(PARAM_PREFIX).append(P_AFTER);
         }
+
+        // RLS: filter rows the caller may not read (the inner SELECT aliases the
+        // table as ALIAS, so relationship/EXISTS predicates correlate to it).
+        appendRls(where, query.table(), ALIAS, RlsOp.SELECT, params);
 
         // Vector k-NN ordering overrides any user-supplied orderBy entirely —
         // nearest-neighbor similarity IS the sort, there is no composing.
@@ -237,6 +244,8 @@ public class RestQueryCompiler {
             params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
         }
         StringBuilder where = buildWhere(filters, P_WHERE_FILTER, params, table);
+        // RLS: a caller can only UPDATE rows it may write (and, via coupling, see).
+        appendRls(where, table, null, RlsOp.UPDATE, params);
         return new CompiledResult(
             WITH + CTE_UPD + AS_OPEN + UPDATE + quotedTable
             + SET + String.join(COMMA_SEP, setClauses) + WHERE + where
@@ -249,6 +258,8 @@ public class RestQueryCompiler {
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
         StringBuilder where = buildWhere(filters, P_DELETE_FILTER, params, table);
+        // RLS: a caller can only DELETE rows it may write (and, via coupling, see).
+        appendRls(where, table, null, RlsOp.DELETE, params);
         return new CompiledResult(
             WITH + CTE_DEL + AS_OPEN + DELETE_FROM + quotedTable
             + WHERE + where + RETURNING_ALL + SPACE
@@ -272,6 +283,26 @@ public class RestQueryCompiler {
             where.append(buildFilterSql(filter, prefix + (fc++), params, table));
         }
         return where;
+    }
+
+    /**
+     * Splices the active request's RLS predicate for {@code (table, op)} into the
+     * REST query's WHERE — the same enforcement the GraphQL path gets via
+     * {@code FilterBuilder}. Without this, engine RLS policies (owner/relationship/
+     * JSON/claim) would be silently bypassed on REST. {@code alias} is the outer
+     * table's alias so relationship/EXISTS predicates correlate correctly (the
+     * inner SELECT aliases the table; UPDATE/DELETE reference it by name → null).
+     * A {@code null} contributor (no RLS context, e.g. unit tests) is a no-op.
+     */
+    private void appendRls(StringBuilder where, String table, String alias, RlsOp op, Map<String, Object> params) {
+        if (table == null) return;
+        RlsWhereContributor contributor = RlsContext.current();
+        if (contributor == null) return;
+        RlsWhereContributor.Contribution rls = contributor.contribute(table, alias, op);
+        if (rls == null || rls.sql() == null || rls.sql().isBlank()) return;
+        params.putAll(rls.params());
+        if (!where.isEmpty()) where.append(AND);
+        where.append("(").append(rls.sql()).append(")");
     }
 
     private void appendOrConditions(StringBuilder where, List<OrCondition> ors, Set<String> knownCols, Map<String, Object> params, String table) {
@@ -342,6 +373,9 @@ public class RestQueryCompiler {
 
     private void appendCountSubquery(StringBuilder sql, List<FilterSpec> filters, String quotedTable, Map<String, Object> params, String table) {
         StringBuilder cw = buildWhere(filters, P_FILTER_COUNT, params, table);
+        // totalCount must respect RLS or it leaks the unfiltered total. The count
+        // table is unaliased, so relationship/EXISTS correlate by table name (null).
+        appendRls(cw, table, null, RlsOp.SELECT, params);
         sql.append(COMMA_SEP).append(parens(SELECT + COUNT_ALL + FROM + quotedTable + (cw.isEmpty() ? "" : WHERE + cw))).append(AS_TOTAL_COUNT);
     }
 

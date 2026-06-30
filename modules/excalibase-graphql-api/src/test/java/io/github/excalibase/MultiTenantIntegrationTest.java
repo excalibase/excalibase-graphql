@@ -163,10 +163,14 @@ class MultiTenantIntegrationTest {
     return mapper.writeValueAsString(Map.of("query", query));
   }
 
+  private static String projectIdOf(String projectName) {
+    return "proj_" + projectName.replaceAll("[^a-z0-9]", "") + "12345";
+  }
+
   private String signJwt(String orgSlug, String projectName, long userId) throws Exception {
     // Simulate the provisioner's opaque projectId ref. Deterministic per (org, project)
     // for test stability; real provisioner generates a random ref at provision time.
-    String projectId = "proj_" + projectName.replaceAll("[^a-z0-9]", "") + "12345";
+    String projectId = projectIdOf(projectName);
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .subject("test@test.com")
         .claim("userId", userId)
@@ -191,7 +195,7 @@ class MultiTenantIntegrationTest {
   void noJwt_usesDefaultDatasource() throws Exception {
     // Without JWT, no tenant routing — uses default Spring datasource
     // Returns 200 (no 401); the RLS/tenant enforcement is handled by the DB, not the controller
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/test-proj/graphql")
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantProducts { id name price } }")))
         .andExpect(status().isOk());
@@ -204,7 +208,7 @@ class MultiTenantIntegrationTest {
   @DisplayName("JWT with tenant A → routes to tenant A database (products table)")
   void jwtTenantA_routesToTenantADatabase() throws Exception {
     String jwt = signJwt("acme-corp", "app-a", 1);
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantProducts { id name price } }")))
@@ -218,7 +222,7 @@ class MultiTenantIntegrationTest {
   @DisplayName("JWT with tenant B → routes to tenant B database (items table, not products)")
   void jwtTenantB_routesToTenantBDatabase() throws Exception {
     String jwt = signJwt("beta-inc", "app-b", 1);
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("app-b") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantItems { id title quantity } }")))
@@ -232,7 +236,7 @@ class MultiTenantIntegrationTest {
   @DisplayName("Tenant B does NOT have products table (different schema)")
   void jwtTenantB_noProductsTable() throws Exception {
     String jwt = signJwt("beta-inc", "app-b", 1);
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("app-b") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantProducts { id name } }")))
@@ -249,14 +253,14 @@ class MultiTenantIntegrationTest {
     String jwt = signJwt("acme-corp", "app-a", 1);
 
     // First request — triggers vault fetch
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantProducts { id } }")))
         .andExpect(status().isOk());
 
     // Second request — should use cached datasource
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantProducts { id } }")))
@@ -271,7 +275,7 @@ class MultiTenantIntegrationTest {
   @DisplayName("JWT with unknown tenant → vault returns 404 → error in response body")
   void jwtUnknownTenant_vaultReturns404_errorResponse() throws Exception {
     String jwt = signJwt("no-such-org", "no-such-app", 1);
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("no-such-app") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ anything { id } }")))

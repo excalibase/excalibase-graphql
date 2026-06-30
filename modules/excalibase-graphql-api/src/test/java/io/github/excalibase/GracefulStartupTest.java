@@ -53,7 +53,7 @@ class GracefulStartupTest {
 
     @Test
     void graphqlEndpoint_returnsError_notServerCrash() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ users { id } }")))
                 .andExpect(status().isOk())
@@ -62,7 +62,7 @@ class GracefulStartupTest {
 
     @Test
     void introspection_returnsValidSchema_whenNoDatabase() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ __schema { queryType { name } } }")))
                 .andExpect(status().isOk())
@@ -71,7 +71,7 @@ class GracefulStartupTest {
 
     @Test
     void introspection_noMutationType_whenNoTables() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ __schema { mutationType } }")))
                 .andExpect(status().isOk())
@@ -80,7 +80,7 @@ class GracefulStartupTest {
 
     @Test
     void missingQuery_returnsBadRequest() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(mapper.writeValueAsString(Map.of("query", ""))))
                 .andExpect(status().isBadRequest());

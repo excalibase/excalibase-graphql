@@ -20,7 +20,10 @@ const {
 
 // ─── Postgres CDC Subscriptions ──────────────────────────────────────────────
 
-const PG_API = process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql';
+// HTTP queries are project-scoped (/{projectId}/graphql); the WS endpoint is not
+// scoped yet (subscriptions still upgrade at /graphql).
+const PG_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
+const PG_API = `${(process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql').replace(/\/graphql$/, '')}/${PG_PROJECT}/graphql`;
 const PG_WS = process.env.POSTGRES_WS_URL || 'ws://localhost:10000/graphql';
 
 const CUSTOMER_SUBSCRIPTION = `

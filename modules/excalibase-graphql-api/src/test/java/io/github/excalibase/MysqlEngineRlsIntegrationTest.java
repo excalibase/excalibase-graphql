@@ -153,7 +153,7 @@ class MysqlEngineRlsIntegrationTest {
 
     @Test
     void rls_aliceSeesOnlyOwnRows() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt("alice"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ testRlsDocs { id owner title } }")))
@@ -163,7 +163,7 @@ class MysqlEngineRlsIntegrationTest {
 
     @Test
     void rls_bobSeesOnlyOwnRows() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt("bob"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ testRlsDocs { id owner title } }")))
@@ -174,7 +174,7 @@ class MysqlEngineRlsIntegrationTest {
     @Test
     void rls_userFilterCannotEscapeRls() throws Exception {
         // Alice asks for Bob's row id=3 → backtick RLS predicate still excludes it.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt("alice"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ testRlsDocs(where: { id: { eq: 3 } }) { id } }")))
@@ -184,7 +184,7 @@ class MysqlEngineRlsIntegrationTest {
 
     @Test
     void cls_hiddenColumnDroppedFromResponse() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt("alice"))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ testRlsDocs { id secret title } }")))

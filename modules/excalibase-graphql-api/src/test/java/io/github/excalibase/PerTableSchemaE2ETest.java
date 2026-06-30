@@ -56,7 +56,7 @@ class PerTableSchemaE2ETest {
     @Test
     @Order(1)
     void listQuery_usesCorrectSchema() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaCustomer(orderBy: { customer_id: ASC }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
@@ -67,7 +67,7 @@ class PerTableSchemaE2ETest {
     @Test
     @Order(2)
     void connectionQuery_usesCorrectSchema() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaCustomerConnection(first: 2) { edges { node { customer_id first_name } } pageInfo { hasNextPage } } }")))
                 .andExpect(status().isOk())
@@ -79,7 +79,7 @@ class PerTableSchemaE2ETest {
     @Order(3)
     void fkTraversal_usesCorrectSchema() throws Exception {
         // orders has FK to customer — both in test_schema; field name derived from FK column "customer_id" → "testSchemaCustomerId"
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaOrders(orderBy: { order_id: ASC }) { order_id total_amount testSchemaCustomerId { first_name } } }")))
                 .andExpect(status().isOk())
@@ -89,7 +89,7 @@ class PerTableSchemaE2ETest {
     @Test
     @Order(4)
     void createMutation_usesCorrectSchema() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("mutation { createTestSchemaCustomer(input: { first_name: \"Test\", last_name: \"User\", email: \"test@test.com\" }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
@@ -99,7 +99,7 @@ class PerTableSchemaE2ETest {
     @Test
     @Order(5)
     void introspection_returnsSchemaWithTables() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ __schema { queryType { fields { name } } } }")))
                 .andExpect(status().isOk())
@@ -109,7 +109,7 @@ class PerTableSchemaE2ETest {
     @Test
     @Order(6)
     void aggregateQuery_usesCorrectSchema() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaCustomerAggregate { count } }")))
                 .andExpect(status().isOk())

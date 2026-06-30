@@ -6,8 +6,12 @@
 const { gql } = require('graphql-request');
 const { waitForApi, createClient } = require('./client');
 
-const API_URL = process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql';
-const API_BASE = API_URL.replace(/\/graphql$/, ''); // e.g. http://localhost:10000
+// Routes are project-scoped: /{projectId}/graphql and /{projectId}/api/v1.
+// The e2e project is 'e2e-test' (auth login is /auth/e2e-org/e2e-test/... so the
+// token's projectId claim is the 'e2e-test' segment — the path must match it).
+const API_BASE = (process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql').replace(/\/graphql$/, '');
+const DATA_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
+const API_URL = `${API_BASE}/${DATA_PROJECT}/graphql`;
 let client;
 
 beforeAll(async () => {
@@ -858,7 +862,7 @@ describe('RLS (Row Level Security)', () => {
     // so RLS still applies with an anonymous context → the relationship policy
     // matches nothing → zero rows. (The legacy /graphql route would skip RLS for
     // an anonymous caller and return rows.)
-    const res = await fetch(`${API_BASE}/e2e/graphql`, {
+    const res = await fetch(`${API_BASE}/${DATA_PROJECT}/graphql`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ query: '{ hanaRlsTeamOrders { id } }' }),
@@ -1115,9 +1119,7 @@ describe('Engine RLS (policy from provisioning mock)', () => {
 
 // ─── REST API (PostgREST-compatible) ─────────────────────────────────────────
 
-const REST_URL = process.env.POSTGRES_API_URL
-  ? process.env.POSTGRES_API_URL.replace('/graphql', '/api/v1')
-  : 'http://localhost:10000/api/v1';
+const REST_URL = `${API_BASE}/${DATA_PROJECT}/api/v1`;
 
 const REST_SCHEMA = 'hana';
 
@@ -1159,6 +1161,15 @@ describe('REST API — Read operations', () => {
     const res = await restGet('/customer');
     expect(res.status).toBe(200);
     expect(res.data.data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('REST enforces engine RLS — anonymous gets 0 rows on an RLS table', async () => {
+    // The engine RLS (relationship/membership) policy on rls_team_orders must
+    // apply to REST exactly as it does to GraphQL. Anonymous → 0 rows. This is a
+    // regression guard for the bug where REST bypassed engine RLS entirely.
+    const res = await restGet('/rls_team_orders');
+    expect(res.status).toBe(200);
+    expect(res.data.data.length).toBe(0);
   });
 
   test('GET with select returns only specified columns', async () => {

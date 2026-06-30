@@ -57,7 +57,7 @@ class MultiSchemaE2ETest {
     @Test
     @Order(1)
     void listSchemaAUsers_prefixed() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ schemaAUsers { user_id name } }")))
                 .andExpect(status().isOk())
@@ -68,7 +68,7 @@ class MultiSchemaE2ETest {
     @Test
     @Order(2)
     void listSchemaBOrders_prefixed() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ schemaBOrders { order_id amount } }")))
                 .andExpect(status().isOk())
@@ -80,7 +80,7 @@ class MultiSchemaE2ETest {
     @Test
     @Order(3)
     void introspection_showsPrefixedTypes() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ __schema { queryType { fields { name } } } }")))
                 .andExpect(status().isOk())
@@ -93,7 +93,7 @@ class MultiSchemaE2ETest {
     @Test
     @Order(4)
     void crossSchemaFk_ordersToUsers() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ schemaBOrders(orderBy: { order_id: ASC }) { order_id amount schemaBUserId { name } } }")))
                 .andExpect(status().isOk())
@@ -105,7 +105,7 @@ class MultiSchemaE2ETest {
     @Test
     @Order(5)
     void connectionQuery_prefixed() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ schemaAUsersConnection(first: 1) { edges { node { user_id name } } pageInfo { hasNextPage } } }")))
                 .andExpect(status().isOk())
@@ -118,7 +118,7 @@ class MultiSchemaE2ETest {
     @Test
     @Order(6)
     void aggregateQuery_prefixed() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ schemaBOrdersAggregate { count } }")))
                 .andExpect(status().isOk())

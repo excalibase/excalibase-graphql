@@ -54,7 +54,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(1)
     void listCustomers() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(orderBy: { customer_id: ASC }, limit: 5) { customer_id first_name last_name } }")))
                 .andExpect(status().isOk())
@@ -65,7 +65,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(2)
     void listWithWhereFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { active: { eq: true } }) { customer_id } }")))
                 .andExpect(status().isOk())
@@ -75,7 +75,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(3)
     void listWithLimit() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(limit: 2) { customer_id } }")))
                 .andExpect(status().isOk())
@@ -87,7 +87,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(5)
     void forwardFkRelationship() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testOrders(limit: 1, orderBy: { order_id: ASC }) { order_id total_amount testCustomerId { first_name } } }")))
                 .andExpect(status().isOk())
@@ -99,7 +99,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(6)
     void reverseFkRelationship() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { customer_id: { eq: 1 } }) { first_name testOrders { order_id } } }")))
                 .andExpect(status().isOk())
@@ -111,7 +111,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(10)
     void connectionBasic() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomerConnection(first: 2) { edges { cursor node { customer_id first_name } } pageInfo { hasNextPage } totalCount } }")))
                 .andExpect(status().isOk())
@@ -125,7 +125,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(20)
     void aggregateCount() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomerAggregate { count } }")))
                 .andExpect(status().isOk())
@@ -137,7 +137,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(30)
     void createCustomer() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("mutation { createTestCustomer(input: { first_name: \"Test\", last_name: \"MySQL\" }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
@@ -148,7 +148,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(31)
     void updateCustomer() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("mutation { updateTestCustomer(where: { customer_id: { eq: 1 } }, input: { email: \"updated@mysql.com\" }) { customer_id email } }")))
                 .andExpect(status().isOk())
@@ -159,7 +159,7 @@ class MysqlIntegrationTest {
     @Order(32)
     void deleteCustomer() throws Exception {
         // Create then capture the ID
-        var createResult = mockMvc.perform(post("/graphql")
+        var createResult = mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("mutation { createTestCustomer(input: { first_name: \"ToDelete\", last_name: \"User\" }) { customer_id } }")))
                 .andExpect(status().isOk())
@@ -167,7 +167,7 @@ class MysqlIntegrationTest {
         int createdId = com.jayway.jsonpath.JsonPath.read(
                 createResult.getResponse().getContentAsString(), "$.data.createTestCustomer.customer_id");
 
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("mutation { deleteTestCustomer(where: { customer_id: { eq: " + createdId + " } }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
@@ -179,7 +179,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(33)
     void bulkCreateCustomers() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("mutation { createManyTestCustomer(inputs: [{ first_name: \"Bulk1\", last_name: \"Test\" }, { first_name: \"Bulk2\", last_name: \"Test\" }]) { customer_id first_name } }")))
                 .andExpect(status().isOk())
@@ -191,7 +191,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(40)
     void whereNeqFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { first_name: { neq: \"Alice\" } }, limit: 10) { first_name } }")))
                 .andExpect(status().isOk())
@@ -201,7 +201,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(41)
     void whereGtFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testOrders(where: { total_amount: { gt: 100 } }) { order_id total_amount } }")))
                 .andExpect(status().isOk())
@@ -211,7 +211,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(42)
     void whereGteFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testOrders(where: { total_amount: { gte: 250 } }) { order_id } }")))
                 .andExpect(status().isOk())
@@ -221,7 +221,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(43)
     void whereLtFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testOrders(where: { total_amount: { lt: 100 } }) { order_id } }")))
                 .andExpect(status().isOk())
@@ -231,7 +231,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(44)
     void whereLteFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testOrders(where: { total_amount: { lte: 100.50 } }) { order_id } }")))
                 .andExpect(status().isOk())
@@ -241,7 +241,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(45)
     void whereInFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { customer_id: { in: [1, 3] } }) { customer_id } }")))
                 .andExpect(status().isOk())
@@ -251,7 +251,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(46)
     void whereLikeFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { first_name: { like: \"A%\" } }) { first_name } }")))
                 .andExpect(status().isOk())
@@ -262,7 +262,7 @@ class MysqlIntegrationTest {
     @Order(47)
     void whereIlikeFilter() throws Exception {
         // MySQL uses LOWER(col) LIKE LOWER(val) for ilike
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { first_name: { ilike: \"alice\" } }) { first_name } }")))
                 .andExpect(status().isOk())
@@ -275,7 +275,7 @@ class MysqlIntegrationTest {
     @Order(50)
     void orderByDesc() throws Exception {
         // Earlier mutations add customers — filter to original 5 to ensure stable ordering
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(orderBy: { first_name: DESC }, limit: 1, where: { customer_id: { lte: 5 } }) { first_name } }")))
                 .andExpect(status().isOk())
@@ -287,7 +287,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(60)
     void aggregateSumAvgMinMax() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testOrdersAggregate { count sum { total_amount } avg { total_amount } min { total_amount } max { total_amount } } }")))
                 .andExpect(status().isOk())
@@ -302,7 +302,7 @@ class MysqlIntegrationTest {
     @Order(70)
     void connectionAfterCursor() throws Exception {
         // Get first page
-        var result = mockMvc.perform(post("/graphql")
+        var result = mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomerConnection(first: 2) { edges { cursor node { customer_id } } } }")))
                 .andReturn();
@@ -310,7 +310,7 @@ class MysqlIntegrationTest {
         String cursor = com.jayway.jsonpath.JsonPath.read(body, "$.data.testCustomerConnection.edges[1].cursor");
 
         // Get second page using after cursor
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomerConnection(first: 2, after: \"" + cursor + "\") { edges { node { customer_id first_name } } pageInfo { hasPreviousPage } } }")))
                 .andExpect(status().isOk())
@@ -323,7 +323,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(80)
     void multipleRootFields() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(limit: 1, orderBy: { customer_id: ASC }) { first_name } testOrders(limit: 1, orderBy: { order_id: ASC }) { order_id } }")))
                 .andExpect(status().isOk())
@@ -336,7 +336,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(90)
     void errorInvalidField() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ nonexistentTable { id } }")))
                 .andExpect(status().isOk())
@@ -348,7 +348,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(100)
     void introspectionSchema() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ __schema { queryType { name } mutationType { name } } }")))
                 .andExpect(status().isOk())
@@ -360,7 +360,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(110)
     void listWithOffset() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(orderBy: { customer_id: ASC }, limit: 2, offset: 2) { customer_id first_name } }")))
                 .andExpect(status().isOk())
@@ -373,7 +373,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(120)
     void aggregateWithFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testOrdersAggregate(where: { total_amount: { gt: 100 } }) { count } }")))
                 .andExpect(status().isOk())
@@ -385,7 +385,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(130)
     void whereNinFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { customer_id: { nin: [1, 2, 3] } }) { customer_id } }")))
                 .andExpect(status().isOk())
@@ -397,7 +397,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(131)
     void whereStartsWithFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { first_name: { startsWith: \"Al\" } }) { first_name } }")))
                 .andExpect(status().isOk())
@@ -407,7 +407,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(132)
     void whereEndsWithFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { email: { endsWith: \"@example.com\" } }) { customer_id } }")))
                 .andExpect(status().isOk())
@@ -417,7 +417,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(133)
     void whereContainsFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { first_name: { contains: \"li\" } }) { first_name } }")))
                 .andExpect(status().isOk())
@@ -429,7 +429,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(140)
     void whereOrFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { or: [{ first_name: { eq: \"Alice\" } }, { first_name: { eq: \"Bob\" } }] }) { first_name } }")))
                 .andExpect(status().isOk())
@@ -439,7 +439,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(141)
     void whereAndFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { and: [{ active: { eq: true } }, { first_name: { eq: \"Alice\" } }] }) { first_name } }")))
                 .andExpect(status().isOk())
@@ -449,7 +449,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(142)
     void whereNotFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { not: { first_name: { eq: \"Alice\" } } }) { first_name } }")))
                 .andExpect(status().isOk())
@@ -461,7 +461,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(150)
     void whereIsNullFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { email: { isNull: true } }) { customer_id } }")))
                 .andExpect(status().isOk())
@@ -472,7 +472,7 @@ class MysqlIntegrationTest {
     @Order(151)
     void whereIsNotNullFilter() throws Exception {
         // All 5 customers have email set, so should get all 5
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { email: { isNotNull: true } }) { customer_id email } }")))
                 .andExpect(status().isOk())
@@ -484,7 +484,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(152)
     void whereNotInFilter() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(where: { customer_id: { notIn: [1, 2] } }) { customer_id } }")))
                 .andExpect(status().isOk())
@@ -496,7 +496,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(160)
     void orderByDescString() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testCustomer(orderBy: { customer_id: \"DESC\" }, limit: 3, where: { customer_id: { lte: 5 } }) { customer_id } }")))
                 .andExpect(status().isOk())
@@ -509,7 +509,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(170)
     void updateWithIdArg() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("mutation { updateTestCustomer(where: { customer_id: { eq: 2 } }, input: { first_name: \"Bobby\" }) { customer_id first_name } }")))
                 .andExpect(status().isOk())
@@ -521,7 +521,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(180)
     void queryView() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testActiveCustomers(limit: 10) { customer_id first_name } }")))
                 .andExpect(status().isOk())
@@ -531,7 +531,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(181)
     void viewHasNoMutationFields() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ __type(name: \"Mutation\") { fields { name } } }")))
                 .andExpect(status().isOk())
@@ -543,7 +543,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(190)
     void queryTaskWithEnumColumns() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testTask(orderBy: { task_id: ASC }, limit: 3) { task_id title status priority } }")))
                 .andExpect(status().isOk())
@@ -556,7 +556,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(191)
     void filterTaskByEnumStatus() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testTask(where: { status: { eq: \"done\" } }) { task_id title } }")))
                 .andExpect(status().isOk())
@@ -568,7 +568,7 @@ class MysqlIntegrationTest {
     @Test
     @Order(192)
     void taskForwardFkToCustomer() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testTask(orderBy: { task_id: ASC }, limit: 1) { title testAssignedTo { first_name } } }")))
                 .andExpect(status().isOk())

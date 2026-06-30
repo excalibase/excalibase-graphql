@@ -395,7 +395,7 @@ wait-ready: ## Wait for services to be ready
 	done
 	@echo "$(BLUE)🔄 Waiting for application...$(NC)"
 	@for i in $$(seq 1 30); do \
-		if curl -s -X POST http://localhost:$(APP_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
+		if curl -s -X POST http://localhost:$(APP_PORT)/e2e-test/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
 			echo "$(GREEN)✓ GraphQL API ready$(NC)"; \
 			break; \
 		fi; \
@@ -443,7 +443,7 @@ wait-ready-native: ## Wait for native services to be ready
 	done
 	@echo "$(BLUE)🔄 Waiting for native application...$(NC)"
 	@for i in $$(seq 1 30); do \
-		if curl -s -X POST http://localhost:$(APP_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
+		if curl -s -X POST http://localhost:$(APP_PORT)/e2e-test/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
 			echo "$(GREEN)✓ GraphQL API ready$(NC)"; \
 			break; \
 		fi; \

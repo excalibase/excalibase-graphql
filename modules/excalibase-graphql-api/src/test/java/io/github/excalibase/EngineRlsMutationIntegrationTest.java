@@ -146,7 +146,7 @@ class EngineRlsMutationIntegrationTest {
     }
 
     private org.springframework.test.web.servlet.ResultActions mutate(String userId, String mutation) throws Exception {
-        return mockMvc.perform(post("/graphql")
+        return mockMvc.perform(post("/" + PROJECT + "/graphql")
                 .header("Authorization", "Bearer " + jwt(userId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(mutation)));
