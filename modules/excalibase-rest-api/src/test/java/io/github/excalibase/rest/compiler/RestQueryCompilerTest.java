@@ -3,6 +3,9 @@ package io.github.excalibase.rest.compiler;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.postgres.PostgresDialect;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.RlsWhereContributor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -548,6 +551,37 @@ class RestQueryCompilerTest {
       // The child order_items join must reference an result-alias (orders outer alias), not c (products)
       // Since the outer alias for orders is r1, order_items join must be "= r1."
       assertTrue(sql.contains("= r1."), "order_items join must use orders alias r1, not top-level c, in: " + sql);
+    }
+  }
+
+  @Nested
+  @DisplayName("RLS injection")
+  class RlsInjection {
+
+    @Test
+    @DisplayName("RLS predicate is spliced into BOTH the top-level query and embedded sub-selects")
+    void rlsAppliedToTopLevelAndEmbed() {
+      // Stub contributor tags each splice with table@alias so we can assert the
+      // RLS predicate reaches the top-level query AND every embedded sub-select.
+      RlsContext.set(new RlsWhereContributor() {
+        @Override public RlsWhereContributor.Contribution contribute(String table, RlsOp op) {
+          return new RlsWhereContributor.Contribution("RLS_" + table, Map.of());
+        }
+        @Override public RlsWhereContributor.Contribution contribute(String table, String alias, RlsOp op) {
+          return new RlsWhereContributor.Contribution("RLS_" + table + "@" + alias, Map.of());
+        }
+      });
+      try {
+        var embed = new RestQueryCompiler.EmbedSpec("orders", List.of("*"));
+        var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+            "public.products", List.of(), List.of(), null, List.of(embed), null, 10, 0, false));
+        String sql = result.sql();
+        assertTrue(sql.contains("RLS_public.products@c"), "top-level RLS missing: " + sql);
+        // The embedded child table must also be RLS-filtered — else ?select=*,fk(*) leaks.
+        assertTrue(sql.contains("RLS_public.orders@r"), "embedded-table RLS missing (leak!): " + sql);
+      } finally {
+        RlsContext.clear();
+      }
     }
   }
 }

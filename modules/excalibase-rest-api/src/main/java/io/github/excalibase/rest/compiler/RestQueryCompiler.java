@@ -117,7 +117,7 @@ public class RestQueryCompiler {
         }
 
         StringBuilder inner = buildInnerSelect(quotedTable, where, orderBySql, effectiveLimit, query.offset());
-        String jsonAgg = buildJsonAgg(columns, buildEmbedEntries(query.table(), query.embeds()), knownCols);
+        String jsonAgg = buildJsonAgg(columns, buildEmbedEntries(query.table(), query.embeds(), params), knownCols);
 
         StringBuilder sql = new StringBuilder();
         sql.append(SELECT).append(jsonAgg).append(AS_BODY);
@@ -380,51 +380,57 @@ public class RestQueryCompiler {
     }
 
 
-    private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds) {
-        return buildEmbedEntries(table, embeds, ALIAS, new AtomicInteger());
+    private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, Map<String, Object> params) {
+        return buildEmbedEntries(table, embeds, ALIAS, new AtomicInteger(), params);
     }
 
-    private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, String parentAlias, AtomicInteger counter) {
+    private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, String parentAlias,
+                                           AtomicInteger counter, Map<String, Object> params) {
         if (embeds == null || embeds.isEmpty()) return List.of();
         List<String> entries = new ArrayList<>();
         for (EmbedSpec embed : embeds) {
             String ia = ALIAS_R + counter.getAndIncrement();
             String oa = ALIAS_R + counter.getAndIncrement();
             var fwd = findForwardFk(table, embed.relationName(), embed.fkHint());
-            if (fwd != null) entries.add(buildForwardEmbed(embed, fwd, ia, oa, parentAlias, counter));
+            if (fwd != null) entries.add(buildForwardEmbed(embed, fwd, ia, oa, parentAlias, counter, params));
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
-                if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa, parentAlias, counter));
+                if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa, parentAlias, counter, params));
             }
         }
         return entries;
     }
 
     private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
-                                     String parentAlias, AtomicInteger counter) {
+                                     String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String refTable = resolveTable(fk.refTable());
-        List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter);
+        List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, fk.refTable()) : SELECT + ia + DOT_STAR;
         String rowExpr = buildRowExpr(embed, oa, fk.refTable(), childEntries);
+        // RLS on the embedded related table (aliased ia) — without this, an embed
+        // (?select=*,fk(*)) would expose related rows the caller may not read.
+        StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(fk.refColumn())
+            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()));
+        appendRls(ew, fk.refTable(), ia, RlsOp.SELECT, params);
         return sqlString(embed.relationName()) + COMMA_SEP + parens(
             SELECT + rowExpr + FROM
-            + parens(innerSel + FROM + refTable + SPACE + ia
-            + WHERE + ia + DOT + dialect.quoteIdentifier(fk.refColumn())
-            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()))
+            + parens(innerSel + FROM + refTable + SPACE + ia + WHERE + ew)
             + SPACE + oa);
     }
 
     private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
-                                     String parentAlias, AtomicInteger counter) {
+                                     String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String childTable = resolveTable(rev.childTable());
-        List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter);
+        List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, rev.childTable()) : SELECT + ia + DOT_STAR;
         String rowExpr = buildRowExpr(embed, oa, rev.childTable(), childEntries);
+        // RLS on the embedded child table (aliased ia) — same leak guard as forward.
+        StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(rev.fkColumn())
+            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(rev.refColumns().get(0)));
+        appendRls(ew, rev.childTable(), ia, RlsOp.SELECT, params);
         return sqlString(embed.relationName()) + COMMA_SEP + COALESCE + parens(
             parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM
-            + parens(innerSel + FROM + childTable + SPACE + ia
-            + WHERE + ia + DOT + dialect.quoteIdentifier(rev.fkColumn())
-            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(rev.refColumns().get(0)))
+            + parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew)
             + SPACE + oa) + COMMA_SEP + EMPTY_JSON_ARRAY);
     }
 
