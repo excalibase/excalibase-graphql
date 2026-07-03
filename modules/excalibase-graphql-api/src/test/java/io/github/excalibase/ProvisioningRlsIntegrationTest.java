@@ -322,6 +322,17 @@ class ProvisioningRlsIntegrationTest {
                 .andExpect(jsonPath("$.data", hasSize(2)));
     }
 
+    @Test
+    void rpc_anonymousRejectedWhenAuthEnabled() throws Exception {
+        // RPC executes an opaque stored function the engine can't row-filter, so
+        // it is not anonymous-safe. With auth enabled, an unauthenticated RPC call
+        // is rejected (401) before the function is even resolved.
+        mockMvc.perform(post("/" + PROJECT + "/api/v1/rpc/any_fn")
+                        .header("Content-Profile", "rls_demo")
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnauthorized());
+    }
+
     private String body(String query) throws Exception {
         return mapper.writeValueAsString(Map.of("query", query));
     }

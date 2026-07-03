@@ -77,13 +77,24 @@ RLS must apply on **every** data path, not just GraphQL. Status:
 | REST embeds `?select=*,fk(*)`          | ✅                | n/a |
 | REST `PATCH`/`DELETE`                  | ✅ (where + coupling) | ❌ new-image not validated |
 | REST `POST` (insert)                   | n/a               | ❌ no WITH-CHECK — can insert policy-violating rows |
-| REST `POST /rpc/{fn}` (stored proc)    | ❌ bypasses RLS (EXC-25) | ❌ |
+| REST `POST /rpc/{fn}` (stored proc)    | ⚠️ auth required (no anon when `jwt-enabled`); no in-function row filter | ⚠️ author's responsibility |
 | Realtime WS subscriptions              | ❌ no per-row RLS (EXC-19) | n/a |
 
 The **read** leaks are closed (REST previously skipped engine RLS entirely —
 `RestQueryCompiler` now splices the predicate into selects, counts, and embeds,
-exactly like GraphQL's `FilterBuilder`). **Remaining gaps** are writes/RPC/
-realtime — fix order: REST insert/update WITH-CHECK → RPC → realtime.
+exactly like GraphQL's `FilterBuilder`).
+
+**RPC** (`/rpc/{fn}`) is an opaque stored function — the engine can't inject a
+`WHERE` into its body, so per-row RLS is impossible in the app-layer model (same
+limit Hasura hits: it only filters `SETOF <table>` *output* against the return
+table's permission, not a function's internal reads). Current stance: **RPC
+requires a token when `jwt-enabled=true`** (no anonymous calls); row filtering
+inside a function is the author's responsibility. Planned enhancement: for
+functions returning `SETOF <table>`, wrap the call and apply that table's engine
+RLS to the output (needs return-type introspection + a rows-returning handler).
+
+**Remaining gaps**, fix order: REST insert/update WITH-CHECK → RPC `SETOF`-table
+output wrapping → realtime per-row RLS.
 
 ## Engine capabilities (Postgres-RLS parity)
 

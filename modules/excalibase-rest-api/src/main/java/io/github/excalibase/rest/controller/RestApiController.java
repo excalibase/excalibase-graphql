@@ -52,15 +52,18 @@ public class RestApiController {
     private final TransactionTemplate txTemplate;
     private final ObjectMapper mapper;
     private final int maxRows;
+    private final boolean jwtEnabled;
 
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
-                             @Value("${app.max-rows:30}") int maxRows) {
+                             @Value("${app.max-rows:30}") int maxRows,
+                             @Value("${app.security.jwt-enabled:false}") boolean jwtEnabled) {
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
         this.mapper = mapper;
         this.maxRows = maxRows;
+        this.jwtEnabled = jwtEnabled;
     }
 
     @GetMapping(produces = "application/openapi+json")
@@ -180,6 +183,18 @@ public class RestApiController {
         String schema = resolveSchema(cp);
         if (schema == null) return notFound();
         var claims = getClaims(request);
+        // RPC executes an opaque stored function, so the engine cannot inject a
+        // row-level filter into its body (unlike compiled table queries). It is
+        // therefore NOT anonymous-safe. When auth is enabled, require a valid
+        // token (row-level filtering inside a function stays the author's
+        // responsibility, as in PostgREST/Hasura for non-SETOF functions). Checked
+        // before revealing whether the function exists, to avoid enumeration. When
+        // auth is disabled (jwt-enabled=false, trusted/dev), RPC runs unauthenticated
+        // like the rest of the surface.
+        if (jwtEnabled && claims == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of(KEY_ERROR, "Authentication required for RPC"));
+        }
         var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
         if (!schemaInfo.getStoredProcedures().containsKey(schema + DOT + function)) return notFound();
 
