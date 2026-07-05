@@ -117,4 +117,4 @@ have native Postgres RLS, so they exercise the *engine*.
 ## 8. Known gaps (documented, not yet closed)
 
 - RPC cannot row-filter *inside* an opaque function (auth-gated only) — `SETOF`-table output wrapping planned.
-- Realtime WS subscriptions: per-row RLS on CDC events (EXC-19).
+- WS subscriptions (GraphQL + realtime) now enforce per-row RLS + column masking; relationship (`EXISTS`) policies fail closed (in-memory matcher can't probe a second table) — DB-backed evaluation planned.

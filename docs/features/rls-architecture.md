@@ -78,7 +78,8 @@ RLS must apply on **every** data path, not just GraphQL. Status:
 | REST `PATCH`/`DELETE`                  | ✅ (where + coupling) | ✅ `RowCheckContributor` (new image) |
 | REST `POST` (insert / bulk / upsert)   | n/a               | ✅ `RowCheckContributor` (each candidate row) |
 | REST `POST /rpc/{fn}` (stored proc)    | ⚠️ auth required (no anon when `jwt-enabled`); no in-function row filter | ⚠️ author's responsibility |
-| Realtime WS subscriptions              | ❌ no per-row RLS (EXC-19) | n/a |
+| GraphQL WS subscriptions               | ✅ per-row + column-mask (in-memory matcher) | n/a |
+| Realtime WS subscriptions              | ✅ per-row + column-mask (in-memory matcher) | n/a |
 
 The **read** leaks are closed (REST previously skipped engine RLS entirely —
 `RestQueryCompiler` now splices the predicate into selects, counts, and embeds,
@@ -96,8 +97,15 @@ RLS to the output (needs return-type introspection + a rows-returning handler).
 REST writes now enforce WITH-CHECK via the same `RowCheckContributor` the
 GraphQL mutation path uses (insert: each candidate row; update: the new image).
 
+WS subscriptions (both GraphQL `graphql-transport-ws` and the realtime REST
+protocol) now enforce per-row RLS and column masking on every CDC event via the
+in-memory `RowMatcher`/`ColumnMasker`: a subscriber receives an event only if the
+row is visible to them, with hidden/masked columns stripped. Relationship
+(`EXISTS`) policies can't be evaluated in-memory without a DB probe, so an event
+governed by one fails closed (dropped) rather than leaking.
+
 **Remaining gaps**, fix order: RPC `SETOF`-table output wrapping → realtime
-per-row RLS.
+relationship-predicate evaluation (needs a DB lookup).
 
 ## Engine capabilities (Postgres-RLS parity)
 
@@ -128,8 +136,9 @@ fails with *missing FROM-clause entry*). The alias is threaded
   which equals the token's `projectId`) — the unscoped routes are gone, so a
   client that calls `/graphql` or `/api/v1` now gets a 404. Auth/functions
   already build project-scoped URLs.
-- **WebSocket subscriptions** still upgrade at `/graphql` (separate handler;
-  realtime per-row RLS is its own epic) — scope + enforce there too later.
+- **WebSocket subscriptions** still upgrade at `/graphql` (separate handler) —
+  per-row RLS + column masking are now enforced there, but the endpoint is not
+  yet project-scoped in the URL; project comes from the JWT tenant claim.
 - **OpenAPI** `servers[].url` still emits `/api/v1` (cosmetic) — should reflect
   the scoped base.
 - **Missing custom claim**: currently throws (typo protection). Postgres

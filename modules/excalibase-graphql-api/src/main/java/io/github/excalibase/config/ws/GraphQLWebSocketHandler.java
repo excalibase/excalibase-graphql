@@ -4,7 +4,10 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.schema.NamingUtils;
+import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.rls.Operation;
+import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.JwtVerificationException;
@@ -47,9 +50,13 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     /** Verified JWT claims for the session — used by realtime column masking. */
     static final String SESSION_CLAIMS_KEY = "excalibase.jwtClaims";
 
+    /** Sentinel: the CDC row must not be delivered to this subscriber under RLS. */
+    private static final Object RLS_DROP = new Object();
+
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
     private final JwtService jwtService;
+    private final RlsPolicyEnforcer rlsEnforcer;
 
     @Value("${app.security.jwt-enabled:false}")
     private boolean jwtEnabled;
@@ -72,10 +79,12 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     public GraphQLWebSocketHandler(SubscriptionService subscriptionService,
                                    ObjectMapper objectMapper,
                                    ObjectProvider<JwtService> jwtServiceProvider,
+                                   ObjectProvider<RlsPolicyEnforcer> rlsEnforcerProvider,
                                    WebSocketHeartbeat heartbeat) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.jwtService = jwtServiceProvider.getIfAvailable();
+        this.rlsEnforcer = rlsEnforcerProvider.getIfAvailable();
         this.heartbeat = heartbeat;
     }
 
@@ -146,6 +155,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                         return;
                     }
                     session.getAttributes().put(SESSION_TENANT_KEY, tenantId);
+                    session.getAttributes().put(SESSION_CLAIMS_KEY, claims);
                     log.info("WS session {} authenticated via connection_init for tenant '{}'",
                             session.getId(), tenantId);
                 } catch (JwtVerificationException e) {
@@ -239,10 +249,15 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         Disposable disposable = subscriptionService.subscribe(tenantId, tableName)
                 .subscribe(event -> {
                     try {
+                        // Row-level + column-level security per subscriber: a CDC event
+                        // must reach a subscriber only if the row is visible to them, and
+                        // hidden/masked columns must be stripped before it leaves the server.
+                        Object data = renderEventData(session, event);
+                        if (data == RLS_DROP) return;
                         Map<String, Object> changeData = Map.of(
                                 "operation", event.type(),
                                 "table", event.table(),
-                                "data", parseEventData(event.data()),
+                                "data", data,
                                 "timestamp", event.timestamp()
                         );
                         Map<String, Object> nextMsg = Map.of(
@@ -266,6 +281,43 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         } catch (Exception _) {
             return data;
         }
+    }
+
+    /**
+     * Applies row-level and column-level security to a CDC event for this
+     * session's subscriber. Returns {@link #RLS_DROP} when the row is not visible
+     * to the subscriber (fail-closed on relationship predicates the in-memory
+     * matcher can't evaluate); otherwise the parsed payload with hidden columns
+     * removed and NULL-masked columns nulled. Falls through to the raw payload
+     * when no engine is wired or no project context is resolvable (single-tenant).
+     */
+    @SuppressWarnings("unchecked")
+    private Object renderEventData(WebSocketSession session, CDCEvent event) {
+        Object parsed = parseEventData(event.data());
+        if (rlsEnforcer == null || !(parsed instanceof Map)) return parsed;
+        JwtClaims claims = (JwtClaims) session.getAttributes().get(SESSION_CLAIMS_KEY);
+        String projectId = claims != null
+                ? claims.projectId()
+                : (String) session.getAttributes().get(SESSION_TENANT_KEY);
+        if (projectId == null) return parsed;
+        Map<String, Object> row = (Map<String, Object>) parsed;
+        String resource = resourceOf(event);
+        try {
+            if (!rlsEnforcer.permitsRow(projectId, resource, claims, Operation.SELECT, row)) {
+                return RLS_DROP;
+            }
+        } catch (UnsupportedOperationException relationshipPredicate) {
+            // Membership/EXISTS policies need a DB probe the in-memory matcher
+            // lacks — fail closed rather than leak the row.
+            return RLS_DROP;
+        }
+        return rlsEnforcer.maskRow(projectId, resource, claims, Operation.SELECT, row);
+    }
+
+    /** Schema-qualified policy resource key for a CDC event ({@code schema.table}). */
+    private static String resourceOf(CDCEvent event) {
+        String schema = (event.schema() == null || event.schema().isBlank()) ? "public" : event.schema();
+        return schema + "." + event.table();
     }
 
     private void handleComplete(WebSocketSession session, Map<String, Object> msg) {

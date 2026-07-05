@@ -210,6 +210,40 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
+    @DisplayName("owner row policy delivers only the subscriber's rows, drops others")
+    void rowFilter_deliversOnlyOwnRows() throws Exception {
+        var policyProvider = new io.github.excalibase.rls.InMemoryPolicyProvider();
+        policyProvider.put("p1", List.of(new io.github.excalibase.rls.Policy(
+                "own", "own", "public.notes", io.github.excalibase.rls.PolicyEffect.ALLOW,
+                io.github.excalibase.rls.Operation.ALL, io.github.excalibase.rls.LogicOperator.AND, 0, true,
+                List.of(new io.github.excalibase.rls.Rule("owner_id", io.github.excalibase.rls.FieldType.STRING,
+                        io.github.excalibase.rls.RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(io.github.excalibase.rls.Assignment.all()))));
+        var enforcer = new io.github.excalibase.rls.RlsPolicyEnforcer(policyProvider);
+        var filtered = new RealtimeWebSocketHandler(subscriptionService, mapper,
+                provider((io.github.excalibase.security.JwtService) null), provider(enforcer), new WebSocketHeartbeat(0));
+
+        var sent = new ArrayList<String>();
+        WebSocketSession session = session(sent);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
+                io.github.excalibase.security.JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com"));
+        filtered.afterConnectionEstablished(session);
+
+        filtered.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "notes"))));
+
+        // Another user's row must NOT be delivered; the subscriber's own row must.
+        subscriptionService.publish(null, new CDCEvent(
+                "INSERT", "public", "notes", "{\"id\":1,\"owner_id\":\"u-2\"}", 0L));
+        subscriptionService.publish(null, new CDCEvent(
+                "INSERT", "public", "notes", "{\"id\":2,\"owner_id\":\"u-1\"}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        assertThat(sent).hasSize(1);
+        assertThat(mapper.readTree(sent.getFirst()).get("doc").get("id").asInt()).isEqualTo(2);
+    }
+
+    @Test
     @DisplayName("subscribe without id or collection returns error")
     void missingFields_error() throws Exception {
         var sent = new ArrayList<String>();
