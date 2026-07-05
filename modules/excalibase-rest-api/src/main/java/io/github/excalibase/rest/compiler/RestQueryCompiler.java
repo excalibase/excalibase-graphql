@@ -224,8 +224,20 @@ public class RestQueryCompiler {
                 updateSets.add(qCol + ASSIGN + EXCLUDED + DOT + qCol);
             }
         }
+        String doUpdate = DO_UPDATE + SET + String.join(COMMA_SEP, updateSets);
+        if (!updateSets.isEmpty()) {
+            // RLS USING for the conflict path: DO UPDATE can overwrite a *pre-existing*
+            // row, so it must be gated by the caller's UPDATE policy — otherwise an
+            // upsert on a known PK silently overwrites another owner's row. Columns are
+            // qualified with the target relation name because a bare column in
+            // ON CONFLICT ... WHERE is ambiguous with EXCLUDED.
+            String targetRef = table.contains(".") ? table.substring(table.lastIndexOf('.') + 1) : table;
+            StringBuilder usingWhere = new StringBuilder();
+            appendRls(usingWhere, table, dialect.quoteIdentifier(targetRef), RlsOp.UPDATE, params);
+            if (!usingWhere.isEmpty()) doUpdate += WHERE + usingWhere;
+        }
         String onConflict = ON_CONFLICT + parens(String.join(COMMA_SEP, quotedConflict))
-            + (updateSets.isEmpty() ? DO_NOTHING : DO_UPDATE + SET + String.join(COMMA_SEP, updateSets));
+            + (updateSets.isEmpty() ? DO_NOTHING : doUpdate);
 
         return new CompiledResult(
             WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable

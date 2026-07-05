@@ -111,11 +111,18 @@ public class JdbcEvaluator {
             ? outerAlias
             : quote(SqlIdentifier.checkColumn(unqualified(resource)));
 
+        // Scalar rules are normally emitted bare ("owner_id = :p") because they sit
+        // inside a `FROM table alias WHERE ...` where the column is unambiguous. When
+        // the caller supplies an explicit alias, qualify with it so the predicate is
+        // safe in contexts where a bare column would be ambiguous — notably
+        // ON CONFLICT ... DO UPDATE WHERE, where EXCLUDED shares the column name.
+        String scalarPrefix = (outerAlias != null && !outerAlias.isBlank()) ? outerAlias + "." : "";
+
         List<String> allowSqls = new ArrayList<>();
         List<String> denySqls = new ArrayList<>();
 
         for (Policy p : inScope) {
-            String pSql = renderPolicy(p, outerRef, resolver, sink);
+            String pSql = renderPolicy(p, outerRef, scalarPrefix, resolver, sink);
             if (pSql == null) continue;
             if (p.effect() == PolicyEffect.ALLOW) allowSqls.add(pSql);
             else denySqls.add(pSql);
@@ -217,10 +224,11 @@ public class JdbcEvaluator {
         return false;
     }
 
-    private String renderPolicy(Policy policy, String outerTable, VariableResolver resolver, ParamSink sink) {
+    private String renderPolicy(Policy policy, String outerTable, String scalarPrefix,
+                                VariableResolver resolver, ParamSink sink) {
         List<String> parts = new ArrayList<>(policy.rules().size() + policy.relations().size());
         for (Rule r : policy.rules()) {
-            parts.add(renderRule("", r, resolver, sink));
+            parts.add(renderRule(scalarPrefix, r, resolver, sink));
         }
         for (RelationPredicate rel : policy.relations()) {
             parts.add(renderRelation(rel, outerTable, resolver, sink));

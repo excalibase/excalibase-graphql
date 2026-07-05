@@ -211,6 +211,40 @@ class EngineRlsMutationIntegrationTest {
                 .andExpect(jsonPath("$.data.createRlsDemoNotes").doesNotExist());
     }
 
+    // ---- UPSERT ON CONFLICT USING (audit H6) ----
+
+    @Test
+    void upsert_cannotOverwriteAnotherOwnersRow() throws Exception {
+        // Alice upserts on id=2 (Bob's note). The ON CONFLICT DO UPDATE is gated by
+        // the UPDATE USING predicate (notes.owner_id = alice), so Bob's row is excluded
+        // and his title is not overwritten — an upsert is not an ownership bypass. The
+        // statement itself must be valid SQL (no EXCLUDED ambiguity → no error).
+        mutate(ALICE, "mutation { createRlsDemoNotes("
+                + "input: { id: 2, owner_id: \"" + ALICE + "\", title: \"hijacked\" }, "
+                + "onConflict: { constraint: \"notes_pkey\", update_columns: [\"title\"] }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist());
+        // Bob still sees his original note title — Alice's upsert did not touch it.
+        mutate(BOB, "{ rlsDemoNotes(where: { id: { eq: 2 } }) { id title } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(1)))
+                .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").value("bob-note"));
+    }
+
+    @Test
+    void upsert_ownRow_updatesTitle() throws Exception {
+        // Alice upserts on id=1 (her own note): the USING predicate matches, so the
+        // conflict path updates her row — the gate must not over-block legitimate upserts.
+        mutate(ALICE, "mutation { createRlsDemoNotes("
+                + "input: { id: 1, owner_id: \"" + ALICE + "\", title: \"alice-upserted\" }, "
+                + "onConflict: { constraint: \"notes_pkey\", update_columns: [\"title\"] }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist());
+        mutate(ALICE, "{ rlsDemoNotes(where: { id: { eq: 1 } }) { id title } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").value("alice-upserted"));
+    }
+
     // ---- NESTED-FK CHILD INSERT WITH-CHECK (audit H5) ----
 
     @Test

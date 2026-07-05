@@ -134,7 +134,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
         requireRowAllowed(tableName, rowForCheck);
 
-        String onConflictSql = parseOnConflict(field, shared);
+        String onConflictSql = parseOnConflict(field, shared, params, tableName);
         String parentCte = shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
                 joinCols(cols), joinCols(vals), onConflictSql, objectSql);
 
@@ -381,7 +381,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
         }
     }
 
-    private String parseOnConflict(Field field, MutationBuilder shared) {
+    private String parseOnConflict(Field field, MutationBuilder shared,
+                                   Map<String, Object> params, String tableName) {
         Argument onConflictArg = shared.findArg(field, ARG_ON_CONFLICT);
         if (onConflictArg == null || !(onConflictArg.getValue() instanceof ObjectValue ocOv)) {
             return "";
@@ -398,7 +399,21 @@ public class PostgresMutationCompiler implements MutationCompiler {
             }
         }
         if (constraint != null && !updateCols.isEmpty()) {
-            return " " + shared.dialect().onConflict(List.of(constraint), updateCols);
+            String clause = " " + shared.dialect().onConflict(List.of(constraint), updateCols);
+            // RLS USING for the conflict path: DO UPDATE can overwrite a pre-existing
+            // row, so gate it with the caller's UPDATE policy — an upsert on a known
+            // key must not silently overwrite another owner's row. Columns are
+            // qualified with the target relation name because a bare column in
+            // ON CONFLICT ... WHERE is ambiguous with EXCLUDED.
+            List<String> usingConds = new ArrayList<>();
+            String targetRef = tableName.contains(".")
+                    ? tableName.substring(tableName.lastIndexOf('.') + 1) : tableName;
+            shared.filterBuilder().appendRlsConditions(usingConds, tableName,
+                    shared.dialect().quoteIdentifier(targetRef), params, RlsOp.UPDATE);
+            if (!usingConds.isEmpty()) {
+                clause += WHERE + String.join(AND, usingConds);
+            }
+            return clause;
         }
         return "";
     }

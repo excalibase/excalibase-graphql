@@ -262,6 +262,31 @@ class RestQueryCompilerTest {
       var result = compiler.compileUpsert("public.products", input, List.of("id"));
       assertTrue(result.sql().contains("DO NOTHING") || result.sql().contains("DO UPDATE"));
     }
+
+    @Test @DisplayName("compileUpsert gates DO UPDATE with the RLS UPDATE predicate (audit H6)")
+    void upsertDoUpdate_hasRlsUsing() {
+      // Without the USING, an upsert on a known PK overwrites another owner's row.
+      RlsContext.set(new RlsWhereContributor() {
+        @Override public RlsWhereContributor.Contribution contribute(String table, RlsOp op) {
+          return new RlsWhereContributor.Contribution("owner_id = 'me'", Map.of());
+        }
+        @Override public RlsWhereContributor.Contribution contribute(String table, String alias, RlsOp op) {
+          return op == RlsOp.UPDATE
+              ? new RlsWhereContributor.Contribution("owner_id = 'me'", Map.of())
+              : null;
+        }
+      });
+      try {
+        var input = Map.of("id", (Object) 1, "name", "Updated", "price", 99.0);
+        var result = compiler.compileUpsert("public.products", input, List.of("id"));
+        String sql = result.sql();
+        assertTrue(sql.contains("DO UPDATE"), "expected DO UPDATE: " + sql);
+        assertTrue(sql.contains("WHERE") && sql.contains("owner_id = 'me'"),
+            "DO UPDATE must be gated by the RLS UPDATE predicate: " + sql);
+      } finally {
+        RlsContext.clear();
+      }
+    }
   }
 
   @Nested

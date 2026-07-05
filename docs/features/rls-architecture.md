@@ -76,7 +76,7 @@ RLS must apply on **every** data path, not just GraphQL. Status:
 | REST `GET /{table}` + `totalCount`     | ✅                | n/a |
 | REST embeds `?select=*,fk(*)`          | ✅                | n/a |
 | REST `PATCH`/`DELETE`                  | ✅ (where + coupling) | ✅ `RowCheckContributor` (new image) |
-| REST `POST` (insert / bulk / upsert)   | n/a               | ✅ `RowCheckContributor` (each candidate row) |
+| REST `POST` (insert / bulk / upsert)   | n/a               | ✅ each candidate row; upsert's `ON CONFLICT DO UPDATE` is gated by the UPDATE policy (USING) |
 | REST `POST /rpc/{fn}` (stored proc)    | ⚠️ auth required (no anon when `jwt-enabled`); no in-function row filter | ⚠️ author's responsibility |
 | GraphQL WS subscriptions               | ✅ per-row + column-mask (in-memory matcher) | n/a |
 | Realtime WS subscriptions              | ✅ per-row + column-mask (in-memory matcher) | n/a |
@@ -128,6 +128,14 @@ The SQL compiler aliases every table (`FROM t <randAlias>`). A relationship
 fails with *missing FROM-clause entry*). The alias is threaded
 `RlsWhereContributor.contribute(table, alias, op)` →
 `RlsPolicyEnforcer.filterFor(…, alias)` → `JdbcEvaluator.compile(…, outerAlias)`.
+
+When an explicit alias is supplied, scalar rules are also qualified with it
+(`<alias>."owner_id" = :p`) rather than emitted bare. Bare columns are fine in a
+plain `FROM t <alias> WHERE …`, but ambiguous in `INSERT … ON CONFLICT DO UPDATE
+… WHERE …` because `EXCLUDED` shares the column names. Passing the target
+relation name as the alias makes the upsert's USING predicate unambiguous.
+Null-alias callers (differential harness, plain `UPDATE`/`DELETE`) keep the bare
+form, so that behaviour is unchanged.
 
 ## Open items
 
