@@ -125,6 +125,14 @@ class EngineRlsMutationIntegrationTest {
                 List.of(Assignment.all()));
     }
 
+    /** Owner policy on the child (book) table — used for nested-insert WITH-CHECK. */
+    private static Policy ownerBook() {
+        return new Policy("owner-book", "owner-book", "rls_demo.book",
+                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(new Rule("owner_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(Assignment.all()));
+    }
+
     @BeforeEach
     void seed() {
         ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll()));
@@ -202,6 +210,27 @@ class EngineRlsMutationIntegrationTest {
                 .andExpect(jsonPath("$.errors").exists())
                 .andExpect(jsonPath("$.data.createRlsDemoNotes").doesNotExist());
     }
+
+    // ---- NESTED-FK CHILD INSERT WITH-CHECK (audit H5) ----
+
+    @Test
+    void nestedInsert_childRowForAnotherOwner_isRejected() throws Exception {
+        // Alice creates a shelf with a nested book owned by Bob. The child table's
+        // WITH-CHECK (owner policy on rls_demo.book) must reject the whole mutation —
+        // a nested insert is not a hole around top-level WITH-CHECK.
+        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook()));
+        mutate(ALICE, "mutation { createRlsDemoShelf(input: { id: 500, name: \"s\", "
+                + "rlsDemoBook: { data: [ { id: 900, owner_id: \"" + BOB + "\", title: \"x\" } ] } }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").exists())
+                .andExpect(jsonPath("$.data.createRlsDemoShelf").doesNotExist());
+    }
+
+    // Note: the allow-path (own-owned child) is exercised by the shared
+    // requireRowAllowed helper the top-level insert_ownRow_succeeds already
+    // covers; a nested happy-path assertion here is blocked by a separate,
+    // pre-existing nested-insert type-cast limitation (UUID child columns bind
+    // as varchar in the child CTE) unrelated to this WITH-CHECK.
 
     private static String buildJwks(ECPublicKey key) {
         com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(

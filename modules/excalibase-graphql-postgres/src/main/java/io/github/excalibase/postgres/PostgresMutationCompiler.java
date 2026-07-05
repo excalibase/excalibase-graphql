@@ -211,6 +211,10 @@ public class PostgresMutationCompiler implements MutationCompiler {
         List<String> selectRows = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
             Map<String, Object> row = rows.get(i);
+            // WITH-CHECK each nested child row against the child table's INSERT
+            // policies — a nested insert must not be a hole through which a caller
+            // writes a row they couldn't write via a top-level createChild.
+            requireRowAllowed(childTable, row);
             List<String> rowVals = new ArrayList<>();
             rowVals.add(alias + DOT + shared.dialect().quoteIdentifier(refCol));
             for (String col : dataCols) {
