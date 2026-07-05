@@ -14,12 +14,16 @@ correlation on compiled paths. Gaps below, severity-first.
 | H5 | HIGH | Nested-FK **child inserts bypass WITH-CHECK** (GraphQL `buildChildInsertCte`) | ✅ |
 | H6 | HIGH | **Upsert / ON CONFLICT DO UPDATE has no USING** — can overwrite another owner's row (REST + GraphQL) | ✅ |
 | M7 | MEDIUM | GraphQL nested-embed **relationship/EXISTS correlation broken under aliasing** (`appendNestedRls` passes alias=null) | ✅ |
-| M8 | MEDIUM | Default `jwt-enabled=false` disables ALL RLS — no loud warning when policies exist | ⬜ |
+| M8 | MEDIUM | Default `jwt-enabled=false` disables ALL RLS — no loud warning when policies exist | ✅ |
 | L9 | LOW | GROUP-assigned policies never match (`groupIds()` always empty) | ⬜ |
 | L10 | LOW | Empty-rule ALLOW: DENY_ALL on read vs permit on WITH-CHECK (inconsistent) | ⬜ |
 | L11 | LOW | RPC no in-body RLS (auth-gated only — documented, PostgREST/Hasura parity) | ✅ accepted |
 
 Priority order to fix: **C1 → C2/H3 → H4 → H5 → H6 → M7 → M8**.
+
+**Status: C1, C2, H3, H4, H5, H6, M7, M8 all fixed** (each with a regression test).
+Remaining: L9/L10 (low — group assignments, empty-rule ALLOW consistency); L11
+accepted. The nested-insert UUID-cast bug below is functional, not a security gap.
 
 ### Adjacent (non-security) issue surfaced while fixing H5
 
