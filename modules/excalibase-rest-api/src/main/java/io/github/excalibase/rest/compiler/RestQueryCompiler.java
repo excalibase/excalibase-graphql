@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.ColumnMaskContributor;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
@@ -117,7 +118,7 @@ public class RestQueryCompiler {
         }
 
         StringBuilder inner = buildInnerSelect(quotedTable, where, orderBySql, effectiveLimit, query.offset());
-        String jsonAgg = buildJsonAgg(columns, buildEmbedEntries(query.table(), query.embeds(), params), knownCols);
+        String jsonAgg = buildJsonAgg(query.table(), columns, buildEmbedEntries(query.table(), query.embeds(), params), knownCols);
 
         StringBuilder sql = new StringBuilder();
         sql.append(SELECT).append(jsonAgg).append(AS_BODY);
@@ -361,14 +362,37 @@ public class RestQueryCompiler {
         throw new IllegalArgumentException("Invalid ORDER BY NULLS clause: " + nulls);
     }
 
-    private String buildJsonAgg(List<String> columns, List<String> embedSql, Set<String> knownCols) {
-        if (columns.isEmpty() && embedSql.isEmpty()) return dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(ALIAS)));
-        List<String> entries = new ArrayList<>();
-        for (String col : columns.isEmpty() ? new ArrayList<>(knownCols) : columns) {
-            entries.add(sqlString(col) + COMMA_SEP + ALIAS + DOT + dialect.quoteIdentifier(col));
+    private String buildJsonAgg(String table, List<String> columns, List<String> embedSql, Set<String> knownCols) {
+        // Fast path only when nothing to mask — rowToJson emits the whole row and
+        // cannot drop HIDE / NULL-mask columns, so it's unsafe when a masker is live.
+        if (columns.isEmpty() && embedSql.isEmpty() && RlsContext.columnMask() == null) {
+            return dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(ALIAS)));
         }
+        List<String> entries = maskedJsonEntries(table, columns.isEmpty() ? knownCols : columns, ALIAS);
         entries.addAll(embedSql);
         return dialect.coalesceArray(dialect.aggregateArray(dialect.buildObject(entries)));
+    }
+
+    /**
+     * JSON object key/value entries for {@code cols} of {@code table}, applying
+     * column-level security (CLS): a HIDDEN column is dropped from the response,
+     * a NULLED column is emitted as {@code 'col', NULL}. Mirrors the GraphQL
+     * masking in {@code QueryBuilder} so REST doesn't leak protected columns.
+     */
+    private List<String> maskedJsonEntries(String table, java.util.Collection<String> cols, String alias) {
+        ColumnMaskContributor masker = RlsContext.columnMask();
+        List<String> entries = new ArrayList<>();
+        for (String col : cols) {
+            ColumnMaskContributor.Decision d = (masker == null || table == null)
+                ? ColumnMaskContributor.Decision.VISIBLE
+                : masker.decide(table, col);
+            switch (d) {
+                case HIDDEN -> { /* drop entirely */ }
+                case NULLED -> entries.add(sqlString(col) + COMMA_SEP + "NULL");
+                case VISIBLE -> entries.add(sqlString(col) + COMMA_SEP + alias + DOT + dialect.quoteIdentifier(col));
+            }
+        }
+        return entries;
     }
 
     private void appendCountSubquery(StringBuilder sql, List<FilterSpec> filters, String quotedTable, Map<String, Object> params, String table) {
@@ -440,14 +464,14 @@ public class RestQueryCompiler {
      * both the requested columns and the child embed entries.
      */
     private String buildRowExpr(EmbedSpec embed, String outerAlias, String table, List<String> childEntries) {
-        if (childEntries.isEmpty()) return dialect.rowToJson(outerAlias + DOT_STAR);
-        List<String> entries = new ArrayList<>();
+        // rowToJson can't mask, so only use it when there's nothing to mask.
+        if (childEntries.isEmpty() && RlsContext.columnMask() == null) {
+            return dialect.rowToJson(outerAlias + DOT_STAR);
+        }
         List<String> cols = embed.columns().isEmpty() || embed.columns().contains(STAR)
             ? new ArrayList<>(schemaInfo.getColumns(table))
             : embed.columns();
-        for (String col : cols) {
-            entries.add(sqlString(col) + COMMA_SEP + outerAlias + DOT + dialect.quoteIdentifier(col));
-        }
+        List<String> entries = maskedJsonEntries(table, cols, outerAlias);
         entries.addAll(childEntries);
         return dialect.buildObject(entries);
     }

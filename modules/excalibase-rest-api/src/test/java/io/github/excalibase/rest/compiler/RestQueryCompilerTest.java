@@ -3,6 +3,7 @@ package io.github.excalibase.rest.compiler;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.postgres.PostgresDialect;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.ColumnMaskContributor;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
@@ -582,6 +583,65 @@ class RestQueryCompilerTest {
       } finally {
         RlsContext.clear();
       }
+    }
+  }
+
+  @Nested
+  @DisplayName("Column-level security (CLS)")
+  class ColumnMasking {
+
+    /** Masks products.description → HIDDEN, products.price → NULLED; everything else VISIBLE. */
+    private void installMasker() {
+      RlsContext.setColumnMask((table, column) -> {
+        if ("public.products".equals(table) && "description".equals(column)) {
+          return ColumnMaskContributor.Decision.HIDDEN;
+        }
+        if ("public.products".equals(table) && "price".equals(column)) {
+          return ColumnMaskContributor.Decision.NULLED;
+        }
+        return ColumnMaskContributor.Decision.VISIBLE;
+      });
+    }
+
+    @Test
+    @DisplayName("HIDDEN column is dropped and NULLED column emits NULL in top-level SELECT")
+    void masksTopLevelColumns() {
+      installMasker();
+      try {
+        // Empty column list = SELECT * — must still honour the mask, not fall back to row_to_json.
+        var result = compiler.compileSelect("public.products", List.of(), List.of(), null, 30, 0, false);
+        String sql = result.sql();
+        assertFalse(sql.contains("row_to_json"), "masked query must not use row_to_json fast path: " + sql);
+        assertFalse(sql.contains("'description'"), "HIDDEN column must be absent from JSON object: " + sql);
+        assertTrue(sql.contains("'price',NULL") || sql.contains("'price', NULL"),
+            "NULLED column must emit NULL literal: " + sql);
+        assertTrue(sql.contains("'name'"), "VISIBLE column must remain: " + sql);
+      } finally {
+        RlsContext.clear();
+      }
+    }
+
+    @Test
+    @DisplayName("explicitly requested HIDDEN column is still dropped")
+    void masksExplicitlyRequestedColumn() {
+      installMasker();
+      try {
+        var result = compiler.compileSelect("public.products", List.of("id", "name", "description"),
+            List.of(), null, 30, 0, false);
+        String sql = result.sql();
+        assertFalse(sql.contains("'description'"), "HIDDEN column requested by client must still be dropped: " + sql);
+        assertTrue(sql.contains("'id'") && sql.contains("'name'"), "visible columns must remain: " + sql);
+      } finally {
+        RlsContext.clear();
+      }
+    }
+
+    @Test
+    @DisplayName("no masker installed keeps the row_to_json fast path")
+    void noMaskerFastPath() {
+      // No RlsContext.setColumnMask — SELECT * should use the row_to_json optimization.
+      var result = compiler.compileSelect("public.products", List.of(), List.of(), null, 30, 0, false);
+      assertTrue(result.sql().contains("row_to_json"), "unmasked SELECT * should keep fast path: " + result.sql());
     }
   }
 }
