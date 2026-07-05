@@ -73,8 +73,10 @@ public class RestQueryCompiler {
     public CompiledResult compileSelect(SelectQuery query) {
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(query.table()));
         List<String> columns = query.columns().stream().filter(knownCols::contains).toList();
-        List<OrderBySpec> orderBy = query.orderBy() != null ? query.orderBy().stream().filter(o -> knownCols.contains(o.column())).toList() : null;
-        List<FilterSpec> allFilters = query.filters().stream().filter(f -> knownCols.contains(f.column())).toList();
+        List<OrderBySpec> orderBy = query.orderBy() != null ? query.orderBy().stream()
+                .filter(o -> knownCols.contains(o.column()) && readable(query.table(), o.column())).toList() : null;
+        List<FilterSpec> allFilters = query.filters().stream()
+                .filter(f -> knownCols.contains(f.column()) && readable(query.table(), f.column())).toList();
 
         String quotedTable = resolveTable(query.table());
         Map<String, Object> params = new LinkedHashMap<>();
@@ -94,7 +96,8 @@ public class RestQueryCompiler {
 
         StringBuilder where = buildWhere(filters, P_FILTER, params, query.table());
         appendOrConditions(where, query.orConditions(), knownCols, params, query.table());
-        if (query.afterCursor() != null && query.orderColumn() != null && knownCols.contains(query.orderColumn())) {
+        if (query.afterCursor() != null && query.orderColumn() != null
+                && knownCols.contains(query.orderColumn()) && readable(query.table(), query.orderColumn())) {
             if (!where.isEmpty()) where.append(AND);
             params.put(P_AFTER, convertValue(query.afterCursor(), query.table(), query.orderColumn()));
             where.append(dialect.quoteIdentifier(query.orderColumn())).append(GT).append(PARAM_PREFIX).append(P_AFTER);
@@ -312,7 +315,8 @@ public class RestQueryCompiler {
             List<String> parts = new ArrayList<>();
             for (int ci = 0; ci < ors.get(oi).conditions().size(); ci++) {
                 var filter = ors.get(oi).conditions().get(ci);
-                if (knownCols.contains(filter.column())) parts.add(buildFilterSql(filter, P_OR + oi + UNDERSCORE + ci, params, table));
+                if (knownCols.contains(filter.column()) && readable(table, filter.column()))
+                    parts.add(buildFilterSql(filter, P_OR + oi + UNDERSCORE + ci, params, table));
             }
             if (!parts.isEmpty()) {
                 if (!where.isEmpty()) where.append(AND);
@@ -379,6 +383,18 @@ public class RestQueryCompiler {
      * a NULLED column is emitted as {@code 'col', NULL}. Mirrors the GraphQL
      * masking in {@code QueryBuilder} so REST doesn't leak protected columns.
      */
+    /**
+     * True iff the column may be read by the current caller, i.e. no active
+     * column mask hides or nulls it. Masked columns are excluded from WHERE,
+     * ORDER BY, cursor, and OR conditions so they can't leak values through
+     * filtering/sorting (an inference oracle), mirroring the GraphQL FilterBuilder.
+     */
+    private boolean readable(String table, String column) {
+        ColumnMaskContributor masker = RlsContext.columnMask();
+        if (masker == null || table == null) return true;
+        return masker.decide(table, column) == ColumnMaskContributor.Decision.VISIBLE;
+    }
+
     private List<String> maskedJsonEntries(String table, java.util.Collection<String> cols, String alias) {
         ColumnMaskContributor masker = RlsContext.columnMask();
         List<String> entries = new ArrayList<>();

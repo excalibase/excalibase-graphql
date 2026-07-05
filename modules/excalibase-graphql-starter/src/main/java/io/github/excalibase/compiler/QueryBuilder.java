@@ -78,7 +78,7 @@ public class QueryBuilder {
         // WHERE from arguments
         filterBuilder.applyWhere(sql, field, alias, params, tableName);
 
-        appendListOrderBy(sql, field, alias, distinctOnCols, vectorClause);
+        appendListOrderBy(sql, field, alias, tableName, distinctOnCols, vectorClause);
         appendListLimit(sql, field, params, vectorClause);
 
         sql.append(") ").append(alias);
@@ -86,7 +86,7 @@ public class QueryBuilder {
     }
 
     /** ORDER BY precedence: vector > distinctOn > user-supplied orderBy. */
-    private void appendListOrderBy(StringBuilder sql, Field field, String alias,
+    private void appendListOrderBy(StringBuilder sql, Field field, String alias, String tableName,
                                    List<String> distinctOnCols,
                                    Optional<VectorSearchBuilder.VectorClause> vectorClause) {
         if (vectorClause.isPresent()) {
@@ -94,7 +94,7 @@ public class QueryBuilder {
         } else if (!distinctOnCols.isEmpty()) {
             sql.append(ORDER_BY).append(joinCols(buildDistinctOnOrderClauses(field, alias, distinctOnCols)));
         } else {
-            filterBuilder.applyOrderBy(sql, field, alias);
+            filterBuilder.applyOrderBy(sql, field, alias, tableName);
         }
     }
 
@@ -209,7 +209,7 @@ public class QueryBuilder {
         PaginationArgs pagination = parsePaginationArgs(field);
 
         // Determine order columns (default: PK ASC)
-        List<String[]> orderCols = filterBuilder.parseOrderBy(field);
+        List<String[]> orderCols = filterBuilder.parseOrderBy(field, tableName);
         if (orderCols.isEmpty()) orderCols.add(new String[]{pk, ASC});
 
         boolean isForward = (pagination.last == null);

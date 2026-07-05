@@ -643,5 +643,36 @@ class RestQueryCompilerTest {
       var result = compiler.compileSelect("public.products", List.of(), List.of(), null, 30, 0, false);
       assertTrue(result.sql().contains("row_to_json"), "unmasked SELECT * should keep fast path: " + result.sql());
     }
+
+    @Test
+    @DisplayName("filter on a HIDDEN column is dropped (no inference oracle)")
+    void filterOnHiddenColumnDropped() {
+      installMasker();
+      try {
+        // description is HIDDEN; a filter on it must not reach the SQL, else the
+        // caller can binary-search the masked value.
+        var filters = List.of(new RestQueryCompiler.FilterSpec("description", "eq", "secret", false));
+        var result = compiler.compileSelect("public.products", List.of("id"), filters, null, 30, 0, false);
+        assertFalse(result.sql().toLowerCase().contains("description"),
+            "HIDDEN column filter must be dropped: " + result.sql());
+      } finally {
+        RlsContext.clear();
+      }
+    }
+
+    @Test
+    @DisplayName("order by a NULLED column is dropped")
+    void orderByMaskedColumnDropped() {
+      installMasker();
+      try {
+        // price is NULL-masked; ordering by it leaks the real ordering.
+        var order = List.of(new RestQueryCompiler.OrderBySpec("price", "ASC", null));
+        var result = compiler.compileSelect("public.products", List.of("id"), List.of(), order, 30, 0, false);
+        assertFalse(result.sql().contains("ORDER BY \"price\""),
+            "masked column must not be orderable: " + result.sql());
+      } finally {
+        RlsContext.clear();
+      }
+    }
   }
 }

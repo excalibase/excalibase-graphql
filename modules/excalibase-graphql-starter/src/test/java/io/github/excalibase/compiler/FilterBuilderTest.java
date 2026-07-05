@@ -498,4 +498,68 @@ class FilterBuilderTest {
             assertThat(conditions).singleElement().asString().contains("\"id\" = :p_id_eq");
         }
     }
+
+    @Nested
+    @DisplayName("column-level security gates filter and order (audit H4)")
+    class MaskedColumnGating {
+
+        /** Hides "salary", keeps everything else VISIBLE. */
+        private void installMasker() {
+            io.github.excalibase.security.RlsContext.setColumnMask((table, column) ->
+                "salary".equals(column)
+                    ? io.github.excalibase.security.ColumnMaskContributor.Decision.HIDDEN
+                    : io.github.excalibase.security.ColumnMaskContributor.Decision.VISIBLE);
+        }
+
+        @Test
+        @DisplayName("filter on a HIDDEN column is dropped, visible columns remain")
+        void filterOnHiddenColumn_dropped() {
+            installMasker();
+            try {
+                Field field = parseField("{ users(where: { salary: { gt: 100000 }, id: { eq: 1 } }) { id } }");
+                Map<String, Object> params = new HashMap<>();
+                List<String> conditions = new ArrayList<>();
+
+                filterBuilder.buildWhereConditions(field, "t", params, conditions, "users");
+
+                assertThat(conditions).noneMatch(c -> c.contains("salary"));
+                assertThat(conditions).anyMatch(c -> c.contains("\"id\""));
+            } finally {
+                io.github.excalibase.security.RlsContext.clear();
+            }
+        }
+
+        @Test
+        @DisplayName("order by a HIDDEN column is dropped")
+        void orderByHiddenColumn_dropped() {
+            installMasker();
+            try {
+                Field field = parseField("{ users(orderBy: { salary: DESC, id: ASC }) { id } }");
+                StringBuilder sql = new StringBuilder("SELECT * FROM users t");
+
+                filterBuilder.applyOrderBy(sql, field, "t", "users");
+
+                assertThat(sql.toString()).doesNotContain("salary");
+                assertThat(sql.toString()).contains("\"id\"");
+            } finally {
+                io.github.excalibase.security.RlsContext.clear();
+            }
+        }
+
+        @Test
+        @DisplayName("parseOrderBy drops HIDDEN column from cursor order")
+        void parseOrderBy_dropsHiddenColumn() {
+            installMasker();
+            try {
+                Field field = parseField("{ users(orderBy: { salary: DESC, id: ASC }) { id } }");
+
+                List<String[]> pairs = filterBuilder.parseOrderBy(field, "users");
+
+                assertThat(pairs).noneMatch(p -> p[0].equals("salary"));
+                assertThat(pairs).anyMatch(p -> p[0].equals("id"));
+            } finally {
+                io.github.excalibase.security.RlsContext.clear();
+            }
+        }
+    }
 }

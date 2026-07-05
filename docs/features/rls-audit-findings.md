@@ -10,7 +10,7 @@ correlation on compiled paths. Gaps below, severity-first.
 | C1 | CRITICAL | REST reads apply **no column masking** — HIDE/NULL columns returned in full over `GET /{p}/api/v1/{table}` (list/singular/CSV/cursor/embed) | ✅ |
 | C2 | CRITICAL | GraphQL WS subscriptions apply **neither row-filter nor column-mask** — subscriber gets every user's events | ✅ |
 | H3 | HIGH | Realtime WS subscriptions mask columns but **don't filter rows** | ✅ |
-| H4 | HIGH | Hidden/masked columns remain **filterable & orderable** (inference oracle) — GraphQL + REST | ⬜ |
+| H4 | HIGH | Hidden/masked columns remain **filterable & orderable** (inference oracle) — GraphQL + REST | ✅ |
 | H5 | HIGH | Nested-FK **child inserts bypass WITH-CHECK** (GraphQL `buildChildInsertCte`) | ⬜ |
 | H6 | HIGH | **Upsert / ON CONFLICT DO UPDATE has no USING** — can overwrite another owner's row (REST + GraphQL) | ⬜ |
 | M7 | MEDIUM | GraphQL nested-embed **relationship/EXISTS correlation broken under aliasing** (`appendNestedRls` passes alias=null) | ⬜ |
