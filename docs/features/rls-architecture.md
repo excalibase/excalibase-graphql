@@ -75,8 +75,8 @@ RLS must apply on **every** data path, not just GraphQL. Status:
 | GraphQL mutation (insert/update/delete)| ✅ (coupling)     | ✅ `RlsContext.rowCheck()` |
 | REST `GET /{table}` + `totalCount`     | ✅                | n/a |
 | REST embeds `?select=*,fk(*)`          | ✅                | n/a |
-| REST `PATCH`/`DELETE`                  | ✅ (where + coupling) | ❌ new-image not validated |
-| REST `POST` (insert)                   | n/a               | ❌ no WITH-CHECK — can insert policy-violating rows |
+| REST `PATCH`/`DELETE`                  | ✅ (where + coupling) | ✅ `RowCheckContributor` (new image) |
+| REST `POST` (insert / bulk / upsert)   | n/a               | ✅ `RowCheckContributor` (each candidate row) |
 | REST `POST /rpc/{fn}` (stored proc)    | ⚠️ auth required (no anon when `jwt-enabled`); no in-function row filter | ⚠️ author's responsibility |
 | Realtime WS subscriptions              | ❌ no per-row RLS (EXC-19) | n/a |
 
@@ -93,8 +93,11 @@ inside a function is the author's responsibility. Planned enhancement: for
 functions returning `SETOF <table>`, wrap the call and apply that table's engine
 RLS to the output (needs return-type introspection + a rows-returning handler).
 
-**Remaining gaps**, fix order: REST insert/update WITH-CHECK → RPC `SETOF`-table
-output wrapping → realtime per-row RLS.
+REST writes now enforce WITH-CHECK via the same `RowCheckContributor` the
+GraphQL mutation path uses (insert: each candidate row; update: the new image).
+
+**Remaining gaps**, fix order: RPC `SETOF`-table output wrapping → realtime
+per-row RLS.
 
 ## Engine capabilities (Postgres-RLS parity)
 

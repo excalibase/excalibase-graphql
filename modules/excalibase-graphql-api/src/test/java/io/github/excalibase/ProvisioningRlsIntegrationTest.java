@@ -31,6 +31,7 @@ import java.util.Map;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -331,6 +332,38 @@ class ProvisioningRlsIntegrationTest {
                         .header("Content-Profile", "rls_demo")
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void rest_insertWithCheck_rejectsForeignOwner() throws Exception {
+        // WITH-CHECK: alice cannot insert a row owned by bob.
+        mockMvc.perform(post("/" + PROJECT + "/api/v1/docs")
+                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void rest_insertWithCheck_allowsOwnRow() throws Exception {
+        // tx=rollback: verify WITH-CHECK passes (own row allowed) without
+        // persisting into the shared container (would skew the read-count tests).
+        mockMvc.perform(post("/" + PROJECT + "/api/v1/docs")
+                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
+                        .header("Prefer", "tx=rollback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\": 92, \"owner_id\": \"" + ALICE + "\", \"title\": \"x\"}"))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void rest_updateWithCheck_rejectsReassignToAnotherOwner() throws Exception {
+        // WITH-CHECK: alice cannot reassign her doc to bob.
+        mockMvc.perform(patch("/" + PROJECT + "/api/v1/docs?id=eq.1")
+                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"owner_id\": \"" + BOB + "\"}"))
+                .andExpect(status().isForbidden());
     }
 
     private String body(String query) throws Exception {

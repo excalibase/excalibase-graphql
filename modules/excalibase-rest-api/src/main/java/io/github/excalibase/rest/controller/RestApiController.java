@@ -9,6 +9,9 @@ import io.github.excalibase.rest.parser.SelectParser;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaProvider;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.RowCheckContributor;
 import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Pattern;
@@ -158,6 +161,11 @@ public class RestApiController {
         if (ctx == null) return notFound();
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
 
+        // RLS WITH-CHECK: the candidate row(s) must satisfy the caller's INSERT
+        // policy — else they could insert rows they'd never be allowed to read.
+        ResponseEntity<Object> insertViolation = checkInsertRows(ctx.tableKey(), body);
+        if (insertViolation != null) return insertViolation;
+
         RestQueryCompiler.CompiledResult compiled = switch (body) {
             case List<?> list -> ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list);
             case Map<?, ?> map -> {
@@ -257,9 +265,39 @@ public class RestApiController {
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "At least one filter is required"));
 
+        // RLS WITH-CHECK: the new image (SET columns) must keep the row within the
+        // caller's UPDATE policy — e.g. can't reassign owner_id to someone else.
+        RowCheckContributor check = RlsContext.rowCheck();
+        if (check != null && !check.permitsUpdate(ctx.tableKey(), body)) {
+            return rlsViolation("UPDATE", table);
+        }
+
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
         Integer maxAffected = parseMaxAffected(prefer);
         return executeDml(ctx.compiler().compileUpdate(ctx.tableKey(), body, filters), rollback, maxAffected, prefer, HttpStatus.OK, null);
+    }
+
+    /** RLS WITH-CHECK for insert: rejects any candidate row the caller's INSERT
+     *  policy forbids. Handles both single-object and bulk-array bodies. No-op
+     *  when no row-check contributor is registered (auth off / no policy). */
+    @SuppressWarnings("unchecked")
+    private ResponseEntity<Object> checkInsertRows(String tableKey, Object body) {
+        RowCheckContributor check = RlsContext.rowCheck();
+        if (check == null) return null;
+        List<Map<String, Object>> rows = switch (body) {
+            case Map<?, ?> m -> List.of((Map<String, Object>) m);
+            case List<?> list -> (List<Map<String, Object>>) list;
+            default -> List.of();
+        };
+        for (Map<String, Object> row : rows) {
+            if (!check.permits(tableKey, row, RlsOp.INSERT)) return rlsViolation("INSERT", tableKey);
+        }
+        return null;
+    }
+
+    private static ResponseEntity<Object> rlsViolation(String op, String table) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of(KEY_ERROR, "Row violates row-level security policy for " + op + " on " + table));
     }
 
 
