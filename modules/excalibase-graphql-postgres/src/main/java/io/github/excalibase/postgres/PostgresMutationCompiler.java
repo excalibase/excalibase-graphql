@@ -219,8 +219,14 @@ public class PostgresMutationCompiler implements MutationCompiler {
             rowVals.add(alias + DOT + shared.dialect().quoteIdentifier(refCol));
             for (String col : dataCols) {
                 String paramName = namedParam(P_NESTED_INSERT, col + "_" + i, params.size());
-                params.put(paramName, row.get(col));
-                rowVals.add(param(paramName));
+                // Cast + convert each child value exactly like the top-level insert.
+                // The child CTE is INSERT ... SELECT, where a bare bind param is
+                // typed as varchar — without the cast, a uuid/enum/jsonb/etc. child
+                // column rejects it ("is of type X but expression is of type
+                // character varying").
+                String enumCast = shared.getEnumCastForMutation(childTable, col);
+                params.put(paramName, shared.convertCompositeValue(childTable, col, row.get(col)));
+                rowVals.add(param(paramName) + enumCast);
             }
             selectRows.add(SELECT + joinCols(rowVals) + FROM + alias);
         }

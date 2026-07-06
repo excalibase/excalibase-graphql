@@ -260,11 +260,18 @@ class EngineRlsMutationIntegrationTest {
                 .andExpect(jsonPath("$.data.createRlsDemoShelf").doesNotExist());
     }
 
-    // Note: the allow-path (own-owned child) is exercised by the shared
-    // requireRowAllowed helper the top-level insert_ownRow_succeeds already
-    // covers; a nested happy-path assertion here is blocked by a separate,
-    // pre-existing nested-insert type-cast limitation (UUID child columns bind
-    // as varchar in the child CTE) unrelated to this WITH-CHECK.
+    @Test
+    void nestedInsert_childRowOwnedBySelf_succeeds() throws Exception {
+        // Alice creates a shelf with a nested book she owns: the child WITH-CHECK
+        // passes, and the child CTE casts the uuid owner_id param (regression for the
+        // nested-insert type-cast bug — a bare bind is varchar in INSERT ... SELECT).
+        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook()));
+        mutate(ALICE, "mutation { createRlsDemoShelf(input: { id: 501, name: \"s2\", "
+                + "rlsDemoBook: { data: [ { id: 901, owner_id: \"" + ALICE + "\", title: \"ok\" } ] } }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.createRlsDemoShelf.id").value("501"));
+    }
 
     private static String buildJwks(ECPublicKey key) {
         com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(

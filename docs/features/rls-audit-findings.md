@@ -23,13 +23,15 @@ Priority order to fix: **C1 → C2/H3 → H4 → H5 → H6 → M7 → M8**.
 
 **Status: C1, C2, H3, H4, H5, H6, M7, M8 all fixed** (each with a regression test).
 Remaining: L9/L10 (low — group assignments, empty-rule ALLOW consistency); L11
-accepted. The nested-insert UUID-cast bug below is functional, not a security gap.
+accepted. The adjacent nested-insert type-cast bug (functional, not security) is
+also fixed.
 
-### Adjacent (non-security) issue surfaced while fixing H5
+### Adjacent (non-security) issue surfaced while fixing H5 — FIXED
 
-Nested-FK **child inserts don't cast UUID/typed columns** — the child CTE binds
-data-column params as `varchar`, so a nested insert into a child table with a
-`uuid` (or enum) column fails with *"column X is of type uuid but expression is
-of type character varying"*. Pre-existing, not a security gap; the top-level and
-bulk insert paths apply `getEnumCastForMutation` but `buildChildInsertCte` does
-not. Fix: thread the same enum/type cast into the child SELECT value list.
+Nested-FK **child inserts didn't cast UUID/typed columns** — the child CTE bound
+data-column params as `varchar` (a bare bind is `varchar` in `INSERT … SELECT`),
+so a nested insert into a child table with a `uuid`/enum/jsonb column failed with
+*"column X is of type uuid but expression is of type character varying"*.
+`buildChildInsertCte` now applies `getEnumCastForMutation` + `convertCompositeValue`
+to each child value, exactly like the top-level and bulk insert paths. Covered by
+`nestedInsert_childRowOwnedBySelf_succeeds`.
