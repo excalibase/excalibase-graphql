@@ -505,7 +505,7 @@ benchmark-dev: benchmark-build benchmark-up ## Start enterprise benchmark servic
 	@echo ""
 	@echo "$(GREEN)🚀 Enterprise benchmark environment ready!$(NC)"
 	@echo ""
-	@echo "$(BLUE)GraphQL API:$(NC) http://localhost:10002/graphql"
+	@echo "$(BLUE)GraphQL API:$(NC) http://localhost:10002/benchmark/graphql"
 	@echo "$(BLUE)PostgreSQL:$(NC)  localhost:5434"
 	@echo ""
 	@echo "$(YELLOW)To run benchmark tests:$(NC) make benchmark-test-only"
@@ -563,7 +563,7 @@ benchmark-wait-ready: ## Wait for enterprise benchmark services to be ready
 	@sleep 5
 	@echo "$(BLUE)🔄 Waiting for database health check and application startup...$(NC)"
 	@for i in $$(seq 1 150); do \
-		if curl -s --connect-timeout 5 http://localhost:10002/graphql > /dev/null 2>&1; then \
+		if curl -s --connect-timeout 5 -X POST http://localhost:10002/benchmark/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q '"data"'; then \
 			echo "$(GREEN)✓ Enterprise GraphQL API ready with full dataset!$(NC)"; \
 			break; \
 		fi; \
