@@ -204,7 +204,7 @@ Charlie has only 10.00 — the procedure rejects the transfer and no balances ch
 ```js
 import { gql, GraphQLClient } from 'graphql-request';
 
-const client = new GraphQLClient('http://localhost:10000/graphql');
+const client = new GraphQLClient('http://localhost:10000/{projectId}/graphql');
 
 async function transferFunds(fromId, toId, amount) {
   const data = await client.request(gql`

@@ -1,11 +1,13 @@
 const { GraphQLClient, gql } = require('graphql-request');
 const { waitForApi } = require('./client');
 
-const GRAPHQL_URL = process.env.SC_GRAPHQL_URL || 'http://localhost:10004/graphql';
-const AUTH_URL = process.env.SC_AUTH_URL || 'http://localhost:24004/auth';
-const REST_URL = GRAPHQL_URL.replace('/graphql', '/api/v1');
-
+// Routes are project-scoped: /{projectId}/graphql and /{projectId}/api/v1. The
+// token's projectId claim is the projectName segment, so the path must match it.
 const PROJECT = { orgSlug: 'study-cases', projectName: 'clinic' };
+const SC_BASE = (process.env.SC_GRAPHQL_URL || 'http://localhost:10004/graphql').replace(/\/graphql$/, '');
+const AUTH_URL = process.env.SC_AUTH_URL || 'http://localhost:24004/auth';
+const GRAPHQL_URL = `${SC_BASE}/${PROJECT.projectName}/graphql`;
+const REST_URL = `${SC_BASE}/${PROJECT.projectName}/api/v1`;
 const TEST_USER = { email: 'clinician@example.com', password: 'Pass123!', fullName: 'E2E Clinician' };
 
 let token;

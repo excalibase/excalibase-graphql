@@ -28,7 +28,15 @@ public final class OpenApiGenerator {
             "version", "1.0.0",
             K_DESCRIPTION, "Auto-generated from database schema"
         ));
-        spec.put("servers", List.of(Map.of("url", "/api/v1")));
+        // Routes are project-scoped: /{projectId}/api/v1/{table}. Expose the project
+        // as an OpenAPI server variable so generated clients target the real path.
+        spec.put("servers", List.of(Map.of(
+            "url", "/{projectId}/api/v1",
+            "variables", Map.of("projectId", Map.of(
+                "default", "your-project-id",
+                K_DESCRIPTION, "Project identifier — the single path segment your token is scoped to"
+            ))
+        )));
 
         Map<String, Object> paths = new LinkedHashMap<>();
         Map<String, Object> schemas = new LinkedHashMap<>();

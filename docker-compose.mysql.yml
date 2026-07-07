@@ -140,7 +140,7 @@ services:
     ports:
       - "20001:80"
     environment:
-      GRAPHQL_ENDPOINT: http://localhost:10001/graphql
+      GRAPHQL_ENDPOINT: http://localhost:10001/e2e-test/graphql
       GRAPHQL_WS_ENDPOINT: http://localhost:10001/graphql
     depends_on:
       - excalibase-app

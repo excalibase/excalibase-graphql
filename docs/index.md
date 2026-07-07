@@ -7,6 +7,12 @@ project. Not sure? See [Choose Your Protocol →](choose-your-protocol.md).
 
 ## The same query, two ways
 
+> **Routes are project-scoped.** Every endpoint begins with your `{projectId}` —
+> `POST /{projectId}/graphql` and `GET /{projectId}/api/v1/{table}` — the single
+> path segment your access token is scoped to. The examples below omit the
+> `/{projectId}` prefix for brevity; prepend it to every path. There is no
+> unscoped route.
+
 **GraphQL:**
 
 ```graphql
@@ -192,7 +198,7 @@ Send a JWT — Excalibase verifies it and sets the `userId` claim as a
 PostgreSQL session variable so RLS policies filter rows automatically:
 
 ```http
-POST /graphql
+POST /{projectId}/graphql
 Authorization: Bearer eyJhbGciOiJFUzI1NiJ9...
 ```
 

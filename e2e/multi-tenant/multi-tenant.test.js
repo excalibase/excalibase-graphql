@@ -1,11 +1,16 @@
 const { GraphQLClient, gql } = require('graphql-request');
 const { waitForApi } = require('../client');
 
-const GRAPHQL_URL = process.env.MT_GRAPHQL_URL || 'http://localhost:10003/graphql';
+// Routes are project-scoped: /{projectId}/graphql, where projectId is the
+// projectName segment (the vault keys credentials under projects/{projectName}).
+// Each tenant therefore has its own scoped endpoint.
+const MT_BASE = (process.env.MT_GRAPHQL_URL || 'http://localhost:10003/graphql').replace(/\/graphql$/, '');
 const AUTH_URL = process.env.MT_AUTH_URL || 'http://localhost:24003/auth';
 
 const TENANT_A = { orgSlug: 'acme-corp', projectName: 'app-a' };
 const TENANT_B = { orgSlug: 'beta-inc', projectName: 'app-b' };
+
+const graphqlUrlFor = (tenant) => `${MT_BASE}/${tenant.projectName}/graphql`;
 
 let clientA, clientB;
 let tokenA, tokenB;
@@ -51,7 +56,7 @@ beforeAll(async () => {
   // Wait for both services in parallel
   await Promise.all([
     waitForAuth(),
-    waitForApi(GRAPHQL_URL, { maxRetries: 30, delayMs: 3000 }),
+    waitForApi(graphqlUrlFor(TENANT_A), { maxRetries: 30, delayMs: 3000 }),
   ]);
 
   // Register + login on both tenants in parallel
@@ -60,10 +65,10 @@ beforeAll(async () => {
     registerAndLogin(TENANT_B, 'bob@beta.com', 'Pass123!', 'Bob B'),
   ]);
 
-  clientA = new GraphQLClient(GRAPHQL_URL, {
+  clientA = new GraphQLClient(graphqlUrlFor(TENANT_A), {
     headers: { Authorization: `Bearer ${tokenA}` },
   });
-  clientB = new GraphQLClient(GRAPHQL_URL, {
+  clientB = new GraphQLClient(graphqlUrlFor(TENANT_B), {
     headers: { Authorization: `Bearer ${tokenB}` },
   });
 });
