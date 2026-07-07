@@ -206,7 +206,8 @@ describe('Postgres CDC subscriptions', () => {
 
 // ─── MySQL CDC Subscriptions ─────────────────────────────────────────────────
 
-const MYSQL_API = process.env.MYSQL_API_URL || 'http://localhost:10001/graphql';
+const MYSQL_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
+const MYSQL_API = `${(process.env.MYSQL_API_URL || 'http://localhost:10001/graphql').replace(/\/graphql$/, '')}/${MYSQL_PROJECT}/graphql`;
 const MYSQL_WS = process.env.MYSQL_WS_URL || 'ws://localhost:10001/graphql';
 
 const MYSQL_CUSTOMER_SUBSCRIPTION = `

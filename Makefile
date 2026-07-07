@@ -125,7 +125,7 @@ mysql-up: ## Start MySQL Docker services
 mysql-wait-ready: ## Wait for MySQL GraphQL API to be ready
 	@echo "$(BLUE)⏳ Waiting for MySQL services...$(NC)"
 	@for i in $$(seq 1 40); do \
-		if curl -s -X POST http://localhost:$(MYSQL_API_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data\|error"; then \
+		if curl -s -X POST http://localhost:$(MYSQL_API_PORT)/e2e-test/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q '"data"'; then \
 			echo "$(GREEN)✓ MySQL GraphQL API ready$(NC)"; \
 			break; \
 		fi; \
