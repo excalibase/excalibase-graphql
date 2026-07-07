@@ -194,7 +194,7 @@ multi-tenant-test: ## Run multi-tenant e2e tests
 multi-tenant-wait-ready:
 	@echo "$(BLUE)⏳ Waiting for multi-tenant services...$(NC)"
 	@for i in $$(seq 1 30); do \
-		if curl -s -X POST http://localhost:$(MT_API_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data\|error"; then \
+		if curl -s -X POST http://localhost:$(MT_API_PORT)/app-a/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q '"data"'; then \
 			echo "$(GREEN)✓ Multi-tenant GraphQL API ready$(NC)"; \
 			break; \
 		fi; \
@@ -245,7 +245,7 @@ study-cases-test: ## Run study-cases e2e tests
 study-cases-wait-ready:
 	@echo "$(BLUE)⏳ Waiting for study-cases services...$(NC)"
 	@for i in $$(seq 1 40); do \
-		if curl -s -X POST http://localhost:$(SC_API_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data\|errors\|Unauthorized\|401"; then \
+		if curl -s -X POST http://localhost:$(SC_API_PORT)/shopify/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q '"data"'; then \
 			echo "$(GREEN)✓ Study-cases GraphQL API ready$(NC)"; \
 			break; \
 		fi; \
