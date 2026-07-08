@@ -33,6 +33,8 @@ apply, so it could not enforce RLS; such routes simply don't exist.
 | Provisioning  | `/provision/{projectId}/rls-policies/`  |
 | **GraphQL**   | `/{projectId}/graphql`                  |
 | **REST**      | `/{projectId}/api/v1/{table}`           |
+| **GraphQL WS**| `/{projectId}/graphql` (upgrade)        |
+| **Realtime WS**| `/{projectId}/api/v1/realtime` (upgrade)|
 
 `projectId` is a single opaque segment (e.g. `proj-237qoqksdb`).
 
@@ -144,9 +146,14 @@ form, so that behaviour is unchanged.
   which equals the token's `projectId`) — the unscoped routes are gone, so a
   client that calls `/graphql` or `/api/v1` now gets a 404. Auth/functions
   already build project-scoped URLs.
-- **WebSocket subscriptions** still upgrade at `/graphql` (separate handler) —
-  per-row RLS + column masking are now enforced there, but the endpoint is not
-  yet project-scoped in the URL; project comes from the JWT tenant claim.
+- **WebSocket subscriptions** now upgrade at the project-scoped
+  `/{projectId}/graphql` and `/{projectId}/api/v1/realtime`. The project is read
+  from the URL path (authoritative for RLS, like the HTTP filter) via
+  `ProjectPathHandshakeInterceptor`; a token whose project disagrees with the
+  path is rejected. The CDC *sink* tenant (which NATS subject the events come
+  from) is a separate axis — it stays derived from the token/`tenant-in-subject`
+  mode, so single-tenant (`null` tenant) and multi-tenant (`cdc.{project}`)
+  routing are both unaffected.
 - **OpenAPI** `servers[].url` still emits `/api/v1` (cosmetic) — should reflect
   the scoped base.
 - **Missing custom claim**: currently throws (typo protection). Postgres

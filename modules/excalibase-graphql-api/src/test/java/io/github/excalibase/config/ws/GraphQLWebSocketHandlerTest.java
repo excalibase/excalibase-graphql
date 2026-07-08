@@ -74,7 +74,11 @@ class GraphQLWebSocketHandlerTest {
         when(session.getId()).thenReturn("gql-session-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
         Map<String, Object> attrs = new ConcurrentHashMap<>();
-        if (projectId != null) attrs.put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, projectId);
+        if (projectId != null) {
+            attrs.put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, projectId);
+            // The handshake interceptor sets the path project; RLS reads it.
+            attrs.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, projectId);
+        }
         if (claims != null) attrs.put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
         when(session.getAttributes()).thenReturn(attrs);
         doAnswer(invocation -> {

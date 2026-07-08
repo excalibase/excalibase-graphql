@@ -58,6 +58,13 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
                 reject(response, "JWT missing projectId claim");
                 return false;
             }
+            // The project is in the URL path (authoritative). A token for another
+            // project cannot open this stream — mirrors the HTTP filter's 403.
+            String pathProject = WsProjectPath.projectId(request.getURI().getPath());
+            if (pathProject != null && !pathProject.equals(tenantId)) {
+                reject(response, "Token project does not match the request path");
+                return false;
+            }
             attributes.put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, tenantId);
             attributes.put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
             log.info("WS handshake authenticated via Authorization header for tenant '{}'", tenantId);

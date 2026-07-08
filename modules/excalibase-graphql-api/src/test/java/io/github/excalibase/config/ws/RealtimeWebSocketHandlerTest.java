@@ -192,6 +192,7 @@ class RealtimeWebSocketHandlerTest {
 
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
                 io.github.excalibase.security.JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com"));
         masking.afterConnectionEstablished(session);
@@ -225,6 +226,7 @@ class RealtimeWebSocketHandlerTest {
 
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
                 io.github.excalibase.security.JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com"));
         filtered.afterConnectionEstablished(session);

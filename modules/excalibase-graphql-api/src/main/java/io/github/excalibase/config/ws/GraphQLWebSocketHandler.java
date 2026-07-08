@@ -49,6 +49,8 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     static final String SESSION_TENANT_KEY = "excalibase.tenantId";
     /** Verified JWT claims for the session — used by realtime column masking. */
     static final String SESSION_CLAIMS_KEY = "excalibase.jwtClaims";
+    /** Project from the URL path — authoritative for RLS (mirrors the HTTP filter). */
+    static final String SESSION_PROJECT_KEY = "excalibase.projectId";
 
     /** Sentinel: the CDC row must not be delivered to this subscriber under RLS. */
     private static final Object RLS_DROP = new Object();
@@ -152,6 +154,12 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                     String tenantId = tenantIdFromClaims(claims);
                     if (tenantId == null) {
                         closeWithAuthError(session, "JWT missing projectId claim");
+                        return;
+                    }
+                    String pathProject = (String) session.getAttributes().get(SESSION_PROJECT_KEY);
+                    if (pathProject != null && !pathProject.equals(tenantId)) {
+                        // A token cannot reach another project's stream (mirrors the HTTP 403).
+                        closeWithAuthError(session, "Token project does not match the request path");
                         return;
                     }
                     session.getAttributes().put(SESSION_TENANT_KEY, tenantId);
@@ -296,9 +304,9 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         Object parsed = parseEventData(event.data());
         if (rlsEnforcer == null || !(parsed instanceof Map)) return parsed;
         JwtClaims claims = (JwtClaims) session.getAttributes().get(SESSION_CLAIMS_KEY);
-        String projectId = claims != null
-                ? claims.projectId()
-                : (String) session.getAttributes().get(SESSION_TENANT_KEY);
+        // Project comes from the URL path (authoritative), like the HTTP filter;
+        // claims supply the user context (anonymous when absent → fail-closed).
+        String projectId = (String) session.getAttributes().get(SESSION_PROJECT_KEY);
         if (projectId == null) return parsed;
         Map<String, Object> row = (Map<String, Object>) parsed;
         String resource = resourceOf(event);

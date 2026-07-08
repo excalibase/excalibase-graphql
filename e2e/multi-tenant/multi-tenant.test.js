@@ -174,17 +174,25 @@ describe('Mutations on tenant databases', () => {
 const WebSocket = require('ws');
 const { execSync } = require('child_process');
 
-const WS_URL = process.env.MT_GRAPHQL_WS_URL || 'ws://localhost:10003/graphql';
+// WS upgrade is project-scoped too: /{projectId}/graphql, and the token's project
+// must match the path (a token can't open another project's stream).
+const MT_WS_BASE = (process.env.MT_GRAPHQL_WS_URL || 'ws://localhost:10003/graphql').replace(/\/graphql$/, '');
+const wsUrlFor = (tenant) => `${MT_WS_BASE}/${tenant.projectName}/graphql`;
 
 function psqlOn(container, db, sql) {
   const cmd = `docker exec ${container} psql -U postgres -d ${db} -c "${sql.replace(/"/g, '\\"')}"`;
   return execSync(cmd, { encoding: 'utf-8' });
 }
 
+/** projectId claim out of a JWT payload — the WS path must match it. */
+function projectIdOf(token) {
+  return JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).projectId;
+}
+
 function subscribeWithJwt(token, subscriptionQuery) {
   const events = [];
   const connectionErrors = [];
-  const ws = new WebSocket(WS_URL, 'graphql-transport-ws');
+  const ws = new WebSocket(`${MT_WS_BASE}/${projectIdOf(token)}/graphql`, 'graphql-transport-ws');
 
   const ready = new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('WS subscription timeout')), 15000);
@@ -247,7 +255,7 @@ describe('CDC subscription isolation (per-tenant watcher-go → NATS → WS)', (
   });
 
   test('WS connection_init without token is rejected (jwt-enabled=true)', async () => {
-    const ws = new WebSocket(WS_URL, 'graphql-transport-ws');
+    const ws = new WebSocket(wsUrlFor(TENANT_A), 'graphql-transport-ws');
     const outcome = await new Promise((resolve) => {
       const events = [];
       ws.on('open', () => ws.send(JSON.stringify({ type: 'connection_init' })));

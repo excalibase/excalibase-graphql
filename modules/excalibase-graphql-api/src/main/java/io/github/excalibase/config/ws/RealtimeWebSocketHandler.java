@@ -176,6 +176,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                 JwtClaims claims = jwtService.verify(token);
                 String tenantId = GraphQLWebSocketHandler.tenantIdFromClaims(claims);
                 if (tenantId != null) {
+                    String pathProject = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
+                    if (pathProject != null && !pathProject.equals(tenantId)) {
+                        closeWithAuthError(session, "Token project does not match the request path");
+                        return;
+                    }
                     session.getAttributes().put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, tenantId);
                     session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
                     log.info("Realtime session {} authenticated via connection_init for tenant '{}'",
@@ -268,11 +273,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
      */
     private Object maskDoc(WebSocketSession session, String resource, JsonNode doc) {
         JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
-        if (rlsEnforcer == null || claims == null || claims.projectId() == null) {
+        // Project from the URL path is authoritative (claims give the user context;
+        // anonymous when absent → owner/claim column policies mask fail-closed).
+        String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
+        if (rlsEnforcer == null || projectId == null) {
             return doc;
         }
         Map<String, Object> row = objectMapper.convertValue(doc, new TypeReference<>() {});
-        return rlsEnforcer.maskRow(claims.projectId(), resource, claims, Operation.SELECT, row);
+        return rlsEnforcer.maskRow(projectId, resource, claims, Operation.SELECT, row);
     }
 
     /**
@@ -284,9 +292,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
      */
     private boolean permitsRow(WebSocketSession session, String resource, JsonNode doc) {
         JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
-        String projectId = claims != null
-                ? claims.projectId()
-                : (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY);
+        String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
         if (rlsEnforcer == null || projectId == null) return true;
         Map<String, Object> row = objectMapper.convertValue(doc, new TypeReference<>() {});
         try {

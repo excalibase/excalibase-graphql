@@ -24,7 +24,7 @@ const {
 // scoped yet (subscriptions still upgrade at /graphql).
 const PG_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
 const PG_API = `${(process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql').replace(/\/graphql$/, '')}/${PG_PROJECT}/graphql`;
-const PG_WS = process.env.POSTGRES_WS_URL || 'ws://localhost:10000/graphql';
+const PG_WS = process.env.POSTGRES_WS_URL || `ws://localhost:10000/${PG_PROJECT}/graphql`;
 
 const CUSTOMER_SUBSCRIPTION = `
   subscription {
@@ -208,7 +208,7 @@ describe('Postgres CDC subscriptions', () => {
 
 const MYSQL_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
 const MYSQL_API = `${(process.env.MYSQL_API_URL || 'http://localhost:10001/graphql').replace(/\/graphql$/, '')}/${MYSQL_PROJECT}/graphql`;
-const MYSQL_WS = process.env.MYSQL_WS_URL || 'ws://localhost:10001/graphql';
+const MYSQL_WS = process.env.MYSQL_WS_URL || `ws://localhost:10001/${MYSQL_PROJECT}/graphql`;
 
 const MYSQL_CUSTOMER_SUBSCRIPTION = `
   subscription {
