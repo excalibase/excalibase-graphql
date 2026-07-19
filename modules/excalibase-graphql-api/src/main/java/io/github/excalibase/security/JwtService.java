@@ -1,5 +1,6 @@
 package io.github.excalibase.security;
 
+import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
@@ -40,6 +41,11 @@ public class JwtService {
     // HMAC mode
     private final byte[] hmacSecret;
 
+    // Expected token issuer (iss). null = don't validate (back-compat / standalone).
+    // When set, a token whose `iss` claim differs is rejected — stops tokens minted
+    // by a different issuer whose key happens to be trusted.
+    private String expectedIssuer;
+
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------
@@ -77,6 +83,16 @@ public class JwtService {
         this.hmacSecret = null;
     }
 
+    /**
+     * Sets the issuer this service will accept. When non-blank, {@link #verify}
+     * rejects any token whose {@code iss} claim differs. Fluent so config can do
+     * {@code new JwtService(url, ttl).expectedIssuer(cfg)}.
+     */
+    public JwtService expectedIssuer(String issuer) {
+        this.expectedIssuer = (issuer != null && !issuer.isBlank()) ? issuer : null;
+        return this;
+    }
+
     // -------------------------------------------------------------------------
     // Verify
     // -------------------------------------------------------------------------
@@ -108,6 +124,12 @@ public class JwtService {
             Date notBefore = claims.getNotBeforeTime();
             if (notBefore != null && new Date().before(notBefore)) {
                 throw new JwtVerificationException("JWT token not yet valid");
+            }
+
+            // Issuer binding — reject tokens from a different issuer whose signing
+            // key happens to be in our trust set. Enforced only when configured.
+            if (expectedIssuer != null && !expectedIssuer.equals(claims.getIssuer())) {
+                throw new JwtVerificationException("JWT issuer not accepted");
             }
 
             String userId = extractUserId(claims);
@@ -151,12 +173,17 @@ public class JwtService {
     // -------------------------------------------------------------------------
 
     private void verifyHmac(SignedJWT jwt) throws JwtVerificationException, com.nimbusds.jose.JOSEException {
+        // Pin HS256 — never let the token header pick the algorithm.
+        requireAlg(jwt, JWSAlgorithm.HS256);
         if (!jwt.verify(new MACVerifier(hmacSecret))) {
             throw new JwtVerificationException("JWT signature verification failed");
         }
     }
 
     private void verifyEc(SignedJWT jwt) throws JwtVerificationException, com.nimbusds.jose.JOSEException {
+        // Pin ES256 explicitly. ECDSAVerifier otherwise accepts ES384/ES512/ES256K,
+        // and this closes any header-driven algorithm ambiguity ("alg confusion").
+        requireAlg(jwt, JWSAlgorithm.ES256);
         List<ECPublicKey> keys = getKeys();
         for (ECPublicKey key : keys) {
             if (jwt.verify(new ECDSAVerifier(key))) {
@@ -164,6 +191,14 @@ public class JwtService {
             }
         }
         throw new JwtVerificationException("JWT signature verification failed");
+    }
+
+    /** Rejects a token whose JWS header algorithm isn't exactly {@code expected}. */
+    private static void requireAlg(SignedJWT jwt, JWSAlgorithm expected) throws JwtVerificationException {
+        if (!expected.equals(jwt.getHeader().getAlgorithm())) {
+            throw new JwtVerificationException(
+                    "Unexpected JWS algorithm: " + jwt.getHeader().getAlgorithm() + " (require " + expected + ")");
+        }
     }
 
     private String extractUserId(JWTClaimsSet claims) {

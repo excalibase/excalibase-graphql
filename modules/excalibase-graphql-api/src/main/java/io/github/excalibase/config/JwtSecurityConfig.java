@@ -44,10 +44,10 @@ public class JwtSecurityConfig {
         }
 
         if (hasJwks) {
-            return new JwtService(auth.jwksUrl(), ttlMinutes);
+            return new JwtService(auth.jwksUrl(), ttlMinutes).expectedIssuer(auth.issuer());
         }
 
-        return new JwtService(auth.hmacSecret());
+        return new JwtService(auth.hmacSecret()).expectedIssuer(auth.issuer());
     }
 
     /**

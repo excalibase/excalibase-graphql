@@ -35,7 +35,8 @@ public record SecurityProperties(
     public record Auth(
             String jwksUrl,
             String hmacSecret,
-            String jwksTtlMinutes
+            String jwksTtlMinutes,
+            String issuer
     ) {
         public boolean hasJwksUrl() {
             return jwksUrl != null && !jwksUrl.isBlank();
