@@ -174,7 +174,8 @@ class ProvisioningPolicyProviderTest {
     @Test
     @DisplayName("unknown partialSpec kind is rejected")
     void unknownPartialSpecKindThrows() {
-        assertThatThrownBy(() -> provider(60_000).columnPoliciesFor("proj3"))
+        ProvisioningPolicyProvider provider = provider(60_000);
+        assertThatThrownBy(() -> provider.columnPoliciesFor("proj3"))
                 .isInstanceOf(PolicyFetchException.class);
     }
 

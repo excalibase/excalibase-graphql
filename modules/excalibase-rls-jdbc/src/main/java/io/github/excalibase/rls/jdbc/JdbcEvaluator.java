@@ -107,7 +107,8 @@ public class JdbcEvaluator {
         // Reference used to correlate EXISTS subqueries back to the outer table.
         // The compiler aliases tables (already-quoted alias), so prefer that;
         // else quote the bare table name for un-aliased callers.
-        String outerRef = (outerAlias != null && !outerAlias.isBlank())
+        boolean hasAlias = outerAlias != null && !outerAlias.isBlank();
+        String outerRef = hasAlias
             ? outerAlias
             : quote(SqlIdentifier.checkColumn(unqualified(resource)));
 
@@ -116,7 +117,7 @@ public class JdbcEvaluator {
         // the caller supplies an explicit alias, qualify with it so the predicate is
         // safe in contexts where a bare column would be ambiguous — notably
         // ON CONFLICT ... DO UPDATE WHERE, where EXCLUDED shares the column name.
-        String scalarPrefix = (outerAlias != null && !outerAlias.isBlank()) ? outerAlias + "." : "";
+        String scalarPrefix = hasAlias ? outerAlias + "." : "";
 
         List<String> allowSqls = new ArrayList<>();
         List<String> denySqls = new ArrayList<>();

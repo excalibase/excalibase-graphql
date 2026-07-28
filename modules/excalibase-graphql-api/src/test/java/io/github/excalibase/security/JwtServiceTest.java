@@ -184,7 +184,8 @@ class JwtServiceTest {
         SignedJWT hs = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.HS256).build(), claims);
         hs.sign(new MACSigner("0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
 
-        assertThrows(JwtVerificationException.class, () -> jwtService.verify(hs.serialize()));
+        String hsToken = hs.serialize();
+        assertThrows(JwtVerificationException.class, () -> jwtService.verify(hsToken));
     }
 
     @Test

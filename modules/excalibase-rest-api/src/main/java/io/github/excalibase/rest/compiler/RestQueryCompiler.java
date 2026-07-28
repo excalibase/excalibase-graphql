@@ -96,12 +96,7 @@ public class RestQueryCompiler {
 
         StringBuilder where = buildWhere(filters, P_FILTER, params, query.table());
         appendOrConditions(where, query.orConditions(), knownCols, params, query.table());
-        if (query.afterCursor() != null && query.orderColumn() != null
-                && knownCols.contains(query.orderColumn()) && readable(query.table(), query.orderColumn())) {
-            if (!where.isEmpty()) where.append(AND);
-            params.put(P_AFTER, convertValue(query.afterCursor(), query.table(), query.orderColumn()));
-            where.append(dialect.quoteIdentifier(query.orderColumn())).append(GT).append(PARAM_PREFIX).append(P_AFTER);
-        }
+        appendAfterCursor(where, query, knownCols, params);
 
         // RLS: filter rows the caller may not read (the inner SELECT aliases the
         // table as ALIAS, so relationship/EXISTS predicates correlate to it).
@@ -390,11 +385,20 @@ public class RestQueryCompiler {
     }
 
     /**
-     * JSON object key/value entries for {@code cols} of {@code table}, applying
-     * column-level security (CLS): a HIDDEN column is dropped from the response,
-     * a NULLED column is emitted as {@code 'col', NULL}. Mirrors the GraphQL
-     * masking in {@code QueryBuilder} so REST doesn't leak protected columns.
+     * Keyset-pagination predicate ({@code orderColumn > afterCursor}). Skipped when
+     * the cursor/column is absent, unknown, or masked — a masked column must not be
+     * usable as a cursor (that would leak its ordering).
      */
+    private void appendAfterCursor(StringBuilder where, SelectQuery query,
+                                   Set<String> knownCols, Map<String, Object> params) {
+        String col = query.orderColumn();
+        if (query.afterCursor() == null || col == null) return;
+        if (!knownCols.contains(col) || !readable(query.table(), col)) return;
+        if (!where.isEmpty()) where.append(AND);
+        params.put(P_AFTER, convertValue(query.afterCursor(), query.table(), col));
+        where.append(dialect.quoteIdentifier(col)).append(GT).append(PARAM_PREFIX).append(P_AFTER);
+    }
+
     /**
      * True iff the column may be read by the current caller, i.e. no active
      * column mask hides or nulls it. Masked columns are excluded from WHERE,
@@ -407,6 +411,12 @@ public class RestQueryCompiler {
         return masker.decide(table, column) == ColumnMaskContributor.Decision.VISIBLE;
     }
 
+    /**
+     * JSON object key/value entries for {@code cols} of {@code table}, applying
+     * column-level security (CLS): a HIDDEN column is dropped from the response,
+     * a NULLED column is emitted as {@code 'col', NULL}. Mirrors the GraphQL
+     * masking in {@code QueryBuilder} so REST doesn't leak protected columns.
+     */
     private List<String> maskedJsonEntries(String table, java.util.Collection<String> cols, String alias) {
         ColumnMaskContributor masker = RlsContext.columnMask();
         List<String> entries = new ArrayList<>();

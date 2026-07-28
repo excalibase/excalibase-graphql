@@ -9,7 +9,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
 import java.sql.CallableStatement;
@@ -32,7 +32,7 @@ import java.util.regex.Pattern;
  *       MySQL / Mongo or single-tenant Postgres with no JWT. No transaction.</li>
  * </ul>
  */
-@Component
+@Service
 public class QueryExecutionService {
 
     /** Only allows quoted identifiers like "schema"."proc_name" or schema.`proc_name` */

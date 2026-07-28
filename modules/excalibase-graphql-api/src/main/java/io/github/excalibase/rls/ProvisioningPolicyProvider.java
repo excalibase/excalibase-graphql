@@ -110,10 +110,10 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
                         "provisioning returned HTTP " + response.statusCode() + " for " + path);
             }
             return parser.apply(mapper.readTree(response.body()));
-        } catch (java.io.IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PolicyFetchException("failed to fetch policies from " + path, e);
+        } catch (java.io.IOException e) {
             throw new PolicyFetchException("failed to fetch policies from " + path, e);
         }
     }

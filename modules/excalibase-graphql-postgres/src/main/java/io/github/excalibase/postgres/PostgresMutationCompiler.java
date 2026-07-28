@@ -404,24 +404,31 @@ public class PostgresMutationCompiler implements MutationCompiler {
                 }
             }
         }
-        if (constraint != null && !updateCols.isEmpty()) {
-            String clause = " " + shared.dialect().onConflict(List.of(constraint), updateCols);
-            // RLS USING for the conflict path: DO UPDATE can overwrite a pre-existing
-            // row, so gate it with the caller's UPDATE policy — an upsert on a known
-            // key must not silently overwrite another owner's row. Columns are
-            // qualified with the target relation name because a bare column in
-            // ON CONFLICT ... WHERE is ambiguous with EXCLUDED.
-            List<String> usingConds = new ArrayList<>();
-            String targetRef = tableName.contains(".")
-                    ? tableName.substring(tableName.lastIndexOf('.') + 1) : tableName;
-            shared.filterBuilder().appendRlsConditions(usingConds, tableName,
-                    shared.dialect().quoteIdentifier(targetRef), params, RlsOp.UPDATE);
-            if (!usingConds.isEmpty()) {
-                clause += WHERE + String.join(AND, usingConds);
-            }
-            return clause;
+        if (constraint == null || updateCols.isEmpty()) {
+            return "";
         }
-        return "";
+        return buildOnConflictClause(shared, params, tableName, constraint, updateCols);
+    }
+
+    /**
+     * {@code ON CONFLICT … DO UPDATE SET …} plus the RLS USING gate. DO UPDATE can
+     * overwrite a pre-existing row, so it's gated by the caller's UPDATE policy —
+     * an upsert on a known key must not silently overwrite another owner's row.
+     * Columns are qualified with the target relation name because a bare column in
+     * {@code ON CONFLICT … WHERE} is ambiguous with {@code EXCLUDED}.
+     */
+    private String buildOnConflictClause(MutationBuilder shared, Map<String, Object> params,
+                                         String tableName, String constraint, List<String> updateCols) {
+        String clause = " " + shared.dialect().onConflict(List.of(constraint), updateCols);
+        String targetRef = tableName.contains(".")
+                ? tableName.substring(tableName.lastIndexOf('.') + 1) : tableName;
+        List<String> usingConds = new ArrayList<>();
+        shared.filterBuilder().appendRlsConditions(usingConds, tableName,
+                shared.dialect().quoteIdentifier(targetRef), params, RlsOp.UPDATE);
+        if (!usingConds.isEmpty()) {
+            clause += WHERE + String.join(AND, usingConds);
+        }
+        return clause;
     }
 
     private int parseAtMost(Field field, Map<String, Object> variables, MutationBuilder shared) {

@@ -108,29 +108,7 @@ public class JwtService {
             }
 
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
-
-            // Require exp claim for user session tokens; API-key tokens (scope=api-key) may omit.
-            Date expiration = claims.getExpirationTime();
-            Object scopeClaim = claims.getClaim("scope");
-            boolean isApiKey = "api-key".equals(scopeClaim);
-            if (expiration == null && !isApiKey) {
-                throw new JwtVerificationException("JWT missing required 'exp' claim");
-            }
-            if (expiration != null && new Date().after(expiration)) {
-                throw new JwtVerificationException("JWT token expired");
-            }
-
-            // Reject pre-dated tokens (nbf: not-before).
-            Date notBefore = claims.getNotBeforeTime();
-            if (notBefore != null && new Date().before(notBefore)) {
-                throw new JwtVerificationException("JWT token not yet valid");
-            }
-
-            // Issuer binding — reject tokens from a different issuer whose signing
-            // key happens to be in our trust set. Enforced only when configured.
-            if (expectedIssuer != null && !expectedIssuer.equals(claims.getIssuer())) {
-                throw new JwtVerificationException("JWT issuer not accepted");
-            }
+            validateTemporalAndIssuer(claims);
 
             String userId = extractUserId(claims);
             String projectId = (String) claims.getClaim("projectId");
@@ -171,6 +149,30 @@ public class JwtService {
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Validates the time window ({@code exp}, {@code nbf}) and issuer binding.
+     * API-key tokens ({@code scope=api-key}) are allowed to omit {@code exp};
+     * the issuer check applies only when an expected issuer is configured.
+     */
+    private void validateTemporalAndIssuer(JWTClaimsSet claims) throws JwtVerificationException {
+        Date expiration = claims.getExpirationTime();
+        boolean isApiKey = "api-key".equals(claims.getClaim("scope"));
+        if (expiration == null && !isApiKey) {
+            throw new JwtVerificationException("JWT missing required 'exp' claim");
+        }
+        if (expiration != null && new Date().after(expiration)) {
+            throw new JwtVerificationException("JWT token expired");
+        }
+        Date notBefore = claims.getNotBeforeTime();
+        if (notBefore != null && new Date().before(notBefore)) {
+            throw new JwtVerificationException("JWT token not yet valid");
+        }
+        // Reject a token from another issuer whose signing key is in our trust set.
+        if (expectedIssuer != null && !expectedIssuer.equals(claims.getIssuer())) {
+            throw new JwtVerificationException("JWT issuer not accepted");
+        }
+    }
 
     private void verifyHmac(SignedJWT jwt) throws JwtVerificationException, com.nimbusds.jose.JOSEException {
         // Pin HS256 — never let the token header pick the algorithm.

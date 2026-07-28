@@ -30,6 +30,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -207,10 +208,10 @@ class QueryExecutionServiceTest {
     }
 
     private Connection mockConn() {
-        return org.mockito.Mockito.mock(Connection.class);
+        return mock(Connection.class);
     }
 
     private CallableStatement mockCs() {
-        return org.mockito.Mockito.mock(CallableStatement.class);
+        return mock(CallableStatement.class);
     }
 }

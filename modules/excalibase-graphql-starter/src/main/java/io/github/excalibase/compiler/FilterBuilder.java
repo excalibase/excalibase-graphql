@@ -170,12 +170,11 @@ public class FilterBuilder {
     public void buildFilterConditions(ObjectValue ov, String alias, Map<String, Object> params, List<String> conditions, String tableName) {
         for (ObjectField of : ov.getObjectFields()) {
             if (applyLogicalOperator(of, alias, params, conditions, tableName)) continue;
-            if (of.getValue() instanceof ObjectValue filterObj) {
-                // Column-level security: a column the caller can't read (HIDE or
-                // NULL-mask) must not be filterable — otherwise a predicate like
-                // `salary: { gt: 100000 }` is a value-inference oracle. Drop it,
-                // matching how unknown columns are silently ignored.
-                if (!isReadable(tableName, of.getName())) continue;
+            // Column-level security: a column the caller can't read (HIDE or
+            // NULL-mask) must not be filterable — otherwise a predicate like
+            // `salary: { gt: 100000 }` is a value-inference oracle. Drop it,
+            // matching how unknown columns are silently ignored.
+            if (of.getValue() instanceof ObjectValue filterObj && isReadable(tableName, of.getName())) {
                 applyColumnFilter(of.getName(), filterObj, alias, params, conditions, tableName);
             }
         }

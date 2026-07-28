@@ -82,8 +82,7 @@ public class RowMatcher {
         // columns are unchanged and already validated by USING).
         boolean anyAllowGovernsChange = false;
         for (Policy p : applicable) {
-            if (p.effect() != PolicyEffect.ALLOW) continue;
-            if (!referencesAnyChangedColumn(p, changedRow)) continue;
+            if (p.effect() != PolicyEffect.ALLOW || !referencesAnyChangedColumn(p, changedRow)) continue;
             anyAllowGovernsChange = true;
             if (matchesPresentRules(p, changedRow, resolver)) return true;
         }

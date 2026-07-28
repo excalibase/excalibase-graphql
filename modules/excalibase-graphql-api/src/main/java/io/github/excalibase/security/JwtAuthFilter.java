@@ -51,8 +51,11 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             writeError(response, HttpServletResponse.SC_FORBIDDEN, "URL project does not match token project");
             return;
         }
-        String projectId = pathProjectId != null ? pathProjectId
-                : (claims != null ? claims.projectId() : null);
+        // Path wins (it is authoritative); fall back to the token's project.
+        String projectId = pathProjectId;
+        if (projectId == null && claims != null) {
+            projectId = claims.projectId();
+        }
 
         try {
             applyTenantContext(projectId, claims);
