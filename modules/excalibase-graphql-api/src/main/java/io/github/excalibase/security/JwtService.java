@@ -185,6 +185,10 @@ public class JwtService {
         // and this closes any header-driven algorithm ambiguity ("alg confusion").
         requireAlg(jwt, JWSAlgorithm.ES256);
         List<ECPublicKey> keys = getKeys();
+        // Fail closed on an empty/absent key set — never fall through to "verified".
+        if (keys == null || keys.isEmpty()) {
+            throw new JwtVerificationException("No JWKS verification keys available");
+        }
         for (ECPublicKey key : keys) {
             if (jwt.verify(new ECDSAVerifier(key))) {
                 return;
