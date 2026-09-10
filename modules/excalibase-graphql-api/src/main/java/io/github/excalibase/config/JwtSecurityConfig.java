@@ -2,6 +2,7 @@ package io.github.excalibase.config;
 
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
+import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.rls.PolicyProvider;
 import io.github.excalibase.rls.ProvisioningPolicyProvider;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
@@ -84,6 +85,20 @@ public class JwtSecurityConfig {
     @Bean
     public JwtAuthFilter jwtAuthFilter(JwtService jwtService, RlsPolicyEnforcer rlsPolicyEnforcer) {
         return new JwtAuthFilter(jwtService, rlsPolicyEnforcer);
+    }
+
+    /**
+     * Invalidates a project's cached policies on a NATS {@code policies.{id}.changed}
+     * signal from provisioning, so Studio edits converge immediately rather than
+     * waiting out the policy-cache TTL (which stays as the fail-safe). Enablement is
+     * read at runtime from {@code app.nats.enabled}; disabled = safe no-op.
+     */
+    @Bean
+    public PolicyChangeSubscriber policyChangeSubscriber(
+            PolicyProvider policyProvider,
+            @Value("${app.nats.enabled:false}") boolean natsEnabled,
+            @Value("${app.nats.url:nats://localhost:4222}") String natsUrl) {
+        return new PolicyChangeSubscriber(policyProvider, natsEnabled, natsUrl);
     }
 
     // Multi-tenant beans — only when provisioning-url is configured
