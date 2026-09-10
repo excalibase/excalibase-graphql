@@ -67,14 +67,11 @@ management:
       probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
 
 app:
-  schemas: ${APP_SCHEMAS:public}
   database-type: postgres
   max-rows: 30
-  max-query-depth: 0
+  max-query-depth: 15  # Reject queries nested beyond this depth (0 = unlimited)
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
-    role-privileges-ttl-minutes: 30  # Role privileges cache TTL in minutes (default: 30 minutes)
-    graphql-ttl-minutes: 30  # GraphQL cache TTL in minutes (default: 30 minutes)
   security:
     jwt-enabled: ${JWT_ENABLED:false}
     auth:
@@ -89,17 +86,6 @@ app:
     stream-name: CDC  # JetStream stream name
     subject-prefix: cdc  # Subject prefix (events on cdc.{schema}.{table})
     tenant-in-subject: false  # When true, subject shape is cdc.{tenantId}.{schema}.{table} (multi-tenant)
-
-# GraphQL Security Configuration - Production Defaults
-# Based on GraphQL.org security recommendations and OWASP guidelines
-graphql:
-  security:
-    max-query-depth: 20       # Prevent deeply nested queries (default: 20)
-    max-query-complexity: 10000 # Prevent expensive operations (default: 1000)
-    max-query-tokens: 5000    # Prevent parser DoS (default: 5000)
-    max-query-characters: 50000 # 50KB query size limit (default: 50KB)
-    max-whitespace-tokens: 10000
-    max-rule-depth: 50
 logging:
   level:
     root: ${log.level.root:info}

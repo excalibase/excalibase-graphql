@@ -1072,4 +1072,29 @@ class SqlCompilerIntegrationTest {
                 .andExpect(jsonPath("$.data.bravo", hasSize(1)))
                 .andExpect(jsonPath("$.data.bravo[0].customer_id").value(2));
     }
+
+    // === Query-depth DoS guard (app.max-query-depth unset -> default 15 applies) ===
+
+    @Test
+    @Order(300)
+    void deeplyNestedQueryRejectedByDefaultDepthLimit() throws Exception {
+        // The test profile leaves app.max-query-depth unset, so the wired default (15) applies.
+        // A query nested beyond 15 levels must return a clear GraphQL error, not a 500.
+        StringBuilder sb = new StringBuilder("{ ");
+        int depth = 20;
+        for (int i = 0; i < depth - 1; i++) {
+            sb.append("f").append(i).append(" { ");
+        }
+        sb.append("f").append(depth - 1);
+        for (int i = 0; i < depth - 1; i++) {
+            sb.append(" }");
+        }
+        String tooDeep = sb.append(" }").toString();
+
+        mockMvc.perform(post("/test-proj/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql(tooDeep)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].message", containsString("exceeds maximum allowed depth of 15")));
+    }
 }
