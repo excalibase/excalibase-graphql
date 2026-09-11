@@ -47,6 +47,84 @@ public class RowMatcher {
     }
 
     /**
+     * WITH-CHECK for an UPDATE's partial new image — {@code changedRow} holds
+     * only the columns the caller is setting, not the full post-update row.
+     *
+     * <p>Native RLS evaluates WITH-CHECK over the complete new row; here we only
+     * have the changed columns, so we enforce the half we can prove: a changed
+     * column whose new value violates a policy is rejected. Rules that reference
+     * columns the caller did not touch are treated as still satisfied, because
+     * the UPDATE's USING predicate already validated the pre-update row for
+     * those columns — this keeps legitimate partial updates working while still
+     * blocking the real attack (reassigning an ownership/tenant column out of
+     * policy). DENY policies veto on any changed value they match.
+     *
+     * @return {@code true} if the changed image is permitted (or no UPDATE
+     *         policy exists for the resource); {@code false} if it must be rejected
+     */
+    public boolean matchesUpdate(String resource, Map<String, Object> changedRow, UserContext ctx) {
+        VariableResolver resolver = new VariableResolver(ctx);
+        List<Policy> applicable = inScope(resource, ctx, Operation.UPDATE);
+
+        for (Policy p : applicable) {
+            if (p.effect() == PolicyEffect.DENY
+                    && referencesAnyChangedColumn(p, changedRow)
+                    && matchesPresentRules(p, changedRow, resolver)) {
+                return false;
+            }
+        }
+
+        if (!rlsEnabledFor(resource, Operation.UPDATE)) return true;
+
+        // The new image is permitted unless a changed column it actually sets
+        // violates every ALLOW policy that governs that column. An ALLOW that
+        // does not reference any changed column imposes no constraint here (its
+        // columns are unchanged and already validated by USING).
+        boolean anyAllowGovernsChange = false;
+        for (Policy p : applicable) {
+            if (p.effect() != PolicyEffect.ALLOW || !referencesAnyChangedColumn(p, changedRow)) continue;
+            anyAllowGovernsChange = true;
+            if (matchesPresentRules(p, changedRow, resolver)) return true;
+        }
+        return !anyAllowGovernsChange;
+    }
+
+    /** True if any of the policy's rules targets a column present in {@code changedRow}. */
+    private static boolean referencesAnyChangedColumn(Policy policy, Map<String, Object> changedRow) {
+        for (Rule r : policy.rules()) {
+            if (changedRow.containsKey(rootField(r.field()))) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Evaluates only the rules whose field is present in {@code changedRow},
+     * honouring the policy's AND/OR logic. Rules on absent (unchanged) columns
+     * are skipped — they are validated by the UPDATE's USING predicate, not here.
+     */
+    private static boolean matchesPresentRules(Policy policy, Map<String, Object> changedRow, VariableResolver resolver) {
+        List<Rule> present = policy.rules().stream()
+                .filter(r -> changedRow.containsKey(rootField(r.field())))
+                .toList();
+        if (present.isEmpty()) return true;
+        if (policy.ruleLogic() == LogicOperator.AND) {
+            for (Rule r : present) {
+                if (!matchesRule(r, changedRow, resolver)) return false;
+            }
+            return true;
+        }
+        for (Rule r : present) {
+            if (matchesRule(r, changedRow, resolver)) return true;
+        }
+        return false;
+    }
+
+    private static String rootField(String field) {
+        int dot = field.indexOf('.');
+        return dot < 0 ? field : field.substring(0, dot);
+    }
+
+    /**
      * True iff at least one enabled ALLOW policy targets this resource and
      * declares this operation in its {@code operations} set. The "RLS is on"
      * test from RFC 0001's composition rule; computed without reference to the
@@ -56,7 +134,7 @@ public class RowMatcher {
         for (Policy p : policies) {
             if (p.enabled()
                 && p.effect() == PolicyEffect.ALLOW
-                && p.resource().equals(resource)
+                && ResourceMatcher.matches(p.resource(), resource)
                 && p.appliesTo(op)) {
                 return true;
             }
@@ -70,7 +148,7 @@ public class RowMatcher {
         String userId = ctx.userId();
         return policies.stream()
             .filter(Policy::enabled)
-            .filter(p -> p.resource().equals(resource))
+            .filter(p -> ResourceMatcher.matches(p.resource(), resource))
             .filter(p -> p.appliesTo(op))
             .filter(p -> assignmentMatches(p, userId, roles, groups))
             .toList();
@@ -89,6 +167,16 @@ public class RowMatcher {
     }
 
     private static boolean matchesPolicy(Policy policy, Map<String, Object> row, VariableResolver resolver) {
+        if (!policy.relations().isEmpty()) {
+            // Relationship (EXISTS) predicates probe another table — the in-memory
+            // matcher has no database to probe. These are evaluated by the SQL
+            // query path (JdbcEvaluator); realtime relation evaluation needs a DB
+            // lookup and is a separate feature. Fail loud rather than silently
+            // grant or hide a row on an unevaluable predicate.
+            throw new UnsupportedOperationException(
+                "Policy '" + policy.name() + "' uses relationship predicates, which the in-memory "
+                    + "RowMatcher cannot evaluate; use the SQL query path (JdbcEvaluator).");
+        }
         if (policy.rules().isEmpty()) return true;
         if (policy.ruleLogic() == LogicOperator.AND) {
             for (Rule r : policy.rules()) {
@@ -113,10 +201,7 @@ public class RowMatcher {
             case NEQ -> !equalsCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType());
             case IN -> inCollection(rowVal, resolver.resolveList(rule.value(), rule.fieldType()), rule.fieldType());
             case NOT_IN -> !inCollection(rowVal, resolver.resolveList(rule.value(), rule.fieldType()), rule.fieldType());
-            case GT -> compareCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType()) > 0;
-            case GTE -> compareCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType()) >= 0;
-            case LT -> compareCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType()) < 0;
-            case LTE -> compareCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType()) <= 0;
+            case GT, GTE, LT, LTE -> compare(rowVal, rule, resolver);
             case LIKE -> matchesLike(rowVal, (String) resolver.resolve(rule.value(), FieldType.STRING));
             case NOT_LIKE -> !matchesLike(rowVal, (String) resolver.resolve(rule.value(), FieldType.STRING));
         };
@@ -149,14 +234,29 @@ public class RowMatcher {
         return false;
     }
 
+    /**
+     * GT/GTE/LT/LTE with SQL three-valued logic: a comparison involving NULL
+     * yields NULL, so the row is excluded (returns {@code false}) — it never
+     * throws. This keeps the in-memory matcher in lockstep with the emitted SQL
+     * (and native Postgres), which simply drop the row.
+     */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static int compareCoerced(Object rowVal, Object policyVal, FieldType fieldType) {
-        if (rowVal == null || policyVal == null) {
-            throw new IllegalArgumentException("comparison operators require non-null operands");
-        }
-        Comparable left = (Comparable) coerce(rowVal, fieldType);
-        Comparable right = (Comparable) coerce(policyVal, fieldType);
-        return left.compareTo(right);
+    private static boolean compare(Object rowVal, Rule rule, VariableResolver resolver) {
+        Object policyVal = resolver.resolve(rule.value(), rule.fieldType());
+        if (rowVal == null || policyVal == null) return false;
+        Comparable left = (Comparable) coerce(rowVal, rule.fieldType());
+        Comparable right = (Comparable) coerce(policyVal, rule.fieldType());
+        // Coercion can yield null for an unparseable value → uncomparable, so the
+        // row is excluded (SQL three-valued logic) rather than throwing on compareTo.
+        if (left == null || right == null) return false;
+        int c = left.compareTo(right);
+        return switch (rule.operator()) {
+            case GT -> c > 0;
+            case GTE -> c >= 0;
+            case LT -> c < 0;
+            case LTE -> c <= 0;
+            default -> throw new IllegalStateException("compare() called for non-comparison operator " + rule.operator());
+        };
     }
 
     private static boolean matchesLike(Object rowVal, String pattern) {

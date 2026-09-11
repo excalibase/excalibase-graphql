@@ -1,6 +1,7 @@
 package io.github.excalibase;
 
 import io.github.excalibase.compiler.SqlCompiler;
+import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.mysql.MysqlDialect;
 import io.github.excalibase.mysql.MysqlSchemaLoader;
 import io.github.excalibase.postgres.PostgresDialect;
@@ -99,5 +100,49 @@ class SqlEngineFactoryTest {
         schema.addPrimaryKey("customer", "customer_id");
         SqlCompiler compiler = new SqlCompiler(schema, "test", 30, engine.dialect(), engine.mutationCompiler(), 5);
         assertDoesNotThrow(() -> compiler.compile("{ customer { customer_id } }"));
+    }
+
+    // === Default query-depth limit (app.max-query-depth unset -> DEFAULT_MAX_QUERY_DEPTH) ===
+
+    @Test
+    void defaultDepthLimitIsFifteen() {
+        assertEquals(15, GraphqlSchemaManager.DEFAULT_MAX_QUERY_DEPTH);
+    }
+
+    @Test
+    void defaultDepthRejectsQueryDeeperThanLimit() {
+        SqlEngine engine = SqlEngineFactory.create("postgres");
+        SqlCompiler compiler = new SqlCompiler(new SchemaInfo(), "test", 30,
+                engine.dialect(), engine.mutationCompiler(), GraphqlSchemaManager.DEFAULT_MAX_QUERY_DEPTH);
+        String tooDeep = nestedQuery(GraphqlSchemaManager.DEFAULT_MAX_QUERY_DEPTH + 1);
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(tooDeep));
+        assertTrue(ex.getMessage().contains("exceeds maximum allowed depth"));
+    }
+
+    @Test
+    void defaultDepthAllowsQueryAtLimit() {
+        SqlEngine engine = SqlEngineFactory.create("postgres");
+        SqlCompiler compiler = new SqlCompiler(new SchemaInfo(), "test", 30,
+                engine.dialect(), engine.mutationCompiler(), GraphqlSchemaManager.DEFAULT_MAX_QUERY_DEPTH);
+        String atLimit = nestedQuery(GraphqlSchemaManager.DEFAULT_MAX_QUERY_DEPTH);
+        // The depth gate must pass at the limit; the unknown-field failure against an
+        // empty schema proves the query got past the depth check rather than being rejected for depth.
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(atLimit));
+        assertFalse(ex.getMessage().contains("exceeds maximum allowed depth"));
+    }
+
+    /** Builds a query nested exactly {@code depth} selection-set levels deep: {@code { f0 { f1 { f2 } } }} is depth 3. */
+    private static String nestedQuery(int depth) {
+        StringBuilder sb = new StringBuilder("{ ");
+        for (int i = 0; i < depth - 1; i++) {
+            sb.append("f").append(i).append(" { ");
+        }
+        sb.append("f").append(depth - 1);
+        for (int i = 0; i < depth - 1; i++) {
+            sb.append(" }");
+        }
+        return sb.append(" }").toString();
     }
 }

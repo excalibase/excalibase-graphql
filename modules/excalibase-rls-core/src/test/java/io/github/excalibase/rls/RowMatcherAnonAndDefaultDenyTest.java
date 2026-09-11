@@ -72,7 +72,7 @@ class RowMatcherAnonAndDefaultDenyTest {
     @Test
     @DisplayName("anon CAN see rows when an ALLOW assigned to 'anon' grants it explicitly")
     void anon_allowed_whenPolicyExplicitlyTargetsAnon() {
-        // The way to give anon read access (mirroring Supabase's "public_posts" pattern):
+        // The way to give anon read access (the public-read pattern):
         // an explicit ALLOW assigned to the "anon" role with the row condition.
         Policy publicReadable = new Policy(
             UUID.randomUUID().toString(), "public posts readable by anon", "posts",

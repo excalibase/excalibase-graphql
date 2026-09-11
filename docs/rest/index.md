@@ -8,23 +8,27 @@ for the decision guide.
 
 ## Endpoint shape
 
+Every route is **project-scoped** — it starts with your `{projectId}`, the single
+path segment your access token is issued for (there is no unscoped route):
+
 ```
-GET    /api/v1/{table}         # list
-GET    /api/v1/{table}/{id}    # single row (if PK is a single column)
-POST   /api/v1/{table}         # create
-PATCH  /api/v1/{table}?col=eq.val   # update rows matching the filter
-PUT    /api/v1/{table}?col=eq.val   # replace
-DELETE /api/v1/{table}?col=eq.val   # delete rows matching the filter
+GET    /{projectId}/api/v1/{table}         # list
+GET    /{projectId}/api/v1/{table}/{id}    # single row (if PK is a single column)
+POST   /{projectId}/api/v1/{table}         # create
+PATCH  /{projectId}/api/v1/{table}?col=eq.val   # update rows matching the filter
+PUT    /{projectId}/api/v1/{table}?col=eq.val   # replace
+DELETE /{projectId}/api/v1/{table}?col=eq.val   # delete rows matching the filter
 ```
 
-The `/{table}` segment is the raw Postgres table name (snake_case, not the
+Examples below drop the `/{projectId}` prefix for brevity — prepend it to every
+path. The `/{table}` segment is the raw Postgres table name (snake_case, not the
 PascalCase GraphQL type). Compare:
 
 | GraphQL field | REST path |
 |---|---|
-| `kanbanIssues` | `/api/v1/issues` + `Accept-Profile: kanban` |
-| `shopifyCustomers` | `/api/v1/customers` + `Accept-Profile: shopify` |
-| `clinicPatients` | `/api/v1/patients` + `Accept-Profile: clinic` |
+| `kanbanIssues` | `/{projectId}/api/v1/issues` + `Accept-Profile: kanban` |
+| `shopifyCustomers` | `/{projectId}/api/v1/customers` + `Accept-Profile: shopify` |
+| `clinicPatients` | `/{projectId}/api/v1/patients` + `Accept-Profile: clinic` |
 
 ## Multi-schema routing
 

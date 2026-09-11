@@ -4,14 +4,14 @@ Excalibase GraphQL generates a full GraphQL API from your database schema — no
 
 ## Choose Your Backend
 
-**PostgreSQL** — full feature set (http://localhost:10000/graphql):
+**PostgreSQL** — full feature set (http://localhost:10000/{projectId}/graphql):
 ```bash
 docker-compose up -d
 # Starts: postgres + nats + excalibase-watcher + excalibase-graphql + graphiql
 ```
 JSON/JSONB, arrays, network types, composite types, domain types, views, materialized views, stored procedures, computed fields, real-time subscriptions (via [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS), Row-Level Security.
 
-**MySQL** — (http://localhost:10001/graphql):
+**MySQL** — (http://localhost:10001/{projectId}/graphql):
 ```bash
 docker-compose -f docker-compose.mysql.yml up -d
 ```

@@ -176,6 +176,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                 JwtClaims claims = jwtService.verify(token);
                 String tenantId = GraphQLWebSocketHandler.tenantIdFromClaims(claims);
                 if (tenantId != null) {
+                    String pathProject = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
+                    if (pathProject != null && !pathProject.equals(tenantId)) {
+                        closeWithAuthError(session, "Token project does not match the request path");
+                        return;
+                    }
                     session.getAttributes().put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, tenantId);
                     session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
                     log.info("Realtime session {} authenticated via connection_init for tenant '{}'",
@@ -241,9 +246,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
 
         // Filter matching runs on the raw row (a masked column must not change
-        // which events the subscriber receives), then column-level security
-        // masks the payload per subscriber before it leaves the server.
+        // which events the subscriber receives). Row-level security then decides
+        // whether this subscriber may see the row at all, and column-level
+        // security masks the payload per subscriber before it leaves the server.
         if (!matchesFilter(doc, filter)) return;
+        if (!permitsRow(session, resource, doc)) return;
         Object payloadDoc = maskDoc(session, resource, doc);
 
         try {
@@ -266,11 +273,33 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
      */
     private Object maskDoc(WebSocketSession session, String resource, JsonNode doc) {
         JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
-        if (rlsEnforcer == null || claims == null || claims.projectId() == null) {
+        // Project from the URL path is authoritative (claims give the user context;
+        // anonymous when absent → owner/claim column policies mask fail-closed).
+        String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
+        if (rlsEnforcer == null || projectId == null) {
             return doc;
         }
         Map<String, Object> row = objectMapper.convertValue(doc, new TypeReference<>() {});
-        return rlsEnforcer.maskRow(claims.projectId(), resource, claims, Operation.SELECT, row);
+        return rlsEnforcer.maskRow(projectId, resource, claims, Operation.SELECT, row);
+    }
+
+    /**
+     * Row-level security for a CDC event: {@code true} iff the subscriber may see
+     * this row. Public tables (no ALLOW policy) pass; owner/claim policies match
+     * only the subscriber's rows; relationship predicates the in-memory matcher
+     * can't evaluate fail closed. Falls through to {@code true} when no engine is
+     * wired or no project context is resolvable (single-tenant passthrough).
+     */
+    private boolean permitsRow(WebSocketSession session, String resource, JsonNode doc) {
+        JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
+        String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
+        if (rlsEnforcer == null || projectId == null) return true;
+        Map<String, Object> row = objectMapper.convertValue(doc, new TypeReference<>() {});
+        try {
+            return rlsEnforcer.permitsRow(projectId, resource, claims, Operation.SELECT, row);
+        } catch (UnsupportedOperationException relationshipPredicate) {
+            return false;
+        }
     }
 
     private boolean matchesFilter(JsonNode doc, Map<String, Object> filter) {

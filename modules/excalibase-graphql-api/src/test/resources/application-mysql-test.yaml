@@ -16,15 +16,6 @@ app:
   nats:
     enabled: false
 
-graphql:
-  security:
-    max-query-depth: 10
-    max-query-complexity: 1000
-    max-query-tokens: 5000
-    max-query-characters: 50000
-    max-whitespace-tokens: 5000
-    max-rule-depth: 30
-
 spring.graphql:
   graphiql:
     enabled: false

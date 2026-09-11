@@ -3,7 +3,9 @@ package io.github.excalibase.security;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.PlainJWT;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.*;
@@ -167,6 +169,59 @@ class JwtServiceTest {
     @Test
     void malformedToken_throws() {
         assertThrows(JwtVerificationException.class, () -> jwtService.verify("not.a.jwt"));
+    }
+
+    // ─── EXC-320: algorithm pinning + issuer binding ─────────────────────────────
+
+    @Test
+    void algConfusion_hs256Token_rejectedInEcMode() throws Exception {
+        // An attacker crafts an HS256 token (e.g. using the EC public key bytes as
+        // the HMAC secret). In EC mode the verifier must pin ES256 and reject it
+        // outright, never attempting HMAC verification.
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .claim("userId", 1).claim("projectId", "p")
+                .expirationTime(Date.from(Instant.now().plusSeconds(3600))).build();
+        SignedJWT hs = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.HS256).build(), claims);
+        hs.sign(new MACSigner("0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
+
+        String hsToken = hs.serialize();
+        assertThrows(JwtVerificationException.class, () -> jwtService.verify(hsToken));
+    }
+
+    @Test
+    void algNone_unsignedToken_rejected() {
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .claim("userId", 1).claim("projectId", "p")
+                .expirationTime(Date.from(Instant.now().plusSeconds(3600))).build();
+        String unsigned = new PlainJWT(claims).serialize(); // alg: none
+
+        assertThrows(JwtVerificationException.class, () -> jwtService.verify(unsigned));
+    }
+
+    @Test
+    void issuer_mismatchRejected_matchAccepted() throws Exception {
+        JwtService pinned = new JwtService(publicKey).expectedIssuer("excalibase");
+
+        String evil = signWithIssuer("evil-issuer");
+        assertThrows(JwtVerificationException.class, () -> pinned.verify(evil));
+
+        String good = signWithIssuer("excalibase");
+        assertEquals("p", pinned.verify(good).projectId());
+    }
+
+    @Test
+    void issuer_notConfigured_acceptsAnyIssuer() throws Exception {
+        // Back-compat: without expectedIssuer, iss isn't checked.
+        assertNotNull(jwtService.verify(signWithIssuer("whoever")));
+    }
+
+    private String signWithIssuer(String iss) throws Exception {
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .issuer(iss).claim("userId", 1).claim("projectId", "p").claim("role", "user")
+                .subject("a@b.com").expirationTime(Date.from(Instant.now().plusSeconds(3600))).build();
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+        signed.sign(new ECDSASigner(privateKey));
+        return signed.serialize();
     }
 
     // ─── Public Key Cache Tests ──────────────────────────────────────────────────

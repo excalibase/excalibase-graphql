@@ -78,7 +78,7 @@ public class QueryBuilder {
         // WHERE from arguments
         filterBuilder.applyWhere(sql, field, alias, params, tableName);
 
-        appendListOrderBy(sql, field, alias, distinctOnCols, vectorClause);
+        appendListOrderBy(sql, field, alias, tableName, distinctOnCols, vectorClause);
         appendListLimit(sql, field, params, vectorClause);
 
         sql.append(") ").append(alias);
@@ -86,7 +86,7 @@ public class QueryBuilder {
     }
 
     /** ORDER BY precedence: vector > distinctOn > user-supplied orderBy. */
-    private void appendListOrderBy(StringBuilder sql, Field field, String alias,
+    private void appendListOrderBy(StringBuilder sql, Field field, String alias, String tableName,
                                    List<String> distinctOnCols,
                                    Optional<VectorSearchBuilder.VectorClause> vectorClause) {
         if (vectorClause.isPresent()) {
@@ -94,7 +94,7 @@ public class QueryBuilder {
         } else if (!distinctOnCols.isEmpty()) {
             sql.append(ORDER_BY).append(joinCols(buildDistinctOnOrderClauses(field, alias, distinctOnCols)));
         } else {
-            filterBuilder.applyOrderBy(sql, field, alias);
+            filterBuilder.applyOrderBy(sql, field, alias, tableName);
         }
     }
 
@@ -209,7 +209,7 @@ public class QueryBuilder {
         PaginationArgs pagination = parsePaginationArgs(field);
 
         // Determine order columns (default: PK ASC)
-        List<String[]> orderCols = filterBuilder.parseOrderBy(field);
+        List<String[]> orderCols = filterBuilder.parseOrderBy(field, tableName);
         if (orderCols.isEmpty()) orderCols.add(new String[]{pk, ASC});
 
         boolean isForward = (pagination.last == null);
@@ -562,7 +562,7 @@ public class QueryBuilder {
             joinConds.add(subAlias + "." + dialect.quoteIdentifier(fk.refColumns().get(i))
                     + " = " + alias + "." + dialect.quoteIdentifier(fk.fkColumns().get(i)));
         }
-        appendNestedRls(joinConds, fk.refTable(), params);
+        appendNestedRls(joinConds, fk.refTable(), subAlias, params);
         return "'" + name + "', (" + SELECT + subObj
                 + FROM + qualifiedTable(fk.refTable()) + " " + subAlias
                 + WHERE + String.join(AND, joinConds) + ")";
@@ -578,7 +578,7 @@ public class QueryBuilder {
             joinConds.add(subAlias + "." + dialect.quoteIdentifier(rfk.fkColumns().get(i))
                     + " = " + alias + "." + dialect.quoteIdentifier(rfk.refColumns().get(i)));
         }
-        appendNestedRls(joinConds, rfk.childTable(), params);
+        appendNestedRls(joinConds, rfk.childTable(), subAlias, params);
         return "'" + name + "', (" + SELECT + dialect.coalesceArray(dialect.aggregateArray(subObj))
                 + FROM + qualifiedTable(rfk.childTable()) + " " + subAlias
                 + WHERE + String.join(AND, joinConds) + ")";
@@ -587,14 +587,17 @@ public class QueryBuilder {
     /**
      * Splices the related table's RLS predicate into a nested FK sub-select's
      * WHERE, so embedded relations are filtered on the same footing as top-level
-     * tables (EXC-315 multi-table threading). The engine's predicate references
-     * unqualified columns, which resolve to the sub-select's own table — the
-     * innermost scope in the correlated subquery. No-op without a live param map
+     * tables (EXC-315 multi-table threading). {@code subAlias} is the sub-select's
+     * own alias for the related table — passing it lets relationship/EXISTS
+     * predicates correlate back to the aliased table (a bare table-name reference
+     * would fail with <em>missing FROM-clause entry</em> under embed aliasing) and
+     * qualifies scalar rules to the same alias. No-op without a live param map
      * (nothing to bind into) or a registered contributor.
      */
-    private void appendNestedRls(List<String> joinConds, String relatedTable, Map<String, Object> params) {
+    private void appendNestedRls(List<String> joinConds, String relatedTable, String subAlias,
+                                 Map<String, Object> params) {
         if (params == null) return;
-        filterBuilder.appendRlsConditions(joinConds, relatedTable, params, RlsOp.SELECT);
+        filterBuilder.appendRlsConditions(joinConds, relatedTable, subAlias, params, RlsOp.SELECT);
     }
 
     private String buildComputedFieldPair(String tableName, String alias, String name) {

@@ -7,7 +7,7 @@ import java.util.Map;
  * clause during SQL compilation. Implemented in {@code excalibase-graphql-api}
  * (which owns the RLS engine dependency) and consulted by the compiler in
  * the starter module via {@link RlsContext} — dependency inversion keeps the
- * generic compiler free of any RLS-engine coupling, mirroring {@link RoleContext}.
+ * generic compiler free of any RLS-engine coupling.
  *
  * <p>The returned {@link Contribution} is already parameter-namespaced and
  * ready to splice: the compiler appends {@code (sql)} as one more WHERE
@@ -24,6 +24,19 @@ public interface RlsWhereContributor {
      * @return a ready-to-splice predicate, or {@code null} if unrestricted
      */
     Contribution contribute(String tableName, RlsOp op);
+
+    /**
+     * As {@link #contribute(String, RlsOp)}, but with the alias the compiler
+     * gave the outer table in its {@code FROM} clause. Relationship/EXISTS
+     * predicates must correlate their subquery back to that alias — once a table
+     * is aliased, its name no longer resolves. Default delegates to the
+     * alias-less form for implementations that emit no correlated subqueries.
+     *
+     * @param outerAlias the outer table's alias as it appears in the query
+     */
+    default Contribution contribute(String tableName, String outerAlias, RlsOp op) {
+        return contribute(tableName, op);
+    }
 
     /**
      * A self-contained WHERE predicate plus its bind parameters. The {@code sql}

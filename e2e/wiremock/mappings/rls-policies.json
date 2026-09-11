@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "urlPathPattern": "/api/provision/.*/rls-policies/"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "bodyFileName": "rls-policies-response.json"
+  }
+}

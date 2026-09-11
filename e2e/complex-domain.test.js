@@ -1,11 +1,14 @@
 const { GraphQLClient, gql } = require('graphql-request');
 const { waitForApi } = require('./client');
 
-const API_URL = process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql';
+// Routes are project-scoped: /{projectId}/graphql (the e2e project is 'e2e-test').
+const API_BASE = (process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql').replace(/\/graphql$/, '');
+const DATA_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
+const API_URL = `${API_BASE}/${DATA_PROJECT}/graphql`;
 let client;
 
 beforeAll(async () => {
-  await waitForApi(API_URL.replace('/graphql', ''));
+  await waitForApi(API_URL);
   client = new GraphQLClient(API_URL);
 });
 

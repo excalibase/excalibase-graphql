@@ -1,11 +1,16 @@
 const { GraphQLClient, gql } = require('graphql-request');
 const { waitForApi } = require('../client');
 
-const GRAPHQL_URL = process.env.MT_GRAPHQL_URL || 'http://localhost:10003/graphql';
+// Routes are project-scoped: /{projectId}/graphql, where projectId is the
+// projectName segment (the vault keys credentials under projects/{projectName}).
+// Each tenant therefore has its own scoped endpoint.
+const MT_BASE = (process.env.MT_GRAPHQL_URL || 'http://localhost:10003/graphql').replace(/\/graphql$/, '');
 const AUTH_URL = process.env.MT_AUTH_URL || 'http://localhost:24003/auth';
 
 const TENANT_A = { orgSlug: 'acme-corp', projectName: 'app-a' };
 const TENANT_B = { orgSlug: 'beta-inc', projectName: 'app-b' };
+
+const graphqlUrlFor = (tenant) => `${MT_BASE}/${tenant.projectName}/graphql`;
 
 let clientA, clientB;
 let tokenA, tokenB;
@@ -51,7 +56,7 @@ beforeAll(async () => {
   // Wait for both services in parallel
   await Promise.all([
     waitForAuth(),
-    waitForApi(GRAPHQL_URL, { maxRetries: 30, delayMs: 3000 }),
+    waitForApi(graphqlUrlFor(TENANT_A), { maxRetries: 30, delayMs: 3000 }),
   ]);
 
   // Register + login on both tenants in parallel
@@ -60,10 +65,10 @@ beforeAll(async () => {
     registerAndLogin(TENANT_B, 'bob@beta.com', 'Pass123!', 'Bob B'),
   ]);
 
-  clientA = new GraphQLClient(GRAPHQL_URL, {
+  clientA = new GraphQLClient(graphqlUrlFor(TENANT_A), {
     headers: { Authorization: `Bearer ${tokenA}` },
   });
-  clientB = new GraphQLClient(GRAPHQL_URL, {
+  clientB = new GraphQLClient(graphqlUrlFor(TENANT_B), {
     headers: { Authorization: `Bearer ${tokenB}` },
   });
 });
@@ -169,17 +174,25 @@ describe('Mutations on tenant databases', () => {
 const WebSocket = require('ws');
 const { execSync } = require('child_process');
 
-const WS_URL = process.env.MT_GRAPHQL_WS_URL || 'ws://localhost:10003/graphql';
+// WS upgrade is project-scoped too: /{projectId}/graphql, and the token's project
+// must match the path (a token can't open another project's stream).
+const MT_WS_BASE = (process.env.MT_GRAPHQL_WS_URL || 'ws://localhost:10003/graphql').replace(/\/graphql$/, '');
+const wsUrlFor = (tenant) => `${MT_WS_BASE}/${tenant.projectName}/graphql`;
 
 function psqlOn(container, db, sql) {
   const cmd = `docker exec ${container} psql -U postgres -d ${db} -c "${sql.replace(/"/g, '\\"')}"`;
   return execSync(cmd, { encoding: 'utf-8' });
 }
 
+/** projectId claim out of a JWT payload — the WS path must match it. */
+function projectIdOf(token) {
+  return JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).projectId;
+}
+
 function subscribeWithJwt(token, subscriptionQuery) {
   const events = [];
   const connectionErrors = [];
-  const ws = new WebSocket(WS_URL, 'graphql-transport-ws');
+  const ws = new WebSocket(`${MT_WS_BASE}/${projectIdOf(token)}/graphql`, 'graphql-transport-ws');
 
   const ready = new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('WS subscription timeout')), 15000);
@@ -242,7 +255,7 @@ describe('CDC subscription isolation (per-tenant watcher-go → NATS → WS)', (
   });
 
   test('WS connection_init without token is rejected (jwt-enabled=true)', async () => {
-    const ws = new WebSocket(WS_URL, 'graphql-transport-ws');
+    const ws = new WebSocket(wsUrlFor(TENANT_A), 'graphql-transport-ws');
     const outcome = await new Promise((resolve) => {
       const events = [];
       ws.on('open', () => ws.send(JSON.stringify({ type: 'connection_init' })));

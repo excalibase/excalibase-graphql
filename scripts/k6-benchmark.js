@@ -9,7 +9,8 @@ const queriesExecuted = new Counter('queries_executed');
 
 // Configuration
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:10002';
-const GRAPHQL_ENDPOINT = `${BASE_URL}/graphql`;
+// Routes are project-scoped: /{projectId}/graphql (benchmark app runs jwt-disabled).
+const GRAPHQL_ENDPOINT = `${BASE_URL}/${__ENV.BENCH_PROJECT || 'benchmark'}/graphql`;
 
 // Test scenarios - configure load profile
 export const options = {

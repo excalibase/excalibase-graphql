@@ -26,14 +26,14 @@ public class VariableResolver {
 
     public Object resolve(String value, FieldType fieldType) {
         if (value == null) return null;
-        if (isVariable(value)) return resolveVariable(unwrap(value));
+        if (isVariable(value)) return resolveVariable(unwrap(value), fieldType);
         return cast(value, fieldType);
     }
 
     public Collection<Object> resolveList(String value, FieldType fieldType) {
         if (value == null) return List.of();
         if (isVariable(value)) {
-            Object resolved = resolveVariable(unwrap(value));
+            Object resolved = resolveVariable(unwrap(value), fieldType);
             if (resolved instanceof Collection<?> col) {
                 List<Object> out = new ArrayList<>(col.size());
                 for (Object o : col) out.add(o);
@@ -55,10 +55,10 @@ public class VariableResolver {
         return value.substring(2, value.length() - 2).trim();
     }
 
-    private Object resolveVariable(String name) {
+    private Object resolveVariable(String name, FieldType fieldType) {
         return switch (name) {
-            case "currentUserId" -> uuidFrom(context.userId());
-            case "currentTenantId" -> uuidFrom(context.tenantId());
+            case "currentUserId" -> identityValue(context.userId(), fieldType);
+            case "currentTenantId" -> identityValue(context.tenantId(), fieldType);
             case "currentUserRoles" -> context.roles();
             case "currentUserGroupIds" -> context.groupIds();
             case "now" -> nowSnapshot;
@@ -68,15 +68,23 @@ public class VariableResolver {
                     int days = Integer.parseInt(name.substring("daysAgo:".length()));
                     yield nowSnapshot.minus(days, ChronoUnit.DAYS);
                 }
+                // Arbitrary session/JWT claim exposed by the UserContext (e.g.
+                // {{region}}, {{plan}}). A string claim is cast to the rule's
+                // declared field type so it binds correctly in SQL; already-typed
+                // claims (Number/Boolean from JSON) pass through unchanged.
                 Object custom = context.resolveVariable(name);
-                if (custom != null) yield custom;
+                if (custom != null) yield custom instanceof String s ? cast(s, fieldType) : custom;
                 throw new IllegalArgumentException("Unknown variable: {{" + name + "}}");
             }
         };
     }
 
-    private static UUID uuidFrom(String s) {
-        return s == null ? null : UUID.fromString(s);
+    /**
+     * Identity claims (userId/tenantId) bind per the rule's declared fieldType,
+     * so a UUID schema keeps UUID typing while string/integer ids work too.
+     */
+    private static Object identityValue(String raw, FieldType fieldType) {
+        return raw == null ? null : cast(raw, fieldType);
     }
 
     private static Object cast(String value, FieldType fieldType) {

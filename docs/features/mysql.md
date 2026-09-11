@@ -8,8 +8,8 @@ Excalibase GraphQL supports MySQL 8.4+ as a first-class database backend. All co
 # Start the MySQL stack
 docker-compose -f docker-compose.mysql.yml up -d
 
-# GraphQL endpoint
-http://localhost:10001/graphql
+# GraphQL endpoint (project-scoped)
+http://localhost:10001/{projectId}/graphql
 ```
 
 ## Configuration

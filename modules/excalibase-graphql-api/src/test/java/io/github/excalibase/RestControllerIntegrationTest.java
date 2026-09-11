@@ -40,7 +40,7 @@ class RestControllerIntegrationTest {
   @Autowired
   private MockMvc mockMvc;
 
-  private static final String BASE = "/api/v1";
+  private static final String BASE = "/test-proj/api/v1";
 
   // ─── GET (list) ────────────────────────────────────────────────────────────
 

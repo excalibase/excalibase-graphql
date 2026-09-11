@@ -134,7 +134,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
         requireRowAllowed(tableName, rowForCheck);
 
-        String onConflictSql = parseOnConflict(field, shared);
+        String onConflictSql = parseOnConflict(field, shared, params, tableName);
         String parentCte = shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
                 joinCols(cols), joinCols(vals), onConflictSql, objectSql);
 
@@ -211,12 +211,22 @@ public class PostgresMutationCompiler implements MutationCompiler {
         List<String> selectRows = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
             Map<String, Object> row = rows.get(i);
+            // WITH-CHECK each nested child row against the child table's INSERT
+            // policies — a nested insert must not be a hole through which a caller
+            // writes a row they couldn't write via a top-level createChild.
+            requireRowAllowed(childTable, row);
             List<String> rowVals = new ArrayList<>();
             rowVals.add(alias + DOT + shared.dialect().quoteIdentifier(refCol));
             for (String col : dataCols) {
                 String paramName = namedParam(P_NESTED_INSERT, col + "_" + i, params.size());
-                params.put(paramName, row.get(col));
-                rowVals.add(param(paramName));
+                // Cast + convert each child value exactly like the top-level insert.
+                // The child CTE is INSERT ... SELECT, where a bare bind param is
+                // typed as varchar — without the cast, a uuid/enum/jsonb/etc. child
+                // column rejects it ("is of type X but expression is of type
+                // character varying").
+                String enumCast = shared.getEnumCastForMutation(childTable, col);
+                params.put(paramName, shared.convertCompositeValue(childTable, col, row.get(col)));
+                rowVals.add(param(paramName) + enumCast);
             }
             selectRows.add(SELECT + joinCols(rowVals) + FROM + alias);
         }
@@ -267,6 +277,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (inputArg == null) return null;
 
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
+        requireUpdateAllowed(tableName, inputFields);
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
@@ -305,6 +316,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (setArg == null) return null;
 
         Map<String, Object> setFields = shared.extractObjectFields(setArg.getValue(), variables);
+        requireUpdateAllowed(tableName, setFields);
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
 
@@ -361,7 +373,22 @@ public class PostgresMutationCompiler implements MutationCompiler {
         }
     }
 
-    private String parseOnConflict(Field field, MutationBuilder shared) {
+    /**
+     * Rejects an UPDATE whose new image (the SET columns) would move the row out
+     * of the caller's UPDATE policies — the WITH-CHECK half for updates. A no-op
+     * when no row-check contributor is registered (feature off / no JWT) or when
+     * no UPDATE policy governs a changed column.
+     */
+    private void requireUpdateAllowed(String tableName, Map<String, Object> changedColumns) {
+        RowCheckContributor check = RlsContext.rowCheck();
+        if (check != null && !check.permitsUpdate(tableName, changedColumns)) {
+            throw new RlsViolationException(
+                    "Row violates row-level security policy for UPDATE on " + tableName);
+        }
+    }
+
+    private String parseOnConflict(Field field, MutationBuilder shared,
+                                   Map<String, Object> params, String tableName) {
         Argument onConflictArg = shared.findArg(field, ARG_ON_CONFLICT);
         if (onConflictArg == null || !(onConflictArg.getValue() instanceof ObjectValue ocOv)) {
             return "";
@@ -377,10 +404,31 @@ public class PostgresMutationCompiler implements MutationCompiler {
                 }
             }
         }
-        if (constraint != null && !updateCols.isEmpty()) {
-            return " " + shared.dialect().onConflict(List.of(constraint), updateCols);
+        if (constraint == null || updateCols.isEmpty()) {
+            return "";
         }
-        return "";
+        return buildOnConflictClause(shared, params, tableName, constraint, updateCols);
+    }
+
+    /**
+     * {@code ON CONFLICT … DO UPDATE SET …} plus the RLS USING gate. DO UPDATE can
+     * overwrite a pre-existing row, so it's gated by the caller's UPDATE policy —
+     * an upsert on a known key must not silently overwrite another owner's row.
+     * Columns are qualified with the target relation name because a bare column in
+     * {@code ON CONFLICT … WHERE} is ambiguous with {@code EXCLUDED}.
+     */
+    private String buildOnConflictClause(MutationBuilder shared, Map<String, Object> params,
+                                         String tableName, String constraint, List<String> updateCols) {
+        String clause = " " + shared.dialect().onConflict(List.of(constraint), updateCols);
+        String targetRef = tableName.contains(".")
+                ? tableName.substring(tableName.lastIndexOf('.') + 1) : tableName;
+        List<String> usingConds = new ArrayList<>();
+        shared.filterBuilder().appendRlsConditions(usingConds, tableName,
+                shared.dialect().quoteIdentifier(targetRef), params, RlsOp.UPDATE);
+        if (!usingConds.isEmpty()) {
+            clause += WHERE + String.join(AND, usingConds);
+        }
+        return clause;
     }
 
     private int parseAtMost(Field field, Map<String, Object> variables, MutationBuilder shared) {

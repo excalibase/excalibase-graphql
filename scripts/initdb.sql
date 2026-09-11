@@ -742,6 +742,57 @@ INSERT INTO rls_orders (user_id, product, amount) VALUES
 GRANT SELECT, INSERT, UPDATE, DELETE ON rls_orders TO app_user;
 GRANT USAGE, SELECT ON SEQUENCE rls_orders_id_seq TO app_user;
 
+-- Engine RLS table (no native RLS): the provisioning policy mock serves an
+-- owner_id = {{currentUserId}} rule for hana.rls_notes, so the app composes the
+-- WHERE clause from the fetched policy. Seeded per-test with the caller's userId.
+CREATE TABLE rls_notes (
+    id        SERIAL PRIMARY KEY,
+    owner_id  TEXT NOT NULL,
+    body      TEXT NOT NULL
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON rls_notes TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE rls_notes_id_seq TO app_user;
+
+-- Engine RLS — relationship/EXISTS policy: rls_team_orders is visible only when
+-- the caller has a membership row in rls_members for the order's org. Proves the
+-- correlated subquery survives the compiler's table aliasing in the live stack.
+CREATE TABLE rls_members (
+    member_user TEXT NOT NULL,
+    org_id      TEXT NOT NULL
+);
+INSERT INTO rls_members (member_user, org_id) VALUES
+    ('alice', 'orgA'), ('bob', 'orgB');
+
+CREATE TABLE rls_team_orders (
+    id     SERIAL PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    title  TEXT NOT NULL
+);
+INSERT INTO rls_team_orders (org_id, title) VALUES
+    ('orgA', 'team-a-1'), ('orgA', 'team-a-2'), ('orgB', 'team-b-1');
+GRANT SELECT, INSERT, UPDATE, DELETE ON rls_team_orders TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE rls_team_orders_id_seq TO app_user;
+GRANT SELECT ON rls_members TO app_user;
+
+-- Engine RLS — JSON-path policy: ownership lives in a jsonb column.
+CREATE TABLE rls_profiles (
+    id   SERIAL PRIMARY KEY,
+    meta JSONB NOT NULL
+);
+INSERT INTO rls_profiles (meta) VALUES
+    ('{"owner":"alice"}'), ('{"owner":"alice"}'), ('{"owner":"bob"}');
+GRANT SELECT, INSERT, UPDATE, DELETE ON rls_profiles TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE rls_profiles_id_seq TO app_user;
+
+-- Engine RLS — custom-claim policy: filter by a region claim from the JWT.
+CREATE TABLE rls_regional (
+    id     SERIAL PRIMARY KEY,
+    region TEXT NOT NULL
+);
+INSERT INTO rls_regional (region) VALUES ('west'), ('west'), ('east');
+GRANT SELECT, INSERT, UPDATE, DELETE ON rls_regional TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE rls_regional_id_seq TO app_user;
+
 -- ====================
 -- ANALYZE TABLES FOR QUERY OPTIMIZATION
 -- ====================

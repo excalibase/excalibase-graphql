@@ -57,7 +57,7 @@ guessing.
   without a query parser. POSTs (which GraphQL uses) can't.
 - **You want language-agnostic access.** Every HTTP client in every
   language can hit REST. GraphQL requires a client library or hand-rolled
-  `POST /graphql` with JSON.
+  `POST /{projectId}/graphql` with JSON.
 - **curl / inspection is part of your workflow.** REST URLs are shareable,
   debuggable, and tell the full story in the browser address bar.
 - **You're paginating through a huge table.** `Range` headers +

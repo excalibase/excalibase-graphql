@@ -9,7 +9,7 @@ package io.github.excalibase.rls;
  * SQL emission and Java fallback for each.
  */
 public enum MaskMode {
-    /** Column is omitted from the result entirely (Hasura-style). */
+    /** Column is omitted from the result entirely. */
     HIDE,
     /** Column value is replaced with null. */
     NULL,

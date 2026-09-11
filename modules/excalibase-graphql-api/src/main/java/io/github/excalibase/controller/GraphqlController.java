@@ -6,7 +6,6 @@ import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtClaims;
-import io.github.excalibase.security.RoleNotAllowedException;
 import io.github.excalibase.service.QueryExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -15,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
 import java.sql.SQLException;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -45,8 +45,18 @@ public class GraphqlController {
         this.observability = observability;
     }
 
-    @PostMapping("/graphql")
+    /**
+     * The GraphQL endpoint. The project lives in the URL path
+     * ({@code /{projectId}/graphql}), mirroring auth ({@code /auth/{projectId}/…})
+     * and functions ({@code /functions/v1/{projectId}/…}). {@link JwtAuthFilter}
+     * has already read {@code projectId} from the path and applied the RLS
+     * context, so this just executes. The {@code projectId} variable is bound
+     * only to make the route match — there is no unscoped route, so RLS always
+     * has a project to enforce against.
+     */
+    @PostMapping("/{projectId}/graphql")
     public ResponseEntity<Object> graphql(
+            @PathVariable String projectId,
             @RequestBody Map<String, Object> request,
             HttpServletRequest httpRequest) {
 
@@ -74,10 +84,6 @@ public class GraphqlController {
                 }
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
                 return dispatchCompiled(compiled, state, finalUserId, finalClaims);
-            } catch (RoleNotAllowedException e) {
-                // Let the @RestControllerAdvice translate this to HTTP 403 — do NOT
-                // fall through to the catch-all that re-wraps as 200 with errors body.
-                throw e;
             } catch (Exception e) {
                 log.warn("GraphQL request failed", e);
                 return ResponseEntity.ok(Map.of(
@@ -100,15 +106,11 @@ public class GraphqlController {
         MapSqlParameterSource params = new MapSqlParameterSource(compiled.params());
         boolean isPostgres = "postgres".equalsIgnoreCase(schemaManager.getDatabaseType());
 
-        // Postgres path: consolidate procedure / two-phase / plain through executeInContext
-        // so they all share one transaction with RLS context + (optional) SET LOCAL ROLE.
-        // Triggers when JWT is present OR role switching is configured (anon traffic).
+        // Postgres + JWT: run procedure / two-phase / plain through one transaction.
         boolean useContextPath = isPostgres
-                && ((userId != null && !userId.isBlank())
-                    || claims != null
-                    || queryExecutor.isRoleSwitchingEnabled());
+                && ((userId != null && !userId.isBlank()) || claims != null);
         if (useContextPath) {
-            return queryExecutor.executeInContext(compiled, params, state.mutationExecutor(), claims);
+            return queryExecutor.executeInContext(compiled, params, state.mutationExecutor());
         }
 
         // Legacy paths for non-Postgres or feature-disabled, no-JWT requests.

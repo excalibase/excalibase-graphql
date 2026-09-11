@@ -7,7 +7,9 @@
 set -e
 
 # Configuration for enterprise benchmarking
-API_URL="http://localhost:10002/graphql"
+# Routes are project-scoped: /{projectId}/graphql (benchmark app runs jwt-disabled,
+# so the projectId is just a path segment).
+API_URL="http://localhost:10002/benchmark/graphql"
 TIMEOUT=60
 MAX_RETRIES=20
 RETRY_DELAY=10

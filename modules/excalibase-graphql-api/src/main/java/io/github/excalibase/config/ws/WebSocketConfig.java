@@ -16,21 +16,26 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.socket.server.support.DefaultHandshakeHandler;
 import org.springframework.web.socket.server.support.WebSocketHttpRequestHandler;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Routes WebSocket upgrade requests:
+ * Routes WebSocket upgrade requests. Routes are <strong>project-scoped</strong>,
+ * matching the HTTP surface — there is no unscoped WS route:
  * <ul>
- *     <li>{@code /graphql} → {@link GraphQLWebSocketHandler} (CDC subscriptions)</li>
- *     <li>{@code /api/v1/realtime} → {@link RealtimeWebSocketHandler} (REST CDC stream)</li>
+ *     <li>{@code /{projectId}/graphql} → {@link GraphQLWebSocketHandler} (CDC subscriptions)</li>
+ *     <li>{@code /{projectId}/api/v1/realtime} → {@link RealtimeWebSocketHandler} (REST CDC stream)</li>
  * </ul>
- * Normal POST /graphql passes through to the REST controller (not an Upgrade request).
+ * Normal POST {@code /{projectId}/graphql} passes through to the REST controller
+ * (not an Upgrade request).
  *
- * <p>When {@code JwtService} is available (i.e. {@code app.security.jwt-enabled=true}),
- * a {@link JwtHandshakeInterceptor} is installed on <strong>both</strong> routes for
- * defense-in-depth. Server-to-server clients that send {@code Authorization: Bearer}
- * on the upgrade are fail-closed at the HTTP layer before a WebSocket is even
- * established. Browser clients that can't set headers fall through to the
+ * <p>The {@code projectId} from the path is stashed on the session
+ * ({@link GraphQLWebSocketHandler#SESSION_PROJECT_KEY}) and is authoritative for
+ * RLS — exactly like the HTTP {@code JwtAuthFilter}. When {@code JwtService} is
+ * available (i.e. {@code app.security.jwt-enabled=true}), a
+ * {@link JwtHandshakeInterceptor} additionally verifies an {@code Authorization:
+ * Bearer} header on the upgrade and rejects a token whose project disagrees with
+ * the path. Browser clients that can't set headers fall through to the
  * {@code connection_init}-based auth in each handler.
  */
 @Configuration
@@ -62,10 +67,10 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 String upgrade = request.getHeader("Upgrade");
                 if (upgrade == null || !"websocket".equalsIgnoreCase(upgrade)) return null;
                 String uri = request.getRequestURI();
-                if ("/graphql".equals(uri)) {
+                if (WsProjectPath.projectId(uri, WsProjectPath.GRAPHQL_SUFFIX) != null) {
                     return buildHandler(graphQLWebSocketHandler);
                 }
-                if ("/api/v1/realtime".equals(uri)) {
+                if (WsProjectPath.projectId(uri, WsProjectPath.REALTIME_SUFFIX) != null) {
                     return buildHandler(realtimeWebSocketHandler);
                 }
                 return null;
@@ -78,10 +83,13 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private WebSocketHttpRequestHandler buildHandler(WebSocketHandler wsHandler) {
         WebSocketHttpRequestHandler handler = new WebSocketHttpRequestHandler(
                 wsHandler, new DefaultHandshakeHandler());
+        List<HandshakeInterceptor> interceptors = new ArrayList<>();
+        // Path project is authoritative for RLS — always captured, even without JWT.
+        interceptors.add(new ProjectPathHandshakeInterceptor());
         if (jwtService != null) {
-            handler.setHandshakeInterceptors(
-                    List.<HandshakeInterceptor>of(new JwtHandshakeInterceptor(jwtService)));
+            interceptors.add(new JwtHandshakeInterceptor(jwtService));
         }
+        handler.setHandshakeInterceptors(interceptors);
         return handler;
     }
 }

@@ -6,7 +6,12 @@
 const { gql } = require('graphql-request');
 const { waitForApi, createClient } = require('./client');
 
-const API_URL = process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql';
+// Routes are project-scoped: /{projectId}/graphql and /{projectId}/api/v1.
+// The e2e project is 'e2e-test' (auth login is /auth/e2e-org/e2e-test/... so the
+// token's projectId claim is the 'e2e-test' segment — the path must match it).
+const API_BASE = (process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql').replace(/\/graphql$/, '');
+const DATA_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
+const API_URL = `${API_BASE}/${DATA_PROJECT}/graphql`;
 let client;
 
 beforeAll(async () => {
@@ -836,6 +841,39 @@ describe('RLS (Row Level Security)', () => {
     const data = await client.request(gql`{ hanaRlsOrders { id user_id product } }`);
     expect(data.hanaRlsOrders.length).toBe(0);
   });
+
+  // ── Engine RLS feature tables are exposed in the schema ──
+  // Precise per-user filtering (relationship/JSON/claim) is asserted in the Java
+  // ProvisioningRlsIntegrationTest, which mints JWTs with known user ids and the
+  // region claim. The "runs through the real aliased SQL path without error"
+  // proof lives in the authenticated JWT block below. NOTE: engine RLS is only
+  // applied to authenticated requests (a no-token request gets no RLS context),
+  // so anonymous row-count assertions are intentionally not made here.
+  test('engine-RLS feature tables (relationship/JSON/claim) are exposed', async () => {
+    const schema = await client.request(gql`{ __type(name: "Query") { fields { name } } }`);
+    const names = schema.__type.fields.map(f => f.name);
+    for (const t of ['hanaRlsTeamOrders', 'hanaRlsProfiles', 'hanaRlsRegional']) {
+      expect(names).toContain(t);
+    }
+  });
+
+  test('project-scoped URL applies RLS to anonymous (fail-closed)', async () => {
+    // POST /{projectId}/graphql with NO token. The project comes from the path,
+    // so RLS still applies with an anonymous context → the relationship policy
+    // matches nothing → zero rows. (The legacy /graphql route would skip RLS for
+    // an anonymous caller and return rows.)
+    const res = await fetch(`${API_BASE}/${DATA_PROJECT}/graphql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: '{ hanaRlsTeamOrders { id } }' }),
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    if (json.data && json.data.hanaRlsTeamOrders !== undefined) {
+      expect(json.errors).toBeUndefined();
+      expect(json.data.hanaRlsTeamOrders.length).toBe(0);
+    }
+  });
 });
 
 // ─── Stored Procedures ────────────────────────────────────────────────────────
@@ -983,6 +1021,30 @@ describe('JWT Authentication (via excalibase-auth)', () => {
     expect(res.data.data).toBeDefined();
   });
 
+  test('authenticated relationship/EXISTS policy compiles & runs in the aliased SQL path', async () => {
+    // With a JWT the engine sets the RLS context and compiles the membership
+    // EXISTS subquery, correlated to the compiler's table alias. This must run
+    // without a SQL error (the alias-correlation fix); the row set is empty
+    // because the JWT's user id is not seeded in rls_members.
+    const res = await rawGraphql(
+      '{ hanaRlsTeamOrders { id org_id } }',
+      { Authorization: `Bearer ${accessToken}` },
+    );
+    expect(res.status).toBe(200);
+    expect(res.data.errors).toBeUndefined();
+    expect(Array.isArray(res.data.data.hanaRlsTeamOrders)).toBe(true);
+  });
+
+  test('authenticated JSON-path policy compiles & runs', async () => {
+    const res = await rawGraphql(
+      '{ hanaRlsProfiles { id } }',
+      { Authorization: `Bearer ${accessToken}` },
+    );
+    expect(res.status).toBe(200);
+    expect(res.data.errors).toBeUndefined();
+    expect(Array.isArray(res.data.data.hanaRlsProfiles)).toBe(true);
+  });
+
   test('graphql rejects invalid JWT with 401', async () => {
     const res = await rawGraphql(
       '{ hanaRlsOrders { id } }',
@@ -1009,12 +1071,55 @@ describe('JWT Authentication (via excalibase-auth)', () => {
   });
 });
 
+// ─── Engine RLS (policy fetched from the provisioning mock over HTTP) ─────────
+
+describe('Engine RLS (policy from provisioning mock)', () => {
+  const { psql } = require('./client');
+  let token;
+  let userId;
+  let decoded;
+
+  function decodeJwt(t) {
+    return JSON.parse(Buffer.from(t.split('.')[1], 'base64').toString('utf-8'));
+  }
+
+  beforeAll(async () => {
+    await authPost(`/auth/${PROJECT_ID}/register`, {
+      email: 'alice-e2e@test.com', password: 'secret123', fullName: 'Alice E2E',
+    });
+    const login = await authPost(`/auth/${PROJECT_ID}/login`, {
+      email: 'alice-e2e@test.com', password: 'secret123',
+    });
+    token = login.data.accessToken;
+    decoded = decodeJwt(token);
+    // Mirror the app's extractUserId: prefer the userId claim, fall back to sub.
+    userId = decoded.userId != null ? String(decoded.userId) : decoded.sub;
+
+    // Two rows owned by the caller, one owned by someone else.
+    psql('DELETE FROM hana.rls_notes;');
+    psql(`INSERT INTO hana.rls_notes (owner_id, body) VALUES ('${userId}','mine-1'),('${userId}','mine-2'),('someone-else','theirs');`);
+  });
+
+  test('JWT carries userId + projectId (engine needs both for RLS context)', () => {
+    expect(userId).toBeTruthy();
+    expect(decoded.projectId).toBeTruthy();
+  });
+
+  test('authenticated caller sees only their own rows — policy filtered the query', async () => {
+    const res = await rawGraphql('{ hanaRlsNotes { id owner_id body } }', { Authorization: `Bearer ${token}` });
+    expect(res.status).toBe(200);
+    expect(res.data.errors).toBeUndefined();
+    expect(res.data.data.hanaRlsNotes).toHaveLength(2);
+    for (const note of res.data.data.hanaRlsNotes) {
+      expect(note.owner_id).toBe(userId);
+    }
+  });
+});
+
 
 // ─── REST API (PostgREST-compatible) ─────────────────────────────────────────
 
-const REST_URL = process.env.POSTGRES_API_URL
-  ? process.env.POSTGRES_API_URL.replace('/graphql', '/api/v1')
-  : 'http://localhost:10000/api/v1';
+const REST_URL = `${API_BASE}/${DATA_PROJECT}/api/v1`;
 
 const REST_SCHEMA = 'hana';
 
@@ -1056,6 +1161,15 @@ describe('REST API — Read operations', () => {
     const res = await restGet('/customer');
     expect(res.status).toBe(200);
     expect(res.data.data.length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('REST enforces engine RLS — anonymous gets 0 rows on an RLS table', async () => {
+    // The engine RLS (relationship/membership) policy on rls_team_orders must
+    // apply to REST exactly as it does to GraphQL. Anonymous → 0 rows. This is a
+    // regression guard for the bug where REST bypassed engine RLS entirely.
+    const res = await restGet('/rls_team_orders');
+    expect(res.status).toBe(200);
+    expect(res.data.data.length).toBe(0);
   });
 
   test('GET with select returns only specified columns', async () => {

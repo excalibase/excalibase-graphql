@@ -1,5 +1,6 @@
 package io.github.excalibase.security;
 
+import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
@@ -40,6 +41,11 @@ public class JwtService {
     // HMAC mode
     private final byte[] hmacSecret;
 
+    // Expected token issuer (iss). null = don't validate (back-compat / standalone).
+    // When set, a token whose `iss` claim differs is rejected — stops tokens minted
+    // by a different issuer whose key happens to be trusted.
+    private String expectedIssuer;
+
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------
@@ -77,6 +83,16 @@ public class JwtService {
         this.hmacSecret = null;
     }
 
+    /**
+     * Sets the issuer this service will accept. When non-blank, {@link #verify}
+     * rejects any token whose {@code iss} claim differs. Fluent so config can do
+     * {@code new JwtService(url, ttl).expectedIssuer(cfg)}.
+     */
+    public JwtService expectedIssuer(String issuer) {
+        this.expectedIssuer = (issuer != null && !issuer.isBlank()) ? issuer : null;
+        return this;
+    }
+
     // -------------------------------------------------------------------------
     // Verify
     // -------------------------------------------------------------------------
@@ -92,23 +108,7 @@ public class JwtService {
             }
 
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
-
-            // Require exp claim for user session tokens; API-key tokens (scope=api-key) may omit.
-            Date expiration = claims.getExpirationTime();
-            Object scopeClaim = claims.getClaim("scope");
-            boolean isApiKey = "api-key".equals(scopeClaim);
-            if (expiration == null && !isApiKey) {
-                throw new JwtVerificationException("JWT missing required 'exp' claim");
-            }
-            if (expiration != null && new Date().after(expiration)) {
-                throw new JwtVerificationException("JWT token expired");
-            }
-
-            // Reject pre-dated tokens (nbf: not-before).
-            Date notBefore = claims.getNotBeforeTime();
-            if (notBefore != null && new Date().before(notBefore)) {
-                throw new JwtVerificationException("JWT token not yet valid");
-            }
+            validateTemporalAndIssuer(claims);
 
             String userId = extractUserId(claims);
             String projectId = (String) claims.getClaim("projectId");
@@ -131,7 +131,13 @@ public class JwtService {
                 keyId = keyIdNumber.longValue();
             }
 
-            return new JwtClaims(userId, projectId, orgSlug, projectName, orgName, role, email, scope, keyId);
+            // Expose every JWT claim so RLS policies can reference arbitrary
+            // custom claims ({{region}}, {{plan}}, …) — the Postgres-RLS
+            // equivalent of current_setting('jwt.claims.x'). Known fields above
+            // still take precedence in JwtClaimsUserContext.
+            java.util.Map<String, Object> extraClaims = new java.util.HashMap<>(claims.getClaims());
+
+            return new JwtClaims(userId, projectId, orgSlug, projectName, orgName, role, email, scope, keyId, extraClaims);
 
         } catch (JwtVerificationException e) {
             throw e;
@@ -144,20 +150,61 @@ public class JwtService {
     // Private helpers
     // -------------------------------------------------------------------------
 
+    /**
+     * Validates the time window ({@code exp}, {@code nbf}) and issuer binding.
+     * API-key tokens ({@code scope=api-key}) are allowed to omit {@code exp};
+     * the issuer check applies only when an expected issuer is configured.
+     */
+    private void validateTemporalAndIssuer(JWTClaimsSet claims) throws JwtVerificationException {
+        Date expiration = claims.getExpirationTime();
+        boolean isApiKey = "api-key".equals(claims.getClaim("scope"));
+        if (expiration == null && !isApiKey) {
+            throw new JwtVerificationException("JWT missing required 'exp' claim");
+        }
+        if (expiration != null && new Date().after(expiration)) {
+            throw new JwtVerificationException("JWT token expired");
+        }
+        Date notBefore = claims.getNotBeforeTime();
+        if (notBefore != null && new Date().before(notBefore)) {
+            throw new JwtVerificationException("JWT token not yet valid");
+        }
+        // Reject a token from another issuer whose signing key is in our trust set.
+        if (expectedIssuer != null && !expectedIssuer.equals(claims.getIssuer())) {
+            throw new JwtVerificationException("JWT issuer not accepted");
+        }
+    }
+
     private void verifyHmac(SignedJWT jwt) throws JwtVerificationException, com.nimbusds.jose.JOSEException {
+        // Pin HS256 — never let the token header pick the algorithm.
+        requireAlg(jwt, JWSAlgorithm.HS256);
         if (!jwt.verify(new MACVerifier(hmacSecret))) {
             throw new JwtVerificationException("JWT signature verification failed");
         }
     }
 
     private void verifyEc(SignedJWT jwt) throws JwtVerificationException, com.nimbusds.jose.JOSEException {
+        // Pin ES256 explicitly. ECDSAVerifier otherwise accepts ES384/ES512/ES256K,
+        // and this closes any header-driven algorithm ambiguity ("alg confusion").
+        requireAlg(jwt, JWSAlgorithm.ES256);
         List<ECPublicKey> keys = getKeys();
+        // Fail closed on an empty/absent key set — never fall through to "verified".
+        if (keys == null || keys.isEmpty()) {
+            throw new JwtVerificationException("No JWKS verification keys available");
+        }
         for (ECPublicKey key : keys) {
             if (jwt.verify(new ECDSAVerifier(key))) {
                 return;
             }
         }
         throw new JwtVerificationException("JWT signature verification failed");
+    }
+
+    /** Rejects a token whose JWS header algorithm isn't exactly {@code expected}. */
+    private static void requireAlg(SignedJWT jwt, JWSAlgorithm expected) throws JwtVerificationException {
+        if (!expected.equals(jwt.getHeader().getAlgorithm())) {
+            throw new JwtVerificationException(
+                    "Unexpected JWS algorithm: " + jwt.getHeader().getAlgorithm() + " (require " + expected + ")");
+        }
     }
 
     private String extractUserId(JWTClaimsSet claims) {

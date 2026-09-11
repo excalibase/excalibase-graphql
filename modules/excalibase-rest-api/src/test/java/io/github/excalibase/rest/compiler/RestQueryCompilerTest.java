@@ -3,6 +3,10 @@ package io.github.excalibase.rest.compiler;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.postgres.PostgresDialect;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.ColumnMaskContributor;
+import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.RlsWhereContributor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -257,6 +261,31 @@ class RestQueryCompilerTest {
       var input = Map.of("id", (Object) 1);
       var result = compiler.compileUpsert("public.products", input, List.of("id"));
       assertTrue(result.sql().contains("DO NOTHING") || result.sql().contains("DO UPDATE"));
+    }
+
+    @Test @DisplayName("compileUpsert gates DO UPDATE with the RLS UPDATE predicate (audit H6)")
+    void upsertDoUpdate_hasRlsUsing() {
+      // Without the USING, an upsert on a known PK overwrites another owner's row.
+      RlsContext.set(new RlsWhereContributor() {
+        @Override public RlsWhereContributor.Contribution contribute(String table, RlsOp op) {
+          return new RlsWhereContributor.Contribution("owner_id = 'me'", Map.of());
+        }
+        @Override public RlsWhereContributor.Contribution contribute(String table, String alias, RlsOp op) {
+          return op == RlsOp.UPDATE
+              ? new RlsWhereContributor.Contribution("owner_id = 'me'", Map.of())
+              : null;
+        }
+      });
+      try {
+        var input = Map.of("id", (Object) 1, "name", "Updated", "price", 99.0);
+        var result = compiler.compileUpsert("public.products", input, List.of("id"));
+        String sql = result.sql();
+        assertTrue(sql.contains("DO UPDATE"), "expected DO UPDATE: " + sql);
+        assertTrue(sql.contains("WHERE") && sql.contains("owner_id = 'me'"),
+            "DO UPDATE must be gated by the RLS UPDATE predicate: " + sql);
+      } finally {
+        RlsContext.clear();
+      }
     }
   }
 
@@ -548,6 +577,127 @@ class RestQueryCompilerTest {
       // The child order_items join must reference an result-alias (orders outer alias), not c (products)
       // Since the outer alias for orders is r1, order_items join must be "= r1."
       assertTrue(sql.contains("= r1."), "order_items join must use orders alias r1, not top-level c, in: " + sql);
+    }
+  }
+
+  @Nested
+  @DisplayName("RLS injection")
+  class RlsInjection {
+
+    @Test
+    @DisplayName("RLS predicate is spliced into BOTH the top-level query and embedded sub-selects")
+    void rlsAppliedToTopLevelAndEmbed() {
+      // Stub contributor tags each splice with table@alias so we can assert the
+      // RLS predicate reaches the top-level query AND every embedded sub-select.
+      RlsContext.set(new RlsWhereContributor() {
+        @Override public RlsWhereContributor.Contribution contribute(String table, RlsOp op) {
+          return new RlsWhereContributor.Contribution("RLS_" + table, Map.of());
+        }
+        @Override public RlsWhereContributor.Contribution contribute(String table, String alias, RlsOp op) {
+          return new RlsWhereContributor.Contribution("RLS_" + table + "@" + alias, Map.of());
+        }
+      });
+      try {
+        var embed = new RestQueryCompiler.EmbedSpec("orders", List.of("*"));
+        var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+            "public.products", List.of(), List.of(), null, List.of(embed), null, 10, 0, false));
+        String sql = result.sql();
+        assertTrue(sql.contains("RLS_public.products@c"), "top-level RLS missing: " + sql);
+        // The embedded child table must also be RLS-filtered — else ?select=*,fk(*) leaks.
+        assertTrue(sql.contains("RLS_public.orders@r"), "embedded-table RLS missing (leak!): " + sql);
+      } finally {
+        RlsContext.clear();
+      }
+    }
+  }
+
+  @Nested
+  @DisplayName("Column-level security (CLS)")
+  class ColumnMasking {
+
+    /** Masks products.description → HIDDEN, products.price → NULLED; everything else VISIBLE. */
+    private void installMasker() {
+      RlsContext.setColumnMask((table, column) -> {
+        if ("public.products".equals(table) && "description".equals(column)) {
+          return ColumnMaskContributor.Decision.HIDDEN;
+        }
+        if ("public.products".equals(table) && "price".equals(column)) {
+          return ColumnMaskContributor.Decision.NULLED;
+        }
+        return ColumnMaskContributor.Decision.VISIBLE;
+      });
+    }
+
+    @Test
+    @DisplayName("HIDDEN column is dropped and NULLED column emits NULL in top-level SELECT")
+    void masksTopLevelColumns() {
+      installMasker();
+      try {
+        // Empty column list = SELECT * — must still honour the mask, not fall back to row_to_json.
+        var result = compiler.compileSelect("public.products", List.of(), List.of(), null, 30, 0, false);
+        String sql = result.sql();
+        assertFalse(sql.contains("row_to_json"), "masked query must not use row_to_json fast path: " + sql);
+        assertFalse(sql.contains("'description'"), "HIDDEN column must be absent from JSON object: " + sql);
+        assertTrue(sql.contains("'price',NULL") || sql.contains("'price', NULL"),
+            "NULLED column must emit NULL literal: " + sql);
+        assertTrue(sql.contains("'name'"), "VISIBLE column must remain: " + sql);
+      } finally {
+        RlsContext.clear();
+      }
+    }
+
+    @Test
+    @DisplayName("explicitly requested HIDDEN column is still dropped")
+    void masksExplicitlyRequestedColumn() {
+      installMasker();
+      try {
+        var result = compiler.compileSelect("public.products", List.of("id", "name", "description"),
+            List.of(), null, 30, 0, false);
+        String sql = result.sql();
+        assertFalse(sql.contains("'description'"), "HIDDEN column requested by client must still be dropped: " + sql);
+        assertTrue(sql.contains("'id'") && sql.contains("'name'"), "visible columns must remain: " + sql);
+      } finally {
+        RlsContext.clear();
+      }
+    }
+
+    @Test
+    @DisplayName("no masker installed keeps the row_to_json fast path")
+    void noMaskerFastPath() {
+      // No RlsContext.setColumnMask — SELECT * should use the row_to_json optimization.
+      var result = compiler.compileSelect("public.products", List.of(), List.of(), null, 30, 0, false);
+      assertTrue(result.sql().contains("row_to_json"), "unmasked SELECT * should keep fast path: " + result.sql());
+    }
+
+    @Test
+    @DisplayName("filter on a HIDDEN column is dropped (no inference oracle)")
+    void filterOnHiddenColumnDropped() {
+      installMasker();
+      try {
+        // description is HIDDEN; a filter on it must not reach the SQL, else the
+        // caller can binary-search the masked value.
+        var filters = List.of(new RestQueryCompiler.FilterSpec("description", "eq", "secret", false));
+        var result = compiler.compileSelect("public.products", List.of("id"), filters, null, 30, 0, false);
+        assertFalse(result.sql().toLowerCase().contains("description"),
+            "HIDDEN column filter must be dropped: " + result.sql());
+      } finally {
+        RlsContext.clear();
+      }
+    }
+
+    @Test
+    @DisplayName("order by a NULLED column is dropped")
+    void orderByMaskedColumnDropped() {
+      installMasker();
+      try {
+        // price is NULL-masked; ordering by it leaks the real ordering.
+        var order = List.of(new RestQueryCompiler.OrderBySpec("price", "ASC", null));
+        var result = compiler.compileSelect("public.products", List.of("id"), List.of(), order, 30, 0, false);
+        assertFalse(result.sql().contains("ORDER BY \"price\""),
+            "masked column must not be orderable: " + result.sql());
+      } finally {
+        RlsContext.clear();
+      }
     }
   }
 }

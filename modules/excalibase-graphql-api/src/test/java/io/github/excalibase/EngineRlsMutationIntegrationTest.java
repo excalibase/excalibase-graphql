@@ -125,6 +125,14 @@ class EngineRlsMutationIntegrationTest {
                 List.of(Assignment.all()));
     }
 
+    /** Owner policy on the child (book) table — used for nested-insert WITH-CHECK. */
+    private static Policy ownerBook() {
+        return new Policy("owner-book", "owner-book", "rls_demo.book",
+                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(new Rule("owner_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(Assignment.all()));
+    }
+
     @BeforeEach
     void seed() {
         ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll()));
@@ -146,7 +154,7 @@ class EngineRlsMutationIntegrationTest {
     }
 
     private org.springframework.test.web.servlet.ResultActions mutate(String userId, String mutation) throws Exception {
-        return mockMvc.perform(post("/graphql")
+        return mockMvc.perform(post("/" + PROJECT + "/graphql")
                 .header("Authorization", "Bearer " + jwt(userId))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(mutation)));
@@ -201,6 +209,68 @@ class EngineRlsMutationIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.errors").exists())
                 .andExpect(jsonPath("$.data.createRlsDemoNotes").doesNotExist());
+    }
+
+    // ---- UPSERT ON CONFLICT USING (audit H6) ----
+
+    @Test
+    void upsert_cannotOverwriteAnotherOwnersRow() throws Exception {
+        // Alice upserts on id=2 (Bob's note). The ON CONFLICT DO UPDATE is gated by
+        // the UPDATE USING predicate (notes.owner_id = alice), so Bob's row is excluded
+        // and his title is not overwritten — an upsert is not an ownership bypass. The
+        // statement itself must be valid SQL (no EXCLUDED ambiguity → no error).
+        mutate(ALICE, "mutation { createRlsDemoNotes("
+                + "input: { id: 2, owner_id: \"" + ALICE + "\", title: \"hijacked\" }, "
+                + "onConflict: { constraint: \"notes_pkey\", update_columns: [\"title\"] }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist());
+        // Bob still sees his original note title — Alice's upsert did not touch it.
+        mutate(BOB, "{ rlsDemoNotes(where: { id: { eq: 2 } }) { id title } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(1)))
+                .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").value("bob-note"));
+    }
+
+    @Test
+    void upsert_ownRow_updatesTitle() throws Exception {
+        // Alice upserts on id=1 (her own note): the USING predicate matches, so the
+        // conflict path updates her row — the gate must not over-block legitimate upserts.
+        mutate(ALICE, "mutation { createRlsDemoNotes("
+                + "input: { id: 1, owner_id: \"" + ALICE + "\", title: \"alice-upserted\" }, "
+                + "onConflict: { constraint: \"notes_pkey\", update_columns: [\"title\"] }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist());
+        mutate(ALICE, "{ rlsDemoNotes(where: { id: { eq: 1 } }) { id title } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").value("alice-upserted"));
+    }
+
+    // ---- NESTED-FK CHILD INSERT WITH-CHECK (audit H5) ----
+
+    @Test
+    void nestedInsert_childRowForAnotherOwner_isRejected() throws Exception {
+        // Alice creates a shelf with a nested book owned by Bob. The child table's
+        // WITH-CHECK (owner policy on rls_demo.book) must reject the whole mutation —
+        // a nested insert is not a hole around top-level WITH-CHECK.
+        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook()));
+        mutate(ALICE, "mutation { createRlsDemoShelf(input: { id: 500, name: \"s\", "
+                + "rlsDemoBook: { data: [ { id: 900, owner_id: \"" + BOB + "\", title: \"x\" } ] } }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").exists())
+                .andExpect(jsonPath("$.data.createRlsDemoShelf").doesNotExist());
+    }
+
+    @Test
+    void nestedInsert_childRowOwnedBySelf_succeeds() throws Exception {
+        // Alice creates a shelf with a nested book she owns: the child WITH-CHECK
+        // passes, and the child CTE casts the uuid owner_id param (regression for the
+        // nested-insert type-cast bug — a bare bind is varchar in INSERT ... SELECT).
+        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook()));
+        mutate(ALICE, "mutation { createRlsDemoShelf(input: { id: 501, name: \"s2\", "
+                + "rlsDemoBook: { data: [ { id: 901, owner_id: \"" + ALICE + "\", title: \"ok\" } ] } }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.createRlsDemoShelf.id").value("501"));
     }
 
     private static String buildJwks(ECPublicKey key) {

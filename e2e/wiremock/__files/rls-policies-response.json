@@ -1,0 +1,68 @@
+[
+  {
+    "id": "e2e-owner-notes",
+    "projectId": "e2e",
+    "name": "owner-notes",
+    "resource": "rls_notes",
+    "effect": "ALLOW",
+    "operations": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+    "ruleLogic": "AND",
+    "priority": 0,
+    "enabled": true,
+    "rules": [
+      { "field": "owner_id", "fieldType": "STRING", "operator": "EQ", "value": "{{currentUserId}}" }
+    ],
+    "assignments": [{ "targetType": "ALL" }]
+  },
+  {
+    "id": "e2e-team-orders-membership",
+    "projectId": "e2e",
+    "name": "team-orders-membership",
+    "resource": "rls_team_orders",
+    "effect": "ALLOW",
+    "operations": ["SELECT"],
+    "ruleLogic": "AND",
+    "enabled": true,
+    "rules": [],
+    "relations": [
+      {
+        "relatedResource": "hana.rls_members",
+        "foreignKey": "org_id",
+        "parentKey": "org_id",
+        "subLogic": "AND",
+        "subRules": [
+          { "field": "member_user", "fieldType": "STRING", "operator": "EQ", "value": "{{currentUserId}}" }
+        ]
+      }
+    ],
+    "assignments": [{ "targetType": "ALL" }]
+  },
+  {
+    "id": "e2e-profiles-json-owner",
+    "projectId": "e2e",
+    "name": "profiles-json-owner",
+    "resource": "rls_profiles",
+    "effect": "ALLOW",
+    "operations": ["SELECT"],
+    "ruleLogic": "AND",
+    "enabled": true,
+    "rules": [
+      { "field": "meta.owner", "fieldType": "STRING", "operator": "EQ", "value": "{{currentUserId}}" }
+    ],
+    "assignments": [{ "targetType": "ALL" }]
+  },
+  {
+    "id": "e2e-regional-claim",
+    "projectId": "e2e",
+    "name": "regional-claim",
+    "resource": "rls_regional",
+    "effect": "ALLOW",
+    "operations": ["SELECT"],
+    "ruleLogic": "AND",
+    "enabled": true,
+    "rules": [
+      { "field": "region", "fieldType": "STRING", "operator": "EQ", "value": "{{region}}" }
+    ],
+    "assignments": [{ "targetType": "ALL" }]
+  }
+]

@@ -125,7 +125,7 @@ mysql-up: ## Start MySQL Docker services
 mysql-wait-ready: ## Wait for MySQL GraphQL API to be ready
 	@echo "$(BLUE)⏳ Waiting for MySQL services...$(NC)"
 	@for i in $$(seq 1 40); do \
-		if curl -s -X POST http://localhost:$(MYSQL_API_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data\|error"; then \
+		if curl -s -X POST http://localhost:$(MYSQL_API_PORT)/e2e-test/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q '"data"'; then \
 			echo "$(GREEN)✓ MySQL GraphQL API ready$(NC)"; \
 			break; \
 		fi; \
@@ -194,7 +194,7 @@ multi-tenant-test: ## Run multi-tenant e2e tests
 multi-tenant-wait-ready:
 	@echo "$(BLUE)⏳ Waiting for multi-tenant services...$(NC)"
 	@for i in $$(seq 1 30); do \
-		if curl -s -X POST http://localhost:$(MT_API_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data\|error"; then \
+		if curl -s -X POST http://localhost:$(MT_API_PORT)/app-a/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q '"data"'; then \
 			echo "$(GREEN)✓ Multi-tenant GraphQL API ready$(NC)"; \
 			break; \
 		fi; \
@@ -245,7 +245,7 @@ study-cases-test: ## Run study-cases e2e tests
 study-cases-wait-ready:
 	@echo "$(BLUE)⏳ Waiting for study-cases services...$(NC)"
 	@for i in $$(seq 1 40); do \
-		if curl -s -X POST http://localhost:$(SC_API_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data\|errors\|Unauthorized\|401"; then \
+		if curl -s -X POST http://localhost:$(SC_API_PORT)/shopify/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q '"data"'; then \
 			echo "$(GREEN)✓ Study-cases GraphQL API ready$(NC)"; \
 			break; \
 		fi; \
@@ -395,7 +395,7 @@ wait-ready: ## Wait for services to be ready
 	done
 	@echo "$(BLUE)🔄 Waiting for application...$(NC)"
 	@for i in $$(seq 1 30); do \
-		if curl -s -X POST http://localhost:$(APP_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
+		if curl -s -X POST http://localhost:$(APP_PORT)/e2e-test/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
 			echo "$(GREEN)✓ GraphQL API ready$(NC)"; \
 			break; \
 		fi; \
@@ -443,7 +443,7 @@ wait-ready-native: ## Wait for native services to be ready
 	done
 	@echo "$(BLUE)🔄 Waiting for native application...$(NC)"
 	@for i in $$(seq 1 30); do \
-		if curl -s -X POST http://localhost:$(APP_PORT)/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
+		if curl -s -X POST http://localhost:$(APP_PORT)/e2e-test/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q "data"; then \
 			echo "$(GREEN)✓ GraphQL API ready$(NC)"; \
 			break; \
 		fi; \
@@ -463,7 +463,7 @@ test-only-native: ## Run e2e tests against native containers
 
 .PHONY: run-tests-native
 run-tests-native: ## Execute test suite against native containers
-	@cd e2e && npm install --silent && npm run test:postgres || (echo "$(RED)❌ Postgres tests failed$(NC)" && exit 1)
+	@cd e2e && npm install --silent && PG_CONTAINER=excalibase-postgres-native npm run test:postgres || (echo "$(RED)❌ Postgres tests failed$(NC)" && exit 1)
 	@echo "$(BLUE)🧪 Running CDC subscription tests (native)...$(NC)"
 	@cd e2e && PG_CONTAINER=excalibase-postgres-native npm run test:subscription:postgres || (echo "$(RED)❌ Subscription tests failed$(NC)" && exit 1)
 
@@ -505,7 +505,7 @@ benchmark-dev: benchmark-build benchmark-up ## Start enterprise benchmark servic
 	@echo ""
 	@echo "$(GREEN)🚀 Enterprise benchmark environment ready!$(NC)"
 	@echo ""
-	@echo "$(BLUE)GraphQL API:$(NC) http://localhost:10002/graphql"
+	@echo "$(BLUE)GraphQL API:$(NC) http://localhost:10002/benchmark/graphql"
 	@echo "$(BLUE)PostgreSQL:$(NC)  localhost:5434"
 	@echo ""
 	@echo "$(YELLOW)To run benchmark tests:$(NC) make benchmark-test-only"
@@ -563,7 +563,7 @@ benchmark-wait-ready: ## Wait for enterprise benchmark services to be ready
 	@sleep 5
 	@echo "$(BLUE)🔄 Waiting for database health check and application startup...$(NC)"
 	@for i in $$(seq 1 150); do \
-		if curl -s --connect-timeout 5 http://localhost:10002/graphql > /dev/null 2>&1; then \
+		if curl -s --connect-timeout 5 -X POST http://localhost:10002/benchmark/graphql -H 'Content-Type: application/json' -d '{"query":"{ __typename }"}' 2>/dev/null | grep -q '"data"'; then \
 			echo "$(GREEN)✓ Enterprise GraphQL API ready with full dataset!$(NC)"; \
 			break; \
 		fi; \

@@ -9,7 +9,9 @@ import io.github.excalibase.rest.parser.SelectParser;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaProvider;
 import io.github.excalibase.security.JwtClaims;
-import io.github.excalibase.security.RoleContext;
+import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.RowCheckContributor;
 import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Pattern;
@@ -31,7 +33,10 @@ import java.util.*;
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
 @RestController
-@RequestMapping("/api/v1")
+// Project-scoped: the project lives in the URL path (`/{projectId}/api/v1/…`),
+// so RLS always has a project to enforce against — even for anonymous callers.
+// JwtAuthFilter reads the projectId from the path; controller methods don't bind it.
+@RequestMapping("/{projectId}/api/v1")
 @Validated
 public class RestApiController {
 
@@ -41,10 +46,6 @@ public class RestApiController {
     private static final Set<String> RESERVED_PARAMS = Set.of("select", "order", "limit", "offset", "or", "first", "after");
     private static final MediaType SINGULAR_TYPE = MediaType.parseMediaType("application/vnd.pgrst.object+json");
     private static final MediaType CSV_TYPE = MediaType.parseMediaType("text/csv");
-    private static final String RLS_USER_ID = "request.user_id";
-    private static final String RLS_PROJECT_ID = "request.project_id";
-    private static final String RLS_SET_CONFIG = "SELECT set_config(:key, :val, true)";
-    private static final java.util.regex.Pattern SAFE_PG_ROLE = java.util.regex.Pattern.compile("^[A-Za-z_][A-Za-z0-9_]{0,62}$");
     private static final String KEY_ERROR = "error";
     private static final String PREFER_TX_ROLLBACK = "tx=rollback";
     private static final String HDR_PREFERENCE_APPLIED = "Preference-Applied";
@@ -54,15 +55,18 @@ public class RestApiController {
     private final TransactionTemplate txTemplate;
     private final ObjectMapper mapper;
     private final int maxRows;
+    private final boolean jwtEnabled;
 
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
-                             @Value("${app.max-rows:30}") int maxRows) {
+                             @Value("${app.max-rows:30}") int maxRows,
+                             @Value("${app.security.jwt-enabled:false}") boolean jwtEnabled) {
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
         this.mapper = mapper;
         this.maxRows = maxRows;
+        this.jwtEnabled = jwtEnabled;
     }
 
     @GetMapping(produces = "application/openapi+json")
@@ -103,7 +107,7 @@ public class RestApiController {
 
     private ResponseEntity<Object> handleSingular(RequestContext ctx, ParsedParams parsed) {
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, 2, 0, false));
-        return executeInTx(compiled, ctx.claims(), rows -> {
+        return executeInTx(compiled, rows -> {
             List<?> data = parseJsonList(rows.get("body"));
             if (data.size() != 1) return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).body(Map.of(KEY_ERROR, "Expected 1 row, got " + data.size()));
             return ResponseEntity.ok().contentType(SINGULAR_TYPE).body(data.get(0));
@@ -114,14 +118,14 @@ public class RestApiController {
         int clamped = Math.clamp(limit, 1, maxRows);
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, false));
         List<String> csvCols = parsed.columns.isEmpty() ? new ArrayList<>(ctx.schemaInfo().getColumns(ctx.tableKey())) : parsed.columns;
-        return executeInTx(compiled, ctx.claims(), rows -> buildCsvResponse(rows, csvCols));
+        return executeInTx(compiled, rows -> buildCsvResponse(rows, csvCols));
     }
 
     private ResponseEntity<Object> handleCursor(RequestContext ctx, ParsedParams parsed, int first, String after) {
         int fetchLimit = Math.min(first, maxRows);
         String orderCol = parsed.orderSpecs.isEmpty() ? null : parsed.orderSpecs.get(0).column();
         var query = new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, fetchLimit + 1, 0, false, after, orderCol);
-        return executeInTx(ctx.compiler().compileSelect(query), ctx.claims(), rows -> {
+        return executeInTx(ctx.compiler().compileSelect(query), rows -> {
             List<?> data = parseJsonList(rows.get("body"));
             boolean hasNext = data.size() > fetchLimit;
             return ResponseEntity.ok(Map.of("data", hasNext ? data.subList(0, fetchLimit) : data, "pageInfo", Map.of("hasNextPage", hasNext)));
@@ -132,7 +136,7 @@ public class RestApiController {
         int clamped = Math.clamp(limit, 1, maxRows);
         boolean count = preferContains(prefer, "count=exact");
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, count));
-        var resp = executeInTx(compiled, ctx.claims(), rows -> {
+        var resp = executeInTx(compiled, rows -> {
             var response = new LinkedHashMap<String, Object>();
             response.put("data", parseJsonList(rows.get("body")));
             if (count && rows.containsKey("total_count")) {
@@ -157,6 +161,11 @@ public class RestApiController {
         if (ctx == null) return notFound();
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
 
+        // RLS WITH-CHECK: the candidate row(s) must satisfy the caller's INSERT
+        // policy — else they could insert rows they'd never be allowed to read.
+        ResponseEntity<Object> insertViolation = checkInsertRows(ctx.tableKey(), body);
+        if (insertViolation != null) return insertViolation;
+
         RestQueryCompiler.CompiledResult compiled = switch (body) {
             case List<?> list -> ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list);
             case Map<?, ?> map -> {
@@ -169,7 +178,7 @@ public class RestApiController {
         };
         if (compiled == null) return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Body must be JSON object or array"));
 
-        return executeDml(compiled, ctx.claims(), rollback, null, prefer, HttpStatus.CREATED, table);
+        return executeDml(compiled, rollback, null, prefer, HttpStatus.CREATED, table);
     }
 
     @PostMapping(path = "/rpc/{function}")
@@ -182,6 +191,18 @@ public class RestApiController {
         String schema = resolveSchema(cp);
         if (schema == null) return notFound();
         var claims = getClaims(request);
+        // RPC executes an opaque stored function, so the engine cannot inject a
+        // row-level filter into its body (unlike compiled table queries). It is
+        // therefore NOT anonymous-safe. When auth is enabled, require a valid
+        // token (row-level filtering inside a function stays the author's
+        // responsibility, as in PostgREST/Hasura for non-SETOF functions). Checked
+        // before revealing whether the function exists, to avoid enumeration. When
+        // auth is disabled (jwt-enabled=false, trusted/dev), RPC runs unauthenticated
+        // like the rest of the surface.
+        if (jwtEnabled && claims == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of(KEY_ERROR, "Authentication required for RPC"));
+        }
         var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
         if (!schemaInfo.getStoredProcedures().containsKey(schema + DOT + function)) return notFound();
 
@@ -234,7 +255,7 @@ public class RestApiController {
 
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
         Integer maxAffected = parseMaxAffected(prefer);
-        return executeDml(ctx.compiler().compileDelete(ctx.tableKey(), filters), ctx.claims(), rollback, maxAffected, prefer, HttpStatus.OK, null);
+        return executeDml(ctx.compiler().compileDelete(ctx.tableKey(), filters), rollback, maxAffected, prefer, HttpStatus.OK, null);
     }
 
 
@@ -244,9 +265,39 @@ public class RestApiController {
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "At least one filter is required"));
 
+        // RLS WITH-CHECK: the new image (SET columns) must keep the row within the
+        // caller's UPDATE policy — e.g. can't reassign owner_id to someone else.
+        RowCheckContributor check = RlsContext.rowCheck();
+        if (check != null && !check.permitsUpdate(ctx.tableKey(), body)) {
+            return rlsViolation("UPDATE", table);
+        }
+
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
         Integer maxAffected = parseMaxAffected(prefer);
-        return executeDml(ctx.compiler().compileUpdate(ctx.tableKey(), body, filters), ctx.claims(), rollback, maxAffected, prefer, HttpStatus.OK, null);
+        return executeDml(ctx.compiler().compileUpdate(ctx.tableKey(), body, filters), rollback, maxAffected, prefer, HttpStatus.OK, null);
+    }
+
+    /** RLS WITH-CHECK for insert: rejects any candidate row the caller's INSERT
+     *  policy forbids. Handles both single-object and bulk-array bodies. No-op
+     *  when no row-check contributor is registered (auth off / no policy). */
+    @SuppressWarnings("unchecked")
+    private ResponseEntity<Object> checkInsertRows(String tableKey, Object body) {
+        RowCheckContributor check = RlsContext.rowCheck();
+        if (check == null) return null;
+        List<Map<String, Object>> rows = switch (body) {
+            case Map<?, ?> m -> List.of((Map<String, Object>) m);
+            case List<?> list -> (List<Map<String, Object>>) list;
+            default -> List.of();
+        };
+        for (Map<String, Object> row : rows) {
+            if (!check.permits(tableKey, row, RlsOp.INSERT)) return rlsViolation("INSERT", tableKey);
+        }
+        return null;
+    }
+
+    private static ResponseEntity<Object> rlsViolation(String op, String table) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(Map.of(KEY_ERROR, "Row violates row-level security policy for " + op + " on " + table));
     }
 
 
@@ -255,10 +306,9 @@ public class RestApiController {
         ResponseEntity<Object> handle(Map<String, Object> rows);
     }
 
-    private ResponseEntity<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, JwtClaims claims, QueryResultHandler handler) {
+    private ResponseEntity<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, QueryResultHandler handler) {
         return txTemplate.execute(status -> {
             try {
-                setRlsContext(claims);
                 var rows = namedJdbc.queryForMap(compiled.sql(), new MapSqlParameterSource(compiled.params()));
                 return handler.handle(rows);
             } catch (Exception e) {
@@ -268,10 +318,9 @@ public class RestApiController {
         });
     }
 
-    private ResponseEntity<Object> executeDml(RestQueryCompiler.CompiledResult compiled, JwtClaims claims, boolean rollback, Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
+    private ResponseEntity<Object> executeDml(RestQueryCompiler.CompiledResult compiled, boolean rollback, Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         return txTemplate.execute(status -> {
             try {
-                setRlsContext(claims);
                 String json = executeDmlQuery(compiled);
                 ResponseEntity<Object> overflow = checkMaxAffected(json, maxAffected, status);
                 if (overflow != null) return overflow;
@@ -317,24 +366,6 @@ public class RestApiController {
         }
         return applied.isEmpty() ? resp : withHeader(resp, HDR_PREFERENCE_APPLIED, String.join(", ", applied));
     }
-
-    private void setRlsContext(JwtClaims claims) {
-        if (claims != null) {
-            namedJdbc.queryForObject(RLS_SET_CONFIG, Map.of("key", RLS_USER_ID, "val", String.valueOf(claims.userId())), String.class);
-            if (claims.projectId() != null) {
-                namedJdbc.queryForObject(RLS_SET_CONFIG, Map.of("key", RLS_PROJECT_ID, "val", claims.projectId()), String.class);
-            }
-        }
-        // Postgres role switching — populated by JwtAuthFilter via RoleContext
-        // ThreadLocal. The string was already validated by PostgresRoleResolver
-        // before being stored, but we re-check here as defense-in-depth because
-        // SET ROLE cannot use parameter placeholders.
-        String pgRole = RoleContext.getRole();
-        if (pgRole != null && SAFE_PG_ROLE.matcher(pgRole).matches()) {
-            namedJdbc.getJdbcOperations().execute("SET LOCAL ROLE \"" + pgRole + "\""); // NOSONAR — role validated against SAFE_PG_ROLE above
-        }
-    }
-
 
     private ResponseEntity<Object> buildCsvResponse(Map<String, Object> rows, List<String> cols) {
         List<?> data = parseJsonList(rows.get("body"));

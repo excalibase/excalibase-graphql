@@ -5,6 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.ColumnMaskContributor;
+import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.RlsWhereContributor;
 import org.springframework.jdbc.core.SqlParameterValue;
 
 import java.sql.Types;
@@ -69,8 +73,10 @@ public class RestQueryCompiler {
     public CompiledResult compileSelect(SelectQuery query) {
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(query.table()));
         List<String> columns = query.columns().stream().filter(knownCols::contains).toList();
-        List<OrderBySpec> orderBy = query.orderBy() != null ? query.orderBy().stream().filter(o -> knownCols.contains(o.column())).toList() : null;
-        List<FilterSpec> allFilters = query.filters().stream().filter(f -> knownCols.contains(f.column())).toList();
+        List<OrderBySpec> orderBy = query.orderBy() != null ? query.orderBy().stream()
+                .filter(o -> knownCols.contains(o.column()) && readable(query.table(), o.column())).toList() : null;
+        List<FilterSpec> allFilters = query.filters().stream()
+                .filter(f -> knownCols.contains(f.column()) && readable(query.table(), f.column())).toList();
 
         String quotedTable = resolveTable(query.table());
         Map<String, Object> params = new LinkedHashMap<>();
@@ -90,11 +96,11 @@ public class RestQueryCompiler {
 
         StringBuilder where = buildWhere(filters, P_FILTER, params, query.table());
         appendOrConditions(where, query.orConditions(), knownCols, params, query.table());
-        if (query.afterCursor() != null && query.orderColumn() != null && knownCols.contains(query.orderColumn())) {
-            if (!where.isEmpty()) where.append(AND);
-            params.put(P_AFTER, convertValue(query.afterCursor(), query.table(), query.orderColumn()));
-            where.append(dialect.quoteIdentifier(query.orderColumn())).append(GT).append(PARAM_PREFIX).append(P_AFTER);
-        }
+        appendAfterCursor(where, query, knownCols, params);
+
+        // RLS: filter rows the caller may not read (the inner SELECT aliases the
+        // table as ALIAS, so relationship/EXISTS predicates correlate to it).
+        appendRls(where, query.table(), ALIAS, RlsOp.SELECT, params);
 
         // Vector k-NN ordering overrides any user-supplied orderBy entirely —
         // nearest-neighbor similarity IS the sort, there is no composing.
@@ -110,7 +116,7 @@ public class RestQueryCompiler {
         }
 
         StringBuilder inner = buildInnerSelect(quotedTable, where, orderBySql, effectiveLimit, query.offset());
-        String jsonAgg = buildJsonAgg(columns, buildEmbedEntries(query.table(), query.embeds()), knownCols);
+        String jsonAgg = buildJsonAgg(query.table(), columns, buildEmbedEntries(query.table(), query.embeds(), params), knownCols);
 
         StringBuilder sql = new StringBuilder();
         sql.append(SELECT).append(jsonAgg).append(AS_BODY);
@@ -213,8 +219,20 @@ public class RestQueryCompiler {
                 updateSets.add(qCol + ASSIGN + EXCLUDED + DOT + qCol);
             }
         }
+        String doUpdate = DO_UPDATE + SET + String.join(COMMA_SEP, updateSets);
+        if (!updateSets.isEmpty()) {
+            // RLS USING for the conflict path: DO UPDATE can overwrite a *pre-existing*
+            // row, so it must be gated by the caller's UPDATE policy — otherwise an
+            // upsert on a known PK silently overwrites another owner's row. Columns are
+            // qualified with the target relation name because a bare column in
+            // ON CONFLICT ... WHERE is ambiguous with EXCLUDED.
+            String targetRef = table.contains(".") ? table.substring(table.lastIndexOf('.') + 1) : table;
+            StringBuilder usingWhere = new StringBuilder();
+            appendRls(usingWhere, table, dialect.quoteIdentifier(targetRef), RlsOp.UPDATE, params);
+            if (!usingWhere.isEmpty()) doUpdate += WHERE + usingWhere;
+        }
         String onConflict = ON_CONFLICT + parens(String.join(COMMA_SEP, quotedConflict))
-            + (updateSets.isEmpty() ? DO_NOTHING : DO_UPDATE + SET + String.join(COMMA_SEP, updateSets));
+            + (updateSets.isEmpty() ? DO_NOTHING : doUpdate);
 
         return new CompiledResult(
             WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
@@ -237,6 +255,8 @@ public class RestQueryCompiler {
             params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
         }
         StringBuilder where = buildWhere(filters, P_WHERE_FILTER, params, table);
+        // RLS: a caller can only UPDATE rows it may write (and, via coupling, see).
+        appendRls(where, table, null, RlsOp.UPDATE, params);
         return new CompiledResult(
             WITH + CTE_UPD + AS_OPEN + UPDATE + quotedTable
             + SET + String.join(COMMA_SEP, setClauses) + WHERE + where
@@ -249,6 +269,8 @@ public class RestQueryCompiler {
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
         StringBuilder where = buildWhere(filters, P_DELETE_FILTER, params, table);
+        // RLS: a caller can only DELETE rows it may write (and, via coupling, see).
+        appendRls(where, table, null, RlsOp.DELETE, params);
         return new CompiledResult(
             WITH + CTE_DEL + AS_OPEN + DELETE_FROM + quotedTable
             + WHERE + where + RETURNING_ALL + SPACE
@@ -274,13 +296,34 @@ public class RestQueryCompiler {
         return where;
     }
 
+    /**
+     * Splices the active request's RLS predicate for {@code (table, op)} into the
+     * REST query's WHERE — the same enforcement the GraphQL path gets via
+     * {@code FilterBuilder}. Without this, engine RLS policies (owner/relationship/
+     * JSON/claim) would be silently bypassed on REST. {@code alias} is the outer
+     * table's alias so relationship/EXISTS predicates correlate correctly (the
+     * inner SELECT aliases the table; UPDATE/DELETE reference it by name → null).
+     * A {@code null} contributor (no RLS context, e.g. unit tests) is a no-op.
+     */
+    private void appendRls(StringBuilder where, String table, String alias, RlsOp op, Map<String, Object> params) {
+        if (table == null) return;
+        RlsWhereContributor contributor = RlsContext.current();
+        if (contributor == null) return;
+        RlsWhereContributor.Contribution rls = contributor.contribute(table, alias, op);
+        if (rls == null || rls.sql() == null || rls.sql().isBlank()) return;
+        params.putAll(rls.params());
+        if (!where.isEmpty()) where.append(AND);
+        where.append("(").append(rls.sql()).append(")");
+    }
+
     private void appendOrConditions(StringBuilder where, List<OrCondition> ors, Set<String> knownCols, Map<String, Object> params, String table) {
         if (ors == null) return;
         for (int oi = 0; oi < ors.size(); oi++) {
             List<String> parts = new ArrayList<>();
             for (int ci = 0; ci < ors.get(oi).conditions().size(); ci++) {
                 var filter = ors.get(oi).conditions().get(ci);
-                if (knownCols.contains(filter.column())) parts.add(buildFilterSql(filter, P_OR + oi + UNDERSCORE + ci, params, table));
+                if (knownCols.contains(filter.column()) && readable(table, filter.column()))
+                    parts.add(buildFilterSql(filter, P_OR + oi + UNDERSCORE + ci, params, table));
             }
             if (!parts.isEmpty()) {
                 if (!where.isEmpty()) where.append(AND);
@@ -330,67 +373,126 @@ public class RestQueryCompiler {
         throw new IllegalArgumentException("Invalid ORDER BY NULLS clause: " + nulls);
     }
 
-    private String buildJsonAgg(List<String> columns, List<String> embedSql, Set<String> knownCols) {
-        if (columns.isEmpty() && embedSql.isEmpty()) return dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(ALIAS)));
-        List<String> entries = new ArrayList<>();
-        for (String col : columns.isEmpty() ? new ArrayList<>(knownCols) : columns) {
-            entries.add(sqlString(col) + COMMA_SEP + ALIAS + DOT + dialect.quoteIdentifier(col));
+    private String buildJsonAgg(String table, List<String> columns, List<String> embedSql, Set<String> knownCols) {
+        // Fast path only when nothing to mask — rowToJson emits the whole row and
+        // cannot drop HIDE / NULL-mask columns, so it's unsafe when a masker is live.
+        if (columns.isEmpty() && embedSql.isEmpty() && RlsContext.columnMask() == null) {
+            return dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(ALIAS)));
         }
+        List<String> entries = maskedJsonEntries(table, columns.isEmpty() ? knownCols : columns, ALIAS);
         entries.addAll(embedSql);
         return dialect.coalesceArray(dialect.aggregateArray(dialect.buildObject(entries)));
     }
 
+    /**
+     * Keyset-pagination predicate ({@code orderColumn > afterCursor}). Skipped when
+     * the cursor/column is absent, unknown, or masked — a masked column must not be
+     * usable as a cursor (that would leak its ordering).
+     */
+    private void appendAfterCursor(StringBuilder where, SelectQuery query,
+                                   Set<String> knownCols, Map<String, Object> params) {
+        String col = query.orderColumn();
+        if (query.afterCursor() == null || col == null) return;
+        if (!knownCols.contains(col) || !readable(query.table(), col)) return;
+        if (!where.isEmpty()) where.append(AND);
+        params.put(P_AFTER, convertValue(query.afterCursor(), query.table(), col));
+        where.append(dialect.quoteIdentifier(col)).append(GT).append(PARAM_PREFIX).append(P_AFTER);
+    }
+
+    /**
+     * True iff the column may be read by the current caller, i.e. no active
+     * column mask hides or nulls it. Masked columns are excluded from WHERE,
+     * ORDER BY, cursor, and OR conditions so they can't leak values through
+     * filtering/sorting (an inference oracle), mirroring the GraphQL FilterBuilder.
+     */
+    private boolean readable(String table, String column) {
+        ColumnMaskContributor masker = RlsContext.columnMask();
+        if (masker == null || table == null) return true;
+        return masker.decide(table, column) == ColumnMaskContributor.Decision.VISIBLE;
+    }
+
+    /**
+     * JSON object key/value entries for {@code cols} of {@code table}, applying
+     * column-level security (CLS): a HIDDEN column is dropped from the response,
+     * a NULLED column is emitted as {@code 'col', NULL}. Mirrors the GraphQL
+     * masking in {@code QueryBuilder} so REST doesn't leak protected columns.
+     */
+    private List<String> maskedJsonEntries(String table, java.util.Collection<String> cols, String alias) {
+        ColumnMaskContributor masker = RlsContext.columnMask();
+        List<String> entries = new ArrayList<>();
+        for (String col : cols) {
+            ColumnMaskContributor.Decision d = (masker == null || table == null)
+                ? ColumnMaskContributor.Decision.VISIBLE
+                : masker.decide(table, col);
+            switch (d) {
+                case HIDDEN -> { /* drop entirely */ }
+                case NULLED -> entries.add(sqlString(col) + COMMA_SEP + "NULL");
+                case VISIBLE -> entries.add(sqlString(col) + COMMA_SEP + alias + DOT + dialect.quoteIdentifier(col));
+            }
+        }
+        return entries;
+    }
+
     private void appendCountSubquery(StringBuilder sql, List<FilterSpec> filters, String quotedTable, Map<String, Object> params, String table) {
         StringBuilder cw = buildWhere(filters, P_FILTER_COUNT, params, table);
+        // totalCount must respect RLS or it leaks the unfiltered total. The count
+        // table is unaliased, so relationship/EXISTS correlate by table name (null).
+        appendRls(cw, table, null, RlsOp.SELECT, params);
         sql.append(COMMA_SEP).append(parens(SELECT + COUNT_ALL + FROM + quotedTable + (cw.isEmpty() ? "" : WHERE + cw))).append(AS_TOTAL_COUNT);
     }
 
 
-    private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds) {
-        return buildEmbedEntries(table, embeds, ALIAS, new AtomicInteger());
+    private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, Map<String, Object> params) {
+        return buildEmbedEntries(table, embeds, ALIAS, new AtomicInteger(), params);
     }
 
-    private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, String parentAlias, AtomicInteger counter) {
+    private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, String parentAlias,
+                                           AtomicInteger counter, Map<String, Object> params) {
         if (embeds == null || embeds.isEmpty()) return List.of();
         List<String> entries = new ArrayList<>();
         for (EmbedSpec embed : embeds) {
             String ia = ALIAS_R + counter.getAndIncrement();
             String oa = ALIAS_R + counter.getAndIncrement();
             var fwd = findForwardFk(table, embed.relationName(), embed.fkHint());
-            if (fwd != null) entries.add(buildForwardEmbed(embed, fwd, ia, oa, parentAlias, counter));
+            if (fwd != null) entries.add(buildForwardEmbed(embed, fwd, ia, oa, parentAlias, counter, params));
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
-                if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa, parentAlias, counter));
+                if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa, parentAlias, counter, params));
             }
         }
         return entries;
     }
 
     private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
-                                     String parentAlias, AtomicInteger counter) {
+                                     String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String refTable = resolveTable(fk.refTable());
-        List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter);
+        List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, fk.refTable()) : SELECT + ia + DOT_STAR;
         String rowExpr = buildRowExpr(embed, oa, fk.refTable(), childEntries);
+        // RLS on the embedded related table (aliased ia) — without this, an embed
+        // (?select=*,fk(*)) would expose related rows the caller may not read.
+        StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(fk.refColumn())
+            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()));
+        appendRls(ew, fk.refTable(), ia, RlsOp.SELECT, params);
         return sqlString(embed.relationName()) + COMMA_SEP + parens(
             SELECT + rowExpr + FROM
-            + parens(innerSel + FROM + refTable + SPACE + ia
-            + WHERE + ia + DOT + dialect.quoteIdentifier(fk.refColumn())
-            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()))
+            + parens(innerSel + FROM + refTable + SPACE + ia + WHERE + ew)
             + SPACE + oa);
     }
 
     private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
-                                     String parentAlias, AtomicInteger counter) {
+                                     String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String childTable = resolveTable(rev.childTable());
-        List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter);
+        List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, rev.childTable()) : SELECT + ia + DOT_STAR;
         String rowExpr = buildRowExpr(embed, oa, rev.childTable(), childEntries);
+        // RLS on the embedded child table (aliased ia) — same leak guard as forward.
+        StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(rev.fkColumn())
+            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(rev.refColumns().get(0)));
+        appendRls(ew, rev.childTable(), ia, RlsOp.SELECT, params);
         return sqlString(embed.relationName()) + COMMA_SEP + COALESCE + parens(
             parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM
-            + parens(innerSel + FROM + childTable + SPACE + ia
-            + WHERE + ia + DOT + dialect.quoteIdentifier(rev.fkColumn())
-            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(rev.refColumns().get(0)))
+            + parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew)
             + SPACE + oa) + COMMA_SEP + EMPTY_JSON_ARRAY);
     }
 
@@ -400,14 +502,14 @@ public class RestQueryCompiler {
      * both the requested columns and the child embed entries.
      */
     private String buildRowExpr(EmbedSpec embed, String outerAlias, String table, List<String> childEntries) {
-        if (childEntries.isEmpty()) return dialect.rowToJson(outerAlias + DOT_STAR);
-        List<String> entries = new ArrayList<>();
+        // rowToJson can't mask, so only use it when there's nothing to mask.
+        if (childEntries.isEmpty() && RlsContext.columnMask() == null) {
+            return dialect.rowToJson(outerAlias + DOT_STAR);
+        }
         List<String> cols = embed.columns().isEmpty() || embed.columns().contains(STAR)
             ? new ArrayList<>(schemaInfo.getColumns(table))
             : embed.columns();
-        for (String col : cols) {
-            entries.add(sqlString(col) + COMMA_SEP + outerAlias + DOT + dialect.quoteIdentifier(col));
-        }
+        List<String> entries = maskedJsonEntries(table, cols, outerAlias);
         entries.addAll(childEntries);
         return dialect.buildObject(entries);
     }

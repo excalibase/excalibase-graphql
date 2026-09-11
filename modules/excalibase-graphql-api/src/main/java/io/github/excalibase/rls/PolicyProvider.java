@@ -27,4 +27,14 @@ public interface PolicyProvider {
     default List<ColumnPolicy> columnPoliciesFor(String projectId) {
         return List.of();
     }
+
+    /**
+     * Drops any cached policies for {@code projectId} so the next read re-fetches.
+     * The NATS policy-change subscriber calls this for immediate convergence;
+     * the per-project TTL remains the fail-safe. Defaults to a no-op for providers
+     * that hold no cache, so eviction is always a safe call.
+     */
+    default void evict(String projectId) {
+        // no-op: providers without a cache converge via re-read on every call
+    }
 }

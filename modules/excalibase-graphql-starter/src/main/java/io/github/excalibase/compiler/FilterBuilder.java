@@ -2,6 +2,7 @@ package io.github.excalibase.compiler;
 
 import graphql.language.*;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.ColumnMaskContributor;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
@@ -67,8 +68,9 @@ public class FilterBuilder {
         // RLS predicate is appended AFTER (and independently of) any user filter,
         // so a query that omits `where`/`filter` is still restricted. This funnel
         // is shared by list, connection (records + totalCount), and aggregate
-        // compilation — closing every read path at once.
-        appendRlsConditions(conditions, tableName, params, op);
+        // compilation — closing every read path at once. The alias is passed so
+        // relationship/EXISTS predicates can correlate back to the outer table.
+        appendRlsConditions(conditions, tableName, alias, params, op);
     }
 
     /**
@@ -82,10 +84,20 @@ public class FilterBuilder {
      */
     public void appendRlsConditions(List<String> conditions, String tableName,
                                     Map<String, Object> params, RlsOp op) {
+        appendRlsConditions(conditions, tableName, null, params, op);
+    }
+
+    /**
+     * As above, with the outer table's alias so relationship/EXISTS predicates
+     * can correlate their subquery back to it. Mutation compilers that have no
+     * alias (or emit no correlated predicates) can use the alias-less overload.
+     */
+    public void appendRlsConditions(List<String> conditions, String tableName, String alias,
+                                    Map<String, Object> params, RlsOp op) {
         if (tableName == null) return;
         RlsWhereContributor contributor = RlsContext.current();
         if (contributor == null) return;
-        RlsWhereContributor.Contribution contribution = contributor.contribute(tableName, op);
+        RlsWhereContributor.Contribution contribution = contributor.contribute(tableName, alias, op);
         if (contribution == null || contribution.sql() == null || contribution.sql().isBlank()) return;
         params.putAll(contribution.params());
         conditions.add("(" + contribution.sql() + ")");
@@ -158,10 +170,25 @@ public class FilterBuilder {
     public void buildFilterConditions(ObjectValue ov, String alias, Map<String, Object> params, List<String> conditions, String tableName) {
         for (ObjectField of : ov.getObjectFields()) {
             if (applyLogicalOperator(of, alias, params, conditions, tableName)) continue;
-            if (of.getValue() instanceof ObjectValue filterObj) {
+            // Column-level security: a column the caller can't read (HIDE or
+            // NULL-mask) must not be filterable — otherwise a predicate like
+            // `salary: { gt: 100000 }` is a value-inference oracle. Drop it,
+            // matching how unknown columns are silently ignored.
+            if (of.getValue() instanceof ObjectValue filterObj && isReadable(tableName, of.getName())) {
                 applyColumnFilter(of.getName(), filterObj, alias, params, conditions, tableName);
             }
         }
+    }
+
+    /**
+     * True iff the column may be read by the current caller, i.e. no active
+     * column mask hides or nulls it. Used to exclude masked columns from WHERE
+     * and ORDER BY so they can't leak values through filtering/sorting.
+     */
+    private boolean isReadable(String tableName, String column) {
+        ColumnMaskContributor masker = RlsContext.columnMask();
+        if (masker == null || tableName == null) return true;
+        return masker.decide(tableName, column) == ColumnMaskContributor.Decision.VISIBLE;
     }
 
     /**
@@ -448,6 +475,10 @@ public class FilterBuilder {
      * Appends an ORDER BY clause to the SQL builder from the field's orderBy argument.
      */
     public void applyOrderBy(StringBuilder sql, Field field, String alias) {
+        applyOrderBy(sql, field, alias, null);
+    }
+
+    public void applyOrderBy(StringBuilder sql, Field field, String alias, String tableName) {
         Argument orderByArg = field.getArguments().stream()
                 .filter(a -> ARG_ORDER_BY.equals(a.getName()))
                 .findFirst().orElse(null);
@@ -456,6 +487,9 @@ public class FilterBuilder {
 
         List<String> clauses = new ArrayList<>();
         for (ObjectField of : ov.getObjectFields()) {
+            // A masked column must not be orderable — sorting by it leaks value
+            // ordering just as a filter would.
+            if (!isReadable(tableName, of.getName())) continue;
             String dir;
             if (of.getValue() instanceof EnumValue ev) {
                 dir = ev.getName();
@@ -477,12 +511,17 @@ public class FilterBuilder {
      * Parses the orderBy argument into a list of [column, direction] pairs.
      */
     public List<String[]> parseOrderBy(Field field) {
+        return parseOrderBy(field, null);
+    }
+
+    public List<String[]> parseOrderBy(Field field, String tableName) {
         List<String[]> result = new ArrayList<>();
         Argument orderByArg = field.getArguments().stream()
                 .filter(a -> ARG_ORDER_BY.equals(a.getName()))
                 .findFirst().orElse(null);
         if (orderByArg != null && orderByArg.getValue() instanceof ObjectValue ov) {
             for (ObjectField of : ov.getObjectFields()) {
+                if (!isReadable(tableName, of.getName())) continue;
                 String dir;
                 if (of.getValue() instanceof EnumValue ev) {
                     dir = ev.getName();

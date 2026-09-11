@@ -2,15 +2,15 @@ package io.github.excalibase.config;
 
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
+import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.rls.PolicyProvider;
+import io.github.excalibase.rls.ProvisioningPolicyProvider;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
-import io.github.excalibase.security.PostgresRoleResolver;
 import io.github.excalibase.service.VaultCredentialService;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -45,21 +45,28 @@ public class JwtSecurityConfig {
         }
 
         if (hasJwks) {
-            return new JwtService(auth.jwksUrl(), ttlMinutes);
+            return new JwtService(auth.jwksUrl(), ttlMinutes).expectedIssuer(auth.issuer());
         }
 
-        return new JwtService(auth.hmacSecret());
+        return new JwtService(auth.hmacSecret()).expectedIssuer(auth.issuer());
     }
 
     /**
-     * Default in-process policy source. Empty until policies are pushed in
-     * (NATS consumer / HTTP sync — separate ticket), so the RLS path is a
-     * no-op passthrough out of the box. {@link ConditionalOnMissingBean} lets a
-     * remote-backed provider replace it without touching this config.
+     * RLS/CLS policy source. When {@code app.security.rls.policy-url} is set,
+     * policies are fetched from the provisioning service over HTTP and cached per
+     * project; otherwise an empty in-memory provider is used (RLS is a no-op until
+     * policies are pushed in). The choice is made at runtime rather than via
+     * {@code @ConditionalOnProperty} so it survives GraalVM AOT, which evaluates
+     * build-time conditions when the property may be absent.
      */
     @Bean
-    @ConditionalOnMissingBean(PolicyProvider.class)
-    public PolicyProvider policyProvider() {
+    public PolicyProvider policyProvider(
+            @Value("${app.security.rls.policy-url:}") String policyUrl,
+            @Value("${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}") String policyPat,
+            @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs) {
+        if (policyUrl != null && !policyUrl.isBlank()) {
+            return new ProvisioningPolicyProvider(policyUrl, policyPat, policyTtlMs);
+        }
         return new InMemoryPolicyProvider();
     }
 
@@ -76,9 +83,22 @@ public class JwtSecurityConfig {
     }
 
     @Bean
-    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver,
-                                       RlsPolicyEnforcer rlsPolicyEnforcer) {
-        return new JwtAuthFilter(jwtService, roleResolver, rlsPolicyEnforcer);
+    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, RlsPolicyEnforcer rlsPolicyEnforcer) {
+        return new JwtAuthFilter(jwtService, rlsPolicyEnforcer);
+    }
+
+    /**
+     * Invalidates a project's cached policies on a NATS {@code policies.{id}.changed}
+     * signal from provisioning, so Studio edits converge immediately rather than
+     * waiting out the policy-cache TTL (which stays as the fail-safe). Enablement is
+     * read at runtime from {@code app.nats.enabled}; disabled = safe no-op.
+     */
+    @Bean
+    public PolicyChangeSubscriber policyChangeSubscriber(
+            PolicyProvider policyProvider,
+            @Value("${app.nats.enabled:false}") boolean natsEnabled,
+            @Value("${app.nats.url:nats://localhost:4222}") String natsUrl) {
+        return new PolicyChangeSubscriber(policyProvider, natsEnabled, natsUrl);
     }
 
     // Multi-tenant beans — only when provisioning-url is configured

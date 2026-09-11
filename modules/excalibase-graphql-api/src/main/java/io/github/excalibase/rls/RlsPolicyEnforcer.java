@@ -52,7 +52,18 @@ public final class RlsPolicyEnforcer {
      * for owner-style policies rather than throwing.
      */
     public SqlFilter filterFor(String projectId, String table, JwtClaims claims, Operation op) {
-        return evaluator(projectId).compile(table, context(projectId, claims), op);
+        return filterFor(projectId, table, claims, op, null);
+    }
+
+    /**
+     * As {@link #filterFor(String, String, JwtClaims, Operation)}, but with the
+     * alias the calling query gives the outer table. Relationship/EXISTS
+     * predicates correlate a subquery back to the outer row; since the compiler
+     * aliases tables, the engine must reference that alias rather than the table
+     * name. Null falls back to the table name (correct for un-aliased callers).
+     */
+    public SqlFilter filterFor(String projectId, String table, JwtClaims claims, Operation op, String outerAlias) {
+        return evaluator(projectId).compile(table, context(projectId, claims), op, outerAlias);
     }
 
     /**
@@ -77,6 +88,20 @@ public final class RlsPolicyEnforcer {
                               Operation op, java.util.Map<String, Object> row) {
         return new RowMatcher(policyProvider.policiesFor(projectId))
                 .matches(table, row, context(projectId, claims), op);
+    }
+
+    /**
+     * WITH-CHECK for an UPDATE's partial new image: {@code changedRow} carries
+     * only the columns the caller is setting. Returns {@code true} iff those
+     * changes keep the row within the project's UPDATE policies (or no UPDATE
+     * policy targets the table), {@code false} if the update must be rejected —
+     * e.g. moving an ownership/tenant column out of policy. Unchanged columns
+     * are not re-validated here; the UPDATE's USING predicate already did.
+     */
+    public boolean permitsRowUpdate(String projectId, String table, JwtClaims claims,
+                                    java.util.Map<String, Object> changedRow) {
+        return new RowMatcher(policyProvider.policiesFor(projectId))
+                .matchesUpdate(table, changedRow, context(projectId, claims));
     }
 
     /**

@@ -76,6 +76,19 @@ class JwtClaimsUserContextTest {
     }
 
     @Test
+    @DisplayName("resolveVariable surfaces arbitrary custom claims from the JWT")
+    void resolveVariableSurfacesCustomClaims() {
+        JwtClaims c = new JwtClaims("u-1", "p-1", "acme", "demo", "", "viewer", "u@x.com", "authenticated", 0L,
+                java.util.Map.of("region", "us-west", "plan", "pro"));
+        UserContext ctx = new JwtClaimsUserContext(c);
+
+        assertThat(ctx.resolveVariable("region")).isEqualTo("us-west");
+        assertThat(ctx.resolveVariable("plan")).isEqualTo("pro");
+        // known fields still take precedence over the raw claim map
+        assertThat(ctx.resolveVariable("user_id")).isEqualTo("u-1");
+    }
+
+    @Test
     @DisplayName("resolveVariable returns null for unknown variables (engine default)")
     void resolveVariableReturnsNullForUnknown() {
         UserContext ctx = new JwtClaimsUserContext(claims("u-1", "p-1", "viewer", "u@x.com"));

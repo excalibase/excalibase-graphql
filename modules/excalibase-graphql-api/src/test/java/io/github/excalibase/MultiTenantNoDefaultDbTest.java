@@ -127,10 +127,14 @@ class MultiTenantNoDefaultDbTest {
     return mapper.writeValueAsString(Map.of("query", query));
   }
 
+  private static String projectIdOf(String projectName) {
+    return "proj_" + projectName.replaceAll("[^a-z0-9]", "") + "12345";
+  }
+
   private String signJwt(String orgSlug, String projectName) throws Exception {
     // Simulate the provisioner's opaque projectId ref. Deterministic per (org, project)
     // for test stability; real provisioner generates a random ref at provision time.
-    String projectId = "proj_" + projectName.replaceAll("[^a-z0-9]", "") + "12345";
+    String projectId = projectIdOf(projectName);
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
         .subject("test@test.com")
         .claim("userId", 1L)
@@ -152,7 +156,7 @@ class MultiTenantNoDefaultDbTest {
   @DisplayName("App starts with no default DB — first tenant request introspects and caches schema")
   void firstTenantRequest_buildsSchemaFromVault() throws Exception {
     String jwt = signJwt("acme-corp", "app-a");
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantProducts { id name price } }")))
@@ -166,7 +170,7 @@ class MultiTenantNoDefaultDbTest {
   @DisplayName("Introspection works on tenant schema (no default DB)")
   void tenantIntrospection_returnsSchema() throws Exception {
     String jwt = signJwt("acme-corp", "app-a");
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ __schema { queryType { fields { name } } } }")))
@@ -179,7 +183,7 @@ class MultiTenantNoDefaultDbTest {
   @DisplayName("Second request uses cached schema — no vault call")
   void secondRequest_usesCachedSchema() throws Exception {
     String jwt = signJwt("acme-corp", "app-a");
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantProducts { id name price } }")))
@@ -192,7 +196,7 @@ class MultiTenantNoDefaultDbTest {
   @DisplayName("Mutation works on tenant DB (no default DB)")
   void tenantMutation_createProduct() throws Exception {
     String jwt = signJwt("acme-corp", "app-a");
-    mockMvc.perform(post("/graphql")
+    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("mutation { createTenantProducts(input: { name: \"New Item\", price: 42.00 }) { id name price } }")))

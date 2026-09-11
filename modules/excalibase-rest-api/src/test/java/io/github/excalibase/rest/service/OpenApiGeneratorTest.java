@@ -39,7 +39,8 @@ class OpenApiGeneratorTest {
         assertThat(info).containsEntry("title", "Excalibase REST API").containsEntry("version", "1.0.0");
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> servers = (List<Map<String, Object>>) spec.get("servers");
-        assertThat(servers).hasSize(1).first().satisfies(srv -> assertThat(srv).containsEntry("url", "/api/v1"));
+        assertThat(servers).hasSize(1).first().satisfies(srv ->
+                assertThat(srv).containsEntry("url", "/{projectId}/api/v1"));
     }
 
     @Test

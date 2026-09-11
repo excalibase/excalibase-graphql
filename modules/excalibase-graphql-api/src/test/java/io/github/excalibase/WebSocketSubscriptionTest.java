@@ -74,7 +74,7 @@ class WebSocketSubscriptionTest {
                     }
                 },
                 headers,
-                URI.create("ws://localhost:" + port + "/graphql")
+                URI.create("ws://localhost:" + port + "/test-proj/graphql")
         );
 
         return futureSession.get(5, TimeUnit.SECONDS);

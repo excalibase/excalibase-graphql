@@ -20,17 +20,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     public static final String JWT_CLAIMS_ATTR = SecurityConstants.JWT_CLAIMS_ATTR;
 
     private final JwtService jwtService;
-    private final PostgresRoleResolver roleResolver;
     private final RlsPolicyEnforcer rlsEnforcer;
 
-    public JwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver) {
-        this(jwtService, roleResolver, null);
+    public JwtAuthFilter(JwtService jwtService) {
+        this(jwtService, null);
     }
 
-    public JwtAuthFilter(JwtService jwtService, PostgresRoleResolver roleResolver,
-                         RlsPolicyEnforcer rlsEnforcer) {
+    public JwtAuthFilter(JwtService jwtService, RlsPolicyEnforcer rlsEnforcer) {
         this.jwtService = jwtService;
-        this.roleResolver = roleResolver;
         this.rlsEnforcer = rlsEnforcer;
     }
 
@@ -45,30 +42,59 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             return;
         }
 
-        // Resolve Postgres role once per request — single source of truth, exposed
-        // to both GraphQL and REST controllers via RoleContext (starter ThreadLocal).
-        // RoleNotAllowedException is converted to a 403 here so it surfaces uniformly
-        // for filter-based REST traffic (which @RestControllerAdvice can't reach).
-        String resolvedRole;
-        try {
-            resolvedRole = roleResolver != null ? roleResolver.resolve(claims) : null;
-        } catch (RoleNotAllowedException ex) {
-            writeError(response, HttpServletResponse.SC_FORBIDDEN, ex.getMessage());
+        // Project comes from the URL path ({@code /{projectId}/graphql}); fall
+        // back to the token's projectId for the legacy unscoped route. When both
+        // are present they must agree — a token cannot reach another project.
+        String pathProjectId = extractProjectId(request);
+        if (pathProjectId != null && claims != null && claims.projectId() != null
+                && !pathProjectId.equals(claims.projectId())) {
+            writeError(response, HttpServletResponse.SC_FORBIDDEN, "URL project does not match token project");
             return;
         }
-        if (resolvedRole != null) {
-            RoleContext.setRole(resolvedRole);
+        // Path wins (it is authoritative); fall back to the token's project.
+        String projectId = pathProjectId;
+        if (projectId == null && claims != null) {
+            projectId = claims.projectId();
         }
 
         try {
-            applyTenantContext(claims);
-            applyRlsContext(claims);
+            applyTenantContext(projectId, claims);
+            applyRlsContext(projectId, claims);
             chain.doFilter(request, response);
         } finally {
             RlsContext.clear();
-            RoleContext.clear();
-            clearTenantContext(claims);
+            clearTenantContext(projectId);
         }
+    }
+
+    /**
+     * Project id from a project-scoped path — {@code /{projectId}/graphql} or
+     * {@code /{projectId}/api/v1/…} — or {@code null} for the legacy unscoped
+     * {@code /graphql} / {@code /api/v1/…}. The projectId is a single opaque
+     * segment (e.g. {@code proj-237qoqksdb}).
+     */
+    static String extractProjectId(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        if (uri == null) {
+            return null;
+        }
+        if (uri.endsWith("/graphql")) {
+            return segment(uri.substring(0, uri.length() - "/graphql".length()));
+        }
+        int api = uri.indexOf("/api/v1");
+        if (api > 0) {
+            return segment(uri.substring(0, api));
+        }
+        return null;
+    }
+
+    /** A single non-empty path segment ({@code /proj-abc} → {@code proj-abc}); null otherwise. */
+    private static String segment(String prefix) {
+        if (!prefix.startsWith("/")) {
+            return null;
+        }
+        String pid = prefix.substring(1);
+        return (pid.isEmpty() || pid.contains("/")) ? null : pid;
     }
 
     /**
@@ -78,13 +104,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
      * predicate, so existing deploys see zero behaviour change until a policy
      * is authored.
      */
-    private void applyRlsContext(JwtClaims claims) {
-        if (rlsEnforcer == null || claims == null || claims.projectId() == null) {
+    private void applyRlsContext(String projectId, JwtClaims claims) {
+        if (rlsEnforcer == null || projectId == null) {
             return;
         }
-        RlsContext.set(new EngineRlsWhereContributor(rlsEnforcer, claims.projectId(), claims));
-        RlsContext.setColumnMask(new EngineColumnMaskContributor(rlsEnforcer, claims.projectId(), claims));
-        RlsContext.setRowCheck(new EngineRowCheckContributor(rlsEnforcer, claims.projectId(), claims));
+        // claims may be null (anonymous) — the engine then uses an anonymous
+        // context, so owner/claim policies match no rows (fail-closed). RLS is a
+        // property of the resource, applied on every request, not gated by token.
+        RlsContext.set(new EngineRlsWhereContributor(rlsEnforcer, projectId, claims));
+        RlsContext.setColumnMask(new EngineColumnMaskContributor(rlsEnforcer, projectId, claims));
+        RlsContext.setRowCheck(new EngineRowCheckContributor(rlsEnforcer, projectId, claims));
     }
 
     private JwtClaims verifyClaims(HttpServletRequest request) {
@@ -97,25 +126,26 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         return claims;
     }
 
-    private static void applyTenantContext(JwtClaims claims) {
-        if (claims == null || claims.projectId() == null) {
+    private static void applyTenantContext(String projectId, JwtClaims claims) {
+        if (projectId == null) {
             return;
         }
-        TenantContext.setTenantId(claims.projectId());
-        TenantContext.setOrgSlug(claims.orgSlug());
-        MDC.put("tenant", claims.projectId());
-        MDC.put("org", claims.orgSlug());
-        MDC.put("project_name", orEmpty(claims.projectName()));
-        MDC.put("org_name", orEmpty(claims.orgName()));
+        String orgSlug = claims != null ? claims.orgSlug() : null;
+        TenantContext.setTenantId(projectId);
+        TenantContext.setOrgSlug(orgSlug);
+        MDC.put("tenant", projectId);
+        MDC.put("org", orEmpty(orgSlug));
+        MDC.put("project_name", claims != null ? orEmpty(claims.projectName()) : "");
+        MDC.put("org_name", claims != null ? orEmpty(claims.orgName()) : "");
         Span span = Span.current();
-        span.setAttribute("tenant.id", claims.projectId());
-        span.setAttribute("org.slug", claims.orgSlug());
-        span.setAttribute("project.name", orEmpty(claims.projectName()));
-        span.setAttribute("org.name", orEmpty(claims.orgName()));
+        span.setAttribute("tenant.id", projectId);
+        span.setAttribute("org.slug", orEmpty(orgSlug));
+        span.setAttribute("project.name", claims != null ? orEmpty(claims.projectName()) : "");
+        span.setAttribute("org.name", claims != null ? orEmpty(claims.orgName()) : "");
     }
 
-    private static void clearTenantContext(JwtClaims claims) {
-        if (claims == null || claims.projectId() == null) {
+    private static void clearTenantContext(String projectId) {
+        if (projectId == null) {
             return;
         }
         TenantContext.clear();

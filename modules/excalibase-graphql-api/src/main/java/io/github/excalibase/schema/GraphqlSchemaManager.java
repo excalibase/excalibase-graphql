@@ -35,6 +35,9 @@ public class GraphqlSchemaManager implements SchemaProvider {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlSchemaManager.class);
 
+    /** Default query-depth limit applied when {@code app.max-query-depth} is unset. */
+    public static final int DEFAULT_MAX_QUERY_DEPTH = 15;
+
     private final JdbcTemplate jdbcTemplate;
     private final TransactionTemplate txTemplate;
     private final int maxRows;
@@ -54,7 +57,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
             TransactionTemplate txTemplate,
             @Value("${app.max-rows:30}") int maxRows,
             @Value("${app.database-type:postgres}") String databaseType,
-            @Value("${app.max-query-depth:0}") int maxQueryDepth,
+            @Value("${app.max-query-depth:#{T(io.github.excalibase.schema.GraphqlSchemaManager).DEFAULT_MAX_QUERY_DEPTH}}") int maxQueryDepth,
             @Value("${app.cache.schema-ttl-minutes:30}") int schemaTtlMinutes,
             @Autowired(required = false) NatsCDCService natsCDCService,
             @Autowired(required = false) DynamicDataSourceManager dataSourceManager) {

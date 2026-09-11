@@ -17,7 +17,7 @@ cd excalibase-graphql
 docker-compose up -d
 ```
 
-API available at **http://localhost:10000/graphql**
+API available at **http://localhost:10000/{projectId}/graphql** (routes are project-scoped)
 
 ### MySQL Stack
 
@@ -25,7 +25,7 @@ API available at **http://localhost:10000/graphql**
 docker-compose -f docker-compose.mysql.yml up -d
 ```
 
-API available at **http://localhost:10001/graphql**
+API available at **http://localhost:10001/{projectId}/graphql** (routes are project-scoped)
 
 ### Check Status
 

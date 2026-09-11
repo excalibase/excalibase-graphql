@@ -6,6 +6,7 @@ import io.github.excalibase.rls.LogicOperator;
 import io.github.excalibase.rls.Operation;
 import io.github.excalibase.rls.Policy;
 import io.github.excalibase.rls.PolicyEffect;
+import io.github.excalibase.rls.RelationPredicate;
 import io.github.excalibase.rls.Rule;
 import io.github.excalibase.rls.RuleOperator;
 import io.github.excalibase.rls.UserContext;
@@ -412,6 +413,94 @@ class JdbcEvaluatorTest {
                     .assignments(Assignment.all()).build()), List.of(), QuoteStyle.BACKTICK)
                     .compile("orders", aliceAuth(), Operation.SELECT);
             assertThat(f.sql()).contains("`user_id`").doesNotContain("\"user_id\"");
+        }
+    }
+
+    @Nested
+    @DisplayName("relationship/EXISTS correlation")
+    class RelationCorrelation {
+
+        private Policy membershipPolicy() {
+            RelationPredicate rel = new RelationPredicate(
+                "members", "org_id", "org_id", LogicOperator.AND,
+                List.of(new Rule("user_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")));
+            return new Policy("p", "p", "orders", PolicyEffect.ALLOW,
+                Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(), List.of(rel), List.of(Assignment.all()));
+        }
+
+        @Test
+        @DisplayName("correlates to the given outer alias, not the table name")
+        void correlatesToAlias() {
+            SqlFilter f = new JdbcEvaluator(List.of(membershipPolicy()))
+                .compile("orders", aliceAuth(), Operation.SELECT, "\"t_outer\"");
+            assertThat(f.sql())
+                .contains("EXISTS (SELECT 1 FROM \"members\"")
+                .contains("= \"t_outer\".\"org_id\"")
+                .doesNotContain("\"orders\".\"org_id\"");
+        }
+
+        @Test
+        @DisplayName("falls back to the quoted table name when no alias is given")
+        void fallsBackToTableName() {
+            SqlFilter f = new JdbcEvaluator(List.of(membershipPolicy()))
+                .compile("orders", aliceAuth(), Operation.SELECT);
+            assertThat(f.sql()).contains("= \"orders\".\"org_id\"");
+        }
+    }
+
+    @Nested
+    @DisplayName("SELECT visibility is required to UPDATE/DELETE")
+    class WriteVisibilityCoupling {
+
+        private Policy selectOwner() {
+            return policyBuilder().name("sel-owner").effect(PolicyEffect.ALLOW)
+                .operations(Set.of(Operation.SELECT))
+                .rules(new Rule("user_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}"))
+                .assignments(Assignment.all()).build();
+        }
+
+        private Policy writeAny(Operation op) {
+            return policyBuilder().name("write-any").effect(PolicyEffect.ALLOW)
+                .operations(Set.of(op))
+                .rules(new Rule("id", FieldType.INTEGER, RuleOperator.IS_NOT_NULL, ""))
+                .assignments(Assignment.all()).build();
+        }
+
+        @Test
+        @DisplayName("UPDATE AND's the SELECT filter in — cannot modify an unreadable row")
+        void updateCoupledToSelect() {
+            JdbcEvaluator e = new JdbcEvaluator(List.of(selectOwner(), writeAny(Operation.UPDATE)));
+            SqlFilter f = e.compile("orders", aliceAuth(), Operation.UPDATE);
+            assertThat(f.sql())
+                .contains("\"id\" IS NOT NULL")
+                .contains("\"user_id\" = :")
+                .contains(") AND (");
+        }
+
+        @Test
+        @DisplayName("DELETE AND's the SELECT filter in — cannot delete an unreadable row")
+        void deleteCoupledToSelect() {
+            JdbcEvaluator e = new JdbcEvaluator(List.of(selectOwner(), writeAny(Operation.DELETE)));
+            SqlFilter f = e.compile("orders", aliceAuth(), Operation.DELETE);
+            assertThat(f.sql())
+                .contains("\"id\" IS NOT NULL")
+                .contains("\"user_id\" = :")
+                .contains(") AND (");
+        }
+
+        @Test
+        @DisplayName("SELECT-RLS on but no read grant for this user → UPDATE is DENY_ALL")
+        void noReadVisibilityDeniesWrite() {
+            // SELECT RLS is on (a SELECT ALLOW exists) but it's scoped to a role alice
+            // does not hold → her read side is DENY_ALL → the UPDATE is DENY_ALL too.
+            Policy selectAdminOnly = policyBuilder().name("sel-admin").effect(PolicyEffect.ALLOW)
+                .operations(Set.of(Operation.SELECT))
+                .rules(new Rule("id", FieldType.INTEGER, RuleOperator.IS_NOT_NULL, ""))
+                .assignments(Assignment.role("admin")).build();
+            JdbcEvaluator e = new JdbcEvaluator(List.of(selectAdminOnly, writeAny(Operation.UPDATE)));
+            SqlFilter f = e.compile("orders", aliceAuth(), Operation.UPDATE);
+            assertThat(f).isEqualTo(SqlFilter.DENY_ALL);
         }
     }
 }

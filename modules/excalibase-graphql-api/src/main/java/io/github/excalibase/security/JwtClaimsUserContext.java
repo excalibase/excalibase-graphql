@@ -67,7 +67,9 @@ public final class JwtClaimsUserContext implements UserContext {
             case "email" -> claims.email();
             case "scope" -> claims.scope();
             case "org_slug", "orgSlug" -> claims.orgSlug();
-            default -> null;
+            // Any other name falls through to the raw JWT claims, so policies can
+            // reference arbitrary custom claims ({{region}}, {{plan}}, …).
+            default -> claims.extraClaims().get(name);
         };
     }
 }

@@ -223,7 +223,8 @@ Basic subscription setup:
 import { createClient } from 'graphql-ws';
 
 const client = createClient({
-  url: 'ws://localhost:10000/graphql',
+  // WebSocket routes are project-scoped, like HTTP: ws://host/{projectId}/graphql
+  url: 'ws://localhost:10000/{projectId}/graphql',
 });
 
 // Subscribe to customer changes

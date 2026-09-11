@@ -208,7 +208,7 @@ class EngineRlsIntegrationTest {
 
     @Test
     void listQuery_aliceSeesOnlyOwnDocs() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_WITH_POLICY))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id owner_id title } }")))
@@ -218,7 +218,7 @@ class EngineRlsIntegrationTest {
 
     @Test
     void listQuery_bobSeesOnlyOwnDocs() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
                         .header("Authorization", "Bearer " + jwt(BOB, PROJECT_WITH_POLICY))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id owner_id title } }")))
@@ -230,7 +230,7 @@ class EngineRlsIntegrationTest {
     void listQuery_projectWithoutPolicy_seesAllDocs() throws Exception {
         // Same table, a project with no seeded policy → engine returns UNRESTRICTED
         // → passthrough, all three rows visible. Proves opt-in behaviour.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_NO_POLICY + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_NO_POLICY))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id } }")))
@@ -242,7 +242,7 @@ class EngineRlsIntegrationTest {
     void listQuery_withUserFilter_combinesWithRls() throws Exception {
         // Alice asks for doc id=1 (hers) → 1 row; the RLS predicate ANDs with the
         // user filter rather than replacing it.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_WITH_POLICY))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs(where: { id: { eq: 1 } }) { id } }")))
@@ -253,7 +253,7 @@ class EngineRlsIntegrationTest {
     @Test
     void listQuery_userFilterCannotEscapeRls() throws Exception {
         // Alice tries to read Bob's doc id=3 by id filter → RLS still excludes it.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_WITH_POLICY))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs(where: { id: { eq: 3 } }) { id } }")))
@@ -264,7 +264,7 @@ class EngineRlsIntegrationTest {
     @Test
     void connectionQuery_isAlsoFiltered() throws Exception {
         // The connection surface must not be a bypass: Alice sees 2 edges.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_WITH_POLICY))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocsConnection { edges { node { id } } } }")))
@@ -275,7 +275,7 @@ class EngineRlsIntegrationTest {
     @Test
     void cls_hiddenColumnIsDroppedFromResponse() throws Exception {
         // No row policy on PROJECT_CLS → all 3 rows; `title` HIDE → key absent.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_CLS + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id title } }")))
@@ -288,7 +288,7 @@ class EngineRlsIntegrationTest {
     @Test
     void cls_nonHiddenColumnsStillReturned() throws Exception {
         // Hiding `title` must not affect other columns.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_CLS + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id owner_id } }")))
@@ -300,7 +300,7 @@ class EngineRlsIntegrationTest {
     @Test
     void cls_projectWithoutColumnPolicy_titleVisible() throws Exception {
         // The row-policy project has no column policy → title is present.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_WITH_POLICY))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id title } }")))
@@ -314,7 +314,7 @@ class EngineRlsIntegrationTest {
         // keeps the null, but the GraphQL response serializer strips null fields, so the
         // key is omitted at the boundary — the real value never leaves the database
         // (the security property), even though the cosmetic key differs from HIDE.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_CLS_NULL + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS_NULL))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id title } }")))
@@ -331,7 +331,7 @@ class EngineRlsIntegrationTest {
     void nested_embeddedRelationIsFiltered_alice() throws Exception {
         // One shelf, three books (2 Alice, 1 Bob). The book policy filters the
         // embedded collection: Alice sees her 2 books nested under the shelf.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_NESTED + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_NESTED))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoShelf { id rlsDemoBook { id title } } }")))
@@ -342,7 +342,7 @@ class EngineRlsIntegrationTest {
 
     @Test
     void nested_embeddedRelationIsFiltered_bob() throws Exception {
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_NESTED + "/graphql")
                         .header("Authorization", "Bearer " + jwt(BOB, PROJECT_NESTED))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoShelf { id rlsDemoBook { id title } } }")))
@@ -356,7 +356,7 @@ class EngineRlsIntegrationTest {
     void typePrecise_decimalThresholdFiltersExactly() throws Exception {
         // amount >= 100.00 → rows 1 (100.00) and 2 (250.50); excludes 3 (99.99).
         // A lossy double bind would risk boundary errors; BigDecimal is exact.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_NUMERIC + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_NUMERIC))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoLedger { id amount } }")))
@@ -368,7 +368,7 @@ class EngineRlsIntegrationTest {
     void typePrecise_timestamptzFilters() throws Exception {
         // created_at >= (now - 1 day) → rows 2 and 3 (created now); excludes row 1
         // (10 days old). Proves DATETIME binds as a real timestamptz operand.
-        mockMvc.perform(post("/graphql")
+        mockMvc.perform(post("/" + PROJECT_TEMPORAL + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_TEMPORAL))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoLedger { id created_at } }")))
