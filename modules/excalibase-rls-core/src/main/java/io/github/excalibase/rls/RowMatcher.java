@@ -240,10 +240,16 @@ public class RowMatcher {
      * throws. This keeps the in-memory matcher in lockstep with the emitted SQL
      * (and native Postgres), which simply drop the row.
      */
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static boolean compare(Object rowVal, Rule rule, VariableResolver resolver) {
         Object policyVal = resolver.resolve(rule.value(), rule.fieldType());
         if (rowVal == null || policyVal == null) return false;
-        int c = compareCoerced(rowVal, policyVal, rule.fieldType());
+        Comparable left = (Comparable) coerce(rowVal, rule.fieldType());
+        Comparable right = (Comparable) coerce(policyVal, rule.fieldType());
+        // Coercion can yield null for an unparseable value → uncomparable, so the
+        // row is excluded (SQL three-valued logic) rather than throwing on compareTo.
+        if (left == null || right == null) return false;
+        int c = left.compareTo(right);
         return switch (rule.operator()) {
             case GT -> c > 0;
             case GTE -> c >= 0;
@@ -251,13 +257,6 @@ public class RowMatcher {
             case LTE -> c <= 0;
             default -> throw new IllegalStateException("compare() called for non-comparison operator " + rule.operator());
         };
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private static int compareCoerced(Object rowVal, Object policyVal, FieldType fieldType) {
-        Comparable left = (Comparable) coerce(rowVal, fieldType);
-        Comparable right = (Comparable) coerce(policyVal, fieldType);
-        return left.compareTo(right);
     }
 
     private static boolean matchesLike(Object rowVal, String pattern) {
