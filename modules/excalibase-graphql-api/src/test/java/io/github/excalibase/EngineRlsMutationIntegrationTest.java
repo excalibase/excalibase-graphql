@@ -41,7 +41,9 @@ import java.security.spec.ECGenParameterSpec;
 import java.util.List;
 import java.util.Map;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -203,12 +205,46 @@ class EngineRlsMutationIntegrationTest {
     @Test
     void insert_rowForAnotherOwner_isRejected() throws Exception {
         // WITH-CHECK: Alice cannot create a note owned by Bob → policy violation,
-        // surfaced as a GraphQL error, and no row is written.
+        // surfaced as a typed RLS_DENIED GraphQL error, and no row is written.
         mutate(ALICE, "mutation { createRlsDemoNotes(input: { id: 101, "
                 + "owner_id: \"" + BOB + "\", title: \"sneaky\" }) { id } }")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors").exists())
+                .andExpect(jsonPath("$.errors", hasSize(1)))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.operation").value("INSERT"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.notes"))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("ERROR:"))))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("SQLSTATE"))))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("violates"))))
                 .andExpect(jsonPath("$.data.createRlsDemoNotes").doesNotExist());
+    }
+
+    @Test
+    void update_reassignToAnotherOwner_returnsRlsDenied() throws Exception {
+        // WITH-CHECK on the new image: Alice cannot hand her note to Bob.
+        mutate(ALICE, "mutation { updateRlsDemoNotes(where: { id: { eq: 1 } }, "
+                + "input: { owner_id: \"" + BOB + "\" }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors", hasSize(1)))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.operation").value("UPDATE"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.notes"))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("ERROR:"))))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("violates"))))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
+
+    @Test
+    void upsert_rowForAnotherOwner_returnsRlsDeniedWithUpsertOperation() throws Exception {
+        // The candidate row of an upsert is still an INSERT WITH-CHECK; the error
+        // names the caller's operation (UPSERT) so clients can tell the two apart.
+        mutate(ALICE, "mutation { createRlsDemoNotes("
+                + "input: { id: 102, owner_id: \"" + BOB + "\", title: \"sneaky\" }, "
+                + "onConflict: { constraint: \"notes_pkey\", update_columns: [\"title\"] }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.operation").value("UPSERT"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.notes"));
     }
 
     // ---- UPSERT ON CONFLICT USING (audit H6) ----
@@ -256,7 +292,9 @@ class EngineRlsMutationIntegrationTest {
         mutate(ALICE, "mutation { createRlsDemoShelf(input: { id: 500, name: \"s\", "
                 + "rlsDemoBook: { data: [ { id: 900, owner_id: \"" + BOB + "\", title: \"x\" } ] } }) { id } }")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors").exists())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.operation").value("INSERT"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.book"))
                 .andExpect(jsonPath("$.data.createRlsDemoShelf").doesNotExist());
     }
 

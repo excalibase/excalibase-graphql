@@ -132,7 +132,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
             }
         }
 
-        requireRowAllowed(tableName, rowForCheck);
+        requireRowAllowed(tableName, rowForCheck, insertOperation(field, shared));
 
         String onConflictSql = parseOnConflict(field, shared, params, tableName);
         String parentCte = shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
@@ -366,11 +366,21 @@ public class PostgresMutationCompiler implements MutationCompiler {
      * (feature off / no JWT) or when policies permit the row.
      */
     private void requireRowAllowed(String tableName, Map<String, Object> row) {
+        requireRowAllowed(tableName, row, RlsOp.INSERT.name());
+    }
+
+    /** {@code operation} labels the caller's intent (INSERT vs UPSERT) in the error; the check is always the INSERT policy. */
+    private void requireRowAllowed(String tableName, Map<String, Object> row, String operation) {
         RowCheckContributor check = RlsContext.rowCheck();
         if (check != null && !check.permits(tableName, row, RlsOp.INSERT)) {
-            throw new RlsViolationException(
-                    "Row violates row-level security policy for INSERT on " + tableName);
+            throw new RlsViolationException(operation, tableName);
         }
+    }
+
+    private static String insertOperation(Field field, MutationBuilder shared) {
+        return shared.findArg(field, ARG_ON_CONFLICT) != null
+                ? RlsViolationException.OPERATION_UPSERT
+                : RlsOp.INSERT.name();
     }
 
     /**
@@ -382,8 +392,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
     private void requireUpdateAllowed(String tableName, Map<String, Object> changedColumns) {
         RowCheckContributor check = RlsContext.rowCheck();
         if (check != null && !check.permitsUpdate(tableName, changedColumns)) {
-            throw new RlsViolationException(
-                    "Row violates row-level security policy for UPDATE on " + tableName);
+            throw new RlsViolationException(RlsOp.UPDATE.name(), tableName);
         }
     }
 

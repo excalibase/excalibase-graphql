@@ -188,8 +188,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
     private void requireRowAllowed(String tableName, Map<String, Object> row) {
         RowCheckContributor check = RlsContext.rowCheck();
         if (check != null && !check.permits(tableName, row, RlsOp.INSERT)) {
-            throw new RlsViolationException(
-                    "Row violates row-level security policy for INSERT on " + tableName);
+            throw new RlsViolationException(RlsOp.INSERT.name(), tableName);
         }
     }
 
@@ -202,8 +201,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
     private void requireUpdateAllowed(String tableName, Map<String, Object> changedColumns) {
         RowCheckContributor check = RlsContext.rowCheck();
         if (check != null && !check.permitsUpdate(tableName, changedColumns)) {
-            throw new RlsViolationException(
-                    "Row violates row-level security policy for UPDATE on " + tableName);
+            throw new RlsViolationException(RlsOp.UPDATE.name(), tableName);
         }
     }
 }

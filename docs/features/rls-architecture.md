@@ -109,6 +109,45 @@ governed by one fails closed (dropped) rather than leaking.
 **Remaining gaps**, fix order: RPC `SETOF`-table output wrapping → realtime
 relationship-predicate evaluation (needs a DB lookup).
 
+## Error contract — `RLS_DENIED`
+
+Reads never error: a row the caller may not see is simply absent (0 rows,
+fail-closed — see above). **Writes** are different: a candidate row that fails
+the WITH-CHECK (insert/upsert of a row the caller could not own, or an update
+that would move a row out of their policy) is rejected *before any SQL runs*,
+and the rejection is a typed error, not database text.
+
+The engine raises one exception, `RlsViolationException`, carrying a stable
+code and only client-safe context — the operation, the table and (when known)
+the policy name. It never carries the SQL, column values or driver messages.
+Both surfaces format it from the same `RlsDeniedResponse`:
+
+| Surface | Status | Shape |
+|---|---|---|
+| GraphQL | `200` (GraphQL error) | `errors[0].extensions = { "code": "RLS_DENIED", "operation": "INSERT" \| "UPDATE" \| "UPSERT", "table": "<schema.table>" }`; `errors[0].message` is a short human message with no `ERROR:` / SQLSTATE / driver text; no `data` key |
+| REST | `403 Forbidden` | `{ "code": "RLS_DENIED", "message": "...", "details": { "operation": ..., "table": ... }, "error": "..." }` — PostgREST-style `code`/`message`/`details`; `error` mirrors `message` for clients still reading the legacy envelope |
+
+GraphQL example:
+
+```json
+{
+  "errors": [
+    {
+      "message": "Row-level security denied INSERT on rls_demo.notes",
+      "extensions": { "code": "RLS_DENIED", "operation": "INSERT", "table": "rls_demo.notes" }
+    }
+  ]
+}
+```
+
+`operation` is the caller's intent: a `create…(onConflict: …)` mutation or a
+REST `POST` with `Prefer: resolution=merge-duplicates` reports `UPSERT` even
+though the check applied is the INSERT policy. `policy` is added to the
+extensions / `details` only when the engine can attribute the denial to a
+single named policy. `DELETE` and the `ON CONFLICT DO UPDATE` half of an upsert
+are governed by the USING predicate and therefore affect 0 rows rather than
+raising — same as native Postgres.
+
 ## Engine capabilities (Postgres-RLS parity)
 
 The engine matches native Postgres RLS for the policy classes it supports,

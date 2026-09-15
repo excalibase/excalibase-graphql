@@ -6,6 +6,8 @@ import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.RlsDeniedResponse;
+import io.github.excalibase.security.RlsViolationException;
 import io.github.excalibase.service.QueryExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -21,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Single endpoint: parse GraphQL -> compile to SQL -> execute -> return JSON.
@@ -85,11 +88,24 @@ public class GraphqlController {
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
                 return dispatchCompiled(compiled, state, finalUserId, finalClaims);
             } catch (Exception e) {
-                log.warn("GraphQL request failed", e);
-                return ResponseEntity.ok(Map.of(
-                        "errors", List.of(Map.of("message", extractErrorMessage(e)))));
+                return errorResponse(e);
             }
         });
+    }
+
+    /**
+     * An RLS denial is a request error with a stable contract (RLS_DENIED plus
+     * operation/table); anything else is reduced to its SQL message as before.
+     */
+    private static ResponseEntity<Object> errorResponse(Exception e) {
+        Optional<RlsViolationException> denied = RlsViolationException.find(e);
+        if (denied.isPresent()) {
+            log.info("GraphQL request denied by RLS: {}", denied.get().getMessage());
+            return ResponseEntity.ok(Map.of("errors", List.of(RlsDeniedResponse.graphqlError(denied.get()))));
+        }
+        log.warn("GraphQL request failed", e);
+        return ResponseEntity.ok(Map.of(
+                "errors", List.of(Map.of("message", extractErrorMessage(e)))));
     }
 
     private ResponseEntity<Object> handleIntrospection(GraphqlSchemaManager.EngineState state,

@@ -176,6 +176,14 @@ try {
 }
 ```
 
+### Error codes
+
+| Code | Where | Meaning |
+|---|---|---|
+| `RLS_DENIED` | GraphQL `errors[].extensions.code`; REST `403` body `code` | A write the caller's row-level policy forbids. `operation` (`INSERT` / `UPDATE` / `UPSERT`) and `table` accompany it; the message never contains database text. Reads are filtered silently and never raise. |
+
+See the [RLS error contract](features/rls-architecture.md#error-contract--rls_denied).
+
 ## Realtime
 
 WebSocket-based subscriptions land in a future SDK release — today the

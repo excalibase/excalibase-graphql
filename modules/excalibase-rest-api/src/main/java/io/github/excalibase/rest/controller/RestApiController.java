@@ -10,7 +10,9 @@ import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaProvider;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.RlsDeniedResponse;
 import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.RlsViolationException;
 import io.github.excalibase.security.RowCheckContributor;
 import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
@@ -160,17 +162,19 @@ public class RestApiController {
         var ctx = resolveContext(table, cp, request);
         if (ctx == null) return notFound();
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
+        boolean mergeDuplicates = preferContains(prefer, "resolution=merge-duplicates");
 
         // RLS WITH-CHECK: the candidate row(s) must satisfy the caller's INSERT
         // policy — else they could insert rows they'd never be allowed to read.
-        ResponseEntity<Object> insertViolation = checkInsertRows(ctx.tableKey(), body);
+        String operation = mergeDuplicates ? RlsViolationException.OPERATION_UPSERT : RlsOp.INSERT.name();
+        ResponseEntity<Object> insertViolation = checkInsertRows(ctx.tableKey(), body, operation);
         if (insertViolation != null) return insertViolation;
 
         RestQueryCompiler.CompiledResult compiled = switch (body) {
             case List<?> list -> ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list);
             case Map<?, ?> map -> {
                 var row = (Map<String, Object>) map;
-                yield preferContains(prefer, "resolution=merge-duplicates")
+                yield mergeDuplicates
                     ? ctx.compiler().compileUpsert(ctx.tableKey(), row, ctx.schemaInfo().getPrimaryKeys(ctx.tableKey()))
                     : ctx.compiler().compileInsert(ctx.tableKey(), row);
             }
@@ -269,7 +273,7 @@ public class RestApiController {
         // caller's UPDATE policy — e.g. can't reassign owner_id to someone else.
         RowCheckContributor check = RlsContext.rowCheck();
         if (check != null && !check.permitsUpdate(ctx.tableKey(), body)) {
-            return rlsViolation("UPDATE", table);
+            return rlsViolation(RlsOp.UPDATE.name(), ctx.tableKey());
         }
 
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
@@ -281,23 +285,26 @@ public class RestApiController {
      *  policy forbids. Handles both single-object and bulk-array bodies. No-op
      *  when no row-check contributor is registered (auth off / no policy). */
     @SuppressWarnings("unchecked")
-    private ResponseEntity<Object> checkInsertRows(String tableKey, Object body) {
+    private ResponseEntity<Object> checkInsertRows(String tableKey, Object body, String operation) {
         RowCheckContributor check = RlsContext.rowCheck();
         if (check == null) return null;
         List<Map<String, Object>> rows = switch (body) {
-            case Map<?, ?> m -> List.of((Map<String, Object>) m);
+            case Map<?, ?> single -> List.of((Map<String, Object>) single);
             case List<?> list -> (List<Map<String, Object>>) list;
             default -> List.of();
         };
         for (Map<String, Object> row : rows) {
-            if (!check.permits(tableKey, row, RlsOp.INSERT)) return rlsViolation("INSERT", tableKey);
+            if (!check.permits(tableKey, row, RlsOp.INSERT)) return rlsViolation(operation, tableKey);
         }
         return null;
     }
 
-    private static ResponseEntity<Object> rlsViolation(String op, String table) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                .body(Map.of(KEY_ERROR, "Row violates row-level security policy for " + op + " on " + table));
+    private static ResponseEntity<Object> rlsViolation(String operation, String table) {
+        return rlsViolation(new RlsViolationException(operation, table));
+    }
+
+    private static ResponseEntity<Object> rlsViolation(RlsViolationException denied) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(RlsDeniedResponse.restBody(denied));
     }
 
 
@@ -327,6 +334,11 @@ public class RestApiController {
                 if (rollback) status.setRollbackOnly();
                 return buildDmlResponse(json, prefer, successStatus, table, rollback);
             } catch (Exception e) {
+                Optional<RlsViolationException> denied = RlsViolationException.find(e);
+                if (denied.isPresent()) {
+                    status.setRollbackOnly();
+                    return rlsViolation(denied.get());
+                }
                 log.warn("rest_dml_failed", e);
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(KEY_ERROR, "Mutation execution failed"));
             }
