@@ -43,7 +43,9 @@ import java.security.spec.ECGenParameterSpec;
 import java.util.List;
 import java.util.Map;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -194,7 +196,37 @@ class MysqlEngineRlsIntegrationTest {
                 .andExpect(jsonPath("$.data.testRlsDocs[0].secret").doesNotExist());
     }
 
+    @Test
+    void insert_rowForAnotherOwner_returnsRlsDenied() throws Exception {
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("mutation { createTestRlsDocs(input: { id: 50, owner: \"bob\", "
+                                + "secret: \"s\", title: \"sneaky\" }) { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors", hasSize(1)))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.operation").value("INSERT"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value("test.rls_docs"))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("ERROR:"))))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("SQLSTATE"))))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("violates"))))
+                .andExpect(jsonPath("$.data").doesNotExist());
+    }
 
+    @Test
+    void update_reassignToAnotherOwner_returnsRlsDenied() throws Exception {
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("mutation { updateTestRlsDocs(where: { id: { eq: 1 } }, "
+                                + "input: { owner: \"bob\" }) { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.operation").value("UPDATE"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value("test.rls_docs"))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("violates"))));
+    }
 
     private static String buildJwks(ECPublicKey key) {
         com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(

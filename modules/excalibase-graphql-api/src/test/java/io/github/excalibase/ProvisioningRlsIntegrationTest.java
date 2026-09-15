@@ -29,7 +29,9 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.Map;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -341,7 +343,26 @@ class ProvisioningRlsIntegrationTest {
                         .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.details.operation").value("INSERT"))
+                .andExpect(jsonPath("$.details.table").value("rls_demo.docs"))
+                .andExpect(jsonPath("$.message", not(containsString("ERROR:"))))
+                .andExpect(jsonPath("$.message", not(containsString("SQLSTATE"))))
+                .andExpect(jsonPath("$.message", not(containsString("violates"))));
+    }
+
+    @Test
+    void rest_upsertWithCheck_rejectsForeignOwnerAsUpsert() throws Exception {
+        mockMvc.perform(post("/" + PROJECT + "/api/v1/docs")
+                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
+                        .header("Prefer", "resolution=merge-duplicates")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.details.operation").value("UPSERT"))
+                .andExpect(jsonPath("$.details.table").value("rls_demo.docs"));
     }
 
     @Test
@@ -363,7 +384,12 @@ class ProvisioningRlsIntegrationTest {
                         .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"owner_id\": \"" + BOB + "\"}"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.details.operation").value("UPDATE"))
+                .andExpect(jsonPath("$.details.table").value("rls_demo.docs"))
+                .andExpect(jsonPath("$.message", not(containsString("ERROR:"))))
+                .andExpect(jsonPath("$.message", not(containsString("violates"))));
     }
 
     private String body(String query) throws Exception {
