@@ -42,6 +42,12 @@ const db = createClient({
 });
 ```
 
+!!! note "Browser origins"
+    In the browser the request's `Origin` is set by the browser, not the SDK.
+    The project must list the origins your app is served from (including
+    `http://localhost:<port>` for local dev) or the call is blocked by CORS —
+    see [CORS (per-project origins)](features/cors.md).
+
 ## Auth
 
 ```ts

@@ -74,27 +74,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
      * segment (e.g. {@code proj-237qoqksdb}).
      */
     static String extractProjectId(HttpServletRequest request) {
-        String uri = request.getRequestURI();
-        if (uri == null) {
-            return null;
-        }
-        if (uri.endsWith("/graphql")) {
-            return segment(uri.substring(0, uri.length() - "/graphql".length()));
-        }
-        int api = uri.indexOf("/api/v1");
-        if (api > 0) {
-            return segment(uri.substring(0, api));
-        }
-        return null;
-    }
-
-    /** A single non-empty path segment ({@code /proj-abc} → {@code proj-abc}); null otherwise. */
-    private static String segment(String prefix) {
-        if (!prefix.startsWith("/")) {
-            return null;
-        }
-        String pid = prefix.substring(1);
-        return (pid.isEmpty() || pid.contains("/")) ? null : pid;
+        return ProjectPath.fromUri(request.getRequestURI());
     }
 
     /**
