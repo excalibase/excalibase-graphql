@@ -1,5 +1,6 @@
 package io.github.excalibase.rls;
 
+import io.github.excalibase.nats.NatsOptionsFactory;
 import io.nats.client.Connection;
 import io.nats.client.Dispatcher;
 import io.nats.client.Message;
@@ -36,13 +37,16 @@ public class PolicyChangeSubscriber {
     private final List<ProjectCacheEvictor> evictors;
     private final boolean natsEnabled;
     private final String natsUrl;
+    private final String natsUsername;
+    private final String natsPassword;
+    private final String natsInboxPrefix;
 
     private Connection connection;
     private Dispatcher dispatcher;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     public PolicyChangeSubscriber(PolicyProvider policyProvider, boolean natsEnabled, String natsUrl) {
-        this(List.of(policyProvider), natsEnabled, natsUrl);
+        this(List.of(policyProvider), natsEnabled, natsUrl, "", "", "");
     }
 
     /**
@@ -52,9 +56,22 @@ public class PolicyChangeSubscriber {
      * serving fields the operator has just taken away.
      */
     public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, boolean natsEnabled, String natsUrl) {
+        this(evictors, natsEnabled, natsUrl, "", "", "");
+    }
+
+    /**
+     * @param natsUsername    bus principal, blank for an anonymous connection
+     * @param natsPassword    principal secret
+     * @param natsInboxPrefix reply-inbox prefix this principal may subscribe to
+     */
+    public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, boolean natsEnabled, String natsUrl,
+                                  String natsUsername, String natsPassword, String natsInboxPrefix) {
         this.evictors = List.copyOf(evictors);
         this.natsEnabled = natsEnabled;
         this.natsUrl = natsUrl;
+        this.natsUsername = natsUsername;
+        this.natsPassword = natsPassword;
+        this.natsInboxPrefix = natsInboxPrefix;
     }
 
     @PostConstruct
@@ -65,10 +82,8 @@ public class PolicyChangeSubscriber {
             return;
         }
         try {
-            Options options = Options.builder()
-                    .server(natsUrl)
-                    .reconnectWait(Duration.ofSeconds(2))
-                    .maxReconnects(-1)
+            Options options = NatsOptionsFactory
+                    .builder(natsUrl, natsUsername, natsPassword, natsInboxPrefix)
                     .build();
             connection = Nats.connect(options);
             dispatcher = connection.createDispatcher(this::handleMessage);

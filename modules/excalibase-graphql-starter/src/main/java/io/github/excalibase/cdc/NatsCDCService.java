@@ -1,6 +1,7 @@
 package io.github.excalibase.cdc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.nats.NatsOptionsFactory;
 import io.nats.client.*;
 import io.nats.client.api.ConsumerConfiguration;
 import io.nats.client.api.DeliverPolicy;
@@ -48,6 +49,17 @@ public class NatsCDCService {
     @Value("${app.nats.tenant-in-subject:false}")
     private boolean tenantInSubject;
 
+    /** Bus principal for the read plane. Blank connects anonymously (local dev). */
+    @Value("${app.nats.username:}")
+    private String natsUsername;
+
+    @Value("${app.nats.password:}")
+    private String natsPassword;
+
+    /** Reply-inbox prefix this principal is permitted to subscribe to. */
+    @Value("${app.nats.inbox-prefix:}")
+    private String natsInboxPrefix;
+
     private Connection natsConnection;
     private JetStreamSubscription subscription;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -72,10 +84,8 @@ public class NatsCDCService {
             return;
         }
         try {
-            Options options = Options.builder()
-                    .server(natsUrl)
-                    .reconnectWait(Duration.ofSeconds(2))
-                    .maxReconnects(-1)
+            Options options = NatsOptionsFactory
+                    .builder(natsUrl, natsUsername, natsPassword, natsInboxPrefix)
                     .connectionListener((conn, type) ->
                             log.debug("NATS connection event: {}", type))
                     .build();
