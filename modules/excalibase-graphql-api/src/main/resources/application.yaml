@@ -72,6 +72,11 @@ app:
   max-query-depth: 15  # Reject queries nested beyond this depth (0 = unlimited)
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:*}      # platform default: routes without a project (health, actuator, legacy unscoped)
+    provisioning-url: ${APP_CORS_PROVISIONING_URL:${app.security.rls.policy-url:}}  # per-project allowlist source (GET {url}/projects/{id}/info); empty = platform default everywhere
+    provisioning-pat: ${APP_CORS_PROVISIONING_PAT:${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}}
+    ttl-ms: 30000                                        # per-project cache; last-good is served while provisioning is down
   security:
     jwt-enabled: ${JWT_ENABLED:false}
     auth:

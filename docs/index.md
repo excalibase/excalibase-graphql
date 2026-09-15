@@ -50,6 +50,8 @@ auth + multi-schema routing. **Pick the protocol that fits the call site.**
 - **Real-time subscriptions** — live table-change events via
   [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS (GraphQL)
 - **Row-Level Security** — per-request user context for RLS policies (PostgreSQL)
+- **Per-project CORS** — each project's browser-origin allowlist, resolved from
+  the URL path and enforced on GraphQL, REST and WebSocket upgrades
 - **Typed filter inputs** — `IntFilterInput`, `FloatFilterInput`, `DateTimeFilterInput`,
   `BooleanFilterInput`, `JsonFilterInput`, per-enum `<EnumType>FilterInput`
 
