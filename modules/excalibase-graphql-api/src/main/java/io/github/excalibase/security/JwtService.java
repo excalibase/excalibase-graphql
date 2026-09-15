@@ -46,6 +46,19 @@ public class JwtService {
     // by a different issuer whose key happens to be trusted.
     private String expectedIssuer;
 
+    // Audience binding (EXC-11). excalibase-auth stamps every token with
+    // aud: ["<prefix><projectId>"]; requiring it stops a token minted for one
+    // project from being replayed against another. On by default; the flag
+    // exists so a fleet can be rolled forward in stages.
+    private boolean requireAud = true;
+    private String audPrefix = DEFAULT_AUD_PREFIX;
+
+    /** Default prefix excalibase-auth puts in front of the projectId in {@code aud}. */
+    public static final String DEFAULT_AUD_PREFIX = "excalibase:";
+
+    /** Value of {@code token_use} that marks a refresh credential. */
+    private static final String TOKEN_USE_REFRESH = "refresh";
+
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------
@@ -93,11 +106,38 @@ public class JwtService {
         return this;
     }
 
+    /**
+     * Configures audience binding. When {@code requireAud} is true (the
+     * default), {@link #verify(String, String)} rejects any token whose
+     * {@code aud} does not contain {@code prefix + projectId}. A blank prefix
+     * falls back to {@link #DEFAULT_AUD_PREFIX} so a missing config value can
+     * never weaken the check to a bare projectId.
+     */
+    public JwtService requireAudience(boolean requireAud, String prefix) {
+        this.requireAud = requireAud;
+        this.audPrefix = (prefix != null && !prefix.isBlank()) ? prefix : DEFAULT_AUD_PREFIX;
+        return this;
+    }
+
     // -------------------------------------------------------------------------
     // Verify
     // -------------------------------------------------------------------------
 
+    /**
+     * Verifies a token without a project from the request path. The audience
+     * requirement is then checked against the token's own {@code projectId}
+     * claim, which still rejects a token carrying an audience for some other
+     * project.
+     */
     public JwtClaims verify(String token) {
+        return verify(token, null);
+    }
+
+    /**
+     * Verifies a token and binds it to {@code expectedProjectId} — the project
+     * in the request path. Pass null when the route carries no project.
+     */
+    public JwtClaims verify(String token, String expectedProjectId) {
         try {
             SignedJWT jwt = SignedJWT.parse(token);
 
@@ -110,8 +150,11 @@ public class JwtService {
             JWTClaimsSet claims = jwt.getJWTClaimsSet();
             validateTemporalAndIssuer(claims);
 
-            String userId = extractUserId(claims);
             String projectId = (String) claims.getClaim("projectId");
+            validateTokenUse(claims);
+            validateAudience(claims, expectedProjectId != null ? expectedProjectId : projectId);
+
+            String userId = extractUserId(claims);
             String orgSlug = (String) claims.getClaim("orgSlug");
             String projectName = (String) claims.getClaim("projectName");
             // orgName is a newer claim — older tokens issued before the auth
@@ -171,6 +214,36 @@ public class JwtService {
         // Reject a token from another issuer whose signing key is in our trust set.
         if (expectedIssuer != null && !expectedIssuer.equals(claims.getIssuer())) {
             throw new JwtVerificationException("JWT issuer not accepted");
+        }
+    }
+
+    /**
+     * Rejects a refresh credential presented as an access token. Tokens minted
+     * before {@code token_use} existed carry no such claim and stay valid.
+     */
+    private static void validateTokenUse(JWTClaimsSet claims) throws JwtVerificationException {
+        if (TOKEN_USE_REFRESH.equals(claims.getClaim("token_use"))) {
+            throw new JwtVerificationException(JwtVerificationException.REFRESH_TOKEN_NOT_ACCEPTED,
+                    "Refresh token is not accepted on API calls");
+        }
+    }
+
+    /**
+     * Requires the token's {@code aud} to cover the project being addressed.
+     * Nimbus normalises both shapes RFC 7519 allows — a bare string and an
+     * array — into the same list, so callers need no special-casing.
+     */
+    private void validateAudience(JWTClaimsSet claims, String projectId) throws JwtVerificationException {
+        if (!requireAud) {
+            return;
+        }
+        String expected = audPrefix + (projectId != null ? projectId : "");
+        List<String> audience = claims.getAudience();
+        if (audience == null || !audience.contains(expected)) {
+            // The message names neither the token's audience nor the expected
+            // one: this reaches the client, and the code carries the meaning.
+            throw new JwtVerificationException(JwtVerificationException.AUD_MISMATCH,
+                    "JWT audience does not cover this project");
         }
     }
 

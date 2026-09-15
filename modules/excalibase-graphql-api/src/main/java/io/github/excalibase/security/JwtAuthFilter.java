@@ -19,6 +19,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     public static final String JWT_CLAIMS_ATTR = SecurityConstants.JWT_CLAIMS_ATTR;
 
+    /** Code reported when the URL project and the token project disagree. */
+    private static final String PROJECT_MISMATCH_CODE = "project_mismatch";
+
     private final JwtService jwtService;
     private final RlsPolicyEnforcer rlsEnforcer;
 
@@ -34,21 +37,23 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        JwtClaims claims;
-        try {
-            claims = verifyClaims(request);
-        } catch (JwtVerificationException _) {
-            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired token");
-            return;
-        }
-
         // Project comes from the URL path ({@code /{projectId}/graphql}); fall
         // back to the token's projectId for the legacy unscoped route. When both
         // are present they must agree — a token cannot reach another project.
         String pathProjectId = extractProjectId(request);
+
+        JwtClaims claims;
+        try {
+            claims = verifyClaims(request, pathProjectId);
+        } catch (JwtVerificationException e) {
+            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired token", e.code());
+            return;
+        }
+
         if (pathProjectId != null && claims != null && claims.projectId() != null
                 && !pathProjectId.equals(claims.projectId())) {
-            writeError(response, HttpServletResponse.SC_FORBIDDEN, "URL project does not match token project");
+            writeError(response, HttpServletResponse.SC_FORBIDDEN, "URL project does not match token project",
+                    PROJECT_MISMATCH_CODE);
             return;
         }
         // Path wins (it is authoritative); fall back to the token's project.
@@ -96,12 +101,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         RlsContext.setRowCheck(new EngineRowCheckContributor(rlsEnforcer, projectId, claims));
     }
 
-    private JwtClaims verifyClaims(HttpServletRequest request) {
+    private JwtClaims verifyClaims(HttpServletRequest request, String pathProjectId) {
         String authHeader = request.getHeader("Authorization");
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             return null;
         }
-        JwtClaims claims = jwtService.verify(authHeader.substring(7));
+        // EXC-11: the path project is what the audience must cover.
+        JwtClaims claims = jwtService.verify(authHeader.substring(7), pathProjectId);
         request.setAttribute(JWT_CLAIMS_ATTR, claims);
         return claims;
     }
@@ -135,11 +141,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         MDC.remove("org_name");
     }
 
-    private static void writeError(HttpServletResponse response, int status, String message)
+    /**
+     * Writes a GraphQL-shaped error carrying a stable machine-readable code in
+     * {@code extensions.code}, matching how RLS denials are reported.
+     */
+    private static void writeError(HttpServletResponse response, int status, String message, String code)
             throws IOException {
         response.setStatus(status);
         response.setContentType("application/json");
-        response.getWriter().write("{\"errors\":[{\"message\":\"" + escape(message) + "\"}]}");
+        response.getWriter().write("{\"errors\":[{\"message\":\"" + escape(message)
+                + "\",\"extensions\":{\"code\":\"" + escape(code) + "\"}}]}");
     }
 
     private static String orEmpty(String s) {

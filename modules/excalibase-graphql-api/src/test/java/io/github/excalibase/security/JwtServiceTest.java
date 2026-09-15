@@ -42,7 +42,10 @@ class JwtServiceTest {
         KeyPair wrong = gen.generateKeyPair();
         wrongPrivateKey = (ECPrivateKey) wrong.getPrivate();
 
-        jwtService = new JwtService(publicKey);
+        // EXC-11: this suite predates audience binding and covers signature,
+        // algorithm, issuer and claim-extraction behaviour, so it opts out of
+        // the audience requirement. JwtServiceAudienceTest covers it directly.
+        jwtService = new JwtService(publicKey).requireAudience(false, null);
     }
 
     private String signJwt(ECPrivateKey key, long userId, String projectId, String role, String email, Instant exp) throws Exception {
@@ -200,7 +203,7 @@ class JwtServiceTest {
 
     @Test
     void issuer_mismatchRejected_matchAccepted() throws Exception {
-        JwtService pinned = new JwtService(publicKey).expectedIssuer("excalibase");
+        JwtService pinned = new JwtService(publicKey).expectedIssuer("excalibase").requireAudience(false, null);
 
         String evil = signWithIssuer("evil-issuer");
         assertThrows(JwtVerificationException.class, () -> pinned.verify(evil));
@@ -269,7 +272,8 @@ class JwtServiceTest {
         @DisplayName("constructor eagerly fetches JWKS on startup")
         void constructor_fetchesFromJwks() {
             fetchCount.set(0);
-            new JwtService("http://localhost:" + jwksPort + "/.well-known/jwks.json", 30);
+            new JwtService("http://localhost:" + jwksPort + "/.well-known/jwks.json", 30)
+                    .requireAudience(false, null);
             assertEquals(1, fetchCount.get());
         }
 
@@ -277,7 +281,8 @@ class JwtServiceTest {
         @DisplayName("verify uses cached keys — no additional JWKS fetches")
         void verify_usesCachedKey_noExtraFetch() throws Exception {
             fetchCount.set(0);
-            var svc = new JwtService("http://localhost:" + jwksPort + "/.well-known/jwks.json", 30);
+            var svc = new JwtService("http://localhost:" + jwksPort + "/.well-known/jwks.json", 30)
+                    .requireAudience(false, null);
             assertEquals(1, fetchCount.get());
 
             for (int i = 0; i < 3; i++) {

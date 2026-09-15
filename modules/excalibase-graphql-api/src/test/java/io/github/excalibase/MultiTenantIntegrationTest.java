@@ -175,6 +175,7 @@ class MultiTenantIntegrationTest {
         .subject("test@test.com")
         .claim("userId", userId)
         .claim("projectId", projectId)
+        .audience("excalibase:" + projectId)
         .claim("orgSlug", orgSlug)
         .claim("projectName", projectName)
         .claim("role", "user")

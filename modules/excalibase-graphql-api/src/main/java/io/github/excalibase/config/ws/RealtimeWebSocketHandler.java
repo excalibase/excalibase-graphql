@@ -172,11 +172,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         Map<String, Object> payload = (Map<String, Object>) msg.getOrDefault("payload", Map.of());
         String token = extractBearerToken(payload);
         if (token != null && jwtService != null) {
+            String pathProject = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
             try {
-                JwtClaims claims = jwtService.verify(token);
+                JwtClaims claims = jwtService.verify(token, pathProject);
                 String tenantId = GraphQLWebSocketHandler.tenantIdFromClaims(claims);
                 if (tenantId != null) {
-                    String pathProject = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
                     if (pathProject != null && !pathProject.equals(tenantId)) {
                         closeWithAuthError(session, "Token project does not match the request path");
                         return;
@@ -187,7 +187,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                             session.getId(), tenantId);
                 }
             } catch (JwtVerificationException e) {
-                closeWithAuthError(session, "Invalid or expired token");
+                closeWithAuthError(session, "Invalid or expired token: " + e.code());
                 return;
             }
         } else if (wsAuthRequired) {

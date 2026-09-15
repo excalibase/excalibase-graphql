@@ -147,6 +147,7 @@ class EngineRlsMutationIntegrationTest {
     private String jwt(String userId) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("u@test.com").claim("userId", userId).claim("projectId", PROJECT)
+                .audience("excalibase:" + PROJECT)
                 .claim("role", "app_authenticated").issuer("excalibase")
                 .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z"))).expirationTime(java.util.Date.from(java.time.Instant.parse("2099-01-01T00:00:00Z")))
                 .build();

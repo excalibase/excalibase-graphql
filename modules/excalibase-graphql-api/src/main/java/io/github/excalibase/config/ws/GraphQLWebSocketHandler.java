@@ -149,14 +149,14 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                     closeWithAuthError(session, "Server misconfigured: JWT enabled but no verifier");
                     return;
                 }
+                String pathProject = (String) session.getAttributes().get(SESSION_PROJECT_KEY);
                 try {
-                    JwtClaims claims = jwtService.verify(token);
+                    JwtClaims claims = jwtService.verify(token, pathProject);
                     String tenantId = tenantIdFromClaims(claims);
                     if (tenantId == null) {
                         closeWithAuthError(session, "JWT missing projectId claim");
                         return;
                     }
-                    String pathProject = (String) session.getAttributes().get(SESSION_PROJECT_KEY);
                     if (pathProject != null && !pathProject.equals(tenantId)) {
                         // A token cannot reach another project's stream (mirrors the HTTP 403).
                         closeWithAuthError(session, "Token project does not match the request path");
@@ -167,7 +167,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                     log.info("WS session {} authenticated via connection_init for tenant '{}'",
                             session.getId(), tenantId);
                 } catch (JwtVerificationException e) {
-                    closeWithAuthError(session, "Invalid or expired token");
+                    closeWithAuthError(session, "Invalid or expired token: " + e.code());
                     return;
                 }
             } else if (wsAuthRequired) {

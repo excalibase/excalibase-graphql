@@ -51,16 +51,17 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             return true;
         }
         String token = authHeader.substring(BEARER.length()).trim();
+        // The project is in the URL path (authoritative). A token for another
+        // project cannot open this stream — mirrors the HTTP filter's 403, and
+        // is what the token's audience has to cover (EXC-11).
+        String pathProject = WsProjectPath.projectId(request.getURI().getPath());
         try {
-            JwtClaims claims = jwtService.verify(token);
+            JwtClaims claims = jwtService.verify(token, pathProject);
             String tenantId = GraphQLWebSocketHandler.tenantIdFromClaims(claims);
             if (tenantId == null) {
                 reject(response, "JWT missing projectId claim");
                 return false;
             }
-            // The project is in the URL path (authoritative). A token for another
-            // project cannot open this stream — mirrors the HTTP filter's 403.
-            String pathProject = WsProjectPath.projectId(request.getURI().getPath());
             if (pathProject != null && !pathProject.equals(tenantId)) {
                 reject(response, "Token project does not match the request path");
                 return false;
@@ -70,7 +71,7 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
             log.info("WS handshake authenticated via Authorization header for tenant '{}'", tenantId);
             return true;
         } catch (JwtVerificationException e) {
-            reject(response, "Invalid or expired token");
+            reject(response, "Invalid or expired token: " + e.code());
             return false;
         }
     }

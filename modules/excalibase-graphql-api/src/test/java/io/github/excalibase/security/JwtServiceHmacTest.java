@@ -16,6 +16,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JwtServiceHmacTest {
 
+    // EXC-11: these cases predate audience binding and exercise signature,
+    // algorithm, issuer and claim-extraction behaviour, so they opt out of
+    // the audience requirement. JwtServiceAudienceTest covers it directly.
+
     private static final String SECRET = "this-secret-must-be-at-least-32-chars-long";
     private static final String SECRET2 = "a-different-32-char-secret-for-tests-xyz";
 
@@ -43,7 +47,7 @@ class JwtServiceHmacTest {
     @Test
     @DisplayName("HMAC-signed token with valid signature verifies successfully")
     void hmac_validToken_verifies() throws Exception {
-        JwtService svc = new JwtService(SECRET);
+        JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("user@example.com")
                 .claim("userId", 42L)
@@ -63,7 +67,7 @@ class JwtServiceHmacTest {
     @Test
     @DisplayName("HMAC token signed with a different secret fails signature verification")
     void hmac_wrongSecret_throws() throws Exception {
-        JwtService svc = new JwtService(SECRET);
+        JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("user@example.com")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
@@ -78,7 +82,7 @@ class JwtServiceHmacTest {
     @Test
     @DisplayName("token without exp claim fails verification for regular users")
     void tokenMissingExp_throws() throws Exception {
-        JwtService svc = new JwtService(SECRET);
+        JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("user@example.com")
                 .claim("userId", 1L)
@@ -93,7 +97,7 @@ class JwtServiceHmacTest {
     @Test
     @DisplayName("api-key scoped token may omit exp claim")
     void apiKeyToken_noExp_isAccepted() throws Exception {
-        JwtService svc = new JwtService(SECRET);
+        JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("bot@example.com")
                 .claim("userId", 7L)
@@ -111,7 +115,7 @@ class JwtServiceHmacTest {
     @Test
     @DisplayName("expired token fails verification")
     void expiredToken_throws() throws Exception {
-        JwtService svc = new JwtService(SECRET);
+        JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("user@example.com")
                 .claim("userId", 1L)
@@ -127,7 +131,7 @@ class JwtServiceHmacTest {
     @Test
     @DisplayName("not-yet-valid (nbf in future) token fails verification")
     void notBeforeInFuture_throws() throws Exception {
-        JwtService svc = new JwtService(SECRET);
+        JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("user@example.com")
                 .claim("userId", 1L)
@@ -144,7 +148,7 @@ class JwtServiceHmacTest {
     @Test
     @DisplayName("token without userId falls back to sub claim")
     void noUserIdClaim_fallsBackToSub() throws Exception {
-        JwtService svc = new JwtService(SECRET);
+        JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("subject-fallback")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
@@ -159,7 +163,7 @@ class JwtServiceHmacTest {
     @Test
     @DisplayName("token with neither userId nor sub throws")
     void noUserIdAndNoSub_throws() throws Exception {
-        JwtService svc = new JwtService(SECRET);
+        JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
                 .build();
@@ -173,7 +177,7 @@ class JwtServiceHmacTest {
     @Test
     @DisplayName("malformed token string throws JwtVerificationException")
     void malformedToken_throws() {
-        JwtService svc = new JwtService(SECRET);
+        JwtService svc = new JwtService(SECRET).requireAudience(false, null);
 
         assertThatThrownBy(() -> svc.verify("not-a-real-jwt"))
                 .isInstanceOf(JwtVerificationException.class);

@@ -82,6 +82,8 @@ app:
     auth:
       jwks-url: ${APP_SECURITY_AUTH_JWKS_URL:}        # JWKS endpoint (excalibase-auth or any OIDC provider)
       hmac-secret: ${APP_SECURITY_AUTH_HMAC_SECRET:}  # HS256 shared secret (standalone mode)
+      require-aud: ${JWT_REQUIRE_AUD:true}            # Require aud to cover the project in the URL path
+      aud-prefix: ${AUTH_AUD_PREFIX:excalibase:}      # Prefix excalibase-auth puts before the projectId in aud
     multi-tenant:
       provisioning-url: ${PROVISIONING_URL:}    # Mode 3 only
       provisioning-pat: ${PROVISIONING_PAT:}

@@ -196,6 +196,7 @@ class EngineRlsIntegrationTest {
                 .subject("user@test.com")
                 .claim("userId", userId)
                 .claim("projectId", projectId)
+                .audience("excalibase:" + projectId)
                 .claim("role", "app_authenticated")
                 .issuer("excalibase")
                 .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z")))
