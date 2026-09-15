@@ -23,7 +23,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     jwks-url: http://excalibase-auth:24000/.well-known/jwks.json
  *   multi-tenant:
  *     provisioning-url: http://provisioning:24005/api
- *     provisioning-pat: ${PROVISIONING_PAT}
+ *     provisioning-pat-file: /var/run/excalibase/graphql-token   # rotated in place
+ *     provisioning-pat: ${PROVISIONING_PAT}                      # standalone/dev fallback
  */
 @ConfigurationProperties(prefix = "app.security")
 public record SecurityProperties(
@@ -60,9 +61,15 @@ public record SecurityProperties(
         }
     }
 
+    /**
+     * {@code provisioningPatFile} wins over {@code provisioningPat} when set: the
+     * platform mounts the token as a file and rotates it in place, so the literal
+     * remains only as the standalone/dev fallback.
+     */
     public record MultiTenant(
             String provisioningUrl,
-            String provisioningPat
+            String provisioningPat,
+            String provisioningPatFile
     ) {
         public boolean isConfigured() {
             return provisioningUrl != null && !provisioningUrl.isBlank();

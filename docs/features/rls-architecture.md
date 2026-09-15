@@ -178,6 +178,37 @@ relation name as the alias makes the upsert's USING predicate unambiguous.
 Null-alias callers (differential harness, plain `UPDATE`/`DELETE`) keep the bare
 form, so that behaviour is unchanged.
 
+## Provisioning token — file-mounted and rotated in place
+
+Every call the engine makes to provisioning (policy fetch, tenant vault
+credentials) authenticates with a personal access token. The platform delivers
+that token as a **file** — a Kubernetes Secret or compose volume mounted at e.g.
+`/var/run/excalibase/graphql-token` — and rotates it in place without restarting
+the pod. The engine therefore reads the token through the file on every call
+rather than capturing it once at startup.
+
+| Property | Environment variable | Purpose |
+|----------|----------------------|---------|
+| `app.security.multi-tenant.provisioning-pat-file` | `APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT_FILE` | Path to the mounted token file |
+| `app.security.multi-tenant.provisioning-pat` | `PROVISIONING_PAT` | Literal token — standalone/dev fallback |
+| `app.security.rls.policy-pat-file` | `APP_SECURITY_RLS_POLICY_PAT_FILE` | Token file for the policy fetch, when it differs |
+| `app.security.rls.policy-pat` | `APP_SECURITY_RLS_POLICY_PAT` | Literal policy token — standalone/dev fallback |
+
+Behaviour:
+
+- When a `*-file` path is set and readable, its **trimmed contents** are the
+  token; the literal property is ignored.
+- The file is re-stat'ed at most **once every 5 seconds**, so a rotation is
+  picked up within 5 seconds with no restart and no per-request file read.
+- If the file becomes unreadable or empty (mid-rotation, remount), the last
+  known good token keeps being used — a rotation window never drops
+  authentication. The failure is logged as a warning; the token value itself is
+  never logged.
+- The `rls.policy-pat*` pair defaults to the `multi-tenant.provisioning-pat*`
+  pair, so a single mounted file covers both clients.
+- With no `*-file` path set, the literal environment value is used as before —
+  that is the standalone and dev path.
+
 ## Open items
 
 - **SDK alignment** (`excalibase-sdk-js`, separate repo): `graphqlEndpoint()` /
