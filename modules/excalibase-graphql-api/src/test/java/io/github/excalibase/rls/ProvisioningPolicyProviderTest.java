@@ -1,14 +1,19 @@
 package io.github.excalibase.rls;
 
+import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.github.excalibase.security.TokenFileSource;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -143,7 +148,7 @@ class ProvisioningPolicyProviderTest {
         server.start();
     }
 
-    private void respond(com.sun.net.httpserver.HttpExchange exchange, String body) throws IOException {
+    private void respond(HttpExchange exchange, String body) throws IOException {
         if (responseStatus != 200) {
             exchange.sendResponseHeaders(responseStatus, -1);
             exchange.close();
@@ -230,6 +235,38 @@ class ProvisioningPolicyProviderTest {
     @DisplayName("a policy without a relations field parses to an empty relation list")
     void noRelationsFieldDefaultsEmpty() {
         assertThat(provider(60_000).policiesFor("proj1").get(0).relations()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Authorization header is built from the token file contents")
+    void authorizationHeaderComesFromTokenFile(@TempDir Path dir) throws IOException {
+        Path tokenFile = Files.writeString(dir.resolve("graphql-token"), "file-pat\n");
+
+        providerWithTokenFile(tokenFile).policiesFor("proj1");
+
+        assertThat(authHeaderSeen).isEqualTo("Bearer file-pat");
+    }
+
+    @Test
+    @DisplayName("a rotated token file is picked up without reconstructing the provider")
+    void picksUpRotatedTokenFile(@TempDir Path dir) throws IOException {
+        Path tokenFile = Files.writeString(dir.resolve("graphql-token"), "old-pat\n");
+        ProvisioningPolicyProvider provider = providerWithTokenFile(tokenFile);
+        provider.policiesFor("proj1");
+        assertThat(authHeaderSeen).isEqualTo("Bearer old-pat");
+
+        Files.writeString(tokenFile, "rotated-pat\n");
+        now[0] += 6_000L;
+        provider.evict("proj1");
+        provider.policiesFor("proj1");
+
+        assertThat(authHeaderSeen).isEqualTo("Bearer rotated-pat");
+    }
+
+    private ProvisioningPolicyProvider providerWithTokenFile(Path tokenFile) {
+        TokenFileSource tokenSource = new TokenFileSource(tokenFile.toString(), "unused-literal", () -> now[0]);
+        return new ProvisioningPolicyProvider(
+                "http://localhost:" + port + "/api", tokenSource, 60_000, () -> now[0]);
     }
 
     private ProvisioningPolicyProvider provider(long ttlMillis) {

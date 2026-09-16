@@ -9,6 +9,7 @@ import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
+import io.github.excalibase.security.TokenFileSource;
 import io.github.excalibase.service.VaultCredentialService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -65,9 +66,11 @@ public class JwtSecurityConfig {
     public PolicyProvider policyProvider(
             @Value("${app.security.rls.policy-url:}") String policyUrl,
             @Value("${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}") String policyPat,
+            @Value("${app.security.rls.policy-pat-file:${app.security.multi-tenant.provisioning-pat-file:}}") String policyPatFile,
             @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs) {
         if (policyUrl != null && !policyUrl.isBlank()) {
-            return new ProvisioningPolicyProvider(policyUrl, policyPat, policyTtlMs);
+            return new ProvisioningPolicyProvider(
+                    policyUrl, new TokenFileSource(policyPatFile, policyPat), policyTtlMs);
         }
         return new InMemoryPolicyProvider();
     }
@@ -108,7 +111,8 @@ public class JwtSecurityConfig {
     @ConditionalOnProperty(name = "app.security.multi-tenant.provisioning-url")
     public VaultCredentialService vaultCredentialService(SecurityProperties security) {
         SecurityProperties.MultiTenant mt = security.multiTenant();
-        return new VaultCredentialService(mt.provisioningUrl(), mt.provisioningPat());
+        return new VaultCredentialService(mt.provisioningUrl(),
+                new TokenFileSource(mt.provisioningPatFile(), mt.provisioningPat()));
     }
 
     @Bean

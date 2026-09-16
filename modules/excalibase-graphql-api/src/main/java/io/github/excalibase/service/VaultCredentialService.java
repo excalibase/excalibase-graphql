@@ -2,6 +2,7 @@ package io.github.excalibase.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.security.TokenFileSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.net.URI;
@@ -21,12 +22,16 @@ public class VaultCredentialService {
   private static final Pattern SLUG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}(/[a-zA-Z0-9_-]{1,64})?$");
 
   private final String provisioningUrl;
-  private final String provisioningPat;
+  private final TokenFileSource tokenSource;
   private final HttpClient httpClient;
 
   public VaultCredentialService(String provisioningUrl, String provisioningPat) {
+    this(provisioningUrl, new TokenFileSource(null, provisioningPat));
+  }
+
+  public VaultCredentialService(String provisioningUrl, TokenFileSource tokenSource) {
     this.provisioningUrl = provisioningUrl;
-    this.provisioningPat = provisioningPat;
+    this.tokenSource = tokenSource;
     this.httpClient = HttpClient.newBuilder()
         .connectTimeout(TIMEOUT)
         .build();
@@ -46,8 +51,9 @@ public class VaultCredentialService {
           .GET()
           .timeout(TIMEOUT);
 
-      if (provisioningPat != null && !provisioningPat.isBlank()) {
-        reqBuilder.header("Authorization", "Bearer " + provisioningPat);
+      String pat = tokenSource.get();
+      if (pat != null && !pat.isBlank()) {
+        reqBuilder.header("Authorization", "Bearer " + pat);
       }
 
       HttpResponse<String> resp = httpClient.send(reqBuilder.build(),

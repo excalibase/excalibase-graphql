@@ -2,6 +2,7 @@ package io.github.excalibase.rls;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.security.TokenFileSource;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -32,7 +33,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
 
     private final HttpClient http;
     private final String baseUrl;
-    private final String pat;
+    private final TokenFileSource tokenSource;
     private final long ttlMillis;
     private final LongSupplier clock;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -43,12 +44,20 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
     private record Cached<T>(T value, long fetchedAt) {}
 
     public ProvisioningPolicyProvider(String baseUrl, String pat, long ttlMillis) {
-        this(baseUrl, pat, ttlMillis, System::currentTimeMillis);
+        this(baseUrl, new TokenFileSource(null, Objects.requireNonNull(pat, "pat")), ttlMillis);
+    }
+
+    public ProvisioningPolicyProvider(String baseUrl, TokenFileSource tokenSource, long ttlMillis) {
+        this(baseUrl, tokenSource, ttlMillis, System::currentTimeMillis);
     }
 
     ProvisioningPolicyProvider(String baseUrl, String pat, long ttlMillis, LongSupplier clock) {
+        this(baseUrl, new TokenFileSource(null, Objects.requireNonNull(pat, "pat")), ttlMillis, clock);
+    }
+
+    ProvisioningPolicyProvider(String baseUrl, TokenFileSource tokenSource, long ttlMillis, LongSupplier clock) {
         this.baseUrl = stripTrailingSlash(Objects.requireNonNull(baseUrl, "baseUrl"));
-        this.pat = Objects.requireNonNull(pat, "pat");
+        this.tokenSource = Objects.requireNonNull(tokenSource, "tokenSource");
         this.ttlMillis = ttlMillis;
         this.clock = Objects.requireNonNull(clock, "clock");
         this.http = HttpClient.newBuilder()
@@ -98,7 +107,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
     private <T> List<T> fetch(String path, Function<JsonNode, List<T>> parser) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
-                .header("Authorization", "Bearer " + pat)
+                .header("Authorization", "Bearer " + tokenSource.get())
                 .header("Accept", "application/json")
                 .timeout(Duration.ofSeconds(5))
                 .GET()
