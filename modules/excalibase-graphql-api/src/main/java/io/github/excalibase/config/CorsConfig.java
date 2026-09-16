@@ -1,28 +1,53 @@
 package io.github.excalibase.config;
 
+import io.github.excalibase.cors.ProjectCorsConfigurationSource;
+import io.github.excalibase.cors.ProjectCorsProvider;
+import io.github.excalibase.cors.ProvisioningProjectCorsProvider;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.config.annotation.CorsRegistry;
-import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
 
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * CORS for the public, browser-facing API (the SDK runs in browser JS).
+ *
+ * <p>Project routes ({@code /{projectId}/graphql}, {@code /{projectId}/api/v1/...},
+ * and the WebSocket upgrades on them) are answered from the project's own
+ * allowlist, fetched from provisioning ({@code app.cors.provisioning-url},
+ * defaulting to the RLS policy URL) and cached for {@code app.cors.ttl-ms}.
+ * Routes without a project (health, actuator, the legacy unscoped paths) use
+ * {@code app.cors.allowed-origins}. Without a provisioning URL — standalone
+ * mode — that platform default applies everywhere, as before.
+ *
+ * <p>The choice is made at runtime rather than via {@code @ConditionalOnProperty}
+ * so it survives GraalVM AOT. The source is installed on the Spring Security
+ * chain (see {@link SecurityConfig}) so it runs before auth and covers every
+ * servlet path, not only MVC handler mappings.
+ */
 @Configuration
-public class CorsConfig implements WebMvcConfigurer {
+public class CorsConfig {
 
-    @Value("${app.cors.allowed-origins:*}")
-    private String allowedOrigins;
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource(
+            @Value("${app.cors.allowed-origins:*}") String platformOrigins,
+            @Value("${app.cors.provisioning-url:${app.security.rls.policy-url:}}") String provisioningUrl,
+            @Value("${app.cors.provisioning-pat:${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}}") String provisioningPat,
+            @Value("${app.cors.ttl-ms:30000}") long ttlMillis) {
+        ProjectCorsProvider provider = null;
+        if (provisioningUrl != null && !provisioningUrl.isBlank()) {
+            provider = new ProvisioningProjectCorsProvider(provisioningUrl, provisioningPat, ttlMillis);
+        }
+        return new ProjectCorsConfigurationSource(provider, ProjectCorsConfigurationSource.configFor(split(platformOrigins)));
+    }
 
-    @Override
-    public void addCorsMappings(CorsRegistry registry) {
-        // Public, browser-facing API (the SDK runs in browser JS), so CORS must
-        // cover every surface — GraphQL + REST, scoped + legacy. Auth is a Bearer
-        // token in the Authorization header (no cookies), so credentials are off
-        // and a wildcard origin is appropriate; tighten via app.cors.allowed-origins.
-        registry.addMapping("/**")
-                .allowedOrigins(allowedOrigins.split(","))
-                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
-                .allowedHeaders("*")
-                .exposedHeaders("Content-Range", "Location")
-                .allowCredentials(false)
-                .maxAge(3600);
+    private static List<String> split(String origins) {
+        return Arrays.stream(origins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList();
     }
 }
