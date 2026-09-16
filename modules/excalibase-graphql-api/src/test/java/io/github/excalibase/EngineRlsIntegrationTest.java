@@ -385,4 +385,61 @@ class EngineRlsIntegrationTest {
                 .build();
         return new com.nimbusds.jose.jwk.JWKSet(ecKey).toString();
     }
+
+    // --- Multi-table requests: a policy must bind to its own table only. ---
+
+    @Test
+    void multiTable_rowPolicyAppliesOnlyToItsOwnTable() throws Exception {
+        // One request, two root fields. `docs` carries the owner policy (Alice
+        // sees 2 of 3); `notes` carries none in this project (all 2 rows).
+        // Neither may borrow the other's filter.
+        mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_WITH_POLICY))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id owner_id } rlsDemoNotes { id owner_id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(2)))
+                .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(2)));
+    }
+
+    @Test
+    void multiTable_restrictedTableYieldsNothingWhileOpenTableStillReturns() throws Exception {
+        // Caller owns no docs: the restricted table must come back empty in the
+        // same request where the unrestricted table returns every row.
+        String stranger = "33333333-3333-3333-3333-333333333333";
+        mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(stranger, PROJECT_WITH_POLICY))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } rlsDemoNotes { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(0)))
+                .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(2)));
+    }
+
+    @Test
+    void multiTable_columnPolicyAppliesOnlyToItsOwnTable() throws Exception {
+        // `title` is HIDE-masked on docs only; notes.title must survive in the
+        // very same response.
+        mockMvc.perform(post("/" + PROJECT_CLS + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id title } rlsDemoNotes { id title } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(3)))
+                .andExpect(jsonPath("$.data.rlsDemoDocs[0].title").doesNotExist())
+                .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(2)))
+                .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").exists());
+    }
+
+    @Test
+    void multiTable_aliasedSameTableTwice_bothCopiesFiltered() throws Exception {
+        // Aliases must not create an unfiltered second path to the same table.
+        mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_WITH_POLICY))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ a: rlsDemoDocs { id } b: rlsDemoDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.a", hasSize(2)))
+                .andExpect(jsonPath("$.data.b", hasSize(2)));
+    }
 }
