@@ -139,6 +139,7 @@ class MultiTenantNoDefaultDbTest {
         .subject("test@test.com")
         .claim("userId", 1L)
         .claim("projectId", projectId)
+        .audience("excalibase:" + projectId)
         .claim("orgSlug", orgSlug)
         .claim("projectName", projectName)
         .claim("role", "user")

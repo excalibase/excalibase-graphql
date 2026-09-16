@@ -35,6 +35,7 @@ import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -236,12 +237,15 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void projectScopedUrl_tokenProjectMismatch_rejected() throws Exception {
-        // token is for PROJECT; the path names a different project → 403
+        // The token is minted for PROJECT; the path names a different one. Since
+        // EXC-11 the audience check catches this first, so the refusal is a 401
+        // aud_mismatch rather than the 403 the path comparison used to produce.
         mockMvc.perform(post("/some-other-project/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id } }")))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("aud_mismatch")));
     }
 
     @Test
@@ -405,6 +409,7 @@ class ProvisioningRlsIntegrationTest {
                 .subject("user@test.com")
                 .claim("userId", userId)
                 .claim("projectId", PROJECT)
+                .audience("excalibase:" + PROJECT)
                 .claim("role", "app_authenticated")
                 .issuer("excalibase")
                 .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z")))

@@ -36,8 +36,21 @@ public record SecurityProperties(
             String jwksUrl,
             String hmacSecret,
             String jwksTtlMinutes,
-            String issuer
+            String issuer,
+            /**
+             * EXC-11. When true (the default), a token is accepted only if its
+             * {@code aud} covers the project in the request path. Settable to
+             * false so a fleet still minting audience-less tokens can be rolled
+             * forward in stages.
+             */
+            Boolean requireAud,
+            /** Prefix in front of the projectId in {@code aud}. */
+            String audPrefix
     ) {
+        /** Defaults to enforcing the audience when the property is absent. */
+        public boolean requireAudOrDefault() {
+            return requireAud == null || requireAud;
+        }
         public boolean hasJwksUrl() {
             return jwksUrl != null && !jwksUrl.isBlank();
         }
