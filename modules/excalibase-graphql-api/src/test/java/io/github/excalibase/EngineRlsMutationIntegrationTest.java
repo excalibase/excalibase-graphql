@@ -318,4 +318,74 @@ class EngineRlsMutationIntegrationTest {
                 .keyUse(com.nimbusds.jose.jwk.KeyUse.SIGNATURE).keyID("test-key").build();
         return new com.nimbusds.jose.jwk.JWKSet(ecKey).toString();
     }
+
+    // --- Multiple mutations in one request: each field enforced on its own. ---
+    // Each test seeds its own ids; the writable table is shared across tests.
+
+    @Test
+    void multiMutation_allowedAndDeniedUpdate_inOneRequest() throws Exception {
+        mutate(ALICE, "mutation { createRlsDemoNotes(input: { id: 310, "
+                + "owner_id: \"" + ALICE + "\", title: \"a\" }) { id } }").andExpect(status().isOk());
+        mutate(BOB, "mutation { createRlsDemoNotes(input: { id: 311, "
+                + "owner_id: \"" + BOB + "\", title: \"b\" }) { id } }").andExpect(status().isOk());
+
+        // Alice edits her own note and Bob's in one request: hers applies, his
+        // matches no row. One request must not lift the filter for the other.
+        mutate(ALICE, "mutation { mine: updateRlsDemoNotes(where: { id: { eq: 310 } }, "
+                + "input: { title: \"mine-edited\" }) { id title } "
+                + "theirs: updateRlsDemoNotes(where: { id: { eq: 311 } }, "
+                + "input: { title: \"hijacked\" }) { id title } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mine", hasSize(1)))
+                .andExpect(jsonPath("$.data.mine[0].title").value("mine-edited"))
+                .andExpect(jsonPath("$.data.theirs", hasSize(0)));
+
+        // Bob's row is untouched.
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(BOB))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoNotes(where: { id: { eq: 311 } }) { title } }")))
+                .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").value("b"));
+    }
+
+    @Test
+    void multiMutation_allowedAndDeniedDelete_inOneRequest() throws Exception {
+        mutate(ALICE, "mutation { createRlsDemoNotes(input: { id: 320, "
+                + "owner_id: \"" + ALICE + "\", title: \"a\" }) { id } }").andExpect(status().isOk());
+        mutate(BOB, "mutation { createRlsDemoNotes(input: { id: 321, "
+                + "owner_id: \"" + BOB + "\", title: \"b\" }) { id } }").andExpect(status().isOk());
+
+        mutate(ALICE, "mutation { mine: deleteRlsDemoNotes(where: { id: { eq: 320 } }) { id } "
+                + "theirs: deleteRlsDemoNotes(where: { id: { eq: 321 } }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.mine", hasSize(1)))
+                .andExpect(jsonPath("$.data.theirs", hasSize(0)));
+
+        // Bob's row survived Alice's delete.
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(BOB))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoNotes(where: { id: { eq: 321 } }) { id } }")))
+                .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(1)));
+    }
+
+    @Test
+    void multiMutation_deniedInsertDoesNotRideAlongWithAnAllowedOne() throws Exception {
+        // The allowed insert must not carry the denied one past WITH-CHECK.
+        mutate(ALICE, "mutation { ok: createRlsDemoNotes(input: { id: 330, "
+                + "owner_id: \"" + ALICE + "\", title: \"ok\" }) { id } "
+                + "bad: createRlsDemoNotes(input: { id: 331, "
+                + "owner_id: \"" + BOB + "\", title: \"sneaky\" }) { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.data.bad").doesNotExist());
+
+        // The denied row must not exist afterwards.
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(BOB))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoNotes(where: { id: { eq: 331 } }) { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(0)));
+    }
 }
