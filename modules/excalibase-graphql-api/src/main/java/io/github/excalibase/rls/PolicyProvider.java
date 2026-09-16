@@ -41,6 +41,19 @@ public interface PolicyProvider {
     }
 
     /**
+     * Whether this provider is a real grant source, meaning its empty result can
+     * be trusted to mean "nothing exposed".
+     *
+     * <p>Providers with no configured source return empty for every project, which
+     * is permissive for policies but would deny every table if read as grants. Such
+     * a provider reports {@code false} so the exposure layer stays inactive instead
+     * of locking out deployments that have no control plane to grant anything.
+     */
+    default boolean servesGrants() {
+        return false;
+    }
+
+    /**
      * Drops any cached policies for {@code projectId} so the next read re-fetches.
      * The NATS policy-change subscriber calls this for immediate convergence;
      * the per-project TTL remains the fail-safe. Defaults to a no-op for providers

@@ -71,6 +71,11 @@ public final class RlsPolicyEnforcer {
      * policies: is {@code table} exposed to this caller for {@code op} at all?
      * Deny by default; no matching grant means {@code false}.
      */
+    /** Whether the exposure layer has a real grant source behind it. */
+    public boolean servesGrants() {
+        return policyProvider.servesGrants();
+    }
+
     public boolean permitsTable(String projectId, String table, JwtClaims claims, Operation op) {
         return new GrantChecker(policyProvider.grantsFor(projectId))
                 .permits(table, context(projectId, claims), op);

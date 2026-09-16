@@ -99,7 +99,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         // claims may be null (anonymous) — the engine then uses an anonymous
         // context, so owner/claim policies match no rows (fail-closed). RLS is a
         // property of the resource, applied on every request, not gated by token.
-        RlsContext.setGrants(new EngineTableGrantContributor(rlsEnforcer, projectId, claims));
+        // Only when a real grant source is configured. Without one the provider
+        // returns empty for every project, which is permissive for policies but
+        // would deny every table here, locking out deployments that have no
+        // control plane to grant anything.
+        if (rlsEnforcer.servesGrants()) {
+            RlsContext.setGrants(new EngineTableGrantContributor(rlsEnforcer, projectId, claims));
+        }
         RlsContext.set(new EngineRlsWhereContributor(rlsEnforcer, projectId, claims));
         RlsContext.setColumnMask(new EngineColumnMaskContributor(rlsEnforcer, projectId, claims));
         RlsContext.setRowCheck(new EngineRowCheckContributor(rlsEnforcer, projectId, claims));

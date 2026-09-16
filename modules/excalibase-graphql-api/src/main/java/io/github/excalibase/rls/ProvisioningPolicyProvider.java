@@ -84,6 +84,12 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
      * an empty list, which here would mean "nothing exposed" but would also hide
      * a broken control plane behind a blanket denial.
      */
+    /** A configured provisioning source, so an empty grant list genuinely means nothing is exposed. */
+    @Override
+    public boolean servesGrants() {
+        return true;
+    }
+
     @Override
     public List<TableGrant> grantsFor(String projectId) {
         return cachedFetch(projectId, grantCache,

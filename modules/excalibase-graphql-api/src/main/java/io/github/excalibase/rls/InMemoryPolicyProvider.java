@@ -58,6 +58,16 @@ public final class InMemoryPolicyProvider implements PolicyProvider {
         return columnsByProject.getOrDefault(projectId, List.of());
     }
 
+    /**
+     * A source only once grants have actually been seeded. Before that this
+     * provider is the "nothing configured" fallback, whose empty result must not
+     * be read as "nothing exposed" or every table would be denied.
+     */
+    @Override
+    public boolean servesGrants() {
+        return !grantsByProject.isEmpty();
+    }
+
     @Override
     public List<TableGrant> grantsFor(String projectId) {
         if (projectId == null) {
