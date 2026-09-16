@@ -53,14 +53,15 @@ class ReservedSchemaDiscoveryTest {
     }
 
     @Test
-    @DisplayName("discoverSchemas excludes built-in reserved schemas on mysql")
-    void discoverSchemas_mysqlWithReservedSchemas_excludesThem() {
+    @DisplayName("discoverSchemas keeps reserved names on mysql, where a schema is a tenant database")
+    void discoverSchemas_mysqlWithReservedNames_keepsThem() {
         JdbcTemplate jdbcTemplate = jdbcReturning(RAW_SCHEMAS);
 
         List<String> discovered = managerFor("mysql", "", jdbcTemplate).discoverSchemas(jdbcTemplate);
 
-        assertThat(discovered).doesNotContain("auth", "excalibase")
-                .containsExactly("public", "hana", "kanban", "rls_demo");
+        // A MySQL schema is a whole database, and the platform never creates
+        // one of these there, so a tenant may legitimately own it.
+        assertThat(discovered).contains("auth", "excalibase");
     }
 
     @Test
@@ -80,7 +81,8 @@ class ReservedSchemaDiscoveryTest {
 
         List<String> discovered = managerFor("postgres", "billing", jdbcTemplate).discoverSchemas(jdbcTemplate);
 
-        assertThat(discovered).doesNotContain("auth", "excalibase");
+        // Asserting the survivors too, so this cannot pass on an empty list.
+        assertThat(discovered).containsExactly("public", "hana", "kanban", "rls_demo");
     }
 
     @Test
