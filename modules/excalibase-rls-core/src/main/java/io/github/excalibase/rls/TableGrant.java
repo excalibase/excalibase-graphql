@@ -34,7 +34,10 @@ public record TableGrant(
 
     public TableGrant {
         Objects.requireNonNull(resource, "resource");
-        operations = (operations == null || operations.isEmpty()) ? Operation.ALL : Set.copyOf(operations);
+        // Unspecified grants nothing. In an allow-list the safe reading of a
+        // missing or null operations field is "none", not "all" — a control
+        // plane serialising an empty list must not silently confer writes.
+        operations = (operations == null) ? Set.of() : Set.copyOf(operations);
         assignments = (assignments == null) ? List.of() : List.copyOf(assignments);
     }
 

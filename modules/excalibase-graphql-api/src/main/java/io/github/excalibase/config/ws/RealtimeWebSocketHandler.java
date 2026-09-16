@@ -250,6 +250,10 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         // whether this subscriber may see the row at all, and column-level
         // security masks the payload per subscriber before it leaves the server.
         if (!matchesFilter(doc, filter)) return;
+        // Exposure before row security, matching the query path. Without this
+        // an ungranted table still streams, since a table with no row policy is
+        // readable by default and the grant layer is the only gate on it.
+        if (!permitsTable(session, resource)) return;
         if (!permitsRow(session, resource, doc)) return;
         Object payloadDoc = maskDoc(session, resource, doc);
 
@@ -290,6 +294,18 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
      * can't evaluate fail closed. Falls through to {@code true} when no engine is
      * wired or no project context is resolvable (single-tenant passthrough).
      */
+    /**
+     * Whether the exposure layer allows this table to stream at all. Gated on a
+     * configured grant source: without one every table reads as ungranted and
+     * nothing would ever be delivered.
+     */
+    private boolean permitsTable(WebSocketSession session, String resource) {
+        JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
+        String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
+        if (rlsEnforcer == null || projectId == null || !rlsEnforcer.servesGrants()) return true;
+        return rlsEnforcer.permitsTable(projectId, resource, claims, Operation.SELECT);
+    }
+
     private boolean permitsRow(WebSocketSession session, String resource, JsonNode doc) {
         JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
         String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);

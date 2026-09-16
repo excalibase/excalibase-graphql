@@ -180,7 +180,7 @@ public class SqlCompiler {
             }
         }
 
-        requireMutationGrant(fieldName);
+        requireMutationGrant(field, fieldName);
 
         CompiledQuery frag = mutationBuilder.compileMutationFragment(field, fieldName, params, variables);
         if (frag == null) return null;
@@ -202,7 +202,7 @@ public class SqlCompiler {
      * table (stored-procedure calls, unknown fields) are left to the compiler to
      * reject on their own terms.
      */
-    private void requireMutationGrant(String fieldName) {
+    private void requireMutationGrant(Field field, String fieldName) {
         for (MutationRoute route : MUTATION_ROUTES) {
             if (!fieldName.startsWith(route.prefix()) || !fieldName.endsWith(route.suffix())) {
                 continue;
@@ -212,9 +212,22 @@ public class SqlCompiler {
             String tableName = mutationBuilder.resolveMutationTable(typePart);
             if (tableName != null) {
                 GrantGuard.require(tableName, route.op());
+                // An insert carrying onConflict compiles to DO UPDATE, so it needs
+                // the update grant too. REST already requires both for upsert; this
+                // keeps the two surfaces from disagreeing.
+                if (route.op() == RlsOp.INSERT && hasOnConflict(field)) {
+                    GrantGuard.require(tableName, RlsOp.UPDATE);
+                }
                 return;
             }
         }
+    }
+
+    /** Whether this mutation carries an onConflict argument, making it an upsert. */
+    private static boolean hasOnConflict(Field field) {
+        return field != null && field.getArguments() != null
+                && field.getArguments().stream()
+                        .anyMatch(argument -> GraphqlConstants.ARG_ON_CONFLICT.equals(argument.getName()));
     }
 
     private record MutationRoute(String prefix, String suffix, RlsOp op) {}
