@@ -195,9 +195,8 @@ public class GraphqlSchemaManager implements SchemaProvider {
     }
 
     List<String> discoverSchemas(JdbcTemplate jdbc) {
-        boolean mysql = "mysql".equalsIgnoreCase(databaseType);
         try {
-            String sql = mysql
+            String sql = "mysql".equalsIgnoreCase(databaseType)
                     ? "SELECT schema_name FROM information_schema.schemata " +
                       "WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys') " +
                       "ORDER BY schema_name"
@@ -205,12 +204,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
                       "WHERE schema_name NOT LIKE 'pg_%' " +
                       "AND schema_name != 'information_schema' " +
                       "ORDER BY schema_name";
-            List<String> discovered = jdbc.queryForList(sql, String.class);
-            // The reserved names are platform-owned Postgres schemas, and the
-            // platform only ever creates them there. In MySQL a schema is a
-            // whole database, so a tenant may legitimately own one by these
-            // names and hiding it would drop their data from the API.
-            return mysql ? discovered : reservedSchemas.filter(discovered);
+            return reservedSchemas.filter(jdbc.queryForList(sql, String.class));
         } catch (Exception e) {
             log.warn("Failed to discover schemas — falling back to 'public'", e);
             return List.of("public");
