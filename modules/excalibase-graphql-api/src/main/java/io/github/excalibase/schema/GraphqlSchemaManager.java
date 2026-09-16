@@ -43,6 +43,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
     private final int maxRows;
     private final String databaseType;
     private final int maxQueryDepth;
+    private final ReservedSchemas reservedSchemas;
     private final DynamicDataSourceManager dataSourceManager;
 
     public record EngineState(SqlCompiler compiler, IntrospectionHandler introspectionHandler,
@@ -59,6 +60,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
             @Value("${app.database-type:postgres}") String databaseType,
             @Value("${app.max-query-depth:#{T(io.github.excalibase.schema.GraphqlSchemaManager).DEFAULT_MAX_QUERY_DEPTH}}") int maxQueryDepth,
             @Value("${app.cache.schema-ttl-minutes:30}") int schemaTtlMinutes,
+            @Value("${app.reserved-schemas:}") String reservedSchemasConfig,
             @Autowired(required = false) NatsCDCService natsCDCService,
             @Autowired(required = false) DynamicDataSourceManager dataSourceManager) {
         this.jdbcTemplate = jdbcTemplate;
@@ -66,6 +68,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
         this.maxRows = maxRows;
         this.databaseType = databaseType;
         this.maxQueryDepth = maxQueryDepth;
+        this.reservedSchemas = ReservedSchemas.fromConfig(reservedSchemasConfig);
         this.dataSourceManager = dataSourceManager;
         this.tenantEngineStates = new TTLCache<>(Duration.ofMinutes(schemaTtlMinutes));
         if (natsCDCService != null) {
@@ -184,12 +187,14 @@ public class GraphqlSchemaManager implements SchemaProvider {
      * db-schemas config, we auto-discover because we serve multiple tenants — each
      * tenant's database may have different schemas. A static list doesn't work
      * in multi-tenant mode. REST clients use Accept-Profile header to select schema.
+     * Platform-owned schemas are removed here, at the single discovery layer, so no
+     * downstream consumer (type generation, REST, introspection, realtime) can see them.
      */
     private List<String> discoverSchemas() {
         return discoverSchemas(jdbcTemplate);
     }
 
-    private List<String> discoverSchemas(JdbcTemplate jdbc) {
+    List<String> discoverSchemas(JdbcTemplate jdbc) {
         try {
             String sql = "mysql".equalsIgnoreCase(databaseType)
                     ? "SELECT schema_name FROM information_schema.schemata " +
@@ -199,7 +204,7 @@ public class GraphqlSchemaManager implements SchemaProvider {
                       "WHERE schema_name NOT LIKE 'pg_%' " +
                       "AND schema_name != 'information_schema' " +
                       "ORDER BY schema_name";
-            return jdbc.queryForList(sql, String.class);
+            return reservedSchemas.filter(jdbc.queryForList(sql, String.class));
         } catch (Exception e) {
             log.warn("Failed to discover schemas — falling back to 'public'", e);
             return List.of("public");

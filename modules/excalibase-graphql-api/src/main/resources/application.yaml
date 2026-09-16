@@ -70,6 +70,7 @@ app:
   database-type: postgres
   max-rows: 30
   max-query-depth: 15  # Reject queries nested beyond this depth (0 = unlimited)
+  reserved-schemas: ${APP_RESERVED_SCHEMAS:}  # Extra schemas never reflected into the API; adds to the built-in list (auth, excalibase), cannot remove from it
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
   cors:
