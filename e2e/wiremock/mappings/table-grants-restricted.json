@@ -7,6 +7,15 @@
   "response": {
     "status": 200,
     "headers": { "Content-Type": "application/json" },
-    "bodyFileName": "table-grants-restricted-response.json"
+    "jsonBody": [
+      {
+        "id": "e2e-grant-notes-only",
+        "name": "grant-notes-only",
+        "resource": "hana.rls_notes",
+        "operations": ["SELECT"],
+        "enabled": true,
+        "assignments": [{ "targetType": "ALL" }]
+      }
+    ]
   }
 }
