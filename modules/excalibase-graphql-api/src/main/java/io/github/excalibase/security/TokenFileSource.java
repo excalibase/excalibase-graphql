@@ -8,6 +8,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.LongSupplier;
 
 /**
@@ -33,7 +34,7 @@ public final class TokenFileSource {
 
     private record Snapshot(String token, long lastModifiedMs, long size, long checkedAtMs) {}
 
-    private volatile Snapshot snapshot;
+    private final AtomicReference<Snapshot> snapshot = new AtomicReference<>();
 
     public TokenFileSource(String filePath, String literalToken) {
         this(filePath, literalToken, System::currentTimeMillis);
@@ -52,7 +53,7 @@ public final class TokenFileSource {
             return literalToken;
         }
         long nowMs = clock.getAsLong();
-        Snapshot current = snapshot;
+        Snapshot current = snapshot.get();
         if (current != null && nowMs - current.checkedAtMs() < REFRESH_INTERVAL_MS) {
             return current.token();
         }
@@ -60,7 +61,7 @@ public final class TokenFileSource {
     }
 
     private synchronized String refresh(Snapshot seen, long nowMs) {
-        Snapshot current = snapshot;
+        Snapshot current = snapshot.get();
         if (current != seen && current != null && nowMs - current.checkedAtMs() < REFRESH_INTERVAL_MS) {
             return current.token();
         }
@@ -69,7 +70,7 @@ public final class TokenFileSource {
             long lastModifiedMs = attributes.lastModifiedTime().toMillis();
             long size = attributes.size();
             if (current != null && current.lastModifiedMs() == lastModifiedMs && current.size() == size) {
-                snapshot = new Snapshot(current.token(), lastModifiedMs, size, nowMs);
+                snapshot.set(new Snapshot(current.token(), lastModifiedMs, size, nowMs));
                 return current.token();
             }
             String token = Files.readString(path, StandardCharsets.UTF_8).trim();
@@ -77,7 +78,7 @@ public final class TokenFileSource {
                 log.warn("token_file_empty path={}", path);
                 return keepLastKnownGood(current, nowMs);
             }
-            snapshot = new Snapshot(token, lastModifiedMs, size, nowMs);
+            snapshot.set(new Snapshot(token, lastModifiedMs, size, nowMs));
             return token;
         } catch (IOException e) {
             log.warn("token_file_unreadable path={} reason={}", path, e.getClass().getSimpleName());
@@ -90,7 +91,7 @@ public final class TokenFileSource {
         if (current == null) {
             return literalToken;
         }
-        snapshot = new Snapshot(current.token(), current.lastModifiedMs(), current.size(), nowMs);
+        snapshot.set(new Snapshot(current.token(), current.lastModifiedMs(), current.size(), nowMs));
         return current.token();
     }
 }
