@@ -4,6 +4,7 @@ import graphql.language.*;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.ColumnMaskContributor;
+import io.github.excalibase.security.GrantGuard;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.SqlDialect;
@@ -554,6 +555,7 @@ public class QueryBuilder {
 
     private String buildForwardFkPair(Field field, String alias, String name, SchemaInfo.FkInfo fk,
                                       Map<String, Object> params) {
+        GrantGuard.require(fk.refTable(), RlsOp.SELECT);
         String subAlias = dialect.randAlias();
         String subObj = buildObject(field.getSelectionSet(), fk.refTable(), subAlias, params);
         // Build multi-column WHERE join for composite FKs
@@ -570,6 +572,7 @@ public class QueryBuilder {
 
     private String buildReverseFkPair(Field field, String alias, String name, SchemaInfo.ReverseFkInfo rfk,
                                       Map<String, Object> params) {
+        GrantGuard.require(rfk.childTable(), RlsOp.SELECT);
         String subAlias = dialect.randAlias();
         String subObj = buildObject(field.getSelectionSet(), rfk.childTable(), subAlias, params);
         // Build multi-column WHERE join for composite FKs

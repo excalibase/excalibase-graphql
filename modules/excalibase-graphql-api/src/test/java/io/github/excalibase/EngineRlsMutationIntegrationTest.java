@@ -10,6 +10,7 @@ import com.sun.net.httpserver.HttpServer;
 import io.github.excalibase.rls.Assignment;
 import io.github.excalibase.rls.FieldType;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
+import io.github.excalibase.rls.TableGrant;
 import io.github.excalibase.rls.LogicOperator;
 import io.github.excalibase.rls.Operation;
 import io.github.excalibase.rls.Policy;
@@ -137,7 +138,12 @@ class EngineRlsMutationIntegrationTest {
 
     @BeforeEach
     void seed() {
-        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll()));
+        var provider = (InMemoryPolicyProvider) policyProvider;
+        provider.put(PROJECT, List.of(ownerAll()));
+        // Exposure is granted outright here: this suite tests the row policies
+        // that run after the grant layer, not the grant layer itself.
+        provider.putGrants(PROJECT, List.of(new TableGrant("grant-all", "grant-all",
+                TableGrant.ALL_RESOURCES, Operation.ALL, List.of(Assignment.all()), true)));
     }
 
     private String body(String query) throws Exception {

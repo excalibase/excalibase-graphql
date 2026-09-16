@@ -40,6 +40,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
 
     private final Map<String, Cached<List<Policy>>> rowCache = new ConcurrentHashMap<>();
     private final Map<String, Cached<List<ColumnPolicy>>> columnCache = new ConcurrentHashMap<>();
+    private final Map<String, Cached<List<TableGrant>>> grantCache = new ConcurrentHashMap<>();
 
     private record Cached<T>(T value, long fetchedAt) {}
 
@@ -77,10 +78,23 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
                 "/provision/" + projectId + "/column-policies/", this::parseColumnPolicies);
     }
 
-    /** Drops the cached policies for one project — the write side a NATS consumer calls. */
+    /**
+     * Table grants for the project. Fails closed exactly like the policy reads:
+     * a fetch error serves the last good copy or throws — it never degrades into
+     * an empty list, which here would mean "nothing exposed" but would also hide
+     * a broken control plane behind a blanket denial.
+     */
+    @Override
+    public List<TableGrant> grantsFor(String projectId) {
+        return cachedFetch(projectId, grantCache,
+                "/provision/" + projectId + "/table-grants/", this::parseGrants);
+    }
+
+    /** Drops the cached policies and grants for one project — the write side a NATS consumer calls. */
     public void evict(String projectId) {
         rowCache.remove(projectId);
         columnCache.remove(projectId);
+        grantCache.remove(projectId);
     }
 
     private <T> List<T> cachedFetch(String projectId,
@@ -176,6 +190,20 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
                     node.path("priority").asInt(0),
                     node.path("enabled").asBoolean(true),
                     assignments(node.get("assignments"))));
+        }
+        return List.copyOf(out);
+    }
+
+    private List<TableGrant> parseGrants(JsonNode root) {
+        List<TableGrant> out = new ArrayList<>();
+        for (JsonNode node : arrayOf(root)) {
+            out.add(new TableGrant(
+                    text(node, "id"),
+                    text(node, "name"),
+                    text(node, "resource"),
+                    operations(node.get("operations")),
+                    assignments(node.get("assignments")),
+                    node.path("enabled").asBoolean(true)));
         }
         return List.copyOf(out);
     }

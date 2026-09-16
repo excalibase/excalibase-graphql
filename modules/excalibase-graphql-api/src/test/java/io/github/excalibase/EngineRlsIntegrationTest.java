@@ -19,6 +19,7 @@ import io.github.excalibase.rls.PolicyEffect;
 import io.github.excalibase.rls.PolicyProvider;
 import io.github.excalibase.rls.Rule;
 import io.github.excalibase.rls.RuleOperator;
+import io.github.excalibase.rls.TableGrant;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,7 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -72,6 +74,12 @@ class EngineRlsIntegrationTest {
     private static final String PROJECT_NESTED = "proj-nested";
     private static final String PROJECT_NUMERIC = "proj-numeric";
     private static final String PROJECT_TEMPORAL = "proj-temporal";
+    private static final String PROJECT_NO_GRANT = "proj-no-grant";
+    private static final String PROJECT_READ_ONLY_GRANT = "proj-read-grant";
+    private static final String PROJECT_ROLE_GRANT = "proj-role-grant";
+    private static final String PROJECT_GRANT_AND_POLICY = "proj-grant-policy";
+    private static final String AUTHENTICATED_ROLE = "app_authenticated";
+    private static final String DOCS = "rls_demo.docs";
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -148,6 +156,12 @@ class EngineRlsIntegrationTest {
                 null, null, 0, true, List.of(Assignment.all()));
     }
 
+    /** Exposes every table to everyone — the projects below test rows/columns, not exposure. */
+    private static TableGrant grantEverything() {
+        return new TableGrant("grant-all", "grant-all", TableGrant.ALL_RESOURCES,
+                Operation.ALL, List.of(Assignment.all()), true);
+    }
+
     @BeforeEach
     void seedPolicies() {
         var provider = (InMemoryPolicyProvider) policyProvider;
@@ -185,6 +199,33 @@ class EngineRlsIntegrationTest {
                 PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
                 List.of(new Rule("created_at", FieldType.DATETIME, RuleOperator.GTE, "{{daysAgo:1}}")),
                 List.of(Assignment.all()))));
+        seedGrantProjects(provider);
+    }
+
+    /** Projects exercising the exposure layer itself: nothing granted unless said so. */
+    private void seedGrantProjects(InMemoryPolicyProvider provider) {
+        // Row/column-policy projects above are fully exposed: they test filtering,
+        // not exposure. Seeded last so an evict() above cannot drop the grants.
+        for (String project : List.of(PROJECT_WITH_POLICY, PROJECT_NO_POLICY, PROJECT_CLS, PROJECT_CLS_NULL,
+                PROJECT_NESTED, PROJECT_NUMERIC, PROJECT_TEMPORAL)) {
+            provider.putGrants(project, List.of(grantEverything()));
+        }
+        // No grant at all → every table is denied, whatever the row policies say.
+        provider.evict(PROJECT_NO_GRANT);
+        // SELECT granted to everyone on docs; writes and every other table denied.
+        provider.putGrants(PROJECT_READ_ONLY_GRANT, List.of(new TableGrant(
+                "read-docs", "read-docs", DOCS,
+                Set.of(Operation.SELECT), List.of(Assignment.all()), true)));
+        // Granted only to the authenticated role.
+        provider.putGrants(PROJECT_ROLE_GRANT, List.of(new TableGrant(
+                "role-docs", "role-docs", DOCS,
+                Operation.ALL, List.of(Assignment.role(AUTHENTICATED_ROLE)), true)));
+        // A permissive row policy on a table nobody granted: exposure still wins.
+        provider.put(PROJECT_GRANT_AND_POLICY, List.of(new Policy(
+                "all-docs", "all-docs", DOCS,
+                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(), List.of(Assignment.all()))));
+        provider.putGrants(PROJECT_GRANT_AND_POLICY, List.of());
     }
 
     private String body(String query) throws Exception {
@@ -192,12 +233,16 @@ class EngineRlsIntegrationTest {
     }
 
     private String jwt(String userId, String projectId) throws Exception {
+        return jwt(userId, projectId, AUTHENTICATED_ROLE);
+    }
+
+    private String jwt(String userId, String projectId, String role) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("user@test.com")
                 .claim("userId", userId)
                 .claim("projectId", projectId)
                 .audience("excalibase:" + projectId)
-                .claim("role", "app_authenticated")
+                .claim("role", role)
                 .issuer("excalibase")
                 .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z")))
                 .expirationTime(java.util.Date.from(java.time.Instant.parse("2099-01-01T00:00:00Z")))
@@ -375,6 +420,105 @@ class EngineRlsIntegrationTest {
                         .content(body("{ rlsDemoLedger { id created_at } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rlsDemoLedger", hasSize(2)));
+    }
+
+    // --- Grant (exposure) layer: checked before row and column policies. ---
+
+    @Test
+    void grants_tableWithoutGrant_isDenied() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_NO_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_NO_GRANT))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("GRANT_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value(DOCS));
+    }
+
+    @Test
+    void grants_selectGrant_returnsRows() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_READ_ONLY_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_READ_ONLY_GRANT))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(3)));
+    }
+
+    @Test
+    void grants_ungrantedSiblingTable_isDeniedWhileGrantedTableWouldReturn() throws Exception {
+        // docs is granted, notes is not — the request is refused outright rather
+        // than silently returning the half the caller may see.
+        mockMvc.perform(post("/" + PROJECT_READ_ONLY_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_READ_ONLY_GRANT))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } rlsDemoNotes { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("GRANT_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.notes"));
+    }
+
+    @Test
+    void grants_selectOnlyGrant_deniesInsert() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_READ_ONLY_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_READ_ONLY_GRANT))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("mutation { createRlsDemoDocs(input: { id: 99, owner_id: \""
+                                + ALICE + "\", title: \"x\" }) { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("GRANT_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.operation").value("INSERT"));
+    }
+
+    @Test
+    void grants_roleScopedGrant_allowsGrantedRole() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_ROLE_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_ROLE_GRANT, AUTHENTICATED_ROLE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(3)));
+    }
+
+    @Test
+    void grants_roleScopedGrant_deniesOtherRole() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_ROLE_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_ROLE_GRANT, "app_anon"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("GRANT_DENIED"));
+    }
+
+    @Test
+    void grants_denialPrecedesRowPolicies() throws Exception {
+        // The project's row policy would return every row; with no grant the
+        // request is refused instead — proof the exposure check runs first.
+        mockMvc.perform(post("/" + PROJECT_GRANT_AND_POLICY + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_GRANT_AND_POLICY))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("GRANT_DENIED"));
+    }
+
+    @Test
+    void grants_nestedEmbedToUngrantedTable_isDenied() throws Exception {
+        // shelf is granted, its embedded book collection is not.
+        var provider = (InMemoryPolicyProvider) policyProvider;
+        provider.putGrants(PROJECT_NESTED, List.of(new TableGrant(
+                "shelf-only", "shelf-only", "rls_demo.shelf",
+                Operation.ALL, List.of(Assignment.all()), true)));
+
+        mockMvc.perform(post("/" + PROJECT_NESTED + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_NESTED))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoShelf { id rlsDemoBook { id } } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("GRANT_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.book"));
     }
 
     private static String buildJwks(ECPublicKey key) {

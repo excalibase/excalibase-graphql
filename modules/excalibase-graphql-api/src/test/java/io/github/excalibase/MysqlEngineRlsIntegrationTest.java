@@ -19,6 +19,7 @@ import io.github.excalibase.rls.PolicyEffect;
 import io.github.excalibase.rls.PolicyProvider;
 import io.github.excalibase.rls.Rule;
 import io.github.excalibase.rls.RuleOperator;
+import io.github.excalibase.rls.TableGrant;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,6 +43,7 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
@@ -63,6 +65,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class MysqlEngineRlsIntegrationTest {
 
     private static final String PROJECT = "proj-mysql";
+    private static final String PROJECT_NO_GRANT = "proj-mysql-no-grant";
+    private static final String PROJECT_READ_GRANT = "proj-mysql-read-grant";
+    private static final String PROJECT_ROLE_GRANT = "proj-mysql-role-grant";
+    private static final String AUTHENTICATED_ROLE = "app_authenticated";
+    private static final String DOCS = "test.rls_docs";
 
     @Container
     static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
@@ -132,6 +139,14 @@ class MysqlEngineRlsIntegrationTest {
     void seed() {
         var p = (InMemoryPolicyProvider) policyProvider;
         p.put(PROJECT, List.of(ownerSelect()));
+        // The RLS/CLS project is fully exposed — it tests filtering, not exposure.
+        p.putGrants(PROJECT, List.of(new TableGrant("grant-all", "grant-all", TableGrant.ALL_RESOURCES,
+                Operation.ALL, List.of(Assignment.all()), true)));
+        p.evict(PROJECT_NO_GRANT);
+        p.putGrants(PROJECT_READ_GRANT, List.of(new TableGrant("read-docs", "read-docs", DOCS,
+                Set.of(Operation.SELECT), List.of(Assignment.all()), true)));
+        p.putGrants(PROJECT_ROLE_GRANT, List.of(new TableGrant("role-docs", "role-docs", DOCS,
+                Operation.ALL, List.of(Assignment.role(AUTHENTICATED_ROLE)), true)));
         p.putColumns(PROJECT, List.of(new ColumnPolicy(
                 "hide-secret", "hide-secret", "test.rls_docs",
                 java.util.Set.of("secret"), Operation.ALL, MaskMode.HIDE,
@@ -143,10 +158,14 @@ class MysqlEngineRlsIntegrationTest {
     }
 
     private String jwt(String userId) throws Exception {
+        return jwt(userId, PROJECT, AUTHENTICATED_ROLE);
+    }
+
+    private String jwt(String userId, String projectId, String role) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("u@test.com").claim("userId", userId).claim("projectId", PROJECT)
-                .audience("excalibase:" + PROJECT)
-                .claim("role", "app_authenticated").issuer("excalibase")
+                .subject("u@test.com").claim("userId", userId).claim("projectId", projectId)
+                .audience("excalibase:" + projectId)
+                .claim("role", role).issuer("excalibase")
                 .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z"))).expirationTime(java.util.Date.from(java.time.Instant.parse("2099-01-01T00:00:00Z")))
                 .build();
         SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
@@ -227,6 +246,63 @@ class MysqlEngineRlsIntegrationTest {
                 .andExpect(jsonPath("$.errors[0].extensions.operation").value("UPDATE"))
                 .andExpect(jsonPath("$.errors[0].extensions.table").value("test.rls_docs"))
                 .andExpect(jsonPath("$.errors[0].message", not(containsString("violates"))));
+    }
+
+    // --- Grant (exposure) layer on MySQL: same Java enforcement, no native GRANT. ---
+
+    @Test
+    void grants_tableWithoutGrant_isDenied() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_NO_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice", PROJECT_NO_GRANT, AUTHENTICATED_ROLE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("GRANT_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.table").value(DOCS));
+    }
+
+    @Test
+    void grants_selectGrant_returnsRows() throws Exception {
+        // No row policy in this project, so the grant alone decides: all 3 rows.
+        mockMvc.perform(post("/" + PROJECT_READ_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice", PROJECT_READ_GRANT, AUTHENTICATED_ROLE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsDocs { id owner } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.testRlsDocs", hasSize(3)));
+    }
+
+    @Test
+    void grants_selectOnlyGrant_deniesInsert() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_READ_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice", PROJECT_READ_GRANT, AUTHENTICATED_ROLE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("mutation { createTestRlsDocs(input: { id: 60, owner: \"alice\", "
+                                + "secret: \"s\", title: \"t\" }) { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("GRANT_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.operation").value("INSERT"));
+    }
+
+    @Test
+    void grants_roleScopedGrant_deniesOtherRole() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_ROLE_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice", PROJECT_ROLE_GRANT, "app_anon"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("GRANT_DENIED"));
+    }
+
+    @Test
+    void grants_roleScopedGrant_allowsGrantedRole() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_ROLE_GRANT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice", PROJECT_ROLE_GRANT, AUTHENTICATED_ROLE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.testRlsDocs", hasSize(3)));
     }
 
     private static String buildJwks(ECPublicKey key) {

@@ -67,6 +67,16 @@ public final class RlsPolicyEnforcer {
     }
 
     /**
+     * Grant (exposure) check — the layer evaluated before row and column
+     * policies: is {@code table} exposed to this caller for {@code op} at all?
+     * Deny by default; no matching grant means {@code false}.
+     */
+    public boolean permitsTable(String projectId, String table, JwtClaims claims, Operation op) {
+        return new GrantChecker(policyProvider.grantsFor(projectId))
+                .permits(table, context(projectId, claims), op);
+    }
+
+    /**
      * Compiles the column-level projection for one table: which of
      * {@code requestedColumns} are visible, masked, or hidden for this caller.
      * Hidden columns appear in {@link SqlProjection#hidden()} and are absent

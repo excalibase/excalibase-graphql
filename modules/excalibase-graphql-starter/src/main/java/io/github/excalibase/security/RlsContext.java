@@ -18,6 +18,7 @@ public final class RlsContext {
     private static final ThreadLocal<RlsWhereContributor> CONTRIBUTOR = new ThreadLocal<>();
     private static final ThreadLocal<ColumnMaskContributor> COLUMN_MASK = new ThreadLocal<>();
     private static final ThreadLocal<RowCheckContributor> ROW_CHECK = new ThreadLocal<>();
+    private static final ThreadLocal<TableGrantContributor> GRANTS = new ThreadLocal<>();
 
     private RlsContext() {}
 
@@ -45,10 +46,24 @@ public final class RlsContext {
         ROW_CHECK.set(contributor);
     }
 
-    /** Clears all RLS contributors (row-filter, column-mask, row-check) for this thread. */
+    /**
+     * The grant (exposure) contributor, consulted before the row and column
+     * contributors. {@code null} means the grant layer is not active for this
+     * request — never "everything is denied".
+     */
+    public static TableGrantContributor grants() {
+        return GRANTS.get();
+    }
+
+    public static void setGrants(TableGrantContributor contributor) {
+        GRANTS.set(contributor);
+    }
+
+    /** Clears all contributors (grants, row-filter, column-mask, row-check) for this thread. */
     public static void clear() {
         CONTRIBUTOR.remove();
         COLUMN_MASK.remove();
         ROW_CHECK.remove();
+        GRANTS.remove();
     }
 }

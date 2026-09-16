@@ -7,6 +7,7 @@ import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.ColumnMaskContributor;
 import io.github.excalibase.security.RlsContext;
+import io.github.excalibase.security.GrantGuard;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import org.springframework.jdbc.core.SqlParameterValue;
@@ -71,6 +72,7 @@ public class RestQueryCompiler {
     }
 
     public CompiledResult compileSelect(SelectQuery query) {
+        GrantGuard.require(query.table(), RlsOp.SELECT);
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(query.table()));
         List<String> columns = query.columns().stream().filter(knownCols::contains).toList();
         List<OrderBySpec> orderBy = query.orderBy() != null ? query.orderBy().stream()
@@ -148,6 +150,7 @@ public class RestQueryCompiler {
     }
 
     public CompiledResult compileInsert(String table, Map<String, Object> input) {
+        GrantGuard.require(table, RlsOp.INSERT);
         String quotedTable = resolveTable(table);
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(table));
         Map<String, Object> params = new LinkedHashMap<>();
@@ -169,6 +172,7 @@ public class RestQueryCompiler {
     }
 
     public CompiledResult compileBulkInsert(String table, List<Map<String, Object>> rows) {
+        GrantGuard.require(table, RlsOp.INSERT);
         if (rows == null || rows.isEmpty()) throw new IllegalArgumentException("Empty bulk insert");
         if (rows.size() > MAX_BULK_ROWS) throw new IllegalArgumentException("Bulk insert exceeds maximum of " + MAX_BULK_ROWS);
         String quotedTable = resolveTable(table);
@@ -198,6 +202,8 @@ public class RestQueryCompiler {
     }
 
     public CompiledResult compileUpsert(String table, Map<String, Object> input, List<String> conflictCols) {
+        GrantGuard.require(table, RlsOp.INSERT);
+        GrantGuard.require(table, RlsOp.UPDATE);
         String quotedTable = resolveTable(table);
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(table));
         Map<String, Object> params = new LinkedHashMap<>();
@@ -242,6 +248,7 @@ public class RestQueryCompiler {
     }
 
     public CompiledResult compileUpdate(String table, Map<String, Object> input, List<FilterSpec> filters) {
+        GrantGuard.require(table, RlsOp.UPDATE);
         if (filters == null || filters.isEmpty()) throw new IllegalArgumentException("Update requires at least one filter");
         String quotedTable = resolveTable(table);
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(table));
@@ -265,6 +272,7 @@ public class RestQueryCompiler {
     }
 
     public CompiledResult compileDelete(String table, List<FilterSpec> filters) {
+        GrantGuard.require(table, RlsOp.DELETE);
         if (filters == null || filters.isEmpty()) throw new IllegalArgumentException("Delete requires at least one filter");
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
@@ -465,6 +473,7 @@ public class RestQueryCompiler {
 
     private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
+        GrantGuard.require(fk.refTable(), RlsOp.SELECT);
         String refTable = resolveTable(fk.refTable());
         List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, fk.refTable()) : SELECT + ia + DOT_STAR;
@@ -482,6 +491,7 @@ public class RestQueryCompiler {
 
     private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
+        GrantGuard.require(rev.childTable(), RlsOp.SELECT);
         String childTable = resolveTable(rev.childTable());
         List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, rev.childTable()) : SELECT + ia + DOT_STAR;

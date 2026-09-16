@@ -4,6 +4,7 @@ import io.github.excalibase.config.datasource.TenantContext;
 import io.github.excalibase.rls.EngineColumnMaskContributor;
 import io.github.excalibase.rls.EngineRlsWhereContributor;
 import io.github.excalibase.rls.EngineRowCheckContributor;
+import io.github.excalibase.rls.EngineTableGrantContributor;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.opentelemetry.api.trace.Span;
 import jakarta.servlet.FilterChain;
@@ -83,11 +84,13 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Registers the query-first RLS contributor for this request. A no-op when
-     * the engine isn't wired or the request carries no project context. Safe to
-     * always call: with no policies for the project the contributor yields no
-     * predicate, so existing deploys see zero behaviour change until a policy
-     * is authored.
+     * Registers the query-first RLS contributors for this request. A no-op when
+     * the engine isn't wired or the request carries no project context, so
+     * standalone deployments are untouched.
+     *
+     * <p>The grant (exposure) contributor is registered here too, under exactly
+     * the same condition: wherever row policies are enforced, grants are
+     * enforced, and wherever they are not, neither is.
      */
     private void applyRlsContext(String projectId, JwtClaims claims) {
         if (rlsEnforcer == null || projectId == null) {
@@ -96,6 +99,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         // claims may be null (anonymous) — the engine then uses an anonymous
         // context, so owner/claim policies match no rows (fail-closed). RLS is a
         // property of the resource, applied on every request, not gated by token.
+        RlsContext.setGrants(new EngineTableGrantContributor(rlsEnforcer, projectId, claims));
         RlsContext.set(new EngineRlsWhereContributor(rlsEnforcer, projectId, claims));
         RlsContext.setColumnMask(new EngineColumnMaskContributor(rlsEnforcer, projectId, claims));
         RlsContext.setRowCheck(new EngineRowCheckContributor(rlsEnforcer, projectId, claims));

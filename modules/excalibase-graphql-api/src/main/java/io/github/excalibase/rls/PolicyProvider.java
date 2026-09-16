@@ -29,6 +29,18 @@ public interface PolicyProvider {
     }
 
     /**
+     * Returns the table grants (exposure layer) scoped to {@code projectId}.
+     *
+     * <p><b>Empty means nothing is exposed, not everything.</b> This is the
+     * inverse of {@link #policiesFor(String)}, where empty means unrestricted.
+     * The default therefore denies, so a provider that does not implement
+     * grants cannot accidentally expose a project's tables.
+     */
+    default List<TableGrant> grantsFor(String projectId) {
+        return List.of();
+    }
+
+    /**
      * Drops any cached policies for {@code projectId} so the next read re-fetches.
      * The NATS policy-change subscriber calls this for immediate convergence;
      * the per-project TTL remains the fail-safe. Defaults to a no-op for providers

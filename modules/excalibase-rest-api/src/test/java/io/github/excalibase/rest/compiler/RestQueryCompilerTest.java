@@ -4,9 +4,11 @@ import io.github.excalibase.SqlDialect;
 import io.github.excalibase.postgres.PostgresDialect;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.ColumnMaskContributor;
+import io.github.excalibase.security.GrantDeniedException;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -608,6 +610,55 @@ class RestQueryCompilerTest {
       } finally {
         RlsContext.clear();
       }
+    }
+  }
+
+  @Nested
+  @DisplayName("Table grants (exposure layer)")
+  class TableGrants {
+
+    @AfterEach
+    void clearContext() {
+      RlsContext.clear();
+    }
+
+    @Test
+    void compileSelect_tableWithoutGrant_isDenied() {
+      RlsContext.setGrants((table, op) -> false);
+
+      assertThrows(GrantDeniedException.class, () -> compiler.compileSelect(
+          "public.products", List.of(), List.of(), null, 10, 0, false));
+    }
+
+    @Test
+    void compileSelect_withoutGrantContributor_compilesNormally() {
+      assertNotNull(compiler.compileSelect("public.products", List.of(), List.of(), null, 10, 0, false).sql());
+    }
+
+    @Test
+    void compileInsert_withSelectOnlyGrant_isDenied() {
+      RlsContext.setGrants((table, op) -> op == RlsOp.SELECT);
+
+      assertThrows(GrantDeniedException.class,
+          () -> compiler.compileInsert("public.products", Map.of("name", "x")));
+    }
+
+    @Test
+    void compileDelete_withSelectOnlyGrant_isDenied() {
+      RlsContext.setGrants((table, op) -> op == RlsOp.SELECT);
+
+      assertThrows(GrantDeniedException.class, () -> compiler.compileDelete("public.products",
+          List.of(new RestQueryCompiler.FilterSpec("id", "eq", "1", false))));
+    }
+
+    @Test
+    void compileSelect_embedToUngrantedTable_isDenied() {
+      RlsContext.setGrants((table, op) -> "public.products".equals(table));
+      var embed = new RestQueryCompiler.EmbedSpec("orders", List.of("*"));
+
+      assertThrows(GrantDeniedException.class, () -> compiler.compileSelect(
+          new RestQueryCompiler.SelectQuery(
+              "public.products", List.of(), List.of(), null, List.of(embed), null, 10, 0, false)));
     }
   }
 

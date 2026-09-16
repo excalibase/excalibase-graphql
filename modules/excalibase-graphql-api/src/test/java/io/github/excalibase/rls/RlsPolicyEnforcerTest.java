@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -138,5 +139,56 @@ class RlsPolicyEnforcerTest {
 
         SqlFilter sel = enforcer.filterFor("proj-a", "orders", claims(ALICE, "proj-a"), Operation.SELECT);
         assertThat(sel.isUnrestricted()).isTrue();
+    }
+
+    // --- Grant (exposure) layer ---
+
+    private static RlsPolicyEnforcer enforcerWithGrants(String projectId, List<TableGrant> grants) {
+        var provider = new InMemoryPolicyProvider();
+        provider.putGrants(projectId, grants);
+        return new RlsPolicyEnforcer(provider);
+    }
+
+    @Test
+    @DisplayName("a project with no grants denies every table")
+    void permitsTable_noGrants_denies() {
+        RlsPolicyEnforcer enforcer = enforcerWithGrants("p1", List.of());
+
+        assertThat(enforcer.permitsTable("p1", "public.docs", claims(ALICE, "p1"), Operation.SELECT))
+                .isFalse();
+    }
+
+    @Test
+    void permitsTable_grantedOperation_allows() {
+        RlsPolicyEnforcer enforcer = enforcerWithGrants("p1", List.of(new TableGrant(
+                "g1", "g1", "public.docs", Set.of(Operation.SELECT),
+                List.of(Assignment.all()), true)));
+
+        assertThat(enforcer.permitsTable("p1", "public.docs", claims(ALICE, "p1"), Operation.SELECT))
+                .isTrue();
+        assertThat(enforcer.permitsTable("p1", "public.docs", claims(ALICE, "p1"), Operation.UPDATE))
+                .isFalse();
+    }
+
+    @Test
+    @DisplayName("anonymous callers are denied a role-scoped grant")
+    void permitsTable_anonymousCaller_deniedRoleScopedGrant() {
+        RlsPolicyEnforcer enforcer = enforcerWithGrants("p1", List.of(new TableGrant(
+                "g1", "g1", "public.docs", Operation.ALL,
+                List.of(Assignment.role("app_authenticated")), true)));
+
+        assertThat(enforcer.permitsTable("p1", "public.docs", null, Operation.SELECT)).isFalse();
+        assertThat(enforcer.permitsTable("p1", "public.docs", claims(ALICE, "p1"), Operation.SELECT))
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("an unknown project is denied, never unrestricted")
+    void permitsTable_unknownProject_denies() {
+        RlsPolicyEnforcer enforcer = enforcerWithGrants("p1", List.of(new TableGrant(
+                "g1", "g1", "public.docs", Operation.ALL, List.of(Assignment.all()), true)));
+
+        assertThat(enforcer.permitsTable("other", "public.docs", claims(ALICE, "other"), Operation.SELECT))
+                .isFalse();
     }
 }

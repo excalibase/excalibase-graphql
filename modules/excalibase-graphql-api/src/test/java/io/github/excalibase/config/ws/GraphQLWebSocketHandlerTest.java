@@ -8,6 +8,7 @@ import io.github.excalibase.rls.Assignment;
 import io.github.excalibase.rls.ColumnPolicy;
 import io.github.excalibase.rls.FieldType;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
+import io.github.excalibase.rls.TableGrant;
 import io.github.excalibase.rls.LogicOperator;
 import io.github.excalibase.rls.MaskMode;
 import io.github.excalibase.rls.Operation;
@@ -102,6 +103,12 @@ class GraphQLWebSocketHandlerTest {
         return fieldNode.get("data");
     }
 
+    /** Realtime enforces exposure too, so these row/column cases grant it up front. */
+    private static void grantEverything(InMemoryPolicyProvider provider) {
+        provider.putGrants("p1", List.of(new TableGrant("grant-all", "grant-all",
+                TableGrant.ALL_RESOURCES, Operation.ALL, List.of(Assignment.all()), true)));
+    }
+
     @Test
     @DisplayName("owner row policy delivers only the subscriber's rows over GraphQL WS")
     void rowFilter_deliversOnlyOwnRows() throws Exception {
@@ -110,6 +117,7 @@ class GraphQLWebSocketHandlerTest {
                 "own", "own", "public.notes", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
                 List.of(new Rule("owner_id", FieldType.STRING, RuleOperator.EQ, "{{currentUserId}}")),
                 List.of(Assignment.all()))));
+        grantEverything(provider);
         var handler = handler(new RlsPolicyEnforcer(provider));
 
         var sent = new ArrayList<String>();
@@ -137,6 +145,7 @@ class GraphQLWebSocketHandlerTest {
         provider.putColumns("p1", List.of(new ColumnPolicy(
                 "h", "h", "public.things", Set.of("secret"), Operation.ALL, MaskMode.HIDE,
                 null, null, 0, true, List.of(Assignment.all()))));
+        grantEverything(provider);
         var handler = handler(new RlsPolicyEnforcer(provider));
 
         var sent = new ArrayList<String>();

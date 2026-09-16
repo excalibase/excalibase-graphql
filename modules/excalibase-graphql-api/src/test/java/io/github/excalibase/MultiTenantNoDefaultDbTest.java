@@ -2,6 +2,11 @@ package io.github.excalibase;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import io.github.excalibase.rls.Assignment;
+import io.github.excalibase.rls.InMemoryPolicyProvider;
+import io.github.excalibase.rls.Operation;
+import io.github.excalibase.rls.PolicyProvider;
+import io.github.excalibase.rls.TableGrant;
 import org.junit.jupiter.api.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -22,6 +27,7 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.*;
@@ -121,7 +127,18 @@ class MultiTenantNoDefaultDbTest {
   @Autowired
   private MockMvc mockMvc;
 
+  @Autowired
+  private PolicyProvider policyProvider;
+
   private static final ObjectMapper mapper = new ObjectMapper();
+
+  /** This suite tests schema bootstrap from vault, so the tenant project is fully exposed. */
+  @BeforeEach
+  void grantTenantProject() {
+    ((InMemoryPolicyProvider) policyProvider).putGrants(projectIdOf("app-a"), List.of(new TableGrant(
+        "grant-all", "grant-all", TableGrant.ALL_RESOURCES,
+        Operation.ALL, List.of(Assignment.all()), true)));
+  }
 
   private String graphql(String query) throws Exception {
     return mapper.writeValueAsString(Map.of("query", query));

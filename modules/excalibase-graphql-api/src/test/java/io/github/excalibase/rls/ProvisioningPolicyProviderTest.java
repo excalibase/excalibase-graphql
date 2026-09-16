@@ -33,6 +33,7 @@ class ProvisioningPolicyProviderTest {
     private int port;
     private final AtomicInteger rlsHits = new AtomicInteger();
     private final AtomicInteger colHits = new AtomicInteger();
+    private final AtomicInteger grantHits = new AtomicInteger();
     private volatile int responseStatus = 200;
     private volatile String authHeaderSeen;
 
@@ -97,6 +98,19 @@ class ProvisioningPolicyProviderTest {
             ]
             """;
 
+    private static final String GRANT_BODY = """
+            [
+              {
+                "id": "g1",
+                "name": "anon_read_docs",
+                "resource": "docs",
+                "operations": ["SELECT"],
+                "enabled": true,
+                "assignments": [{"targetType": "ROLE", "targetId": "anon"}]
+              }
+            ]
+            """;
+
     private static final String RLS_RELATIONS_BODY = """
             [
               {
@@ -137,6 +151,10 @@ class ProvisioningPolicyProviderTest {
             colHits.incrementAndGet();
             respond(exchange, COL_BODY);
         });
+        server.createContext("/api/provision/proj1/table-grants/", exchange -> {
+            grantHits.incrementAndGet();
+            respond(exchange, GRANT_BODY);
+        });
         server.createContext("/api/provision/proj2/rls-policies/", exchange -> respond(exchange, "[]"));
         server.createContext("/api/provision/proj2/column-policies/", exchange -> respond(exchange, COL_VARIANTS_BODY));
         server.createContext("/api/provision/proj4/rls-policies/", exchange -> respond(exchange, RLS_RELATIONS_BODY));
@@ -174,6 +192,61 @@ class ProvisioningPolicyProviderTest {
         ProvisioningPolicyProvider p = new ProvisioningPolicyProvider(
                 "http://localhost:" + port + "/api", "test-pat", 60_000);
         assertThatThrownBy(() -> p.policiesFor("proj1")).isInstanceOf(PolicyFetchException.class);
+    }
+
+    @Test
+    @DisplayName("maps table grants from provisioning JSON")
+    void grantsFor_mapsProvisioningJson() {
+        List<TableGrant> grants = provider(60_000).grantsFor("proj1");
+
+        assertThat(grants).singleElement().satisfies(grant -> {
+            assertThat(grant.resource()).isEqualTo("docs");
+            assertThat(grant.operations()).containsExactly(Operation.SELECT);
+            assertThat(grant.assignments()).containsExactly(Assignment.role("anon"));
+            assertThat(grant.enabled()).isTrue();
+        });
+    }
+
+    @Test
+    @DisplayName("grants are cached per project within the TTL")
+    void grantsFor_cachesWithinTtl() {
+        ProvisioningPolicyProvider provider = provider(60_000);
+        provider.grantsFor("proj1");
+        provider.grantsFor("proj1");
+
+        assertThat(grantHits.get()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("grant fetch fails closed rather than degrading to an empty (blanket-deny) list")
+    void grantsFor_networkError_throwsInsteadOfReturningEmpty() {
+        server.stop(0);
+        server = null;
+        ProvisioningPolicyProvider provider = new ProvisioningPolicyProvider(
+                "http://localhost:" + port + "/api", "test-pat", 60_000);
+
+        assertThatThrownBy(() -> provider.grantsFor("proj1")).isInstanceOf(PolicyFetchException.class);
+    }
+
+    @Test
+    @DisplayName("grant fetch serves the last good copy when provisioning errors")
+    void grantsFor_fetchError_servesLastGoodCopy() {
+        ProvisioningPolicyProvider provider = provider(0);
+        List<TableGrant> first = provider.grantsFor("proj1");
+        responseStatus = 500;
+
+        assertThat(provider.grantsFor("proj1")).isEqualTo(first);
+    }
+
+    @Test
+    @DisplayName("evict drops cached grants so the next read re-fetches")
+    void evict_dropsCachedGrants() {
+        ProvisioningPolicyProvider provider = provider(60_000);
+        provider.grantsFor("proj1");
+        provider.evict("proj1");
+        provider.grantsFor("proj1");
+
+        assertThat(grantHits.get()).isEqualTo(2);
     }
 
     @Test

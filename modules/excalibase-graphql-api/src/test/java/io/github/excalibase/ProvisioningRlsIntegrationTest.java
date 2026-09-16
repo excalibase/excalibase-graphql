@@ -130,6 +130,20 @@ class ProvisioningRlsIntegrationTest {
             ]
             """;
 
+    /** This suite asserts row filtering, so provisioning exposes every table. */
+    private static final String GRANT_EVERYTHING = """
+            [
+              {
+                "id": "grant-all",
+                "name": "grant-all",
+                "resource": "*",
+                "operations": ["SELECT", "INSERT", "UPDATE", "DELETE"],
+                "enabled": true,
+                "assignments": [{"targetType": "ALL"}]
+              }
+            ]
+            """;
+
     static {
         try {
             KeyPairGenerator gen = KeyPairGenerator.getInstance("EC");
@@ -143,6 +157,7 @@ class ProvisioningRlsIntegrationTest {
             serve("/.well-known/jwks.json", buildJwks(publicKey));
             serve("/api/provision/" + PROJECT + "/rls-policies/", OWNER_POLICY);
             serve("/api/provision/" + PROJECT + "/column-policies/", "[]");
+            serve("/api/provision/" + PROJECT + "/table-grants/", GRANT_EVERYTHING);
             stub.start();
         } catch (Exception e) {
             throw new RuntimeException("stub setup failed", e);

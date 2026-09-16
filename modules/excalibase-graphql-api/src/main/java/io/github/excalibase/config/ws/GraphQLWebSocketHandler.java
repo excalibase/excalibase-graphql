@@ -310,6 +310,11 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         if (projectId == null) return parsed;
         Map<String, Object> row = (Map<String, Object>) parsed;
         String resource = resourceOf(event);
+        // Exposure first: an ungranted table must not stream either, or realtime
+        // becomes a way around the grant layer the query path enforces.
+        if (!rlsEnforcer.permitsTable(projectId, resource, claims, Operation.SELECT)) {
+            return RLS_DROP;
+        }
         try {
             if (!rlsEnforcer.permitsRow(projectId, resource, claims, Operation.SELECT, row)) {
                 return RLS_DROP;

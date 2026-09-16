@@ -3,7 +3,10 @@ package io.github.excalibase.compiler;
 import graphql.language.*;
 import graphql.parser.Parser;
 import io.github.excalibase.*;
+import io.github.excalibase.schema.GraphqlConstants;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.GrantGuard;
+import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.spi.MutationCompiler;
 
 import java.util.*;
@@ -141,6 +144,9 @@ public class SqlCompiler {
             unresolvedFields.add(fieldName);
             return;
         }
+        // Exposure check first: an ungranted table is refused before a single
+        // character of SQL is built for it, and before any row/column policy runs.
+        GrantGuard.require(tableName, RlsOp.SELECT);
         String sql;
         if (fieldName.endsWith("Aggregate")) {
             sql = queryBuilder.compileAggregate(field, tableName, params);
@@ -174,6 +180,8 @@ public class SqlCompiler {
             }
         }
 
+        requireMutationGrant(fieldName);
+
         CompiledQuery frag = mutationBuilder.compileMutationFragment(field, fieldName, params, variables);
         if (frag == null) return null;
 
@@ -187,6 +195,42 @@ public class SqlCompiler {
         mutFragments.add(new MutationFragment(responseKey, frag.sql()));
         return null;
     }
+
+    /**
+     * Refuses a mutation whose target table is not granted for its operation,
+     * before the dialect compiler builds any DML. Field names that resolve to no
+     * table (stored-procedure calls, unknown fields) are left to the compiler to
+     * reject on their own terms.
+     */
+    private void requireMutationGrant(String fieldName) {
+        for (MutationRoute route : MUTATION_ROUTES) {
+            if (!fieldName.startsWith(route.prefix()) || !fieldName.endsWith(route.suffix())) {
+                continue;
+            }
+            String typePart = fieldName.substring(route.prefix().length(),
+                    fieldName.length() - route.suffix().length());
+            String tableName = mutationBuilder.resolveMutationTable(typePart);
+            if (tableName != null) {
+                GrantGuard.require(tableName, route.op());
+                return;
+            }
+        }
+    }
+
+    private record MutationRoute(String prefix, String suffix, RlsOp op) {}
+
+    /**
+     * Mutation name → (table, operation), in the same precedence the dialect
+     * compilers use: collection-suffixed and {@code createMany} routes are tried
+     * before the plain prefixes they start with.
+     */
+    private static final List<MutationRoute> MUTATION_ROUTES = List.of(
+            new MutationRoute(GraphqlConstants.DELETE_FROM_PREFIX, GraphqlConstants.COLLECTION_SUFFIX, RlsOp.DELETE),
+            new MutationRoute(GraphqlConstants.UPDATE_PREFIX, GraphqlConstants.COLLECTION_SUFFIX, RlsOp.UPDATE),
+            new MutationRoute(GraphqlConstants.CREATE_MANY_PREFIX, "", RlsOp.INSERT),
+            new MutationRoute(GraphqlConstants.CREATE_PREFIX, "", RlsOp.INSERT),
+            new MutationRoute(GraphqlConstants.UPDATE_PREFIX, "", RlsOp.UPDATE),
+            new MutationRoute(GraphqlConstants.DELETE_PREFIX, "", RlsOp.DELETE));
 
     /**
      * Combines multiple CTE mutation fragments into a single atomic SQL statement.
