@@ -311,8 +311,11 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         Map<String, Object> row = (Map<String, Object>) parsed;
         String resource = resourceOf(event);
         // Exposure first: an ungranted table must not stream either, or realtime
-        // becomes a way around the grant layer the query path enforces.
-        if (!rlsEnforcer.permitsTable(projectId, resource, claims, Operation.SELECT)) {
+        // becomes a way around the grant layer the query path enforces. Gated on a
+        // configured grant source for the same reason the query path is: without
+        // one every table reads as ungranted and nothing would ever stream.
+        if (rlsEnforcer.servesGrants()
+                && !rlsEnforcer.permitsTable(projectId, resource, claims, Operation.SELECT)) {
             return RLS_DROP;
         }
         try {
