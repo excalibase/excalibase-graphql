@@ -698,9 +698,29 @@ CREATE TABLE auth.refresh_tokens (
 );
 
 CREATE ROLE auth_admin WITH LOGIN PASSWORD 'authpass';
-GRANT USAGE ON SCHEMA auth TO auth_admin;
+-- CREATE on the database lets the auth service apply its own migrations on
+-- first connect; without it every migration after the initial schema is
+-- skipped and login fails against the stale tables.
+GRANT CREATE ON DATABASE hana TO auth_admin;
+GRANT ALL ON SCHEMA auth TO auth_admin;
 GRANT ALL ON ALL TABLES IN SCHEMA auth TO auth_admin;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO auth_admin;
+ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT ALL ON TABLES TO auth_admin;
+ALTER DEFAULT PRIVILEGES IN SCHEMA auth GRANT ALL ON SEQUENCES TO auth_admin;
+
+-- Migrations ALTER the tables seeded above, and ALTER requires ownership
+-- rather than privileges, so hand the whole auth schema to auth_admin.
+ALTER SCHEMA auth OWNER TO auth_admin;
+DO $$
+DECLARE obj record;
+BEGIN
+    FOR obj IN SELECT tablename FROM pg_tables WHERE schemaname = 'auth' LOOP
+        EXECUTE format('ALTER TABLE auth.%I OWNER TO auth_admin', obj.tablename);
+    END LOOP;
+    FOR obj IN SELECT sequencename FROM pg_sequences WHERE schemaname = 'auth' LOOP
+        EXECUTE format('ALTER SEQUENCE auth.%I OWNER TO auth_admin', obj.sequencename);
+    END LOOP;
+END $$;
 
 -- ====================
 -- RLS (ROW LEVEL SECURITY) TEST SETUP
