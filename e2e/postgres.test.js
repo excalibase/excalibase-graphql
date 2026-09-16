@@ -876,6 +876,57 @@ describe('RLS (Row Level Security)', () => {
   });
 });
 
+// ─── Table Grants (exposure layer) ───────────────────────────────────────────
+
+// The grant layer is checked before row and column policies: a table with no
+// grant is refused before any SQL is built. Every other test of it runs against
+// an in-process stub, so this is the only place the real engine fetches grants
+// from a control plane over HTTP. The mock serves a wildcard grant for every
+// project except `e2e-grants-restricted`, which is granted SELECT on
+// `hana.rls_notes` and nothing else.
+describe('Table Grants', () => {
+  const RESTRICTED_PROJECT = 'e2e-grants-restricted';
+
+  async function queryAs(project, query) {
+    const res = await fetch(`${API_BASE}/${project}/graphql`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query }),
+    });
+    return { status: res.status, json: await res.json().catch(() => ({})) };
+  }
+
+  test('granted table returns data under the default wildcard grant', async () => {
+    const { status, json } = await queryAs(DATA_PROJECT, '{ hanaCustomer { customer_id } }');
+    expect(status).toBe(200);
+    expect(json.errors).toBeUndefined();
+    expect(Array.isArray(json.data.hanaCustomer)).toBe(true);
+  });
+
+  test('ungranted table is denied even though the project has other grants', async () => {
+    const { json } = await queryAs(RESTRICTED_PROJECT, '{ hanaCustomer { customer_id } }');
+    expect(json.errors).toBeDefined();
+    const codes = json.errors.map(e => e.extensions && e.extensions.code);
+    expect(codes).toContain('GRANT_DENIED');
+  });
+
+  test('granted table still works on the restricted project', async () => {
+    const { json } = await queryAs(RESTRICTED_PROJECT, '{ hanaRlsNotes { id } }');
+    const codes = (json.errors || []).map(e => e.extensions && e.extensions.code);
+    expect(codes).not.toContain('GRANT_DENIED');
+  });
+
+  test('write is denied when only SELECT is granted', async () => {
+    const { json } = await queryAs(
+      RESTRICTED_PROJECT,
+      'mutation { deleteHanaRlsNotes(where: { id: { eq: 999999 } }) }',
+    );
+    expect(json.errors).toBeDefined();
+    const codes = json.errors.map(e => e.extensions && e.extensions.code);
+    expect(codes).toContain('GRANT_DENIED');
+  });
+});
+
 // ─── Stored Procedures ────────────────────────────────────────────────────────
 
 describe('Stored Procedures', () => {
