@@ -259,7 +259,18 @@ public class SchemaInfo {
     }
     public record ComputedField(String functionName, String returnType) {}
     public record ProcParam(String mode, String name, String type) {}
-    public record ProcedureInfo(String name, List<ProcParam> params) {
+
+    /**
+     * A stored function/procedure. {@code returnType} is the declared result as the
+     * database reports it ("SETOF orders", "integer", "TABLE(...)"), or null when the
+     * backend has none to report (MySQL procedures). It is plain reflection, kept
+     * because a function returning rows of a table is a second way to read that table.
+     */
+    public record ProcedureInfo(String name, List<ProcParam> params, String returnType) {
+        public ProcedureInfo(String name, List<ProcParam> params) {
+            this(name, params, null);
+        }
+
         public List<ProcParam> inParams() {
             return params.stream().filter(p -> "IN".equals(p.mode()) || "INOUT".equals(p.mode())).toList();
         }

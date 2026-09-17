@@ -96,14 +96,14 @@ class MutationBuilderTest {
     }
 
     @Nested
-    @DisplayName("resolveMutationTable lookup order")
+    @DisplayName("lookupTable lookup order")
     class ResolveMutationTable {
         @Test
         @DisplayName("PascalCase to snake_case lookup succeeds")
         void pascalCase_resolvesToSnake() {
             schemaInfo.addColumn("user_accounts", "id", "integer");
 
-            assertThat(mutationBuilder.resolveMutationTable("UserAccounts")).isEqualTo("user_accounts");
+            assertThat(mutationBuilder.lookupTable("UserAccounts")).isEqualTo("user_accounts");
         }
 
         @Test
@@ -111,7 +111,7 @@ class MutationBuilderTest {
         void lowercaseFallback() {
             schemaInfo.addColumn("users", "id", "integer");
 
-            assertThat(mutationBuilder.resolveMutationTable("USERS")).isEqualTo("users");
+            assertThat(mutationBuilder.lookupTable("USERS")).isEqualTo("users");
         }
 
         @Test
@@ -119,13 +119,13 @@ class MutationBuilderTest {
         void compoundPrefixedName_resolves() {
             schemaInfo.addColumn("tenant.customer", "id", "integer");
 
-            assertThat(mutationBuilder.resolveMutationTable("TenantCustomer")).isEqualTo("tenant.customer");
+            assertThat(mutationBuilder.lookupTable("TenantCustomer")).isEqualTo("tenant.customer");
         }
 
         @Test
         @DisplayName("unknown type name returns null")
         void unknownName_returnsNull() {
-            assertThat(mutationBuilder.resolveMutationTable("Ghost")).isNull();
+            assertThat(mutationBuilder.lookupTable("Ghost")).isNull();
         }
     }
 

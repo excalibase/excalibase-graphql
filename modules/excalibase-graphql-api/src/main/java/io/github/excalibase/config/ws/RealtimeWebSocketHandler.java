@@ -55,6 +55,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final ObjectMapper objectMapper;
     private final JwtService jwtService;
     private final RlsPolicyEnforcer rlsEnforcer;
+    private final RealtimeExposureGate exposureGate;
 
     @Value("${app.security.jwt-enabled:false}")
     private boolean jwtEnabled;
@@ -70,12 +71,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                                     ObjectMapper objectMapper,
                                     ObjectProvider<JwtService> jwtServiceProvider,
                                     ObjectProvider<RlsPolicyEnforcer> rlsEnforcerProvider,
-                                    WebSocketHeartbeat heartbeat) {
+                                    WebSocketHeartbeat heartbeat,
+                                    ObjectProvider<RealtimeExposureGate> exposureGateProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.jwtService = jwtServiceProvider.getIfAvailable();
         this.rlsEnforcer = rlsEnforcerProvider.getIfAvailable();
         this.heartbeat = heartbeat;
+        this.exposureGate = exposureGateProvider.getIfAvailable();
     }
 
     @Override
@@ -143,6 +146,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         // Resource the CDC events belong to, matching how policies are keyed
         // (schema-qualified table) so column masking can be applied per subscriber.
         String resource = (schema == null ? "public" : schema) + "." + collection;
+        // Exposure: CDC events never pass through the schema this caller was
+        // served, so a collection they were not granted has to be refused here.
+        // Same answer as a collection that does not exist — there is no such
+        // collection for them.
+        if (exposureGate != null && !exposureGate.permitsRead(session, resource)) {
+            sendError(session, id, "Unknown collection: " + collection);
+            return;
+        }
         Disposable disposable = subscriptionService.subscribe(tenantId, key)
                 .subscribe(event -> dispatchEvent(session, id, filter, resource, event));
         sessionSubs.put(id, disposable);

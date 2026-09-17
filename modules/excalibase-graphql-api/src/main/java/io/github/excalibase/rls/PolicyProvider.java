@@ -11,7 +11,7 @@ import java.util.List;
  * must be cheap to call on the hot path (cache, not network) and must
  * never return {@code null}.
  */
-public interface PolicyProvider {
+public interface PolicyProvider extends ProjectCacheEvictor {
 
     /**
      * Returns the row-level policies scoped to {@code projectId}, or an empty
@@ -26,6 +26,15 @@ public interface PolicyProvider {
      */
     default List<ColumnPolicy> columnPoliciesFor(String projectId) {
         return List.of();
+    }
+
+    /**
+     * Returns the exposure grants in force for {@code projectId}. Defaults to
+     * "not enforced" so a provider that knows nothing about exposure keeps serving
+     * the whole schema, exactly as before the feature existed.
+     */
+    default TableGrants tableGrantsFor(String projectId) {
+        return TableGrants.unenforced(projectId);
     }
 
     /**

@@ -18,6 +18,7 @@ public final class InMemoryPolicyProvider implements PolicyProvider {
 
     private final Map<String, List<Policy>> byProject = new ConcurrentHashMap<>();
     private final Map<String, List<ColumnPolicy>> columnsByProject = new ConcurrentHashMap<>();
+    private final Map<String, TableGrants> grantsByProject = new ConcurrentHashMap<>();
 
     /** Replaces the row-policy set for {@code projectId}. */
     public void put(String projectId, List<Policy> policies) {
@@ -29,10 +30,24 @@ public final class InMemoryPolicyProvider implements PolicyProvider {
         columnsByProject.put(projectId, List.copyOf(columnPolicies));
     }
 
-    /** Drops all policies (row and column) for {@code projectId}. */
+    /** Replaces the exposure grants for {@code projectId}. */
+    public void putGrants(String projectId, TableGrants grants) {
+        grantsByProject.put(projectId, grants);
+    }
+
+    /** Drops all policies (row and column) and grants for {@code projectId}. */
     public void evict(String projectId) {
         byProject.remove(projectId);
         columnsByProject.remove(projectId);
+        grantsByProject.remove(projectId);
+    }
+
+    @Override
+    public TableGrants tableGrantsFor(String projectId) {
+        if (projectId == null) {
+            return TableGrants.unenforced(null);
+        }
+        return grantsByProject.getOrDefault(projectId, TableGrants.unenforced(projectId));
     }
 
     @Override

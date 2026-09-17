@@ -8,6 +8,7 @@ import io.github.excalibase.rest.parser.OrderParser;
 import io.github.excalibase.rest.parser.SelectParser;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaProvider;
+import io.github.excalibase.schema.TableExposure;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsDeniedResponse;
@@ -417,6 +418,13 @@ public class RestApiController {
             OrderParser.parse(order).stream().map(o -> new RestQueryCompiler.OrderBySpec(o.column(), o.direction(), o.nulls())).toList());
     }
 
+    /**
+     * Resolves the table this request addresses, or null when there is none to
+     * address — which the callers turn into the 404 they already returned for an
+     * unknown table. A table the caller may not read is absent from their
+     * {@link SchemaInfo}, and one they may read but not write for this HTTP method
+     * is equally not there for this request: same answer, no separate denial.
+     */
     private RequestContext resolveContext(String table, String profileHeader, HttpServletRequest request) {
         String schema = resolveSchema(profileHeader);
         if (schema == null) return null;
@@ -424,7 +432,25 @@ public class RestApiController {
         String tableKey = schema + DOT + table;
         var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
         if (!schemaInfo.hasTable(tableKey)) return null;
+        if (!permitsMethod(schemaProvider.resolveExposure(claims), tableKey, request)) return null;
         return new RequestContext(tableKey, new RestQueryCompiler(schemaInfo, schemaProvider.resolveDialect(claims), schema, maxRows), schemaInfo, claims);
+    }
+
+    /**
+     * Maps the HTTP method onto the operation it performs. A POST carrying
+     * {@code Prefer: resolution=merge-duplicates} upserts, which rewrites existing
+     * rows, so it needs UPDATE as well as INSERT.
+     */
+    private boolean permitsMethod(TableExposure exposure, String tableKey, HttpServletRequest request) {
+        String prefer = request.getHeader("Prefer");
+        return switch (request.getMethod()) {
+            case "POST" -> exposure.permits(tableKey, RlsOp.INSERT)
+                    && (!preferContains(prefer, "resolution=merge-duplicates")
+                        || exposure.permits(tableKey, RlsOp.UPDATE));
+            case "PATCH", "PUT" -> exposure.permits(tableKey, RlsOp.UPDATE);
+            case "DELETE" -> exposure.permits(tableKey, RlsOp.DELETE);
+            default -> exposure.permits(tableKey, RlsOp.SELECT);
+        };
     }
 
     private String resolveSchema(String header) {

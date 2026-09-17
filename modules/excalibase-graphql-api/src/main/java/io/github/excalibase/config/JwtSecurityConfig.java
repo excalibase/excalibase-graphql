@@ -6,6 +6,7 @@ import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.rls.PolicyProvider;
 import io.github.excalibase.rls.ProvisioningPolicyProvider;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
+import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
@@ -16,6 +17,8 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.List;
 
 @Configuration
 @ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true")
@@ -101,9 +104,11 @@ public class JwtSecurityConfig {
     @Bean
     public PolicyChangeSubscriber policyChangeSubscriber(
             PolicyProvider policyProvider,
+            GraphqlSchemaManager schemaManager,
             @Value("${app.nats.enabled:false}") boolean natsEnabled,
             @Value("${app.nats.url:nats://localhost:4222}") String natsUrl) {
-        return new PolicyChangeSubscriber(policyProvider, natsEnabled, natsUrl);
+        return new PolicyChangeSubscriber(List.of(policyProvider, schemaManager::evict),
+                natsEnabled, natsUrl);
     }
 
     // Multi-tenant beans — only when provisioning-url is configured

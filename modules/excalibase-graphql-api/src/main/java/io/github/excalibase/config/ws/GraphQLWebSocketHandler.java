@@ -59,6 +59,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     private final ObjectMapper objectMapper;
     private final JwtService jwtService;
     private final RlsPolicyEnforcer rlsEnforcer;
+    private final RealtimeExposureGate exposureGate;
 
     @Value("${app.security.jwt-enabled:false}")
     private boolean jwtEnabled;
@@ -82,12 +83,14 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                                    ObjectMapper objectMapper,
                                    ObjectProvider<JwtService> jwtServiceProvider,
                                    ObjectProvider<RlsPolicyEnforcer> rlsEnforcerProvider,
-                                   WebSocketHeartbeat heartbeat) {
+                                   WebSocketHeartbeat heartbeat,
+                                   ObjectProvider<RealtimeExposureGate> exposureGateProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.jwtService = jwtServiceProvider.getIfAvailable();
         this.rlsEnforcer = rlsEnforcerProvider.getIfAvailable();
         this.heartbeat = heartbeat;
+        this.exposureGate = exposureGateProvider.getIfAvailable();
     }
 
     @Override
@@ -302,6 +305,11 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     @SuppressWarnings("unchecked")
     private Object renderEventData(WebSocketSession session, CDCEvent event) {
         Object parsed = parseEventData(event.data());
+        // Exposure: a CDC event reaches the subscriber without passing through the
+        // schema they were served, so this is the one place it has to be asked.
+        if (exposureGate != null && !exposureGate.permitsRead(session, resourceOf(event))) {
+            return RLS_DROP;
+        }
         if (rlsEnforcer == null || !(parsed instanceof Map)) return parsed;
         JwtClaims claims = (JwtClaims) session.getAttributes().get(SESSION_CLAIMS_KEY);
         // Project comes from the URL path (authoritative), like the HTTP filter;

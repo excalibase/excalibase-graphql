@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -32,7 +33,7 @@ public class PolicyChangeSubscriber {
     /** Wildcard that matches every project's change subject; the project is token 2. */
     static final String SUBJECT = "policies.*.changed";
 
-    private final PolicyProvider policyProvider;
+    private final List<ProjectCacheEvictor> evictors;
     private final boolean natsEnabled;
     private final String natsUrl;
 
@@ -41,7 +42,17 @@ public class PolicyChangeSubscriber {
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     public PolicyChangeSubscriber(PolicyProvider policyProvider, boolean natsEnabled, String natsUrl) {
-        this.policyProvider = policyProvider;
+        this(List.of(policyProvider), natsEnabled, natsUrl);
+    }
+
+    /**
+     * A grant change reshapes the caller's schema, not just their row filters, so
+     * the built engines are invalidated alongside the policies. Both caches are
+     * evicted from the same signal — a schema that outlived its grants would keep
+     * serving fields the operator has just taken away.
+     */
+    public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, boolean natsEnabled, String natsUrl) {
+        this.evictors = List.copyOf(evictors);
         this.natsEnabled = natsEnabled;
         this.natsUrl = natsUrl;
     }
@@ -109,8 +120,8 @@ public class PolicyChangeSubscriber {
             log.warn("Ignoring policy-change on malformed subject: {}", subject);
             return;
         }
-        log.info("Policy change for project {} - evicting cached policies", projectId);
-        policyProvider.evict(projectId);
+        log.info("Policy change for project {} - evicting cached policies and engines", projectId);
+        evictors.forEach(evictor -> evictor.evict(projectId));
     }
 
     static String parseProjectId(String subject) {
