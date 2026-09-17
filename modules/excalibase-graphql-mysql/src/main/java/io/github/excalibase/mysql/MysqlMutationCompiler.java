@@ -35,16 +35,16 @@ public class MysqlMutationCompiler implements MutationCompiler {
                                                                       Map<String, Object> params, Map<String, Object> variables,
                                                                       MutationBuilder shared) {
         if (fieldName.startsWith(CREATE_MANY_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_MANY_PREFIX.length()));
+            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_MANY_PREFIX.length()), fieldName);
             if (tableName != null) return compileBulkInsert(field, fieldName, tableName, params, variables, shared);
         } else if (fieldName.startsWith(CREATE_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_PREFIX.length()));
+            String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_PREFIX.length()), fieldName);
             if (tableName != null) return compileInsert(field, fieldName, tableName, params, variables, shared);
         } else if (fieldName.startsWith(UPDATE_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(UPDATE_PREFIX.length()));
+            String tableName = shared.resolveMutationTable(fieldName.substring(UPDATE_PREFIX.length()), fieldName);
             if (tableName != null) return compileUpdate(field, fieldName, tableName, params, variables, shared);
         } else if (fieldName.startsWith(DELETE_PREFIX)) {
-            String tableName = shared.resolveMutationTable(fieldName.substring(DELETE_PREFIX.length()));
+            String tableName = shared.resolveMutationTable(fieldName.substring(DELETE_PREFIX.length()), fieldName);
             if (tableName != null) return compileDelete(field, fieldName, tableName, params, shared);
         }
         return null;

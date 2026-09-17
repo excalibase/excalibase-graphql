@@ -19,6 +19,9 @@ import io.github.excalibase.rls.PolicyEffect;
 import io.github.excalibase.rls.PolicyProvider;
 import io.github.excalibase.rls.Rule;
 import io.github.excalibase.rls.RuleOperator;
+import io.github.excalibase.rls.TableGrant;
+import io.github.excalibase.rls.TableGrants;
+import io.github.excalibase.schema.GraphqlSchemaManager;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,10 +45,12 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -118,6 +123,11 @@ class MysqlEngineRlsIntegrationTest {
     private MockMvc mockMvc;
     @Autowired
     private PolicyProvider policyProvider;
+    @Autowired
+    private GraphqlSchemaManager schemaManager;
+
+    /** The role every test token carries; grants are matched against it. */
+    private static final String CALLER_ROLE = "app_authenticated";
     private static final ObjectMapper mapper = new ObjectMapper();
 
     /** Owner policy: a row is visible iff its owner equals the caller's userId. */
@@ -136,6 +146,9 @@ class MysqlEngineRlsIntegrationTest {
                 "hide-secret", "hide-secret", "test.rls_docs",
                 java.util.Set.of("secret"), Operation.ALL, MaskMode.HIDE,
                 null, null, 0, true, List.of(Assignment.all()))));
+        // Exposure starts off for every test; the ones that care opt in via enforce().
+        p.putGrants(PROJECT, TableGrants.unenforced(PROJECT));
+        schemaManager.evict(PROJECT);
     }
 
     private String body(String query) throws Exception {
@@ -227,6 +240,118 @@ class MysqlEngineRlsIntegrationTest {
                 .andExpect(jsonPath("$.errors[0].extensions.operation").value("UPDATE"))
                 .andExpect(jsonPath("$.errors[0].extensions.table").value("test.rls_docs"))
                 .andExpect(jsonPath("$.errors[0].message", not(containsString("violates"))));
+    }
+
+    private static TableGrant grantOn(String resource, String role, Operation... operations) {
+        return new TableGrant("g-" + resource + "-" + role, PROJECT, resource,
+                Set.of(operations), role, true);
+    }
+
+    /** Enforces exposure for the project and drops any engine already built for it. */
+    private void enforce(TableGrant... grants) {
+        ((InMemoryPolicyProvider) policyProvider)
+                .putGrants(PROJECT, new TableGrants(PROJECT, true, List.of(grants)));
+        schemaManager.evict(PROJECT);
+    }
+
+    @Test
+    void exposure_whenTableNotGranted_graphqlReportsAnUnknownField() throws Exception {
+        enforce(grantOn("test.rls_docs", CALLER_ROLE, Operation.SELECT));
+
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsNotes { id body } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+    }
+
+    @Test
+    void exposure_whenTableGranted_theQueryStillRuns() throws Exception {
+        enforce(grantOn("test.rls_docs", CALLER_ROLE, Operation.SELECT));
+
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsDocs { id owner title } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.testRlsDocs", hasSize(2)));
+    }
+
+    @Test
+    void exposure_whenOnlySelectGranted_theUpdateFieldDoesNotExist() throws Exception {
+        enforce(grantOn("test.rls_docs", CALLER_ROLE, Operation.SELECT));
+
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("mutation { updateTestRlsDocs(where: { id: { eq: 1 } }, "
+                                + "input: { title: \"renamed\" }) { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").doesNotExist());
+
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsDocs(where: { id: { eq: 1 } }) { title } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.testRlsDocs[0].title").value("alice-doc-1"));
+    }
+
+    @Test
+    void exposure_whenGrantsBelongToAnotherRole_theSchemaIsEmptyForThisCaller() throws Exception {
+        enforce(grantOn("test.rls_docs", "some_other_role", Operation.SELECT));
+
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+    }
+
+    @Test
+    void exposure_whenEnforcedWithNoGrants_nothingIsReachable() throws Exception {
+        enforce();
+
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+    }
+
+    @Test
+    void exposure_whenNotEnforced_theWholeSchemaIsServed() throws Exception {
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ testRlsNotes { id body } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.testRlsNotes", hasSize(1)));
+    }
+
+    @Test
+    void exposure_whenTableNotGranted_restReturnsNotFound() throws Exception {
+        enforce(grantOn("test.rls_docs", CALLER_ROLE, Operation.SELECT));
+
+        mockMvc.perform(get("/" + PROJECT + "/api/v1/rls_notes")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .header("Accept-Profile", "test"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void exposure_whenOnlySelectGranted_restRefusesTheWriteWithNotFound() throws Exception {
+        enforce(grantOn("test.rls_docs", CALLER_ROLE, Operation.SELECT));
+
+        mockMvc.perform(post("/" + PROJECT + "/api/v1/rls_docs")
+                        .header("Authorization", "Bearer " + jwt("alice"))
+                        .header("Content-Profile", "test")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\":90,\"owner\":\"alice\",\"secret\":\"s\",\"title\":\"t\"}"))
+                .andExpect(status().isNotFound());
     }
 
     private static String buildJwks(ECPublicKey key) {

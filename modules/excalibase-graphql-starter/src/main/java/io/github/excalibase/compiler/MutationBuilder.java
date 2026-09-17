@@ -4,11 +4,17 @@ import graphql.language.*;
 import io.github.excalibase.*;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.TableExposure;
+import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.spi.MutationCompiler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.*;
+
+import static io.github.excalibase.schema.GraphqlConstants.CREATE_PREFIX;
+import static io.github.excalibase.schema.GraphqlConstants.DELETE_PREFIX;
+import static io.github.excalibase.schema.GraphqlConstants.UPDATE_PREFIX;
 
 /**
  * Mutation router and shared helpers. Delegates to a MutationCompiler
@@ -25,15 +31,24 @@ public class MutationBuilder {
     private final QueryBuilder queryBuilder;
 
     private final MutationCompiler mutationCompiler;
+    private final TableExposure exposure;
 
     public MutationBuilder(SchemaInfo schemaInfo, SqlDialect dialect, FilterBuilder filterBuilder,
                            String dbSchema, QueryBuilder queryBuilder, MutationCompiler mutationCompiler) {
+        this(schemaInfo, dialect, filterBuilder, dbSchema, queryBuilder, mutationCompiler,
+                TableExposure.UNRESTRICTED);
+    }
+
+    public MutationBuilder(SchemaInfo schemaInfo, SqlDialect dialect, FilterBuilder filterBuilder,
+                           String dbSchema, QueryBuilder queryBuilder, MutationCompiler mutationCompiler,
+                           TableExposure exposure) {
         this.schemaInfo = schemaInfo;
         this.dialect = dialect;
         this.filterBuilder = filterBuilder;
         this.dbSchema = dbSchema;
         this.queryBuilder = queryBuilder;
         this.mutationCompiler = mutationCompiler;
+        this.exposure = exposure == null ? TableExposure.UNRESTRICTED : exposure;
     }
 
     // === Accessors for dialect-specific compilers ===
@@ -114,7 +129,48 @@ public class MutationBuilder {
 
     // === Table name resolution ===
 
-    public String resolveMutationTable(String typeName) {
+    /**
+     * Resolves the table behind a mutation field, and is the one place a mutation
+     * field comes into existence. A field the caller was not granted resolves to
+     * {@code null} — the same answer an unknown table gives — so the caller sees
+     * "unknown field" rather than a denial, because for them the field is not part
+     * of the schema.
+     */
+    public String resolveMutationTable(String typeName, String mutationFieldName) {
+        String tableName = lookupTable(typeName);
+        if (tableName == null) {
+            return null;
+        }
+        RlsOp operation = operationOf(mutationFieldName);
+        return (operation == null || exposure.permits(tableName, operation)) ? tableName : null;
+    }
+
+    /**
+     * True when the caller may upsert into {@code tableName}. {@code create} with
+     * {@code onConflict} compiles to {@code DO UPDATE}, which overwrites rows that
+     * already exist, so it needs UPDATE on top of INSERT.
+     */
+    public boolean permitsUpsert(String tableName) {
+        return exposure.permits(tableName, RlsOp.UPDATE);
+    }
+
+    private static RlsOp operationOf(String mutationFieldName) {
+        if (mutationFieldName == null) {
+            return null;
+        }
+        if (mutationFieldName.startsWith(CREATE_PREFIX)) {
+            return RlsOp.INSERT;
+        }
+        if (mutationFieldName.startsWith(UPDATE_PREFIX)) {
+            return RlsOp.UPDATE;
+        }
+        if (mutationFieldName.startsWith(DELETE_PREFIX)) {
+            return RlsOp.DELETE;
+        }
+        return null;
+    }
+
+    String lookupTable(String typeName) {
         String snake = NamingUtils.camelToSnakeCase(typeName);
         if (schemaInfo.hasTable(snake)) return snake;
         String lower = typeName.toLowerCase();

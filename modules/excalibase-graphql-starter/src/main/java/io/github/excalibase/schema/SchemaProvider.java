@@ -14,6 +14,15 @@ public interface SchemaProvider {
 
     SqlDialect resolveDialect(JwtClaims claims);
 
+    /**
+     * Which operations the caller may run on the tables of the schema they were
+     * served. Unrestricted by default so a provider that does not implement
+     * exposure filtering keeps serving its whole schema.
+     */
+    default TableExposure resolveExposure(JwtClaims claims) {
+        return TableExposure.UNRESTRICTED;
+    }
+
     String getDatabaseType();
 
     /** Returns the default schema name (first discovered or configured schema). */

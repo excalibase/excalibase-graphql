@@ -5,6 +5,11 @@ import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.cdc.NatsCDCService;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
+import io.github.excalibase.config.datasource.TenantContext;
+import io.github.excalibase.rls.ExposureFilter;
+import io.github.excalibase.rls.PolicyProvider;
+import io.github.excalibase.rls.ProjectCacheEvictor;
+import io.github.excalibase.rls.TableGrants;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.spi.SchemaLoader;
@@ -16,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -31,7 +37,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * Produces an immutable {@link EngineState} that the controller snapshots per-request.
  */
 @Component
-public class GraphqlSchemaManager implements SchemaProvider {
+public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, ProjectCacheEvictor {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlSchemaManager.class);
 
@@ -46,12 +52,23 @@ public class GraphqlSchemaManager implements SchemaProvider {
     private final ReservedSchemas reservedSchemas;
     private final DynamicDataSourceManager dataSourceManager;
 
+    private final PolicyProvider policyProvider;
+
     public record EngineState(SqlCompiler compiler, IntrospectionHandler introspectionHandler,
-                              MutationExecutor mutationExecutor) {}
+                              MutationExecutor mutationExecutor, TableExposure exposure) {}
+
+    /**
+     * Cache identity for a built engine. The role is part of it because the schema
+     * is: two callers on the same project with different roles are served different
+     * sets of tables, so one cached state cannot stand for both.
+     */
+    record EngineKey(String projectId, String role) {}
 
     private final AtomicReference<EngineState> engineState = new AtomicReference<>();
+    /** The unfiltered reflection of the configured database, re-filtered per caller. */
+    private final AtomicReference<SchemaInfo> defaultSchemaInfo = new AtomicReference<>();
     private volatile String defaultSchema;
-    private final TTLCache<String, EngineState> tenantEngineStates;
+    private final TTLCache<EngineKey, EngineState> tenantEngineStates;
 
     public GraphqlSchemaManager(
             JdbcTemplate jdbcTemplate,
@@ -62,7 +79,9 @@ public class GraphqlSchemaManager implements SchemaProvider {
             @Value("${app.cache.schema-ttl-minutes:30}") int schemaTtlMinutes,
             @Value("${app.reserved-schemas:}") String reservedSchemasConfig,
             @Autowired(required = false) NatsCDCService natsCDCService,
-            @Autowired(required = false) DynamicDataSourceManager dataSourceManager) {
+            @Autowired(required = false) DynamicDataSourceManager dataSourceManager,
+            @Autowired(required = false) PolicyProvider policyProvider) {
+        this.policyProvider = policyProvider;
         this.jdbcTemplate = jdbcTemplate;
         this.txTemplate = txTemplate;
         this.maxRows = maxRows;
@@ -87,22 +106,52 @@ public class GraphqlSchemaManager implements SchemaProvider {
         } catch (Exception e) {
             log.warn("Failed to load database schema — starting with empty schema", e);
         }
+        this.defaultSchemaInfo.set(schemaInfo);
 
         this.defaultSchema = resolveDefaultSchema(schemaList, schemaInfo);
-        SqlCompiler newCompiler = new SqlCompiler(schemaInfo, defaultSchema, maxRows,
-                engine.dialect(), engine.mutationCompiler(), maxQueryDepth);
-
-        IntrospectionHandler newHandler = null;
-        try {
-            newHandler = new IntrospectionHandler(schemaInfo);
-        } catch (Exception e) {
-            log.warn("IntrospectionHandler failed to build schema", e);
-        }
-
         MutationExecutor mutationExecutor = SqlEngineFactory.createMutationExecutor(
                 databaseType, jdbcTemplate, txTemplate);
 
-        engineState.set(new EngineState(newCompiler, newHandler, mutationExecutor));
+        // The unscoped state serves requests that carry no project, so there is no
+        // grant configuration to read: it is the whole schema. Project-scoped
+        // callers get a filtered view built from this same database below.
+        engineState.set(assemble(schemaInfo, defaultSchema, engine, mutationExecutor,
+                TableGrants.unenforced(null), null));
+        tenantEngineStates.clear();
+    }
+
+    /**
+     * The single place an {@link EngineState} is assembled, and therefore the single
+     * place the exposure filter is applied. The compiler and the introspection
+     * handler are both built from the <em>filtered</em> schema, so a resource the
+     * caller was not granted has no field to ask for anywhere downstream — there is
+     * no per-call-site check because there is nothing left to check.
+     */
+    private EngineState assemble(SchemaInfo schemaInfo, String schemaForCompiler, SqlEngine engine,
+                                 MutationExecutor mutationExecutor, TableGrants grants, String callerRole) {
+        ExposureFilter.Result exposed = ExposureFilter.apply(schemaInfo, grants, callerRole);
+        SqlCompiler compiler = new SqlCompiler(exposed.schemaInfo(), schemaForCompiler, maxRows,
+                engine.dialect(), engine.mutationCompiler(), maxQueryDepth, exposed.exposure());
+
+        IntrospectionHandler handler = null;
+        try {
+            handler = new IntrospectionHandler(exposed.schemaInfo(), exposed.exposure());
+        } catch (Exception e) {
+            log.warn("IntrospectionHandler failed to build schema", e);
+        }
+        return new EngineState(compiler, handler, mutationExecutor, exposed.exposure());
+    }
+
+    /**
+     * The grants in force for a project. A project with no exposure configuration,
+     * or a deployment with no policy source wired, is unenforced — the feature stays
+     * inert until someone opts in.
+     */
+    private TableGrants grantsFor(String projectId) {
+        if (policyProvider == null || projectId == null) {
+            return TableGrants.unenforced(projectId);
+        }
+        return policyProvider.tableGrantsFor(projectId);
     }
 
     /**
@@ -115,25 +164,73 @@ public class GraphqlSchemaManager implements SchemaProvider {
     }
 
     /**
-     * Resolve EngineState based on JWT claims.
-     * If claims have a projectId → tenant-specific state.
-     * Otherwise → default state.
+     * Resolve EngineState for the current request.
+     *
+     * <p>The project comes from {@link TenantContext} — the URL path, which
+     * {@code JwtAuthFilter} has already reconciled with the token — so an anonymous
+     * caller on a project-scoped route is filtered exactly like an authenticated
+     * one rather than falling through to the unfiltered schema. The role comes from
+     * the claims, and is null for an anonymous caller.
      */
     public EngineState resolveEngineState(JwtClaims claims) {
-        if (claims != null && claims.projectId() != null && claims.orgSlug() != null) {
-            return getEngineState(claims.orgSlug(), claims.projectId());
+        String projectId = TenantContext.getTenantId();
+        if (projectId == null && claims != null) {
+            projectId = claims.projectId();
         }
-        return engineState.get();
+        String orgSlug = TenantContext.getOrgSlug();
+        if (orgSlug == null && claims != null) {
+            orgSlug = claims.orgSlug();
+        }
+        String role = claims != null ? claims.role() : null;
+        return resolveEngineState(orgSlug, projectId, role);
     }
 
     /**
-     * Get or build EngineState for a specific tenant, keyed on the opaque {@code projectId}.
-     * {@code orgSlug} is still required to address the vault path at first-access
-     * introspection, but is not part of the cache key (projectId is globally unique).
+     * Get or build the EngineState for one caller: the tenant's database when
+     * multi-tenant routing is wired, otherwise the configured database, in both
+     * cases filtered to what {@code role} was granted on {@code projectId}.
      */
-    public EngineState getEngineState(String orgSlug, String projectId) {
-        return tenantEngineStates.computeIfAbsent(projectId,
-            key -> buildTenantEngineState(orgSlug, projectId));
+    public EngineState resolveEngineState(String orgSlug, String projectId, String role) {
+        if (projectId == null) {
+            return engineState.get();
+        }
+        final String tenantOrg = orgSlug;
+        final String tenantProject = projectId;
+        final String callerRole = role;
+        return tenantEngineStates.computeIfAbsent(new EngineKey(projectId, role),
+                key -> buildEngineState(tenantOrg, tenantProject, callerRole));
+    }
+
+    /** Multi-tenant routing picks the tenant's own database; otherwise the configured one. */
+    EngineState buildEngineState(String orgSlug, String projectId, String callerRole) {
+        return orgSlug != null && dataSourceManager != null
+                ? buildTenantEngineState(orgSlug, projectId, callerRole)
+                : filteredDefaultEngineState(projectId, callerRole);
+    }
+
+    /** The exposure in force for the caller behind {@code claims} on the current request. */
+    @Override
+    public TableExposure resolveExposure(JwtClaims claims) {
+        EngineState state = resolveEngineState(claims);
+        return state == null ? TableExposure.UNRESTRICTED : state.exposure();
+    }
+
+    @Override
+    public TableExposure exposureFor(String orgSlug, String projectId, String callerRole) {
+        EngineState state = resolveEngineState(orgSlug, projectId, callerRole);
+        return state == null ? TableExposure.UNRESTRICTED : state.exposure();
+    }
+
+    /**
+     * Drops every cached engine state for {@code projectId}, all roles included: a
+     * grant change reshapes the schema for one role and leaves the others alone, and
+     * guessing which is which would leave a stale, over-wide schema behind.
+     */
+    public void evict(String projectId) {
+        if (projectId == null) {
+            return;
+        }
+        tenantEngineStates.removeIf(key -> projectId.equals(key.projectId()));
     }
 
     @Override
@@ -228,7 +325,23 @@ public class GraphqlSchemaManager implements SchemaProvider {
         return null;
     }
 
-    private EngineState buildTenantEngineState(String orgSlug, String projectId) {
+    /**
+     * Reuses the unscoped database for a project-scoped caller, filtered to their
+     * grants. This is the single-tenant deployment shape: one database, many
+     * project-scoped callers, each served the slice they were granted.
+     */
+    private EngineState filteredDefaultEngineState(String projectId, String callerRole) {
+        EngineState base = engineState.get();
+        SchemaInfo source = defaultSchemaInfo.get();
+        TableGrants grants = grantsFor(projectId);
+        if (base == null || source == null || !grants.enforced()) {
+            return base;
+        }
+        return assemble(source, defaultSchema, SqlEngineFactory.create(databaseType),
+                base.mutationExecutor(), grants, callerRole);
+    }
+
+    EngineState buildTenantEngineState(String orgSlug, String projectId, String callerRole) {
         if (dataSourceManager == null) {
             throw new IllegalStateException("Multi-tenant not enabled — DynamicDataSourceManager is null");
         }
@@ -242,24 +355,19 @@ public class GraphqlSchemaManager implements SchemaProvider {
         loadMultiSchema(schemaInfo, tenantSchemas, engine.schemaLoader(), tenantJdbc);
 
         String tenantDefaultSchema = resolveDefaultSchema(tenantSchemas, schemaInfo);
-        SqlCompiler compiler = new SqlCompiler(schemaInfo, tenantDefaultSchema, maxRows,
-                engine.dialect(), engine.mutationCompiler(), maxQueryDepth);
-
-        IntrospectionHandler handler = null;
-        try {
-            handler = new IntrospectionHandler(schemaInfo);
-        } catch (Exception e) {
-            log.warn("IntrospectionHandler failed for tenant {}/{}", orgSlug, projectId, e);
-        }
 
         TransactionTemplate tenantTx = new TransactionTemplate(
-                new org.springframework.jdbc.datasource.DataSourceTransactionManager(tenantDs));
+                new DataSourceTransactionManager(tenantDs));
         MutationExecutor mutationExecutor = SqlEngineFactory.createMutationExecutor(
                 databaseType, tenantJdbc, tenantTx);
 
-        log.info("built_tenant_engine tenant={}/{} tables={}",
-                orgSlug, projectId, schemaInfo.getTableNames().size());
-        return new EngineState(compiler, handler, mutationExecutor);
+        EngineState state = assemble(schemaInfo, tenantDefaultSchema, engine, mutationExecutor,
+                grantsFor(projectId), callerRole);
+
+        log.info("built_tenant_engine tenant={}/{} role={} tables={} exposed_tables={}",
+                orgSlug, projectId, callerRole, schemaInfo.getTableNames().size(),
+                state.compiler().schemaInfo().getTableNames().size());
+        return state;
     }
 
     private void loadMultiSchema(SchemaInfo schemaInfo, List<String> schemaList,

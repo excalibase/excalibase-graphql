@@ -135,7 +135,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
                        NULL::bigint as ordinal, NULL as enum_label, NULL::double precision as sort_order,
                        p.proname as proc_name,
                        pg_get_function_identity_arguments(p.oid) as args_signature,
-                       NULL as return_type, NULL as function_name
+                       pg_get_function_result(p.oid) as return_type, NULL as function_name
                 FROM pg_proc p
                 JOIN pg_namespace n ON p.pronamespace = n.oid
                 WHERE n.nspname = ANY(?) AND p.prokind IN ('f', 'p')
@@ -308,7 +308,10 @@ public class PostgresSchemaLoader implements SchemaLoader {
             String procName = node.get("proc_name").asText();
             String argsSig = node.has(COL_ARGS_SIGNATURE) && !node.get(COL_ARGS_SIGNATURE).isNull()
                     ? node.get(COL_ARGS_SIGNATURE).asText() : "";
-            info.addStoredProcedure(procName, new SchemaInfo.ProcedureInfo(procName, parseProcArgs(argsSig)));
+            String returnType = node.has("return_type") && !node.get("return_type").isNull()
+                    ? node.get("return_type").asText() : null;
+            info.addStoredProcedure(procName,
+                    new SchemaInfo.ProcedureInfo(procName, parseProcArgs(argsSig), returnType));
         } else {
             info.addComputedField(node.get(COL_TABLE_NAME).asText(),
                     node.get("function_name").asText(), node.get("return_type").asText());
@@ -462,7 +465,8 @@ public class PostgresSchemaLoader implements SchemaLoader {
     public void loadStoredProcedures(JdbcTemplate jdbc, String schema, SchemaInfo info) {
         jdbc.query("""
             SELECT p.proname AS proc_name,
-                   pg_get_function_identity_arguments(p.oid) AS args_signature
+                   pg_get_function_identity_arguments(p.oid) AS args_signature,
+                   pg_get_function_result(p.oid) AS return_type
             FROM pg_proc p
             JOIN pg_namespace n ON p.pronamespace = n.oid
             WHERE n.nspname = ? AND p.prokind IN ('f', 'p')
@@ -470,7 +474,8 @@ public class PostgresSchemaLoader implements SchemaLoader {
             String procName = rs.getString("proc_name");
             String argsSig = rs.getString(COL_ARGS_SIGNATURE);
             List<SchemaInfo.ProcParam> params = parseProcArgs(argsSig);
-            info.addStoredProcedure(procName, new SchemaInfo.ProcedureInfo(procName, params));
+            info.addStoredProcedure(procName,
+                    new SchemaInfo.ProcedureInfo(procName, params, rs.getString("return_type")));
         }, schema);
     }
 

@@ -33,6 +33,7 @@ class ReservedSchemaDiscoveryTest {
                 30,
                 reservedSchemasConfig,
                 null,
+                null,
                 null);
     }
 

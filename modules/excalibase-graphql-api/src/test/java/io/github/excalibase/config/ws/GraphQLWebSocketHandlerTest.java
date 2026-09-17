@@ -66,7 +66,7 @@ class GraphQLWebSocketHandlerTest {
 
     private GraphQLWebSocketHandler handler(RlsPolicyEnforcer enforcer) {
         return new GraphQLWebSocketHandler(subscriptionService, mapper,
-                provider((JwtService) null), provider(enforcer), new WebSocketHeartbeat(0));
+                provider((JwtService) null), provider(enforcer), new WebSocketHeartbeat(0), provider((RealtimeExposureGate) null));
     }
 
     private WebSocketSession session(List<String> sink, String projectId, JwtClaims claims) throws Exception {

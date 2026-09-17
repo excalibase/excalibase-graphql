@@ -41,7 +41,16 @@ public class IntrospectionHandler {
     private final GraphQLSchema schema;
 
     public IntrospectionHandler(SchemaInfo schemaInfo) {
-        this.schema = buildSchema(schemaInfo);
+        this(schemaInfo, TableExposure.UNRESTRICTED);
+    }
+
+    /**
+     * {@code schemaInfo} is the caller's view of the database, so what they may not
+     * read is already missing from it; {@code exposure} adds which of the remaining
+     * tables they may write.
+     */
+    public IntrospectionHandler(SchemaInfo schemaInfo, TableExposure exposure) {
+        this.schema = buildSchema(schemaInfo, exposure);
         this.graphQL = GraphQL.newGraphQL(this.schema).build();
     }
 
@@ -62,7 +71,7 @@ public class IntrospectionHandler {
         return response;
     }
 
-    private GraphQLSchema buildSchema(SchemaInfo schemaInfo) {
+    private GraphQLSchema buildSchema(SchemaInfo schemaInfo, TableExposure exposure) {
         // Step 1: build enums, shared filter inputs, per-enum filter inputs.
         Map<String, GraphQLEnumType> enumTypes = new EnumTypeFactory().build(schemaInfo);
         FilterInputCatalog.FilterInputs filters = FilterInputCatalog.INPUTS;
@@ -80,7 +89,7 @@ public class IntrospectionHandler {
         GraphQLObjectType.Builder queryBuilder = newObject().name(TYPE_QUERY);
         new QueryFieldsAssembler().build(schemaInfo, tableTypes, whereTypes).forEach(queryBuilder::field);
         GraphQLObjectType.Builder mutationBuilder = newObject().name(TYPE_MUTATION);
-        new MutationFieldsAssembler().build(schemaInfo, tableTypes, createInputs, whereTypes)
+        new MutationFieldsAssembler().build(schemaInfo, tableTypes, createInputs, whereTypes, exposure)
                 .forEach(mutationBuilder::field);
 
         // Step 4: schema assembly with additional types.

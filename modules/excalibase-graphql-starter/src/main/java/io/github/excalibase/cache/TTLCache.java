@@ -19,6 +19,7 @@ package io.github.excalibase.cache;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -26,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * Thread-safe cache with TTL (Time To Live) support.
@@ -116,6 +118,15 @@ public class TTLCache<K, V> {
             return entry.getValue();
         }
         return null;
+    }
+
+    /** Removes every entry whose key matches, running onEvict for each. */
+    public void removeIf(Predicate<? super K> keyFilter) {
+        for (K key : Set.copyOf(cache.keySet())) {
+            if (keyFilter.test(key)) {
+                remove(key);
+            }
+        }
     }
 
     public void clear() {

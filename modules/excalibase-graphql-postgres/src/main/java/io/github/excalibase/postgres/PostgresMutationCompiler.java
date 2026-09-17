@@ -77,7 +77,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (!fieldName.startsWith(prefix)) return null;
         if (!suffix.isEmpty() && !fieldName.endsWith(suffix)) return null;
         String typePart = fieldName.substring(prefix.length(), fieldName.length() - suffix.length());
-        String tableName = shared.resolveMutationTable(typePart);
+        String tableName = shared.resolveMutationTable(typePart, fieldName);
         return tableName != null ? fn.compile(field, tableName) : null;
     }
 
@@ -415,6 +415,12 @@ public class PostgresMutationCompiler implements MutationCompiler {
         }
         if (constraint == null || updateCols.isEmpty()) {
             return "";
+        }
+        if (!shared.permitsUpsert(tableName)) {
+            // DO UPDATE rewrites rows that already exist, so onConflict is part of
+            // create only for a caller who also holds UPDATE. For anyone else the
+            // argument does not exist — reported as such, never as a denial.
+            throw new IllegalArgumentException("Unknown argument 'onConflict' on field '" + field.getName() + "'");
         }
         return buildOnConflictClause(shared, params, tableName, constraint, updateCols);
     }

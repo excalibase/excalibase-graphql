@@ -13,6 +13,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Unit tests for {@link PolicyChangeSubscriber}. A message on
  * {@code policies.{projectId}.changed} must evict exactly that project's cached
@@ -89,6 +92,32 @@ class PolicyChangeSubscriberTest {
         assertThat(PolicyChangeSubscriber.parseProjectId("policies..changed")).isNull();
         assertThat(PolicyChangeSubscriber.parseProjectId("policies.*.changed")).isNull();
         assertThat(PolicyChangeSubscriber.parseProjectId("other.proj.changed")).isNull();
+    }
+
+    @Test
+    @DisplayName("every registered cache is evicted, not just the policy cache")
+    void evictFor_whenSeveralCachesRegistered_evictsAllOfThem() {
+        List<String> engineEvictions = new ArrayList<>();
+        PolicyChangeSubscriber subscriber = new PolicyChangeSubscriber(
+                List.of(policyProvider, engineEvictions::add), false, "nats://localhost:4222");
+
+        subscriber.evictFor("policies.proj-abc.changed");
+
+        verify(policyProvider, times(1)).evict("proj-abc");
+        assertThat(engineEvictions).containsExactly("proj-abc");
+    }
+
+    @Test
+    @DisplayName("a malformed subject evicts no cache at all")
+    void evictFor_whenSubjectMalformed_evictsNoCache() {
+        List<String> engineEvictions = new ArrayList<>();
+        PolicyChangeSubscriber subscriber = new PolicyChangeSubscriber(
+                List.of(policyProvider, engineEvictions::add), false, "nats://localhost:4222");
+
+        subscriber.evictFor("policies.*.changed");
+
+        verify(policyProvider, never()).evict(any());
+        assertThat(engineEvictions).isEmpty();
     }
 
     @Test
