@@ -240,12 +240,27 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
 
     @Override
     public SchemaInfo resolveSchemaInfo(JwtClaims claims) {
-        return resolveEngineState(claims).compiler().schemaInfo();
+        return requireEngineState(claims).compiler().schemaInfo();
     }
 
     @Override
     public SqlDialect resolveDialect(JwtClaims claims) {
-        return resolveEngineState(claims).compiler().dialect();
+        return requireEngineState(claims).compiler().dialect();
+    }
+
+    /**
+     * The caller's engine state, or a clear failure. In multi-tenant-only mode
+     * there is no default state, so an unscoped request resolves to null; saying
+     * so beats a NullPointerException from the dereference that follows.
+     */
+    private EngineState requireEngineState(JwtClaims claims) {
+        EngineState state = resolveEngineState(claims);
+        if (state == null) {
+            throw new IllegalStateException(
+                    "No schema for this request: multi-tenant mode is configured with no default "
+                            + "datasource, so the request must carry a project");
+        }
+        return state;
     }
 
     @Override
