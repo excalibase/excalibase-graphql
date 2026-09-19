@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit tests for {@link TokenFileSource}: the provisioning token arrives as a
@@ -111,6 +112,31 @@ class TokenFileSourceTest {
         now[0] += 6_000L;
 
         assertThat(tokenSource.get()).isEqualTo("bbbb");
+    }
+
+    @Test
+    @DisplayName("require returns the current token when one resolves")
+    void requireReturnsResolvedToken(@TempDir Path dir) throws IOException {
+        Path file = Files.writeString(dir.resolve("token"), "file-pat\n");
+
+        assertThat(source(file, "literal-pat").require()).isEqualTo("file-pat");
+    }
+
+    @Test
+    @DisplayName("require fails explicitly when neither file nor literal resolves a token")
+    void requireFailsWhenNothingConfigured(@TempDir Path dir) {
+        assertThatThrownBy(() -> source(dir.resolve("absent"), "").require())
+                .isInstanceOf(TokenUnavailableException.class);
+        assertThatThrownBy(() -> source(null, null).require())
+                .isInstanceOf(TokenUnavailableException.class);
+    }
+
+    @Test
+    @DisplayName("the failure message never carries the token value")
+    void requireFailureDoesNotLeakToken(@TempDir Path dir) {
+        assertThatThrownBy(() -> source(dir.resolve("absent"), "   ").require())
+                .hasMessageNotContaining("   ")
+                .hasMessageContaining("absent");
     }
 
     @Test

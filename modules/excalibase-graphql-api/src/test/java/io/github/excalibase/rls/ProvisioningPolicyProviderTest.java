@@ -3,6 +3,7 @@ package io.github.excalibase.rls;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.excalibase.security.TokenFileSource;
+import io.github.excalibase.security.TokenUnavailableException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -261,6 +262,20 @@ class ProvisioningPolicyProviderTest {
         provider.policiesFor("proj1");
 
         assertThat(authHeaderSeen).isEqualTo("Bearer rotated-pat");
+    }
+
+    @Test
+    @DisplayName("an unresolvable token fails explicitly instead of sending an empty bearer")
+    void unresolvableTokenFailsExplicitly(@TempDir Path dir) {
+        TokenFileSource empty = new TokenFileSource(dir.resolve("absent").toString(), "", () -> now[0]);
+        ProvisioningPolicyProvider provider = new ProvisioningPolicyProvider(
+                "http://localhost:" + port + "/api", empty, 60_000, () -> now[0]);
+        authHeaderSeen = null;
+
+        assertThatThrownBy(() -> provider.policiesFor("proj1"))
+                .isInstanceOf(PolicyFetchException.class)
+                .hasRootCauseInstanceOf(TokenUnavailableException.class);
+        assertThat(authHeaderSeen).isNull();
     }
 
     private ProvisioningPolicyProvider providerWithTokenFile(Path tokenFile) {

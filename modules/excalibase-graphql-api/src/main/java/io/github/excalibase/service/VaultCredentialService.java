@@ -3,6 +3,7 @@ package io.github.excalibase.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.security.TokenFileSource;
+import io.github.excalibase.security.TokenUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.net.URI;
@@ -51,9 +52,12 @@ public class VaultCredentialService {
           .GET()
           .timeout(TIMEOUT);
 
-      String pat = tokenSource.get();
-      if (pat != null && !pat.isBlank()) {
-        reqBuilder.header("Authorization", "Bearer " + pat);
+      // An unresolvable token is a configuration error: fetching anonymously would
+      // surface as a vault 401 that reads like a revoked credential.
+      try {
+        reqBuilder.header("Authorization", "Bearer " + tokenSource.require());
+      } catch (TokenUnavailableException e) {
+        throw new VaultCredentialException("Cannot authenticate to provisioning", e);
       }
 
       HttpResponse<String> resp = httpClient.send(reqBuilder.build(),

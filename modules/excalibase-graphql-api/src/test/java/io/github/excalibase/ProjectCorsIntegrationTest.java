@@ -18,6 +18,10 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -48,11 +52,18 @@ class ProjectCorsIntegrationTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init.sql");
 
+    private static final String FILE_TOKEN = "file-delivered-pat";
+
     static HttpServer stub;
     static int stubPort;
+    static Path tokenFile;
+    static volatile String authHeaderSeen;
 
     static {
         try {
+            tokenFile = Files.createTempFile("provisioning-token", ".txt");
+            tokenFile.toFile().deleteOnExit();
+            Files.writeString(tokenFile, FILE_TOKEN + "\n");
             stub = HttpServer.create(new InetSocketAddress(0), 0);
             stubPort = stub.getAddress().getPort();
             serve("/api/projects/" + PROJECT + "/info",
@@ -67,6 +78,7 @@ class ProjectCorsIntegrationTest {
 
     private static void serve(String path, String body) {
         stub.createContext(path, exchange -> {
+            authHeaderSeen = exchange.getRequestHeaders().getFirst("Authorization");
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, bytes.length);
@@ -89,7 +101,9 @@ class ProjectCorsIntegrationTest {
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.cors.allowed-origins", () -> "*");
         registry.add("app.cors.provisioning-url", () -> "http://localhost:" + stubPort + "/api");
-        registry.add("app.cors.provisioning-pat", () -> "test-pat");
+        // Token file only, exactly as the platform mounts it: the CORS provider must
+        // read the shared provisioning token source, not a CORS-specific literal.
+        registry.add("app.security.multi-tenant.provisioning-pat-file", tokenFile::toString);
     }
 
     @Autowired
@@ -196,6 +210,18 @@ class ProjectCorsIntegrationTest {
                         .header(HttpHeaders.UPGRADE, "websocket")
                         .header(HttpHeaders.CONNECTION, "Upgrade"))
                 .andExpect(header().string(ALLOW_ORIGIN, ALLOWED));
+    }
+
+    @Test
+    @DisplayName("the /info call authenticates with the mounted token file")
+    void infoCallUsesTheMountedTokenFile() throws Exception {
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header(HttpHeaders.ORIGIN, ALLOWED)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(TYPENAME_QUERY))
+                .andExpect(status().isOk());
+
+        assertThat(authHeaderSeen).isEqualTo("Bearer " + FILE_TOKEN);
     }
 
     @Test

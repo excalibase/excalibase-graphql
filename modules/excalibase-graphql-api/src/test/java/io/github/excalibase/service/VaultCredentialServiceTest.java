@@ -1,10 +1,15 @@
 package io.github.excalibase.service;
 
 import com.sun.net.httpserver.HttpServer;
+import io.github.excalibase.security.TokenFileSource;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -12,7 +17,9 @@ class VaultCredentialServiceTest {
 
   private static HttpServer mockVault;
   private static int port;
+  private static volatile String authHeaderSeen;
   private VaultCredentialService service;
+  private final long[] now = {1_000L};
 
   @BeforeAll
   static void startMockVault() throws Exception {
@@ -21,6 +28,7 @@ class VaultCredentialServiceTest {
 
     // Vault path is projectId-only.
     mockVault.createContext("/api/vault/secrets/projects/app-a/credentials/excalibase_app", exchange -> {
+      authHeaderSeen = exchange.getRequestHeaders().getFirst("Authorization");
       String json = """
           {"host":"app-a-postgres-rw.svc.local","port":"5432","database":"app","username":"excalibase_app","password":"secret123"}
           """;
@@ -91,6 +99,35 @@ class VaultCredentialServiceTest {
     var serviceWithPat = new VaultCredentialService("http://localhost:" + port + "/api", "my-secret-pat");
     VaultCredentials creds = serviceWithPat.fetchCredentials("duc-corp", "app-a");
     assertNotNull(creds);
+    assertEquals("Bearer my-secret-pat", authHeaderSeen);
+  }
+
+  @Test
+  @DisplayName("a rotated token file is picked up without reconstructing the service")
+  void fetchCredentials_picksUpRotatedTokenFile(@TempDir Path dir) throws IOException {
+    Path tokenFile = Files.writeString(dir.resolve("graphql-token"), "old-pat\n");
+    var serviceWithFile = new VaultCredentialService("http://localhost:" + port + "/api",
+        new TokenFileSource(tokenFile.toString(), "unused-literal", () -> now[0]));
+    serviceWithFile.fetchCredentials("duc-corp", "app-a");
+    assertEquals("Bearer old-pat", authHeaderSeen);
+
+    Files.writeString(tokenFile, "rotated-pat\n");
+    now[0] += 6_000L;
+    serviceWithFile.fetchCredentials("duc-corp", "app-a");
+
+    assertEquals("Bearer rotated-pat", authHeaderSeen);
+  }
+
+  @Test
+  @DisplayName("an unresolvable token fails explicitly instead of fetching anonymously")
+  void fetchCredentials_unresolvableToken_throws(@TempDir Path dir) {
+    var serviceWithoutToken = new VaultCredentialService("http://localhost:" + port + "/api",
+        new TokenFileSource(dir.resolve("absent").toString(), "", () -> now[0]));
+    authHeaderSeen = null;
+
+    assertThrows(VaultCredentialException.class,
+        () -> serviceWithoutToken.fetchCredentials("duc-corp", "app-a"));
+    assertNull(authHeaderSeen);
   }
 
   // ─── Slug Validation (path traversal prevention) ─────────────────────────────

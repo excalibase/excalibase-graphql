@@ -47,6 +47,22 @@ public final class TokenFileSource {
         this.clock = clock;
     }
 
+    /**
+     * The token to authenticate with right now, or a failure. Every outbound call
+     * to the control plane goes through here: an unresolvable token is a
+     * configuration error and must be reported as one, at first use, rather than
+     * degrading into an unauthenticated request.
+     */
+    public String require() {
+        String token = get();
+        if (token == null || token.isBlank()) {
+            throw new TokenUnavailableException(path == null
+                    ? "no provisioning token configured: set the token file path or the literal token"
+                    : "no provisioning token available from " + path + " and no literal token configured");
+        }
+        return token;
+    }
+
     /** The token to authenticate with right now: current file contents, else the configured literal. */
     public String get() {
         if (path == null) {
