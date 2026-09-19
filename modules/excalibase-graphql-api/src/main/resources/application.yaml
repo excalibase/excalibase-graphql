@@ -76,8 +76,9 @@ app:
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:*}      # platform default: routes without a project (health, actuator, legacy unscoped)
     provisioning-url: ${APP_CORS_PROVISIONING_URL:${app.security.rls.policy-url:}}  # per-project allowlist source (GET {url}/projects/{id}/info); empty = platform default everywhere
-    provisioning-pat: ${APP_CORS_PROVISIONING_PAT:${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}}
-    ttl-ms: 30000                                        # per-project cache; last-good is served while provisioning is down
+    # The service token is the shared provisioning one (app.security.rls.policy-pat[-file],
+    # else app.security.multi-tenant.provisioning-pat[-file]); there is no CORS-specific token.
+    ttl-ms: 30000                                      # per-project cache; last-good is served while provisioning is down
   security:
     jwt-enabled: ${JWT_ENABLED:false}
     auth:

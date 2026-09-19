@@ -2,14 +2,19 @@ package io.github.excalibase.cors;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.github.excalibase.security.TokenFileSource;
+import io.github.excalibase.security.TokenUnavailableException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -183,5 +188,51 @@ class ProvisioningProjectCorsProviderTest {
         body = "not json";
         ProvisioningProjectCorsProvider p = provider(60_000);
         assertThatThrownBy(() -> p.originsFor(PROJECT)).isInstanceOf(CorsOriginsFetchException.class);
+    }
+
+    private ProvisioningProjectCorsProvider providerWithTokenSource(TokenFileSource tokenSource) {
+        return new ProvisioningProjectCorsProvider(
+                "http://localhost:" + port + "/api/", tokenSource, 60_000, () -> now[0]);
+    }
+
+    @Test
+    @DisplayName("Authorization header is built from the token file contents")
+    void authorizationHeaderComesFromTokenFile(@TempDir Path dir) throws IOException {
+        Path tokenFile = Files.writeString(dir.resolve("graphql-token"), "file-pat\n");
+
+        providerWithTokenSource(new TokenFileSource(tokenFile.toString(), "unused-literal", () -> now[0]))
+                .originsFor(PROJECT);
+
+        assertThat(authHeaderSeen).isEqualTo("Bearer file-pat");
+    }
+
+    @Test
+    @DisplayName("a rotated token file is picked up without reconstructing the provider")
+    void picksUpRotatedTokenFile(@TempDir Path dir) throws IOException {
+        Path tokenFile = Files.writeString(dir.resolve("graphql-token"), "old-pat\n");
+        ProvisioningProjectCorsProvider provider =
+                providerWithTokenSource(new TokenFileSource(tokenFile.toString(), "unused-literal", () -> now[0]));
+        provider.originsFor(PROJECT);
+        assertThat(authHeaderSeen).isEqualTo("Bearer old-pat");
+
+        Files.writeString(tokenFile, "rotated-pat\n");
+        now[0] += 6_000L;
+        provider.evict(PROJECT);
+        provider.originsFor(PROJECT);
+
+        assertThat(authHeaderSeen).isEqualTo("Bearer rotated-pat");
+    }
+
+    @Test
+    @DisplayName("an unresolvable token fails explicitly and sends no request at all")
+    void unresolvableTokenFailsWithoutCallingProvisioning(@TempDir Path dir) {
+        TokenFileSource empty = new TokenFileSource(dir.resolve("absent").toString(), "", () -> now[0]);
+        ProvisioningProjectCorsProvider provider = providerWithTokenSource(empty);
+
+        assertThatThrownBy(() -> provider.originsFor(PROJECT))
+                .isInstanceOf(CorsOriginsFetchException.class)
+                .hasRootCauseInstanceOf(TokenUnavailableException.class);
+        assertThat(hits.get()).isZero();
+        assertThat(authHeaderSeen).isNull();
     }
 }

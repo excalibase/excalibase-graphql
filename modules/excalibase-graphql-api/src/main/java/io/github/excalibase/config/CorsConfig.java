@@ -3,6 +3,7 @@ package io.github.excalibase.config;
 import io.github.excalibase.cors.ProjectCorsConfigurationSource;
 import io.github.excalibase.cors.ProjectCorsProvider;
 import io.github.excalibase.cors.ProvisioningProjectCorsProvider;
+import io.github.excalibase.security.TokenFileSource;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,7 +19,8 @@ import java.util.List;
  * <p>Project routes ({@code /{projectId}/graphql}, {@code /{projectId}/api/v1/...},
  * and the WebSocket upgrades on them) are answered from the project's own
  * allowlist, fetched from provisioning ({@code app.cors.provisioning-url},
- * defaulting to the RLS policy URL) and cached for {@code app.cors.ttl-ms}.
+ * defaulting to the RLS policy URL) with the shared provisioning token source,
+ * and cached for {@code app.cors.ttl-ms}.
  * Routes without a project (health, actuator, the legacy unscoped paths) use
  * {@code app.cors.allowed-origins}. Without a provisioning URL — standalone
  * mode — that platform default applies everywhere, as before.
@@ -35,11 +37,11 @@ public class CorsConfig {
     public CorsConfigurationSource corsConfigurationSource(
             @Value("${app.cors.allowed-origins:*}") String platformOrigins,
             @Value("${app.cors.provisioning-url:${app.security.rls.policy-url:}}") String provisioningUrl,
-            @Value("${app.cors.provisioning-pat:${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}}") String provisioningPat,
+            TokenFileSource provisioningTokenSource,
             @Value("${app.cors.ttl-ms:30000}") long ttlMillis) {
         ProjectCorsProvider provider = null;
         if (provisioningUrl != null && !provisioningUrl.isBlank()) {
-            provider = new ProvisioningProjectCorsProvider(provisioningUrl, provisioningPat, ttlMillis);
+            provider = new ProvisioningProjectCorsProvider(provisioningUrl, provisioningTokenSource, ttlMillis);
         }
         return new ProjectCorsConfigurationSource(provider, ProjectCorsConfigurationSource.configFor(split(platformOrigins)));
     }

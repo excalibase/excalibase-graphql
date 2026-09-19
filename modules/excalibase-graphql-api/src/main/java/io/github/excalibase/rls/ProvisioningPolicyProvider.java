@@ -3,7 +3,9 @@ package io.github.excalibase.rls;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.security.TokenFileSource;
+import io.github.excalibase.security.TokenUnavailableException;
 
+import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -141,10 +143,19 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
         }
     }
 
+    /** An unresolvable token is a configuration error, never an anonymous request. */
+    private String requireToken(String path) {
+        try {
+            return tokenSource.require();
+        } catch (TokenUnavailableException e) {
+            throw new PolicyFetchException("cannot authenticate to provisioning for " + path, e);
+        }
+    }
+
     private <T> List<T> fetch(String path, Function<JsonNode, List<T>> parser) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
-                .header("Authorization", "Bearer " + tokenSource.get())
+                .header("Authorization", "Bearer " + requireToken(path))
                 .header("Accept", "application/json")
                 .timeout(Duration.ofSeconds(5))
                 .GET()
@@ -159,7 +170,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new PolicyFetchException("failed to fetch policies from " + path, e);
-        } catch (java.io.IOException e) {
+        } catch (IOException e) {
             throw new PolicyFetchException("failed to fetch policies from " + path, e);
         }
     }
@@ -171,7 +182,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
     private <T> T fetchValue(String path, Function<JsonNode, T> parser, Supplier<T> absent) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
-                .header("Authorization", "Bearer " + tokenSource.get())
+                .header("Authorization", "Bearer " + requireToken(path))
                 .header("Accept", "application/json")
                 .timeout(Duration.ofSeconds(5))
                 .GET()
@@ -189,7 +200,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new PolicyFetchException("failed to fetch from " + path, e);
-        } catch (java.io.IOException e) {
+        } catch (IOException e) {
             throw new PolicyFetchException("failed to fetch from " + path, e);
         }
     }

@@ -60,7 +60,8 @@ public class JwtSecurityConfig {
     /**
      * RLS/CLS policy source. When {@code app.security.rls.policy-url} is set,
      * policies are fetched from the provisioning service over HTTP and cached per
-     * project; otherwise an empty in-memory provider is used (RLS is a no-op until
+     * project with the shared provisioning token source; otherwise an empty
+     * in-memory provider is used (RLS is a no-op until
      * policies are pushed in). The choice is made at runtime rather than via
      * {@code @ConditionalOnProperty} so it survives GraalVM AOT, which evaluates
      * build-time conditions when the property may be absent.
@@ -68,12 +69,10 @@ public class JwtSecurityConfig {
     @Bean
     public PolicyProvider policyProvider(
             @Value("${app.security.rls.policy-url:}") String policyUrl,
-            @Value("${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}") String policyPat,
-            @Value("${app.security.rls.policy-pat-file:${app.security.multi-tenant.provisioning-pat-file:}}") String policyPatFile,
+            TokenFileSource provisioningTokenSource,
             @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs) {
         if (policyUrl != null && !policyUrl.isBlank()) {
-            return new ProvisioningPolicyProvider(
-                    policyUrl, new TokenFileSource(policyPatFile, policyPat), policyTtlMs);
+            return new ProvisioningPolicyProvider(policyUrl, provisioningTokenSource, policyTtlMs);
         }
         return new InMemoryPolicyProvider();
     }
@@ -114,10 +113,9 @@ public class JwtSecurityConfig {
     // Multi-tenant beans — only when provisioning-url is configured
     @Bean
     @ConditionalOnProperty(name = "app.security.multi-tenant.provisioning-url")
-    public VaultCredentialService vaultCredentialService(SecurityProperties security) {
-        SecurityProperties.MultiTenant mt = security.multiTenant();
-        return new VaultCredentialService(mt.provisioningUrl(),
-                new TokenFileSource(mt.provisioningPatFile(), mt.provisioningPat()));
+    public VaultCredentialService vaultCredentialService(SecurityProperties security,
+            TokenFileSource provisioningTokenSource) {
+        return new VaultCredentialService(security.multiTenant().provisioningUrl(), provisioningTokenSource);
     }
 
     @Bean

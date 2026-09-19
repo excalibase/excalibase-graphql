@@ -2,6 +2,8 @@ package io.github.excalibase.cors;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.security.TokenFileSource;
+import io.github.excalibase.security.TokenUnavailableException;
 
 import java.io.IOException;
 import java.net.URI;
@@ -21,6 +23,10 @@ import java.util.function.LongSupplier;
  * provisioning API ({@code GET {base}/projects/{projectId}/info}, field
  * {@code corsAllowedOrigins}) and caches it per project for {@code ttlMillis}.
  *
+ * <p>The service token is read from the shared {@link TokenFileSource} on every
+ * fetch, because the platform rotates it in place; capturing it once left the
+ * provider authenticating with a stale or empty bearer after the first rotation.
+ *
  * <p>Same contract as the RLS policy provider: on a fetch failure it serves the
  * last good copy if one is cached, else it throws {@link CorsOriginsFetchException}.
  * It never returns an empty list on error — the caller reads empty as "this
@@ -33,7 +39,7 @@ public final class ProvisioningProjectCorsProvider implements ProjectCorsProvide
 
     private final HttpClient http;
     private final String baseUrl;
-    private final String pat;
+    private final TokenFileSource tokenSource;
     private final long ttlMillis;
     private final LongSupplier clock;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -42,12 +48,20 @@ public final class ProvisioningProjectCorsProvider implements ProjectCorsProvide
     private record Cached(List<String> origins, long fetchedAt) {}
 
     public ProvisioningProjectCorsProvider(String baseUrl, String pat, long ttlMillis) {
-        this(baseUrl, pat, ttlMillis, System::currentTimeMillis);
+        this(baseUrl, new TokenFileSource(null, Objects.requireNonNull(pat, "pat")), ttlMillis);
+    }
+
+    public ProvisioningProjectCorsProvider(String baseUrl, TokenFileSource tokenSource, long ttlMillis) {
+        this(baseUrl, tokenSource, ttlMillis, System::currentTimeMillis);
     }
 
     ProvisioningProjectCorsProvider(String baseUrl, String pat, long ttlMillis, LongSupplier clock) {
+        this(baseUrl, new TokenFileSource(null, Objects.requireNonNull(pat, "pat")), ttlMillis, clock);
+    }
+
+    ProvisioningProjectCorsProvider(String baseUrl, TokenFileSource tokenSource, long ttlMillis, LongSupplier clock) {
         this.baseUrl = stripTrailingSlash(Objects.requireNonNull(baseUrl, "baseUrl"));
-        this.pat = Objects.requireNonNull(pat, "pat");
+        this.tokenSource = Objects.requireNonNull(tokenSource, "tokenSource");
         this.ttlMillis = ttlMillis;
         this.clock = Objects.requireNonNull(clock, "clock");
         this.http = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
@@ -79,9 +93,15 @@ public final class ProvisioningProjectCorsProvider implements ProjectCorsProvide
 
     private List<String> fetch(String projectId) {
         String path = "/projects/" + projectId + "/info";
+        String token;
+        try {
+            token = tokenSource.require();
+        } catch (TokenUnavailableException e) {
+            throw new CorsOriginsFetchException("cannot authenticate to provisioning for " + path, e);
+        }
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
-                .header("Authorization", "Bearer " + pat)
+                .header("Authorization", "Bearer " + token)
                 .header("Accept", "application/json")
                 .timeout(TIMEOUT)
                 .GET()
