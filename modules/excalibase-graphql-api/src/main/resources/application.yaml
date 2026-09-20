@@ -96,6 +96,13 @@ app:
     stream-name: CDC  # JetStream stream name
     subject-prefix: cdc  # Subject prefix (events on cdc.{schema}.{table})
     tenant-in-subject: false  # When true, subject shape is cdc.{tenantId}.{schema}.{table} (multi-tenant)
+    # Bus credential (EXC-324). The platform NATS server scopes subject permissions
+    # per principal; svc-graphql may subscribe cdc.> and policies.> and publish nothing.
+    username: ${APP_NATS_USERNAME:}
+    password: ${APP_NATS_PASSWORD:}
+    # Reply-inbox prefix this principal is allowed to subscribe to. Must match what
+    # the server grants, or JetStream requests time out. Blank = client default.
+    inbox-prefix: ${APP_NATS_INBOX_PREFIX:}
 logging:
   level:
     root: ${log.level.root:info}

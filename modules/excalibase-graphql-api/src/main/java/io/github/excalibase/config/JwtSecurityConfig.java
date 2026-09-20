@@ -105,9 +105,12 @@ public class JwtSecurityConfig {
             PolicyProvider policyProvider,
             GraphqlSchemaManager schemaManager,
             @Value("${app.nats.enabled:false}") boolean natsEnabled,
-            @Value("${app.nats.url:nats://localhost:4222}") String natsUrl) {
+            @Value("${app.nats.url:nats://localhost:4222}") String natsUrl,
+            @Value("${app.nats.username:}") String natsUsername,
+            @Value("${app.nats.password:}") String natsPassword,
+            @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
         return new PolicyChangeSubscriber(List.of(policyProvider, schemaManager::evict),
-                natsEnabled, natsUrl);
+                natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 
     // Multi-tenant beans — only when provisioning-url is configured
