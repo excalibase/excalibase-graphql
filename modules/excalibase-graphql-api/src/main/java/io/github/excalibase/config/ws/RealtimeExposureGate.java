@@ -2,6 +2,7 @@ package io.github.excalibase.config.ws;
 
 import io.github.excalibase.schema.ExposureSource;
 import io.github.excalibase.schema.TableExposure;
+import io.github.excalibase.security.CallerRole;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.RlsOp;
 import org.springframework.stereotype.Component;
@@ -37,8 +38,10 @@ public class RealtimeExposureGate {
         }
         JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
         String orgSlug = claims != null ? claims.orgSlug() : null;
-        String role = claims != null ? claims.role() : null;
-        TableExposure exposure = exposureSource.exposureFor(orgSlug, projectId, role);
+        // Exposure's role is derived from whether this session authenticated, not
+        // from the free-form `role` claim — that one drives row-level policies and
+        // matches neither of the two roles a grant may name.
+        TableExposure exposure = exposureSource.exposureFor(orgSlug, projectId, CallerRole.of(claims));
         return exposure == null || exposure.permits(resource, RlsOp.SELECT);
     }
 }

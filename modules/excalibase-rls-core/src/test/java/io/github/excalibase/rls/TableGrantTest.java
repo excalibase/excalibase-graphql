@@ -61,18 +61,35 @@ class TableGrantTest {
     class RoleMatching {
 
         @Test
-        void appliesToRole_whenGrantRoleIsNull_appliesToEveryCaller() {
+        void appliesToRole_whenGrantRoleIsNull_appliesToNobody() {
             TableGrant grant = grant(Set.of(Operation.SELECT), null, true);
 
-            assertThat(grant.appliesToRole("authenticated")).isTrue();
-            assertThat(grant.appliesToRole(null)).isTrue();
+            assertThat(grant.appliesToRole("authenticated")).isFalse();
+            assertThat(grant.appliesToRole("anon")).isFalse();
+            assertThat(grant.appliesToRole(null)).isFalse();
         }
 
         @Test
-        void appliesToRole_whenGrantRoleIsBlank_appliesToEveryCaller() {
+        void appliesToRole_whenGrantRoleIsBlank_appliesToNobody() {
             TableGrant grant = grant(Set.of(Operation.SELECT), "  ", true);
 
-            assertThat(grant.appliesToRole("authenticated")).isTrue();
+            assertThat(grant.appliesToRole("authenticated")).isFalse();
+            assertThat(grant.appliesToRole("anon")).isFalse();
+        }
+
+        @Test
+        void appliesToRole_whenGrantRoleIsAWildcard_isNotSpecialCased() {
+            TableGrant grant = grant(Set.of(Operation.SELECT), "*", true);
+
+            assertThat(grant.appliesToRole("authenticated")).isFalse();
+            assertThat(grant.appliesToRole("anon")).isFalse();
+        }
+
+        @Test
+        void appliesToRole_whenCallerRoleIsBlank_matchesNoGrant() {
+            TableGrant grant = grant(Set.of(Operation.SELECT), "anon", true);
+
+            assertThat(grant.appliesToRole("  ")).isFalse();
         }
 
         @Test

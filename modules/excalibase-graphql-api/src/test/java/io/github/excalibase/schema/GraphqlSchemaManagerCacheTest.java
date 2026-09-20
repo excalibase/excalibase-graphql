@@ -1,6 +1,11 @@
 package io.github.excalibase.schema;
 
+import io.github.excalibase.config.datasource.TenantContext;
+import io.github.excalibase.security.JwtClaims;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -92,5 +97,56 @@ class GraphqlSchemaManagerCacheTest {
     void resolveEngineState_whenNoProject_returnsTheUnscopedStateWithoutBuilding() {
         assertThat(manager.resolveEngineState("acme", null, "anon")).isNull();
         assertThat(manager.built).isEmpty();
+    }
+
+    /**
+     * Exposure is evaluated against whether the caller is signed in, not against the
+     * free-form {@code role} claim — which defaults to "user" and so would match
+     * neither of the two roles a grant may name.
+     */
+    @Nested
+    @DisplayName("caller role derivation")
+    class CallerRoleDerivation {
+
+        @AfterEach
+        void clearTenant() {
+            TenantContext.clear();
+        }
+
+        @BeforeEach
+        void setTenant() {
+            TenantContext.setTenantId("proj-1");
+            TenantContext.setOrgSlug("acme");
+        }
+
+        @Test
+        void resolveEngineState_whenThereAreNoClaims_buildsForAnon() {
+            manager.resolveEngineState((JwtClaims) null);
+
+            assertThat(manager.built).containsExactly("proj-1/anon");
+        }
+
+        @Test
+        void resolveEngineState_whenClaimsCarryTheDefaultFreeFormRole_buildsForAuthenticated() {
+            manager.resolveEngineState(JwtClaims.of("u-1", "proj-1", "acme", "demo", "user", "u@x.com"));
+
+            assertThat(manager.built).containsExactly("proj-1/authenticated");
+        }
+
+        @Test
+        void resolveEngineState_whenFreeFormRolesDiffer_sharesOneAuthenticatedState() {
+            manager.resolveEngineState(JwtClaims.of("u-1", "proj-1", "acme", "demo", "user", "a@x.com"));
+            manager.resolveEngineState(JwtClaims.of("u-2", "proj-1", "acme", "demo", "app_admin", "b@x.com"));
+
+            assertThat(manager.built).containsExactly("proj-1/authenticated");
+        }
+
+        @Test
+        void resolveEngineState_whenSignedInAndAnonymous_areSeparateCacheEntries() {
+            manager.resolveEngineState(JwtClaims.of("u-1", "proj-1", "acme", "demo", "user", "a@x.com"));
+            manager.resolveEngineState((JwtClaims) null);
+
+            assertThat(manager.built).containsExactly("proj-1/authenticated", "proj-1/anon");
+        }
     }
 }
