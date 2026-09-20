@@ -10,6 +10,7 @@ import io.github.excalibase.rls.ExposureFilter;
 import io.github.excalibase.rls.PolicyProvider;
 import io.github.excalibase.rls.ProjectCacheEvictor;
 import io.github.excalibase.rls.TableGrants;
+import io.github.excalibase.security.CallerRole;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.spi.SchemaLoader;
@@ -169,8 +170,9 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
      * <p>The project comes from {@link TenantContext} — the URL path, which
      * {@code JwtAuthFilter} has already reconciled with the token — so an anonymous
      * caller on a project-scoped route is filtered exactly like an authenticated
-     * one rather than falling through to the unfiltered schema. The role comes from
-     * the claims, and is null for an anonymous caller.
+     * one rather than falling through to the unfiltered schema. The role is the one
+     * exposure speaks — {@code anon} or {@code authenticated}, derived from whether
+     * the caller is signed in, not read off the free-form {@code role} claim.
      */
     public EngineState resolveEngineState(JwtClaims claims) {
         String projectId = TenantContext.getTenantId();
@@ -181,8 +183,7 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
         if (orgSlug == null && claims != null) {
             orgSlug = claims.orgSlug();
         }
-        String role = claims != null ? claims.role() : null;
-        return resolveEngineState(orgSlug, projectId, role);
+        return resolveEngineState(orgSlug, projectId, CallerRole.of(claims));
     }
 
     /**

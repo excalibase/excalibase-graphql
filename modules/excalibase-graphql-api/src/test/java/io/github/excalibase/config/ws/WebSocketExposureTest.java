@@ -173,6 +173,42 @@ class WebSocketExposureTest {
         await().atMost(Duration.ofSeconds(2)).until(() -> sent.stream().anyMatch(msg -> msg.contains("\"next\"")));
     }
 
+    /**
+     * The gate asks exposure about the caller's sign-in state, not about the
+     * free-form {@code role} claim: that claim drives row-level policies and
+     * defaults to "user", which matches neither role a grant may name.
+     */
+    @Test
+    void permitsRead_whenSessionIsAuthenticated_asksExposureForTheAuthenticatedRole() throws Exception {
+        var asked = new ArrayList<String>();
+        ExposureSource source = (orgSlug, projectId, role) -> {
+            asked.add(role);
+            return TableExposure.UNRESTRICTED;
+        };
+        WebSocketSession session = session(new ArrayList<>());
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
+                JwtClaims.of("u-1", PROJECT, "acme", "demo", "user", "u@x.com"));
+
+        new RealtimeExposureGate(source).permitsRead(session, "public.customers");
+
+        assertThat(asked).containsExactly("authenticated");
+    }
+
+    @Test
+    void permitsRead_whenSessionHasNoClaims_asksExposureForTheAnonRole() throws Exception {
+        var asked = new ArrayList<String>();
+        ExposureSource source = (orgSlug, projectId, role) -> {
+            asked.add(role);
+            return TableExposure.UNRESTRICTED;
+        };
+        WebSocketSession session = session(new ArrayList<>());
+        session.getAttributes().remove(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
+
+        new RealtimeExposureGate(source).permitsRead(session, "public.customers");
+
+        assertThat(asked).containsExactly("anon");
+    }
+
     @Test
     void permitsRead_whenSessionHasNoProject_passesThrough() throws Exception {
         WebSocketSession session = session(new ArrayList<>());

@@ -64,7 +64,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ExposureIntegrationTest {
 
     private static final String PROJECT = "proj-exposure";
-    private static final String ROLE = "app_authenticated";
+    /** Exposure knows two roles; this is the one a signed-in caller is given. */
+    private static final String ROLE = "authenticated";
+    private static final String ANON = "anon";
+    /** What excalibase-auth puts in the free-form {@code role} claim by default. */
+    private static final String FREE_FORM_ROLE = "user";
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -152,7 +156,7 @@ class ExposureIntegrationTest {
                 .subject("u@test.com")
                 .claim("userId", "u-1")
                 .claim("projectId", PROJECT)
-                .claim("role", ROLE)
+                .claim("role", FREE_FORM_ROLE)
                 .audience("excalibase:" + PROJECT)
                 .issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
@@ -168,6 +172,57 @@ class ExposureIntegrationTest {
                 .header("Authorization", "Bearer " + jwt())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body(query)));
+    }
+
+    private ResultActions anonymousGraphql(String query) throws Exception {
+        return mockMvc.perform(post("/" + PROJECT + "/graphql")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body(query)));
+    }
+
+    /**
+     * The two roles a grant may name, end to end. A caller who presents no token is
+     * {@code anon}; a caller who presents one is {@code authenticated} whatever its
+     * free-form {@code role} claim says — here "user", the value excalibase-auth
+     * defaults to, which is neither grant role.
+     */
+    @Test
+    void graphql_whenCallerIsAnonymous_seesOnlyTheAnonGrant() throws Exception {
+        enforce(grantOn("public.orders", ANON, Operation.SELECT),
+                grantOn("public.secrets", ROLE, Operation.SELECT));
+
+        anonymousGraphql("{ publicOrders { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist());
+        anonymousGraphql("{ publicSecrets { id token } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+    }
+
+    @Test
+    void graphql_whenCallerIsSignedIn_seesOnlyTheAuthenticatedGrant() throws Exception {
+        enforce(grantOn("public.orders", ANON, Operation.SELECT),
+                grantOn("public.secrets", ROLE, Operation.SELECT));
+
+        graphql("{ publicSecrets { id token } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist());
+        graphql("{ publicOrders { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+    }
+
+    @Test
+    void graphql_whenGrantNamesNoRole_reachesNobody() throws Exception {
+        enforce(new TableGrant("g-roleless", PROJECT, "public.orders",
+                Set.of(Operation.SELECT), null, true));
+
+        graphql("{ publicOrders { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+        anonymousGraphql("{ publicOrders { id } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
     }
 
     @Test

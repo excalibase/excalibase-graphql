@@ -126,18 +126,19 @@ class ExposureFilterTest {
         }
 
         @Test
-        void apply_whenGrantHasNoRole_appliesToEveryCaller() {
-            TableGrant everyone = new TableGrant("g1", PROJECT, "public.orders",
+        void apply_whenGrantHasNoRole_appliesToNobody() {
+            TableGrant roleless = new TableGrant("g1", PROJECT, "public.orders",
                     Set.of(Operation.SELECT), null, true);
 
-            ExposureFilter.Result result = ExposureFilter.apply(twoSchemaFixture(), enforcing(everyone), "anon");
-
-            assertThat(result.schemaInfo().getTableNames()).containsExactly("public.orders");
+            assertThat(ExposureFilter.apply(twoSchemaFixture(), enforcing(roleless), "anon")
+                    .schemaInfo().getTableNames()).isEmpty();
+            assertThat(ExposureFilter.apply(twoSchemaFixture(), enforcing(roleless), ROLE)
+                    .schemaInfo().getTableNames()).isEmpty();
         }
 
         @Test
         void apply_whenSeveralGrantsCoverOneTable_unionsTheirOperations() {
-            TableGrant read = new TableGrant("g1", PROJECT, "public.orders", Set.of(Operation.SELECT), null, true);
+            TableGrant read = new TableGrant("g1", PROJECT, "public.orders", Set.of(Operation.SELECT), ROLE, true);
             TableGrant write = new TableGrant("g2", PROJECT, "public.orders", Set.of(Operation.UPDATE), ROLE, true);
 
             ExposureFilter.Result result = ExposureFilter.apply(twoSchemaFixture(), enforcing(read, write), ROLE);
