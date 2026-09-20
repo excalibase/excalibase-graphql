@@ -34,10 +34,18 @@ public record TableGrant(
         return operations.contains(operation);
     }
 
-    /** A grant with no role is project-wide; otherwise the caller's role must match it. */
+    /**
+     * True only when this grant names the caller's role.
+     *
+     * <p>A grant with no role reaches nobody. In an allow-list an unspecified
+     * field is "none", not "everyone" — the same reading the operations field
+     * gets above — so a control plane that serialises a blank role cannot
+     * silently publish a resource to every caller. There is no wildcard either:
+     * a grant may name {@code anon} or {@code authenticated} and nothing else.
+     */
     public boolean appliesToRole(String callerRole) {
-        if (role == null || role.isBlank()) {
-            return true;
+        if (role == null || role.isBlank() || callerRole == null || callerRole.isBlank()) {
+            return false;
         }
         return role.equalsIgnoreCase(callerRole);
     }
