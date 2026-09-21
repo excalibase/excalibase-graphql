@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -32,6 +33,21 @@ class PolicyChangeSubscriberTest {
 
     private PolicyChangeSubscriber subscriber() {
         return new PolicyChangeSubscriber(policyProvider, false, "nats://localhost:4222");
+    }
+
+    @Test
+    @DisplayName("every registered cache is evicted, not just the policies")
+    void evictFor_evictsEverySubscribedCache() {
+        // The schema cache is registered alongside the policy provider
+        // (JwtSecurityConfig wires schemaManager::evict). A DDL or grant change
+        // that dropped policies but kept the schema would keep serving fields
+        // that no longer exist, for the whole 30-minute schema TTL.
+        ProjectCacheEvictor schemaCache = mock(ProjectCacheEvictor.class);
+        new PolicyChangeSubscriber(List.of(policyProvider, schemaCache), false, "nats://localhost:4222")
+                .evictFor("policies.proj-abc.changed");
+
+        verify(policyProvider, times(1)).evict("proj-abc");
+        verify(schemaCache, times(1)).evict("proj-abc");
     }
 
     @Test
