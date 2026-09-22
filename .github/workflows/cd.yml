@@ -66,7 +66,6 @@ jobs:
         tags: |
           type=ref,event=branch
           type=sha,prefix={{branch}}-
-          type=raw,value=latest,enable={{is_default_branch}}
           
     - name: Build and push Docker image
       uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
@@ -119,7 +118,7 @@ jobs:
       with:
         images: ${{ env.DOCKER_IMAGE }}
         tags: |
-          type=raw,value=native-latest,enable={{is_default_branch}}
+          type=raw,value=native-main,enable={{is_default_branch}}
           type=raw,value=native-${{ github.sha }}
 
     - name: Build and push native Docker image
