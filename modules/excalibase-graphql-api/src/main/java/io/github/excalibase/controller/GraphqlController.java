@@ -12,6 +12,8 @@ import io.github.excalibase.service.QueryExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
@@ -35,17 +37,22 @@ public class GraphqlController {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlController.class);
     private static final String VARIABLES_KEY = "variables";
+    private static final String ERRORS_KEY = "errors";
+    private static final String MESSAGE_KEY = "message";
 
     private final GraphqlSchemaManager schemaManager;
     private final QueryExecutionService queryExecutor;
     private final GraphQLObservabilityInstrumentation observability;
+    private final boolean jwtEnabled;
 
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
-                             GraphQLObservabilityInstrumentation observability) {
+                             GraphQLObservabilityInstrumentation observability,
+                             @Value("${app.security.jwt-enabled:false}") boolean jwtEnabled) {
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;
+        this.jwtEnabled = jwtEnabled;
     }
 
     /**
@@ -68,7 +75,7 @@ public class GraphqlController {
 
         if (!(request.get("query") instanceof String query) || query.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of(
-                    "errors", List.of(Map.of("message", "Missing or invalid 'query' field"))));
+                    ERRORS_KEY, List.of(Map.of(MESSAGE_KEY, "Missing or invalid 'query' field"))));
         }
 
         @SuppressWarnings("unchecked")
@@ -86,11 +93,21 @@ public class GraphqlController {
                     return handleIntrospection(state, finalQuery, variables);
                 }
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
+                // A procedure body is opaque to RLS, so like REST /rpc it needs a token.
+                if (jwtEnabled && finalClaims == null && compiled.isProcedureCall()) {
+                    return procedureCallUnauthenticated();
+                }
                 return dispatchCompiled(compiled, state, finalUserId, finalClaims);
             } catch (Exception e) {
                 return errorResponse(e);
             }
         });
+    }
+
+    private static ResponseEntity<Object> procedureCallUnauthenticated() {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(ERRORS_KEY, List.of(Map.of(
+                MESSAGE_KEY, "Authentication required for procedure calls",
+                "extensions", Map.of("code", "UNAUTHENTICATED")))));
     }
 
     /**
@@ -101,11 +118,11 @@ public class GraphqlController {
         Optional<RlsViolationException> denied = RlsViolationException.find(e);
         if (denied.isPresent()) {
             log.info("GraphQL request denied by RLS: {}", denied.get().getMessage());
-            return ResponseEntity.ok(Map.of("errors", List.of(RlsDeniedResponse.graphqlError(denied.get()))));
+            return ResponseEntity.ok(Map.of(ERRORS_KEY, List.of(RlsDeniedResponse.graphqlError(denied.get()))));
         }
         log.warn("GraphQL request failed", e);
         return ResponseEntity.ok(Map.of(
-                "errors", List.of(Map.of("message", extractErrorMessage(e)))));
+                ERRORS_KEY, List.of(Map.of(MESSAGE_KEY, extractErrorMessage(e)))));
     }
 
     private ResponseEntity<Object> handleIntrospection(GraphqlSchemaManager.EngineState state,

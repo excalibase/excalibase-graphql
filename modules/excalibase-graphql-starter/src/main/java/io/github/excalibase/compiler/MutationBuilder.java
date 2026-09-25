@@ -11,7 +11,15 @@ import io.github.excalibase.spi.MutationCompiler;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.*;
+import java.util.function.Consumer;
 
+import static io.github.excalibase.compiler.SqlKeywords.P_BULK_INSERT;
+import static io.github.excalibase.compiler.SqlKeywords.assignWithCast;
+import static io.github.excalibase.compiler.SqlKeywords.joinCols;
+import static io.github.excalibase.compiler.SqlKeywords.namedParam;
+import static io.github.excalibase.compiler.SqlKeywords.param;
+import static io.github.excalibase.compiler.SqlKeywords.parens;
+import static io.github.excalibase.schema.GraphqlConstants.ARG_INPUTS;
 import static io.github.excalibase.schema.GraphqlConstants.CREATE_PREFIX;
 import static io.github.excalibase.schema.GraphqlConstants.DELETE_PREFIX;
 import static io.github.excalibase.schema.GraphqlConstants.UPDATE_PREFIX;
@@ -187,6 +195,65 @@ public class MutationBuilder {
     }
 
     // === Shared helpers (public, used by dialect-specific mutation compilers) ===
+
+    /** A multi-row INSERT's result object, quoted column list and VALUES rows. */
+    public record BulkInsertParts(String alias, String objectSql, String columns, String valueRows, int rowCount) {}
+
+    /** A single-table UPDATE's result object and SET clauses. */
+    public record UpdateParts(String alias, String objectSql, List<String> setClauses) {}
+
+    /**
+     * Builds the parts of {@code createMany} every dialect shares; {@code null}
+     * without an {@code inputs} argument or rows. {@code rowCheck} runs per row.
+     */
+    public BulkInsertParts bulkInsertParts(Field field, String tableName, Map<String, Object> params,
+                                           Map<String, Object> variables, boolean castParams,
+                                           Consumer<Map<String, Object>> rowCheck) {
+        Argument inputsArg = findArg(field, ARG_INPUTS);
+        if (inputsArg == null) return null;
+        List<Map<String, Object>> rows = extractArrayOfObjects(inputsArg.getValue(), variables);
+        if (rows.isEmpty()) return null;
+
+        String alias = dialect.randAlias();
+        String objectSql = queryBuilder.buildObject(field.getSelectionSet(), tableName, alias, params);
+        List<String> colNames = new ArrayList<>(rows.getFirst().keySet());
+        List<String> valueRows = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            Map<String, Object> row = rows.get(i);
+            rowCheck.accept(row);
+            List<String> vals = new ArrayList<>();
+            for (String col : colNames) {
+                String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
+                vals.add(param(paramName) + castFor(tableName, col, castParams));
+                params.put(paramName, row.get(col));
+            }
+            valueRows.add(parens(joinCols(vals)));
+        }
+        String columns = joinCols(colNames.stream().map(dialect::quoteIdentifier).toList());
+        return new BulkInsertParts(alias, objectSql, columns, joinCols(valueRows), rows.size());
+    }
+
+    /**
+     * Builds the result object and SET clauses of an UPDATE from {@code setFields};
+     * the result object is built first so its RLS binds precede the SET binds.
+     */
+    public UpdateParts updateParts(Field field, String tableName, Map<String, Object> setFields,
+                                   String paramPrefix, Map<String, Object> params, boolean castParams) {
+        String alias = dialect.randAlias();
+        String objectSql = queryBuilder.buildObject(field.getSelectionSet(), tableName, alias, params);
+        List<String> setClauses = new ArrayList<>();
+        for (var entry : setFields.entrySet()) {
+            String paramName = namedParam(paramPrefix, entry.getKey(), params.size());
+            setClauses.add(assignWithCast(dialect.quoteIdentifier(entry.getKey()), paramName,
+                    castFor(tableName, entry.getKey(), castParams)));
+            params.put(paramName, entry.getValue());
+        }
+        return new UpdateParts(alias, objectSql, setClauses);
+    }
+
+    private String castFor(String tableName, String colName, boolean castParams) {
+        return castParams ? getEnumCastForMutation(tableName, colName) : "";
+    }
 
     public String getEnumCastForMutation(String tableName, String colName) {
         String enumType = schemaInfo.getEnumType(tableName, colName);

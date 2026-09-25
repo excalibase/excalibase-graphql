@@ -879,6 +879,25 @@ describe('RLS (Row Level Security)', () => {
 // ─── Stored Procedures ────────────────────────────────────────────────────────
 
 describe('Stored Procedures', () => {
+  // A procedure body is opaque to RLS, so calls need a token (same as REST /rpc).
+  let authClient;
+
+  beforeAll(async () => {
+    await authPost(`/auth/${PROJECT_ID}/register`, {
+      email: 'alice-e2e@test.com', password: 'secret123', fullName: 'Alice E2E',
+    });
+    const login = await authPost(`/auth/${PROJECT_ID}/login`, {
+      email: 'alice-e2e@test.com', password: 'secret123',
+    });
+    authClient = createClient(API_URL, { Authorization: `Bearer ${login.data.accessToken}` });
+  });
+
+  test('anonymous procedure call is refused', async () => {
+    const res = await rawGraphql('mutation { callHanaGetCustomerOrderCount(p_customer_id: 1) }');
+    expect(res.status).toBe(401);
+    expect(res.data.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+  });
+
   test('procedure mutation appears in schema', async () => {
     const data = await client.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
     const mutationNames = data.__type.fields.map(f => f.name);
@@ -886,7 +905,7 @@ describe('Stored Procedures', () => {
   });
 
   test('call procedure with IN param returns OUT param', async () => {
-    const data = await client.request(gql`
+    const data = await authClient.request(gql`
       mutation { callHanaGetCustomerOrderCount(p_customer_id: 1) }
     `);
     expect(data.callHanaGetCustomerOrderCount).toBeDefined();
@@ -919,7 +938,7 @@ describe('Stored Procedures', () => {
     const bobBefore   = Number(before.hanaWallets.find(w => w.wallet_id == 2).balance);
 
     // Alice (wallet 1) transfers 200 to Bob (wallet 2)
-    const data = await client.request(gql`
+    const data = await authClient.request(gql`
       mutation { callHanaTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 200.00) }
     `);
     const result = JSON.parse(data.callHanaTransferFunds);
@@ -937,7 +956,7 @@ describe('Stored Procedures', () => {
 
   test('transfer_funds unhappy path — insufficient funds rejected, balances unchanged', async () => {
     // Charlie (wallet 3, balance=10) tries to send 500 → should fail
-    const data = await client.request(gql`
+    const data = await authClient.request(gql`
       mutation { callHanaTransferFunds(p_from_wallet_id: 3, p_to_wallet_id: 1, p_amount: 500.00) }
     `);
     const result = JSON.parse(data.callHanaTransferFunds);

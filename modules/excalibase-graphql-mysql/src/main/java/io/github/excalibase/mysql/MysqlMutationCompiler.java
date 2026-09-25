@@ -59,7 +59,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
         requireRowAllowed(tableName, inputFields);
         String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
+        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias, params);
 
         List<String> cols = new ArrayList<>();
         List<String> vals = new ArrayList<>();
@@ -86,37 +86,18 @@ public class MysqlMutationCompiler implements MutationCompiler {
     private MutationBuilder.MysqlMutationResult compileBulkInsert(Field field, String fieldName, String tableName,
                                                                     Map<String, Object> params, Map<String, Object> variables,
                                                                     MutationBuilder shared) {
-        Argument inputsArg = shared.findArg(field, ARG_INPUTS);
-        if (inputsArg == null) return null;
-
-        List<Map<String, Object>> rows = shared.extractArrayOfObjects(inputsArg.getValue(), variables);
-        if (rows.isEmpty()) return null;
-
-        String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
-
-        List<String> colNames = new ArrayList<>(rows.getFirst().keySet());
-        List<String> colsSql = colNames.stream().map(shared.dialect()::quoteIdentifier).toList();
-
-        List<String> valueRows = new ArrayList<>();
-        for (int i = 0; i < rows.size(); i++) {
-            Map<String, Object> row = rows.get(i);
-            requireRowAllowed(tableName, row);
-            List<String> vals = new ArrayList<>();
-            for (String col : colNames) {
-                String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
-                vals.add(param(paramName));
-                params.put(paramName, row.get(col));
-            }
-            valueRows.add(parens(joinCols(vals)));
-        }
+        MutationBuilder.BulkInsertParts bulk = shared.bulkInsertParts(field, tableName, params, variables,
+                false, row -> requireRowAllowed(tableName, row));
+        if (bulk == null) return null;
+        String alias = bulk.alias();
+        String objectSql = bulk.objectSql();
 
         String dmlSql = shared.dialect().cteBulkInsert(alias, shared.qualifiedTable(tableName),
-                joinCols(colsSql), joinCols(valueRows), objectSql);
+                bulk.columns(), bulk.valueRows(), objectSql);
 
         String pk = shared.schemaInfo().getPrimaryKey(tableName);
         String lastIdParam = namedParam(P_LAST_ID, params.size());
-        int rowCount = rows.size();
+        int rowCount = bulk.rowCount();
         String pkCol = alias + "." + shared.dialect().quoteIdentifier(pk);
         String innerSelect = SELECT + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
                 + FROM + shared.qualifiedTable(tableName) + " " + alias
@@ -136,15 +117,10 @@ public class MysqlMutationCompiler implements MutationCompiler {
 
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
         requireUpdateAllowed(tableName, inputFields);
-        String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
-
-        List<String> setClauses = new ArrayList<>();
-        for (var entry : inputFields.entrySet()) {
-            String paramName = namedParam(P_UPDATE, entry.getKey(), params.size());
-            setClauses.add(buildAssign(shared.dialect().quoteIdentifier(entry.getKey()), paramName));
-            params.put(paramName, entry.getValue());
-        }
+        MutationBuilder.UpdateParts update = shared.updateParts(field, tableName, inputFields, P_UPDATE, params, false);
+        String alias = update.alias();
+        String objectSql = update.objectSql();
+        List<String> setClauses = update.setClauses();
         if (setClauses.isEmpty()) return null;
 
         // Build WHERE from where argument (filter-based)
@@ -168,7 +144,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
                                                                Map<String, Object> params,
                                                                MutationBuilder shared) {
         String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
+        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias, params);
 
         StringBuilder whereSql = new StringBuilder();
         shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName, RlsOp.DELETE);

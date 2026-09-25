@@ -462,15 +462,9 @@ public class QueryBuilder {
 
     // === JSON object builder (recursive with FK traversal) ===
 
-    public String buildObject(SelectionSet selectionSet, String tableName, String alias) {
-        return buildObject(selectionSet, tableName, alias, null);
-    }
-
     /**
-     * As above, but threads the query's bind-param map so nested FK sub-selects
-     * can splice their own RLS predicate (which carries bind parameters). Read
-     * paths pass the live map; callers that don't (some mutation result objects)
-     * pass {@code null}, which simply skips nested RLS for that object.
+     * Threads the query's bind-param map so nested FK sub-selects splice their
+     * own RLS predicate; reads and mutation results must both pass the live map.
      */
     public String buildObject(SelectionSet selectionSet, String tableName, String alias, Map<String, Object> params) {
         if (selectionSet == null) return dialect.buildObject(List.of());
@@ -591,12 +585,10 @@ public class QueryBuilder {
      * own alias for the related table — passing it lets relationship/EXISTS
      * predicates correlate back to the aliased table (a bare table-name reference
      * would fail with <em>missing FROM-clause entry</em> under embed aliasing) and
-     * qualifies scalar rules to the same alias. No-op without a live param map
-     * (nothing to bind into) or a registered contributor.
+     * qualifies scalar rules to the same alias. No-op without a registered contributor.
      */
     private void appendNestedRls(List<String> joinConds, String relatedTable, String subAlias,
                                  Map<String, Object> params) {
-        if (params == null) return;
         filterBuilder.appendRlsConditions(joinConds, relatedTable, subAlias, params, RlsOp.SELECT);
     }
 

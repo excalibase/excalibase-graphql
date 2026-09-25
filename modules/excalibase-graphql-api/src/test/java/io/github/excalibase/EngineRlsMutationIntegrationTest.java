@@ -312,6 +312,69 @@ class EngineRlsMutationIntegrationTest {
                 .andExpect(jsonPath("$.data.createRlsDemoShelf.id").value("501"));
     }
 
+    // ---- MUTATION RESULT EMBEDS (GQL-01) ----
+
+    /** Only shelf 999 is readable, so a book's forward embed to shelf 1 must come back null. */
+    private static Policy onlyShelf999() {
+        return new Policy("shelf-999", "shelf-999", "rls_demo.shelf",
+                PolicyEffect.ALLOW, java.util.Set.of(Operation.SELECT), LogicOperator.AND, 0, true,
+                List.of(new Rule("id", FieldType.LONG, RuleOperator.EQ, "999")),
+                List.of(Assignment.all()));
+    }
+
+    @Test
+    void mutationResult_reverseEmbed_isFilteredLikeQuery() throws Exception {
+        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook()));
+        mutate(BOB, "{ rlsDemoShelf(where: { id: { eq: 1 } }) { id rlsDemoBook { id } } }")
+                .andExpect(jsonPath("$.data.rlsDemoShelf[0].rlsDemoBook", hasSize(1)));
+
+        mutate(BOB, "mutation { updateRlsDemoShelf(where: { id: { eq: 1 } }, "
+                + "input: { name: \"main\" }) { id rlsDemoBook { id title } } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.updateRlsDemoShelf[0].rlsDemoBook", hasSize(1)))
+                .andExpect(jsonPath("$.data.updateRlsDemoShelf[0].rlsDemoBook[0].title").value("bob-book-1"));
+    }
+
+    @Test
+    void mutationResult_forwardEmbed_isFilteredLikeQuery() throws Exception {
+        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook(), onlyShelf999()));
+        mutate(ALICE, "{ rlsDemoBook(where: { id: { eq: 10 } }) { id rlsDemoShelfId { id name } } }")
+                .andExpect(jsonPath("$.data.rlsDemoBook[0].rlsDemoShelfId").doesNotExist());
+
+        mutate(ALICE, "mutation { createRlsDemoBook(input: { id: 950, shelf_id: 1, "
+                + "owner_id: \"" + ALICE + "\", title: \"embed\" }) { id rlsDemoShelfId { id name } } }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.createRlsDemoBook.id").value("950"))
+                .andExpect(jsonPath("$.data.createRlsDemoBook.rlsDemoShelfId").doesNotExist());
+    }
+
+    // ---- STORED PROCEDURE CALLS (GQL-04) ----
+
+    @Test
+    void procedureCall_anonymous_isRefused() throws Exception {
+        mutate(BOB, "mutation { createRlsDemoNotes(input: { id: 410, "
+                + "owner_id: \"" + BOB + "\", title: \"bob-410\" }) { id } }").andExpect(status().isOk());
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("mutation { callRlsDemoRenameNote(p_id: 410, p_title: \"anon-renamed\") }")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        mutate(BOB, "{ rlsDemoNotes(where: { id: { eq: 410 } }) { title } }")
+                .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").value("bob-410"));
+    }
+
+    @Test
+    void procedureCall_authenticated_runs() throws Exception {
+        mutate(ALICE, "mutation { callRlsDemoRenameNote(p_id: 400, p_title: \"noop\") }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.callRlsDemoRenameNote").exists());
+    }
+
     private static String buildJwks(ECPublicKey key) {
         com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(
                 com.nimbusds.jose.jwk.Curve.P_256, key)
