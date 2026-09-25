@@ -92,7 +92,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (inputArg == null) return null;
 
         String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
+        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias, params);
 
         List<String> cols = new ArrayList<>();
         List<String> vals = new ArrayList<>();
@@ -239,36 +239,13 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
     String compileBulkInsert(Field field, String tableName, Map<String, Object> params,
                              Map<String, Object> variables, MutationBuilder shared) {
-        Argument inputsArg = shared.findArg(field, ARG_INPUTS);
-        if (inputsArg == null) return null;
-
-        List<Map<String, Object>> rows = shared.extractArrayOfObjects(inputsArg.getValue(), variables);
-        if (rows.isEmpty()) return null;
-
-        String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
-
-        List<String> colNames = new ArrayList<>(rows.getFirst().keySet());
-        List<String> colsSql = colNames.stream().map(shared.dialect()::quoteIdentifier).toList();
-
-        List<String> valueRows = new ArrayList<>();
-        for (int i = 0; i < rows.size(); i++) {
-            Map<String, Object> row = rows.get(i);
-            // WITH-CHECK every row in the batch: one disallowed row rejects the
-            // whole mutation before any SQL runs.
-            requireRowAllowed(tableName, row);
-            List<String> vals = new ArrayList<>();
-            for (String col : colNames) {
-                String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
-                String enumCast = shared.getEnumCastForMutation(tableName, col);
-                vals.add(param(paramName) + enumCast);
-                params.put(paramName, row.get(col));
-            }
-            valueRows.add(parens(joinCols(vals)));
-        }
-
-        return shared.dialect().cteBulkInsert(alias, shared.qualifiedTable(tableName),
-                joinCols(colsSql), joinCols(valueRows), objectSql);
+        // WITH-CHECK every row in the batch: one disallowed row rejects the
+        // whole mutation before any SQL runs.
+        MutationBuilder.BulkInsertParts bulk = shared.bulkInsertParts(field, tableName, params, variables,
+                true, row -> requireRowAllowed(tableName, row));
+        if (bulk == null) return null;
+        return shared.dialect().cteBulkInsert(bulk.alias(), shared.qualifiedTable(tableName),
+                bulk.columns(), bulk.valueRows(), bulk.objectSql());
     }
 
     String compileUpdate(Field field, String tableName, Map<String, Object> params,
@@ -278,16 +255,10 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
         requireUpdateAllowed(tableName, inputFields);
-        String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
-
-        List<String> setClauses = new ArrayList<>();
-        for (var entry : inputFields.entrySet()) {
-            String paramName = namedParam(P_UPDATE, entry.getKey(), params.size());
-            String enumCast = shared.getEnumCastForMutation(tableName, entry.getKey());
-            setClauses.add(assignWithCast(shared.dialect().quoteIdentifier(entry.getKey()), paramName, enumCast));
-            params.put(paramName, entry.getValue());
-        }
+        MutationBuilder.UpdateParts update = shared.updateParts(field, tableName, inputFields, P_UPDATE, params, true);
+        String alias = update.alias();
+        String objectSql = update.objectSql();
+        List<String> setClauses = update.setClauses();
         if (setClauses.isEmpty()) return null;
 
         StringBuilder whereSql = new StringBuilder();
@@ -300,7 +271,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
     String compileDelete(Field field, String tableName, Map<String, Object> params, MutationBuilder shared) {
         String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
+        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias, params);
 
         StringBuilder whereSql = new StringBuilder();
         shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName, RlsOp.DELETE);
@@ -317,18 +288,12 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
         Map<String, Object> setFields = shared.extractObjectFields(setArg.getValue(), variables);
         requireUpdateAllowed(tableName, setFields);
-        String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
+        MutationBuilder.UpdateParts update = shared.updateParts(field, tableName, setFields, P_UC_SET, params, true);
+        String alias = update.alias();
+        String objectSql = update.objectSql();
+        List<String> setClauses = update.setClauses();
 
         int atMost = parseAtMost(field, variables, shared);
-
-        List<String> setClauses = new ArrayList<>();
-        for (var entry : setFields.entrySet()) {
-            String paramName = namedParam(P_UC_SET, entry.getKey(), params.size());
-            String enumCast = shared.getEnumCastForMutation(tableName, entry.getKey());
-            setClauses.add(assignWithCast(shared.dialect().quoteIdentifier(entry.getKey()), paramName, enumCast));
-            params.put(paramName, entry.getValue());
-        }
 
         String filterWhere = buildCollectionFilter(field, shared, params, tableName, RlsOp.UPDATE);
         String atMostParam = namedParam(P_UC_AT_MOST, params.size());
@@ -344,7 +309,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
     String compileDeleteFromCollection(Field field, String tableName, Map<String, Object> params,
                                        Map<String, Object> variables, MutationBuilder shared) {
         String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias);
+        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias, params);
 
         int atMost = parseAtMost(field, variables, shared);
 
