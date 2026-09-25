@@ -350,6 +350,31 @@ class EngineRlsMutationIntegrationTest {
                 .andExpect(jsonPath("$.data.createRlsDemoBook.rlsDemoShelfId").doesNotExist());
     }
 
+    // ---- STORED PROCEDURE CALLS (GQL-04) ----
+
+    @Test
+    void procedureCall_anonymous_isRefused() throws Exception {
+        mutate(BOB, "mutation { createRlsDemoNotes(input: { id: 410, "
+                + "owner_id: \"" + BOB + "\", title: \"bob-410\" }) { id } }").andExpect(status().isOk());
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("mutation { callRlsDemoRenameNote(p_id: 410, p_title: \"anon-renamed\") }")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("UNAUTHENTICATED"))
+                .andExpect(jsonPath("$.data").doesNotExist());
+
+        mutate(BOB, "{ rlsDemoNotes(where: { id: { eq: 410 } }) { title } }")
+                .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").value("bob-410"));
+    }
+
+    @Test
+    void procedureCall_authenticated_runs() throws Exception {
+        mutate(ALICE, "mutation { callRlsDemoRenameNote(p_id: 400, p_title: \"noop\") }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.callRlsDemoRenameNote").exists());
+    }
+
     private static String buildJwks(ECPublicKey key) {
         com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(
                 com.nimbusds.jose.jwk.Curve.P_256, key)

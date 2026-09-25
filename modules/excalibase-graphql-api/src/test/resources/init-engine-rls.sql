@@ -113,3 +113,12 @@ INSERT INTO rls_demo.regional (id, region) VALUES
     (1, 'west'),
     (2, 'west'),
     (3, 'east');
+
+-- Stored procedure for the GraphQL call<Proc> auth rule: an opaque body the
+-- engine cannot filter, so it must require a token like REST /rpc.
+CREATE PROCEDURE rls_demo.rename_note(IN p_id BIGINT, IN p_title TEXT)
+LANGUAGE plpgsql AS $$
+BEGIN
+    UPDATE rls_demo.notes SET title = p_title WHERE id = p_id;
+END;
+$$;
