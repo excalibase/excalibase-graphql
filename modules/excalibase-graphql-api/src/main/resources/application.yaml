@@ -19,9 +19,12 @@ spring:
     open-in-view: false
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: ${POSTGRES_URL:jdbc:postgresql://localhost:5433/dvdrental}
-    username: ${POSTGRES_USER:postgres}
-    password: ${POSTGRES_PASSWORD:postgres}
+    # No built-in database or credentials. Single-database mode sets all three
+    # (SPRING_DATASOURCE_URL/USERNAME/PASSWORD) or refuses to start; multi-tenant
+    # mode leaves the URL empty.
+    url: ${POSTGRES_URL:}
+    username: ${POSTGRES_USER:}
+    password: ${POSTGRES_PASSWORD:}
     hikari:
       maximum-pool-size: 50  # Limit connection pool
       minimum-idle: 2
@@ -67,6 +70,7 @@ management:
       probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}
 
 app:
+  project-id: ${APP_PROJECT_ID:}  # single-database mode: the one project this database serves (required); unset in multi-tenant mode
   database-type: postgres
   max-rows: 30
   max-query-depth: 15  # Reject queries nested beyond this depth (0 = unlimited)
@@ -80,7 +84,8 @@ app:
     # else app.security.multi-tenant.provisioning-pat[-file]); there is no CORS-specific token.
     ttl-ms: 30000                                      # per-project cache; last-good is served while provisioning is down
   security:
-    jwt-enabled: ${JWT_ENABLED:false}
+    jwt-enabled: ${JWT_ENABLED:true}                 # off only together with insecure-dev-mode
+    insecure-dev-mode: ${APP_SECURITY_INSECURE_DEV_MODE:false}  # local development only: allows jwt-enabled=false, logged at ERROR
     auth:
       jwks-url: ${APP_SECURITY_AUTH_JWKS_URL:}        # JWKS endpoint (excalibase-auth or any OIDC provider)
       hmac-secret: ${APP_SECURITY_AUTH_HMAC_SECRET:}  # HS256 shared secret (standalone mode)
@@ -90,6 +95,9 @@ app:
       provisioning-url: ${PROVISIONING_URL:}    # Mode 3 only
       provisioning-pat: ${PROVISIONING_PAT:}    # standalone/dev fallback when no token file is mounted
       provisioning-pat-file: ${APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT_FILE:}  # re-read on change, wins over the literal
+      unknown-project-cache:            # vault 404s remembered so a missing project costs one vault call per TTL
+        max-entries: 10000              # LRU bound: random project ids cannot grow memory past this
+        ttl-seconds: 30                 # a project created after a 404 is reachable once this expires
   nats:
     enabled: false  # Enable NATS CDC subscription from excalibase-watcher (default: false)
     url: nats://localhost:4222  # NATS server URL

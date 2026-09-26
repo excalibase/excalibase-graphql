@@ -31,9 +31,8 @@ public class DynamicRoutingDataSource extends AbstractRoutingDataSource {
     @Override
     protected DataSource determineTargetDataSource() {
         String tenantId = TenantContext.getTenantId();
-        String orgSlug = TenantContext.getOrgSlug();
-        if (tenantId != null && orgSlug != null && dataSourceManager != null) {
-            return dataSourceManager.getDataSource(orgSlug, tenantId);
+        if (tenantId != null && dataSourceManager != null) {
+            return dataSourceManager.getDataSource(TenantContext.getOrgSlug(), tenantId);
         }
         return super.determineTargetDataSource();
     }

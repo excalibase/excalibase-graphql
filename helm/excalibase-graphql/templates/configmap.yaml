@@ -50,6 +50,12 @@ data:
 
   # JWT verification
   APP_SECURITY_JWT_ENABLED: {{ .Values.app.security.jwtEnabled | quote }}
+  {{- if .Values.app.security.insecureDevMode }}
+  APP_SECURITY_INSECURE_DEV_MODE: "true"
+  {{- end }}
+  {{- if .Values.app.projectId }}
+  APP_PROJECT_ID: {{ .Values.app.projectId | quote }}
+  {{- end }}
   {{- if .Values.app.security.auth.jwksUrl }}
   APP_SECURITY_AUTH_JWKS_URL: {{ .Values.app.security.auth.jwksUrl | quote }}
   {{- end }}

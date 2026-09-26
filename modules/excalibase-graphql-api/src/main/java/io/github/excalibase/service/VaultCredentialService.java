@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.security.TokenFileSource;
 import io.github.excalibase.security.TokenUnavailableException;
+import io.github.excalibase.security.UnknownProjectException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.net.URI;
@@ -63,6 +64,9 @@ public class VaultCredentialService {
       HttpResponse<String> resp = httpClient.send(reqBuilder.build(),
           HttpResponse.BodyHandlers.ofString());
 
+      if (resp.statusCode() == 404) {
+        throw new UnknownProjectException(projectId);
+      }
       if (resp.statusCode() != 200) {
         log.error("vault_credential_fetch_failed status={} tenant={}/{}", resp.statusCode(), orgSlug, projectId);
         throw new VaultCredentialException("Database not available for the requested project");
@@ -76,7 +80,7 @@ public class VaultCredentialService {
           json.get("username").asText(),
           json.get("password").asText()
       );
-    } catch (VaultCredentialException e) {
+    } catch (VaultCredentialException | UnknownProjectException e) {
       throw e;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();

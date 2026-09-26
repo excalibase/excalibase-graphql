@@ -57,7 +57,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final RlsPolicyEnforcer rlsEnforcer;
     private final RealtimeExposureGate exposureGate;
 
-    @Value("${app.security.jwt-enabled:false}")
+    @Value("${app.security.jwt-enabled:true}")
     private boolean jwtEnabled;
 
     @Value("${app.nats.tenant-in-subject:false}")

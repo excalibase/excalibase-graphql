@@ -22,9 +22,18 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
+import org.slf4j.LoggerFactory;
 
 import static org.hamcrest.Matchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -44,11 +53,6 @@ import com.nimbusds.jwt.SignedJWT;
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class MultiTenantIntegrationTest {
 
-  // Default static datasource (backward compatibility — no JWT)
-  @Container
-  static PostgreSQLContainer<?> defaultDb = new PostgreSQLContainer<>("postgres:16-alpine")
-      .withInitScript("init-tenant-a.sql");
-
   // Tenant A's database (separate container)
   @Container
   static PostgreSQLContainer<?> tenantADb = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -63,6 +67,8 @@ class MultiTenantIntegrationTest {
   static ECPublicKey publicKey;
   static HttpServer mockVault;
   static int mockVaultPort;
+  static final String GHOST_PROJECT = "proj_ghost12345";
+  static final AtomicInteger ghostProvisioningCalls = new AtomicInteger();
 
   static {
     try {
@@ -83,6 +89,20 @@ class MultiTenantIntegrationTest {
         exchange.sendResponseHeaders(200, body.length);
         exchange.getResponseBody().write(body);
         exchange.getResponseBody().close();
+      });
+
+      // Counts every provisioning call made on behalf of a project nobody provisioned.
+      mockVault.createContext("/api/vault/secrets/projects/" + GHOST_PROJECT + "/", exchange -> {
+        ghostProvisioningCalls.incrementAndGet();
+        exchange.sendResponseHeaders(404, -1);
+        exchange.close();
+      });
+      mockVault.createContext("/api/projects/", exchange -> {
+        if (exchange.getRequestURI().getPath().contains(GHOST_PROJECT)) {
+          ghostProvisioningCalls.incrementAndGet();
+        }
+        exchange.sendResponseHeaders(404, -1);
+        exchange.close();
       });
 
       mockVault.start();
@@ -141,10 +161,10 @@ class MultiTenantIntegrationTest {
     // Register credential endpoints now that containers have ports
     registerCredentialEndpoints();
 
-    // Default static datasource (backward compat — no JWT fallback)
-    registry.add("spring.datasource.url", defaultDb::getJdbcUrl);
-    registry.add("spring.datasource.username", defaultDb::getUsername);
-    registry.add("spring.datasource.password", defaultDb::getPassword);
+    // Multi-tenant mode has no default database: every project is served from its own.
+    registry.add("spring.datasource.url", () -> "");
+    registry.add("management.health.db.enabled", () -> "false");
+    registry.add("app.cors.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
 
     registry.add("app.database-type", () -> "postgres");
     registry.add("app.max-rows", () -> 30);
@@ -188,18 +208,57 @@ class MultiTenantIntegrationTest {
     return signed.serialize();
   }
 
-  // ─── Backward Compatibility ──────────────────────────────────────────────────
+  // ─── No Default Project ──────────────────────────────────────────────────────
 
   @Test
   @Order(1)
-  @DisplayName("No JWT → 200 with default datasource (no 401, no tenant routing)")
-  void noJwt_usesDefaultDatasource() throws Exception {
-    // Without JWT, no tenant routing — uses default Spring datasource
-    // Returns 200 (no 401); the RLS/tenant enforcement is handled by the DB, not the controller
+  @DisplayName("A path project the vault does not know → 404, never the default datasource")
+  void unknownProject_isNotServedFromTheDefaultDatasource() throws Exception {
     mockMvc.perform(post("/test-proj/graphql")
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ tenantProducts { id name price } }")))
-        .andExpect(status().isOk());
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.errors[0].extensions.code", is("project_not_found")));
+    mockMvc.perform(get("/test-proj/api/v1/products").header("Accept-Profile", "tenant"))
+        .andExpect(status().isNotFound());
+  }
+
+  @Test
+  @Order(2)
+  @DisplayName("An anonymous caller on a real project is served that project's own database")
+  void anonymousCaller_routesToTheProjectDatabase() throws Exception {
+    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
+            .contentType(MediaType.APPLICATION_JSON)
+            .content(graphql("{ tenantProducts { id name price } }")))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.tenantProducts", hasSize(3)));
+  }
+
+  @Test
+  @Order(3)
+  @DisplayName("Repeated browser requests for an unknown project cost one provisioning call and log nothing")
+  void unknownProject_repeatedFromABrowser_oneProvisioningCallAndNoLogFlood() throws Exception {
+    Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+    ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    appender.start();
+    root.addAppender(appender);
+    try {
+      for (int i = 0; i < 10; i++) {
+        mockMvc.perform(post("/" + GHOST_PROJECT + "/graphql")
+                .header("Origin", "https://app.example.com")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(graphql("{ tenantProducts { id } }")))
+            .andExpect(status().isNotFound());
+      }
+    } finally {
+      root.detachAppender(appender);
+    }
+
+    Assertions.assertEquals(1, ghostProvisioningCalls.get());
+    Assertions.assertEquals(List.of(), appender.list.stream()
+        .filter(event -> event.getLevel().isGreaterOrEqual(Level.WARN))
+        .map(ILoggingEvent::getFormattedMessage)
+        .toList());
   }
 
   // ─── Multi-Tenant Routing ────────────────────────────────────────────────────
@@ -273,16 +332,15 @@ class MultiTenantIntegrationTest {
 
   @Test
   @Order(6)
-  @DisplayName("JWT with unknown tenant → vault returns 404 → error in response body")
-  void jwtUnknownTenant_vaultReturns404_errorResponse() throws Exception {
+  @DisplayName("JWT with unknown tenant → vault returns 404 → 404 project_not_found")
+  void jwtUnknownTenant_vaultReturns404_notFound() throws Exception {
     String jwt = signJwt("no-such-org", "no-such-app", 1);
     mockMvc.perform(post("/" + projectIdOf("no-such-app") + "/graphql")
             .header("Authorization", "Bearer " + jwt)
             .contentType(MediaType.APPLICATION_JSON)
             .content(graphql("{ anything { id } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").exists())
-        .andExpect(jsonPath("$.errors[0].message", containsString("Database not available")));
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.errors[0].extensions.code", is("project_not_found")));
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

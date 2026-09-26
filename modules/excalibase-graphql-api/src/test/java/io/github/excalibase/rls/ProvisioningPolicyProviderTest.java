@@ -376,4 +376,24 @@ class ProvisioningPolicyProviderTest {
         List<Policy> stale = p.policiesFor("proj1");
         assertThat(stale).hasSize(1);    // last good copy, not an exception, not empty
     }
+
+    @Test
+    @DisplayName("an unknown project (404) is refused, never read as having no policies")
+    void unknownProjectIsRefused() {
+        responseStatus = 404;
+        ProvisioningPolicyProvider p = provider(60_000);
+        assertThatThrownBy(() -> p.policiesFor("proj1")).isInstanceOf(PolicyFetchException.class);
+        assertThatThrownBy(() -> p.columnPoliciesFor("proj1")).isInstanceOf(PolicyFetchException.class);
+    }
+
+    @Test
+    @DisplayName("a project that has gone (404) is refused even with policies cached from before")
+    void projectGoneIsRefusedDespiteCache() {
+        ProvisioningPolicyProvider p = provider(30_000);
+        p.policiesFor("proj2");          // cached: known project, no row policies
+        responseStatus = 404;
+        now[0] += 30_001;
+
+        assertThatThrownBy(() -> p.policiesFor("proj2")).isInstanceOf(PolicyFetchException.class);
+    }
 }

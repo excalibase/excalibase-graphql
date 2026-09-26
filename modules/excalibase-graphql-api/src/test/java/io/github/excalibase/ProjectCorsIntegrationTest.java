@@ -97,6 +97,9 @@ class ProjectCorsIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("app.project-id", () -> PROJECT);
+        registry.add("app.security.jwt-enabled", () -> "false");
+        registry.add("app.security.insecure-dev-mode", () -> "true");
         registry.add("app.allowed-schema", () -> "test_schema");
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.cors.allowed-origins", () -> "*");
@@ -150,25 +153,17 @@ class ProjectCorsIntegrationTest {
                 .andExpect(header().doesNotExist(ALLOW_ORIGIN));
     }
 
-    @Test
-    @DisplayName("a project with no origins blocks every browser origin")
-    void projectWithoutOriginsDeniesAll() throws Exception {
-        mockMvc.perform(post("/" + LOCKED_PROJECT + "/graphql")
-                        .header(HttpHeaders.ORIGIN, ALLOWED)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(TYPENAME_QUERY))
-                .andExpect(status().isForbidden())
-                .andExpect(header().doesNotExist(ALLOW_ORIGIN));
-    }
+    // A project with an empty allowlist is covered by ProjectCorsConfigurationSourceTest:
+    // a single-database deployment serves one project, so it has no second one to lock.
 
     @Test
-    @DisplayName("an unknown project is denied — never the platform default")
+    @DisplayName("an unknown project is a 404 before any CORS lookup — never the platform default")
     void unknownProjectDenied() throws Exception {
         mockMvc.perform(post("/proj-does-not-exist/graphql")
                         .header(HttpHeaders.ORIGIN, ALLOWED)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(TYPENAME_QUERY))
-                .andExpect(status().isForbidden())
+                .andExpect(status().isNotFound())
                 .andExpect(header().doesNotExist(ALLOW_ORIGIN));
     }
 
@@ -227,10 +222,12 @@ class ProjectCorsIntegrationTest {
     @Test
     @DisplayName("non-browser clients (no Origin) are unaffected")
     void noOriginIsNotCors() throws Exception {
+        // This deployment serves PROJECT only, so the locked project is answered by
+        // the project check (404), not refused by CORS (403).
         mockMvc.perform(post("/" + LOCKED_PROJECT + "/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(TYPENAME_QUERY))
-                .andExpect(status().isOk())
+                .andExpect(status().isNotFound())
                 .andExpect(header().doesNotExist(ALLOW_ORIGIN));
     }
 
