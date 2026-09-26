@@ -34,6 +34,9 @@ class MysqlIntegrationTest {
         registry.add("spring.datasource.url", mysql::getJdbcUrl);
         registry.add("spring.datasource.username", mysql::getUsername);
         registry.add("spring.datasource.password", mysql::getPassword);
+        registry.add("app.project-id", () -> "test-proj");
+        registry.add("app.security.jwt-enabled", () -> "false");
+        registry.add("app.security.insecure-dev-mode", () -> "true");
         registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
 
         registry.add("app.max-rows", () -> 30);

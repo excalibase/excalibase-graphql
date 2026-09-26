@@ -8,7 +8,9 @@ Automatic GraphQL API generation from PostgreSQL and MySQL databases.
 helm install my-release ./helm/excalibase-graphql \
   --set database.url=jdbc:postgresql://postgres:5432/mydb \
   --set database.username=app_user \
-  --set database.password=secret
+  --set database.password=secret \
+  --set app.projectId=my-project \
+  --set app.security.auth.jwksUrl=https://auth.example.com/.well-known/jwks.json
 ```
 
 ## Multi-Tenant Mode
@@ -33,7 +35,7 @@ helm install my-release ./helm/excalibase-graphql \
   --set app.allowedSchema=public
 ```
 
-In multi-tenant mode, `database.url` is optional. If omitted, the app starts with no default database and routes all requests via JWT claims to tenant-specific databases.
+In multi-tenant mode, `database.url` is optional and never serves a project: every `/{projectId}/` request is routed to that project's own database, and a project the provisioning vault does not know is a 404.
 
 ## Deployment topology (bare metal)
 
@@ -120,7 +122,9 @@ Bare metal has no cloud load balancer, so external traffic needs:
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `app.security.jwtEnabled` | Enable JWT verification. Invalid tokens → 401. Missing tokens are allowed (RLS at DB level). | `false` |
+| `app.projectId` | Single-database mode: the one project served; required unless `multiTenant.provisioningUrl` is set. Other path projects → 404 | `""` |
+| `app.security.jwtEnabled` | JWT verification, on by default; needs `auth.jwksUrl` or `auth.hmacSecret` or the pod refuses to start. Invalid tokens → 401, missing tokens are anonymous | `true` |
+| `app.security.insecureDevMode` | Local development only: required to run with `jwtEnabled=false`; logged at ERROR | `false` |
 | `app.security.auth.publicKey` | Inline EC public key PEM (Mode 1a — local dev) | `""` |
 | `app.security.auth.publicKeyFile` | Path to PEM file (Mode 1b — K8s Secret volume mount) | `""` |
 | `app.security.auth.jwksUrl` | JWKS endpoint URL — Auth0, Keycloak, excalibase-auth, any OIDC provider (Mode 2/3) | `""` |
@@ -165,7 +169,7 @@ Pool size formula: `(target_db_CPU x 2 + 1) / replicas`. With multi-tenant routi
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `jvm.opts` | JVM options (Generational ZGC recommended for Java 25) | `-XX:+UseZGC -XX:+ZGenerational -XX:InitialRAMPercentage=50.0 -XX:MaxRAMPercentage=75.0` |
+| `jvm.opts` | JVM options (Generational ZGC recommended for Java 25) | `-XX:+UseZGC -XX:InitialRAMPercentage=50.0 -XX:MaxRAMPercentage=75.0` |
 | `virtualThreads.enabled` | Enable Java 25 Virtual Threads | `true` |
 
 ### Resources & Scaling

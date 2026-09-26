@@ -32,6 +32,9 @@ class GracefulStartupTest {
         registry.add("spring.datasource.url", () -> "jdbc:postgresql://localhost:59999/nonexistent");
         registry.add("spring.datasource.username", () -> "fake");
         registry.add("spring.datasource.password", () -> "fake");
+        registry.add("app.project-id", () -> "test-proj");
+        registry.add("app.security.jwt-enabled", () -> "false");
+        registry.add("app.security.insecure-dev-mode", () -> "true");
 
         registry.add("app.database-type", () -> "postgres");
     }

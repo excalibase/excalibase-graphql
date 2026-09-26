@@ -115,6 +115,7 @@ class MysqlEngineRlsIntegrationTest {
         registry.add("app.database-type", () -> "mysql");
         registry.add("app.max-rows", () -> 30);
         registry.add("app.security.jwt-enabled", () -> "true");
+        registry.add("app.project-id", () -> PROJECT);
         registry.add("app.security.auth.jwks-url",
                 () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
     }

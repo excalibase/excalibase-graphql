@@ -56,7 +56,8 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     private final PolicyProvider policyProvider;
 
     public record EngineState(SqlCompiler compiler, IntrospectionHandler introspectionHandler,
-                              MutationExecutor mutationExecutor, TableExposure exposure) {}
+                              MutationExecutor mutationExecutor, TableExposure exposure,
+                              String defaultSchema) {}
 
     /**
      * Cache identity for a built engine. The role is part of it because the schema
@@ -140,7 +141,7 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
         } catch (Exception e) {
             log.warn("IntrospectionHandler failed to build schema", e);
         }
-        return new EngineState(compiler, handler, mutationExecutor, exposed.exposure());
+        return new EngineState(compiler, handler, mutationExecutor, exposed.exposure(), schemaForCompiler);
     }
 
     /**
@@ -167,18 +168,15 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     /**
      * Resolve EngineState for the current request.
      *
-     * <p>The project comes from {@link TenantContext} — the URL path, which
-     * {@code JwtAuthFilter} has already reconciled with the token — so an anonymous
-     * caller on a project-scoped route is filtered exactly like an authenticated
-     * one rather than falling through to the unfiltered schema. The role is the one
-     * exposure speaks — {@code anon} or {@code authenticated}, derived from whether
-     * the caller is signed in, not read off the free-form {@code role} claim.
+     * <p>The project comes from {@link TenantContext} — the URL path, already checked
+     * against the projects this deployment serves — and never from the token, so an
+     * anonymous caller on a project-scoped route is filtered exactly like an
+     * authenticated one. The role is the one exposure speaks — {@code anon} or
+     * {@code authenticated}, derived from whether the caller is signed in, not read
+     * off the free-form {@code role} claim.
      */
     public EngineState resolveEngineState(JwtClaims claims) {
         String projectId = TenantContext.getTenantId();
-        if (projectId == null && claims != null) {
-            projectId = claims.projectId();
-        }
         String orgSlug = TenantContext.getOrgSlug();
         if (orgSlug == null && claims != null) {
             orgSlug = claims.orgSlug();
@@ -202,9 +200,13 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
                 key -> buildEngineState(tenantOrg, tenantProject, callerRole));
     }
 
-    /** Multi-tenant routing picks the tenant's own database; otherwise the configured one. */
+    /**
+     * With tenant routing wired a project is served from its own database only, for
+     * anonymous callers too; otherwise this is single-database mode, where the one
+     * project the configured database serves has already been matched to the path.
+     */
     EngineState buildEngineState(String orgSlug, String projectId, String callerRole) {
-        return orgSlug != null && dataSourceManager != null
+        return dataSourceManager != null
                 ? buildTenantEngineState(orgSlug, projectId, callerRole)
                 : filteredDefaultEngineState(projectId, callerRole);
     }
@@ -265,8 +267,8 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     }
 
     @Override
-    public String getDefaultSchema() {
-        return defaultSchema;
+    public String resolveDefaultSchema(JwtClaims claims) {
+        return requireEngineState(claims).defaultSchema();
     }
 
     /** Reinitialize schema and compiler. Called on DDL events from NatsCDCService. */
@@ -342,9 +344,9 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     }
 
     /**
-     * Reuses the unscoped database for a project-scoped caller, filtered to their
-     * grants. This is the single-tenant deployment shape: one database, many
-     * project-scoped callers, each served the slice they were granted.
+     * The configured database for its one pinned project, filtered to the caller's
+     * grants. Single-database mode only: {@code KnownProjectFilter} has refused
+     * every other project before this is reached.
      */
     private EngineState filteredDefaultEngineState(String projectId, String callerRole) {
         EngineState base = engineState.get();

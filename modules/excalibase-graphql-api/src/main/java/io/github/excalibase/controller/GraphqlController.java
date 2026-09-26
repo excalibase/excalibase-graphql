@@ -48,7 +48,7 @@ public class GraphqlController {
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
                              GraphQLObservabilityInstrumentation observability,
-                             @Value("${app.security.jwt-enabled:false}") boolean jwtEnabled) {
+                             @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;

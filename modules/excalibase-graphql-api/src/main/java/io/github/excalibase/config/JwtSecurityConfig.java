@@ -21,9 +21,13 @@ import org.springframework.context.annotation.Configuration;
 import java.util.List;
 
 @Configuration
-@ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true")
+@ConditionalOnProperty(name = "app.security.jwt-enabled", havingValue = "true", matchIfMissing = true)
 @EnableConfigurationProperties(SecurityProperties.class)
 public class JwtSecurityConfig {
+
+    static final String NO_VERIFIER = "Authentication is on by default and needs a token verifier: set "
+            + "app.security.auth.jwks-url or app.security.auth.hmac-secret. To run without authentication "
+            + "for local development only, set app.security.jwt-enabled=false and app.security.insecure-dev-mode=true.";
 
     @Bean
     public JwtService jwtService(
@@ -31,21 +35,15 @@ public class JwtSecurityConfig {
             @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes) {
 
         SecurityProperties.Auth auth = security.auth();
-        if (auth == null) {
-            throw new IllegalStateException(
-                    "jwt-enabled=true requires app.security.auth.jwks-url or app.security.auth.hmac-secret");
-        }
-
-        boolean hasJwks = auth.hasJwksUrl();
-        boolean hasHmac = auth.hasHmacSecret();
+        boolean hasJwks = auth != null && auth.hasJwksUrl();
+        boolean hasHmac = auth != null && auth.hasHmacSecret();
 
         if (hasJwks && hasHmac) {
             throw new IllegalStateException(
                     "app.security.auth: set either jwks-url or hmac-secret, not both");
         }
         if (!hasJwks && !hasHmac) {
-            throw new IllegalStateException(
-                    "jwt-enabled=true requires app.security.auth.jwks-url or app.security.auth.hmac-secret");
+            throw new IllegalStateException(NO_VERIFIER);
         }
 
         JwtService service = hasJwks
@@ -113,22 +111,23 @@ public class JwtSecurityConfig {
                 natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 
-    // Multi-tenant beans — only when provisioning-url is configured
+    /**
+     * Per-project database routing, present only when
+     * {@code app.security.multi-tenant.provisioning-url} is set to something. Decided
+     * at runtime like {@link #policyProvider}: {@code @ConditionalOnProperty} would
+     * also match the blank default and route single-database requests to a vault
+     * that does not exist. A null bean leaves every optional injection point empty.
+     */
     @Bean
-    @ConditionalOnProperty(name = "app.security.multi-tenant.provisioning-url")
-    public VaultCredentialService vaultCredentialService(SecurityProperties security,
-            TokenFileSource provisioningTokenSource) {
-        return new VaultCredentialService(security.multiTenant().provisioningUrl(), provisioningTokenSource);
-    }
-
-    @Bean
-    @ConditionalOnProperty(name = "app.security.multi-tenant.provisioning-url")
-    public DynamicDataSourceManager dynamicDataSourceManager(
-            VaultCredentialService vaultCredentialService,
+    public DynamicDataSourceManager dynamicDataSourceManager(SecurityProperties security,
+            TokenFileSource provisioningTokenSource,
             @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes,
             @Value("${app.hikari.tenant-pool-size:5}") int poolSize) {
-        return new DynamicDataSourceManager(vaultCredentialService, ttlMinutes, poolSize);
+        if (!security.isMultiTenantEnabled()) {
+            return null;
+        }
+        VaultCredentialService vault = new VaultCredentialService(
+                security.multiTenant().provisioningUrl(), provisioningTokenSource);
+        return new DynamicDataSourceManager(vault, ttlMinutes, poolSize);
     }
-
-
 }

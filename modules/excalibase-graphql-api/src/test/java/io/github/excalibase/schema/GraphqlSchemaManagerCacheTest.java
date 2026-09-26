@@ -35,7 +35,7 @@ class GraphqlSchemaManagerCacheTest {
         @Override
         EngineState buildEngineState(String orgSlug, String projectId, String callerRole) {
             built.add(projectId + "/" + callerRole);
-            return new EngineState(null, null, null, TableExposure.UNRESTRICTED);
+            return new EngineState(null, null, null, TableExposure.UNRESTRICTED, "public");
         }
     }
 

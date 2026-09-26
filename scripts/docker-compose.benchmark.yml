@@ -12,6 +12,10 @@ services:
       - SPRING_DATASOURCE_USERNAME=excalibase_user
       - SPRING_DATASOURCE_PASSWORD=excalibase_pass
       - SPRING_DATASOURCE_SCHEMA=hana
+      # Single-database mode serves one project; local benchmark runs without auth.
+      - APP_PROJECT_ID=benchmark
+      - APP_SECURITY_JWT_ENABLED=false
+      - APP_SECURITY_INSECURE_DEV_MODE=true
 
       # HikariCP Connection Pool Configuration for Benchmark
       # Experiment: Try 20 (default), 30, 50, 100 for high-load testing

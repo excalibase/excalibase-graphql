@@ -12,7 +12,6 @@ ADD /modules/excalibase-graphql-api/target/*.jar /app.jar
 USER app
 
 ENV JAVA_OPTS="-XX:+UseZGC \
-               -XX:+ZGenerational \
                -XX:InitialRAMPercentage=50.0 \
                -XX:MaxRAMPercentage=75.0 \
                -XX:MinRAMPercentage=50.0 \

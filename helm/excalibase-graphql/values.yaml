@@ -118,6 +118,10 @@ database:
 # Application settings
 # ---------------------------------------------------------------------------
 app:
+  # Single-database mode: the one project this database serves. Required unless
+  # security.multiTenant.provisioningUrl is set; any other /{projectId}/ path is a 404.
+  projectId: ""
+
   # Schema/database name to expose via GraphQL
   allowedSchema: "public"
 
@@ -125,9 +129,11 @@ app:
   port: 10000
 
   security:
-    # Enable JWT verification. When true, the JWKS endpoint or a static public key is required.
-    # Invalid tokens return 401. Missing tokens are allowed (RLS at the DB level controls access).
-    jwtEnabled: false
+    # JWT verification, on by default: auth.jwksUrl or auth.hmacSecret is required or the
+    # pod refuses to start. Invalid tokens return 401; missing tokens are served as anonymous.
+    jwtEnabled: true
+    # Local development only: the one way to run with jwtEnabled=false. Logged at ERROR.
+    insecureDevMode: false
 
     auth:
       # Mode 1 — JWKS endpoint (excalibase-auth ES256, Auth0, Keycloak, any OIDC provider)
@@ -188,7 +194,7 @@ tomcat:
 
 # JVM — Generational ZGC (default in Java 25)
 jvm:
-  opts: "-XX:+UseZGC -XX:+ZGenerational -XX:InitialRAMPercentage=50.0 -XX:MaxRAMPercentage=75.0"
+  opts: "-XX:+UseZGC -XX:InitialRAMPercentage=50.0 -XX:MaxRAMPercentage=75.0"
 
 # Enable Java 25 virtual threads
 virtualThreads:
