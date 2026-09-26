@@ -5,6 +5,7 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import io.github.excalibase.config.datasource.TenantContext;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.rls.jdbc.QuoteStyle;
@@ -144,5 +145,20 @@ class JwtAuthFilterAudienceTest {
 
         assertThat(response.getStatus()).isEqualTo(200);
         verify(chain).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("a route with no project in its path gets no project from the token either")
+    void projectlessPath_doesNotTakeTheTokensProject() throws Exception {
+        JwtService service = new JwtService(publicKey).requireAudience(false, AUD_PREFIX);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/health");
+        request.setRequestURI("/actuator/health");
+        request.addHeader("Authorization", "Bearer " + token(AUD_PREFIX + PROJECT, null));
+        String[] tenantSeen = {"unset"};
+        FilterChain chain = (req, res) -> tenantSeen[0] = TenantContext.getTenantId();
+
+        new JwtAuthFilter(service, enforcer()).doFilter(request, new MockHttpServletResponse(), chain);
+
+        assertThat(tenantSeen[0]).isNull();
     }
 }

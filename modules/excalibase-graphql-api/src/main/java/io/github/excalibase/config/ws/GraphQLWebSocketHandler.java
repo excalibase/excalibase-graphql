@@ -61,7 +61,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     private final RlsPolicyEnforcer rlsEnforcer;
     private final RealtimeExposureGate exposureGate;
 
-    @Value("${app.security.jwt-enabled:false}")
+    @Value("${app.security.jwt-enabled:true}")
     private boolean jwtEnabled;
 
     /**

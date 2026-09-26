@@ -109,6 +109,11 @@ services:
       SERVER_PORT: 10001
       APP_DATABASE_TYPE: mysql
       APP_MAX_ROWS: 30
+      # Single-database mode serves exactly one project; the suite uses e2e-test.
+      APP_PROJECT_ID: e2e-test
+      # Local e2e only: authentication off must be opted into explicitly.
+      APP_SECURITY_JWT_ENABLED: "false"
+      APP_SECURITY_INSECURE_DEV_MODE: "true"
       APP_NATS_ENABLED: true
       APP_NATS_URL: nats://nats:4222
       APP_NATS_STREAM_NAME: CDC

@@ -36,9 +36,11 @@ services:
     image: excalibase/excalibase-graphql:native
     container_name: excalibase-graphql-native
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/hana
-      SPRING_DATASOURCE_USERNAME: app_user
-      SPRING_DATASOURCE_PASSWORD: password123
+      # Multi-tenant mode: no default datasource. Every project (the e2e suite uses
+      # e2e-test) is routed to the database mock-vault's credentials name: hana, as
+      # app_user, a non-superuser so PostgreSQL RLS is enforced.
+      SPRING_DATASOURCE_URL: ""
+      MANAGEMENT_HEALTH_DB_ENABLED: "false"
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
 
       SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: 5

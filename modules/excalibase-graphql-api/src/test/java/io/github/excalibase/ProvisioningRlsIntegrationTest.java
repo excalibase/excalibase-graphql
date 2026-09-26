@@ -143,6 +143,8 @@ class ProvisioningRlsIntegrationTest {
             serve("/.well-known/jwks.json", buildJwks(publicKey));
             serve("/api/provision/" + PROJECT + "/rls-policies/", OWNER_POLICY);
             serve("/api/provision/" + PROJECT + "/column-policies/", "[]");
+            serve("/api/provision/" + PROJECT + "/table-grants/",
+                    "{\"projectId\":\"" + PROJECT + "\",\"enforced\":false,\"grants\":[]}");
             stub.start();
         } catch (Exception e) {
             throw new RuntimeException("stub setup failed", e);
@@ -172,6 +174,7 @@ class ProvisioningRlsIntegrationTest {
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.max-rows", () -> 30);
         registry.add("app.security.jwt-enabled", () -> "true");
+        registry.add("app.project-id", () -> PROJECT);
         registry.add("app.security.auth.jwks-url",
                 () -> "http://localhost:" + stubPort + "/.well-known/jwks.json");
         registry.add("app.security.rls.policy-url", () -> "http://localhost:" + stubPort + "/api");
@@ -237,15 +240,31 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void projectScopedUrl_tokenProjectMismatch_rejected() throws Exception {
-        // The token is minted for PROJECT; the path names a different one. Since
-        // EXC-11 the audience check catches this first, so the refusal is a 401
-        // aud_mismatch rather than the 403 the path comparison used to produce.
-        mockMvc.perform(post("/some-other-project/graphql")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
+        // The path names this deployment's project; the token was minted for another.
+        // The audience check catches this first, so the refusal is a 401 aud_mismatch.
+        String otherProjectToken = jwtWithClaims(ALICE,
+                Map.of("projectId", "some-other-project", "aud", "excalibase:some-other-project"));
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + otherProjectToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id } }")))
                 .andExpect(status().isUnauthorized())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("aud_mismatch")));
+    }
+
+    @Test
+    void unknownProjectPath_isNotFound_withOrWithoutAToken() throws Exception {
+        mockMvc.perform(post("/some-other-project/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(post("/some-other-project/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/some-other-project/api/v1/docs").header("Accept-Profile", "rls_demo"))
+                .andExpect(status().isNotFound());
     }
 
     @Test

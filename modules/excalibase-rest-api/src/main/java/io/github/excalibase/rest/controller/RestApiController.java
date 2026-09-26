@@ -63,7 +63,7 @@ public class RestApiController {
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
                              @Value("${app.max-rows:30}") int maxRows,
-                             @Value("${app.security.jwt-enabled:false}") boolean jwtEnabled) {
+                             @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;

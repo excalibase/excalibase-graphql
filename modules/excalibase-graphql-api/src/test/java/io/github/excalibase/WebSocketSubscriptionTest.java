@@ -39,6 +39,9 @@ class WebSocketSubscriptionTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("app.project-id", () -> "test-proj");
+        registry.add("app.security.jwt-enabled", () -> "false");
+        registry.add("app.security.insecure-dev-mode", () -> "true");
 
         registry.add("app.max-rows", () -> 30);
         registry.add("app.nats.enabled", () -> false);
@@ -319,5 +322,18 @@ class WebSocketSubscriptionTest {
         } finally {
             session.close();
         }
+    }
+
+    @Test
+    @Order(7)
+    @DisplayName("a WebSocket upgrade naming an unknown project is refused")
+    void unknownProject_handshakeRefused() {
+        StandardWebSocketClient client = new StandardWebSocketClient();
+        CompletableFuture<WebSocketSession> futureSession = client.execute(new TextWebSocketHandler(),
+                new WebSocketHttpHeaders(), URI.create("ws://localhost:" + port + "/nonexistent/graphql"));
+
+        ExecutionException refused = assertThrows(ExecutionException.class,
+                () -> futureSession.get(5, TimeUnit.SECONDS));
+        assertTrue(String.valueOf(refused.getCause()).contains("404"), String.valueOf(refused.getCause()));
     }
 }
