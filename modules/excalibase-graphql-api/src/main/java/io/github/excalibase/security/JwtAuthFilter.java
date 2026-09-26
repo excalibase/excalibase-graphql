@@ -37,9 +37,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        // Project comes from the URL path ({@code /{projectId}/graphql}); fall
-        // back to the token's projectId for the legacy unscoped route. When both
-        // are present they must agree — a token cannot reach another project.
+        // The project comes from the URL path only, already matched to a project this
+        // deployment serves. A token cannot name one: when it carries a project, it
+        // must agree with the path.
         String pathProjectId = extractProjectId(request);
 
         JwtClaims claims;
@@ -56,27 +56,21 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     PROJECT_MISMATCH_CODE);
             return;
         }
-        // Path wins (it is authoritative); fall back to the token's project.
-        String projectId = pathProjectId;
-        if (projectId == null && claims != null) {
-            projectId = claims.projectId();
-        }
-
         try {
-            applyTenantContext(projectId, claims);
-            applyRlsContext(projectId, claims);
+            applyTenantContext(pathProjectId, claims);
+            applyRlsContext(pathProjectId, claims);
             chain.doFilter(request, response);
         } finally {
             RlsContext.clear();
-            clearTenantContext(projectId);
+            clearTenantContext(pathProjectId);
         }
     }
 
     /**
      * Project id from a project-scoped path — {@code /{projectId}/graphql} or
-     * {@code /{projectId}/api/v1/…} — or {@code null} for the legacy unscoped
-     * {@code /graphql} / {@code /api/v1/…}. The projectId is a single opaque
-     * segment (e.g. {@code proj-237qoqksdb}).
+     * {@code /{projectId}/api/v1/…} — or {@code null} for a route with no project
+     * (health, actuator). The projectId is a single opaque segment
+     * (e.g. {@code proj-237qoqksdb}).
      */
     static String extractProjectId(HttpServletRequest request) {
         return ProjectPath.fromUri(request.getRequestURI());

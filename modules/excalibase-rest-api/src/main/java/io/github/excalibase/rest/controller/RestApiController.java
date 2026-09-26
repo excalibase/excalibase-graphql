@@ -63,7 +63,7 @@ public class RestApiController {
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
                              @Value("${app.max-rows:30}") int maxRows,
-                             @Value("${app.security.jwt-enabled:false}") boolean jwtEnabled) {
+                             @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
@@ -76,7 +76,7 @@ public class RestApiController {
     public ResponseEntity<Object> openapi(HttpServletRequest request) {
         var claims = getClaims(request);
         var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
-        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.getDefaultSchema()));
+        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.resolveDefaultSchema(claims)));
     }
 
     @GetMapping("/{table}")
@@ -193,9 +193,9 @@ public class RestApiController {
             @RequestHeader(value = "Content-Profile", required = false) String cp,
             HttpServletRequest request) {
 
-        String schema = resolveSchema(cp);
-        if (schema == null) return notFound();
         var claims = getClaims(request);
+        String schema = resolveSchema(cp, claims);
+        if (schema == null) return notFound();
         // RPC executes an opaque stored function, so the engine cannot inject a
         // row-level filter into its body (unlike compiled table queries). It is
         // therefore NOT anonymous-safe. When auth is enabled, require a valid
@@ -426,9 +426,9 @@ public class RestApiController {
      * is equally not there for this request: same answer, no separate denial.
      */
     private RequestContext resolveContext(String table, String profileHeader, HttpServletRequest request) {
-        String schema = resolveSchema(profileHeader);
-        if (schema == null) return null;
         var claims = getClaims(request);
+        String schema = resolveSchema(profileHeader, claims);
+        if (schema == null) return null;
         String tableKey = schema + DOT + table;
         var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
         if (!schemaInfo.hasTable(tableKey)) return null;
@@ -453,8 +453,8 @@ public class RestApiController {
         };
     }
 
-    private String resolveSchema(String header) {
-        if (header == null || header.isBlank()) return schemaProvider.getDefaultSchema();
+    private String resolveSchema(String header, JwtClaims claims) {
+        if (header == null || header.isBlank()) return schemaProvider.resolveDefaultSchema(claims);
         String trimmed = header.trim();
         if (!trimmed.matches(IDENT_REGEX)) {
             throw new IllegalArgumentException("Invalid Content-Profile");

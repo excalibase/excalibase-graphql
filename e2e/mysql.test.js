@@ -6,9 +6,9 @@
 const { gql } = require('graphql-request');
 const { waitForApi, createClient } = require('./client');
 
-// Routes are project-scoped: /{projectId}/graphql. MySQL e2e runs jwt-disabled,
-// so the projectId is just a path segment (any value the filter reads but does
-// not enforce); 'e2e-test' mirrors the Postgres suite.
+// Routes are project-scoped: /{projectId}/graphql. MySQL e2e runs single-database
+// in insecure dev mode, pinned to 'e2e-test' (APP_PROJECT_ID); any other project
+// in the path is a 404.
 const API_BASE = (process.env.MYSQL_API_URL || 'http://localhost:10001/graphql').replace(/\/graphql$/, '');
 const DATA_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
 const API_URL = `${API_BASE}/${DATA_PROJECT}/graphql`;

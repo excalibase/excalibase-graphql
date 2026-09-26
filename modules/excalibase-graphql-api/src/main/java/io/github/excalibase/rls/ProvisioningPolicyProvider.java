@@ -19,7 +19,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.function.LongSupplier;
 
 /**
@@ -30,7 +29,8 @@ import java.util.function.LongSupplier;
  * <p>On a fetch failure it serves the last good copy if one is cached, else it
  * throws {@link PolicyFetchException}. It must never return an empty list on
  * error: the engine reads empty as {@code UNRESTRICTED}, which would silently
- * disable RLS.
+ * disable RLS. A 404 means the project does not exist; that is refused outright
+ * and never answered from the cache.
  */
 public final class ProvisioningPolicyProvider implements PolicyProvider {
 
@@ -83,36 +83,15 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
 
     /**
      * A project's exposure grants, cached and stale-served exactly like its policies.
-     *
-     * <p>Failure handling is deliberately asymmetric. A reachable control plane that
-     * has no grant configuration for this project answers 404, and that is an
-     * answer, not a failure: the project has not opted in, so its schema is served
-     * whole (this is also what lets the engine ship before the endpoint does). A
-     * 5xx, a timeout or a refused connection is a failure, and then the last good
-     * grants are served if there are any. With nothing cached the request fails:
-     * the alternative — falling back to "not enforced" — would hand a locked-down
-     * project's whole schema to whoever asked during the outage, and a brief outage
-     * is recoverable where that is not.
+     * Provisioning answers every known project with an explicit {@code enforced}
+     * flag, so a 404 is an unknown project and fails like any other error; with
+     * nothing cached, falling back to "not enforced" would hand a locked-down
+     * project's whole schema to whoever asked.
      */
     @Override
     public TableGrants tableGrantsFor(String projectId) {
-        long nowMs = clock.getAsLong();
-        Cached<TableGrants> current = grantCache.get(projectId);
-        if (current != null && nowMs - current.fetchedAt() < ttlMillis) {
-            return current.value();
-        }
-        try {
-            TableGrants fresh = fetchValue("/provision/" + projectId + "/table-grants/",
-                    root -> parseGrants(projectId, root),
-                    () -> TableGrants.unenforced(projectId));
-            grantCache.put(projectId, new Cached<>(fresh, nowMs));
-            return fresh;
-        } catch (PolicyFetchException e) {
-            if (current != null) {
-                return current.value();
-            }
-            throw e;
-        }
+        return cachedFetch(projectId, grantCache, "/provision/" + projectId + "/table-grants/",
+                root -> parseGrants(projectId, root));
     }
 
     /** Drops the cached policies and grants for one project — the write side a NATS consumer calls. */
@@ -122,24 +101,34 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
         grantCache.remove(projectId);
     }
 
-    private <T> List<T> cachedFetch(String projectId,
-                                    Map<String, Cached<List<T>>> cache,
-                                    String path,
-                                    Function<JsonNode, List<T>> parser) {
+    private <T> T cachedFetch(String projectId,
+                              Map<String, Cached<T>> cache,
+                              String path,
+                              Function<JsonNode, T> parser) {
         long nowMs = clock.getAsLong();
-        Cached<List<T>> current = cache.get(projectId);
+        Cached<T> current = cache.get(projectId);
         if (current != null && nowMs - current.fetchedAt() < ttlMillis) {
             return current.value();
         }
         try {
-            List<T> fresh = fetch(path, parser);
+            T fresh = fetch(path, parser);
             cache.put(projectId, new Cached<>(fresh, nowMs));
             return fresh;
+        } catch (UnknownProjectPolicyException e) {
+            evict(projectId);
+            throw e;
         } catch (PolicyFetchException e) {
             if (current != null) {
                 return current.value();   // stale-while-error
             }
             throw e;                      // fail-closed: no policies to fall back on
+        }
+    }
+
+    /** A 404: the project does not exist, so no cached answer for it still stands. */
+    private static final class UnknownProjectPolicyException extends PolicyFetchException {
+        UnknownProjectPolicyException(String path) {
+            super("provisioning has no project for " + path);
         }
     }
 
@@ -152,34 +141,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
         }
     }
 
-    private <T> List<T> fetch(String path, Function<JsonNode, List<T>> parser) {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + path))
-                .header("Authorization", "Bearer " + requireToken(path))
-                .header("Accept", "application/json")
-                .timeout(Duration.ofSeconds(5))
-                .GET()
-                .build();
-        try {
-            HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) {
-                throw new PolicyFetchException(
-                        "provisioning returned HTTP " + response.statusCode() + " for " + path);
-            }
-            return parser.apply(mapper.readTree(response.body()));
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new PolicyFetchException("failed to fetch policies from " + path, e);
-        } catch (IOException e) {
-            throw new PolicyFetchException("failed to fetch policies from " + path, e);
-        }
-    }
-
-    /**
-     * Single-object variant of {@link #fetch}. {@code absent} answers a 404, which
-     * the caller decides the meaning of.
-     */
-    private <T> T fetchValue(String path, Function<JsonNode, T> parser, Supplier<T> absent) {
+    private <T> T fetch(String path, Function<JsonNode, T> parser) {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(baseUrl + path))
                 .header("Authorization", "Bearer " + requireToken(path))
@@ -190,7 +152,7 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
         try {
             HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 404) {
-                return absent.get();
+                throw new UnknownProjectPolicyException(path);
             }
             if (response.statusCode() != 200) {
                 throw new PolicyFetchException(
@@ -199,9 +161,9 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
             return parser.apply(mapper.readTree(response.body()));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new PolicyFetchException("failed to fetch from " + path, e);
+            throw new PolicyFetchException("failed to fetch policies from " + path, e);
         } catch (IOException e) {
-            throw new PolicyFetchException("failed to fetch from " + path, e);
+            throw new PolicyFetchException("failed to fetch policies from " + path, e);
         }
     }
 

@@ -25,6 +25,9 @@ public interface SchemaProvider {
 
     String getDatabaseType();
 
-    /** Returns the default schema name (first discovered or configured schema). */
-    String getDefaultSchema();
+    /**
+     * The schema a request without {@code Accept-Profile} addresses: the default
+     * schema of the database serving the caller's project, never of another one.
+     */
+    String resolveDefaultSchema(JwtClaims claims);
 }

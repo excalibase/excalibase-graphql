@@ -2,6 +2,7 @@ package io.github.excalibase.service;
 
 import com.sun.net.httpserver.HttpServer;
 import io.github.excalibase.security.TokenFileSource;
+import io.github.excalibase.security.UnknownProjectException;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -45,6 +46,11 @@ class VaultCredentialServiceTest {
       exchange.close();
     });
 
+    mockVault.createContext("/api/vault/secrets/projects/broken-app/credentials/excalibase_app", exchange -> {
+      exchange.sendResponseHeaders(500, -1);
+      exchange.close();
+    });
+
     mockVault.start();
   }
 
@@ -78,10 +84,17 @@ class VaultCredentialServiceTest {
   }
 
   @Test
-  @DisplayName("fetchCredentials throws on non-200 response")
-  void fetchCredentials_notFound_throws() {
-    var ex = assertThrows(VaultCredentialException.class,
+  @DisplayName("fetchCredentials reports a 404 as an unknown project")
+  void fetchCredentials_notFound_isUnknownProject() {
+    assertThrows(UnknownProjectException.class,
         () -> service.fetchCredentials("unknown-org", "unknown-app"));
+  }
+
+  @Test
+  @DisplayName("fetchCredentials reports any other non-200 as unavailable, not unknown")
+  void fetchCredentials_serverError_isUnavailable() {
+    var ex = assertThrows(VaultCredentialException.class,
+        () -> service.fetchCredentials("any-org", "broken-app"));
     assertTrue(ex.getMessage().contains("Database not available"));
   }
 

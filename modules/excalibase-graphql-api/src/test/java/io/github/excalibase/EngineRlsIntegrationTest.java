@@ -57,6 +57,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * registers the RLS contributor → SqlCompiler builds the WHERE via the
  * contributor → Postgres returns only the rows the policy allows. Asserts the
  * list, connection, and aggregate read surfaces are all filtered (no bypass).
+ *
+ * <p>Each policy shape lives in its own project, so this runs multi-tenant: the
+ * stub vault resolves every one of those projects to the same test database.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -100,10 +103,27 @@ class EngineRlsIntegrationTest {
                 exchange.getResponseBody().write(body);
                 exchange.getResponseBody().close();
             });
+            for (String project : List.of(PROJECT_WITH_POLICY, PROJECT_NO_POLICY, PROJECT_CLS, PROJECT_CLS_NULL,
+                    PROJECT_NESTED, PROJECT_NUMERIC, PROJECT_TEMPORAL)) {
+                mockVault.createContext("/api/vault/secrets/projects/" + project + "/credentials/excalibase_app",
+                        exchange -> {
+                            byte[] body = tenantCredentials().getBytes(StandardCharsets.UTF_8);
+                            exchange.getResponseHeaders().set("Content-Type", "application/json");
+                            exchange.sendResponseHeaders(200, body.length);
+                            exchange.getResponseBody().write(body);
+                            exchange.getResponseBody().close();
+                        });
+            }
             mockVault.start();
         } catch (Exception e) {
             throw new RuntimeException("Failed to set up mock vault", e);
         }
+    }
+
+    private static String tenantCredentials() {
+        return "{\"host\":\"" + postgres.getHost() + "\",\"port\":\"" + postgres.getMappedPort(5432)
+                + "\",\"database\":\"" + postgres.getDatabaseName() + "\",\"username\":\""
+                + postgres.getUsername() + "\",\"password\":\"" + postgres.getPassword() + "\"}";
     }
 
     @AfterAll
@@ -113,14 +133,13 @@ class EngineRlsIntegrationTest {
 
     @DynamicPropertySource
     static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.max-rows", () -> 30);
         registry.add("app.security.jwt-enabled", () -> "true");
         registry.add("app.security.auth.jwks-url",
                 () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
+        registry.add("app.security.multi-tenant.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
+        registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat");
     }
 
     @Autowired
@@ -185,6 +204,14 @@ class EngineRlsIntegrationTest {
                 PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
                 List.of(new Rule("created_at", FieldType.DATETIME, RuleOperator.GTE, "{{daysAgo:1}}")),
                 List.of(Assignment.all()))));
+    }
+
+    @Test
+    void unknownProject_isNotFound() throws Exception {
+        mockMvc.perform(post("/proj-nowhere/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isNotFound());
     }
 
     private String body(String query) throws Exception {

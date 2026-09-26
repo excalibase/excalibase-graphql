@@ -202,10 +202,24 @@ class ProvisioningTableGrantsTest {
     }
 
     @Test
-    void tableGrantsFor_whenTheEndpointIsNotFound_treatsTheProjectAsNotOptedIn() {
+    void tableGrantsFor_whenTheProjectIsNotFound_throwsRatherThanExposingEverything() {
         status = 404;
 
-        assertThat(provider(60_000).tableGrantsFor("proj1").enforced()).isFalse();
+        assertThatThrownBy(() -> provider(60_000).tableGrantsFor("proj1"))
+                .isInstanceOf(PolicyFetchException.class);
+    }
+
+    @Test
+    void tableGrantsFor_whenTheProjectHasGone_doesNotServeTheCachedGrants() {
+        body = ENFORCED_BODY;
+        ProvisioningPolicyProvider provider = provider(1_000);
+        provider.tableGrantsFor("proj1");
+
+        status = 404;
+        now[0] += 5_000;
+
+        assertThatThrownBy(() -> provider.tableGrantsFor("proj1"))
+                .isInstanceOf(PolicyFetchException.class);
     }
 
     @Test
