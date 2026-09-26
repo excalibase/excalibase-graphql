@@ -198,6 +198,20 @@ class JwtServiceAudienceTest {
     }
 
     @Test
+    @DisplayName("a key-management token is refused even with the engine's audience and the requirement off")
+    void keyAdminTokenUse_rejected() throws Exception {
+        String token = sign(baseClaims().audience(EXPECTED_AUD).claim("token_use", "key_admin").build());
+
+        JwtVerificationException required = assertThrows(JwtVerificationException.class,
+                () -> requiringAud().verify(token, PROJECT));
+        JwtVerificationException notRequired = assertThrows(JwtVerificationException.class,
+                () -> notRequiringAud().verify(token, PROJECT));
+
+        assertEquals(JwtVerificationException.NOT_AN_ACCESS_TOKEN, required.code());
+        assertEquals(JwtVerificationException.NOT_AN_ACCESS_TOKEN, notRequired.code());
+    }
+
+    @Test
     @DisplayName("token_use=access and tokens with no token_use are both accepted")
     void accessAndLegacyTokenUse_accepted() throws Exception {
         assertDoesNotThrow(() -> requiringAud().verify(

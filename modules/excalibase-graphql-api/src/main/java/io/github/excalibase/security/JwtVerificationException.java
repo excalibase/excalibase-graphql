@@ -19,6 +19,9 @@ public class JwtVerificationException extends RuntimeException {
     /** A refresh credential was presented where an access token is required. */
     public static final String REFRESH_TOKEN_NOT_ACCEPTED = "refresh_token_not_accepted";
 
+    /** Any other non-access credential, such as a key-management token. */
+    public static final String NOT_AN_ACCESS_TOKEN = "not_an_access_token";
+
     private final String code;
 
     public JwtVerificationException(String message) {
