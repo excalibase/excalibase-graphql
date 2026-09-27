@@ -186,7 +186,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     /**
      * Tenant key used for NATS subject filtering. Returns the opaque {@code projectId}
      * claim ({@code proj_XXXXXXXXXX}) minted by the provisioner — same identifier used
-     * for K8s namespace, vault paths, and pgdog database name. Watcher deployments use
+     * for K8s namespace and vault paths. Watcher deployments use
      * {@code WATCHER_NATS_SUBJECT_PREFIX=cdc.{projectId}}.
      */
     static String tenantIdFromClaims(JwtClaims claims) {
