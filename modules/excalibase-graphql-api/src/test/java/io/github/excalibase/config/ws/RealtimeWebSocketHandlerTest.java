@@ -211,6 +211,48 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
+    @DisplayName("an UPDATE is judged on its old and new images, and each image is masked")
+    void update_judgedPerImageAndMasked() throws Exception {
+        var policyProvider = new io.github.excalibase.rls.InMemoryPolicyProvider();
+        policyProvider.put("p1", List.of(new io.github.excalibase.rls.Policy(
+                "own", "own", "public.notes", io.github.excalibase.rls.PolicyEffect.ALLOW,
+                io.github.excalibase.rls.Operation.ALL, io.github.excalibase.rls.LogicOperator.AND, 0, true,
+                List.of(new io.github.excalibase.rls.Rule("owner_id", io.github.excalibase.rls.FieldType.STRING,
+                        io.github.excalibase.rls.RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(io.github.excalibase.rls.Assignment.all()))));
+        policyProvider.putColumns("p1", List.of(new io.github.excalibase.rls.ColumnPolicy(
+                "h", "h", "public.notes", java.util.Set.of("secret"),
+                io.github.excalibase.rls.Operation.ALL, io.github.excalibase.rls.MaskMode.HIDE,
+                null, null, 0, true, List.of(io.github.excalibase.rls.Assignment.all()))));
+        var enforcer = new io.github.excalibase.rls.RlsPolicyEnforcer(policyProvider);
+        var filtered = new RealtimeWebSocketHandler(subscriptionService, mapper,
+                provider((io.github.excalibase.security.JwtService) null), provider(enforcer), new WebSocketHeartbeat(0), provider((RealtimeExposureGate) null));
+
+        var sent = new ArrayList<String>();
+        WebSocketSession session = session(sent);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
+                io.github.excalibase.security.JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com"));
+        filtered.afterConnectionEstablished(session);
+        filtered.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "notes"))));
+
+        subscriptionService.publish(null, new CDCEvent("UPDATE", "public", "notes",
+                "{\"old\":{\"id\":1,\"owner_id\":\"u-2\",\"secret\":\"x\"},"
+                        + "\"new\":{\"id\":1,\"owner_id\":\"u-2\",\"secret\":\"y\"}}", 0L));
+        subscriptionService.publish(null, new CDCEvent("UPDATE", "public", "notes",
+                "{\"old\":{\"id\":2,\"owner_id\":\"u-1\",\"secret\":\"x\"},"
+                        + "\"new\":{\"id\":2,\"owner_id\":\"u-1\",\"secret\":\"y\"}}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        assertThat(sent).hasSize(1);
+        var doc = mapper.readTree(sent.getFirst()).get("doc");
+        assertThat(doc.get("new").get("id").asInt()).isEqualTo(2);
+        assertThat(doc.get("new").has("secret")).isFalse();
+        assertThat(doc.get("old").has("secret")).isFalse();
+    }
+
+    @Test
     @DisplayName("owner row policy delivers only the subscriber's rows, drops others")
     void rowFilter_deliversOnlyOwnRows() throws Exception {
         var policyProvider = new io.github.excalibase.rls.InMemoryPolicyProvider();

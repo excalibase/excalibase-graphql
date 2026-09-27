@@ -242,12 +242,13 @@ class RowMatcherOperatorsTest {
     }
 
     @Test
-    @DisplayName("nested-path traversal returns null for missing intermediate keys")
+    @DisplayName("nested-path traversal returns null for a missing key inside a present column")
     void nestedPath_missingKey_returnsNull() {
         Policy p = allow(new Rule("dept.tenant_id", FieldType.UUID, RuleOperator.IS_NULL, null));
         RowMatcher m = new RowMatcher(List.of(p));
-        // No "dept" key → readPath returns null → IS_NULL passes.
-        assertThat(m.matches("employees", Map.of("id", 1), aliceCtx(), Operation.SELECT)).isTrue();
+        assertThat(m.matches("employees", Map.of("id", 1, "dept", Map.of()), aliceCtx(), Operation.SELECT)).isTrue();
+        // The "dept" column itself is absent from the image: unknown, so excluded.
+        assertThat(m.matches("employees", Map.of("id", 1), aliceCtx(), Operation.SELECT)).isFalse();
     }
 
     private static Policy allow(Rule rule) {

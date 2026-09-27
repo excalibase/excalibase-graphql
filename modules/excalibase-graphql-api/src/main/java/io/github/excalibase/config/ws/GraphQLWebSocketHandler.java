@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
-import io.github.excalibase.rls.Operation;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
@@ -31,6 +30,7 @@ import reactor.core.Disposable;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -316,18 +316,10 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         // claims supply the user context (anonymous when absent → fail-closed).
         String projectId = (String) session.getAttributes().get(SESSION_PROJECT_KEY);
         if (projectId == null) return parsed;
-        Map<String, Object> row = (Map<String, Object>) parsed;
-        String resource = resourceOf(event);
-        try {
-            if (!rlsEnforcer.permitsRow(projectId, resource, claims, Operation.SELECT, row)) {
-                return RLS_DROP;
-            }
-        } catch (UnsupportedOperationException relationshipPredicate) {
-            // Membership/EXISTS policies need a DB probe the in-memory matcher
-            // lacks — fail closed rather than leak the row.
-            return RLS_DROP;
-        }
-        return rlsEnforcer.maskRow(projectId, resource, claims, Operation.SELECT, row);
+        Map<String, Object> change = (Map<String, Object>) parsed;
+        Optional<Map<String, Object>> visible =
+                rlsEnforcer.renderChange(projectId, resourceOf(event), claims, event.type(), change);
+        return visible.isPresent() ? visible.get() : RLS_DROP;
     }
 
     /** Schema-qualified policy resource key for a CDC event ({@code schema.table}). */

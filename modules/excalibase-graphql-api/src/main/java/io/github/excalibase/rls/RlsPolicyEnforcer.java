@@ -7,8 +7,11 @@ import io.github.excalibase.rls.jdbc.SqlProjection;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtClaimsUserContext;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -115,6 +118,45 @@ public final class RlsPolicyEnforcer {
         new ColumnMasker(policyProvider.columnPoliciesFor(projectId))
                 .plan(resource, context(projectId, claims), op)
                 .apply(row);
+        return row;
+    }
+
+    /**
+     * Row- and column-level security for one change event, as the query path
+     * would apply it: empty when the subscriber may not see the change, otherwise
+     * the payload with hidden columns removed. An UPDATE carries its row images
+     * under "old" and "new"; each is checked on its own and only the images the
+     * subscriber may read are kept.
+     */
+    public Optional<Map<String, Object>> renderChange(String projectId, String resource, JwtClaims claims,
+                                                      String eventType, Map<String, Object> data) {
+        if (!"UPDATE".equalsIgnoreCase(eventType)) {
+            return visibleImage(projectId, resource, claims, data);
+        }
+        Map<String, Object> visible = new LinkedHashMap<>();
+        for (String side : List.of("old", "new")) {
+            if (data.get(side) instanceof Map<?, ?> image) {
+                visibleImage(projectId, resource, claims, asRow(image)).ifPresent(kept -> visible.put(side, kept));
+            }
+        }
+        return visible.isEmpty() ? Optional.empty() : Optional.of(visible);
+    }
+
+    private Optional<Map<String, Object>> visibleImage(String projectId, String resource, JwtClaims claims,
+                                                       Map<String, Object> image) {
+        Map<String, Object> row = new LinkedHashMap<>(image);
+        try {
+            if (!permitsRow(projectId, resource, claims, Operation.SELECT, row)) return Optional.empty();
+        } catch (UnsupportedOperationException relationshipPredicate) {
+            // Relationship policies need a database probe the in-memory matcher lacks.
+            return Optional.empty();
+        }
+        return Optional.of(maskRow(projectId, resource, claims, Operation.SELECT, row));
+    }
+
+    private static Map<String, Object> asRow(Map<?, ?> image) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        image.forEach((key, value) -> row.put(String.valueOf(key), value));
         return row;
     }
 

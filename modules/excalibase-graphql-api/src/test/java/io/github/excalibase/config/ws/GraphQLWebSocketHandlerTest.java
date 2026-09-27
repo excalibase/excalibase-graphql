@@ -156,6 +156,40 @@ class GraphQLWebSocketHandlerTest {
     }
 
     @Test
+    @DisplayName("an UPDATE is judged on its old and new images, and each image is masked")
+    void update_judgedPerImageAndMasked() throws Exception {
+        var provider = new InMemoryPolicyProvider();
+        provider.put("p1", List.of(new Policy(
+                "own", "own", "public.notes", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(new Rule("owner_id", FieldType.STRING, RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(Assignment.all()))));
+        provider.putColumns("p1", List.of(new ColumnPolicy(
+                "h", "h", "public.notes", Set.of("secret"), Operation.ALL, MaskMode.HIDE,
+                null, null, 0, true, List.of(Assignment.all()))));
+        var handler = handler(new RlsPolicyEnforcer(provider));
+
+        var sent = new ArrayList<String>();
+        var claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
+        var session = session(sent, "p1", claims);
+        handler.afterConnectionEstablished(session);
+        subscribe(handler, session, "notesChanges");
+
+        subscriptionService.publish("p1", new CDCEvent("UPDATE", null, "notes",
+                "{\"old\":{\"id\":1,\"owner_id\":\"u-2\",\"secret\":\"x\"},"
+                        + "\"new\":{\"id\":1,\"owner_id\":\"u-2\",\"secret\":\"y\"}}", 0L));
+        subscriptionService.publish("p1", new CDCEvent("UPDATE", null, "notes",
+                "{\"old\":{\"id\":2,\"owner_id\":\"u-1\",\"secret\":\"x\"},"
+                        + "\"new\":{\"id\":2,\"owner_id\":\"u-1\",\"secret\":\"y\"}}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        assertThat(sent).hasSize(1);
+        JsonNode data = deliveredData(sent.getFirst());
+        assertThat(data.get("new").get("id").asInt()).isEqualTo(2);
+        assertThat(data.get("new").has("secret")).isFalse();
+        assertThat(data.get("old").has("secret")).isFalse();
+    }
+
+    @Test
     @DisplayName("no RLS engine wired: events pass through unfiltered (single-tenant)")
     void noEngine_passthrough() throws Exception {
         var handler = handler(null);
