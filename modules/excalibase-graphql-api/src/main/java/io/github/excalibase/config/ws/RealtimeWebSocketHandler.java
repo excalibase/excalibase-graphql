@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
-import io.github.excalibase.rls.Operation;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
@@ -261,8 +260,8 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         // whether this subscriber may see the row at all, and column-level
         // security masks the payload per subscriber before it leaves the server.
         if (!matchesFilter(doc, filter)) return;
-        if (!permitsRow(session, resource, doc)) return;
-        Object payloadDoc = maskDoc(session, resource, doc);
+        Object payloadDoc = visibleDoc(session, resource, event.type(), doc);
+        if (payloadDoc == null) return;
 
         try {
             var payload = new LinkedHashMap<String, Object>();
@@ -277,40 +276,19 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * Applies column-level security to a CDC row for the session's subscriber.
-     * Returns the original {@code doc} unchanged when masking can't apply (engine
-     * not wired, or an unauthenticated session with no claims); otherwise returns
-     * a map with hidden columns dropped and NULL-masked columns nulled.
+     * Row- and column-level security for a CDC event and this session's
+     * subscriber: null when the subscriber may not see it, otherwise the payload
+     * with hidden columns removed. Passes {@code doc} through unchanged when no
+     * engine is wired or no project context is resolvable (single-tenant).
      */
-    private Object maskDoc(WebSocketSession session, String resource, JsonNode doc) {
+    private Object visibleDoc(WebSocketSession session, String resource, String eventType, JsonNode doc) {
         JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
-        // Project from the URL path is authoritative (claims give the user context;
-        // anonymous when absent → owner/claim column policies mask fail-closed).
+        // Project from the URL path is authoritative; claims give the user context
+        // (anonymous when absent, so owner/claim policies fail closed).
         String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
-        if (rlsEnforcer == null || projectId == null) {
-            return doc;
-        }
-        Map<String, Object> row = objectMapper.convertValue(doc, new TypeReference<>() {});
-        return rlsEnforcer.maskRow(projectId, resource, claims, Operation.SELECT, row);
-    }
-
-    /**
-     * Row-level security for a CDC event: {@code true} iff the subscriber may see
-     * this row. Public tables (no ALLOW policy) pass; owner/claim policies match
-     * only the subscriber's rows; relationship predicates the in-memory matcher
-     * can't evaluate fail closed. Falls through to {@code true} when no engine is
-     * wired or no project context is resolvable (single-tenant passthrough).
-     */
-    private boolean permitsRow(WebSocketSession session, String resource, JsonNode doc) {
-        JwtClaims claims = (JwtClaims) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
-        String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
-        if (rlsEnforcer == null || projectId == null) return true;
-        Map<String, Object> row = objectMapper.convertValue(doc, new TypeReference<>() {});
-        try {
-            return rlsEnforcer.permitsRow(projectId, resource, claims, Operation.SELECT, row);
-        } catch (UnsupportedOperationException relationshipPredicate) {
-            return false;
-        }
+        if (rlsEnforcer == null || projectId == null) return doc;
+        Map<String, Object> change = objectMapper.convertValue(doc, new TypeReference<>() {});
+        return rlsEnforcer.renderChange(projectId, resource, claims, eventType, change).orElse(null);
     }
 
     private boolean matchesFilter(JsonNode doc, Map<String, Object> filter) {

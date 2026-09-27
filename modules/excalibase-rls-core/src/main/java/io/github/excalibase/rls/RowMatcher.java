@@ -26,8 +26,9 @@ public class RowMatcher {
         // DENY always subtracts. A matching in-scope DENY hides the row whether
         // RLS is "on" for the resource or not — this supports the common
         // block-list pattern (a DENY without any ALLOW).
+        // A DENY that is TRUE or UNKNOWN hides the row, as NOT (deny) does in SQL.
         for (Policy p : applicable) {
-            if (p.effect() == PolicyEffect.DENY && matchesPolicy(p, row, resolver)) {
+            if (p.effect() == PolicyEffect.DENY && evalPolicy(p, row, resolver) != Truth.FALSE) {
                 return false;
             }
         }
@@ -39,7 +40,7 @@ public class RowMatcher {
         if (!rlsEnabledFor(resource, op)) return true;
 
         for (Policy p : applicable) {
-            if (p.effect() == PolicyEffect.ALLOW && matchesPolicy(p, row, resolver)) {
+            if (p.effect() == PolicyEffect.ALLOW && evalPolicy(p, row, resolver) == Truth.TRUE) {
                 return true;
             }
         }
@@ -69,7 +70,7 @@ public class RowMatcher {
         for (Policy p : applicable) {
             if (p.effect() == PolicyEffect.DENY
                     && referencesAnyChangedColumn(p, changedRow)
-                    && matchesPresentRules(p, changedRow, resolver)) {
+                    && evalPresentRules(p, changedRow, resolver) != Truth.FALSE) {
                 return false;
             }
         }
@@ -84,7 +85,7 @@ public class RowMatcher {
         for (Policy p : applicable) {
             if (p.effect() != PolicyEffect.ALLOW || !referencesAnyChangedColumn(p, changedRow)) continue;
             anyAllowGovernsChange = true;
-            if (matchesPresentRules(p, changedRow, resolver)) return true;
+            if (evalPresentRules(p, changedRow, resolver) == Truth.TRUE) return true;
         }
         return !anyAllowGovernsChange;
     }
@@ -102,21 +103,11 @@ public class RowMatcher {
      * honouring the policy's AND/OR logic. Rules on absent (unchanged) columns
      * are skipped — they are validated by the UPDATE's USING predicate, not here.
      */
-    private static boolean matchesPresentRules(Policy policy, Map<String, Object> changedRow, VariableResolver resolver) {
+    private static Truth evalPresentRules(Policy policy, Map<String, Object> changedRow, VariableResolver resolver) {
         List<Rule> present = policy.rules().stream()
                 .filter(r -> changedRow.containsKey(rootField(r.field())))
                 .toList();
-        if (present.isEmpty()) return true;
-        if (policy.ruleLogic() == LogicOperator.AND) {
-            for (Rule r : present) {
-                if (!matchesRule(r, changedRow, resolver)) return false;
-            }
-            return true;
-        }
-        for (Rule r : present) {
-            if (matchesRule(r, changedRow, resolver)) return true;
-        }
-        return false;
+        return evalRules(present, policy.ruleLogic(), changedRow, resolver);
     }
 
     private static String rootField(String field) {
@@ -166,7 +157,7 @@ public class RowMatcher {
         return false;
     }
 
-    private static boolean matchesPolicy(Policy policy, Map<String, Object> row, VariableResolver resolver) {
+    private static Truth evalPolicy(Policy policy, Map<String, Object> row, VariableResolver resolver) {
         if (!policy.relations().isEmpty()) {
             // Relationship (EXISTS) predicates probe another table — the in-memory
             // matcher has no database to probe. These are evaluated by the SQL
@@ -177,33 +168,38 @@ public class RowMatcher {
                 "Policy '" + policy.name() + "' uses relationship predicates, which the in-memory "
                     + "RowMatcher cannot evaluate; use the SQL query path (JdbcEvaluator).");
         }
-        if (policy.rules().isEmpty()) return true;
-        if (policy.ruleLogic() == LogicOperator.AND) {
-            for (Rule r : policy.rules()) {
-                if (!matchesRule(r, row, resolver)) return false;
-            }
-            return true;
-        } else {
-            for (Rule r : policy.rules()) {
-                if (matchesRule(r, row, resolver)) return true;
-            }
-            return false;
-        }
+        return evalRules(policy.rules(), policy.ruleLogic(), row, resolver);
     }
 
-    private static boolean matchesRule(Rule rule, Map<String, Object> row, VariableResolver resolver) {
+    private static Truth evalRules(List<Rule> rules, LogicOperator logic, Map<String, Object> row,
+                                   VariableResolver resolver) {
+        boolean and = logic == LogicOperator.AND;
+        if (rules.isEmpty()) return Truth.TRUE;
+        Truth result = and ? Truth.TRUE : Truth.FALSE;
+        for (Rule r : rules) {
+            Truth t = evalRule(r, row, resolver);
+            result = and ? result.and(t) : result.or(t);
+            if (result == (and ? Truth.FALSE : Truth.TRUE)) return result;
+        }
+        return result;
+    }
+
+    // A column missing from the image (key-only DELETE, unchanged TOAST value)
+    // could hold anything, so a rule over it is UNKNOWN, like a NULL comparison.
+    private static Truth evalRule(Rule rule, Map<String, Object> row, VariableResolver resolver) {
+        if (!row.containsKey(rootField(rule.field()))) return Truth.UNKNOWN;
         Object rowVal = readPath(row, rule.field());
 
         return switch (rule.operator()) {
-            case IS_NULL -> rowVal == null;
-            case IS_NOT_NULL -> rowVal != null;
+            case IS_NULL -> Truth.of(rowVal == null);
+            case IS_NOT_NULL -> Truth.of(rowVal != null);
             case EQ -> equalsCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType());
-            case NEQ -> !equalsCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType());
+            case NEQ -> equalsCoerced(rowVal, resolver.resolve(rule.value(), rule.fieldType()), rule.fieldType()).not();
             case IN -> inCollection(rowVal, resolver.resolveList(rule.value(), rule.fieldType()), rule.fieldType());
-            case NOT_IN -> !inCollection(rowVal, resolver.resolveList(rule.value(), rule.fieldType()), rule.fieldType());
+            case NOT_IN -> inCollection(rowVal, resolver.resolveList(rule.value(), rule.fieldType()), rule.fieldType()).not();
             case GT, GTE, LT, LTE -> compare(rowVal, rule, resolver);
             case LIKE -> matchesLike(rowVal, (String) resolver.resolve(rule.value(), FieldType.STRING));
-            case NOT_LIKE -> !matchesLike(rowVal, (String) resolver.resolve(rule.value(), FieldType.STRING));
+            case NOT_LIKE -> matchesLike(rowVal, (String) resolver.resolve(rule.value(), FieldType.STRING)).not();
         };
     }
 
@@ -220,47 +216,50 @@ public class RowMatcher {
         return current;
     }
 
-    private static boolean equalsCoerced(Object rowVal, Object policyVal, FieldType fieldType) {
-        if (rowVal == null || policyVal == null) return Objects.equals(rowVal, policyVal);
-        return Objects.equals(coerce(rowVal, fieldType), coerce(policyVal, fieldType));
+    private static Truth equalsCoerced(Object rowVal, Object policyVal, FieldType fieldType) {
+        if (rowVal == null || policyVal == null) return Truth.UNKNOWN;
+        return Truth.of(Objects.equals(coerce(rowVal, fieldType), coerce(policyVal, fieldType)));
     }
 
-    private static boolean inCollection(Object rowVal, Collection<?> values, FieldType fieldType) {
-        if (rowVal == null) return false;
+    // Mirrors the emitted SQL: an empty list is 1=0 (IN) / 1=1 (NOT IN) whatever the row holds.
+    private static Truth inCollection(Object rowVal, Collection<?> values, FieldType fieldType) {
+        if (values.isEmpty()) return Truth.FALSE;
+        if (rowVal == null) return Truth.UNKNOWN;
         Object coerced = coerce(rowVal, fieldType);
+        boolean sawNull = false;
         for (Object v : values) {
-            if (Objects.equals(coerced, coerce(v, fieldType))) return true;
+            if (v == null) sawNull = true;
+            else if (Objects.equals(coerced, coerce(v, fieldType))) return Truth.TRUE;
         }
-        return false;
+        return sawNull ? Truth.UNKNOWN : Truth.FALSE;
     }
 
     /**
      * GT/GTE/LT/LTE with SQL three-valued logic: a comparison involving NULL
-     * yields NULL, so the row is excluded (returns {@code false}) — it never
-     * throws. This keeps the in-memory matcher in lockstep with the emitted SQL
+     * yields UNKNOWN, so the row is excluded — it never throws. This keeps the in-memory matcher in lockstep with the emitted SQL
      * (and native Postgres), which simply drop the row.
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private static boolean compare(Object rowVal, Rule rule, VariableResolver resolver) {
+    private static Truth compare(Object rowVal, Rule rule, VariableResolver resolver) {
         Object policyVal = resolver.resolve(rule.value(), rule.fieldType());
-        if (rowVal == null || policyVal == null) return false;
+        if (rowVal == null || policyVal == null) return Truth.UNKNOWN;
         Comparable left = (Comparable) coerce(rowVal, rule.fieldType());
         Comparable right = (Comparable) coerce(policyVal, rule.fieldType());
         // Coercion can yield null for an unparseable value → uncomparable, so the
         // row is excluded (SQL three-valued logic) rather than throwing on compareTo.
-        if (left == null || right == null) return false;
+        if (left == null || right == null) return Truth.UNKNOWN;
         int c = left.compareTo(right);
-        return switch (rule.operator()) {
+        return Truth.of(switch (rule.operator()) {
             case GT -> c > 0;
             case GTE -> c >= 0;
             case LT -> c < 0;
             case LTE -> c <= 0;
             default -> throw new IllegalStateException("compare() called for non-comparison operator " + rule.operator());
-        };
+        });
     }
 
-    private static boolean matchesLike(Object rowVal, String pattern) {
-        if (rowVal == null || pattern == null) return false;
+    private static Truth matchesLike(Object rowVal, String pattern) {
+        if (rowVal == null || pattern == null) return Truth.UNKNOWN;
         // Simple SQL-LIKE: % → .*, _ → . — sufficient for v1; document escape semantics later.
         String regex = "^" + pattern
             .replace("\\", "\\\\")
@@ -268,7 +267,7 @@ public class RowMatcher {
             .replace("%", ".*")
             .replace("_", ".")
             + "$";
-        return rowVal.toString().matches(regex);
+        return Truth.of(rowVal.toString().matches(regex));
     }
 
     private static Object coerce(Object value, FieldType fieldType) {
@@ -295,5 +294,29 @@ public class RowMatcher {
                 }
             }
         };
+    }
+
+    /** SQL three-valued logic (Kleene): a row is kept only when its predicate is TRUE. */
+    private enum Truth {
+        TRUE, FALSE, UNKNOWN;
+
+        static Truth of(boolean value) {
+            return value ? TRUE : FALSE;
+        }
+
+        Truth not() {
+            if (this == UNKNOWN) return UNKNOWN;
+            return this == TRUE ? FALSE : TRUE;
+        }
+
+        Truth and(Truth other) {
+            if (this == FALSE || other == FALSE) return FALSE;
+            return (this == TRUE && other == TRUE) ? TRUE : UNKNOWN;
+        }
+
+        Truth or(Truth other) {
+            if (this == TRUE || other == TRUE) return TRUE;
+            return (this == FALSE && other == FALSE) ? FALSE : UNKNOWN;
+        }
     }
 }

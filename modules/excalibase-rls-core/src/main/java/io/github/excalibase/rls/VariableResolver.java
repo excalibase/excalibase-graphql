@@ -9,6 +9,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -39,7 +40,8 @@ public class VariableResolver {
                 for (Object o : col) out.add(o);
                 return out;
             }
-            return List.of(resolved);
+            // An unset identity is SQL NULL: IN (NULL) never matches, it must not throw.
+            return Collections.singletonList(resolved);
         }
         return Arrays.stream(value.split(","))
             .map(String::trim)
