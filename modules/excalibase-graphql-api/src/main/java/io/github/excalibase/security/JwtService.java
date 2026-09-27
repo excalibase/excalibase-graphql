@@ -59,6 +59,9 @@ public class JwtService {
     /** Value of {@code token_use} that marks a refresh credential. */
     private static final String TOKEN_USE_REFRESH = "refresh";
 
+    /** Value of {@code token_use} that marks an access credential. */
+    private static final String TOKEN_USE_ACCESS = "access";
+
     // -------------------------------------------------------------------------
     // Constructors
     // -------------------------------------------------------------------------
@@ -218,14 +221,22 @@ public class JwtService {
     }
 
     /**
-     * Rejects a refresh credential presented as an access token. Tokens minted
-     * before {@code token_use} existed carry no such claim and stay valid.
+     * Accepts only access tokens: {@code token_use} of {@code access}, or absent
+     * on tokens minted before the claim existed. A refresh credential or a
+     * key-management token signed by the same key is refused regardless of
+     * the audience setting.
      */
     private static void validateTokenUse(JWTClaimsSet claims) throws JwtVerificationException {
-        if (TOKEN_USE_REFRESH.equals(claims.getClaim("token_use"))) {
+        Object tokenUse = claims.getClaim("token_use");
+        if (tokenUse == null || TOKEN_USE_ACCESS.equals(tokenUse)) {
+            return;
+        }
+        if (TOKEN_USE_REFRESH.equals(tokenUse)) {
             throw new JwtVerificationException(JwtVerificationException.REFRESH_TOKEN_NOT_ACCEPTED,
                     "Refresh token is not accepted on API calls");
         }
+        throw new JwtVerificationException(JwtVerificationException.NOT_AN_ACCESS_TOKEN,
+                "Only access tokens are accepted on API calls");
     }
 
     /**
