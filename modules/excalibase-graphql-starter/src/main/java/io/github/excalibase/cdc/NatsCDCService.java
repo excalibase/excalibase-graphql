@@ -12,7 +12,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -24,10 +27,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class NatsCDCService {
 
     private static final Logger log = LoggerFactory.getLogger(NatsCDCService.class);
+    // A failed schema reload is retried a few times, spaced out, then given up.
+    private static final Duration REDELIVERY_DELAY = Duration.ofSeconds(5);
+    private static final int MAX_DELIVERIES = 5;
 
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
-    private final java.util.List<Runnable> schemaReloadCallbacks = new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final List<Runnable> schemaReloadCallbacks = new CopyOnWriteArrayList<>();
 
     @Value("${app.nats.enabled:false}")
     private boolean natsEnabled;
@@ -61,6 +67,7 @@ public class NatsCDCService {
     private String natsInboxPrefix;
 
     private Connection natsConnection;
+    private Dispatcher dispatcher;
     private JetStreamSubscription subscription;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
@@ -92,11 +99,14 @@ public class NatsCDCService {
 
             natsConnection = Nats.connect(options);
             JetStream js = natsConnection.jetStream();
-            Dispatcher dispatcher = natsConnection.createDispatcher();
+            dispatcher = natsConnection.createDispatcher();
 
+            // Realtime is live fan-out: every replica needs every event, and a
+            // replica that restarts has no clients left to replay history to.
             String subject = subjectPrefix + ".>";
             ConsumerConfiguration cc = ConsumerConfiguration.builder()
                     .deliverPolicy(DeliverPolicy.New)
+                    .maxDeliver(MAX_DELIVERIES)
                     .build();
             PushSubscribeOptions opts = PushSubscribeOptions.builder()
                     .stream(streamName)
@@ -117,8 +127,8 @@ public class NatsCDCService {
 
     @PreDestroy
     public void stop() {
-        if (subscription != null) {
-            subscription.unsubscribe();
+        if (dispatcher != null && subscription != null) {
+            dispatcher.unsubscribe(subscription);
         }
         try {
             if (natsConnection != null) {
@@ -136,25 +146,32 @@ public class NatsCDCService {
     }
 
     private void handleMessage(Message msg) {
+        CDCEvent event;
         try {
-            CDCEvent event = objectMapper.readValue(msg.getData(), CDCEvent.class);
+            event = objectMapper.readValue(msg.getData(), CDCEvent.class);
+        } catch (IOException e) {
+            log.error("Dropping unreadable NATS CDC message: subject={}", msg.getSubject(), e);
+            msg.term();
+            return;
+        }
+        try {
+            dispatch(msg, event);
             msg.ack();
+        } catch (RuntimeException e) {
+            log.error("Failed to process NATS CDC message, asking for redelivery: subject={}", msg.getSubject(), e);
+            msg.nakWithDelay(REDELIVERY_DELAY);
+        }
+    }
 
-            if ("DDL".equals(event.type())) {
-                log.info("DDL event received - reloading schema");
-                if (!schemaReloadCallbacks.isEmpty()) {
-                    schemaReloadCallbacks.forEach(Runnable::run);
-                }
-                return;
-            }
-
-            if (event.table() != null && isDmlEvent(event)) {
-                String tenantId = tenantInSubject ? parseTenantId(msg.getSubject(), event) : null;
-                subscriptionService.publish(tenantId, event);
-            }
-        } catch (Exception e) {
-            log.error("Failed to process NATS CDC message: subject={}", msg.getSubject(), e);
-            msg.ack(); // ack to avoid redelivery loop
+    private void dispatch(Message msg, CDCEvent event) {
+        if ("DDL".equals(event.type())) {
+            log.info("DDL event received - reloading schema");
+            schemaReloadCallbacks.forEach(Runnable::run);
+            return;
+        }
+        if (event.table() != null && isDmlEvent(event)) {
+            String tenantId = tenantInSubject ? parseTenantId(msg.getSubject(), event) : null;
+            subscriptionService.publish(tenantId, event);
         }
     }
 

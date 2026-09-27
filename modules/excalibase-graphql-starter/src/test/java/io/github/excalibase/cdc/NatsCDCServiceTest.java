@@ -1,6 +1,7 @@
 package io.github.excalibase.cdc;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.nats.client.Dispatcher;
 import io.nats.client.JetStreamSubscription;
 import io.nats.client.Message;
 import io.nats.client.Connection;
@@ -8,16 +9,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
+import java.time.Duration;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -56,17 +61,14 @@ class NatsCDCServiceTest {
     }
 
     @Test
-    @DisplayName("stop closes connection and unsubscribes when they exist")
-    void stop_closesConnectionAndSubscription() throws Exception {
-        JetStreamSubscription sub = org.mockito.Mockito.mock(JetStreamSubscription.class);
+    @DisplayName("stop closes the connection and marks the service stopped")
+    void stop_closesConnection() throws Exception {
         Connection conn = org.mockito.Mockito.mock(Connection.class);
-        ReflectionTestUtils.setField(service, "subscription", sub);
         ReflectionTestUtils.setField(service, "natsConnection", conn);
         ReflectionTestUtils.setField(service, "running", new java.util.concurrent.atomic.AtomicBoolean(true));
 
         service.stop();
 
-        verify(sub).unsubscribe();
         verify(conn).close();
         assertThat(service.isRunning()).isFalse();
     }
@@ -162,16 +164,62 @@ class NatsCDCServiceTest {
     }
 
     @Test
-    @DisplayName("handleMessage with invalid JSON still acks to avoid redelivery loop")
-    void handleMessage_invalidJson_acksAnyway() throws Exception {
+    @DisplayName("handleMessage terminates a message that can never be parsed instead of acking it")
+    void handleMessage_invalidJson_terminates() throws Exception {
         Message msg = org.mockito.Mockito.mock(Message.class);
         when(msg.getData()).thenReturn("not-json".getBytes(StandardCharsets.UTF_8));
         when(msg.getSubject()).thenReturn("cdc.customers");
 
         invokeHandleMessage(msg);
 
-        verify(msg, times(1)).ack();
+        verify(msg).term();
+        verify(msg, never()).ack();
         verify(subscriptionService, never()).publish(any(String.class), any(CDCEvent.class));
+    }
+
+    @Test
+    @DisplayName("handleMessage asks for redelivery when a schema reload fails, and does not ack")
+    void handleMessage_reloadFails_naksForRedelivery() throws Exception {
+        service.setSchemaReloadCallback(() -> {
+            throw new IllegalStateException("database unavailable");
+        });
+        Message msg = mockMessage(new CDCEvent("DDL", "public", null, null, 1000L));
+
+        invokeHandleMessage(msg);
+
+        verify(msg).nakWithDelay(any(Duration.class));
+        verify(msg, never()).ack();
+    }
+
+    @Test
+    @DisplayName("handleMessage acks only after the event was handed to subscribers")
+    void handleMessage_acksAfterPublishing() throws Exception {
+        CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1000L);
+        Message msg = mockMessage(event);
+
+        invokeHandleMessage(msg);
+
+        InOrder order = inOrder(subscriptionService, msg);
+        order.verify(subscriptionService).publish((String) org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.eq(event));
+        order.verify(msg).ack();
+    }
+
+    @Test
+    @DisplayName("stop releases a subscription owned by a dispatcher without throwing")
+    void stop_unsubscribesThroughTheDispatcher() throws Exception {
+        JetStreamSubscription sub = org.mockito.Mockito.mock(JetStreamSubscription.class);
+        Dispatcher dispatcher = mock(Dispatcher.class);
+        Connection conn = org.mockito.Mockito.mock(Connection.class);
+        ReflectionTestUtils.setField(service, "subscription", sub);
+        ReflectionTestUtils.setField(service, "dispatcher", dispatcher);
+        ReflectionTestUtils.setField(service, "natsConnection", conn);
+
+        service.stop();
+
+        verify(dispatcher).unsubscribe(sub);
+        verify(sub, never()).unsubscribe();
+        verify(conn).close();
     }
 
     // ─── Tenant parsing from subject ─────────────────────────────────────────
