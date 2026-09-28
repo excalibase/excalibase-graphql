@@ -10,6 +10,9 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.sql.DataSource;
+import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -114,5 +117,32 @@ class DynamicDataSourceManagerTest {
     manager.destroy();
 
     assertFalse(manager.isCached("app-a"));
+  }
+
+  @Test
+  @DisplayName("pools live at most one hour, so a renewed certificate is picked up within the hour")
+  void poolAgeIsCappedAtOneHour() {
+    assertEquals(Duration.ofMinutes(30), DynamicDataSourceManager.maxPoolAge(30));
+    assertEquals(Duration.ofMinutes(60), DynamicDataSourceManager.maxPoolAge(60));
+    assertEquals(Duration.ofMinutes(60), DynamicDataSourceManager.maxPoolAge(240));
+  }
+
+  @Test
+  @DisplayName("an aged-out pool is rebuilt from a freshly fetched record")
+  void agedOutPoolIsRebuiltFromRenewedRecord() throws InterruptedException {
+    var renewed = new VaultCredentials("localhost", "5432", "app_db", "excalibase_app", "renewed");
+    List<VaultCredentials> built = new CopyOnWriteArrayList<>();
+    var ageing = new DynamicDataSourceManager(vaultService, creds -> {
+      built.add(creds);
+      return creds == CREDS ? mockDataSource : mockDataSourceB;
+    }, Duration.ofMillis(50));
+    when(vaultService.fetchCredentials("duc-corp", "app-a")).thenReturn(CREDS, renewed);
+
+    assertSame(mockDataSource, ageing.getDataSource("duc-corp", "app-a"));
+    Thread.sleep(120);
+    assertSame(mockDataSourceB, ageing.getDataSource("duc-corp", "app-a"));
+
+    assertEquals(List.of(CREDS, renewed), built);
+    verify(vaultService, times(2)).fetchCredentials("duc-corp", "app-a");
   }
 }

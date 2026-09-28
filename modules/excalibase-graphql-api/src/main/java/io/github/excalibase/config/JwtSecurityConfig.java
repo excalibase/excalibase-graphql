@@ -1,6 +1,8 @@
 package io.github.excalibase.config;
 
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
+import io.github.excalibase.config.datasource.TenantDataSourceFactory;
+import io.github.excalibase.config.datasource.TenantDbSslMode;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.rls.PolicyProvider;
@@ -122,12 +124,14 @@ public class JwtSecurityConfig {
     public DynamicDataSourceManager dynamicDataSourceManager(SecurityProperties security,
             TokenFileSource provisioningTokenSource,
             @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes,
-            @Value("${app.hikari.tenant-pool-size:5}") int poolSize) {
+            @Value("${app.hikari.tenant-pool-size:5}") int poolSize,
+            @Value("${app.tenant-db.sslmode:verify-full}") String tenantSslMode) {
+        TenantDbSslMode sslMode = TenantDbSslMode.parse(tenantSslMode);
         if (!security.isMultiTenantEnabled()) {
             return null;
         }
         VaultCredentialService vault = new VaultCredentialService(
                 security.multiTenant().provisioningUrl(), provisioningTokenSource);
-        return new DynamicDataSourceManager(vault, ttlMinutes, poolSize);
+        return new DynamicDataSourceManager(vault, new TenantDataSourceFactory(sslMode, poolSize), ttlMinutes);
     }
 }

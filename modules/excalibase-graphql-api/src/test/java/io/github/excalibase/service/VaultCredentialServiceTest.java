@@ -46,6 +46,19 @@ class VaultCredentialServiceTest {
       exchange.close();
     });
 
+    mockVault.createContext("/api/vault/secrets/projects/tls-app/credentials/excalibase_app", exchange -> {
+      String json = """
+          {"host":"tls-app-postgres-rw.ns.svc.cluster.local","port":"5432","database":"app",
+           "username":"excalibase_app","password":"secret123",
+           "sslcert":"CERT-PEM","sslkey":"KEY-PEM","sslrootcert":"ROOT-PEM"}
+          """;
+      byte[] body = json.getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+
     mockVault.createContext("/api/vault/secrets/projects/broken-app/credentials/excalibase_app", exchange -> {
       exchange.sendResponseHeaders(500, -1);
       exchange.close();
@@ -74,6 +87,20 @@ class VaultCredentialServiceTest {
     assertEquals("app", creds.database());
     assertEquals("excalibase_app", creds.username());
     assertEquals("secret123", creds.password());
+  }
+
+  @Test
+  @DisplayName("a record without certificate fields carries no TLS material")
+  void fetchCredentials_passwordOnlyRecord_hasNoTls() {
+    assertNull(service.fetchCredentials("duc-corp", "app-a").tls());
+  }
+
+  @Test
+  @DisplayName("sslcert, sslkey and sslrootcert are read from the record")
+  void fetchCredentials_readsClientCertificateFields() {
+    TenantTlsCredentials tls = service.fetchCredentials("duc-corp", "tls-app").tls();
+
+    assertEquals(new TenantTlsCredentials("CERT-PEM", "KEY-PEM", "ROOT-PEM"), tls);
   }
 
   @Test

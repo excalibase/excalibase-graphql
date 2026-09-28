@@ -41,7 +41,20 @@ class JwtSecurityConfigTest {
         SecurityProperties configured = new SecurityProperties(true, null,
                 new SecurityProperties.MultiTenant("http://provisioning/api", null, null));
 
-        assertThat(new JwtSecurityConfig().dynamicDataSourceManager(blank, token, 30, 5)).isNull();
-        assertThat(new JwtSecurityConfig().dynamicDataSourceManager(configured, token, 30, 5)).isNotNull();
+        assertThat(new JwtSecurityConfig().dynamicDataSourceManager(blank, token, 30, 5, "verify-full")).isNull();
+        assertThat(new JwtSecurityConfig().dynamicDataSourceManager(configured, token, 30, 5, "verify-full"))
+                .isNotNull();
+    }
+
+    @Test
+    @DisplayName("a tenant sslmode other than verify-full or disable fails startup, in any mode")
+    void tenantSslMode_weakerModesRefused() {
+        TokenFileSource token = new TokenFileSource(null, "pat");
+        SecurityProperties blank = new SecurityProperties(true, null,
+                new SecurityProperties.MultiTenant("", null, null));
+
+        assertThatThrownBy(() -> new JwtSecurityConfig().dynamicDataSourceManager(blank, token, 30, 5, "require"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("TENANT_DB_SSLMODE");
     }
 }

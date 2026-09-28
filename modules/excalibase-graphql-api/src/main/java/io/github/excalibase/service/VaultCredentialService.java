@@ -78,7 +78,8 @@ public class VaultCredentialService {
           json.get("port").asText(),
           json.get("database").asText(),
           json.get("username").asText(),
-          json.get("password").asText()
+          json.get("password").asText(),
+          tlsCredentials(json)
       );
     } catch (VaultCredentialException | UnknownProjectException e) {
       throw e;
@@ -90,6 +91,18 @@ public class VaultCredentialService {
       throw new VaultCredentialException(
           "Failed to fetch credentials for " + orgSlug + "/" + projectId, e);
     }
+  }
+
+  /** Null when the record has none of the certificate fields; partial records are judged by the pool. */
+  private static TenantTlsCredentials tlsCredentials(JsonNode json) {
+    TenantTlsCredentials tls = new TenantTlsCredentials(
+        textOrNull(json, "sslcert"), textOrNull(json, "sslkey"), textOrNull(json, "sslrootcert"));
+    return tls.isAbsent() ? null : tls;
+  }
+
+  private static String textOrNull(JsonNode json, String field) {
+    JsonNode node = json.get(field);
+    return node == null || node.isNull() ? null : node.asText();
   }
 
   private static void validateSlug(String value, String field) {

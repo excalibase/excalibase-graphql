@@ -154,6 +154,12 @@ app:
       existingSecret: ""
       existingPatKey: "provisioning-pat"
 
+  tenantDb:
+    # verify-full: tenants are reached with the vault record's client certificate
+    # (sslcert/sslkey) and the server is verified against its sslrootcert.
+    # disable: password only, for tenants without TLS (docker all-in-one). Nothing else is accepted.
+    sslmode: "verify-full"
+
   # NATS CDC subscription (events from excalibase-watcher)
   nats:
     enabled: false

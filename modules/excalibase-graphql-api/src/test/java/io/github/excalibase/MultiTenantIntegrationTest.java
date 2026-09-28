@@ -171,6 +171,7 @@ class MultiTenantIntegrationTest {
     registry.add("app.security.jwt-enabled", () -> "true");
     registry.add("app.security.auth.jwks-url", () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
     registry.add("app.security.multi-tenant.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
+    registry.add("app.tenant-db.sslmode", () -> "disable");
     registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat-token");
   }
 

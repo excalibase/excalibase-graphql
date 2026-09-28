@@ -2,11 +2,16 @@ package io.github.excalibase.service;
 
 import java.util.regex.Pattern;
 
+/** {@code tls} is null when the record carries no client certificate (tenants without TLS). */
 public record VaultCredentials(String host, String port, String database,
-                               String username, String password) {
+                               String username, String password, TenantTlsCredentials tls) {
 
   private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9._-]{1,253}$");
   private static final Pattern DB_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,63}$");
+
+  public VaultCredentials(String host, String port, String database, String username, String password) {
+    this(host, port, database, username, password, null);
+  }
 
   public String jdbcUrl() {
     if (!HOST_PATTERN.matcher(host).matches()) {
@@ -31,6 +36,6 @@ public record VaultCredentials(String host, String port, String database,
   public String toString() {
     // NOSONAR: literal "password" is a redaction label, not a hard-coded secret
     return "VaultCredentials[host=" + host + ", port=" + port +
-        ", database=" + database + ", username=" + username + ", password=REDACTED]"; // NOSONAR
+        ", database=" + database + ", username=" + username + ", password=REDACTED, tls=" + (tls == null ? "none" : "REDACTED") + "]"; // NOSONAR
   }
 }
