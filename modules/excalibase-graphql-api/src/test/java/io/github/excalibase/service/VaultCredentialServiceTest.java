@@ -2,6 +2,7 @@ package io.github.excalibase.service;
 
 import com.sun.net.httpserver.HttpServer;
 import io.github.excalibase.security.TokenFileSource;
+import io.github.excalibase.security.ProjectWithoutDatabaseException;
 import io.github.excalibase.security.UnknownProjectException;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -59,6 +60,14 @@ class VaultCredentialServiceTest {
       exchange.close();
     });
 
+    // A project created without a database: provisioning answers 409.
+    mockVault.createContext("/api/vault/secrets/projects/apps-only/credentials/excalibase_app", exchange -> {
+      byte[] body = "{\"error\":\"project has no database\"}".getBytes(StandardCharsets.UTF_8);
+      exchange.sendResponseHeaders(409, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
+
     mockVault.createContext("/api/vault/secrets/projects/broken-app/credentials/excalibase_app", exchange -> {
       exchange.sendResponseHeaders(500, -1);
       exchange.close();
@@ -108,6 +117,13 @@ class VaultCredentialServiceTest {
   void fetchCredentials_buildsJdbcUrl() {
     VaultCredentials creds = service.fetchCredentials("duc-corp", "app-a");
     assertEquals("jdbc:postgresql://app-a-postgres-rw.svc.local:5432/app", creds.jdbcUrl());
+  }
+
+  @Test
+  @DisplayName("fetchCredentials reports a 409 as a project that has no database")
+  void fetchCredentials_conflict_isProjectWithoutDatabase() {
+    assertThrows(ProjectWithoutDatabaseException.class,
+        () -> service.fetchCredentials("org", "apps-only"));
   }
 
   @Test

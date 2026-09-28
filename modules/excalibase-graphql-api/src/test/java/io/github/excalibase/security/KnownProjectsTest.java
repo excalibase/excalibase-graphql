@@ -65,4 +65,16 @@ class KnownProjectsTest {
         verify(manager).getDataSource(null, "proj-a");
         assertThatThrownBy(() -> projects.require("proj-gone")).isInstanceOf(UnknownProjectException.class);
     }
+
+    @Test
+    @DisplayName("a project without a database is refused and not remembered as missing: a database can be added later")
+    void multiTenant_projectWithoutDatabase_isNotCachedAsUnknown() {
+        DynamicDataSourceManager manager = mock(DynamicDataSourceManager.class);
+        when(manager.getDataSource(null, "proj-apps")).thenThrow(new ProjectWithoutDatabaseException("proj-apps"));
+        UnknownProjectCache unknown = unknownCache();
+        KnownProjects projects = KnownProjects.tenants(manager, unknown);
+
+        assertThatThrownBy(() -> projects.require("proj-apps")).isInstanceOf(ProjectWithoutDatabaseException.class);
+        org.assertj.core.api.Assertions.assertThat(unknown.isKnownMissing("proj-apps")).isFalse();
+    }
 }

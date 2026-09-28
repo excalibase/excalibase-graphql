@@ -39,6 +39,9 @@ public class KnownProjectFilter extends OncePerRequestFilter {
         } catch (UnknownProjectException e) {
             writeError(response, HttpServletResponse.SC_NOT_FOUND, "Project not found", "project_not_found");
             return;
+        } catch (ProjectWithoutDatabaseException e) {
+            writeError(response, HttpServletResponse.SC_CONFLICT, "Project has no database", "project_has_no_database");
+            return;
         } catch (VaultCredentialException e) {
             log.error("project_lookup_failed project={}", projectId, e);
             writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Project unavailable",
