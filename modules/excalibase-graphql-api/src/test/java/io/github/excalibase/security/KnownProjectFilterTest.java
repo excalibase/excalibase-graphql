@@ -80,4 +80,19 @@ class KnownProjectFilterTest {
                 .doesNotContain("provisioning unreachable");
         verify(chain, never()).doFilter(any(), any());
     }
+
+    @Test
+    @DisplayName("a project without a database is a 409 naming that, never a pass-through or a fallback")
+    void projectWithoutDatabase_isConflict() throws Exception {
+        FilterChain chain = mock(FilterChain.class);
+        KnownProjects noDatabase = projectId -> {
+            throw new ProjectWithoutDatabaseException(projectId);
+        };
+
+        MockHttpServletResponse response = call(noDatabase, "POST", "/proj-x/graphql", chain);
+
+        assertThat(response.getStatus()).isEqualTo(409);
+        assertThat(response.getContentAsString()).contains("\"code\":\"project_has_no_database\"");
+        verify(chain, never()).doFilter(any(), any());
+    }
 }
