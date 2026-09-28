@@ -64,6 +64,8 @@ services:
       APP_SECURITY_AUTH_JWKS_URL: http://excalibase-auth:24000/.well-known/jwks.json
       APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: http://mock-vault:8080/api
       APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT: test-pat
+      # Mock tenants run without TLS; real tenants need verify-full (the default).
+      TENANT_DB_SSLMODE: disable
 
       # RLS/CLS policies fetched from provisioning (mocked by mock-vault in e2e)
       APP_SECURITY_RLS_POLICY_URL: http://mock-vault:8080/api

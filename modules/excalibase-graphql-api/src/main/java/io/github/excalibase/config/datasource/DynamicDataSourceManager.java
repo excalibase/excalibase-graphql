@@ -1,6 +1,5 @@
 package io.github.excalibase.config.datasource;
 
-import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.service.VaultCredentialService;
@@ -15,27 +14,31 @@ import java.util.function.Function;
 public class DynamicDataSourceManager {
 
   private static final Logger log = LoggerFactory.getLogger(DynamicDataSourceManager.class);
+  // Pools are rebuilt from a fresh vault record at this age at the latest, which is
+  // how renewed client certificates (and a rotated CA) reach new connections.
+  private static final Duration MAX_POOL_AGE = Duration.ofHours(1);
   private final VaultCredentialService vaultService;
   private final Function<VaultCredentials, DataSource> dataSourceFactory;
   private final TTLCache<String, DataSource> cache;
 
-  /** Production constructor — creates real HikariDataSource. */
-  public DynamicDataSourceManager(VaultCredentialService vaultService, int ttlMinutes, int poolSize) {
-    this(vaultService, creds -> createHikariDataSource(creds, poolSize), ttlMinutes);
+  /** Production constructor — pools built by {@code dataSourceFactory}, rebuilt at most hourly. */
+  public DynamicDataSourceManager(VaultCredentialService vaultService, TenantDataSourceFactory dataSourceFactory,
+                                  int ttlMinutes) {
+    this(vaultService, dataSourceFactory, maxPoolAge(ttlMinutes));
   }
 
   /** Test constructor — injectable factory for mock datasources. */
   public DynamicDataSourceManager(VaultCredentialService vaultService,
                                   Function<VaultCredentials, DataSource> dataSourceFactory) {
-    this(vaultService, dataSourceFactory, 30);
+    this(vaultService, dataSourceFactory, maxPoolAge(30));
   }
 
-  private DynamicDataSourceManager(VaultCredentialService vaultService,
-                                   Function<VaultCredentials, DataSource> dataSourceFactory,
-                                   int ttlMinutes) {
+  DynamicDataSourceManager(VaultCredentialService vaultService,
+                           Function<VaultCredentials, DataSource> dataSourceFactory,
+                           Duration poolAge) {
     this.vaultService = vaultService;
     this.dataSourceFactory = dataSourceFactory;
-    this.cache = new TTLCache<>(Duration.ofMinutes(ttlMinutes), ds -> {
+    this.cache = new TTLCache<>(poolAge, ds -> {
       if (ds instanceof HikariDataSource hikari) {
         hikari.close();
         log.info("closed_expired_datasource pool={}", hikari.getPoolName());
@@ -64,6 +67,11 @@ public class DynamicDataSourceManager {
     }
   }
 
+  static Duration maxPoolAge(int ttlMinutes) {
+    Duration configured = Duration.ofMinutes(ttlMinutes);
+    return configured.compareTo(MAX_POOL_AGE) > 0 ? MAX_POOL_AGE : configured;
+  }
+
   public boolean isCached(String cacheKey) {
     return cache.get(cacheKey) != null;
   }
@@ -72,20 +80,9 @@ public class DynamicDataSourceManager {
   public void destroy() {
     cache.clear();
     cache.shutdown();
+    if (dataSourceFactory instanceof TenantDataSourceFactory tenantFactory) {
+      tenantFactory.close();
+    }
     log.info("tenant_datasource_manager_destroyed");
-  }
-
-  private static DataSource createHikariDataSource(VaultCredentials creds, int poolSize) {
-    HikariConfig config = new HikariConfig();
-    config.setJdbcUrl(creds.jdbcUrl());
-    config.setUsername(creds.username());
-    config.setPassword(creds.password());
-    config.setMaximumPoolSize(poolSize);
-    config.setMinimumIdle(1);
-    config.setConnectionTimeout(10_000);
-    config.setIdleTimeout(300_000);
-    config.setMaxLifetime(900_000);
-    config.setPoolName("tenant-" + creds.host() + "-" + creds.database());
-    return new HikariDataSource(config);
   }
 }

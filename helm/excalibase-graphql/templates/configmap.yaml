@@ -69,6 +69,7 @@ data:
   {{- if .Values.app.security.multiTenant.provisioningUrl }}
   APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: {{ .Values.app.security.multiTenant.provisioningUrl | quote }}
   {{- end }}
+  TENANT_DB_SSLMODE: {{ .Values.app.tenantDb.sslmode | default "verify-full" | quote }}
 
   # NATS CDC subscription (events from excalibase-watcher)
   APP_NATS_ENABLED: {{ .Values.app.nats.enabled | quote }}

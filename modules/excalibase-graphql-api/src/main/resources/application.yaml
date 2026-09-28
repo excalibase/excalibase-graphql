@@ -98,6 +98,11 @@ app:
       unknown-project-cache:            # vault 404s remembered so a missing project costs one vault call per TTL
         max-entries: 10000              # LRU bound: random project ids cannot grow memory past this
         ttl-seconds: 30                 # a project created after a 404 is reachable once this expires
+  tenant-db:
+    # verify-full: connect with the vault record's client certificate (sslcert/sslkey)
+    # and verify the server against its sslrootcert; a record without them is refused.
+    # disable: plain password connections, only for the docker all-in-one whose tenants have no TLS.
+    sslmode: ${TENANT_DB_SSLMODE:verify-full}
   nats:
     enabled: false  # Enable NATS CDC subscription from excalibase-watcher (default: false)
     url: nats://localhost:4222  # NATS server URL

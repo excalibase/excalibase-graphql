@@ -3,6 +3,8 @@ package io.github.excalibase.service;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class VaultCredentialsTest {
@@ -56,5 +58,25 @@ class VaultCredentialsTest {
     String str = creds.toString();
     assertFalse(str.contains("secret123"));
     assertTrue(str.contains("REDACTED"));
+  }
+
+  @Test
+  @DisplayName("toString never prints the private key or certificates")
+  void toString_redactsKeyMaterial() {
+    var tls = new TenantTlsCredentials("CERT-PEM", "KEY-PEM", "ROOT-PEM");
+    var creds = new VaultCredentials("host", "5432", "db", "user", "secret123", tls);
+
+    String str = creds.toString();
+
+    assertFalse(str.contains("KEY-PEM"));
+    assertFalse(str.contains("CERT-PEM"));
+    assertFalse(tls.toString().contains("KEY-PEM"));
+  }
+
+  @Test
+  @DisplayName("missingFields names each blank certificate field")
+  void missingFields_namesBlankFields() {
+    assertEquals(List.of(), new TenantTlsCredentials("c", "k", "r").missingFields());
+    assertEquals(List.of("sslcert", "sslrootcert"), new TenantTlsCredentials(" ", "k", null).missingFields());
   }
 }

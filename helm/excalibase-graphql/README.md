@@ -133,6 +133,7 @@ Bare metal has no cloud load balancer, so external traffic needs:
 | `app.security.multiTenant.provisioningPat` | PAT for provisioning API (use `multiTenant.existingSecret` in production) | `""` |
 | `app.security.multiTenant.existingSecret` | Name of existing Secret containing the provisioning PAT | `""` |
 | `app.security.multiTenant.existingPatKey` | Key in existing Secret for provisioning PAT | `provisioning-pat` |
+| `app.tenantDb.sslmode` | `verify-full` (client certificate from the vault record, server verified) or `disable` (password only, tenants without TLS) | `verify-full` |
 
 ### NATS CDC (Change Data Capture)
 
@@ -235,9 +236,18 @@ Expected response:
   "port": "5432",
   "database": "app",
   "username": "excalibase_app",
-  "password": "..."
+  "password": "...",
+  "sslcert": "-----BEGIN CERTIFICATE-----...",
+  "sslkey": "-----BEGIN PRIVATE KEY-----...",
+  "sslrootcert": "-----BEGIN CERTIFICATE-----..."
 }
 ```
+
+With `app.tenantDb.sslmode: verify-full` (the default) the engine connects with `sslcert` (CN = role) and
+`sslkey` (unencrypted PKCS#8 PEM) and verifies the server against `sslrootcert`; a record without all three is
+refused. Pools are rebuilt from a freshly fetched record at least hourly (sooner when
+`app.cache.schema-ttl-minutes` is lower), so renewed certificates need no restart. `disable` connects with
+the password only and is meant for tenants without TLS.
 
 Public key for JWT verification is fetched from:
 ```
