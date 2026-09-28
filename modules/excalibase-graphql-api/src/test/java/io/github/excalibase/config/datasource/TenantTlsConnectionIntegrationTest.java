@@ -80,7 +80,7 @@ class TenantTlsConnectionIntegrationTest {
     }
   }
 
-  private static VaultCredentials record(TenantTlsCredentials tls) {
+  private static VaultCredentials vaultRecord(TenantTlsCredentials tls) {
     return new VaultCredentials(postgres.getHost(), String.valueOf(postgres.getFirstMappedPort()),
         postgres.getDatabaseName(), ROLE, "not-the-password", tls);
   }
@@ -93,7 +93,7 @@ class TenantTlsConnectionIntegrationTest {
   @DisplayName("connects as the platform role with the EC client certificate over verified TLS")
   void connectsWithClientCertificate() throws Exception {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
-    DataSource dataSource = factory.apply(record(issued(pki, pki.caCertificate)));
+    DataSource dataSource = factory.apply(vaultRecord(issued(pki, pki.caCertificate)));
 
     try (Connection connection = dataSource.getConnection();
          Statement statement = connection.createStatement();
@@ -113,13 +113,15 @@ class TenantTlsConnectionIntegrationTest {
   void passwordOnlyIsRefused() {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
 
-    assertThrows(TenantTlsException.class, () -> factory.apply(record(null)));
+    VaultCredentials withoutCertificate = vaultRecord(null);
+    assertThrows(TenantTlsException.class, () -> factory.apply(withoutCertificate));
 
     Properties passwordOnly = new Properties();
     passwordOnly.setProperty("user", ROLE);
     passwordOnly.setProperty("password", "password-login");
     passwordOnly.setProperty("sslmode", "require");
-    assertThrows(SQLException.class, () -> DriverManager.getConnection(postgres.getJdbcUrl(), passwordOnly).close());
+    String url = postgres.getJdbcUrl();
+    assertThrows(SQLException.class, () -> DriverManager.getConnection(url, passwordOnly));
   }
 
   @Test
@@ -127,8 +129,9 @@ class TenantTlsConnectionIntegrationTest {
   void untrustedServerIsRefused() throws Exception {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
 
-    assertThrows(PoolInitializationException.class,
-        () -> factory.apply(record(issued(pki, foreignPki.caCertificate))));
+    VaultCredentials foreignRoot = vaultRecord(issued(pki, foreignPki.caCertificate));
+
+    assertThrows(PoolInitializationException.class, () -> factory.apply(foreignRoot));
     assertEmpty(root);
   }
 
@@ -137,8 +140,9 @@ class TenantTlsConnectionIntegrationTest {
   void foreignClientCertificateIsRefused() throws Exception {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
 
-    assertThrows(PoolInitializationException.class,
-        () -> factory.apply(record(issued(foreignPki, pki.caCertificate))));
+    VaultCredentials foreignClient = vaultRecord(issued(foreignPki, pki.caCertificate));
+
+    assertThrows(PoolInitializationException.class, () -> factory.apply(foreignClient));
     assertEmpty(root);
   }
 

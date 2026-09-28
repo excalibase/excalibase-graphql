@@ -14,6 +14,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -129,7 +130,7 @@ class DynamicDataSourceManagerTest {
 
   @Test
   @DisplayName("an aged-out pool is rebuilt from a freshly fetched record")
-  void agedOutPoolIsRebuiltFromRenewedRecord() throws InterruptedException {
+  void agedOutPoolIsRebuiltFromRenewedRecord() {
     var renewed = new VaultCredentials("localhost", "5432", "app_db", "excalibase_app", "renewed");
     List<VaultCredentials> built = new CopyOnWriteArrayList<>();
     var ageing = new DynamicDataSourceManager(vaultService, creds -> {
@@ -139,8 +140,8 @@ class DynamicDataSourceManagerTest {
     when(vaultService.fetchCredentials("duc-corp", "app-a")).thenReturn(CREDS, renewed);
 
     assertSame(mockDataSource, ageing.getDataSource("duc-corp", "app-a"));
-    Thread.sleep(120);
-    assertSame(mockDataSourceB, ageing.getDataSource("duc-corp", "app-a"));
+    await().atMost(Duration.ofSeconds(5))
+        .until(() -> ageing.getDataSource("duc-corp", "app-a") == mockDataSourceB);
 
     assertEquals(List.of(CREDS, renewed), built);
     verify(vaultService, times(2)).fetchCredentials("duc-corp", "app-a");

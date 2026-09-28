@@ -31,7 +31,7 @@ class TenantDataSourceFactoryTest {
     pki = TestPki.generate(pkiDir, "excalibase_app");
   }
 
-  private static VaultCredentials record(TenantTlsCredentials tls) {
+  private static VaultCredentials vaultRecord(TenantTlsCredentials tls) {
     return new VaultCredentials("db.svc.cluster.local", "5432", "app", "excalibase_app", "pw", tls);
   }
 
@@ -40,7 +40,9 @@ class TenantDataSourceFactoryTest {
   void verifyFullRefusesPasswordOnlyRecord() throws IOException {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
 
-    TenantTlsException refused = assertThrows(TenantTlsException.class, () -> factory.apply(record(null)));
+    VaultCredentials passwordOnly = vaultRecord(null);
+
+    TenantTlsException refused = assertThrows(TenantTlsException.class, () -> factory.apply(passwordOnly));
 
     assertEquals("Tenant database record lacks sslcert, sslkey, sslrootcert required by "
         + "app.tenant-db.sslmode=verify-full", refused.getMessage());
@@ -52,8 +54,9 @@ class TenantDataSourceFactoryTest {
   void verifyFullRefusesPartialRecord() throws IOException {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
     TenantTlsCredentials noRoot = new TenantTlsCredentials(pki.clientCertificate, pki.clientKey, null);
+    VaultCredentials partial = vaultRecord(noRoot);
 
-    TenantTlsException refused = assertThrows(TenantTlsException.class, () -> factory.apply(record(noRoot)));
+    TenantTlsException refused = assertThrows(TenantTlsException.class, () -> factory.apply(partial));
 
     assertEquals("Tenant database record lacks sslrootcert required by app.tenant-db.sslmode=verify-full",
         refused.getMessage());
@@ -67,7 +70,7 @@ class TenantDataSourceFactoryTest {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
 
     try (TenantTlsFiles files = TenantTlsFiles.write(root, tls)) {
-      Properties props = factory.hikariConfig(record(tls), files).getDataSourceProperties();
+      Properties props = factory.hikariConfig(vaultRecord(tls), files).getDataSourceProperties();
 
       assertEquals("verify-full", props.getProperty("sslmode"));
       assertEquals(files.clientCertificate().toString(), props.getProperty("sslcert"));
@@ -81,7 +84,7 @@ class TenantDataSourceFactoryTest {
   void disableUsesPasswordOnly() {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.DISABLE, 2, root);
 
-    HikariConfig config = factory.hikariConfig(record(null), null);
+    HikariConfig config = factory.hikariConfig(vaultRecord(null), null);
 
     assertEquals("disable", config.getDataSourceProperties().getProperty("sslmode"));
     assertFalse(config.getDataSourceProperties().containsKey("sslcert"));

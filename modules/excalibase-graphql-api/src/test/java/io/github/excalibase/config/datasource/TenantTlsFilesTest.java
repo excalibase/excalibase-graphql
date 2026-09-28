@@ -11,6 +11,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.stream.Stream;
@@ -41,7 +42,7 @@ class TenantTlsFilesTest {
 
   @Test
   @DisplayName("writes the cert, a PKCS-8 DER key and the root in an owner-only directory")
-  void writesOwnerOnlyFiles() throws Exception {
+  void writesOwnerOnlyFiles() throws IOException, GeneralSecurityException {
     try (TenantTlsFiles files = TenantTlsFiles.write(root, valid())) {
       Path dir = files.clientCertificate().getParent();
       assertEquals(root, dir.getParent());
@@ -60,7 +61,7 @@ class TenantTlsFilesTest {
 
   @Test
   @DisplayName("close deletes the material")
-  void closeDeletesTheDirectory() throws Exception {
+  void closeDeletesTheDirectory() {
     TenantTlsFiles files = TenantTlsFiles.write(root, valid());
     Path dir = files.clientCertificate().getParent();
 
@@ -71,7 +72,7 @@ class TenantTlsFilesTest {
 
   @Test
   @DisplayName("each write gets its own directory, so a renewed record never overwrites live files")
-  void eachWriteIsIsolated() throws Exception {
+  void eachWriteIsIsolated() {
     try (TenantTlsFiles first = TenantTlsFiles.write(root, valid());
          TenantTlsFiles second = TenantTlsFiles.write(root, valid())) {
       assertNotEquals(first.clientCertificate().getParent(), second.clientCertificate().getParent());
@@ -95,12 +96,13 @@ class TenantTlsFilesTest {
     String garbage = "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydA==\n-----END CERTIFICATE-----\n";
     String rsaHeader = pki.clientKey.replace("PRIVATE KEY", "RSA PRIVATE KEY");
 
-    assertThrows(TenantTlsException.class, () -> TenantTlsFiles.write(root,
-        new TenantTlsCredentials(garbage, pki.clientKey, pki.caCertificate)));
-    assertThrows(TenantTlsException.class, () -> TenantTlsFiles.write(root,
-        new TenantTlsCredentials(pki.clientCertificate, rsaHeader, pki.caCertificate)));
-    assertThrows(TenantTlsException.class, () -> TenantTlsFiles.write(root,
-        new TenantTlsCredentials(pki.clientCertificate, pki.clientKey, "not pem")));
+    TenantTlsCredentials badCertificate = new TenantTlsCredentials(garbage, pki.clientKey, pki.caCertificate);
+    TenantTlsCredentials badKey = new TenantTlsCredentials(pki.clientCertificate, rsaHeader, pki.caCertificate);
+    TenantTlsCredentials badRoot = new TenantTlsCredentials(pki.clientCertificate, pki.clientKey, "not pem");
+
+    assertThrows(TenantTlsException.class, () -> TenantTlsFiles.write(root, badCertificate));
+    assertThrows(TenantTlsException.class, () -> TenantTlsFiles.write(root, badKey));
+    assertThrows(TenantTlsException.class, () -> TenantTlsFiles.write(root, badRoot));
     assertDirectoryEmpty();
   }
 

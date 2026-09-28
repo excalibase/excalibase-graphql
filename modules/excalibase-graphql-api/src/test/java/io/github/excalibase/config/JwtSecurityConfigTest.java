@@ -53,7 +53,9 @@ class JwtSecurityConfigTest {
         SecurityProperties blank = new SecurityProperties(true, null,
                 new SecurityProperties.MultiTenant("", null, null));
 
-        assertThatThrownBy(() -> new JwtSecurityConfig().dynamicDataSourceManager(blank, token, 30, 5, "require"))
+        JwtSecurityConfig config = new JwtSecurityConfig();
+
+        assertThatThrownBy(() -> config.dynamicDataSourceManager(blank, token, 30, 5, "require"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("TENANT_DB_SSLMODE");
     }
