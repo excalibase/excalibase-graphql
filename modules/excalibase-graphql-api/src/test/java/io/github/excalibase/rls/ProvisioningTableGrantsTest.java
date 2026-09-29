@@ -117,12 +117,38 @@ class ProvisioningTableGrantsTest {
     }
 
     @Test
-    void tableGrantsFor_whenEnforcedFieldAbsent_doesNotInferItFromTheGrantList() {
+    void tableGrantsFor_whenEnforcedFieldAbsent_refusesRatherThanReadingItAsOff() {
         body = """
                 {"projectId":"proj1","grants":[]}
                 """;
 
-        assertThat(provider(60_000).tableGrantsFor("proj1").enforced()).isFalse();
+        assertThatThrownBy(() -> provider(60_000).tableGrantsFor("proj1"))
+                .isInstanceOf(PolicyFetchException.class)
+                .hasMessageContaining("enforced");
+    }
+
+    @Test
+    void tableGrantsFor_whenEnforcedIsNotABoolean_refuses() {
+        body = """
+                {"projectId":"proj1","enforced":"true","grants":[]}
+                """;
+
+        assertThatThrownBy(() -> provider(60_000).tableGrantsFor("proj1"))
+                .isInstanceOf(PolicyFetchException.class);
+    }
+
+    @Test
+    void tableGrantsFor_whenEnforcedIsMissingAfterAGoodRead_keepsServingTheGoodGrants() {
+        body = ENFORCED_BODY;
+        ProvisioningPolicyProvider provider = provider(1_000);
+        provider.tableGrantsFor("proj1");
+
+        body = """
+                {"projectId":"proj1","grants":[]}
+                """;
+        now[0] += 5_000;
+
+        assertThat(provider.tableGrantsFor("proj1").enforced()).isTrue();
     }
 
     @Test
