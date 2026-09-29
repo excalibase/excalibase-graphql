@@ -1,7 +1,7 @@
 package io.github.excalibase.rls;
 
 import io.github.excalibase.rls.jdbc.SqlFilter;
-import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 
@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * hands back a parameter-namespaced predicate the compiler can splice directly.
  *
  * <p>One instance is created per request (it carries that request's project +
- * claims) and registered on {@code RlsContext}. It is single-threaded with
+ * principal) and registered on {@code RlsContext}. It is single-threaded with
  * respect to a request but uses an {@link AtomicInteger} so the namespacing is
  * robust even if the compiler parallelizes table compilation in future.
  *
@@ -35,13 +35,13 @@ public final class EngineRlsWhereContributor implements RlsWhereContributor {
 
     private final RlsPolicyEnforcer enforcer;
     private final String projectId;
-    private final JwtClaims claims;
+    private final Principal principal;
     private final AtomicInteger counter = new AtomicInteger();
 
-    public EngineRlsWhereContributor(RlsPolicyEnforcer enforcer, String projectId, JwtClaims claims) {
+    public EngineRlsWhereContributor(RlsPolicyEnforcer enforcer, String projectId, Principal principal) {
         this.enforcer = enforcer;
         this.projectId = projectId;
-        this.claims = claims;
+        this.principal = principal;
     }
 
     @Override
@@ -51,7 +51,7 @@ public final class EngineRlsWhereContributor implements RlsWhereContributor {
 
     @Override
     public Contribution contribute(String tableName, String outerAlias, RlsOp op) {
-        SqlFilter filter = enforcer.filterFor(projectId, tableName, claims, toOperation(op), outerAlias);
+        SqlFilter filter = enforcer.filterFor(projectId, tableName, principal, toOperation(op), outerAlias);
         if (filter.isUnrestricted()) {
             return null;
         }

@@ -1,6 +1,6 @@
 package io.github.excalibase.rls;
 
-import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RowCheckContributor;
 
@@ -17,22 +17,22 @@ public final class EngineRowCheckContributor implements RowCheckContributor {
 
     private final RlsPolicyEnforcer enforcer;
     private final String projectId;
-    private final JwtClaims claims;
+    private final Principal principal;
 
-    public EngineRowCheckContributor(RlsPolicyEnforcer enforcer, String projectId, JwtClaims claims) {
+    public EngineRowCheckContributor(RlsPolicyEnforcer enforcer, String projectId, Principal principal) {
         this.enforcer = enforcer;
         this.projectId = projectId;
-        this.claims = claims;
+        this.principal = principal;
     }
 
     @Override
     public boolean permits(String tableName, Map<String, Object> row, RlsOp op) {
-        return enforcer.permitsRow(projectId, tableName, claims, toOperation(op), row);
+        return enforcer.permitsRow(projectId, tableName, principal, toOperation(op), row);
     }
 
     @Override
     public boolean permitsUpdate(String tableName, Map<String, Object> changedColumns) {
-        return enforcer.permitsRowUpdate(projectId, tableName, claims, changedColumns);
+        return enforcer.permitsRowUpdate(projectId, tableName, principal, changedColumns);
     }
 
     private static Operation toOperation(RlsOp op) {

@@ -3,6 +3,8 @@ package io.github.excalibase.config.ws;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -193,8 +195,10 @@ class RealtimeWebSocketHandlerTest {
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
-                io.github.excalibase.security.JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com"));
+        JwtClaims claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY,
+                new Principal(claims.role(), false, claims, Map.of()));
         masking.afterConnectionEstablished(session);
 
         masking.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -231,8 +235,10 @@ class RealtimeWebSocketHandlerTest {
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
-                io.github.excalibase.security.JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com"));
+        JwtClaims claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY,
+                new Principal(claims.role(), false, claims, Map.of()));
         filtered.afterConnectionEstablished(session);
         filtered.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "subscribe", "id", "s1", "collection", "notes"))));
@@ -269,8 +275,10 @@ class RealtimeWebSocketHandlerTest {
         var sent = new ArrayList<String>();
         WebSocketSession session = session(sent);
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
-                io.github.excalibase.security.JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com"));
+        JwtClaims claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY,
+                new Principal(claims.role(), false, claims, Map.of()));
         filtered.afterConnectionEstablished(session);
 
         filtered.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(

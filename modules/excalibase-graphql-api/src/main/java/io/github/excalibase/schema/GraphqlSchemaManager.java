@@ -10,8 +10,7 @@ import io.github.excalibase.rls.ExposureFilter;
 import io.github.excalibase.rls.PolicyProvider;
 import io.github.excalibase.rls.ProjectCacheEvictor;
 import io.github.excalibase.rls.TableGrants;
-import io.github.excalibase.security.CallerRole;
-import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.spi.SchemaLoader;
 import io.github.excalibase.spi.SqlEngine;
@@ -145,12 +144,12 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     }
 
     /**
-     * The grants in force for a project. A project with no exposure configuration,
-     * or a deployment with no policy source wired, is unenforced — the feature stays
-     * inert until someone opts in.
+     * The grants in force for a project and role. A project with no exposure
+     * configuration, a deployment with no policy source wired, and the {@code service}
+     * role (which bypasses permissions) are all unenforced.
      */
-    private TableGrants grantsFor(String projectId) {
-        if (policyProvider == null || projectId == null) {
+    private TableGrants grantsFor(String projectId, String callerRole) {
+        if (policyProvider == null || projectId == null || Principal.SERVICE.equals(callerRole)) {
             return TableGrants.unenforced(projectId);
         }
         return policyProvider.tableGrantsFor(projectId);
@@ -169,35 +168,45 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
      * Resolve EngineState for the current request.
      *
      * <p>The project comes from {@link TenantContext} — the URL path, already checked
-     * against the projects this deployment serves — and never from the token, so an
-     * anonymous caller on a project-scoped route is filtered exactly like an
-     * authenticated one. The role is the one exposure speaks — {@code anon} or
-     * {@code authenticated}, derived from whether the caller is signed in, not read
-     * off the free-form {@code role} claim.
+     * against the projects this deployment serves — and never from the token. The
+     * role is the one the request runs as, resolved once by the authentication filter.
      */
-    public EngineState resolveEngineState(JwtClaims claims) {
+    public EngineState resolveEngineState(Principal principal) {
         String projectId = TenantContext.getTenantId();
         String orgSlug = TenantContext.getOrgSlug();
-        if (orgSlug == null && claims != null) {
-            orgSlug = claims.orgSlug();
+        if (orgSlug == null && principal != null && principal.claims() != null) {
+            orgSlug = principal.claims().orgSlug();
         }
-        return resolveEngineState(orgSlug, projectId, CallerRole.of(claims));
+        return resolveEngineState(orgSlug, projectId, principal);
     }
 
     /**
      * Get or build the EngineState for one caller: the tenant's database when
      * multi-tenant routing is wired, otherwise the configured database, in both
-     * cases filtered to what {@code role} was granted on {@code projectId}.
+     * cases filtered to what the principal's role was granted on {@code projectId}.
      */
-    public EngineState resolveEngineState(String orgSlug, String projectId, String role) {
+    public EngineState resolveEngineState(String orgSlug, String projectId, Principal principal) {
         if (projectId == null) {
             return engineState.get();
         }
-        final String tenantOrg = orgSlug;
-        final String tenantProject = projectId;
-        final String callerRole = role;
-        return tenantEngineStates.computeIfAbsent(new EngineKey(projectId, role),
-                key -> buildEngineState(tenantOrg, tenantProject, callerRole));
+        String callerRole = cacheRole(principal);
+        return tenantEngineStates.computeIfAbsent(new EngineKey(projectId, callerRole),
+                key -> buildEngineState(orgSlug, projectId, callerRole));
+    }
+
+    /**
+     * The role an engine is built and cached for. {@code service} (the bypass) gets the
+     * whole schema. No principal is legitimate only where no permission source is wired
+     * (authentication off); anywhere else it is a bug, and guessing a role would hide it.
+     */
+    private String cacheRole(Principal principal) {
+        if (principal != null) {
+            return principal.role();
+        }
+        if (policyProvider != null) {
+            throw new IllegalStateException("No principal for a request on a deployment where permissions apply");
+        }
+        return Principal.SERVICE;
     }
 
     /**
@@ -211,17 +220,22 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
                 : filteredDefaultEngineState(projectId, callerRole);
     }
 
-    /** The exposure in force for the caller behind {@code claims} on the current request. */
+    /** The exposure in force for {@code principal} on the current request. */
     @Override
-    public TableExposure resolveExposure(JwtClaims claims) {
-        EngineState state = resolveEngineState(claims);
+    public TableExposure resolveExposure(Principal principal) {
+        EngineState state = resolveEngineState(principal);
         return state == null ? TableExposure.UNRESTRICTED : state.exposure();
     }
 
     @Override
-    public TableExposure exposureFor(String orgSlug, String projectId, String callerRole) {
-        EngineState state = resolveEngineState(orgSlug, projectId, callerRole);
+    public TableExposure exposureFor(String orgSlug, String projectId, Principal principal) {
+        EngineState state = resolveEngineState(orgSlug, projectId, principal);
         return state == null ? TableExposure.UNRESTRICTED : state.exposure();
+    }
+
+    @Override
+    public boolean requiresPrincipal() {
+        return policyProvider != null;
     }
 
     /**
@@ -242,13 +256,13 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     }
 
     @Override
-    public SchemaInfo resolveSchemaInfo(JwtClaims claims) {
-        return requireEngineState(claims).compiler().schemaInfo();
+    public SchemaInfo resolveSchemaInfo(Principal principal) {
+        return requireEngineState(principal).compiler().schemaInfo();
     }
 
     @Override
-    public SqlDialect resolveDialect(JwtClaims claims) {
-        return requireEngineState(claims).compiler().dialect();
+    public SqlDialect resolveDialect(Principal principal) {
+        return requireEngineState(principal).compiler().dialect();
     }
 
     /**
@@ -256,8 +270,8 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
      * there is no default state, so an unscoped request resolves to null; saying
      * so beats a NullPointerException from the dereference that follows.
      */
-    private EngineState requireEngineState(JwtClaims claims) {
-        EngineState state = resolveEngineState(claims);
+    private EngineState requireEngineState(Principal principal) {
+        EngineState state = resolveEngineState(principal);
         if (state == null) {
             throw new IllegalStateException(
                     "No schema for this request: multi-tenant mode is configured with no default "
@@ -267,8 +281,8 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     }
 
     @Override
-    public String resolveDefaultSchema(JwtClaims claims) {
-        return requireEngineState(claims).defaultSchema();
+    public String resolveDefaultSchema(Principal principal) {
+        return requireEngineState(principal).defaultSchema();
     }
 
     /** Reinitialize schema and compiler. Called on DDL events from NatsCDCService. */
@@ -351,7 +365,7 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     private EngineState filteredDefaultEngineState(String projectId, String callerRole) {
         EngineState base = engineState.get();
         SchemaInfo source = defaultSchemaInfo.get();
-        TableGrants grants = grantsFor(projectId);
+        TableGrants grants = grantsFor(projectId, callerRole);
         if (base == null || source == null || !grants.enforced()) {
             return base;
         }
@@ -380,7 +394,7 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
                 databaseType, tenantJdbc, tenantTx);
 
         EngineState state = assemble(schemaInfo, tenantDefaultSchema, engine, mutationExecutor,
-                grantsFor(projectId), callerRole);
+                grantsFor(projectId, callerRole), callerRole);
 
         log.info("built_tenant_engine tenant={}/{} role={} tables={} exposed_tables={}",
                 orgSlug, projectId, callerRole, schemaInfo.getTableNames().size(),

@@ -2,10 +2,13 @@ package io.github.excalibase.rls;
 
 import io.github.excalibase.rls.jdbc.SqlFilter;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -23,8 +26,9 @@ class RlsPolicyEnforcerTest {
 
     private static final String ALICE = "11111111-1111-1111-1111-111111111111";
 
-    private static JwtClaims claims(String userId, String projectId) {
-        return JwtClaims.of(userId, projectId, "acme", "demo", "app_authenticated", "a@x.com");
+    private static Principal claims(String userId, String projectId) {
+        JwtClaims claims = JwtClaims.of(userId, projectId, "acme", "demo", "app_authenticated", "a@x.com");
+        return new Principal(claims.role(), false, claims, Map.of());
     }
 
     /** Owner policy: a row is visible iff its user_id equals the caller. */
@@ -60,6 +64,45 @@ class RlsPolicyEnforcerTest {
         assertThat(f.sql()).contains("user_id");
         assertThat(f.params()).isNotEmpty();
         assertThat(f.params()).containsValue(UUID.fromString(ALICE));
+    }
+
+    @Test
+    @DisplayName("a role-assigned policy follows the role the request runs as, not the token's default role")
+    void roleAssignedPolicy_followsTheActiveRole() {
+        Policy editorsOwnRows = new Policy("id-e", "editor-own", "orders",
+                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(new Rule("user_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(Assignment.role("editor")));
+        var enforcer = enforcerWith("proj-a", List.of(editorsOwnRows));
+        JwtClaims token = new JwtClaims(ALICE, "proj-a", "acme", "demo", "", "user", "a@x.com", null, 0L,
+                Map.of(), Set.of("user", "editor"));
+
+        SqlFilter asEditor = enforcer.filterFor("proj-a", "orders",
+                new Principal("editor", false, token, Map.of()), Operation.SELECT);
+        SqlFilter asUser = enforcer.filterFor("proj-a", "orders",
+                new Principal("user", false, token, Map.of()), Operation.SELECT);
+
+        assertThat(asEditor.sql()).contains("user_id");
+        assertThat(asUser.sql()).doesNotContain("user_id");
+    }
+
+    @Test
+    @DisplayName("an anon key token has no user: an INTEGER owner rule matches no rows and does not throw")
+    void anonKeyToken_getsTheAnonymousContext() {
+        Policy integerOwner = new Policy("id-i", "int-owner", "orders",
+                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(new Rule("owner_id", FieldType.INTEGER, RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(Assignment.all()));
+        var enforcer = enforcerWith("proj-a", List.of(integerOwner));
+        // What JwtService yields for a publishable key: no userId claim, so userId falls back to sub.
+        JwtClaims anonKey = new JwtClaims("apikey:5", "proj-a", "acme", "demo", "", "anon", "apikey:5", "public", 5L,
+                Map.of("sub", "apikey:5", "role", "anon", "scope", "public", "keyId", 5L));
+        Principal anon = new Principal(Principal.ANON, false, anonKey, Map.of());
+
+        SqlFilter filter = enforcer.filterFor("proj-a", "orders", anon, Operation.SELECT);
+
+        assertThat(filter.params()).doesNotContainValue("apikey:5");
+        assertThat(enforcer.permitsRow("proj-a", "orders", anon, Operation.INSERT, Map.of("owner_id", 5))).isFalse();
     }
 
     @Test

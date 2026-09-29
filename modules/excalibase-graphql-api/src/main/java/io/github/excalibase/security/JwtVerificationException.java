@@ -22,6 +22,9 @@ public class JwtVerificationException extends RuntimeException {
     /** Any other non-access credential, such as a key-management token. */
     public static final String NOT_AN_ACCESS_TOKEN = "not_an_access_token";
 
+    /** The {@code role} or {@code allowed_roles} claim is missing, malformed or inconsistent. */
+    public static final String INVALID_ROLE_CLAIM = "invalid_role_claim";
+
     private final String code;
 
     public JwtVerificationException(String message) {

@@ -127,12 +127,8 @@ class MysqlEngineRlsIntegrationTest {
     @Autowired
     private GraphqlSchemaManager schemaManager;
 
-    /**
-     * The exposure role a signed-in caller is given. It is derived from the token
-     * being present, not from its free-form {@code role} claim (here
-     * "app_authenticated"), which drives row-level policies instead.
-     */
-    private static final String CALLER_ROLE = "authenticated";
+    /** The role the caller's requests run as: the token's {@code role} claim. */
+    private static final String CALLER_ROLE = "app_authenticated";
     private static final ObjectMapper mapper = new ObjectMapper();
 
     /** Owner policy: a row is visible iff its owner equals the caller's userId. */

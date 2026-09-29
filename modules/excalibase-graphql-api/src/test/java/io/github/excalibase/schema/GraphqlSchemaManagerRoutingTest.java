@@ -3,12 +3,14 @@ package io.github.excalibase.schema;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.config.datasource.TenantContext;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -43,7 +45,7 @@ class GraphqlSchemaManagerRoutingTest {
     void anonymousCaller_isServedTheTenantDatabase() {
         RecordingManager manager = new RecordingManager(mock(DynamicDataSourceManager.class));
 
-        manager.resolveEngineState(null, "proj-a", "anon");
+        manager.resolveEngineState(null, "proj-a", Principal.anonymous());
 
         assertThat(manager.tenantBuilds).containsExactly("proj-a");
     }
@@ -53,7 +55,8 @@ class GraphqlSchemaManagerRoutingTest {
     void tokenProject_isNotAFallbackForThePath() {
         RecordingManager manager = new RecordingManager(mock(DynamicDataSourceManager.class));
 
-        manager.resolveEngineState(JwtClaims.of("u-1", "proj-from-token", "acme", "demo", "user", "u@x.com"));
+        manager.resolveEngineState(new Principal("user", false,
+                JwtClaims.of("u-1", "proj-from-token", "acme", "demo", "user", "u@x.com"), Map.of()));
 
         assertThat(manager.tenantBuilds).isEmpty();
     }

@@ -4,8 +4,8 @@ import io.github.excalibase.rls.jdbc.JdbcEvaluator;
 import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.rls.jdbc.SqlFilter;
 import io.github.excalibase.rls.jdbc.SqlProjection;
-import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtClaimsUserContext;
+import io.github.excalibase.security.Principal;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -15,7 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Turns a request — (projectId, table, JWT claims, operation) — into a
+ * Turns a request — (projectId, table, principal, operation) — into a
  * parameterized RLS {@link SqlFilter} by loading the project's policies
  * and delegating to the engine's {@link JdbcEvaluator}.
  *
@@ -49,24 +49,24 @@ public final class RlsPolicyEnforcer {
     }
 
     /**
-     * Compiles the RLS filter for one table. {@code claims} may be null
-     * for anonymous traffic — an anonymous context (null user, project as
+     * Compiles the RLS filter for one table. {@code principal} may be null, or carry
+     * no claims, for anonymous traffic — an anonymous context (null user, project as
      * tenant) is used, which the engine resolves to a no-rows predicate
      * for owner-style policies rather than throwing.
      */
-    public SqlFilter filterFor(String projectId, String table, JwtClaims claims, Operation op) {
-        return filterFor(projectId, table, claims, op, null);
+    public SqlFilter filterFor(String projectId, String table, Principal principal, Operation op) {
+        return filterFor(projectId, table, principal, op, null);
     }
 
     /**
-     * As {@link #filterFor(String, String, JwtClaims, Operation)}, but with the
+     * As {@link #filterFor(String, String, Principal, Operation)}, but with the
      * alias the calling query gives the outer table. Relationship/EXISTS
      * predicates correlate a subquery back to the outer row; since the compiler
      * aliases tables, the engine must reference that alias rather than the table
      * name. Null falls back to the table name (correct for un-aliased callers).
      */
-    public SqlFilter filterFor(String projectId, String table, JwtClaims claims, Operation op, String outerAlias) {
-        return evaluator(projectId).compile(table, context(projectId, claims), op, outerAlias);
+    public SqlFilter filterFor(String projectId, String table, Principal principal, Operation op, String outerAlias) {
+        return evaluator(projectId).compile(table, context(projectId, principal), op, outerAlias);
     }
 
     /**
@@ -75,9 +75,9 @@ public final class RlsPolicyEnforcer {
      * Hidden columns appear in {@link SqlProjection#hidden()} and are absent
      * from its select list.
      */
-    public SqlProjection projectionFor(String projectId, String table, JwtClaims claims,
+    public SqlProjection projectionFor(String projectId, String table, Principal principal,
                                        Operation op, List<String> requestedColumns) {
-        return evaluator(projectId).project(table, context(projectId, claims), op, requestedColumns);
+        return evaluator(projectId).project(table, context(projectId, principal), op, requestedColumns);
     }
 
     /**
@@ -87,10 +87,10 @@ public final class RlsPolicyEnforcer {
      * When no ALLOW policy targets the resource/op, the matcher's default-deny
      * semantics apply.
      */
-    public boolean permitsRow(String projectId, String table, JwtClaims claims,
-                              Operation op, java.util.Map<String, Object> row) {
+    public boolean permitsRow(String projectId, String table, Principal principal,
+                              Operation op, Map<String, Object> row) {
         return new RowMatcher(policyProvider.policiesFor(projectId))
-                .matches(table, row, context(projectId, claims), op);
+                .matches(table, row, context(projectId, principal), op);
     }
 
     /**
@@ -101,10 +101,10 @@ public final class RlsPolicyEnforcer {
      * e.g. moving an ownership/tenant column out of policy. Unchanged columns
      * are not re-validated here; the UPDATE's USING predicate already did.
      */
-    public boolean permitsRowUpdate(String projectId, String table, JwtClaims claims,
-                                    java.util.Map<String, Object> changedRow) {
+    public boolean permitsRowUpdate(String projectId, String table, Principal principal,
+                                    Map<String, Object> changedRow) {
         return new RowMatcher(policyProvider.policiesFor(projectId))
-                .matchesUpdate(table, changedRow, context(projectId, claims));
+                .matchesUpdate(table, changedRow, context(projectId, principal));
     }
 
     /**
@@ -113,10 +113,10 @@ public final class RlsPolicyEnforcer {
      * SELECT. Hidden columns are removed and NULL-masked columns nulled, per the
      * caller's column policies. Returns the same map for chaining.
      */
-    public java.util.Map<String, Object> maskRow(String projectId, String resource, JwtClaims claims,
-                                                  Operation op, java.util.Map<String, Object> row) {
+    public Map<String, Object> maskRow(String projectId, String resource, Principal principal,
+                                                  Operation op, Map<String, Object> row) {
         new ColumnMasker(policyProvider.columnPoliciesFor(projectId))
-                .plan(resource, context(projectId, claims), op)
+                .plan(resource, context(projectId, principal), op)
                 .apply(row);
         return row;
     }
@@ -128,30 +128,30 @@ public final class RlsPolicyEnforcer {
      * under "old" and "new"; each is checked on its own and only the images the
      * subscriber may read are kept.
      */
-    public Optional<Map<String, Object>> renderChange(String projectId, String resource, JwtClaims claims,
+    public Optional<Map<String, Object>> renderChange(String projectId, String resource, Principal principal,
                                                       String eventType, Map<String, Object> data) {
         if (!"UPDATE".equalsIgnoreCase(eventType)) {
-            return visibleImage(projectId, resource, claims, data);
+            return visibleImage(projectId, resource, principal, data);
         }
         Map<String, Object> visible = new LinkedHashMap<>();
         for (String side : List.of("old", "new")) {
             if (data.get(side) instanceof Map<?, ?> image) {
-                visibleImage(projectId, resource, claims, asRow(image)).ifPresent(kept -> visible.put(side, kept));
+                visibleImage(projectId, resource, principal, asRow(image)).ifPresent(kept -> visible.put(side, kept));
             }
         }
         return visible.isEmpty() ? Optional.empty() : Optional.of(visible);
     }
 
-    private Optional<Map<String, Object>> visibleImage(String projectId, String resource, JwtClaims claims,
+    private Optional<Map<String, Object>> visibleImage(String projectId, String resource, Principal principal,
                                                        Map<String, Object> image) {
         Map<String, Object> row = new LinkedHashMap<>(image);
         try {
-            if (!permitsRow(projectId, resource, claims, Operation.SELECT, row)) return Optional.empty();
+            if (!permitsRow(projectId, resource, principal, Operation.SELECT, row)) return Optional.empty();
         } catch (UnsupportedOperationException relationshipPredicate) {
             // Relationship policies need a database probe the in-memory matcher lacks.
             return Optional.empty();
         }
-        return Optional.of(maskRow(projectId, resource, claims, Operation.SELECT, row));
+        return Optional.of(maskRow(projectId, resource, principal, Operation.SELECT, row));
     }
 
     private static Map<String, Object> asRow(Map<?, ?> image) {
@@ -168,8 +168,11 @@ public final class RlsPolicyEnforcer {
                 quoteStyle);
     }
 
-    private UserContext context(String projectId, JwtClaims claims) {
-        return claims != null ? new JwtClaimsUserContext(claims) : anonymous(projectId);
+    /** anon has no user by definition, whatever its token (a publishable key's sub) carries. */
+    private UserContext context(String projectId, Principal principal) {
+        boolean signedIn = principal != null && principal.claims() != null
+                && !Principal.ANON.equals(principal.role());
+        return signedIn ? new JwtClaimsUserContext(principal) : anonymous(projectId);
     }
 
     /** Anonymous principal: no user id, project doubles as tenant, no roles. */

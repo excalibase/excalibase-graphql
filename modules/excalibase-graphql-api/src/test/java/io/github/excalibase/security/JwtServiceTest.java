@@ -290,6 +290,7 @@ class JwtServiceTest {
                         .subject("test@test.com")
                         .claim("userId", 1L)
                         .claim("projectId", "test/proj")
+                        .claim("role", "user")
                         .issuer("excalibase")
                         .issueTime(Date.from(Instant.now()))
                         .expirationTime(Date.from(Instant.now().plusSeconds(3600)))

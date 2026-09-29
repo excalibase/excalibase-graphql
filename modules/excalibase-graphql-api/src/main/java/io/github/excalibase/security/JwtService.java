@@ -15,7 +15,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.interfaces.ECPublicKey;
 import java.time.Duration;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Verifies JWTs. Two modes:
@@ -157,33 +161,7 @@ public class JwtService {
             validateTokenUse(claims);
             validateAudience(claims, expectedProjectId != null ? expectedProjectId : projectId);
 
-            String userId = extractUserId(claims);
-            String orgSlug = (String) claims.getClaim("orgSlug");
-            String projectName = (String) claims.getClaim("projectName");
-            // orgName is a newer claim — older tokens issued before the auth
-            // upgrade won't carry it. Default to empty string for back-compat
-            // so verification still succeeds.
-            String orgNameClaim = (String) claims.getClaim("orgName");
-            String orgName = orgNameClaim != null ? orgNameClaim : "";
-            String role = claims.getClaim("role") instanceof String roleValue ? roleValue : "user";
-            String email = claims.getSubject() != null ? claims.getSubject()
-                    : (String) claims.getClaim("email");
-            // Optional claims emitted by excalibase-auth's api-key grant.
-            // Absent on password/refresh tokens — defaulted to null / 0.
-            String scope = claims.getClaim("scope") instanceof String scopeValue ? scopeValue : null;
-            long keyId = 0L;
-            Object keyIdClaim = claims.getClaim("keyId");
-            if (keyIdClaim instanceof Number keyIdNumber) {
-                keyId = keyIdNumber.longValue();
-            }
-
-            // Expose every JWT claim so RLS policies can reference arbitrary
-            // custom claims ({{region}}, {{plan}}, …) — the Postgres-RLS
-            // equivalent of current_setting('jwt.claims.x'). Known fields above
-            // still take precedence in JwtClaimsUserContext.
-            java.util.Map<String, Object> extraClaims = new java.util.HashMap<>(claims.getClaims());
-
-            return new JwtClaims(userId, projectId, orgSlug, projectName, orgName, role, email, scope, keyId, extraClaims);
+            return toJwtClaims(claims, projectId);
 
         } catch (JwtVerificationException e) {
             throw e;
@@ -289,6 +267,85 @@ public class JwtService {
             throw new JwtVerificationException(
                     "Unexpected JWS algorithm: " + jwt.getHeader().getAlgorithm() + " (require " + expected + ")");
         }
+    }
+
+    /** Maps verified claims onto {@link JwtClaims}, refusing a missing or inconsistent role. */
+    private JwtClaims toJwtClaims(JWTClaimsSet claims, String projectId) {
+        String userId = extractUserId(claims);
+        String orgSlug = (String) claims.getClaim("orgSlug");
+        String projectName = (String) claims.getClaim("projectName");
+        // orgName is a newer claim — older tokens issued before the auth
+        // upgrade won't carry it. Default to empty string for back-compat
+        // so verification still succeeds.
+        String orgNameClaim = (String) claims.getClaim("orgName");
+        String orgName = orgNameClaim != null ? orgNameClaim : "";
+        String email = claims.getSubject() != null ? claims.getSubject()
+                : (String) claims.getClaim("email");
+        // Optional claims emitted by excalibase-auth's api-key grant.
+        // Absent on password/refresh tokens — defaulted to null / 0.
+        String scope = claims.getClaim("scope") instanceof String scopeValue ? scopeValue : null;
+        String role = requireRole(claims);
+        Set<String> allowedRoles = requireAllowedRoles(claims, role);
+        requireServiceScope(role, allowedRoles, scope);
+        long keyId = 0L;
+        Object keyIdClaim = claims.getClaim("keyId");
+        if (keyIdClaim instanceof Number keyIdNumber) {
+            keyId = keyIdNumber.longValue();
+        }
+
+        // Expose every JWT claim so RLS policies can reference arbitrary
+        // custom claims ({{region}}, {{plan}}, …) — the Postgres-RLS
+        // equivalent of current_setting('jwt.claims.x'). Known fields above
+        // still take precedence in JwtClaimsUserContext.
+        Map<String, Object> extraClaims = new HashMap<>(claims.getClaims());
+
+        return new JwtClaims(userId, projectId, orgSlug, projectName, orgName, role, email, scope, keyId,
+                extraClaims, allowedRoles);
+    }
+
+    /** The default role: required, never defaulted, and a valid role name (spec §1). */
+    private static String requireRole(JWTClaimsSet claims) {
+        if (claims.getClaim("role") instanceof String role && Principal.isValidRoleName(role)) {
+            return role;
+        }
+        throw new JwtVerificationException(JwtVerificationException.INVALID_ROLE_CLAIM,
+                "JWT role claim is missing or not a valid role name");
+    }
+
+    /** {@code allowed_roles}: absent means only the default role; present must list it. */
+    private static Set<String> requireAllowedRoles(JWTClaimsSet claims, String role) {
+        Object allowed = claims.getClaim("allowed_roles");
+        if (allowed == null) {
+            return Set.of(role);
+        }
+        if (!(allowed instanceof List<?> entries)) {
+            throw invalidAllowedRoles();
+        }
+        Set<String> allowedRoles = new LinkedHashSet<>();
+        for (Object entry : entries) {
+            if (!(entry instanceof String allowedRole) || !Principal.isValidRoleName(allowedRole)) {
+                throw invalidAllowedRoles();
+            }
+            allowedRoles.add(allowedRole);
+        }
+        if (!allowedRoles.contains(role)) {
+            throw invalidAllowedRoles();
+        }
+        return Set.copyOf(allowedRoles);
+    }
+
+    /** Only a secret-key token (scope {@code service}) may name the bypass role at all. */
+    private static void requireServiceScope(String role, Set<String> allowedRoles, String scope) {
+        boolean namesService = Principal.SERVICE.equals(role) || allowedRoles.contains(Principal.SERVICE);
+        if (namesService && !Principal.SERVICE.equals(scope)) {
+            throw new JwtVerificationException(JwtVerificationException.INVALID_ROLE_CLAIM,
+                    "JWT names the service role without the service scope");
+        }
+    }
+
+    private static JwtVerificationException invalidAllowedRoles() {
+        return new JwtVerificationException(JwtVerificationException.INVALID_ROLE_CLAIM,
+                "JWT allowed_roles claim must be an array of role names that contains the role claim");
     }
 
     private String extractUserId(JWTClaimsSet claims) {

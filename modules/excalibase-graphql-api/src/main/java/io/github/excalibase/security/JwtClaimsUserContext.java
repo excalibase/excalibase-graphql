@@ -2,44 +2,44 @@ package io.github.excalibase.security;
 
 import io.github.excalibase.rls.UserContext;
 
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
 /**
- * Adapter that exposes a verified {@link JwtClaims} as the RLS engine's
+ * Adapter that exposes a signed-in {@link Principal} as the RLS engine's
  * {@link UserContext}. Pure mapping; no I/O.
  *
- * <p>Groups are intentionally always empty — the JWT pipeline does not
- * carry group membership yet. When/if the auth service starts issuing
- * a {@code groups} claim, populate it here.
+ * <p>{@link #roles()} is the one role the request runs as, never the token's raw
+ * {@code role} claim. When a service token acts as another role, the caller is
+ * described only by the request's session headers: the service token's own user id
+ * and claims say nothing about whom it is acting for.
  *
- * <p>{@link #resolveVariable} surfaces the small set of claim values that
- * RLS rules may reference as {@code ctx.*} variables. Snake_case keys
- * (e.g. {@code user_id}) are the canonical form documented for policy
- * authors; the camelCase aliases match the JSON field names of {@link
- * JwtClaims} so policy authors who copy/paste from a JWT payload don't
- * get a silent null.
+ * <p>Snake_case variable names ({@code user_id}) are canonical for policy authors;
+ * camelCase aliases match the JWT field names so a copied name never silently resolves
+ * to null. Groups are always empty — the JWT pipeline carries no group membership.
  */
 public final class JwtClaimsUserContext implements UserContext {
 
+    private final Principal principal;
     private final JwtClaims claims;
+    private final Map<String, String> sessionVariables;
     private final Set<String> roles;
 
-    public JwtClaimsUserContext(JwtClaims claims) {
-        this.claims = Objects.requireNonNull(claims, "claims");
-        String role = claims.role();
-        this.roles = (role == null || role.isBlank()) ? Set.of() : Set.of(role);
+    public JwtClaimsUserContext(Principal principal) {
+        this.principal = Objects.requireNonNull(principal, "principal");
+        this.claims = Objects.requireNonNull(principal.claims(), "principal.claims");
+        this.sessionVariables = principal.sessionVariables(claims.projectId());
+        this.roles = Set.of(principal.role());
     }
 
     @Override
     public String userId() {
-        return claims.userId();
+        return principal.impersonating() ? sessionVariable("user-id") : claims.userId();
     }
 
-    /**
-     * In excalibase the project boundary is the tenant boundary, so the
-     * verified {@code projectId} JWT claim doubles as the RLS tenant id.
-     */
+    /** The project boundary is the tenant boundary, so the verified projectId doubles as tenant id. */
     @Override
     public String tenantId() {
         return claims.projectId();
@@ -61,15 +61,25 @@ public final class JwtClaimsUserContext implements UserContext {
             return null;
         }
         return switch (name) {
-            case "user_id", "userId" -> claims.userId();
+            case "user_id", "userId" -> userId();
             case "project_id", "projectId", "tenant_id", "tenantId" -> claims.projectId();
-            case "role" -> claims.role();
+            case "role" -> principal.role();
+            default -> principal.impersonating() ? sessionVariable(name) : claimVariable(name);
+        };
+    }
+
+    private Object claimVariable(String name) {
+        return switch (name) {
             case "email" -> claims.email();
             case "scope" -> claims.scope();
             case "org_slug", "orgSlug" -> claims.orgSlug();
-            // Any other name falls through to the raw JWT claims, so policies can
-            // reference arbitrary custom claims ({{region}}, {{plan}}, …).
+            // Any other name falls through to the raw JWT claims ({{region}}, {{plan}}, …).
             default -> claims.extraClaims().get(name);
         };
+    }
+
+    private String sessionVariable(String name) {
+        return sessionVariables.get(Principal.SESSION_VARIABLE_PREFIX
+                + name.toLowerCase(Locale.ROOT).replace('_', '-'));
     }
 }

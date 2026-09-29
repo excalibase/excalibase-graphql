@@ -43,6 +43,7 @@ public class ExcalibaseRuntimeHints implements RuntimeHintsRegistrar {
         registerClass(hints, "io.github.excalibase.security.JwtAuthFilter", all);
         registerClass(hints, "io.github.excalibase.security.JwtService", all);
         registerClass(hints, "io.github.excalibase.security.JwtClaims", all);
+        registerClass(hints, "io.github.excalibase.security.Principal", all);
         registerClass(hints, "io.github.excalibase.config.SecurityProperties", all);
         registerClass(hints, "io.github.excalibase.config.SecurityProperties$Auth", all);
         registerClass(hints, "io.github.excalibase.config.SecurityProperties$MultiTenant", all);

@@ -14,6 +14,11 @@ import org.slf4j.MDC;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 
 public class JwtAuthFilter extends OncePerRequestFilter {
 
@@ -56,9 +61,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     PROJECT_MISMATCH_CODE);
             return;
         }
+        Principal principal;
+        try {
+            principal = RoleResolver.resolve(claims, request.getHeader(RoleResolver.ROLE_HEADER),
+                    excalibaseHeaders(request));
+        } catch (RoleNotAllowedException e) {
+            writeError(response, HttpServletResponse.SC_FORBIDDEN, "Role not allowed", e.code());
+            return;
+        }
+        request.setAttribute(SecurityConstants.PRINCIPAL_ATTR, principal);
         try {
             applyTenantContext(pathProjectId, claims);
-            applyRlsContext(pathProjectId, claims);
+            applyRlsContext(pathProjectId, principal);
             chain.doFilter(request, response);
         } finally {
             RlsContext.clear();
@@ -77,22 +91,34 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Registers the query-first RLS contributor for this request. A no-op when
-     * the engine isn't wired or the request carries no project context. Safe to
-     * always call: with no policies for the project the contributor yields no
-     * predicate, so existing deploys see zero behaviour change until a policy
-     * is authored.
+     * Registers the query-first RLS contributors for this request. A no-op when
+     * the engine isn't wired, the request carries no project context, or the
+     * request runs as {@code service}, which row and column policies do not govern.
      */
-    private void applyRlsContext(String projectId, JwtClaims claims) {
-        if (rlsEnforcer == null || projectId == null) {
+    private void applyRlsContext(String projectId, Principal principal) {
+        if (rlsEnforcer == null || projectId == null || principal.bypass()) {
             return;
         }
-        // claims may be null (anonymous) — the engine then uses an anonymous
-        // context, so owner/claim policies match no rows (fail-closed). RLS is a
-        // property of the resource, applied on every request, not gated by token.
-        RlsContext.set(new EngineRlsWhereContributor(rlsEnforcer, projectId, claims));
-        RlsContext.setColumnMask(new EngineColumnMaskContributor(rlsEnforcer, projectId, claims));
-        RlsContext.setRowCheck(new EngineRowCheckContributor(rlsEnforcer, projectId, claims));
+        // An anonymous principal gets the engine's anonymous context, so owner/claim
+        // policies match no rows (fail-closed). RLS applies on every request, not only with a token.
+        RlsContext.set(new EngineRlsWhereContributor(rlsEnforcer, projectId, principal));
+        RlsContext.setColumnMask(new EngineColumnMaskContributor(rlsEnforcer, projectId, principal));
+        RlsContext.setRowCheck(new EngineRowCheckContributor(rlsEnforcer, projectId, principal));
+    }
+
+    /** The request's {@code x-excalibase-*} headers, which carry session variables for a service token. */
+    private static Map<String, String> excalibaseHeaders(HttpServletRequest request) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        Enumeration<String> names = request.getHeaderNames();
+        if (names == null) {
+            return headers;
+        }
+        for (String name : Collections.list(names)) {
+            if (name.toLowerCase(Locale.ROOT).startsWith(Principal.SESSION_VARIABLE_PREFIX)) {
+                headers.put(name, request.getHeader(name));
+            }
+        }
+        return headers;
     }
 
     private JwtClaims verifyClaims(HttpServletRequest request, String pathProjectId) {

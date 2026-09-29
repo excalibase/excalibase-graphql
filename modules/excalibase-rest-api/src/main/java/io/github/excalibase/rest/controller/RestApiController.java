@@ -10,6 +10,7 @@ import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaProvider;
 import io.github.excalibase.schema.TableExposure;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsDeniedResponse;
 import io.github.excalibase.security.RlsOp;
@@ -32,6 +33,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
@@ -74,9 +76,9 @@ public class RestApiController {
 
     @GetMapping(produces = "application/openapi+json")
     public ResponseEntity<Object> openapi(HttpServletRequest request) {
-        var claims = getClaims(request);
-        var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
-        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.resolveDefaultSchema(claims)));
+        var principal = getPrincipal(request);
+        var schemaInfo = schemaProvider.resolveSchemaInfo(principal);
+        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.resolveDefaultSchema(principal)));
     }
 
     @GetMapping("/{table}")
@@ -194,7 +196,8 @@ public class RestApiController {
             HttpServletRequest request) {
 
         var claims = getClaims(request);
-        String schema = resolveSchema(cp, claims);
+        var principal = getPrincipal(request);
+        String schema = resolveSchema(cp, principal);
         if (schema == null) return notFound();
         // RPC executes an opaque stored function, so the engine cannot inject a
         // row-level filter into its body (unlike compiled table queries). It is
@@ -208,11 +211,11 @@ public class RestApiController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of(KEY_ERROR, "Authentication required for RPC"));
         }
-        var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
+        var schemaInfo = schemaProvider.resolveSchemaInfo(principal);
         if (!schemaInfo.getStoredProcedures().containsKey(schema + DOT + function)) return notFound();
 
         try {
-            var dialect = schemaProvider.resolveDialect(claims);
+            var dialect = schemaProvider.resolveDialect(principal);
             var ps = new MapSqlParameterSource();
             StringBuilder args = new StringBuilder();
             if (params != null) {
@@ -388,9 +391,9 @@ public class RestApiController {
         for (Object row : data) {
             if (row instanceof Map<?, ?> raw) {
                 @SuppressWarnings("unchecked") var rowMap = (Map<String, Object>) raw;
-                List<String> vals = new ArrayList<>();
-                for (String col : cols) vals.add(csvEscape(String.valueOf(rowMap.getOrDefault(col, ""))));
-                csv.append(String.join(",", vals)).append("\n");
+                csv.append(cols.stream()
+                        .map(col -> csvEscape(String.valueOf(rowMap.getOrDefault(col, ""))))
+                        .collect(Collectors.joining(","))).append("\n");
             }
         }
         return ResponseEntity.ok().contentType(CSV_TYPE).body((Object) csv.toString());
@@ -402,7 +405,7 @@ public class RestApiController {
     }
 
 
-    private record RequestContext(String tableKey, RestQueryCompiler compiler, SchemaInfo schemaInfo, JwtClaims claims) {}
+    private record RequestContext(String tableKey, RestQueryCompiler compiler, SchemaInfo schemaInfo) {}
 
     private record ParsedParams(List<String> columns, List<RestQueryCompiler.FilterSpec> filters,
                                 List<RestQueryCompiler.OrCondition> orConditions, List<RestQueryCompiler.EmbedSpec> embeds,
@@ -426,14 +429,14 @@ public class RestApiController {
      * is equally not there for this request: same answer, no separate denial.
      */
     private RequestContext resolveContext(String table, String profileHeader, HttpServletRequest request) {
-        var claims = getClaims(request);
-        String schema = resolveSchema(profileHeader, claims);
+        var principal = getPrincipal(request);
+        String schema = resolveSchema(profileHeader, principal);
         if (schema == null) return null;
         String tableKey = schema + DOT + table;
-        var schemaInfo = schemaProvider.resolveSchemaInfo(claims);
+        var schemaInfo = schemaProvider.resolveSchemaInfo(principal);
         if (!schemaInfo.hasTable(tableKey)) return null;
-        if (!permitsMethod(schemaProvider.resolveExposure(claims), tableKey, request)) return null;
-        return new RequestContext(tableKey, new RestQueryCompiler(schemaInfo, schemaProvider.resolveDialect(claims), schema, maxRows), schemaInfo, claims);
+        if (!permitsMethod(schemaProvider.resolveExposure(principal), tableKey, request)) return null;
+        return new RequestContext(tableKey, new RestQueryCompiler(schemaInfo, schemaProvider.resolveDialect(principal), schema, maxRows), schemaInfo);
     }
 
     /**
@@ -453,8 +456,8 @@ public class RestApiController {
         };
     }
 
-    private String resolveSchema(String header, JwtClaims claims) {
-        if (header == null || header.isBlank()) return schemaProvider.resolveDefaultSchema(claims);
+    private String resolveSchema(String header, Principal principal) {
+        if (header == null || header.isBlank()) return schemaProvider.resolveDefaultSchema(principal);
         String trimmed = header.trim();
         if (!trimmed.matches(IDENT_REGEX)) {
             throw new IllegalArgumentException("Invalid Content-Profile");
@@ -489,6 +492,8 @@ public class RestApiController {
     private static ResponseEntity<Object> notFound() { return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(KEY_ERROR, "Not found")); }
 
     private JwtClaims getClaims(HttpServletRequest request) { return (JwtClaims) request.getAttribute(SecurityConstants.JWT_CLAIMS_ATTR); }
+
+    private Principal getPrincipal(HttpServletRequest request) { return (Principal) request.getAttribute(SecurityConstants.PRINCIPAL_ATTR); }
 
     private List<RestQueryCompiler.FilterSpec> parseFilters(Map<String, String> allParams) {
         List<RestQueryCompiler.FilterSpec> filters = new ArrayList<>();
