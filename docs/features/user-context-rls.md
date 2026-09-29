@@ -1,5 +1,7 @@
 # JWT-Based Row Level Security (RLS)
 
+> Being replaced by [API permissions](permissions.md): once rolled out, a table or function is reachable only by roles that have a permission for it, and only tracked functions are exposed.
+
 ## Overview
 
 Excalibase integrates PostgreSQL **Row Level Security (RLS)** with JWT authentication. When a valid JWT is present, Excalibase sets the user ID as a PostgreSQL session variable before executing queries, enabling per-user row filtering without separate database roles.

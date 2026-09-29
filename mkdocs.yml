@@ -124,6 +124,7 @@ nav:
       - Enhanced PostgreSQL Types: features/enhanced-postgresql-types.md
       - Full-Text & Vector Search: features/search-and-vector.md
       - Real-Time Subscriptions: features/subscriptions.md
+      - API Permissions: features/permissions.md
       - Row-Level Security: features/user-context-rls.md
       - RLS Engine Architecture: features/rls-architecture.md
       - CORS (per-project origins): features/cors.md

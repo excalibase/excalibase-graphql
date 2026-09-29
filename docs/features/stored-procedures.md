@@ -1,5 +1,7 @@
 # Stored Procedures
 
+> Being replaced by [API permissions](permissions.md): once rolled out, a table or function is reachable only by roles that have a permission for it, and only tracked functions are exposed.
+
 Excalibase GraphQL automatically discovers stored procedures in your database and exposes them as GraphQL mutations. Both PostgreSQL and MySQL backends are supported.
 
 ## How It Works
