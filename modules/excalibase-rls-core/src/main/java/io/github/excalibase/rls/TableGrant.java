@@ -41,7 +41,7 @@ public record TableGrant(
      * field is "none", not "everyone" — the same reading the operations field
      * gets above — so a control plane that serialises a blank role cannot
      * silently publish a resource to every caller. There is no wildcard either:
-     * a grant may name {@code anon} or {@code authenticated} and nothing else.
+     * a grant names exactly one role, compared with the role the request runs as.
      */
     public boolean appliesToRole(String callerRole) {
         if (role == null || role.isBlank() || callerRole == null || callerRole.isBlank()) {

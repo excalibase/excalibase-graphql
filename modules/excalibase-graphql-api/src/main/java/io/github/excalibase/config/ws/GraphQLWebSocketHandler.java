@@ -7,9 +7,8 @@ import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
 import io.github.excalibase.rls.RlsPolicyEnforcer;
-import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
-import io.github.excalibase.security.JwtVerificationException;
+import io.github.excalibase.security.Principal;
 import graphql.language.Document;
 import graphql.language.Field;
 import graphql.language.OperationDefinition;
@@ -51,6 +50,8 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     static final String SESSION_CLAIMS_KEY = "excalibase.jwtClaims";
     /** Project from the URL path — authoritative for RLS (mirrors the HTTP filter). */
     static final String SESSION_PROJECT_KEY = "excalibase.projectId";
+    /** The {@link Principal} the session runs as, resolved at the handshake and at connection_init. */
+    static final String SESSION_PRINCIPAL_KEY = "excalibase.principal";
 
     /** Sentinel: the CDC row must not be delivered to this subscriber under RLS. */
     private static final Object RLS_DROP = new Object();
@@ -139,74 +140,29 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
 
     // -- Private handlers --
 
+    /**
+     * Resolves who the session runs as before acknowledging it; see {@link WsSessionAuth}.
+     * With JWT disabled there is no authentication and no principal.
+     */
     @SuppressWarnings("unchecked")
     private void handleConnectionInit(WebSocketSession session, Map<String, Object> msg) {
-        if (jwtEnabled && session.getAttributes().get(SESSION_TENANT_KEY) == null) {
-            // JwtHandshakeInterceptor did not authenticate at HTTP upgrade (no Authorization
-            // header). Try the connection_init payload next.
-            Map<String, Object> payload = (Map<String, Object>) msg.getOrDefault(PAYLOAD, Map.of());
-            String token = extractBearerToken(payload);
-            if (token != null) {
-                if (jwtService == null) {
-                    log.error("jwt-enabled=true but JwtService bean is not available");
-                    closeWithAuthError(session, "Server misconfigured: JWT enabled but no verifier");
-                    return;
-                }
-                String pathProject = (String) session.getAttributes().get(SESSION_PROJECT_KEY);
-                try {
-                    JwtClaims claims = jwtService.verify(token, pathProject);
-                    String tenantId = tenantIdFromClaims(claims);
-                    if (tenantId == null) {
-                        closeWithAuthError(session, "JWT missing projectId claim");
-                        return;
-                    }
-                    if (pathProject != null && !pathProject.equals(tenantId)) {
-                        // A token cannot reach another project's stream (mirrors the HTTP 403).
-                        closeWithAuthError(session, "Token project does not match the request path");
-                        return;
-                    }
-                    session.getAttributes().put(SESSION_TENANT_KEY, tenantId);
-                    session.getAttributes().put(SESSION_CLAIMS_KEY, claims);
-                    log.info("WS session {} authenticated via connection_init for tenant '{}'",
-                            session.getId(), tenantId);
-                } catch (JwtVerificationException e) {
-                    closeWithAuthError(session, "Invalid or expired token: " + e.code());
-                    return;
-                }
-            } else if (wsAuthRequired) {
-                // Strict mode (tenant-in-subject=true): no token is a hard reject.
-                closeWithAuthError(session, "Missing Authorization token in connection_init payload");
+        if (jwtEnabled) {
+            Map<String, Object> payload = msg.get(PAYLOAD) instanceof Map<?, ?> map
+                    ? (Map<String, Object>) map : Map.of();
+            try {
+                WsSessionAuth.onConnectionInit(jwtService, wsAuthRequired, payload, session.getAttributes());
+            } catch (WsSessionAuth.Failure failure) {
+                closeWithAuthError(session, failure.getMessage());
                 return;
             }
-            // Permissive mode + no token: pass through as null-tenant (matches HTTP filter semantics).
+            log.info("WS session {} runs as role '{}' for tenant '{}'", session.getId(),
+                    principalOf(session).role(), session.getAttributes().get(SESSION_TENANT_KEY));
         }
         sendMessage(session, "{\"type\":\"connection_ack\"}");
     }
 
-    /**
-     * Tenant key used for NATS subject filtering. Returns the opaque {@code projectId}
-     * claim ({@code proj_XXXXXXXXXX}) minted by the provisioner — same identifier used
-     * for K8s namespace and vault paths. Watcher deployments use
-     * {@code WATCHER_NATS_SUBJECT_PREFIX=cdc.{projectId}}.
-     */
-    static String tenantIdFromClaims(JwtClaims claims) {
-        if (claims == null) return null;
-        return claims.projectId();
-    }
-
-    @SuppressWarnings("unchecked")
-    private String extractBearerToken(Map<String, Object> payload) {
-        // Accept both payload.Authorization and payload.headers.Authorization (Apollo and common conventions)
-        Object direct = payload.get("Authorization");
-        if (direct == null) {
-            Object headers = payload.get("headers");
-            if (headers instanceof Map<?, ?> headerMap) {
-                direct = ((Map<String, Object>) headerMap).get("Authorization");
-            }
-        }
-        if (!(direct instanceof String header)) return null;
-        if (!header.startsWith("Bearer ")) return null;
-        return header.substring("Bearer ".length()).trim();
+    static Principal principalOf(WebSocketSession session) {
+        return (Principal) session.getAttributes().get(SESSION_PRINCIPAL_KEY);
     }
 
     private void closeWithAuthError(WebSocketSession session, String reason) {
@@ -310,15 +266,18 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         if (exposureGate != null && !exposureGate.permitsRead(session, resourceOf(event))) {
             return RLS_DROP;
         }
-        if (rlsEnforcer == null || !(parsed instanceof Map)) return parsed;
-        JwtClaims claims = (JwtClaims) session.getAttributes().get(SESSION_CLAIMS_KEY);
+        Principal principal = principalOf(session);
+        // service bypasses row and column policies, as on the query path.
+        if (rlsEnforcer == null || !(parsed instanceof Map) || (principal != null && principal.bypass())) {
+            return parsed;
+        }
         // Project comes from the URL path (authoritative), like the HTTP filter;
-        // claims supply the user context (anonymous when absent → fail-closed).
+        // the principal supplies the user context (anonymous when absent → fail-closed).
         String projectId = (String) session.getAttributes().get(SESSION_PROJECT_KEY);
         if (projectId == null) return parsed;
         Map<String, Object> change = (Map<String, Object>) parsed;
         Optional<Map<String, Object>> visible =
-                rlsEnforcer.renderChange(projectId, resourceOf(event), claims, event.type(), change);
+                rlsEnforcer.renderChange(projectId, resourceOf(event), principal, event.type(), change);
         return visible.isPresent() ? visible.get() : RLS_DROP;
     }
 

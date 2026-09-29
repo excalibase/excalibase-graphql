@@ -6,6 +6,8 @@ import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
+import io.github.excalibase.security.SecurityConstants;
 import io.github.excalibase.security.RlsDeniedResponse;
 import io.github.excalibase.security.RlsViolationException;
 import io.github.excalibase.service.QueryExecutionService;
@@ -71,7 +73,10 @@ public class GraphqlController {
             HttpServletRequest httpRequest) {
 
         var jwtClaims = (JwtClaims) httpRequest.getAttribute(JwtAuthFilter.JWT_CLAIMS_ATTR);
-        String userId = jwtClaims != null ? jwtClaims.userId() : null;
+        final Principal principal = (Principal) httpRequest.getAttribute(SecurityConstants.PRINCIPAL_ATTR);
+        // anon has no user, even when its token (a publishable key) carries a subject.
+        String userId = jwtClaims != null && principal != null && !Principal.ANON.equals(principal.role())
+                ? jwtClaims.userId() : null;
 
         if (!(request.get("query") instanceof String query) || query.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -88,7 +93,7 @@ public class GraphqlController {
 
         return observability.observe(query, null, () -> {
             try {
-                GraphqlSchemaManager.EngineState state = schemaManager.resolveEngineState(finalClaims);
+                GraphqlSchemaManager.EngineState state = schemaManager.resolveEngineState(principal);
                 if (state.compiler().isIntrospection(finalQuery)) {
                     return handleIntrospection(state, finalQuery, variables);
                 }

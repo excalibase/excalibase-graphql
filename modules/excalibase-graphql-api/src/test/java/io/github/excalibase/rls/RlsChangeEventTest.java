@@ -1,6 +1,7 @@
 package io.github.excalibase.rls;
 
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -140,7 +141,8 @@ class RlsChangeEventTest {
         return (Map<String, Object>) change.get(key);
     }
 
-    private static JwtClaims claims(String userId) {
-        return JwtClaims.of(userId, PROJECT, "acme", "demo", "app_authenticated", "a@x.com");
+    private static Principal claims(String userId) {
+        JwtClaims claims = JwtClaims.of(userId, PROJECT, "acme", "demo", "app_authenticated", "a@x.com");
+        return new Principal(claims.role(), false, claims, Map.of());
     }
 }

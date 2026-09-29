@@ -64,11 +64,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ExposureIntegrationTest {
 
     private static final String PROJECT = "proj-exposure";
-    /** Exposure knows two roles; this is the one a signed-in caller is given. */
-    private static final String ROLE = "authenticated";
+    /** The role excalibase-auth gives a signed-in end user; requests with that token run as it. */
+    private static final String ROLE = "user";
     private static final String ANON = "anon";
-    /** What excalibase-auth puts in the free-form {@code role} claim by default. */
-    private static final String FREE_FORM_ROLE = "user";
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -157,7 +155,7 @@ class ExposureIntegrationTest {
                 .subject("u@test.com")
                 .claim("userId", "u-1")
                 .claim("projectId", PROJECT)
-                .claim("role", FREE_FORM_ROLE)
+                .claim("role", ROLE)
                 .audience("excalibase:" + PROJECT)
                 .issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
@@ -181,12 +179,7 @@ class ExposureIntegrationTest {
                 .content(body(query)));
     }
 
-    /**
-     * The two roles a grant may name, end to end. A caller who presents no token is
-     * {@code anon}; a caller who presents one is {@code authenticated} whatever its
-     * free-form {@code role} claim says — here "user", the value excalibase-auth
-     * defaults to, which is neither grant role.
-     */
+    /** A caller who presents no token runs as {@code anon}; a signed-in one as its token's role. */
     @Test
     void graphql_whenCallerIsAnonymous_seesOnlyTheAnonGrant() throws Exception {
         enforce(grantOn("public.orders", ANON, Operation.SELECT),
@@ -201,7 +194,7 @@ class ExposureIntegrationTest {
     }
 
     @Test
-    void graphql_whenCallerIsSignedIn_seesOnlyTheAuthenticatedGrant() throws Exception {
+    void graphql_whenCallerIsSignedIn_seesOnlyTheUserGrant() throws Exception {
         enforce(grantOn("public.orders", ANON, Operation.SELECT),
                 grantOn("public.secrets", ROLE, Operation.SELECT));
 

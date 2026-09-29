@@ -1,8 +1,7 @@
 package io.github.excalibase.config.ws;
 
-import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
-import io.github.excalibase.security.JwtVerificationException;
+import io.github.excalibase.security.RoleNotAllowedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -16,25 +15,17 @@ import org.springframework.web.socket.server.HandshakeInterceptor;
 import java.util.Map;
 
 /**
- * Verifies the JWT on the WebSocket HTTP upgrade when an {@code Authorization: Bearer}
- * header is present. Successful verification stashes the tenant claim on the session
- * attributes under {@link GraphQLWebSocketHandler#SESSION_TENANT_KEY}, short-circuiting
- * the {@code connection_init} payload auth later.
+ * Authenticates the WebSocket HTTP upgrade from its headers: {@code Authorization: Bearer}
+ * and {@code X-Excalibase-Role}. The session's {@link io.github.excalibase.security.Principal}
+ * is stored under {@link GraphQLWebSocketHandler#SESSION_PRINCIPAL_KEY}.
  *
- * <p>Design: <strong>fail-closed on invalid headers, fail-through on missing ones.</strong>
- * Browser-based GraphQL clients (Apollo, urql, graphql-ws) cannot set headers on the WS
- * upgrade — they send the JWT in {@code connection_init.payload.Authorization} — so this
- * interceptor does NOT reject requests without an Authorization header. Both paths are
- * fail-closed in their own layer:
- * <ul>
- *     <li>With header (server-to-server, CLI): rejected here, no WS established.</li>
- *     <li>Without header (browsers): handled in {@code GraphQLWebSocketHandler.handleConnectionInit}.</li>
- * </ul>
+ * <p>Fail-closed on invalid headers, fail-through on a missing token: browser clients
+ * cannot set headers on the upgrade and send the token (and role) in the
+ * {@code connection_init} payload instead, where the handlers resolve the session again.
  */
 public class JwtHandshakeInterceptor implements HandshakeInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(JwtHandshakeInterceptor.class);
-    private static final String BEARER = "Bearer ";
 
     private final JwtService jwtService;
 
@@ -45,33 +36,16 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) {
-        String authHeader = request.getHeaders().getFirst(HttpHeaders.AUTHORIZATION);
-        if (authHeader == null || !authHeader.startsWith(BEARER)) {
-            // No header → let connection_init auth take over.
-            return true;
-        }
-        String token = authHeader.substring(BEARER.length()).trim();
-        // The project is in the URL path (authoritative). A token for another
-        // project cannot open this stream — mirrors the HTTP filter's 403, and
-        // is what the token's audience has to cover (EXC-11).
+        HttpHeaders headers = request.getHeaders();
+        // The project is in the URL path (authoritative); a token for another project
+        // cannot open this stream, and its audience has to cover this one (EXC-11).
         String pathProject = WsProjectPath.projectId(request.getURI().getPath());
         try {
-            JwtClaims claims = jwtService.verify(token, pathProject);
-            String tenantId = GraphQLWebSocketHandler.tenantIdFromClaims(claims);
-            if (tenantId == null) {
-                reject(response, "JWT missing projectId claim");
-                return false;
-            }
-            if (pathProject != null && !pathProject.equals(tenantId)) {
-                reject(response, "Token project does not match the request path");
-                return false;
-            }
-            attributes.put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, tenantId);
-            attributes.put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
-            log.info("WS handshake authenticated via Authorization header for tenant '{}'", tenantId);
+            WsSessionAuth.onHandshake(jwtService, headers.getFirst(HttpHeaders.AUTHORIZATION),
+                    WsSessionAuth.excalibaseHeaders(headers.toSingleValueMap()), pathProject, attributes);
             return true;
-        } catch (JwtVerificationException e) {
-            reject(response, "Invalid or expired token: " + e.code());
+        } catch (WsSessionAuth.Failure failure) {
+            reject(response, failure);
             return false;
         }
     }
@@ -82,11 +56,12 @@ public class JwtHandshakeInterceptor implements HandshakeInterceptor {
         // no-op
     }
 
-    private void reject(ServerHttpResponse response, String reason) {
-        response.setStatusCode(HttpStatus.UNAUTHORIZED);
+    private void reject(ServerHttpResponse response, WsSessionAuth.Failure failure) {
+        boolean forbidden = RoleNotAllowedException.ROLE_NOT_ALLOWED.equals(failure.code());
+        response.setStatusCode(forbidden ? HttpStatus.FORBIDDEN : HttpStatus.UNAUTHORIZED);
         if (response instanceof ServletServerHttpResponse servlet) {
-            servlet.getServletResponse().setHeader("X-Auth-Reason", reason);
+            servlet.getServletResponse().setHeader("X-Auth-Reason", failure.getMessage());
         }
-        log.warn("Rejected WS handshake: {}", reason);
+        log.warn("Rejected WS handshake: {}", failure.getMessage());
     }
 }

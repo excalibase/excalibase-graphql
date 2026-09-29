@@ -52,8 +52,10 @@ The engine grants the `service` bypass only to a token whose `role` **and** `sco
 turns the bypass on.
 
 Realtime and GraphQL-over-WebSocket clients cannot set headers in a browser; they pass the role as
-`role` in the connection payload (`connection_init` payload for GraphQL WS, the `access_token`
-join payload for realtime). The same rules and errors apply.
+`role` in the `connection_init` payload (or as `X-Excalibase-Role` in its `headers` object, name
+matched case-insensitively), on both the GraphQL WS and the realtime endpoint. A role sent on the
+upgrade request's headers is used when the payload names none. The same rules and errors apply;
+the socket is closed with a `connection_error` carrying the code.
 
 ## 2. Session variables
 
@@ -67,6 +69,13 @@ Permissions refer to the caller through session variables, written as strings th
 | `X-Excalibase-Project-Id` | the project in the URL |
 | `X-Excalibase-Email` | the token's `email` claim, else `sub` for password tokens |
 | `X-Excalibase-<Claim>` | every other top-level claim of the token (scalar or array) |
+
+Names are compared lower-cased. An array claim becomes a Postgres array literal with every element
+quoted (`{"a","b"}`). The registered claims `iss`, `aud`, `exp`, `iat`, `nbf`, `jti` and `token_use`
+are not session variables. A request running as `anon` has no user, even when its token (a
+publishable key's) carries a subject. When a `service` token acts as another role, the request's
+variables are only `X-Excalibase-Role`, `X-Excalibase-Project-Id` and the `X-Excalibase-*` headers
+it sent — never the service token's own claims.
 
 A permission that refers to a variable the request does not carry fails the request with
 `missing_session_variable` (Hasura's behaviour) — it never evaluates to "true" and never to a

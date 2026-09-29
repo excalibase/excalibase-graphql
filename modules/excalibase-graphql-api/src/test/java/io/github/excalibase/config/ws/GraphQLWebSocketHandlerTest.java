@@ -18,6 +18,7 @@ import io.github.excalibase.rls.Rule;
 import io.github.excalibase.rls.RuleOperator;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
+import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -79,7 +80,10 @@ class GraphQLWebSocketHandlerTest {
             // The handshake interceptor sets the path project; RLS reads it.
             attrs.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, projectId);
         }
-        if (claims != null) attrs.put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
+        if (claims != null) {
+            attrs.put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
+            attrs.put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY, principalOf(claims));
+        }
         when(session.getAttributes()).thenReturn(attrs);
         doAnswer(invocation -> {
             TextMessage msg = invocation.getArgument(0);
@@ -87,6 +91,12 @@ class GraphQLWebSocketHandlerTest {
             return null;
         }).when(session).sendMessage(any(TextMessage.class));
         return session;
+    }
+
+    private static Principal principalOf(JwtClaims claims) {
+        return Principal.SERVICE.equals(claims.role())
+                ? new Principal(Principal.SERVICE, true, claims, Map.of())
+                : new Principal(claims.role(), false, claims, Map.of());
     }
 
     private void subscribe(GraphQLWebSocketHandler handler, WebSocketSession session, String field) throws Exception {
@@ -153,6 +163,32 @@ class GraphQLWebSocketHandlerTest {
         assertThat(data.has("secret")).isFalse();
         assertThat(data.get("name").asText()).isEqualTo("n");
         assertThat(data.get("id").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("a service session bypasses row and column policies")
+    void serviceSession_bypassesRowAndColumnPolicies() throws Exception {
+        var provider = new InMemoryPolicyProvider();
+        provider.put("p1", List.of(new Policy(
+                "own", "own", "public.things", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+                List.of(new Rule("owner_id", FieldType.STRING, RuleOperator.EQ, "{{currentUserId}}")),
+                List.of(Assignment.all()))));
+        provider.putColumns("p1", List.of(new ColumnPolicy(
+                "h", "h", "public.things", Set.of("secret"), Operation.ALL, MaskMode.HIDE,
+                null, null, 0, true, List.of(Assignment.all()))));
+        var handler = handler(new RlsPolicyEnforcer(provider));
+
+        var sent = new ArrayList<String>();
+        var service = new JwtClaims("svc", "p1", "acme", "demo", "", "service", "apikey:1", "service", 1L);
+        var session = session(sent, "p1", service);
+        handler.afterConnectionEstablished(session);
+        subscribe(handler, session, "thingsChanges");
+
+        subscriptionService.publish("p1", new CDCEvent(
+                "INSERT", null, "things", "{\"id\":1,\"owner_id\":\"someone\",\"secret\":\"x\"}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        assertThat(deliveredData(sent.getFirst()).get("secret").asText()).isEqualTo("x");
     }
 
     @Test

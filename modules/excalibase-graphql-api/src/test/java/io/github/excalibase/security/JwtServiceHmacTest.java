@@ -103,6 +103,7 @@ class JwtServiceHmacTest {
                 .claim("userId", 7L)
                 .claim("scope", "api-key")
                 .claim("keyId", 99L)
+                .claim("role", "anon")
                 .build();
         String token = signHmac(SECRET, claims);
 
@@ -151,6 +152,7 @@ class JwtServiceHmacTest {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("subject-fallback")
+                .claim("role", "user")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
                 .build();
         String token = signHmac(SECRET, claims);

@@ -7,6 +7,7 @@ import io.github.excalibase.schema.ExposureSource;
 import io.github.excalibase.schema.TableExposure;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
+import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.RlsOp;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,8 @@ class WebSocketExposureTest {
 
     private static final String PROJECT = "p1";
     private static final JwtClaims CLAIMS =
-            JwtClaims.of("u-1", PROJECT, "acme", "demo", "authenticated", "u@x.com");
+            JwtClaims.of("u-1", PROJECT, "acme", "demo", "user", "u@x.com");
+    private static final Principal USER = new Principal("user", false, CLAIMS, Map.of());
 
     private SubscriptionService subscriptionService;
     private ObjectMapper mapper;
@@ -83,6 +85,7 @@ class WebSocketExposureTest {
         }).when(session).sendMessage(any(TextMessage.class));
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, PROJECT);
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, CLAIMS);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY, USER);
         return session;
     }
 
@@ -173,40 +176,63 @@ class WebSocketExposureTest {
         await().atMost(Duration.ofSeconds(2)).until(() -> sent.stream().anyMatch(msg -> msg.contains("\"next\"")));
     }
 
-    /**
-     * The gate asks exposure about the caller's sign-in state, not about the
-     * free-form {@code role} claim: that claim drives row-level policies and
-     * defaults to "user", which matches neither role a grant may name.
-     */
+    /** The gate asks exposure about the role the session runs as. */
     @Test
-    void permitsRead_whenSessionIsAuthenticated_asksExposureForTheAuthenticatedRole() throws Exception {
+    void permitsRead_asksExposureForTheSessionsActiveRole() throws Exception {
         var asked = new ArrayList<String>();
-        ExposureSource source = (orgSlug, projectId, role) -> {
-            asked.add(role);
+        ExposureSource source = (orgSlug, projectId, principal) -> {
+            asked.add(principal.role());
             return TableExposure.UNRESTRICTED;
         };
         WebSocketSession session = session(new ArrayList<>());
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
-                JwtClaims.of("u-1", PROJECT, "acme", "demo", "user", "u@x.com"));
+        JwtClaims editorCapable = new JwtClaims("u-1", PROJECT, "acme", "demo", "", "user", "u@x.com", null, 0L,
+                Map.of(), Set.of("user", "editor"));
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY,
+                new Principal("editor", false, editorCapable, Map.of()));
 
         new RealtimeExposureGate(source).permitsRead(session, "public.customers");
 
-        assertThat(asked).containsExactly("authenticated");
+        assertThat(asked).containsExactly("editor");
     }
 
     @Test
-    void permitsRead_whenSessionHasNoClaims_asksExposureForTheAnonRole() throws Exception {
+    void permitsRead_whenAnonymous_asksExposureForAnon() throws Exception {
         var asked = new ArrayList<String>();
-        ExposureSource source = (orgSlug, projectId, role) -> {
-            asked.add(role);
+        ExposureSource source = (orgSlug, projectId, principal) -> {
+            asked.add(principal.role());
             return TableExposure.UNRESTRICTED;
         };
         WebSocketSession session = session(new ArrayList<>());
         session.getAttributes().remove(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY, Principal.anonymous());
 
         new RealtimeExposureGate(source).permitsRead(session, "public.customers");
 
         assertThat(asked).containsExactly("anon");
+    }
+
+    @Test
+    void permitsRead_whenServiceBypasses_passesWithoutAskingExposure() throws Exception {
+        var asked = new ArrayList<String>();
+        ExposureSource source = (orgSlug, projectId, principal) -> {
+            asked.add(principal.role());
+            return TableExposure.enforcing(Map.of());
+        };
+        WebSocketSession session = session(new ArrayList<>());
+        JwtClaims service = new JwtClaims("svc", PROJECT, "acme", "demo", "", "service", "apikey:1", "service", 1L);
+        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY,
+                new Principal(Principal.SERVICE, true, service, Map.of()));
+
+        assertThat(new RealtimeExposureGate(source).permitsRead(session, "public.secrets")).isTrue();
+        assertThat(asked).isEmpty();
+    }
+
+    @Test
+    void permitsRead_whenSessionResolvedNoPrincipal_refusesWherePermissionsApply() throws Exception {
+        WebSocketSession session = session(new ArrayList<>());
+        session.getAttributes().remove(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY);
+
+        assertThat(gateGranting("public.customers").permitsRead(session, "public.customers")).isFalse();
     }
 
     @Test
