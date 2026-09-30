@@ -574,6 +574,36 @@ FROM posts p
 JOIN users u ON p.author_id = u.id;
 
 -- ====================
+-- TRACKED FUNCTIONS
+-- ====================
+-- Reachable only when the project tracks them (docs/features/permissions.md §6); the
+-- procedures above are reflected but never exposed. Both return rows of wallets, so
+-- a caller sees only the wallet rows and columns its role may select.
+
+CREATE OR REPLACE FUNCTION wallets_with_balance_at_least(p_min NUMERIC)
+RETURNS SETOF wallets LANGUAGE sql STABLE AS $$
+    SELECT * FROM hana.wallets WHERE balance >= p_min ORDER BY wallet_id
+$$;
+
+CREATE OR REPLACE FUNCTION transfer_between_wallets(p_from BIGINT, p_to BIGINT, p_amount NUMERIC)
+RETURNS SETOF wallets LANGUAGE plpgsql VOLATILE AS $$
+DECLARE
+    v_balance NUMERIC(15,2);
+BEGIN
+    SELECT balance INTO v_balance FROM hana.wallets WHERE wallet_id = p_from FOR UPDATE;
+    IF v_balance IS NULL THEN
+        RAISE EXCEPTION 'Source wallet not found';
+    END IF;
+    IF v_balance < p_amount THEN
+        RAISE EXCEPTION 'Insufficient funds (balance=%, requested=%)', v_balance, p_amount;
+    END IF;
+    UPDATE hana.wallets SET balance = balance - p_amount WHERE wallet_id = p_from;
+    UPDATE hana.wallets SET balance = balance + p_amount WHERE wallet_id = p_to;
+    RETURN QUERY SELECT * FROM hana.wallets WHERE wallet_id IN (p_from, p_to) ORDER BY wallet_id;
+END;
+$$;
+
+-- ====================
 -- COMPUTED FIELD FUNCTIONS
 -- ====================
 -- Computed field functions follow the naming pattern: tablename_fieldname(row tablename)

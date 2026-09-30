@@ -9,19 +9,19 @@ Excalibase GraphQL generates a full GraphQL API from your database schema — no
 docker-compose up -d
 # Starts: postgres + nats + excalibase-watcher + excalibase-graphql + graphiql
 ```
-JSON/JSONB, arrays, network types, composite types, domain types, views, materialized views, stored procedures, computed fields, real-time subscriptions (via [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS), Row-Level Security.
+JSON/JSONB, arrays, network types, composite types, domain types, views, materialized views, tracked functions, real-time subscriptions (via [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS), Row-Level Security.
 
 **MySQL** — (http://localhost:10001/{projectId}/graphql):
 ```bash
 docker-compose -f docker-compose.mysql.yml up -d
 ```
-CRUD, ENUM/JSON types, views, stored procedures, FK relationships.
+CRUD, ENUM/JSON types, views, FK relationships.
 
 ## Key Concepts
 
 ### Everything is auto-generated
 
-Excalibase reads your database schema at startup and builds the GraphQL schema automatically. Tables become query/mutation types, foreign keys become relationship fields, stored procedures become mutations, views become read-only query fields.
+Excalibase reads your database schema at startup and builds the GraphQL schema automatically. Tables become query/mutation types, foreign keys become relationship fields, tracked functions become query or mutation fields, views become read-only query fields.
 
 ### Include FK columns for relationships
 
@@ -40,15 +40,10 @@ When traversing a relationship, you must include the foreign key column in your 
 }
 ```
 
-### Stored procedure results are JSON strings
+### Functions return table rows
 
-OUT parameters come back as a single JSON string. Parse it on the client:
-
-```js
-const raw = data.callHanaTransferFunds;
-const result = JSON.parse(raw);
-// result.p_status === "SUCCESS"
-```
+A tracked function returns rows of its return table, shaped like a read of that table. Procedures
+are not exposed. See [Functions](../features/functions.md).
 
 ### orderBy syntax differs between backends
 
@@ -57,7 +52,7 @@ const result = JSON.parse(raw);
 
 ## What's in the Sample Data
 
-The Docker stacks initialize with tables, views, stored procedures, and seed data. See the [Installation Guide](../quick-start.md) for the full list.
+The Docker stacks initialize with tables, views, functions, and seed data. See the [Installation Guide](../quick-start.md) for the full list.
 
 ## Next Steps
 

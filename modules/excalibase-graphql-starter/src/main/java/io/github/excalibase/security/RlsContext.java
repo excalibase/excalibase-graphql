@@ -1,5 +1,7 @@
 package io.github.excalibase.security;
 
+import java.util.Map;
+
 /**
  * Per-request holder for the request's permission guards: the row filter every read and write
  * ANDs in, and the write guard (presets and checks). Populated once the project and the role are
@@ -13,6 +15,7 @@ public final class RlsContext {
 
     private static final ThreadLocal<RlsWhereContributor> CONTRIBUTOR = new ThreadLocal<>();
     private static final ThreadLocal<WriteGuard> WRITE_GUARD = new ThreadLocal<>();
+    private static final ThreadLocal<Map<String, String>> SESSION_VARIABLES = new ThreadLocal<>();
 
     private RlsContext() {}
 
@@ -32,8 +35,22 @@ public final class RlsContext {
         WRITE_GUARD.set(guard);
     }
 
+    /**
+     * The request's session variables (spec §2), for a tracked function's session argument. Set for
+     * every role, {@code service} included; empty when the request has none.
+     */
+    public static Map<String, String> sessionVariables() {
+        Map<String, String> variables = SESSION_VARIABLES.get();
+        return variables == null ? Map.of() : variables;
+    }
+
+    public static void setSessionVariables(Map<String, String> variables) {
+        SESSION_VARIABLES.set(Map.copyOf(variables));
+    }
+
     public static void clear() {
         CONTRIBUTOR.remove();
         WRITE_GUARD.remove();
+        SESSION_VARIABLES.remove();
     }
 }

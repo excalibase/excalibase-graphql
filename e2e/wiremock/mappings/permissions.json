@@ -2921,8 +2921,26 @@
      }
     }
    ],
-   "functions": [],
-   "functionPermissions": []
+   "functions": [
+    {
+     "function": "hana.wallets_with_balance_at_least",
+     "exposedAs": "QUERY",
+     "inferPermissions": true,
+     "sessionArgument": null
+    },
+    {
+     "function": "hana.transfer_between_wallets",
+     "exposedAs": "MUTATION",
+     "inferPermissions": false,
+     "sessionArgument": null
+    }
+   ],
+   "functionPermissions": [
+    {
+     "function": "hana.transfer_between_wallets",
+     "role": "user"
+    }
+   ]
   }
  }
 }

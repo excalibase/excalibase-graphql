@@ -16,7 +16,6 @@ import io.github.excalibase.service.QueryExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -47,16 +46,13 @@ public class GraphqlController {
     private final GraphqlSchemaManager schemaManager;
     private final QueryExecutionService queryExecutor;
     private final GraphQLObservabilityInstrumentation observability;
-    private final boolean jwtEnabled;
 
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
-                             GraphQLObservabilityInstrumentation observability,
-                             @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
+                             GraphQLObservabilityInstrumentation observability) {
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;
-        this.jwtEnabled = jwtEnabled;
     }
 
     /**
@@ -100,21 +96,11 @@ public class GraphqlController {
                     return handleIntrospection(state, finalQuery, variables);
                 }
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
-                // A procedure body is opaque to RLS, so like REST /rpc it needs a token.
-                if (jwtEnabled && finalClaims == null && compiled.isProcedureCall()) {
-                    return procedureCallUnauthenticated();
-                }
                 return dispatchCompiled(compiled, state, finalUserId, finalClaims);
             } catch (Exception e) {
                 return errorResponse(e);
             }
         });
-    }
-
-    private static ResponseEntity<Object> procedureCallUnauthenticated() {
-        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(ERRORS_KEY, List.of(Map.of(
-                MESSAGE_KEY, "Authentication required for procedure calls",
-                "extensions", Map.of("code", "UNAUTHENTICATED")))));
     }
 
     /**
@@ -156,7 +142,7 @@ public class GraphqlController {
         MapSqlParameterSource params = new MapSqlParameterSource(compiled.params());
         boolean isPostgres = "postgres".equalsIgnoreCase(schemaManager.getDatabaseType());
 
-        // Postgres + JWT: run procedure / two-phase / plain through one transaction.
+        // Postgres + JWT: run two-phase / plain through one transaction.
         boolean useContextPath = isPostgres
                 && ((userId != null && !userId.isBlank()) || claims != null);
         if (useContextPath) {
@@ -164,9 +150,6 @@ public class GraphqlController {
         }
 
         // Legacy paths for non-Postgres or feature-disabled, no-JWT requests.
-        if (compiled.isProcedureCall() && compiled.procedureCallInfo() != null) {
-            return queryExecutor.executeProcedureCall(compiled);
-        }
         if (compiled.isTwoPhase()) {
             return queryExecutor.executeTwoPhase(compiled, params, state.mutationExecutor());
         }

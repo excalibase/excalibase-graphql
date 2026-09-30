@@ -34,8 +34,8 @@ public class SchemaInfo {
     private final Map<String, List<ComputedField>> computedFields = new HashMap<>();
     // set of view names (read-only — no mutations)
     private final Set<String> viewNames = new HashSet<>();
-    // stored procedures: name → ProcedureInfo
-    private final Map<String, ProcedureInfo> storedProcedures = new LinkedHashMap<>();
+    // functions and procedures as reflected: name → FunctionInfo
+    private final Map<String, FunctionInfo> functions = new LinkedHashMap<>();
     // composite types: typeName → list of fields
     private final Map<String, List<CompositeTypeField>> compositeTypes = new LinkedHashMap<>();
     // installed Postgres extensions: extname → extversion. Populated by the
@@ -60,7 +60,7 @@ public class SchemaInfo {
         loader.loadCompositeTypes(jdbc, schema, this);
         loader.loadComputedFields(jdbc, schema, this);
         loader.loadViews(jdbc, schema, this);
-        loader.loadStoredProcedures(jdbc, schema, this);
+        loader.loadFunctions(jdbc, schema, this);
     }
 
     public void removeTable(String table) {
@@ -91,7 +91,7 @@ public class SchemaInfo {
         columnEnumType.clear();
         computedFields.clear();
         viewNames.clear();
-        storedProcedures.clear();
+        functions.clear();
         compositeTypes.clear();
     }
 
@@ -178,8 +178,8 @@ public class SchemaInfo {
         enumTypes.computeIfAbsent(enumTypeName, k -> new ArrayList<>()).add(label);
     }
 
-    public void addStoredProcedure(String name, ProcedureInfo info) {
-        storedProcedures.put(name, info);
+    public void addFunction(String name, FunctionInfo info) {
+        functions.put(name, info);
     }
 
     public void addCompositeTypeField(String typeName, String fieldName, String dataType) {
@@ -236,7 +236,8 @@ public class SchemaInfo {
     public Map<String, List<String>> getEnumTypes() { return Collections.unmodifiableMap(enumTypes); }
     public boolean isView(String tableName) { return viewNames.contains(tableName); }
     public Set<String> getViewNames() { return Collections.unmodifiableSet(viewNames); }
-    public Map<String, ProcedureInfo> getStoredProcedures() { return Collections.unmodifiableMap(storedProcedures); }
+    public Map<String, FunctionInfo> getFunctions() { return Collections.unmodifiableMap(functions); }
+    public FunctionInfo getFunction(String name) { return functions.get(name); }
     public Map<String, List<CompositeTypeField>> getCompositeTypes() { return Collections.unmodifiableMap(compositeTypes); }
     public boolean isCompositeType(String typeName) { return compositeTypes.containsKey(typeName); }
 
@@ -268,25 +269,52 @@ public class SchemaInfo {
         public boolean isComposite() { return fkColumns.size() > 1; }
     }
     public record ComputedField(String functionName, String returnType) {}
-    public record ProcParam(String mode, String name, String type) {}
+    /** A routine as {@code pg_proc} reports it: a function or a procedure. */
+    public enum RoutineKind { FUNCTION, PROCEDURE }
 
-    /**
-     * A stored function/procedure. {@code returnType} is the declared result as the
-     * database reports it ("SETOF orders", "integer", "TABLE(...)"), or null when the
-     * backend has none to report (MySQL procedures). It is plain reflection, kept
-     * because a function returning rows of a table is a second way to read that table.
-     */
-    public record ProcedureInfo(String name, List<ProcParam> params, String returnType) {
-        public ProcedureInfo(String name, List<ProcParam> params) {
-            this(name, params, null);
-        }
+    public enum Volatility {
+        IMMUTABLE, STABLE, VOLATILE;
 
-        public List<ProcParam> inParams() {
-            return params.stream().filter(p -> "IN".equals(p.mode()) || "INOUT".equals(p.mode())).toList();
-        }
-        public List<ProcParam> outParams() {
-            return params.stream().filter(p -> "OUT".equals(p.mode()) || "INOUT".equals(p.mode())).toList();
+        /** Maps {@code pg_proc.provolatile}; anything else is unknown (null). */
+        public static Volatility fromCatalog(String code) {
+            if (code == null) return null;
+            return switch (code) {
+                case "i" -> IMMUTABLE;
+                case "s" -> STABLE;
+                case "v" -> VOLATILE;
+                default -> null;
+            };
         }
     }
+
+    /**
+     * One declared argument. {@code mode} is {@code pg_proc.proargmodes}' letter: i (in), o (out),
+     * b (inout), v (variadic), t (table column). {@code name} is empty for an unnamed argument.
+     */
+    public record FunctionArg(String name, String type, String mode, boolean hasDefault) {
+        public boolean isInput() {
+            return "i".equals(mode) || "b".equals(mode) || "v".equals(mode);
+        }
+    }
+
+    /**
+     * A reflected function or procedure. Plain reflection: whether it may be called is decided by
+     * the access plan, from the project's tracked functions.
+     *
+     * @param returnTable the schema-qualified table or view whose row type it returns, or null
+     * @param overloads   how many routines of the schema share this name
+     */
+    public record FunctionInfo(String schema, String name, RoutineKind kind, Volatility volatility,
+                               boolean securityDefiner, boolean returnsSet, String returnTable,
+                               List<FunctionArg> args, int overloads) {
+        public FunctionInfo {
+            args = List.copyOf(args);
+        }
+
+        public String qualifiedName() {
+            return schema + "." + name;
+        }
+    }
+
     public record CompositeTypeField(String name, String type) {}
 }

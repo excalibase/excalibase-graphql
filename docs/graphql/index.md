@@ -1,6 +1,6 @@
 # API Reference
 
-Excalibase GraphQL automatically generates a complete GraphQL schema from your database tables, views, and stored procedures. This page documents the shape of that schema.
+Excalibase GraphQL automatically generates a complete GraphQL schema from your database tables, views, and tracked functions. This page documents the shape of that schema.
 
 **Default endpoints:**
 - PostgreSQL: `http://localhost:10000/graphql`
@@ -138,7 +138,7 @@ For every table, the following mutations are generated:
 | `createMany{Schema}{Table}` | Bulk insert |
 | `update{Schema}{Table}` | Update one row |
 | `delete{Schema}{Table}` | Delete one row, returns the deleted row |
-| `call{Schema}{ProcedureName}` | Call a stored procedure |
+| `{schema}{FunctionName}` | Call a tracked `VOLATILE` function (see [Functions](../features/functions.md)) |
 
 ### Create
 
@@ -205,25 +205,22 @@ mutation {
 }
 ```
 
-### Stored Procedure Call
+### Tracked function call
 
-Each discovered procedure becomes a `call{Schema}{ProcedureName}` mutation. IN parameters become arguments; OUT parameters are returned as a JSON string.
+A function the project tracks, and the role may call, is a root field: `STABLE`/`IMMUTABLE`
+functions on `Query`, `VOLATILE` ones on `Mutation`. It returns rows of its return table, filtered
+and projected by the role's select permission on that table. Procedures are never exposed.
 
 ```graphql
 mutation {
-  callHanaTransferFunds(
-    p_from_wallet_id: 1
-    p_to_wallet_id: 2
-    p_amount: 200.00
-  )
+  hanaTransferBetweenWallets(p_from: 1, p_to: 2, p_amount: 200.00) {
+    wallet_id
+    balance
+  }
 }
 ```
 
-```json
-{ "data": { "callHanaTransferFunds": "{\"p_status\":\"SUCCESS\"}" } }
-```
-
-See [Stored Procedures →](../features/stored-procedures.md) for full documentation.
+See [Functions →](../features/functions.md) for full documentation.
 
 ---
 
@@ -372,36 +369,11 @@ Multi-column FKs work the same way — include all FK columns:
 
 ## Computed Fields (PostgreSQL)
 
-PostgreSQL functions matching the pattern `{tablename}_{fieldname}(row {tablename})` are auto-discovered and exposed as read-only GraphQL fields:
-
-```sql
--- Function in the database:
-CREATE FUNCTION customer_full_name(c customer) RETURNS TEXT ...
-CREATE FUNCTION customer_active_label(c customer) RETURNS TEXT ...
-CREATE FUNCTION orders_total_with_tax(o orders) RETURNS NUMERIC ...
-CREATE FUNCTION orders_is_high_value(o orders) RETURNS BOOLEAN ...
-```
-
-```graphql
-{
-  hanaCustomer {
-    customer_id
-    first_name
-    last_name
-    full_name       # computed: first_name || ' ' || last_name
-    active_label    # computed: 'Active' or 'Inactive'
-  }
-}
-
-{
-  hanaOrders {
-    order_id
-    total_amount
-    total_with_tax  # computed: total_amount * 1.10
-    is_high_value   # computed: total_amount > 200
-  }
-}
-```
+Functions of one table row (`customer_full_name(c customer)`) are reflected but **not exposed**
+for GA, to any role, `service` included: they are functions the project does not track, and an
+untracked function is unreachable. Selecting one answers `Unknown field(s): <name>`. Use a view,
+or a [tracked function](../features/functions.md) that returns rows of a table. A later step may
+let a function be tracked as a computed field.
 
 ---
 

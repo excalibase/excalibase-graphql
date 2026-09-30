@@ -10,6 +10,7 @@ import io.github.excalibase.access.AccessPlan;
 import io.github.excalibase.access.ProbeRunner;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.PermissionSet;
+import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.permissions.RolePermissions;
 import io.github.excalibase.rls.ProjectCacheEvictor;
 import io.github.excalibase.security.Principal;
@@ -162,10 +163,11 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     EngineState assemble(Reflection reflection, AccessPlan plan, long permissionsVersion) {
         SchemaInfo view = plan.view();
         SqlCompiler compiler = new SqlCompiler(view, reflection.defaultSchema(), maxRows,
-                reflection.engine().dialect(), reflection.engine().mutationCompiler(), maxQueryDepth, plan.access());
+                reflection.engine().dialect(), reflection.engine().mutationCompiler(), maxQueryDepth, plan.access(),
+                plan.functions());
         IntrospectionHandler handler = null;
         try {
-            handler = new IntrospectionHandler(view, plan.access());
+            handler = new IntrospectionHandler(view, plan.access(), plan.functions());
         } catch (Exception e) {
             log.warn("IntrospectionHandler failed to build schema", e);
         }
@@ -225,12 +227,14 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         String role = engineRole(principal);
         Reflection reflection = reflections.computeIfAbsent(projectId, key -> reflect(orgSlug, projectId));
         EngineKey key = new EngineKey(projectId, role);
-        if (Principal.SERVICE.equals(role) || !permissionsSourced()) {
+        if (!permissionsSourced()) {
             return tenantEngineStates.computeIfAbsent(key, ignored -> build(reflection, projectId, role, null));
         }
-        PermissionSet permissions = permissionProvider.permissionsFor(projectId);
+        PermissionSet permissions = Principal.SERVICE.equals(role)
+                ? servicePermissions(projectId) : permissionProvider.permissionsFor(projectId);
+        long version = permissions == null ? NO_DOCUMENT : permissions.version();
         EngineState cached = tenantEngineStates.get(key);
-        if (cached != null && cached.permissionsVersion() == permissions.version()) {
+        if (cached != null && cached.permissionsVersion() == version) {
             return cached;
         }
         EngineState built = build(reflection, projectId, role, permissions);
@@ -239,21 +243,36 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     /**
-     * {@code service} is served everything and needs no document. Without a permission source, every
-     * other role is served nothing — unless authentication is off, where the whole schema is served.
+     * {@code service} needs the document only for the project's tracked functions. When it cannot be
+     * read, service is still served every table, and no function: nothing counts as tracked.
+     */
+    private PermissionSet servicePermissions(String projectId) {
+        try {
+            return permissionProvider.permissionsFor(projectId);
+        } catch (PermissionsUnavailableException e) {
+            log.warn("service_functions_unavailable project={}: serving tables only", projectId);
+            return null;
+        }
+    }
+
+    /**
+     * {@code service} is served every table and every valid tracked function. Without a permission
+     * source, every other role is served nothing — unless authentication is off, where the whole
+     * schema is served — and no function is tracked.
      */
     private EngineState build(Reflection reflection, String projectId, String role, PermissionSet permissions) {
         AccessPlan plan;
         if (Principal.SERVICE.equals(role)) {
-            plan = AccessPlan.allAccess(reflection.schema());
+            plan = AccessPlan.allAccess(reflection.schema(), permissions == null ? List.of() : permissions.functions());
         } else if (permissions == null) {
             plan = AccessPlan.forRole(reflection.schema(), new RolePermissions(role, Map.of(), List.of(), Set.of()));
         } else {
             plan = AccessPlan.forRole(reflection.schema(), permissions.forRole(role));
         }
         EngineState state = assemble(reflection, plan, permissions == null ? NO_DOCUMENT : permissions.version());
-        log.info("built_engine project={} role={} tables={} served_tables={}", projectId, role,
-                reflection.schema().getTableNames().size(), plan.view().getTableNames().size());
+        log.info("built_engine project={} role={} tables={} served_tables={} functions={}", projectId, role,
+                reflection.schema().getTableNames().size(), plan.view().getTableNames().size(),
+                plan.functions().all().size());
         return state;
     }
 
@@ -352,6 +371,11 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     @Override
     public TableAccess resolveAccess(Principal principal) {
         return requireEngineState(principal).plan().access();
+    }
+
+    @Override
+    public ExposedFunctions resolveFunctions(Principal principal) {
+        return requireEngineState(principal).plan().functions();
     }
 
     /**
@@ -500,8 +524,8 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
                 target.addEnumValue(schema + "." + entry.getKey(), label);
             }
         }
-        for (var entry : source.getStoredProcedures().entrySet()) {
-            target.addStoredProcedure(schema + "." + entry.getKey(), entry.getValue());
+        for (var entry : source.getFunctions().entrySet()) {
+            target.addFunction(schema + "." + entry.getKey(), entry.getValue());
         }
         for (var entry : source.getCompositeTypes().entrySet()) {
             for (var field : entry.getValue()) {

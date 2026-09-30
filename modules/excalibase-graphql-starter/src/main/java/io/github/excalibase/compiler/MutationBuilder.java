@@ -22,6 +22,9 @@ import static io.github.excalibase.compiler.SqlKeywords.param;
 import static io.github.excalibase.compiler.SqlKeywords.parens;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_INPUTS;
 import static io.github.excalibase.schema.GraphqlConstants.CREATE_PREFIX;
+import static io.github.excalibase.schema.GraphqlConstants.COLLECTION_SUFFIX;
+import static io.github.excalibase.schema.GraphqlConstants.CREATE_MANY_PREFIX;
+import static io.github.excalibase.schema.GraphqlConstants.DELETE_FROM_PREFIX;
 import static io.github.excalibase.schema.GraphqlConstants.DELETE_PREFIX;
 import static io.github.excalibase.schema.GraphqlConstants.UPDATE_PREFIX;
 
@@ -94,48 +97,6 @@ public class MutationBuilder {
         return mutationCompiler.compileMutationFragment(field, fieldName, params, variables, this);
     }
 
-    // === Stored procedure support ===
-
-    public SqlCompiler.ProcedureCallInfo buildProcedureCallInfo(Field field, String procName,
-                                                                  Map<String, Object> variables) {
-        SchemaInfo.ProcedureInfo proc = schemaInfo.getStoredProcedures().get(procName);
-        if (proc == null) return null;
-
-        String rawProc = procName.contains(".") ? procName.substring(procName.indexOf('.') + 1) : procName;
-        String procSchema = procName.contains(".") ? procName.substring(0, procName.indexOf('.')) : dbSchema;
-        String qualifiedName = procSchema + "." + dialect.quoteIdentifier(rawProc);
-        List<SqlCompiler.ProcedureCallParam> allParams = new ArrayList<>();
-
-        for (SchemaInfo.ProcParam p : proc.params()) {
-            Object value = null;
-            if ("IN".equals(p.mode()) || "INOUT".equals(p.mode())) {
-                Argument arg = findArg(field, p.name());
-                if (arg != null) {
-                    value = extractValue(arg.getValue(), variables);
-                }
-            }
-            allParams.add(new SqlCompiler.ProcedureCallParam(p.name(), p.mode(), p.type(), value));
-        }
-
-        return new SqlCompiler.ProcedureCallInfo(qualifiedName, allParams);
-    }
-
-    public String resolveStoredProcedure(String pascalName) {
-        String snake = NamingUtils.camelToSnakeCase(pascalName);
-        if (schemaInfo.getStoredProcedures().containsKey(snake)) return snake;
-        String lower = pascalName.toLowerCase();
-        if (schemaInfo.getStoredProcedures().containsKey(lower)) return lower;
-
-        // Compound keys: match prefixed name (e.g., "HanaTransferFunds" → "hana.transfer_funds")
-        for (String procKey : schemaInfo.getStoredProcedures().keySet()) {
-            if (!procKey.contains(".")) continue;
-            String schema = procKey.substring(0, procKey.indexOf('.'));
-            String rawProc = procKey.substring(procKey.indexOf('.') + 1);
-            if (NamingUtils.schemaTypeName(schema, rawProc).equals(pascalName)) return procKey;
-        }
-        return null;
-    }
-
     // === Table name resolution ===
 
     /**
@@ -152,6 +113,23 @@ public class MutationBuilder {
         }
         RlsOp operation = operationOf(mutationFieldName);
         return (operation == null || access.permits(tableName, operation)) ? tableName : null;
+    }
+
+    /** True when {@code fieldName} is a table mutation the caller's schema has, whatever its arguments. */
+    public boolean isMutationField(String fieldName) {
+        for (String prefix : List.of(DELETE_FROM_PREFIX, CREATE_MANY_PREFIX, CREATE_PREFIX, UPDATE_PREFIX,
+                DELETE_PREFIX)) {
+            if (fieldName.startsWith(prefix)) {
+                String typePart = fieldName.substring(prefix.length());
+                if (typePart.endsWith(COLLECTION_SUFFIX)) {
+                    typePart = typePart.substring(0, typePart.length() - COLLECTION_SUFFIX.length());
+                }
+                if (resolveMutationTable(typePart, fieldName) != null) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

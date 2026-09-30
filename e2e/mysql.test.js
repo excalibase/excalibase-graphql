@@ -538,78 +538,16 @@ describe('Views (read-only)', () => {
   });
 });
 
-// ─── Stored Procedures ────────────────────────────────────────────────────────
+// ─── Stored procedures ────────────────────────────────────────────────────────
+// Procedures are never exposed: only tracked functions are reachable, and tracking
+// (like permissions) is Postgres-only (docs/features/permissions.md §6). The MySQL
+// call<Procedure> tests were removed with that surface.
 
-describe('Stored Procedures', () => {
-  test('procedure mutation appears in schema', async () => {
+describe('Stored procedures', () => {
+  test('a procedure is not a mutation field', async () => {
     const data = await client.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
     const mutationNames = data.__type.fields.map(f => f.name);
-    expect(mutationNames).toContain('callHanaGetCustomerOrderCount');
-  });
-
-  test('call procedure with IN param returns OUT param', async () => {
-    const data = await client.request(gql`
-      mutation { callHanaGetCustomerOrderCount(p_customer_id: 1) }
-    `);
-    expect(data.callHanaGetCustomerOrderCount).toBeDefined();
-    const result = JSON.parse(data.callHanaGetCustomerOrderCount);
-    expect(result).toHaveProperty('p_count');
-    expect(Number(result.p_count)).toBeGreaterThanOrEqual(0);
-  });
-
-  // ── transfer_funds: complex procedure with balance check ─────────────────
-
-  beforeAll(async () => {
-    // Reset wallet balances so transfer tests are idempotent across repeated runs
-    await client.request(gql`mutation { updateHanaWallets(id: 1, input: { balance: 1000.00 }) { wallet_id } }`);
-    await client.request(gql`mutation { updateHanaWallets(id: 2, input: { balance: 500.00 }) { wallet_id } }`);
-    await client.request(gql`mutation { updateHanaWallets(id: 3, input: { balance: 10.00 }) { wallet_id } }`);
-  });
-
-  test('transfer_funds appears in schema', async () => {
-    const data = await client.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
-    const mutationNames = data.__type.fields.map(f => f.name);
-    expect(mutationNames).toContain('callHanaTransferFunds');
-  });
-
-  test('transfer_funds happy path — sufficient balance moves money', async () => {
-    // Read balances before transfer
-    const before = await client.request(gql`
-      { hanaWallets(orderBy: { wallet_id: "ASC" }) { wallet_id balance } }
-    `);
-    const aliceBefore = Number(before.hanaWallets.find(w => w.wallet_id == 1).balance);
-    const bobBefore   = Number(before.hanaWallets.find(w => w.wallet_id == 2).balance);
-
-    // Alice (wallet 1) transfers 200 to Bob (wallet 2)
-    const data = await client.request(gql`
-      mutation { callHanaTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 200.00) }
-    `);
-    const result = JSON.parse(data.callHanaTransferFunds);
-    expect(result.p_status).toBe('SUCCESS');
-
-    // Verify balances changed by exactly 200
-    const after = await client.request(gql`
-      { hanaWallets(orderBy: { wallet_id: "ASC" }) { wallet_id balance } }
-    `);
-    const aliceAfter = Number(after.hanaWallets.find(w => w.wallet_id == 1).balance);
-    const bobAfter   = Number(after.hanaWallets.find(w => w.wallet_id == 2).balance);
-    expect(aliceAfter).toBeCloseTo(aliceBefore - 200, 2);
-    expect(bobAfter).toBeCloseTo(bobBefore + 200, 2);
-  });
-
-  test('transfer_funds unhappy path — insufficient funds rejected, balances unchanged', async () => {
-    // Charlie (wallet 3, balance=10) tries to send 500 → should fail
-    const data = await client.request(gql`
-      mutation { callHanaTransferFunds(p_from_wallet_id: 3, p_to_wallet_id: 1, p_amount: 500.00) }
-    `);
-    const result = JSON.parse(data.callHanaTransferFunds);
-    expect(result.p_status).toMatch(/ERROR.*Insufficient/i);
-
-    // Verify Charlie's balance is still 10, not negative (constraint not violated)
-    const wallets = await client.request(gql`
-      { hanaWallets(orderBy: { wallet_id: "ASC" }) { wallet_id balance } }
-    `);
-    const charlie = wallets.hanaWallets.find(w => w.wallet_id == 3);
-    expect(Number(charlie.balance)).toBeCloseTo(10.00, 2);
+    expect(mutationNames).not.toContain('callHanaGetCustomerOrderCount');
+    expect(mutationNames).not.toContain('callHanaTransferFunds');
   });
 });

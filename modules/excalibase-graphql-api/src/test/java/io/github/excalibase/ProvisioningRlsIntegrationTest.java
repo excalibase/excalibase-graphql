@@ -346,14 +346,12 @@ class ProvisioningRlsIntegrationTest {
     }
 
     @Test
-    void rpc_anonymousRejectedWhenAuthEnabled() throws Exception {
-        // RPC executes an opaque stored function the engine can't row-filter, so
-        // it is not anonymous-safe. With auth enabled, an unauthenticated RPC call
-        // is rejected (401) before the function is even resolved.
+    void rpc_anUntrackedFunction_isNotFound() throws Exception {
+        // Only tracked functions are reachable; this project tracks none.
         mockMvc.perform(post("/" + PROJECT + "/api/v1/rpc/any_fn")
                         .header("Content-Profile", "rls_demo")
                         .contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isNotFound());
     }
 
     @Test

@@ -1,13 +1,17 @@
 package io.github.excalibase.access;
 
 import io.github.excalibase.permissions.RolePermissions;
+import io.github.excalibase.permissions.TrackedFunction;
 import io.github.excalibase.permissions.compile.SessionBinding;
+import io.github.excalibase.schema.ExposedFunction;
+import io.github.excalibase.schema.ExposedFunctions;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.RlsOp;
 
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -28,25 +32,47 @@ public final class AccessPlan {
     private final TableAccess access;
     private final Map<String, TableRules> rules;
     private final boolean allAccess;
+    private final ExposedFunctions functions;
 
     private AccessPlan(SchemaInfo reflected, SchemaInfo view, TableAccess access, Map<String, TableRules> rules,
-                       boolean allAccess) {
+                       boolean allAccess, ExposedFunctions functions) {
         this.reflected = reflected;
         this.view = view;
         this.access = access;
         this.rules = Map.copyOf(rules);
         this.allAccess = allAccess;
+        this.functions = functions;
     }
 
+    /** Every table, and no function: nothing is tracked. */
     public static AccessPlan allAccess(SchemaInfo reflected) {
-        Objects.requireNonNull(reflected, "reflected");
-        return new AccessPlan(reflected, reflected, TableAccess.UNRESTRICTED, Map.of(), true);
+        return allAccess(reflected, List.of());
     }
 
+    /** Every table and every valid tracked function; an untracked function is not reachable even so. */
+    public static AccessPlan allAccess(SchemaInfo reflected, List<TrackedFunction> tracked) {
+        Objects.requireNonNull(reflected, "reflected");
+        return new AccessPlan(reflected, reflected, TableAccess.UNRESTRICTED, Map.of(), true,
+                FunctionResolver.resolve(reflected, tracked, function -> true));
+    }
+
+    /**
+     * A tracked function is callable when the role may select its return table and holds an explicit
+     * function permission, or, for a query function tracked with inference on, by that select alone.
+     */
     public static AccessPlan forRole(SchemaInfo reflected, RolePermissions permissions) {
         Objects.requireNonNull(reflected, "reflected");
         Map<String, TableRules> rules = RulesResolver.resolve(reflected, permissions);
-        return new AccessPlan(reflected, RoleView.build(reflected, rules), rightsOf(rules), rules, false);
+        ExposedFunctions functions = FunctionResolver.resolve(reflected, permissions.trackedFunctions(),
+                function -> rules.containsKey(function.returnTable())
+                        && (permissions.explicitlyPermittedFunctions().contains(function.function())
+                            || inferred(permissions, function)));
+        return new AccessPlan(reflected, RoleView.build(reflected, rules), rightsOf(rules), rules, false, functions);
+    }
+
+    private static boolean inferred(RolePermissions permissions, ExposedFunction function) {
+        return function.operation() == ExposedFunction.Operation.QUERY
+                && permissions.trackedFunction(function.function()).map(TrackedFunction::inferPermissions).orElse(false);
     }
 
     /** The schema the role is served; the compiler and introspection see nothing else. */
@@ -60,6 +86,11 @@ public final class AccessPlan {
 
     public boolean allAccess() {
         return allAccess;
+    }
+
+    /** The tracked functions the role may call; their rows obey the return table's select permission. */
+    public ExposedFunctions functions() {
+        return functions;
     }
 
     /** The guard one request applies: this plan's rules bound to the request's session variables. */

@@ -53,4 +53,15 @@ public final class NamingUtils {
         return toLowerCamelCase(schema) + capitalize(table);
     }
 
+    /** GraphQL type name of a table or function key; a {@code schema.name} key is always schema-prefixed. */
+    public static String typeNameOf(String key) {
+        int dot = key.indexOf('.');
+        return dot < 0 ? capitalize(key) : schemaTypeName(key.substring(0, dot), key.substring(dot + 1));
+    }
+
+    /** GraphQL field name of a table or function key; a {@code schema.name} key is always schema-prefixed. */
+    public static String fieldNameOf(String key) {
+        int dot = key.indexOf('.');
+        return dot < 0 ? toLowerCamelCase(key) : schemaFieldName(key.substring(0, dot), key.substring(dot + 1));
+    }
 }

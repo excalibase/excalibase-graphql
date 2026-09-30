@@ -37,7 +37,7 @@ Every table-derived GraphQL type is prefixed with its schema name:
 | Update mutation | `update{Schema}{Table}` | `updateHanaCustomer` |
 | Delete mutation | `delete{Schema}{Table}` | `deleteHanaCustomer` |
 | Bulk create | `createMany{Schema}{Table}` | `createManyHanaCustomer` |
-| Stored procedure | `call{Schema}{Proc}` | `callHanaTransferFunds` |
+| Tracked function | `{schema}{Function}` | `hanaTransferBetweenWallets` |
 | Subscription | `{schema}{Table}Changes` | `hanaCustomerChanges` |
 | FK relationship | `{schema}{ReferencedTable}` | `hanaCustomer` (on orders) |
 | Enum type | `{Schema}{EnumName}` | `HanaOrderStatus` |
@@ -150,7 +150,7 @@ Enum types include a description showing their origin:
 
 ## Performance
 
-Excalibase loads all schema metadata in a **single SQL query** regardless of how many schemas are configured. This uses a CTE (Common Table Expression) with `UNION ALL` that fetches columns, primary keys, foreign keys, views, enums, composite types, stored procedures, and computed fields in one round-trip.
+Excalibase loads all schema metadata in a **single SQL query** regardless of how many schemas are configured. This uses a CTE (Common Table Expression) with `UNION ALL` that fetches columns, primary keys, foreign keys, views, enums, composite types, functions and procedures, and computed-field functions in one round-trip (reflected; see [Functions](functions.md) for what is exposed).
 
 | Schemas | Queries |
 |---------|---------|

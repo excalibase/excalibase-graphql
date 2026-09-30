@@ -387,16 +387,28 @@ class SqlCompilerIntegrationTest {
                 .andExpect(jsonPath("$.data.testSchemaTask", hasSize(2)));
     }
 
-    // === Phase 1B: Computed fields ===
+    // === Computed fields: reflected, never served (not tracked functions) ===
 
     @Test
     @Order(80)
-    void computedFieldFullName() throws Exception {
+    void computedField_isNotServed_evenToService() throws Exception {
         mockMvc.perform(post("/test-proj/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaCustomer(limit: 1, orderBy: { customer_id: ASC }) { first_name last_name customer_full_name } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaCustomer[0].customer_full_name").value("Alice Smith"));
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andExpect(jsonPath("$.errors[0].message").value("Unknown field(s): customer_full_name"));
+    }
+
+    @Test
+    @Order(81)
+    void unknownRootMutation_isAnError_withNoData() throws Exception {
+        mockMvc.perform(post("/test-proj/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("mutation { noSuchMutation(id: 1) { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andExpect(jsonPath("$.errors[0].message").value("Unknown field(s): noSuchMutation"));
     }
 
     // === Phase 1C: Bulk UPDATE by filter ===

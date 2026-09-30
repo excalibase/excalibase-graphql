@@ -151,12 +151,15 @@ class GraphqlSchemaManagerCacheTest {
         assertThat(manager.reflected).containsExactly("proj-1");
     }
 
+    /** The document gives service only its tracked functions: without it, every table and no function. */
     @Test
-    void service_needsNoDocument() {
+    void service_isServedEveryTable_withoutADocument_butNoFunction() {
         permissions.unavailable = true;
 
-        assertThat(manager.resolveEngineState("acme", "proj-1", service()).plan().allAccess()).isTrue();
-        assertThat(permissions.reads).isEmpty();
+        var svc = manager.resolveEngineState("acme", "proj-1", service());
+        assertThat(svc.plan().allAccess()).isTrue();
+        assertThat(svc.compiler().schemaInfo().getTableNames()).containsExactly(ORDERS);
+        assertThat(svc.plan().functions().all()).isEmpty();
         assertThatThrownBy(() -> manager.resolveEngineState("acme", "proj-1", runningAs("user")))
                 .isInstanceOf(PermissionsUnavailableException.class);
     }

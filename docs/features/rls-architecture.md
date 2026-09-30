@@ -62,8 +62,10 @@ fails the build if one does.
   judged in memory; one that needs the database (a relationship or `_exists`) is probed with
   `SELECT EXISTS (...)` for an INSERT or an UPDATE's new image, and withheld for a DELETE or an
   UPDATE's old image. Only the select columns are delivered.
-- **Functions**: until function permissions ship, only `service` reaches stored procedures and
-  computed fields.
+- **Functions**: only tracked functions are reachable, by roles permitted to call them (explicitly,
+  or inferred from the return table's select for a query function); their rows are read through the
+  return table's select filter, columns and limit ([Functions](functions.md)). Procedures are never
+  exposed, and neither are computed fields (untracked functions), for any role.
 
 ## Where permissions come from, and failure
 

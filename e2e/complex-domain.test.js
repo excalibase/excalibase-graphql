@@ -7,7 +7,6 @@ const DATA_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
 const API_URL = `${API_BASE}/${DATA_PROJECT}/graphql`;
 let client;
 
-// Computed fields are functions: only the service role reaches them until function permissions exist.
 let serviceClient;
 
 beforeAll(async () => {
@@ -222,30 +221,16 @@ describe('Enum Types', () => {
 });
 
 // ─── Computed Fields ──────────────────────────────────────────────────────────
+// Reflected but not exposed for GA, not even to service (docs/features/functions.md).
 
 describe('Computed Fields', () => {
-  test('computed fields visible in introspection', async () => {
+  test('computed fields are not in the service schema', async () => {
     const data = await serviceClient.request(gql`{
       __type(name: "ComplexEmployee") { fields { name } }
     }`);
     const fields = data.__type.fields.map(f => f.name);
-    expect(fields).toContain('full_title');
-    expect(fields).toContain('tenure_days');
-  });
-
-  test('computed field returns correct value', async () => {
-    const data = await serviceClient.request(gql`{
-      complexEmployee(where: { id: { eq: 1 } }) { id name status full_title }
-    }`);
-    expect(data.complexEmployee[0].full_title).toBe('Alice CEO (active)');
-  });
-
-  test('task computed field is_overdue', async () => {
-    const data = await serviceClient.request(gql`{
-      __type(name: "ComplexTask") { fields { name } }
-    }`);
-    const fields = data.__type.fields.map(f => f.name);
-    expect(fields).toContain('is_overdue');
+    expect(fields).not.toContain('full_title');
+    expect(fields).not.toContain('tenure_days');
   });
 });
 
@@ -309,12 +294,10 @@ describe('Where-Based Mutations', () => {
     expect(data.deleteComplexDocument[0].title).toBe('To Delete');
   });
 
-  test('update without where is rejected (returns null)', async () => {
-    const data = await client.request(gql`mutation {
+  test('update without where is rejected with an error, never a silent empty result', async () => {
+    await expect(client.request(gql`mutation {
       updateComplexEmployee(input: { salary: 0 }) { id }
-    }`);
-    // No where = compiler returns null → field omitted from response
-    expect(data.updateComplexEmployee).toBeFalsy();
+    }`)).rejects.toThrow('Invalid arguments for updateComplexEmployee');
   });
 });
 

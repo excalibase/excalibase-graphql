@@ -31,7 +31,7 @@ public interface SchemaLoader {
             loadEnums(jdbc, schema, info);
             loadCompositeTypes(jdbc, schema, info);
             loadComputedFields(jdbc, schema, info);
-            loadStoredProcedures(jdbc, schema, info);
+            loadFunctions(jdbc, schema, info);
         }
     }
 
@@ -53,7 +53,8 @@ public interface SchemaLoader {
 
     void loadViews(JdbcTemplate jdbc, String schema, SchemaInfo info);
 
-    void loadStoredProcedures(JdbcTemplate jdbc, String schema, SchemaInfo info);
+    /** Functions and procedures, with what the access plan needs to decide whether one may be tracked. */
+    void loadFunctions(JdbcTemplate jdbc, String schema, SchemaInfo info);
 
     void loadEnums(JdbcTemplate jdbc, String schema, SchemaInfo info);
 

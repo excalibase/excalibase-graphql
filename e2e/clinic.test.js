@@ -12,7 +12,6 @@ const TEST_USER = { email: 'clinician@example.com', password: 'Pass123!', fullNa
 
 let token;
 let client;
-// Computed fields are functions: only the service role reaches them until function permissions exist.
 const serviceClient = () => new GraphQLClient(GRAPHQL_URL, {
   headers: { Authorization: `Bearer ${serviceToken(PROJECT.projectName, `${__dirname}/study-cases/private.pem`)}` },
 });
@@ -135,11 +134,10 @@ describe('Clinic GraphQL — Patients', () => {
     expect(data.clinicPatients[0].allergies.length).toBe(2);
   });
 
-  test('computed field: patient age', async () => {
-    const data = await serviceClient().request(gql`{
+  test('computed field patient_age is not exposed, even to service', async () => {
+    await expect(serviceClient().request(gql`{
       clinicPatients(where: { id: { eq: 1 } }) { name patient_age }
-    }`);
-    expect(data.clinicPatients[0].patient_age).toBeGreaterThanOrEqual(40);
+    }`)).rejects.toThrow('Unknown field(s): patient_age');
   });
 });
 

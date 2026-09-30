@@ -3,8 +3,8 @@ package io.github.excalibase;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaInfo.CompositeTypeField;
 import io.github.excalibase.schema.SchemaInfo.FkInfo;
-import io.github.excalibase.schema.SchemaInfo.ProcParam;
-import io.github.excalibase.schema.SchemaInfo.ProcedureInfo;
+import io.github.excalibase.schema.SchemaInfo.FunctionArg;
+import io.github.excalibase.schema.SchemaInfo.FunctionInfo;
 import io.github.excalibase.schema.SchemaInfo.ReverseFkInfo;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -42,38 +42,35 @@ class SchemaInfoExtrasTest {
     }
 
     @Test
-    @DisplayName("addStoredProcedure registers a procedure retrievable by name")
-    void addStoredProcedure_registersProcedure() {
+    @DisplayName("addFunction registers a reflected routine retrievable by name")
+    void addFunction_registersRoutine() {
         SchemaInfo schema = new SchemaInfo();
-        ProcedureInfo info = new ProcedureInfo("pay_rental",
-                List.of(new ProcParam("IN", "rental_id", "int4"),
-                        new ProcParam("OUT", "paid", "boolean")));
-        schema.addStoredProcedure("pay_rental", info);
+        FunctionInfo info = new FunctionInfo("public", "pay_rental", SchemaInfo.RoutineKind.FUNCTION,
+                SchemaInfo.Volatility.VOLATILE, false, true, "public.rental",
+                List.of(new FunctionArg("rental_id", "integer", "i", false)), 1);
+        schema.addFunction("public.pay_rental", info);
 
-        assertThat(schema.getStoredProcedures()).containsKey("pay_rental");
-        assertThat(schema.getStoredProcedures().get("pay_rental")).isSameAs(info);
+        assertThat(schema.getFunctions()).containsKey("public.pay_rental");
+        assertThat(schema.getFunction("public.pay_rental")).isSameAs(info);
+        assertThat(info.qualifiedName()).isEqualTo("public.pay_rental");
     }
 
     @Test
-    @DisplayName("ProcedureInfo.inParams filters IN and INOUT params")
-    void procedureInfo_inParams_returnsInAndInout() {
-        ProcedureInfo info = new ProcedureInfo("foo",
-                List.of(new ProcParam("IN", "a", "int"),
-                        new ProcParam("OUT", "b", "text"),
-                        new ProcParam("INOUT", "c", "text")));
-
-        assertThat(info.inParams()).extracting(ProcParam::name).containsExactly("a", "c");
+    @DisplayName("FunctionArg.isInput holds for in, inout and variadic arguments only")
+    void functionArg_isInput() {
+        assertThat(List.of("i", "b", "v", "o", "t"))
+                .map(mode -> new FunctionArg("a", "int", mode, false).isInput())
+                .containsExactly(true, true, true, false, false);
     }
 
     @Test
-    @DisplayName("ProcedureInfo.outParams filters OUT and INOUT params")
-    void procedureInfo_outParams_returnsOutAndInout() {
-        ProcedureInfo info = new ProcedureInfo("foo",
-                List.of(new ProcParam("IN", "a", "int"),
-                        new ProcParam("OUT", "b", "text"),
-                        new ProcParam("INOUT", "c", "text")));
-
-        assertThat(info.outParams()).extracting(ProcParam::name).containsExactly("b", "c");
+    @DisplayName("Volatility maps pg_proc.provolatile, anything else is unknown")
+    void volatility_fromCatalog() {
+        assertThat(SchemaInfo.Volatility.fromCatalog("i")).isEqualTo(SchemaInfo.Volatility.IMMUTABLE);
+        assertThat(SchemaInfo.Volatility.fromCatalog("s")).isEqualTo(SchemaInfo.Volatility.STABLE);
+        assertThat(SchemaInfo.Volatility.fromCatalog("v")).isEqualTo(SchemaInfo.Volatility.VOLATILE);
+        assertThat(SchemaInfo.Volatility.fromCatalog("x")).isNull();
+        assertThat(SchemaInfo.Volatility.fromCatalog(null)).isNull();
     }
 
     @Test
@@ -117,15 +114,17 @@ class SchemaInfoExtrasTest {
     }
 
     @Test
-    @DisplayName("getStoredProcedures and getCompositeTypes return unmodifiable maps")
+    @DisplayName("getFunctions and getCompositeTypes return unmodifiable maps")
     void publicGetters_returnUnmodifiableMaps() {
         SchemaInfo schema = new SchemaInfo();
-        schema.addStoredProcedure("p", new ProcedureInfo("p", List.of()));
+        var function = new FunctionInfo("public", "p", SchemaInfo.RoutineKind.PROCEDURE, null, false, false, null,
+                List.of(), 1);
+        schema.addFunction("public.p", function);
         schema.addCompositeTypeField("t", "f", "int");
 
-        var procs = schema.getStoredProcedures();
+        var procs = schema.getFunctions();
         var comps = schema.getCompositeTypes();
-        var extraProc = new ProcedureInfo("x", List.of());
+        var extraProc = function;
         var emptyFields = List.<SchemaInfo.CompositeTypeField>of();
 
         org.junit.jupiter.api.Assertions.assertThrows(

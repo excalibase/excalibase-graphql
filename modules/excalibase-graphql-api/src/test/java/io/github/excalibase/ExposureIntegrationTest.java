@@ -222,8 +222,8 @@ class ExposureIntegrationTest {
     void theServiceRole_bypassesPermissions() throws Exception {
         graphqlAs("service", "service", "{ publicSecrets { id token } }")
                 .andExpect(jsonPath("$.data.publicSecrets", hasSize(1)));
-        graphqlAs("service", "service", "{ __schema { mutationType { fields { name } } } }")
-                .andExpect(content().string(containsString("callPublicRecentOrders")));
+        graphqlAs("service", "service", "{ __schema { queryType { fields { name } } } }")
+                .andExpect(content().string(not(containsString("RecentOrders"))));
     }
 
     @Test
@@ -381,13 +381,13 @@ class ExposureIntegrationTest {
                 .andExpect(jsonPath("$.data.deletePublicOrders[0].id").value(95));
     }
 
-    // ---- functions (spec §6 is not in force yet: no role but service reaches one) ----
+    // ---- functions: only tracked ones are reachable (spec §6) ----
 
     @Test
-    void functions_areNotServedToARole() throws Exception {
+    void anUntrackedFunction_isNotServedToARole() throws Exception {
         permit(entry("public.orders", ROLE, selectAll()));
 
-        graphql("{ __schema { mutationType { fields { name } } } }")
+        graphql("{ __schema { queryType { fields { name } } } }")
                 .andExpect(content().string(not(containsString("RecentOrders"))));
         mockMvc.perform(post("/" + PROJECT + "/api/v1/rpc/recent_orders")
                         .header("Authorization", "Bearer " + jwt(ROLE, "authenticated"))

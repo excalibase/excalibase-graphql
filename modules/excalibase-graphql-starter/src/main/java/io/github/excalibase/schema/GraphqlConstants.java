@@ -14,7 +14,6 @@ public final class GraphqlConstants {
     public static final String UPDATE_PREFIX = "update";
     public static final String DELETE_PREFIX = "delete";
     public static final String DELETE_FROM_PREFIX = "deleteFrom";
-    public static final String CALL_PREFIX = "call";
 
     // --- Mutation/query suffixes ---
     public static final String COLLECTION_SUFFIX = "Collection";

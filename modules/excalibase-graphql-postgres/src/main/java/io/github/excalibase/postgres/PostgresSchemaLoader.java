@@ -7,6 +7,9 @@ import io.github.excalibase.spi.SchemaLoader;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 
+import io.github.excalibase.spi.SchemaIntrospectionException;
+
+import java.io.IOException;
 import java.util.*;
 
 public class PostgresSchemaLoader implements SchemaLoader {
@@ -16,7 +19,6 @@ public class PostgresSchemaLoader implements SchemaLoader {
     private static final String COL_DATA_TYPE = "data_type";
     private static final String COL_UDT_NAME = "udt_name";
     private static final String COL_CHARACTER_MAXIMUM_LENGTH = "character_maximum_length";
-    private static final String COL_ARGS_SIGNATURE = "args_signature";
     private static final String COL_TABLE_SCHEMA = "table_schema";
 
     private static final Set<String> EXCLUDED_VIEWS = Set.of(
@@ -24,6 +26,30 @@ public class PostgresSchemaLoader implements SchemaLoader {
     );
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * Every function and procedure of the schemas, with what deciding whether one may be tracked
+     * needs: kind, volatility, SECURITY DEFINER, set-ness, the table or view whose row type it
+     * returns, its arguments (mode, name, type) and how many routines share its name.
+     */
+    static final String FUNCTIONS_SELECT = """
+                SELECT 'function' as kind, n.nspname as table_schema, p.proname as proc_name,
+                       p.prokind as routine_kind, p.provolatile as volatility, p.prosecdef as security_definer,
+                       p.proretset as returns_set,
+                       CASE WHEN rc.oid IS NULL THEN NULL ELSE rn.nspname || '.' || rc.relname END as return_table,
+                       count(*) OVER (PARTITION BY p.pronamespace, p.proname) as overloads,
+                       p.pronargdefaults as default_count,
+                       (SELECT coalesce(json_agg(json_build_object(
+                                   'name', coalesce(p.proargnames[a.ord], ''),
+                                   'type', pg_catalog.format_type(a.typ, NULL),
+                                   'mode', coalesce(p.proargmodes[a.ord]::text, 'i')) ORDER BY a.ord), '[]'::json)
+                          FROM unnest(coalesce(p.proallargtypes, p.proargtypes::oid[])) WITH ORDINALITY AS a(typ, ord)) as args
+                FROM pg_proc p
+                JOIN pg_namespace n ON p.pronamespace = n.oid
+                LEFT JOIN pg_type rt ON rt.oid = p.prorettype
+                LEFT JOIN pg_class rc ON rc.oid = rt.typrelid AND rc.relkind IN ('r', 'v', 'm', 'p', 'f')
+                LEFT JOIN pg_namespace rn ON rn.oid = rc.relnamespace
+                WHERE n.nspname = ANY(?) AND p.prokind IN ('f', 'p')""";
 
     private static final String BULK_INTROSPECTION_QUERY = """
             WITH
@@ -128,17 +154,9 @@ public class PostgresSchemaLoader implements SchemaLoader {
                 WHERE n.nspname = ANY(?) AND t.typtype = 'c' AND c.relkind = 'c'
                 ORDER BY n.nspname, t.typname, a.attnum
               ),
-              procs AS (
-                SELECT 'proc' as kind, n.nspname as table_schema, NULL as table_name, NULL as column_name,
-                       NULL as data_type, NULL as udt_name, NULL::int as character_maximum_length,
-                       NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column,
-                       NULL::bigint as ordinal, NULL as enum_label, NULL::double precision as sort_order,
-                       p.proname as proc_name,
-                       pg_get_function_identity_arguments(p.oid) as args_signature,
-                       pg_get_function_result(p.oid) as return_type, NULL as function_name
-                FROM pg_proc p
-                JOIN pg_namespace n ON p.pronamespace = n.oid
-                WHERE n.nspname = ANY(?) AND p.prokind IN ('f', 'p')
+              functions AS (
+            """ + FUNCTIONS_SELECT + """
+
               ),
               computed AS (
                 SELECT 'computed' as kind, n.nspname as table_schema, c.relname as table_name,
@@ -174,7 +192,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             UNION ALL SELECT row_to_json(x) FROM matview_cols x
             UNION ALL SELECT row_to_json(x) FROM enums x
             UNION ALL SELECT row_to_json(x) FROM composites x
-            UNION ALL SELECT row_to_json(x) FROM procs x
+            UNION ALL SELECT row_to_json(x) FROM functions x
             UNION ALL SELECT row_to_json(x) FROM computed x
             UNION ALL SELECT row_to_json(x) FROM extensions x
             """;
@@ -226,11 +244,13 @@ public class PostgresSchemaLoader implements SchemaLoader {
                 case "composite" -> info.addCompositeTypeField(
                         node.get(COL_UDT_NAME).asText(), node.get(COL_COLUMN_NAME).asText(),
                         node.get(COL_DATA_TYPE).asText());
-                case "proc", "computed" -> handleProcOrComputed(kind, node, info);
+                case "function" -> handleFunction(node, info);
+                case "computed" -> info.addComputedField(node.get(COL_TABLE_NAME).asText(),
+                        node.get("function_name").asText(), node.get("return_type").asText());
                 default -> { /* Ignore unknown introspection row kinds */ }
             }
         } catch (Exception e) {
-            throw new io.github.excalibase.spi.SchemaIntrospectionException("Failed to parse introspection row", e);
+            throw new SchemaIntrospectionException("Failed to parse introspection row", e);
         }
     }
 
@@ -302,20 +322,36 @@ public class PostgresSchemaLoader implements SchemaLoader {
         info.addView(viewName);
     }
 
-    /** Handles 'proc' (stored procedure) and 'computed' (table-input computed function). */
-    private void handleProcOrComputed(String kind, JsonNode node, SchemaInfo info) {
-        if ("proc".equals(kind)) {
-            String procName = node.get("proc_name").asText();
-            String argsSig = node.has(COL_ARGS_SIGNATURE) && !node.get(COL_ARGS_SIGNATURE).isNull()
-                    ? node.get(COL_ARGS_SIGNATURE).asText() : "";
-            String returnType = node.has("return_type") && !node.get("return_type").isNull()
-                    ? node.get("return_type").asText() : null;
-            info.addStoredProcedure(procName,
-                    new SchemaInfo.ProcedureInfo(procName, parseProcArgs(argsSig), returnType));
-        } else {
-            info.addComputedField(node.get(COL_TABLE_NAME).asText(),
-                    node.get("function_name").asText(), node.get("return_type").asText());
+    /** One reflected routine; the arguments that carry a default are the last {@code default_count} inputs. */
+    static void handleFunction(JsonNode node, SchemaInfo info) {
+        String name = node.get("proc_name").asText();
+        int defaults = node.path("default_count").asInt(0);
+        List<JsonNode> declared = new ArrayList<>();
+        node.path("args").forEach(declared::add);
+        long inputs = declared.stream().filter(arg -> isInputMode(arg.path("mode").asText())).count();
+        List<SchemaInfo.FunctionArg> args = new ArrayList<>();
+        int inputIndex = 0;
+        for (JsonNode arg : declared) {
+            String mode = arg.path("mode").asText();
+            boolean input = isInputMode(mode);
+            boolean hasDefault = input && inputIndex >= inputs - defaults;
+            if (input) {
+                inputIndex++;
+            }
+            args.add(new SchemaInfo.FunctionArg(arg.path("name").asText(), arg.path("type").asText(), mode, hasDefault));
         }
+        JsonNode returnTable = node.get("return_table");
+        info.addFunction(name, new SchemaInfo.FunctionInfo(node.get(COL_TABLE_SCHEMA).asText(), name,
+                "p".equals(node.path("routine_kind").asText()) ? SchemaInfo.RoutineKind.PROCEDURE
+                        : SchemaInfo.RoutineKind.FUNCTION,
+                SchemaInfo.Volatility.fromCatalog(node.path("volatility").asText(null)),
+                node.path("security_definer").asBoolean(false), node.path("returns_set").asBoolean(false),
+                returnTable == null || returnTable.isNull() ? null : returnTable.asText(),
+                args, node.path("overloads").asInt(1)));
+    }
+
+    private static boolean isInputMode(String mode) {
+        return "i".equals(mode) || "b".equals(mode) || "v".equals(mode);
     }
 
     private void postProcessForeignKeys(Map<String, List<String[]>> fkColumns,
@@ -462,21 +498,16 @@ public class PostgresSchemaLoader implements SchemaLoader {
     }
 
     @Override
-    public void loadStoredProcedures(JdbcTemplate jdbc, String schema, SchemaInfo info) {
-        jdbc.query("""
-            SELECT p.proname AS proc_name,
-                   pg_get_function_identity_arguments(p.oid) AS args_signature,
-                   pg_get_function_result(p.oid) AS return_type
-            FROM pg_proc p
-            JOIN pg_namespace n ON p.pronamespace = n.oid
-            WHERE n.nspname = ? AND p.prokind IN ('f', 'p')
-            """, rs -> {
-            String procName = rs.getString("proc_name");
-            String argsSig = rs.getString(COL_ARGS_SIGNATURE);
-            List<SchemaInfo.ProcParam> params = parseProcArgs(argsSig);
-            info.addStoredProcedure(procName,
-                    new SchemaInfo.ProcedureInfo(procName, params, rs.getString("return_type")));
-        }, schema);
+    public void loadFunctions(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+        jdbc.query("SELECT row_to_json(x) FROM (" + FUNCTIONS_SELECT + ") x",
+                ps -> ps.setArray(1, ps.getConnection().createArrayOf("text", new String[] {schema})),
+                (RowCallbackHandler) rs -> {
+                    try {
+                        handleFunction(JSON.readTree(rs.getString(1)), info);
+                    } catch (IOException e) {
+                        throw new SchemaIntrospectionException("Failed to parse function row", e);
+                    }
+                });
     }
 
     @Override
@@ -516,23 +547,5 @@ public class PostgresSchemaLoader implements SchemaLoader {
             JOIN pg_class c ON t.typrelid = c.oid
             WHERE n.nspname = ? AND array_length(p.proargtypes, 1) = 1
             """, (RowCallbackHandler) rs -> info.addComputedField(rs.getString(COL_TABLE_NAME), rs.getString("function_name"), rs.getString("return_type")), schema);
-    }
-
-    private List<SchemaInfo.ProcParam> parseProcArgs(String argsSig) {
-        List<SchemaInfo.ProcParam> params = new ArrayList<>();
-        if (argsSig == null || argsSig.isBlank()) return params;
-        for (String part : argsSig.split(",")) {
-            part = part.trim();
-            String[] tokens = part.split("\\s+");
-            if (tokens.length >= 3) {
-                String mode = tokens[0].toUpperCase();
-                String paramName = tokens[1];
-                String paramType = String.join(" ", Arrays.copyOfRange(tokens, 2, tokens.length));
-                params.add(new SchemaInfo.ProcParam(mode, paramName, paramType));
-            } else if (tokens.length == 2) {
-                params.add(new SchemaInfo.ProcParam("IN", tokens[0], tokens[1]));
-            }
-        }
-        return params;
     }
 }

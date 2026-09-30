@@ -129,12 +129,12 @@ curl -X POST https://api.example.com/api/v1/issues \
 
 Nested transactions / multi-statement transactions are NOT supported via a
 single REST call. Use GraphQL mutations (which compose in one document) or
-a stored procedure if you need atomicity across multiple writes.
+a tracked `VOLATILE` function if you need atomicity across multiple writes.
 
-## Stored procedures
+## Functions
 
-Not exposed through REST today — call them via GraphQL (`call<Proc>` mutation
-fields). See [Stored Procedures](../features/stored-procedures.md).
+Tracked functions are called at `GET`/`POST /rpc/<fn>`; procedures are not exposed.
+See [Functions](../features/functions.md).
 
 ## Error responses
 

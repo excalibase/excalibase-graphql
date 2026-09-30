@@ -354,10 +354,10 @@ class EngineRlsMutationIntegrationTest {
                 .andExpect(jsonPath("$.data.createRlsDemoBook.rlsDemoShelfId").doesNotExist());
     }
 
-    // ---- STORED PROCEDURE CALLS: no role but service reaches a function yet (spec §6, step E) ----
+    // ---- PROCEDURES: never exposed, whatever the role (spec §6) ----
 
     @Test
-    void procedureCall_byARole_reachesNoFunction() throws Exception {
+    void aProcedure_isReachableByNoRole() throws Exception {
         mutate(BOB, "mutation { createRlsDemoNotes(input: { id: 410, "
                 + "owner_id: \"" + BOB + "\", title: \"bob-410\" }) { id } }").andExpect(status().isOk());
 
