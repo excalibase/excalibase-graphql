@@ -6,6 +6,7 @@ import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLObjectType;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.TableAccess;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -48,6 +49,17 @@ public final class QueryFieldsAssembler {
     public List<GraphQLFieldDefinition> build(SchemaInfo schemaInfo,
                                        Map<String, GraphQLObjectType> tableTypes,
                                        Map<String, GraphQLInputObjectType> whereTypes) {
+        return build(schemaInfo, tableTypes, whereTypes, TableAccess.UNRESTRICTED);
+    }
+
+    /**
+     * Aggregates and {@code totalCount} exist only for a role allowed aggregations; a connection only
+     * where the role can read the primary key its cursors are made of.
+     */
+    public List<GraphQLFieldDefinition> build(SchemaInfo schemaInfo,
+                                       Map<String, GraphQLObjectType> tableTypes,
+                                       Map<String, GraphQLInputObjectType> whereTypes,
+                                       TableAccess access) {
         List<GraphQLFieldDefinition> fields = new ArrayList<>();
         // GraphQL requires at least one field in Query — add placeholder when no tables exist.
         if (schemaInfo.getTableNames().isEmpty()) {
@@ -60,9 +72,14 @@ public final class QueryFieldsAssembler {
             String tName = NamingHelpers.typeName(table);
             GraphQLObjectType type = tableTypes.get(table);
             GraphQLInputObjectType whereType = whereTypes.get(table);
+            boolean aggregations = access.allowsAggregations(table);
             fields.add(buildListField(fName, type, whereType));
-            fields.add(buildConnectionField(fName, tName, type, whereType, pageInfoType));
-            fields.add(buildAggregateField(fName, tName));
+            if (!access.enforced() || schemaInfo.getColumns(table).contains(schemaInfo.getPrimaryKey(table))) {
+                fields.add(buildConnectionField(fName, tName, type, whereType, pageInfoType, aggregations));
+            }
+            if (aggregations) {
+                fields.add(buildAggregateField(fName, tName));
+            }
         }
         return fields;
     }
@@ -92,19 +109,21 @@ public final class QueryFieldsAssembler {
                                                         String tName,
                                                         GraphQLObjectType type,
                                                         GraphQLInputObjectType whereType,
-                                                        GraphQLObjectType pageInfoType) {
+                                                        GraphQLObjectType pageInfoType,
+                                                        boolean withTotalCount) {
         GraphQLObjectType edgeType = newObject().name(tName + EDGE_SUFFIX)
                 .field(newFieldDefinition().name(FIELD_NODE).type(type).build())
                 .field(newFieldDefinition().name(FIELD_CURSOR).type(GraphQLString).build())
                 .build();
-        GraphQLObjectType connectionType = newObject().name(tName + CONNECTION_SUFFIX)
+        GraphQLObjectType.Builder connectionType = newObject().name(tName + CONNECTION_SUFFIX)
                 .field(newFieldDefinition().name(FIELD_EDGES).type(GraphQLList.list(edgeType)).build())
-                .field(newFieldDefinition().name(FIELD_PAGE_INFO).type(pageInfoType).build())
-                .field(newFieldDefinition().name(FIELD_TOTAL_COUNT).type(GraphQLInt).build())
-                .build();
+                .field(newFieldDefinition().name(FIELD_PAGE_INFO).type(pageInfoType).build());
+        if (withTotalCount) {
+            connectionType.field(newFieldDefinition().name(FIELD_TOTAL_COUNT).type(GraphQLInt).build());
+        }
         return newFieldDefinition()
                 .name(fName + CONNECTION_SUFFIX)
-                .type(connectionType)
+                .type(connectionType.build())
                 .argument(GraphQLArgument.newArgument().name(ARG_FIRST).type(GraphQLInt).build())
                 .argument(GraphQLArgument.newArgument().name(ARG_AFTER).type(GraphQLString).build())
                 .argument(GraphQLArgument.newArgument().name(ARG_LAST).type(GraphQLInt).build())

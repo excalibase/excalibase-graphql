@@ -2,7 +2,7 @@ package io.github.excalibase.compiler;
 
 import graphql.language.*;
 import io.github.excalibase.schema.SchemaInfo;
-import io.github.excalibase.security.ColumnMaskContributor;
+import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
@@ -20,19 +20,25 @@ public class FilterBuilder {
 
     private final SqlDialect dialect;
     private final int maxRows;
-    private SchemaInfo schemaInfo;
-    private String dbSchema;
+    private final SchemaInfo schemaInfo;
+    private final String dbSchema;
+    private final TableAccess access;
 
     public FilterBuilder(SqlDialect dialect, int maxRows) {
-        this.dialect = dialect;
-        this.maxRows = maxRows;
+        this(dialect, maxRows, null, null);
     }
 
     public FilterBuilder(SqlDialect dialect, int maxRows, SchemaInfo schemaInfo, String dbSchema) {
+        this(dialect, maxRows, schemaInfo, dbSchema, TableAccess.UNRESTRICTED);
+    }
+
+    public FilterBuilder(SqlDialect dialect, int maxRows, SchemaInfo schemaInfo, String dbSchema,
+                         TableAccess access) {
         this.dialect = dialect;
         this.maxRows = maxRows;
         this.schemaInfo = schemaInfo;
         this.dbSchema = dbSchema;
+        this.access = access == null ? TableAccess.UNRESTRICTED : access;
     }
 
     // === WHERE ===
@@ -170,25 +176,21 @@ public class FilterBuilder {
     public void buildFilterConditions(ObjectValue ov, String alias, Map<String, Object> params, List<String> conditions, String tableName) {
         for (ObjectField of : ov.getObjectFields()) {
             if (applyLogicalOperator(of, alias, params, conditions, tableName)) continue;
-            // Column-level security: a column the caller can't read (HIDE or
-            // NULL-mask) must not be filterable — otherwise a predicate like
-            // `salary: { gt: 100000 }` is a value-inference oracle. Drop it,
-            // matching how unknown columns are silently ignored.
-            if (of.getValue() instanceof ObjectValue filterObj && isReadable(tableName, of.getName())) {
+            if (of.getValue() instanceof ObjectValue filterObj) {
+                requireColumn(tableName, of.getName());
                 applyColumnFilter(of.getName(), filterObj, alias, params, conditions, tableName);
             }
         }
     }
 
     /**
-     * True iff the column may be read by the current caller, i.e. no active
-     * column mask hides or nulls it. Used to exclude masked columns from WHERE
-     * and ORDER BY so they can't leak values through filtering/sorting.
+     * A column outside the caller's schema is refused wherever it could steer a query (where, orderBy,
+     * cursor, aggregate): filtering or sorting by a column the role cannot read would reveal its values.
      */
-    private boolean isReadable(String tableName, String column) {
-        ColumnMaskContributor masker = RlsContext.columnMask();
-        if (masker == null || tableName == null) return true;
-        return masker.decide(tableName, column) == ColumnMaskContributor.Decision.VISIBLE;
+    public void requireColumn(String tableName, String column) {
+        if (schemaInfo != null && tableName != null && !schemaInfo.getColumns(tableName).contains(column)) {
+            throw new IllegalArgumentException("Unknown column '" + column + "' on " + tableName);
+        }
     }
 
     /**
@@ -487,9 +489,7 @@ public class FilterBuilder {
 
         List<String> clauses = new ArrayList<>();
         for (ObjectField of : ov.getObjectFields()) {
-            // A masked column must not be orderable — sorting by it leaks value
-            // ordering just as a filter would.
-            if (!isReadable(tableName, of.getName())) continue;
+            requireColumn(tableName, of.getName());
             String dir;
             if (of.getValue() instanceof EnumValue ev) {
                 dir = ev.getName();
@@ -521,7 +521,7 @@ public class FilterBuilder {
                 .findFirst().orElse(null);
         if (orderByArg != null && orderByArg.getValue() instanceof ObjectValue ov) {
             for (ObjectField of : ov.getObjectFields()) {
-                if (!isReadable(tableName, of.getName())) continue;
+                requireColumn(tableName, of.getName());
                 String dir;
                 if (of.getValue() instanceof EnumValue ev) {
                     dir = ev.getName();
@@ -558,11 +558,16 @@ public class FilterBuilder {
      * Appends LIMIT and OFFSET clauses to the SQL builder, capped by maxRows.
      */
     public void applyLimit(StringBuilder sql, Field field, Map<String, Object> params) {
-        int limit = maxRows;
+        applyLimit(sql, field, params, null);
+    }
+
+    /** As above, also capped by the caller's own row limit on {@code tableName}. */
+    public void applyLimit(StringBuilder sql, Field field, Map<String, Object> params, String tableName) {
+        int limit = rowCap(tableName);
         for (Argument arg : field.getArguments()) {
             if (ARG_LIMIT.equals(arg.getName()) || ARG_FIRST.equals(arg.getName())) {
                 Integer value = resolveIntArg(arg.getValue(), boundVariables());
-                if (value != null) limit = Math.min(value, maxRows);
+                if (value != null) limit = Math.min(value, limit);
             }
         }
         String paramName = namedParam(P_LIMIT, params.size());
@@ -731,5 +736,20 @@ public class FilterBuilder {
      */
     public int getMaxRows() {
         return maxRows;
+    }
+
+    /** The most rows one select of {@code tableName} returns: app.max-rows, lowered by the role's own limit. */
+    public int rowCap(String tableName) {
+        Integer roleLimit = tableName == null ? null : access.rowLimit(tableName);
+        return roleLimit == null ? maxRows : Math.min(roleLimit, maxRows);
+    }
+
+    /** The caller's own row limit on {@code tableName}, or null when it has none. */
+    public Integer roleRowLimit(String tableName) {
+        return tableName == null ? null : access.rowLimit(tableName);
+    }
+
+    public TableAccess access() {
+        return access;
     }
 }

@@ -117,6 +117,10 @@ services:
       # Mock tenants run without TLS; real tenants need verify-full (the default).
       TENANT_DB_SSLMODE: disable
 
+      # Per-project permission documents (mocked by mock-vault)
+      APP_SECURITY_RLS_POLICY_URL: http://mock-vault:8080/api
+      APP_SECURITY_RLS_POLICY_PAT: test-pat
+
       # NATS CDC with tenant-in-subject — NatsCDCService parses tenant from subject
       APP_NATS_ENABLED: true
       APP_NATS_URL: nats://nats:4222

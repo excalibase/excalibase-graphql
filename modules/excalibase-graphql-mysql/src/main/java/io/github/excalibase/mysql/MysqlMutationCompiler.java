@@ -2,10 +2,7 @@ package io.github.excalibase.mysql;
 
 import graphql.language.*;
 import io.github.excalibase.compiler.MutationBuilder;
-import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
-import io.github.excalibase.security.RlsViolationException;
-import io.github.excalibase.security.RowCheckContributor;
 import io.github.excalibase.spi.MutationCompiler;
 import io.github.excalibase.compiler.SqlCompiler;
 
@@ -57,7 +54,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
         if (inputArg == null) return null;
 
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
-        requireRowAllowed(tableName, inputFields);
+        shared.requireSettable(tableName, RlsOp.INSERT, inputFields.keySet());
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias, params);
 
@@ -86,8 +83,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
     private MutationBuilder.MysqlMutationResult compileBulkInsert(Field field, String fieldName, String tableName,
                                                                     Map<String, Object> params, Map<String, Object> variables,
                                                                     MutationBuilder shared) {
-        MutationBuilder.BulkInsertParts bulk = shared.bulkInsertParts(field, tableName, params, variables,
-                false, row -> requireRowAllowed(tableName, row));
+        MutationBuilder.BulkInsertParts bulk = shared.bulkInsertParts(field, tableName, params, variables, false);
         if (bulk == null) return null;
         String alias = bulk.alias();
         String objectSql = bulk.objectSql();
@@ -116,7 +112,6 @@ public class MysqlMutationCompiler implements MutationCompiler {
         if (inputArg == null) return null;
 
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
-        requireUpdateAllowed(tableName, inputFields);
         MutationBuilder.UpdateParts update = shared.updateParts(field, tableName, inputFields, P_UPDATE, params, false);
         String alias = update.alias();
         String objectSql = update.objectSql();
@@ -159,25 +154,5 @@ public class MysqlMutationCompiler implements MutationCompiler {
                 whereSql.toString(), objectSql);
 
         return new MutationBuilder.MysqlMutationResult(dmlSql, selectSql, MutationBuilder.MUTATION_DELETE);
-    }
-
-    private void requireRowAllowed(String tableName, Map<String, Object> row) {
-        RowCheckContributor check = RlsContext.rowCheck();
-        if (check != null && !check.permits(tableName, row, RlsOp.INSERT)) {
-            throw new RlsViolationException(RlsOp.INSERT.name(), tableName);
-        }
-    }
-
-    /**
-     * Rejects an UPDATE whose new image (the SET columns) would move the row out
-     * of the caller's UPDATE policies — the WITH-CHECK half for updates. A no-op
-     * when no row-check contributor is registered or no UPDATE policy governs a
-     * changed column.
-     */
-    private void requireUpdateAllowed(String tableName, Map<String, Object> changedColumns) {
-        RowCheckContributor check = RlsContext.rowCheck();
-        if (check != null && !check.permitsUpdate(tableName, changedColumns)) {
-            throw new RlsViolationException(RlsOp.UPDATE.name(), tableName);
-        }
     }
 }

@@ -1,23 +1,18 @@
 package io.github.excalibase.security;
 
 /**
- * Per-request holder for the active {@link RlsWhereContributor}. Populated at
- * the start of a request (e.g. by {@code JwtAuthFilter}) once the project +
- * JWT claims are known, read by the compiler's {@code FilterBuilder} as it
- * builds each table's WHERE clause, and cleared in a {@code finally} so the
+ * Per-request holder for the request's permission guards: the row filter every read and write
+ * ANDs in, and the write guard (presets and checks). Populated once the project and the role are
+ * known (by {@code JwtAuthFilter}), read by the compilers, and cleared in a {@code finally} so the
  * ThreadLocal never leaks across pooled request threads.
  *
- * <p>Lives in the starter module so the generic compiler can consult it
- * without depending on the api module or the RLS engine.
- *
- * <p>{@code null} means "no RLS for this request": the feature is off, or the
- * request shape doesn't carry a project context.
+ * <p>Lives in the starter module so the generic compiler can consult it without depending on the api
+ * module. {@code null} means no guards: a deployment without permissions, or the {@code service} role.
  */
 public final class RlsContext {
 
     private static final ThreadLocal<RlsWhereContributor> CONTRIBUTOR = new ThreadLocal<>();
-    private static final ThreadLocal<ColumnMaskContributor> COLUMN_MASK = new ThreadLocal<>();
-    private static final ThreadLocal<RowCheckContributor> ROW_CHECK = new ThreadLocal<>();
+    private static final ThreadLocal<WriteGuard> WRITE_GUARD = new ThreadLocal<>();
 
     private RlsContext() {}
 
@@ -29,26 +24,16 @@ public final class RlsContext {
         CONTRIBUTOR.set(contributor);
     }
 
-    public static ColumnMaskContributor columnMask() {
-        return COLUMN_MASK.get();
+    public static WriteGuard writeGuard() {
+        return WRITE_GUARD.get();
     }
 
-    public static void setColumnMask(ColumnMaskContributor contributor) {
-        COLUMN_MASK.set(contributor);
+    public static void setWriteGuard(WriteGuard guard) {
+        WRITE_GUARD.set(guard);
     }
 
-    public static RowCheckContributor rowCheck() {
-        return ROW_CHECK.get();
-    }
-
-    public static void setRowCheck(RowCheckContributor contributor) {
-        ROW_CHECK.set(contributor);
-    }
-
-    /** Clears all RLS contributors (row-filter, column-mask, row-check) for this thread. */
     public static void clear() {
         CONTRIBUTOR.remove();
-        COLUMN_MASK.remove();
-        ROW_CHECK.remove();
+        WRITE_GUARD.remove();
     }
 }

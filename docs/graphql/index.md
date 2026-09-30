@@ -471,22 +471,22 @@ CREATE POLICY user_isolation ON rls_orders
 
 Each user sees only their own rows — no application-level filtering needed. Requires `jwt-enabled: true` and a configured `auth.jwks-url` or public key.
 
-A mutation the caller's policy forbids (inserting or upserting a row they could not own, or reassigning a row out of their policy) fails with a typed error instead of database text:
+A mutation whose written rows fail the role's permission `check` (inserting a row the caller could not own, or reassigning a row out of their permission) rolls back whole and fails with a typed error instead of database text:
 
 ```json
 {
   "errors": [
     {
-      "message": "Row-level security denied INSERT on public.rls_orders",
-      "extensions": { "code": "RLS_DENIED", "operation": "INSERT", "table": "public.rls_orders" }
+      "message": "A written row does not pass the role's permission check",
+      "extensions": { "code": "permission_check_failed" }
     }
   ]
 }
 ```
 
-Match on `extensions.code === "RLS_DENIED"`; `operation` is `INSERT`, `UPDATE` or `UPSERT`. Reads never raise — filtered rows are simply absent.
+Match on `extensions.code`: `permission_check_failed` for a failed check, `missing_session_variable` / `invalid_session_variable` when a permission needs a session variable the request lacks or cannot convert. Reads never raise — filtered rows are simply absent.
 
-See [Row-Level Security →](../features/user-context-rls.md) for full documentation and the [error contract](../features/rls-architecture.md#error-contract--rls_denied).
+See [API permissions →](../features/permissions.md) for the model and the [error contract](../features/rls-architecture.md#error-contract).
 
 ---
 

@@ -6,10 +6,12 @@ import io.github.excalibase.cdc.NatsCDCService;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.config.datasource.TenantContext;
-import io.github.excalibase.rls.ExposureFilter;
-import io.github.excalibase.rls.PolicyProvider;
+import io.github.excalibase.access.AccessPlan;
+import io.github.excalibase.access.ProbeRunner;
+import io.github.excalibase.permissions.PermissionProvider;
+import io.github.excalibase.permissions.PermissionSet;
+import io.github.excalibase.permissions.RolePermissions;
 import io.github.excalibase.rls.ProjectCacheEvictor;
-import io.github.excalibase.rls.TableGrants;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.spi.SchemaLoader;
@@ -21,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -30,14 +33,17 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Manages database schema introspection, compiler creation, and hot reloads.
- * Produces an immutable {@link EngineState} that the controller snapshots per-request.
+ * Reflects each project's database once and serves every role an engine built from it and the role's
+ * access plan (docs/features/permissions.md §7). This is the one place a plan is built: the compiler,
+ * introspection, the request guards and realtime all take theirs from the {@link EngineState} made here.
  */
 @Component
-public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, ProjectCacheEvictor {
+public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, ProjectCacheEvictor {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlSchemaManager.class);
 
@@ -51,24 +57,30 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     private final int maxQueryDepth;
     private final ReservedSchemas reservedSchemas;
     private final DynamicDataSourceManager dataSourceManager;
-
-    private final PolicyProvider policyProvider;
-
-    public record EngineState(SqlCompiler compiler, IntrospectionHandler introspectionHandler,
-                              MutationExecutor mutationExecutor, TableExposure exposure,
-                              String defaultSchema) {}
+    private final PermissionProvider permissionProvider;
+    private final boolean jwtEnabled;
 
     /**
-     * Cache identity for a built engine. The role is part of it because the schema
-     * is: two callers on the same project with different roles are served different
-     * sets of tables, so one cached state cannot stand for both.
+     * One role's engine on one project.
+     *
+     * @param permissionsVersion the permission document it was built from, or {@link #NO_DOCUMENT}
      */
+    public record EngineState(SqlCompiler compiler, IntrospectionHandler introspectionHandler,
+                              MutationExecutor mutationExecutor, AccessPlan plan, String defaultSchema,
+                              ProbeRunner probes, long permissionsVersion) {}
+
+    /** One project's database as reflected, shared by the engines of all its roles. */
+    record Reflection(SchemaInfo schema, String defaultSchema, SqlEngine engine,
+                      MutationExecutor mutationExecutor, ProbeRunner probes) {}
+
+    /** The role is part of the key because the schema is: each role is served its own. */
     record EngineKey(String projectId, String role) {}
 
+    static final long NO_DOCUMENT = -1;
+
     private final AtomicReference<EngineState> engineState = new AtomicReference<>();
-    /** The unfiltered reflection of the configured database, re-filtered per caller. */
-    private final AtomicReference<SchemaInfo> defaultSchemaInfo = new AtomicReference<>();
-    private volatile String defaultSchema;
+    private final AtomicReference<Reflection> defaultReflection = new AtomicReference<>();
+    private final TTLCache<String, Reflection> reflections;
     private final TTLCache<EngineKey, EngineState> tenantEngineStates;
 
     public GraphqlSchemaManager(
@@ -81,8 +93,8 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
             @Value("${app.reserved-schemas:}") String reservedSchemasConfig,
             @Autowired(required = false) NatsCDCService natsCDCService,
             @Autowired(required = false) DynamicDataSourceManager dataSourceManager,
-            @Autowired(required = false) PolicyProvider policyProvider) {
-        this.policyProvider = policyProvider;
+            @Autowired(required = false) PermissionProvider permissionProvider,
+            @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
         this.jdbcTemplate = jdbcTemplate;
         this.txTemplate = txTemplate;
         this.maxRows = maxRows;
@@ -90,9 +102,30 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
         this.maxQueryDepth = maxQueryDepth;
         this.reservedSchemas = ReservedSchemas.fromConfig(reservedSchemasConfig);
         this.dataSourceManager = dataSourceManager;
+        this.permissionProvider = permissionProvider;
+        this.jwtEnabled = jwtEnabled;
+        this.reflections = new TTLCache<>(Duration.ofMinutes(schemaTtlMinutes));
         this.tenantEngineStates = new TTLCache<>(Duration.ofMinutes(schemaTtlMinutes));
+        requireSupportedPermissions();
         if (natsCDCService != null) {
             natsCDCService.setSchemaReloadCallback(this::reload);
+        }
+    }
+
+    /**
+     * Permission filters compile to Postgres SQL only, so a MySQL deployment with a permission source
+     * is refused at startup rather than served unfiltered. Without a source, authentication on means
+     * only the service role reaches tables.
+     */
+    private void requireSupportedPermissions() {
+        boolean sourced = permissionProvider != null && permissionProvider.configured();
+        if (jwtEnabled && sourced && "mysql".equalsIgnoreCase(databaseType)) {
+            throw new IllegalStateException("Permissions are Postgres-only: a MySQL deployment cannot use "
+                    + "app.security.rls.policy-url. Unset it, or serve this database with Postgres.");
+        }
+        if (jwtEnabled && !sourced) {
+            log.warn("permissions_source_missing: app.security.rls.policy-url is blank, so only the service "
+                    + "role is served tables; every other role gets an empty schema");
         }
     }
 
@@ -107,69 +140,49 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
         } catch (Exception e) {
             log.warn("Failed to load database schema — starting with empty schema", e);
         }
-        this.defaultSchemaInfo.set(schemaInfo);
-
-        this.defaultSchema = resolveDefaultSchema(schemaList, schemaInfo);
+        String defaultSchema = resolveDefaultSchema(schemaList, schemaInfo);
         MutationExecutor mutationExecutor = SqlEngineFactory.createMutationExecutor(
                 databaseType, jdbcTemplate, txTemplate);
-
-        // The unscoped state serves requests that carry no project, so there is no
-        // grant configuration to read: it is the whole schema. Project-scoped
-        // callers get a filtered view built from this same database below.
-        engineState.set(assemble(schemaInfo, defaultSchema, engine, mutationExecutor,
-                TableGrants.unenforced(null), null));
+        Reflection reflection = new Reflection(schemaInfo, defaultSchema, engine, mutationExecutor,
+                probesOn(jdbcTemplate));
+        defaultReflection.set(reflection);
+        // Requests without a project get the configured database whole: there is no project to hold
+        // permissions for. Every project-scoped request is built per role below.
+        engineState.set(assemble(reflection, AccessPlan.allAccess(schemaInfo), NO_DOCUMENT));
+        reflections.clear();
         tenantEngineStates.clear();
     }
 
     /**
-     * The single place an {@link EngineState} is assembled, and therefore the single
-     * place the exposure filter is applied. The compiler and the introspection
-     * handler are both built from the <em>filtered</em> schema, so a resource the
-     * caller was not granted has no field to ask for anywhere downstream — there is
-     * no per-call-site check because there is nothing left to check.
+     * The single place an {@link EngineState} is assembled. The compiler and the introspection handler
+     * are both built from the plan's view, so what the role cannot reach has no field anywhere.
      */
-    private EngineState assemble(SchemaInfo schemaInfo, String schemaForCompiler, SqlEngine engine,
-                                 MutationExecutor mutationExecutor, TableGrants grants, String callerRole) {
-        ExposureFilter.Result exposed = ExposureFilter.apply(schemaInfo, grants, callerRole);
-        SqlCompiler compiler = new SqlCompiler(exposed.schemaInfo(), schemaForCompiler, maxRows,
-                engine.dialect(), engine.mutationCompiler(), maxQueryDepth, exposed.exposure());
-
+    EngineState assemble(Reflection reflection, AccessPlan plan, long permissionsVersion) {
+        SchemaInfo view = plan.view();
+        SqlCompiler compiler = new SqlCompiler(view, reflection.defaultSchema(), maxRows,
+                reflection.engine().dialect(), reflection.engine().mutationCompiler(), maxQueryDepth, plan.access());
         IntrospectionHandler handler = null;
         try {
-            handler = new IntrospectionHandler(exposed.schemaInfo(), exposed.exposure());
+            handler = new IntrospectionHandler(view, plan.access());
         } catch (Exception e) {
             log.warn("IntrospectionHandler failed to build schema", e);
         }
-        return new EngineState(compiler, handler, mutationExecutor, exposed.exposure(), schemaForCompiler);
+        return new EngineState(compiler, handler, reflection.mutationExecutor(), plan, reflection.defaultSchema(),
+                reflection.probes(), permissionsVersion);
     }
 
     /**
-     * The grants in force for a project and role. A project with no exposure
-     * configuration, a deployment with no policy source wired, and the {@code service}
-     * role (which bypasses permissions) are all unenforced.
-     */
-    private TableGrants grantsFor(String projectId, String callerRole) {
-        if (policyProvider == null || projectId == null || Principal.SERVICE.equals(callerRole)) {
-            return TableGrants.unenforced(projectId);
-        }
-        return policyProvider.tableGrantsFor(projectId);
-    }
-
-    /**
-     * Returns the default EngineState (for non-JWT requests using static datasource).
-     * In multi-tenant-only mode (no spring.datasource.url), this throws a clear error
-     * instead of returning an empty schema.
+     * Returns the default EngineState (for requests that carry no project). In multi-tenant-only mode
+     * (no spring.datasource.url) there is none.
      */
     public EngineState getEngineState() {
         return engineState.get();
     }
 
     /**
-     * Resolve EngineState for the current request.
-     *
-     * <p>The project comes from {@link TenantContext} — the URL path, already checked
-     * against the projects this deployment serves — and never from the token. The
-     * role is the one the request runs as, resolved once by the authentication filter.
+     * Resolve EngineState for the current request. The project comes from {@link TenantContext} — the
+     * URL path, already checked against the projects this deployment serves — and never from the
+     * token. The role is the one the request runs as, resolved once by the authentication filter.
      */
     public EngineState resolveEngineState(Principal principal) {
         String projectId = TenantContext.getTenantId();
@@ -181,72 +194,121 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     }
 
     /**
-     * Get or build the EngineState for one caller: the tenant's database when
-     * multi-tenant routing is wired, otherwise the configured database, in both
-     * cases filtered to what the principal's role was granted on {@code projectId}.
+     * The engine one caller is served on {@code projectId}: built from the project's reflection and the
+     * role's plan, and rebuilt when the project's permission document moves to a new version.
+     *
+     * @throws io.github.excalibase.permissions.PermissionsUnavailableException the permissions cannot be read
      */
     public EngineState resolveEngineState(String orgSlug, String projectId, Principal principal) {
         if (projectId == null) {
             return engineState.get();
         }
-        String callerRole = cacheRole(principal);
-        return tenantEngineStates.computeIfAbsent(new EngineKey(projectId, callerRole),
-                key -> buildEngineState(orgSlug, projectId, callerRole));
+        String role = engineRole(principal);
+        Reflection reflection = reflections.computeIfAbsent(projectId, key -> reflect(orgSlug, projectId));
+        EngineKey key = new EngineKey(projectId, role);
+        if (Principal.SERVICE.equals(role) || !permissionsSourced()) {
+            return tenantEngineStates.computeIfAbsent(key, ignored -> build(reflection, projectId, role, null));
+        }
+        PermissionSet permissions = permissionProvider.permissionsFor(projectId);
+        EngineState cached = tenantEngineStates.get(key);
+        if (cached != null && cached.permissionsVersion() == permissions.version()) {
+            return cached;
+        }
+        EngineState built = build(reflection, projectId, role, permissions);
+        tenantEngineStates.put(key, built);
+        return built;
     }
 
     /**
-     * The role an engine is built and cached for. {@code service} (the bypass) gets the
-     * whole schema. No principal is legitimate only where no permission source is wired
-     * (authentication off); anywhere else it is a bug, and guessing a role would hide it.
+     * {@code service} is served everything and needs no document. Without a permission source, every
+     * other role is served nothing — unless authentication is off, where the whole schema is served.
      */
-    private String cacheRole(Principal principal) {
-        if (principal != null) {
-            return principal.role();
+    private EngineState build(Reflection reflection, String projectId, String role, PermissionSet permissions) {
+        AccessPlan plan;
+        if (Principal.SERVICE.equals(role)) {
+            plan = AccessPlan.allAccess(reflection.schema());
+        } else if (permissions == null) {
+            plan = AccessPlan.forRole(reflection.schema(), new RolePermissions(role, Map.of(), List.of(), Set.of()));
+        } else {
+            plan = AccessPlan.forRole(reflection.schema(), permissions.forRole(role));
         }
-        if (policyProvider != null) {
+        EngineState state = assemble(reflection, plan, permissions == null ? NO_DOCUMENT : permissions.version());
+        log.info("built_engine project={} role={} tables={} served_tables={}", projectId, role,
+                reflection.schema().getTableNames().size(), plan.view().getTableNames().size());
+        return state;
+    }
+
+    private boolean permissionsSourced() {
+        return permissionProvider != null && permissionProvider.configured();
+    }
+
+    /**
+     * The role an engine is built for. With authentication off there is no principal and the whole
+     * schema is served; with it on, a missing principal is a bug, and guessing a role would hide it.
+     */
+    private String engineRole(Principal principal) {
+        if (!jwtEnabled) {
+            return Principal.SERVICE;
+        }
+        if (principal == null) {
             throw new IllegalStateException("No principal for a request on a deployment where permissions apply");
         }
-        return Principal.SERVICE;
+        return principal.role();
     }
 
     /**
-     * With tenant routing wired a project is served from its own database only, for
-     * anonymous callers too; otherwise this is single-database mode, where the one
-     * project the configured database serves has already been matched to the path.
+     * With tenant routing wired a project is served from its own database only; otherwise this is
+     * single-database mode, where the one project the configured database serves has already been
+     * matched to the path.
      */
-    EngineState buildEngineState(String orgSlug, String projectId, String callerRole) {
-        return dataSourceManager != null
-                ? buildTenantEngineState(orgSlug, projectId, callerRole)
-                : filteredDefaultEngineState(projectId, callerRole);
+    Reflection reflect(String orgSlug, String projectId) {
+        return dataSourceManager != null ? reflectTenant(orgSlug, projectId) : defaultReflection.get();
     }
 
-    /** The exposure in force for {@code principal} on the current request. */
     @Override
-    public TableExposure resolveExposure(Principal principal) {
+    public AccessPlan planFor(Principal principal) {
         EngineState state = resolveEngineState(principal);
-        return state == null ? TableExposure.UNRESTRICTED : state.exposure();
+        return state == null ? null : state.plan();
     }
 
     @Override
-    public TableExposure exposureFor(String orgSlug, String projectId, Principal principal) {
+    public Optional<RealtimeAccess> realtime(String orgSlug, String projectId, Principal principal,
+                                             String subscriptionKey) {
         EngineState state = resolveEngineState(orgSlug, projectId, principal);
-        return state == null ? TableExposure.UNRESTRICTED : state.exposure();
+        if (state == null) {
+            return Optional.empty();
+        }
+        return tableFor(state, subscriptionKey).flatMap(table ->
+                state.plan().changes(table, sessionVariables(principal, projectId))
+                        .map(filter -> new RealtimeAccess(table, filter, state.probes())));
     }
 
-    @Override
-    public boolean requiresPrincipal() {
-        return policyProvider != null;
+    private static Map<String, String> sessionVariables(Principal principal, String projectId) {
+        return principal == null ? Map.of() : principal.sessionVariables(projectId);
+    }
+
+    /** {@code schema_table}, {@code schema.table}, or a bare table of the default schema, among the served tables. */
+    private static Optional<String> tableFor(EngineState state, String subscriptionKey) {
+        SchemaInfo view = state.plan().view();
+        String qualified = state.defaultSchema() + "." + subscriptionKey;
+        if (view.hasTable(subscriptionKey) || view.hasTable(qualified)) {
+            return Optional.of(view.hasTable(subscriptionKey) ? subscriptionKey : qualified);
+        }
+        return view.getTableNames().stream()
+                .filter(table -> table.replace('.', '_').equals(subscriptionKey))
+                .findFirst();
     }
 
     /**
-     * Drops every cached engine state for {@code projectId}, all roles included: a
-     * grant change reshapes the schema for one role and leaves the others alone, and
-     * guessing which is which would leave a stale, over-wide schema behind.
+     * Drops every cached engine of {@code projectId}, all roles included, and its reflection: a
+     * permission or schema change reshapes the schema of some roles, and guessing which would leave a
+     * stale, over-wide one behind.
      */
     public void evict(String projectId) {
         if (projectId == null) {
             return;
         }
+        reflections.remove(projectId);
         tenantEngineStates.removeIf(key -> projectId.equals(key.projectId()));
     }
 
@@ -263,6 +325,11 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
     @Override
     public SqlDialect resolveDialect(Principal principal) {
         return requireEngineState(principal).compiler().dialect();
+    }
+
+    @Override
+    public TableAccess resolveAccess(Principal principal) {
+        return requireEngineState(principal).plan().access();
     }
 
     /**
@@ -357,26 +424,7 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
         return null;
     }
 
-    /**
-     * The configured database for its one pinned project, filtered to the caller's
-     * grants. Single-database mode only: {@code KnownProjectFilter} has refused
-     * every other project before this is reached.
-     */
-    private EngineState filteredDefaultEngineState(String projectId, String callerRole) {
-        EngineState base = engineState.get();
-        SchemaInfo source = defaultSchemaInfo.get();
-        TableGrants grants = grantsFor(projectId, callerRole);
-        if (base == null || source == null || !grants.enforced()) {
-            return base;
-        }
-        return assemble(source, defaultSchema, SqlEngineFactory.create(databaseType),
-                base.mutationExecutor(), grants, callerRole);
-    }
-
-    EngineState buildTenantEngineState(String orgSlug, String projectId, String callerRole) {
-        if (dataSourceManager == null) {
-            throw new IllegalStateException("Multi-tenant not enabled — DynamicDataSourceManager is null");
-        }
+    Reflection reflectTenant(String orgSlug, String projectId) {
         DataSource tenantDs = dataSourceManager.getDataSource(orgSlug, projectId);
         JdbcTemplate tenantJdbc = new JdbcTemplate(tenantDs);
 
@@ -386,20 +434,21 @@ public class GraphqlSchemaManager implements SchemaProvider, ExposureSource, Pro
         SchemaInfo schemaInfo = new SchemaInfo();
         loadMultiSchema(schemaInfo, tenantSchemas, engine.schemaLoader(), tenantJdbc);
 
-        String tenantDefaultSchema = resolveDefaultSchema(tenantSchemas, schemaInfo);
-
-        TransactionTemplate tenantTx = new TransactionTemplate(
-                new DataSourceTransactionManager(tenantDs));
+        TransactionTemplate tenantTx = new TransactionTemplate(new DataSourceTransactionManager(tenantDs));
         MutationExecutor mutationExecutor = SqlEngineFactory.createMutationExecutor(
                 databaseType, tenantJdbc, tenantTx);
+        log.info("reflected_tenant tenant={}/{} tables={}", orgSlug, projectId, schemaInfo.getTableNames().size());
+        return new Reflection(schemaInfo, resolveDefaultSchema(tenantSchemas, schemaInfo), engine, mutationExecutor,
+                probesOn(tenantJdbc));
+    }
 
-        EngineState state = assemble(schemaInfo, tenantDefaultSchema, engine, mutationExecutor,
-                grantsFor(projectId, callerRole), callerRole);
-
-        log.info("built_tenant_engine tenant={}/{} role={} tables={} exposed_tables={}",
-                orgSlug, projectId, callerRole, schemaInfo.getTableNames().size(),
-                state.compiler().schemaInfo().getTableNames().size());
-        return state;
+    /** Realtime's database probes run on the project's own database. */
+    private static ProbeRunner probesOn(JdbcTemplate jdbc) {
+        if (jdbc == null) {
+            return (sql, params) -> false;
+        }
+        NamedParameterJdbcTemplate named = new NamedParameterJdbcTemplate(jdbc);
+        return (sql, params) -> Boolean.TRUE.equals(named.queryForObject(sql, params, Boolean.class));
     }
 
     private void loadMultiSchema(SchemaInfo schemaInfo, List<String> schemaList,

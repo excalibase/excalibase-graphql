@@ -3,10 +3,11 @@ package io.github.excalibase.rest.compiler;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.postgres.PostgresDialect;
 import io.github.excalibase.schema.SchemaInfo;
-import io.github.excalibase.security.ColumnMaskContributor;
+import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
+import io.github.excalibase.security.WriteGuard;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -612,92 +614,100 @@ class RestQueryCompilerTest {
   }
 
   @Nested
-  @DisplayName("Column-level security (CLS)")
-  class ColumnMasking {
+  @DisplayName("A role's view: only its columns, only its writes")
+  class RoleView {
 
-    /** Masks products.description → HIDDEN, products.price → NULLED; everything else VISIBLE. */
-    private void installMasker() {
-      RlsContext.setColumnMask((table, column) -> {
-        if ("public.products".equals(table) && "description".equals(column)) {
-          return ColumnMaskContributor.Decision.HIDDEN;
+    /** products as a role sees it: description and price are not selectable, only name is insertable. */
+    private RestQueryCompiler roleCompiler() {
+      SchemaInfo view = new SchemaInfo();
+      view.addColumn("public.products", "id", "integer");
+      view.addColumn("public.products", "name", "text");
+      view.addPrimaryKey("public.products", "id");
+      view.setTableSchema("public.products", "public");
+      TableAccess access = TableAccess.enforcing(Map.of("public.products", new TableAccess.Rights(
+          Set.of(RlsOp.SELECT, RlsOp.INSERT), Set.of("name"), Set.of(), 5, false)));
+      return new RestQueryCompiler(view, dialect, "public", 30, access);
+    }
+
+    @Test
+    @DisplayName("SELECT * reads only the role's columns, capped by its row limit")
+    void selectStar_projectsTheViewColumns() {
+      String sql = roleCompiler().compileSelect("public.products", List.of(), List.of(), null, 30, 0, false).sql();
+
+      assertTrue(sql.contains("SELECT c.\"id\", c.\"name\" FROM"), sql);
+      assertFalse(sql.contains("description") || sql.contains("price"), sql);
+      assertTrue(sql.contains("LIMIT 5"), sql);
+    }
+
+    @Test
+    @DisplayName("a column outside the view is refused wherever it is named")
+    void unknownColumns_refused() {
+      RestQueryCompiler role = roleCompiler();
+      var hiddenFilter = List.of(new RestQueryCompiler.FilterSpec("description", "eq", "secret", false));
+      var hiddenOrder = List.of(new RestQueryCompiler.OrderBySpec("price", "ASC", null));
+
+      assertThrows(IllegalArgumentException.class, () ->
+          role.compileSelect("public.products", List.of("description"), List.of(), null, 30, 0, false));
+      assertThrows(IllegalArgumentException.class, () ->
+          role.compileSelect("public.products", List.of("id"), hiddenFilter, null, 30, 0, false));
+      assertThrows(IllegalArgumentException.class, () ->
+          role.compileSelect("public.products", List.of("id"), List.of(), hiddenOrder, 30, 0, false));
+      assertThrows(IllegalArgumentException.class, () -> role.compileDelete("public.products", hiddenFilter));
+    }
+
+    @Test
+    @DisplayName("counting rows needs the aggregation right")
+    void count_needsAggregations() {
+      assertThrows(IllegalArgumentException.class, () ->
+          roleCompiler().compileSelect("public.products", List.of(), List.of(), null, 30, 0, true));
+    }
+
+    @Test
+    @DisplayName("an insert may set only the role's columns")
+    void insert_refusesUnsettableColumns() {
+      assertThrows(IllegalArgumentException.class, () ->
+          roleCompiler().compileInsert("public.products", Map.of("name", "x", "price", 1)));
+    }
+
+    @Test
+    @DisplayName("presets are written, the check guards the rows, the output is filtered and projected")
+    void insert_appliesTheWriteGuard() {
+      RlsContext.set(new RlsWhereContributor() {
+        @Override public Contribution contribute(String table, RlsOp op) {
+          return contribute(table, null, op);
         }
-        if ("public.products".equals(table) && "price".equals(column)) {
-          return ColumnMaskContributor.Decision.NULLED;
+        @Override public Contribution contribute(String table, String alias, RlsOp op) {
+          return new Contribution("SEL_" + alias, Map.of());
         }
-        return ColumnMaskContributor.Decision.VISIBLE;
       });
-    }
-
-    @Test
-    @DisplayName("HIDDEN column is dropped and NULLED column emits NULL in top-level SELECT")
-    void masksTopLevelColumns() {
-      installMasker();
+      RlsContext.setWriteGuard(new WriteGuard() {
+        @Override public Map<String, Object> presets(String table, RlsOp op) {
+          return Map.of("id", 7);
+        }
+        @Override public RlsWhereContributor.Contribution check(String table, String alias, RlsOp op) {
+          return new RlsWhereContributor.Contribution("CHK_" + alias, Map.of());
+        }
+      });
       try {
-        // Empty column list = SELECT * — must still honour the mask, not fall back to row_to_json.
-        var result = compiler.compileSelect("public.products", List.of(), List.of(), null, 30, 0, false);
+        var result = roleCompiler().compileInsert("public.products", Map.of("name", "x"));
         String sql = result.sql();
-        assertFalse(sql.contains("row_to_json"), "masked query must not use row_to_json fast path: " + sql);
-        assertFalse(sql.contains("'description'"), "HIDDEN column must be absent from JSON object: " + sql);
-        assertTrue(sql.contains("'price',NULL") || sql.contains("'price', NULL"),
-            "NULLED column must emit NULL literal: " + sql);
-        assertTrue(sql.contains("'name'"), "VISIBLE column must remain: " + sql);
+
+        assertTrue(sql.contains("(\"name\", \"id\")"), sql);
+        assertTrue(result.params().containsValue(7), sql);
+        assertTrue(sql.contains("excalibase_permission_check_failed"), sql);
+        assertTrue(sql.contains("(CHK_chk0) IS NOT TRUE"), sql);
+        assertTrue(sql.contains("SELECT ins.\"id\", ins.\"name\" FROM ins WHERE (SEL_ins)"), sql);
       } finally {
         RlsContext.clear();
       }
     }
 
     @Test
-    @DisplayName("explicitly requested HIDDEN column is still dropped")
-    void masksExplicitlyRequestedColumn() {
-      installMasker();
-      try {
-        var result = compiler.compileSelect("public.products", List.of("id", "name", "description"),
-            List.of(), null, 30, 0, false);
-        String sql = result.sql();
-        assertFalse(sql.contains("'description'"), "HIDDEN column requested by client must still be dropped: " + sql);
-        assertTrue(sql.contains("'id'") && sql.contains("'name'"), "visible columns must remain: " + sql);
-      } finally {
-        RlsContext.clear();
-      }
-    }
-
-    @Test
-    @DisplayName("no masker installed keeps the row_to_json fast path")
-    void noMaskerFastPath() {
-      // No RlsContext.setColumnMask — SELECT * should use the row_to_json optimization.
+    @DisplayName("without permissions SELECT * keeps the row_to_json fast path")
+    void unrestricted_keepsTheFastPath() {
       var result = compiler.compileSelect("public.products", List.of(), List.of(), null, 30, 0, false);
-      assertTrue(result.sql().contains("row_to_json"), "unmasked SELECT * should keep fast path: " + result.sql());
-    }
-
-    @Test
-    @DisplayName("filter on a HIDDEN column is dropped (no inference oracle)")
-    void filterOnHiddenColumnDropped() {
-      installMasker();
-      try {
-        // description is HIDDEN; a filter on it must not reach the SQL, else the
-        // caller can binary-search the masked value.
-        var filters = List.of(new RestQueryCompiler.FilterSpec("description", "eq", "secret", false));
-        var result = compiler.compileSelect("public.products", List.of("id"), filters, null, 30, 0, false);
-        assertFalse(result.sql().toLowerCase().contains("description"),
-            "HIDDEN column filter must be dropped: " + result.sql());
-      } finally {
-        RlsContext.clear();
-      }
-    }
-
-    @Test
-    @DisplayName("order by a NULLED column is dropped")
-    void orderByMaskedColumnDropped() {
-      installMasker();
-      try {
-        // price is NULL-masked; ordering by it leaks the real ordering.
-        var order = List.of(new RestQueryCompiler.OrderBySpec("price", "ASC", null));
-        var result = compiler.compileSelect("public.products", List.of("id"), List.of(), order, 30, 0, false);
-        assertFalse(result.sql().contains("ORDER BY \"price\""),
-            "masked column must not be orderable: " + result.sql());
-      } finally {
-        RlsContext.clear();
-      }
+      assertTrue(result.sql().contains("row_to_json"), result.sql());
+      assertTrue(result.sql().contains("SELECT * FROM"), result.sql());
     }
   }
 }

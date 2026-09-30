@@ -1,0 +1,2928 @@
+{
+ "request": {
+  "method": "GET",
+  "url": "/api/provision/e2e-test/permissions/"
+ },
+ "response": {
+  "status": 200,
+  "headers": {
+   "Content-Type": "application/json"
+  },
+  "jsonBody": {
+   "projectId": "e2e-test",
+   "version": 1,
+   "tables": [
+    {
+     "table": "clinic.appointments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.appointments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.diagnoses",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.diagnoses",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.doctor_availability",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.doctor_availability",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.doctors",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.doctors",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.lab_results",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.lab_results",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.lab_tests",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.lab_tests",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.medications",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.medications",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.patient_history",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "clinic.patient_history",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "clinic.patients",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.patients",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.prescriptions",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.prescriptions",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.specializations",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.specializations",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.upcoming_appointments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "clinic.upcoming_appointments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "complex.active_employees",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "complex.active_employees",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "complex.audit_log",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.audit_log",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.comment",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.comment",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.company",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.company",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.config_a",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.config_a",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.config_b",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.config_b",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.department",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.department",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.document",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.document",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.employee",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.employee",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.order",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.order",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.project",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.project",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.project_member",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.project_member",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.project_summary",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "complex.project_summary",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "complex.task",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.task",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.task_overview",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "complex.task_overview",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "complex.team",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "complex.team",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.active_customers",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "hana.active_customers",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "hana.child_table",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.child_table",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.comments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.comments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.custom_types_test",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.custom_types_test",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.customer",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.customer",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.domain_types_test",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.domain_types_test",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.enhanced_types",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.enhanced_types",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.enhanced_types_summary",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "hana.enhanced_types_summary",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "hana.order_items",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.order_items",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.orders",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.orders",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.parent_table",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.parent_table",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.posts",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.posts",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.posts_with_authors",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "hana.posts_with_authors",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "hana.products",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.products",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.rls_notes",
+     "role": "user",
+     "select": {
+      "filter": {
+       "owner_id": {
+        "_eq": "X-Excalibase-User-Id"
+       }
+      },
+      "columns": "*"
+     },
+     "insert": {
+      "check": {
+       "owner_id": {
+        "_eq": "X-Excalibase-User-Id"
+       }
+      },
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {
+       "owner_id": {
+        "_eq": "X-Excalibase-User-Id"
+       }
+      },
+      "check": {
+       "owner_id": {
+        "_eq": "X-Excalibase-User-Id"
+       }
+      },
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {
+       "owner_id": {
+        "_eq": "X-Excalibase-User-Id"
+       }
+      }
+     }
+    },
+    {
+     "table": "hana.rls_orders",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.rls_orders",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.rls_regional",
+     "role": "user",
+     "select": {
+      "filter": {
+       "region": {
+        "_eq": "X-Excalibase-Region"
+       }
+      },
+      "columns": "*"
+     }
+    },
+    {
+     "table": "hana.rls_team_orders",
+     "role": "user",
+     "select": {
+      "filter": {
+       "hanaOrgId": {
+        "hanaRlsMembers": {
+         "member_user": {
+          "_eq": "X-Excalibase-User-Id"
+         }
+        }
+       }
+      },
+      "columns": "*"
+     }
+    },
+    {
+     "table": "hana.tasks",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.tasks",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.users",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.users",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.wallets",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "hana.wallets",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.attachments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.attachments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.comments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.comments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.issue_labels",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.issue_labels",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.issues",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.issues",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.labels",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.labels",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.organizations",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.organizations",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.projects",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.projects",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.sprint_board",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "kanban.sprint_board",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "kanban.sprints",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.sprints",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.time_entries",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.time_entries",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.user_workload",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "kanban.user_workload",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "kanban.users",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.users",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.categories",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.categories",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.customers",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.customers",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.order_items",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.order_items",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.order_summary",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "shopify.order_summary",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "shopify.orders",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.orders",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.payments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.payments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.product_catalog",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "shopify.product_catalog",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "shopify.product_variants",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.product_variants",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.products",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.products",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.reviews",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.reviews",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.wishlists",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.wishlists",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    }
+   ],
+   "functions": [],
+   "functionPermissions": []
+  }
+ }
+}

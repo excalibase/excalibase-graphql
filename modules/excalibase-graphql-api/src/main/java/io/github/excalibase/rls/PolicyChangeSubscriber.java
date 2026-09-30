@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Invalidates a project's cached RLS/CLS policies the moment provisioning signals
+ * Invalidates a project's cached permissions and engines the moment provisioning signals
  * a change, so edits in Studio converge immediately instead of waiting out the
  * policy-cache TTL. Subscribes with <em>core</em> NATS (not JetStream) to
  * {@code policies.*.changed}: invalidation is fire-and-forget and the TTL is the
@@ -45,15 +45,10 @@ public class PolicyChangeSubscriber {
     private Dispatcher dispatcher;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
-    public PolicyChangeSubscriber(PolicyProvider policyProvider, boolean natsEnabled, String natsUrl) {
-        this(List.of(policyProvider), natsEnabled, natsUrl, "", "", "");
-    }
-
     /**
-     * A grant change reshapes the caller's schema, not just their row filters, so
-     * the built engines are invalidated alongside the policies. Both caches are
-     * evicted from the same signal — a schema that outlived its grants would keep
-     * serving fields the operator has just taken away.
+     * A permission change reshapes each role's schema, not just its row filters, so the built engines
+     * are invalidated alongside the cached permissions, from the same signal: a schema that outlived
+     * its permissions would keep serving fields the operator has just taken away.
      */
     public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, boolean natsEnabled, String natsUrl) {
         this(evictors, natsEnabled, natsUrl, "", "", "");

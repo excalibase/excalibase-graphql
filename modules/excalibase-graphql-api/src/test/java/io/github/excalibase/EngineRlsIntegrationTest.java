@@ -7,20 +7,7 @@ import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
-import io.github.excalibase.rls.Assignment;
-import io.github.excalibase.rls.ColumnPolicy;
-import io.github.excalibase.rls.FieldType;
-import io.github.excalibase.rls.InMemoryPolicyProvider;
-import io.github.excalibase.rls.LogicOperator;
-import io.github.excalibase.rls.MaskMode;
-import io.github.excalibase.rls.Operation;
-import io.github.excalibase.rls.Policy;
-import io.github.excalibase.rls.PolicyEffect;
-import io.github.excalibase.rls.PolicyProvider;
-import io.github.excalibase.rls.Rule;
-import io.github.excalibase.rls.RuleOperator;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -40,26 +27,28 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Integration test for query-first (engine-driven) RLS on a single table
- * SELECT — EXC-312. The table has NO Postgres-native RLS, so any filtering
- * observed is proof the excalibase-rls engine composed the WHERE clause.
+ * Integration test for engine-composed select filters and columns. The tables have NO
+ * Postgres-native RLS, so any filtering observed is proof the engine composed the WHERE clause from
+ * the project's permission document.
  *
- * <p>Exercises the full production path: JWT verification → JwtAuthFilter
- * registers the RLS contributor → SqlCompiler builds the WHERE via the
- * contributor → Postgres returns only the rows the policy allows. Asserts the
- * list, connection, and aggregate read surfaces are all filtered (no bypass).
+ * <p>Exercises the full production path: JWT verification → JwtAuthFilter registers the request's
+ * guard from the role's access plan → SqlCompiler ANDs the select filter into every read → Postgres
+ * returns only the rows the permission allows.
  *
- * <p>Each policy shape lives in its own project, so this runs multi-tenant: the
- * stub vault resolves every one of those projects to the same test database.
+ * <p>Each permission shape lives in its own project, so this runs multi-tenant: the stub vault
+ * resolves every one of those projects to the same test database.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -75,6 +64,10 @@ class EngineRlsIntegrationTest {
     private static final String PROJECT_NESTED = "proj-nested";
     private static final String PROJECT_NUMERIC = "proj-numeric";
     private static final String PROJECT_TEMPORAL = "proj-temporal";
+    private static final String ROLE = "app_authenticated";
+    private static final String ALL = "\"*\"";
+    /** Ledger rows created at most a day ago; time variables are not part of the grammar, so a literal. */
+    private static final String DAY_AGO = Instant.now().minus(Duration.ofDays(1)).toString();
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -114,6 +107,7 @@ class EngineRlsIntegrationTest {
                             exchange.getResponseBody().close();
                         });
             }
+            permissions().forEach((project, document) -> PermissionDocs.serve(mockVault, project, () -> document));
             mockVault.start();
         } catch (Exception e) {
             throw new RuntimeException("Failed to set up mock vault", e);
@@ -141,70 +135,39 @@ class EngineRlsIntegrationTest {
         registry.add("app.security.multi-tenant.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
         registry.add("app.tenant-db.sslmode", () -> "disable");
         registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat");
+        registry.add("app.security.rls.policy-url", () -> "http://localhost:" + mockVaultPort + "/api");
+        registry.add("app.security.rls.policy-pat", () -> "test-pat");
     }
 
     @Autowired
     private MockMvc mockMvc;
 
-    @Autowired
-    private PolicyProvider policyProvider;
-
     private static final ObjectMapper mapper = new ObjectMapper();
 
-    /** Owner policy: a doc row is visible iff its owner_id equals the caller. */
-    private static Policy ownerSelect() {
-        return new Policy(
-                "owner-docs", "owner-docs", "rls_demo.docs",
-                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
-                List.of(new Rule("owner_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(Assignment.all()));
+    private static String owned(String table) {
+        return PermissionDocs.entry(table, ROLE, PermissionDocs.select(PermissionDocs.OWNED, ALL));
     }
 
-    /** Column policy: HIDE the `title` column for everyone. */
-    private static ColumnPolicy hideTitle() {
-        return new ColumnPolicy(
-                "hide-title", "hide-title", "rls_demo.docs",
-                java.util.Set.of("title"), Operation.ALL, MaskMode.HIDE,
-                null, null, 0, true, List.of(Assignment.all()));
+    private static String open(String table) {
+        return PermissionDocs.entry(table, ROLE, PermissionDocs.selectAll());
     }
 
-    @BeforeEach
-    void seedPolicies() {
-        var provider = (InMemoryPolicyProvider) policyProvider;
-        // Row-policy project: owner filter, no column masking.
-        provider.put(PROJECT_WITH_POLICY, List.of(ownerSelect()));
-        provider.putColumns(PROJECT_WITH_POLICY, List.of());
-        // Open project: nothing seeded → full passthrough.
-        provider.evict(PROJECT_NO_POLICY);
-        // CLS project: no row policy (all rows visible) but `title` is hidden,
-        // isolating column-level security from row-level filtering.
-        provider.put(PROJECT_CLS, List.of());
-        provider.putColumns(PROJECT_CLS, List.of(hideTitle()));
-        // CLS-NULL project: `title` is null-masked (key present, value null).
-        provider.put(PROJECT_CLS_NULL, List.of());
-        provider.putColumns(PROJECT_CLS_NULL, List.of(new ColumnPolicy(
-                "null-title", "null-title", "rls_demo.docs",
-                java.util.Set.of("title"), Operation.ALL, MaskMode.NULL,
-                null, null, 0, true, List.of(Assignment.all()))));
-        // Nested project: owner policy on `book` only (not `shelf`), so the
-        // embedded books under a shelf must be filtered per caller.
-        provider.put(PROJECT_NESTED, List.of(new Policy(
-                "owner-book", "owner-book", "rls_demo.book",
-                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
-                List.of(new Rule("owner_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(Assignment.all()))));
-        // Numeric project: DECIMAL rule binds as BigDecimal → exact NUMERIC compare.
-        provider.put(PROJECT_NUMERIC, List.of(new Policy(
-                "min-amount", "min-amount", "rls_demo.ledger",
-                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
-                List.of(new Rule("amount", FieldType.DECIMAL, RuleOperator.GTE, "100.00")),
-                List.of(Assignment.all()))));
-        // Temporal project: DATETIME rule binds as OffsetDateTime → TIMESTAMPTZ compare.
-        provider.put(PROJECT_TEMPORAL, List.of(new Policy(
-                "recent", "recent", "rls_demo.ledger",
-                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
-                List.of(new Rule("created_at", FieldType.DATETIME, RuleOperator.GTE, "{{daysAgo:1}}")),
-                List.of(Assignment.all()))));
+    /** One permission shape per project. */
+    private static Map<String, String> permissions() {
+        String docsWithoutTitle = PermissionDocs.entry("rls_demo.docs", ROLE,
+                PermissionDocs.select("{}", "[\"id\",\"owner_id\"]"));
+        return Map.of(
+                PROJECT_WITH_POLICY, PermissionDocs.document(PROJECT_WITH_POLICY,
+                        owned("rls_demo.docs"), open("rls_demo.notes")),
+                PROJECT_NO_POLICY, PermissionDocs.document(PROJECT_NO_POLICY, open("rls_demo.docs")),
+                PROJECT_CLS, PermissionDocs.document(PROJECT_CLS, docsWithoutTitle, open("rls_demo.notes")),
+                PROJECT_CLS_NULL, PermissionDocs.document(PROJECT_CLS_NULL, docsWithoutTitle),
+                PROJECT_NESTED, PermissionDocs.document(PROJECT_NESTED, owned("rls_demo.book"),
+                        open("rls_demo.shelf")),
+                PROJECT_NUMERIC, PermissionDocs.document(PROJECT_NUMERIC, PermissionDocs.entry("rls_demo.ledger", ROLE,
+                        PermissionDocs.select("{\"amount\":{\"_gte\":100.00}}", ALL))),
+                PROJECT_TEMPORAL, PermissionDocs.document(PROJECT_TEMPORAL, PermissionDocs.entry("rls_demo.ledger", ROLE,
+                        PermissionDocs.select("{\"created_at\":{\"_gte\":\"" + DAY_AGO + "\"}}", ALL))));
     }
 
     @Test
@@ -256,15 +219,24 @@ class EngineRlsIntegrationTest {
     }
 
     @Test
-    void listQuery_projectWithoutPolicy_seesAllDocs() throws Exception {
-        // Same table, a project with no seeded policy → engine returns UNRESTRICTED
-        // → passthrough, all three rows visible. Proves opt-in behaviour.
+    void listQuery_projectWithAnEmptyFilter_seesAllDocs() throws Exception {
+        // Same table, a project whose permission has an empty filter → every row.
         mockMvc.perform(post("/" + PROJECT_NO_POLICY + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_NO_POLICY))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(3)));
+    }
+
+    @Test
+    void aTableTheRoleHoldsNoPermissionFor_isUnknown() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_NO_POLICY + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_NO_POLICY))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoNotes { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
     }
 
     @Test
@@ -302,16 +274,15 @@ class EngineRlsIntegrationTest {
     }
 
     @Test
-    void cls_hiddenColumnIsDroppedFromResponse() throws Exception {
-        // No row policy on PROJECT_CLS → all 3 rows; `title` HIDE → key absent.
+    void cls_selectingAColumnOutsideTheSelectColumns_isAnUnknownField() throws Exception {
+        // `title` is not among the role's select columns, so it does not exist in its schema.
         mockMvc.perform(post("/" + PROJECT_CLS + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id title } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(3)))
-                .andExpect(jsonPath("$.data.rlsDemoDocs[0].id").exists())
-                .andExpect(jsonPath("$.data.rlsDemoDocs[0].title").doesNotExist());
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field(s): title")))
+                .andExpect(jsonPath("$.data").doesNotExist());
     }
 
     @Test
@@ -339,18 +310,13 @@ class EngineRlsIntegrationTest {
 
     @Test
     void cls_nullMaskedColumnHasNoRealValue() throws Exception {
-        // NULL mask emits `'title', NULL` (engine selectList "NULL AS title"). Postgres
-        // keeps the null, but the GraphQL response serializer strips null fields, so the
-        // key is omitted at the boundary — the real value never leaves the database
-        // (the security property), even though the cosmetic key differs from HIDE.
+        // A former NULL mask is now "not selectable" (spec §9): the column is not on the type at all.
         mockMvc.perform(post("/" + PROJECT_CLS_NULL + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS_NULL))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id title } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(3)))
-                .andExpect(jsonPath("$.data.rlsDemoDocs[0].id").exists())
-                .andExpect(jsonPath("$.data.rlsDemoDocs[0].title").doesNotExist());
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field(s): title")));
     }
 
 
@@ -396,7 +362,7 @@ class EngineRlsIntegrationTest {
     @Test
     void typePrecise_timestamptzFilters() throws Exception {
         // created_at >= (now - 1 day) → rows 2 and 3 (created now); excludes row 1
-        // (10 days old). Proves DATETIME binds as a real timestamptz operand.
+        // (10 days old). Proves a timestamp literal binds as a real timestamptz operand.
         mockMvc.perform(post("/" + PROJECT_TEMPORAL + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_TEMPORAL))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -446,17 +412,21 @@ class EngineRlsIntegrationTest {
 
     @Test
     void multiTable_columnPolicyAppliesOnlyToItsOwnTable() throws Exception {
-        // `title` is HIDE-masked on docs only; notes.title must survive in the
+        // `title` is not selectable on docs only; notes.title must survive in the
         // very same response.
         mockMvc.perform(post("/" + PROJECT_CLS + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS))
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoDocs { id title } rlsDemoNotes { id title } }")))
+                        .content(body("{ rlsDemoDocs { id } rlsDemoNotes { id title } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(3)))
-                .andExpect(jsonPath("$.data.rlsDemoDocs[0].title").doesNotExist())
                 .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(2)))
                 .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").exists());
+        mockMvc.perform(post("/" + PROJECT_CLS + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE, PROJECT_CLS))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body("{ rlsDemoDocs { id title } rlsDemoNotes { id title } }")))
+                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field(s): title")));
     }
 
     @Test

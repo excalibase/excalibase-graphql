@@ -1,10 +1,11 @@
 package io.github.excalibase.security;
 
+import io.github.excalibase.access.AccessPlan;
+import io.github.excalibase.access.RequestGuard;
 import io.github.excalibase.config.datasource.TenantContext;
-import io.github.excalibase.rls.EngineColumnMaskContributor;
-import io.github.excalibase.rls.EngineRlsWhereContributor;
-import io.github.excalibase.rls.EngineRowCheckContributor;
-import io.github.excalibase.rls.RlsPolicyEnforcer;
+import io.github.excalibase.permissions.PermissionsUnavailableException;
+import io.github.excalibase.schema.AccessPlans;
+import io.github.excalibase.service.VaultCredentialException;
 import io.opentelemetry.api.trace.Span;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -28,15 +29,15 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     private static final String PROJECT_MISMATCH_CODE = "project_mismatch";
 
     private final JwtService jwtService;
-    private final RlsPolicyEnforcer rlsEnforcer;
+    private final AccessPlans accessPlans;
 
     public JwtAuthFilter(JwtService jwtService) {
         this(jwtService, null);
     }
 
-    public JwtAuthFilter(JwtService jwtService, RlsPolicyEnforcer rlsEnforcer) {
+    public JwtAuthFilter(JwtService jwtService, AccessPlans accessPlans) {
         this.jwtService = jwtService;
-        this.rlsEnforcer = rlsEnforcer;
+        this.accessPlans = accessPlans;
     }
 
     @Override
@@ -72,8 +73,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         request.setAttribute(SecurityConstants.PRINCIPAL_ATTR, principal);
         try {
             applyTenantContext(pathProjectId, claims);
-            applyRlsContext(pathProjectId, principal);
-            chain.doFilter(request, response);
+            if (applyGuards(pathProjectId, principal, response)) {
+                chain.doFilter(request, response);
+            }
         } finally {
             RlsContext.clear();
             clearTenantContext(pathProjectId);
@@ -91,19 +93,36 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Registers the query-first RLS contributors for this request. A no-op when
-     * the engine isn't wired, the request carries no project context, or the
-     * request runs as {@code service}, which row and column policies do not govern.
+     * Registers this request's guards, made from the role's access plan and the request's session
+     * variables. Returns false after answering the request itself when the plan cannot be had: a
+     * project whose permissions cannot be read is refused, never served without them.
      */
-    private void applyRlsContext(String projectId, Principal principal) {
-        if (rlsEnforcer == null || projectId == null || principal.bypass()) {
-            return;
+    private boolean applyGuards(String projectId, Principal principal, HttpServletResponse response)
+            throws IOException {
+        if (accessPlans == null || projectId == null) {
+            return true;
         }
-        // An anonymous principal gets the engine's anonymous context, so owner/claim
-        // policies match no rows (fail-closed). RLS applies on every request, not only with a token.
-        RlsContext.set(new EngineRlsWhereContributor(rlsEnforcer, projectId, principal));
-        RlsContext.setColumnMask(new EngineColumnMaskContributor(rlsEnforcer, projectId, principal));
-        RlsContext.setRowCheck(new EngineRowCheckContributor(rlsEnforcer, projectId, principal));
+        AccessPlan plan;
+        try {
+            plan = accessPlans.planFor(principal);
+        } catch (PermissionsUnavailableException e) {
+            writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Permissions unavailable",
+                    PermissionsUnavailableException.CODE);
+            return false;
+        } catch (UnknownProjectException e) {
+            writeError(response, HttpServletResponse.SC_NOT_FOUND, "Project not found", "project_not_found");
+            return false;
+        } catch (VaultCredentialException e) {
+            writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Project unavailable",
+                    "project_unavailable");
+            return false;
+        }
+        if (plan != null && !plan.allAccess()) {
+            RequestGuard guard = plan.guard(principal.sessionVariables(projectId));
+            RlsContext.set(guard);
+            RlsContext.setWriteGuard(guard);
+        }
+        return true;
     }
 
     /** The request's {@code x-excalibase-*} headers, which carry session variables for a service token. */

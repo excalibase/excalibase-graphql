@@ -7,16 +7,6 @@ import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
-import io.github.excalibase.rls.Assignment;
-import io.github.excalibase.rls.FieldType;
-import io.github.excalibase.rls.InMemoryPolicyProvider;
-import io.github.excalibase.rls.LogicOperator;
-import io.github.excalibase.rls.Operation;
-import io.github.excalibase.rls.Policy;
-import io.github.excalibase.rls.PolicyEffect;
-import io.github.excalibase.rls.PolicyProvider;
-import io.github.excalibase.rls.Rule;
-import io.github.excalibase.rls.RuleOperator;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,11 +28,14 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
-import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -73,6 +66,10 @@ class EngineRlsMutationIntegrationTest {
     static HttpServer mockVault;
     static int mockVaultPort;
 
+    /** The document served now; each change bumps its version so the engines are rebuilt. */
+    private static final AtomicReference<String> PERMISSIONS = new AtomicReference<>();
+    private static final AtomicLong VERSION = new AtomicLong();
+
     static {
         try {
             KeyPairGenerator gen = KeyPairGenerator.getInstance("EC");
@@ -90,6 +87,7 @@ class EngineRlsMutationIntegrationTest {
                 exchange.getResponseBody().write(b);
                 exchange.getResponseBody().close();
             });
+            PermissionDocs.serve(mockVault, PROJECT, PERMISSIONS::get);
             mockVault.start();
         } catch (Exception e) {
             throw new RuntimeException("setup failed", e);
@@ -112,33 +110,51 @@ class EngineRlsMutationIntegrationTest {
         registry.add("app.project-id", () -> PROJECT);
         registry.add("app.security.auth.jwks-url",
                 () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
+        registry.add("app.security.rls.policy-url", () -> "http://localhost:" + mockVaultPort + "/api");
+        registry.add("app.security.rls.policy-pat", () -> "test-pat");
+        registry.add("app.security.rls.policy-ttl-ms", () -> 0);
     }
+
+    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final String ROLE = "app_authenticated";
+    private static final String ALL = "\"*\"";
 
     @Autowired
     private MockMvc mockMvc;
-    @Autowired
-    private PolicyProvider policyProvider;
-    private static final ObjectMapper mapper = new ObjectMapper();
 
-    /** Owner policy on the writable notes table, all operations. */
-    private static Policy ownerAll() {
-        return new Policy("owner-notes", "owner-notes", "rls_demo.notes",
-                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
-                List.of(new Rule("owner_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(Assignment.all()));
+    /** Owner permission on the writable notes table, all operations. */
+    private static String ownerNotes() {
+        return PermissionDocs.entry("rls_demo.notes", ROLE, PermissionDocs.select(PermissionDocs.OWNED, ALL),
+                PermissionDocs.insert(PermissionDocs.OWNED, ALL, "{}"),
+                PermissionDocs.update(PermissionDocs.OWNED, PermissionDocs.OWNED, ALL, "{}"),
+                PermissionDocs.delete(PermissionDocs.OWNED));
     }
 
-    /** Owner policy on the child (book) table — used for nested-insert WITH-CHECK. */
-    private static Policy ownerBook() {
-        return new Policy("owner-book", "owner-book", "rls_demo.book",
-                PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
-                List.of(new Rule("owner_id", FieldType.UUID, RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(Assignment.all()));
+    private static String open(String table) {
+        return PermissionDocs.entry(table, ROLE, PermissionDocs.everything());
+    }
+
+    /** Owner permission on the child (book) table — used for nested-insert checks. */
+    private static String ownerBook() {
+        return PermissionDocs.entry("rls_demo.book", ROLE, PermissionDocs.select(PermissionDocs.OWNED, ALL),
+                PermissionDocs.insert(PermissionDocs.OWNED, ALL, "{}"),
+                PermissionDocs.update(PermissionDocs.OWNED, PermissionDocs.OWNED, ALL, "{}"),
+                PermissionDocs.delete(PermissionDocs.OWNED));
+    }
+
+    /** Only shelf 999 is readable, so a book's forward embed to shelf 1 must come back null. */
+    private static String onlyShelf999() {
+        return PermissionDocs.entry("rls_demo.shelf", ROLE,
+                PermissionDocs.select("{\"id\":{\"_eq\":999}}", ALL));
+    }
+
+    private static void permit(String... entries) {
+        PERMISSIONS.set(PermissionDocs.document(PROJECT, VERSION.incrementAndGet(), entries));
     }
 
     @BeforeEach
     void seed() {
-        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll()));
+        permit(ownerNotes(), open("rls_demo.shelf"), open("rls_demo.book"));
     }
 
     private String body(String query) throws Exception {
@@ -207,46 +223,41 @@ class EngineRlsMutationIntegrationTest {
     @Test
     void insert_rowForAnotherOwner_isRejected() throws Exception {
         // WITH-CHECK: Alice cannot create a note owned by Bob → policy violation,
-        // surfaced as a typed RLS_DENIED GraphQL error, and no row is written.
+        // surfaced as a typed permission_check_failed error, and no row is written.
         mutate(ALICE, "mutation { createRlsDemoNotes(input: { id: 101, "
                 + "owner_id: \"" + BOB + "\", title: \"sneaky\" }) { id } }")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.errors", hasSize(1)))
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
-                .andExpect(jsonPath("$.errors[0].extensions.operation").value("INSERT"))
-                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.notes"))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"))
                 .andExpect(jsonPath("$.errors[0].message", not(containsString("ERROR:"))))
                 .andExpect(jsonPath("$.errors[0].message", not(containsString("SQLSTATE"))))
                 .andExpect(jsonPath("$.errors[0].message", not(containsString("violates"))))
                 .andExpect(jsonPath("$.data.createRlsDemoNotes").doesNotExist());
+        mutate(BOB, "{ rlsDemoNotes(where: { id: { eq: 101 } }) { id } }")
+                .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(0)));
     }
 
     @Test
-    void update_reassignToAnotherOwner_returnsRlsDenied() throws Exception {
+    void update_reassignToAnotherOwner_failsTheCheck() throws Exception {
         // WITH-CHECK on the new image: Alice cannot hand her note to Bob.
         mutate(ALICE, "mutation { updateRlsDemoNotes(where: { id: { eq: 1 } }, "
                 + "input: { owner_id: \"" + BOB + "\" }) { id } }")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.errors", hasSize(1)))
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
-                .andExpect(jsonPath("$.errors[0].extensions.operation").value("UPDATE"))
-                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.notes"))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"))
                 .andExpect(jsonPath("$.errors[0].message", not(containsString("ERROR:"))))
                 .andExpect(jsonPath("$.errors[0].message", not(containsString("violates"))))
                 .andExpect(jsonPath("$.data").doesNotExist());
     }
 
     @Test
-    void upsert_rowForAnotherOwner_returnsRlsDeniedWithUpsertOperation() throws Exception {
-        // The candidate row of an upsert is still an INSERT WITH-CHECK; the error
-        // names the caller's operation (UPSERT) so clients can tell the two apart.
+    void upsert_rowForAnotherOwner_failsTheCheck() throws Exception {
+        // The candidate row of an upsert still owes the insert check.
         mutate(ALICE, "mutation { createRlsDemoNotes("
                 + "input: { id: 102, owner_id: \"" + BOB + "\", title: \"sneaky\" }, "
                 + "onConflict: { constraint: \"notes_pkey\", update_columns: [\"title\"] }) { id } }")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
-                .andExpect(jsonPath("$.errors[0].extensions.operation").value("UPSERT"))
-                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.notes"));
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
     }
 
     // ---- UPSERT ON CONFLICT USING (audit H6) ----
@@ -290,14 +301,14 @@ class EngineRlsMutationIntegrationTest {
         // Alice creates a shelf with a nested book owned by Bob. The child table's
         // WITH-CHECK (owner policy on rls_demo.book) must reject the whole mutation —
         // a nested insert is not a hole around top-level WITH-CHECK.
-        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook()));
+        permit(ownerNotes(), open("rls_demo.shelf"), ownerBook());
         mutate(ALICE, "mutation { createRlsDemoShelf(input: { id: 500, name: \"s\", "
                 + "rlsDemoBook: { data: [ { id: 900, owner_id: \"" + BOB + "\", title: \"x\" } ] } }) { id } }")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
-                .andExpect(jsonPath("$.errors[0].extensions.operation").value("INSERT"))
-                .andExpect(jsonPath("$.errors[0].extensions.table").value("rls_demo.book"))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"))
                 .andExpect(jsonPath("$.data.createRlsDemoShelf").doesNotExist());
+        mutate(ALICE, "{ rlsDemoShelf(where: { id: { eq: 500 } }) { id } }")
+                .andExpect(jsonPath("$.data.rlsDemoShelf", hasSize(0)));
     }
 
     @Test
@@ -305,7 +316,7 @@ class EngineRlsMutationIntegrationTest {
         // Alice creates a shelf with a nested book she owns: the child WITH-CHECK
         // passes, and the child CTE casts the uuid owner_id param (regression for the
         // nested-insert type-cast bug — a bare bind is varchar in INSERT ... SELECT).
-        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook()));
+        permit(ownerNotes(), open("rls_demo.shelf"), ownerBook());
         mutate(ALICE, "mutation { createRlsDemoShelf(input: { id: 501, name: \"s2\", "
                 + "rlsDemoBook: { data: [ { id: 901, owner_id: \"" + ALICE + "\", title: \"ok\" } ] } }) { id } }")
                 .andExpect(status().isOk())
@@ -315,17 +326,9 @@ class EngineRlsMutationIntegrationTest {
 
     // ---- MUTATION RESULT EMBEDS (GQL-01) ----
 
-    /** Only shelf 999 is readable, so a book's forward embed to shelf 1 must come back null. */
-    private static Policy onlyShelf999() {
-        return new Policy("shelf-999", "shelf-999", "rls_demo.shelf",
-                PolicyEffect.ALLOW, java.util.Set.of(Operation.SELECT), LogicOperator.AND, 0, true,
-                List.of(new Rule("id", FieldType.LONG, RuleOperator.EQ, "999")),
-                List.of(Assignment.all()));
-    }
-
     @Test
     void mutationResult_reverseEmbed_isFilteredLikeQuery() throws Exception {
-        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook()));
+        permit(ownerNotes(), open("rls_demo.shelf"), ownerBook());
         mutate(BOB, "{ rlsDemoShelf(where: { id: { eq: 1 } }) { id rlsDemoBook { id } } }")
                 .andExpect(jsonPath("$.data.rlsDemoShelf[0].rlsDemoBook", hasSize(1)));
 
@@ -339,7 +342,7 @@ class EngineRlsMutationIntegrationTest {
 
     @Test
     void mutationResult_forwardEmbed_isFilteredLikeQuery() throws Exception {
-        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(ownerAll(), ownerBook(), onlyShelf999()));
+        permit(ownerNotes(), onlyShelf999(), ownerBook());
         mutate(ALICE, "{ rlsDemoBook(where: { id: { eq: 10 } }) { id rlsDemoShelfId { id name } } }")
                 .andExpect(jsonPath("$.data.rlsDemoBook[0].rlsDemoShelfId").doesNotExist());
 
@@ -351,29 +354,84 @@ class EngineRlsMutationIntegrationTest {
                 .andExpect(jsonPath("$.data.createRlsDemoBook.rlsDemoShelfId").doesNotExist());
     }
 
-    // ---- STORED PROCEDURE CALLS (GQL-04) ----
+    // ---- STORED PROCEDURE CALLS: no role but service reaches a function yet (spec §6, step E) ----
 
     @Test
-    void procedureCall_anonymous_isRefused() throws Exception {
+    void procedureCall_byARole_reachesNoFunction() throws Exception {
         mutate(BOB, "mutation { createRlsDemoNotes(input: { id: 410, "
                 + "owner_id: \"" + BOB + "\", title: \"bob-410\" }) { id } }").andExpect(status().isOk());
+
+        mutate(BOB, "mutation { callRlsDemoRenameNote(p_id: 410, p_title: \"renamed\") }")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.callRlsDemoRenameNote").doesNotExist());
         mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("mutation { callRlsDemoRenameNote(p_id: 410, p_title: \"anon-renamed\") }")))
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("UNAUTHENTICATED"))
-                .andExpect(jsonPath("$.data").doesNotExist());
+                .andExpect(jsonPath("$.data.callRlsDemoRenameNote").doesNotExist());
 
         mutate(BOB, "{ rlsDemoNotes(where: { id: { eq: 410 } }) { title } }")
                 .andExpect(jsonPath("$.data.rlsDemoNotes[0].title").value("bob-410"));
     }
 
+    // ---- WHAT A MUTATION RETURNS (risk 38) ----
+
     @Test
-    void procedureCall_authenticated_runs() throws Exception {
-        mutate(ALICE, "mutation { callRlsDemoRenameNote(p_id: 400, p_title: \"noop\") }")
-                .andExpect(status().isOk())
+    void mutationOutput_onlyHoldsRowsTheRoleMaySelect() throws Exception {
+        // Alice may update every note but read only her own: the update reaches both of these,
+        // but only hers comes back.
+        permit(PermissionDocs.entry("rls_demo.notes", ROLE, PermissionDocs.select(PermissionDocs.OWNED, ALL),
+                PermissionDocs.insert("{}", ALL, "{}"), PermissionDocs.update("{}", "{}", ALL, "{}")),
+                open("rls_demo.shelf"), open("rls_demo.book"));
+        mutate(ALICE, "mutation { a: createRlsDemoNotes(input: { id: 340, owner_id: \"" + ALICE
+                + "\", title: \"a\" }) { id } b: createRlsDemoNotes(input: { id: 341, owner_id: \"" + BOB
+                + "\", title: \"b\" }) { id } }")
+                .andExpect(jsonPath("$.data.a.id").value("340"))
+                .andExpect(jsonPath("$.data", hasKey("b")))
+                .andExpect(jsonPath("$.data.b").value(nullValue()));
+    }
+
+    @Test
+    void aWrittenRowTheRoleCannotRead_isReturnedAsNullOrAnEmptyList() throws Exception {
+        // Alice may insert any note but read only her own: a note she plants for Bob is written,
+        // and the field still answers — null for one row, an empty list for many.
+        permit(PermissionDocs.entry("rls_demo.notes", ROLE, PermissionDocs.select(PermissionDocs.OWNED, ALL),
+                PermissionDocs.insert("{}", ALL, "{}")), open("rls_demo.shelf"), open("rls_demo.book"));
+
+        mutate(ALICE, "mutation { createRlsDemoNotes(input: { id: 360, owner_id: \"" + BOB
+                + "\", title: \"planted\" }) { id title } }")
                 .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.callRlsDemoRenameNote").exists());
+                .andExpect(jsonPath("$.data", hasKey("createRlsDemoNotes")))
+                .andExpect(jsonPath("$.data.createRlsDemoNotes").value(nullValue()));
+        mutate(ALICE, "mutation { createManyRlsDemoNotes(inputs: [{ id: 361, owner_id: \"" + BOB
+                + "\", title: \"planted\" }]) { id } }")
+                .andExpect(jsonPath("$.data.createManyRlsDemoNotes", hasSize(0)));
+        mockMvc.perform(post("/" + PROJECT + "/api/v1/notes")
+                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
+                        .header("Prefer", "return=representation")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\": 362, \"owner_id\": \"" + BOB + "\", \"title\": \"planted\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data", hasSize(0)));
+
+        permit(ownerNotes(), open("rls_demo.shelf"), open("rls_demo.book"));
+        mutate(BOB, "{ rlsDemoNotes(where: { id: { in: [360, 361, 362] } }) { id } }")
+                .andExpect(jsonPath("$.data.rlsDemoNotes", hasSize(3)));
+    }
+
+    // ---- PRESETS ----
+
+    @Test
+    void presets_areWrittenAndCannotBeSetByTheClient() throws Exception {
+        permit(PermissionDocs.entry("rls_demo.notes", ROLE, PermissionDocs.select(PermissionDocs.OWNED, ALL),
+                PermissionDocs.insert("{}", "[\"id\",\"title\"]", "{\"owner_id\":\"X-Excalibase-User-Id\"}")),
+                open("rls_demo.shelf"), open("rls_demo.book"));
+
+        mutate(ALICE, "mutation { createRlsDemoNotes(input: { id: 350, title: \"preset\" }) { id owner_id } }")
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andExpect(jsonPath("$.data.createRlsDemoNotes.owner_id").value(ALICE));
+        mutate(ALICE, "mutation { createRlsDemoNotes(input: { id: 351, owner_id: \"" + BOB
+                + "\", title: \"x\" }) { id } }")
+                .andExpect(jsonPath("$.errors[0].message", containsString("owner_id")));
     }
 
     private static String buildJwks(ECPublicKey key) {
@@ -441,7 +499,7 @@ class EngineRlsMutationIntegrationTest {
                 + "bad: createRlsDemoNotes(input: { id: 331, "
                 + "owner_id: \"" + BOB + "\", title: \"sneaky\" }) { id } }")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("RLS_DENIED"))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"))
                 .andExpect(jsonPath("$.data.bad").doesNotExist());
 
         // The denied row must not exist afterwards.

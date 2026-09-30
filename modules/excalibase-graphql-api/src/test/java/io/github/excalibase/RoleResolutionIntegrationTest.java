@@ -11,19 +11,6 @@ import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
-import io.github.excalibase.rls.Assignment;
-import io.github.excalibase.rls.FieldType;
-import io.github.excalibase.rls.InMemoryPolicyProvider;
-import io.github.excalibase.rls.LogicOperator;
-import io.github.excalibase.rls.Operation;
-import io.github.excalibase.rls.Policy;
-import io.github.excalibase.rls.PolicyEffect;
-import io.github.excalibase.rls.PolicyProvider;
-import io.github.excalibase.rls.Rule;
-import io.github.excalibase.rls.RuleOperator;
-import io.github.excalibase.rls.TableGrant;
-import io.github.excalibase.rls.TableGrants;
-import io.github.excalibase.schema.GraphqlSchemaManager;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -51,7 +38,8 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
@@ -63,7 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Over HTTP against real Postgres: every request runs as one role — anon without a token,
  * the token's role, or an allowed role picked with {@code X-Excalibase-Role} — and the
- * grants that apply are exactly that role's. {@code service} sees everything.
+ * permissions that apply are exactly that role's. {@code service} sees everything.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -81,6 +69,9 @@ class RoleResolutionIntegrationTest {
     static ECPrivateKey privateKey;
     static HttpServer mockJwks;
 
+    private static final AtomicReference<String> PERMISSIONS = new AtomicReference<>();
+    private static final AtomicLong VERSION = new AtomicLong();
+
     static {
         try {
             KeyPairGenerator generator = KeyPairGenerator.getInstance("EC");
@@ -97,6 +88,7 @@ class RoleResolutionIntegrationTest {
                 exchange.getResponseBody().write(payload);
                 exchange.getResponseBody().close();
             });
+            PermissionDocs.serve(mockJwks, PROJECT, PERMISSIONS::get);
             mockJwks.start();
         } catch (Exception e) {
             throw new IllegalStateException("Failed to set up mock JWKS", e);
@@ -118,28 +110,25 @@ class RoleResolutionIntegrationTest {
         registry.add("app.project-id", () -> PROJECT);
         registry.add("app.security.auth.jwks-url",
                 () -> "http://localhost:" + mockJwks.getAddress().getPort() + "/.well-known/jwks.json");
+        registry.add("app.security.rls.policy-url",
+                () -> "http://localhost:" + mockJwks.getAddress().getPort() + "/api");
+        registry.add("app.security.rls.policy-pat", () -> "test-pat");
+        registry.add("app.security.rls.policy-ttl-ms", () -> 0);
     }
 
     @Autowired
     private MockMvc mockMvc;
-    @Autowired
-    private PolicyProvider policyProvider;
-    @Autowired
-    private GraphqlSchemaManager schemaManager;
+
+    private static void permit(String... entries) {
+        PERMISSIONS.set(PermissionDocs.document(PROJECT, VERSION.incrementAndGet(), entries));
+    }
 
     /** anon may read orders, user may read secrets, editor may read customer — nothing else. */
     @BeforeEach
-    void grantOneTablePerRole() {
-        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of());
-        ((InMemoryPolicyProvider) policyProvider).putGrants(PROJECT, new TableGrants(PROJECT, true, List.of(
-                grant("public.orders", "anon"),
-                grant("public.secrets", "user"),
-                grant("public.customer", "editor"))));
-        schemaManager.evict(PROJECT);
-    }
-
-    private static TableGrant grant(String resource, String role) {
-        return new TableGrant("g-" + resource + "-" + role, PROJECT, resource, Set.of(Operation.SELECT), role, true);
+    void permitOneTablePerRole() {
+        permit(PermissionDocs.entry("public.orders", "anon", PermissionDocs.selectAll()),
+                PermissionDocs.entry("public.secrets", "user", PermissionDocs.selectAll()),
+                PermissionDocs.entry("public.customer", "editor", PermissionDocs.selectAll()));
     }
 
     private static String token(Map<String, Object> roleClaims) throws Exception {
@@ -256,14 +245,14 @@ class RoleResolutionIntegrationTest {
                 .andExpect(jsonPath("$.errors[0].extensions.code").value("invalid_role_claim"));
     }
 
-    /** A publishable key's token has no userId and sub "apikey:<id>"; anon still has no user. */
+    /**
+     * A publishable key's token has no userId and sub "apikey:<id>"; anon has no user, so a filter on
+     * the user id fails the request with missing_session_variable rather than guessing a value.
+     */
     @Test
-    void anonKeyToken_againstAnIntegerOwnerPolicy_matchesNoRowsWithoutError() throws Exception {
-        ((InMemoryPolicyProvider) policyProvider).put(PROJECT, List.of(new Policy(
-                "own-orders", "own-orders", "public.orders", PolicyEffect.ALLOW, Operation.ALL,
-                LogicOperator.AND, 0, true,
-                List.of(new Rule("id", FieldType.INTEGER, RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(Assignment.all()))));
+    void anonKeyToken_againstAnOwnerFilter_failsWithMissingSessionVariable() throws Exception {
+        permit(PermissionDocs.entry("public.orders", "anon",
+                PermissionDocs.select("{\"id\":{\"_eq\":\"X-Excalibase-User-Id\"}}", "\"*\"")));
         JWTClaimsSet anonKey = new JWTClaimsSet.Builder()
                 .subject("apikey:5")
                 .claim("projectId", PROJECT)
@@ -281,8 +270,8 @@ class RoleResolutionIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(MAPPER.writeValueAsString(Map.of("query", "{ publicOrders { id } }"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.publicOrders", hasSize(0)));
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"))
+                .andExpect(jsonPath("$.data").doesNotExist());
     }
 
     @Test

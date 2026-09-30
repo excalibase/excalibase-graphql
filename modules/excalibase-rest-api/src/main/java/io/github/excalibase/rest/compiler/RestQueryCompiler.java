@@ -5,10 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
-import io.github.excalibase.security.ColumnMaskContributor;
+import io.github.excalibase.schema.TableAccess;
+import io.github.excalibase.security.PermissionCheckFailedException;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
+import io.github.excalibase.security.WriteGuard;
 import org.springframework.jdbc.core.SqlParameterValue;
 
 import java.sql.Types;
@@ -25,6 +27,8 @@ public class RestQueryCompiler {
     private static final String CTE_UPD = "upd";
     private static final String CTE_DEL = "del";
     private static final String ALIAS = "c";
+    private static final String OUT = "out";
+    private static final String CHECK_ALIAS = "chk";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -32,6 +36,7 @@ public class RestQueryCompiler {
     private final SqlDialect dialect;
     private final String defaultSchema;
     private final int defaultMaxRows;
+    private final TableAccess access;
 
     public record CompiledResult(String sql, Map<String, Object> params) {}
     public record FilterSpec(String column, String operator, String value, boolean negated) {}
@@ -59,10 +64,20 @@ public class RestQueryCompiler {
     }
 
     public RestQueryCompiler(SchemaInfo schemaInfo, SqlDialect dialect, String defaultSchema, int maxRows) {
+        this(schemaInfo, dialect, defaultSchema, maxRows, TableAccess.UNRESTRICTED);
+    }
+
+    /**
+     * {@code schemaInfo} is the caller's view, so a table or column it may not read is not in it;
+     * {@code access} adds what it may write, its row cap and its aggregation right.
+     */
+    public RestQueryCompiler(SchemaInfo schemaInfo, SqlDialect dialect, String defaultSchema, int maxRows,
+                             TableAccess access) {
         this.schemaInfo = schemaInfo;
         this.dialect = dialect;
         this.defaultSchema = defaultSchema;
         this.defaultMaxRows = maxRows;
+        this.access = access == null ? TableAccess.UNRESTRICTED : access;
     }
 
     public CompiledResult compileSelect(String table, List<String> columns, List<FilterSpec> filters,
@@ -72,27 +87,20 @@ public class RestQueryCompiler {
 
     public CompiledResult compileSelect(SelectQuery query) {
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(query.table()));
+        requirePermittedSelect(query, knownCols);
         List<String> columns = query.columns().stream().filter(knownCols::contains).toList();
         List<OrderBySpec> orderBy = query.orderBy() != null ? query.orderBy().stream()
-                .filter(o -> knownCols.contains(o.column()) && readable(query.table(), o.column())).toList() : null;
+                .filter(o -> knownCols.contains(o.column())).toList() : null;
         List<FilterSpec> allFilters = query.filters().stream()
-                .filter(f -> knownCols.contains(f.column()) && readable(query.table(), f.column())).toList();
+                .filter(f -> knownCols.contains(f.column())).toList();
 
         String quotedTable = resolveTable(query.table());
         Map<String, Object> params = new LinkedHashMap<>();
 
-        // Extract the (optional) vector filter before WHERE. k-NN search is not
-        // a predicate — it modifies ORDER BY + LIMIT — so the vector FilterSpec
-        // must not land in buildWhere. Only the first vector filter is honored.
-        VectorSearchBuilder.VectorClause vectorClause = null;
+        // k-NN search is not a predicate — it modifies ORDER BY + LIMIT — so the vector
+        // FilterSpec must not land in buildWhere. Only the first vector filter is honored.
         List<FilterSpec> filters = new ArrayList<>(allFilters.size());
-        for (FilterSpec filter : allFilters) {
-            if ("vector".equals(filter.operator()) && vectorClause == null) {
-                vectorClause = compileVectorFilter(filter, ALIAS, params);
-            } else {
-                filters.add(filter);
-            }
-        }
+        VectorSearchBuilder.VectorClause vectorClause = splitVectorFilter(allFilters, filters, params);
 
         StringBuilder where = buildWhere(filters, P_FILTER, params, query.table());
         appendOrConditions(where, query.orConditions(), knownCols, params, query.table());
@@ -114,8 +122,10 @@ public class RestQueryCompiler {
         } else {
             orderBySql = buildOrderBy(orderBy);
         }
+        effectiveLimit = capped(query.table(), effectiveLimit > 0 ? effectiveLimit : defaultMaxRows);
 
-        StringBuilder inner = buildInnerSelect(quotedTable, where, orderBySql, effectiveLimit, query.offset());
+        StringBuilder inner = buildInnerSelect(query.table(), quotedTable, where, orderBySql, effectiveLimit,
+                query.offset());
         String jsonAgg = buildJsonAgg(query.table(), columns, buildEmbedEntries(query.table(), query.embeds(), params), knownCols);
 
         StringBuilder sql = new StringBuilder();
@@ -123,6 +133,20 @@ public class RestQueryCompiler {
         if (query.includeCount()) appendCountSubquery(sql, filters, quotedTable, params, query.table());
         sql.append(FROM).append(parens(inner.toString())).append(SPACE).append(ALIAS);
         return new CompiledResult(sql.toString(), params);
+    }
+
+    /** Moves every filter but the vector one honored into {@code predicates}; returns that one compiled. */
+    private VectorSearchBuilder.VectorClause splitVectorFilter(List<FilterSpec> allFilters, List<FilterSpec> predicates,
+                                                               Map<String, Object> params) {
+        VectorSearchBuilder.VectorClause vectorClause = null;
+        for (FilterSpec filter : allFilters) {
+            if ("vector".equals(filter.operator()) && vectorClause == null) {
+                vectorClause = compileVectorFilter(filter, ALIAS, params);
+            } else {
+                predicates.add(filter);
+            }
+        }
+        return vectorClause;
     }
 
     /**
@@ -149,135 +173,247 @@ public class RestQueryCompiler {
 
     public CompiledResult compileInsert(String table, Map<String, Object> input) {
         String quotedTable = resolveTable(table);
-        Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(table));
         Map<String, Object> params = new LinkedHashMap<>();
+        Map<String, Object> row = writable(table, RlsOp.INSERT, input);
         List<String> cols = new ArrayList<>();
         List<String> vals = new ArrayList<>();
         int i = 0;
-        for (var entry : input.entrySet()) {
-            if (!knownCols.contains(entry.getKey())) continue;
+        for (var entry : row.entrySet()) {
             String pn = P_INSERT + (i++);
             cols.add(dialect.quoteIdentifier(entry.getKey()));
             vals.add(PARAM_PREFIX + pn);
             params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
         }
-        return new CompiledResult(
-            WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
-            + parens(joinCols(cols)) + VALUES + parens(String.join(COMMA_SEP, vals))
-            + RETURNING_ALL + SPACE + SELECT + dialect.rowToJson(CTE_INS) + FROM + CTE_INS,
-            params);
+        String cte = WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
+                + parens(joinCols(cols)) + VALUES + parens(String.join(COMMA_SEP, vals)) + RETURNING_ALL;
+        return new CompiledResult(cte + SPACE + output(table, CTE_INS, false, List.of(RlsOp.INSERT), params), params);
     }
 
     public CompiledResult compileBulkInsert(String table, List<Map<String, Object>> rows) {
         if (rows == null || rows.isEmpty()) throw new IllegalArgumentException("Empty bulk insert");
         if (rows.size() > MAX_BULK_ROWS) throw new IllegalArgumentException("Bulk insert exceeds maximum of " + MAX_BULK_ROWS);
         String quotedTable = resolveTable(table);
-        Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(table));
         Map<String, Object> params = new LinkedHashMap<>();
+        List<Map<String, Object>> written = rows.stream().map(row -> writable(table, RlsOp.INSERT, row)).toList();
 
         Set<String> allCols = new LinkedHashSet<>();
-        for (var row : rows) row.keySet().stream().filter(knownCols::contains).forEach(allCols::add);
+        written.forEach(row -> allCols.addAll(row.keySet()));
         List<String> colNames = allCols.stream().toList();
 
         List<String> valueRows = new ArrayList<>();
-        for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+        for (int rowIndex = 0; rowIndex < written.size(); rowIndex++) {
             List<String> vals = new ArrayList<>();
             for (String col : colNames) {
                 String pn = P_INSERT + rowIndex + UNDERSCORE + col;
-                params.put(pn, coerceParam(table, col, rows.get(rowIndex).getOrDefault(col, null)));
+                params.put(pn, coerceParam(table, col, written.get(rowIndex).getOrDefault(col, null)));
                 vals.add(PARAM_PREFIX + pn);
             }
             valueRows.add(parens(String.join(COMMA_SEP, vals)));
         }
         List<String> quotedCols = colNames.stream().map(dialect::quoteIdentifier).toList();
-        return new CompiledResult(
-            WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
-            + parens(joinCols(new ArrayList<>(quotedCols))) + VALUES + String.join(COMMA_SEP, valueRows)
-            + RETURNING_ALL + SPACE + SELECT + dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(CTE_INS))) + FROM + CTE_INS,
-            params);
+        String cte = WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
+                + parens(joinCols(new ArrayList<>(quotedCols))) + VALUES + String.join(COMMA_SEP, valueRows)
+                + RETURNING_ALL;
+        return new CompiledResult(cte + SPACE + output(table, CTE_INS, true, List.of(RlsOp.INSERT), params), params);
     }
 
+    /**
+     * INSERT … ON CONFLICT DO UPDATE: the insert half obeys the insert permission, the update half the
+     * update permission's columns, presets and filter, and every written row must pass both checks.
+     */
     public CompiledResult compileUpsert(String table, Map<String, Object> input, List<String> conflictCols) {
         String quotedTable = resolveTable(table);
-        Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(table));
         Map<String, Object> params = new LinkedHashMap<>();
+        Map<String, Object> row = writable(table, RlsOp.INSERT, input);
         List<String> cols = new ArrayList<>();
         List<String> vals = new ArrayList<>();
         int i = 0;
-        for (var entry : input.entrySet()) {
-            if (!knownCols.contains(entry.getKey())) continue;
+        for (var entry : row.entrySet()) {
             String pn = P_INSERT + (i++);
             cols.add(dialect.quoteIdentifier(entry.getKey()));
             vals.add(PARAM_PREFIX + pn);
             params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
         }
-        List<String> quotedConflict = conflictCols.stream().map(dialect::quoteIdentifier).toList();
+        String onConflict = ON_CONFLICT + parens(String.join(COMMA_SEP,
+                conflictCols.stream().map(dialect::quoteIdentifier).toList()))
+                + doUpdate(table, input, conflictCols, params);
+        String cte = WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
+                + parens(joinCols(cols)) + VALUES + parens(String.join(COMMA_SEP, vals)) + onConflict + RETURNING_ALL;
+        return new CompiledResult(cte + SPACE
+                + output(table, CTE_INS, false, List.of(RlsOp.INSERT, RlsOp.UPDATE), params), params);
+    }
+
+    /**
+     * The DO UPDATE half. It can overwrite a pre-existing row, so it reaches only rows the caller may
+     * update; columns are qualified with the target relation name because a bare column in
+     * {@code ON CONFLICT … WHERE} is ambiguous with {@code EXCLUDED}.
+     */
+    private String doUpdate(String table, Map<String, Object> input, List<String> conflictCols,
+                            Map<String, Object> params) {
+        Map<String, Object> changed = new LinkedHashMap<>(input);
+        conflictCols.forEach(changed::remove);
+        Map<String, Object> updated = writable(table, RlsOp.UPDATE, changed);
         List<String> updateSets = new ArrayList<>();
-        for (var entry : input.entrySet()) {
-            if (!conflictCols.contains(entry.getKey()) && knownCols.contains(entry.getKey())) {
-                String qCol = dialect.quoteIdentifier(entry.getKey());
+        int i = 0;
+        for (var entry : updated.entrySet()) {
+            String qCol = dialect.quoteIdentifier(entry.getKey());
+            if (changed.containsKey(entry.getKey())) {
                 updateSets.add(qCol + ASSIGN + EXCLUDED + DOT + qCol);
+            } else {
+                String pn = P_UPDATE + "p" + (i++);
+                updateSets.add(qCol + ASSIGN + PARAM_PREFIX + pn);
+                params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
             }
         }
-        String doUpdate = DO_UPDATE + SET + String.join(COMMA_SEP, updateSets);
-        if (!updateSets.isEmpty()) {
-            // RLS USING for the conflict path: DO UPDATE can overwrite a *pre-existing*
-            // row, so it must be gated by the caller's UPDATE policy — otherwise an
-            // upsert on a known PK silently overwrites another owner's row. Columns are
-            // qualified with the target relation name because a bare column in
-            // ON CONFLICT ... WHERE is ambiguous with EXCLUDED.
-            String targetRef = table.contains(".") ? table.substring(table.lastIndexOf('.') + 1) : table;
-            StringBuilder usingWhere = new StringBuilder();
-            appendRls(usingWhere, table, dialect.quoteIdentifier(targetRef), RlsOp.UPDATE, params);
-            if (!usingWhere.isEmpty()) doUpdate += WHERE + usingWhere;
-        }
-        String onConflict = ON_CONFLICT + parens(String.join(COMMA_SEP, quotedConflict))
-            + (updateSets.isEmpty() ? DO_NOTHING : doUpdate);
-
-        return new CompiledResult(
-            WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
-            + parens(joinCols(cols)) + VALUES + parens(String.join(COMMA_SEP, vals))
-            + onConflict + RETURNING_ALL + SPACE + SELECT + dialect.rowToJson(CTE_INS) + FROM + CTE_INS,
-            params);
+        if (updateSets.isEmpty()) return DO_NOTHING;
+        String targetRef = table.contains(".") ? table.substring(table.lastIndexOf('.') + 1) : table;
+        StringBuilder usingWhere = new StringBuilder();
+        appendRls(usingWhere, table, dialect.quoteIdentifier(targetRef), RlsOp.UPDATE, params);
+        return DO_UPDATE + SET + String.join(COMMA_SEP, updateSets) + (usingWhere.isEmpty() ? "" : WHERE + usingWhere);
     }
 
     public CompiledResult compileUpdate(String table, Map<String, Object> input, List<FilterSpec> filters) {
         if (filters == null || filters.isEmpty()) throw new IllegalArgumentException("Update requires at least one filter");
+        requireKnownFilterColumns(table, filters);
         String quotedTable = resolveTable(table);
-        Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(table));
         Map<String, Object> params = new LinkedHashMap<>();
         List<String> setClauses = new ArrayList<>();
         int i = 0;
-        for (var entry : input.entrySet()) {
-            if (!knownCols.contains(entry.getKey())) continue;
+        for (var entry : writable(table, RlsOp.UPDATE, input).entrySet()) {
             String pn = P_UPDATE + (i++);
             setClauses.add(dialect.quoteIdentifier(entry.getKey()) + ASSIGN + PARAM_PREFIX + pn);
             params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
         }
+        if (setClauses.isEmpty()) throw new IllegalArgumentException("Update sets no column");
         StringBuilder where = buildWhere(filters, P_WHERE_FILTER, params, table);
-        // RLS: a caller can only UPDATE rows it may write (and, via coupling, see).
+        // Rows the caller may update, and read: the update filter carries the select filter.
         appendRls(where, table, null, RlsOp.UPDATE, params);
-        return new CompiledResult(
-            WITH + CTE_UPD + AS_OPEN + UPDATE + quotedTable
-            + SET + String.join(COMMA_SEP, setClauses) + WHERE + where
-            + RETURNING_ALL + SPACE + SELECT + dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(CTE_UPD))) + FROM + CTE_UPD,
-            params);
+        String cte = WITH + CTE_UPD + AS_OPEN + UPDATE + quotedTable
+                + SET + String.join(COMMA_SEP, setClauses) + WHERE + where + RETURNING_ALL;
+        return new CompiledResult(cte + SPACE + output(table, CTE_UPD, true, List.of(RlsOp.UPDATE), params), params);
     }
 
     public CompiledResult compileDelete(String table, List<FilterSpec> filters) {
         if (filters == null || filters.isEmpty()) throw new IllegalArgumentException("Delete requires at least one filter");
+        requireKnownFilterColumns(table, filters);
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
         StringBuilder where = buildWhere(filters, P_DELETE_FILTER, params, table);
-        // RLS: a caller can only DELETE rows it may write (and, via coupling, see).
+        // Rows the caller may delete, and read: the delete filter carries the select filter.
         appendRls(where, table, null, RlsOp.DELETE, params);
-        return new CompiledResult(
-            WITH + CTE_DEL + AS_OPEN + DELETE_FROM + quotedTable
-            + WHERE + where + RETURNING_ALL + SPACE
-            + SELECT + dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(CTE_DEL))) + FROM + CTE_DEL,
-            params);
+        String cte = WITH + CTE_DEL + AS_OPEN + DELETE_FROM + quotedTable + WHERE + where + RETURNING_ALL;
+        return new CompiledResult(cte + SPACE + output(table, CTE_DEL, true, List.of(), params), params);
     }
 
+    /**
+     * {@code row} as it will be written: only columns the caller may set for {@code op}, then the
+     * permission's presets over it. Without permissions an unknown column is skipped, as before; with
+     * them it is refused, so a client cannot write a column by naming it.
+     */
+    private Map<String, Object> writable(String table, RlsOp op, Map<String, Object> row) {
+        Set<String> settable = access.settableColumns(table, op, schemaInfo);
+        Map<String, Object> written = new LinkedHashMap<>();
+        for (var entry : row.entrySet()) {
+            if (settable.contains(entry.getKey())) {
+                written.put(entry.getKey(), entry.getValue());
+            } else if (access.enforced()) {
+                throw new IllegalArgumentException("Unknown column '" + entry.getKey() + "' in "
+                        + op.name().toLowerCase(Locale.ROOT) + " of " + table);
+            }
+        }
+        WriteGuard guard = RlsContext.writeGuard();
+        if (guard != null) {
+            written.putAll(guard.presets(table, op));
+        }
+        return written;
+    }
+
+    /**
+     * What a write returns: the written rows passing the select filter, with the caller's columns
+     * only. When any written row fails its permission check the statement raises, so the whole write
+     * rolls back.
+     */
+    private String output(String table, String cte, boolean many, List<RlsOp> checks, Map<String, Object> params) {
+        StringBuilder readable = new StringBuilder();
+        appendRls(readable, table, cte, RlsOp.SELECT, params);
+        String rows = SELECT + starFor(table, cte) + FROM + cte + (readable.isEmpty() ? "" : WHERE + readable);
+        String json = many ? dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(OUT))) : dialect.rowToJson(OUT);
+        String result = SELECT + json + FROM + parens(rows) + SPACE + OUT;
+        List<String> violations = violations(table, cte, checks, params);
+        if (violations.isEmpty()) {
+            return result;
+        }
+        return SELECT + "CASE WHEN " + PermissionCheckFailedException.raiseWhen(String.join(OR, violations))
+                + " IS NULL THEN (" + result + ") END";
+    }
+
+    private List<String> violations(String table, String cte, List<RlsOp> checks, Map<String, Object> params) {
+        WriteGuard guard = RlsContext.writeGuard();
+        List<String> violations = new ArrayList<>();
+        if (guard == null) return violations;
+        for (RlsOp op : checks) {
+            String rowAlias = CHECK_ALIAS + violations.size();
+            RlsWhereContributor.Contribution check = guard.check(table, rowAlias, op);
+            if (check != null) {
+                params.putAll(check.params());
+                violations.add("EXISTS (" + SELECT + "1" + FROM + cte + SPACE + rowAlias
+                        + WHERE + parens(check.sql()) + " IS NOT TRUE)");
+            }
+        }
+        return violations;
+    }
+
+    /** Every column of the caller's view of {@code table}, or {@code alias.*} without permissions. */
+    private String starFor(String table, String alias) {
+        if (!access.enforced()) {
+            return alias + DOT_STAR;
+        }
+        return String.join(COMMA_SEP, schemaInfo.getColumns(table).stream()
+                .map(column -> alias + DOT + dialect.quoteIdentifier(column)).toList());
+    }
+
+    /** {@code LIMIT n} for the caller's own row limit on an embedded table, or nothing. */
+    private String roleLimit(String table) {
+        Integer limit = access.rowLimit(table);
+        return limit == null ? "" : LIMIT + limit;
+    }
+
+    /** The select's rows capped by the caller's own row limit on {@code table}. */
+    private int capped(String table, int limit) {
+        Integer roleLimit = access.rowLimit(table);
+        return roleLimit == null ? limit : Math.min(limit, roleLimit);
+    }
+
+    /**
+     * A count needs the role's aggregation right. With permissions, a column outside the caller's view
+     * is refused wherever it could steer the query or be selected: filtering, ordering or paging by a
+     * column the role cannot read would reveal it.
+     */
+    private void requirePermittedSelect(SelectQuery query, Set<String> knownCols) {
+        if (query.includeCount() && !access.allowsAggregations(query.table())) {
+            throw new IllegalArgumentException("Counting rows of " + query.table() + " is not permitted");
+        }
+        if (!access.enforced()) return;
+        List<String> named = new ArrayList<>(query.columns().stream().filter(column -> !STAR.equals(column)).toList());
+        query.filters().forEach(filter -> named.add(filter.column()));
+        if (query.orderBy() != null) query.orderBy().forEach(order -> named.add(order.column()));
+        if (query.orConditions() != null) {
+            query.orConditions().forEach(or -> or.conditions().forEach(filter -> named.add(filter.column())));
+        }
+        if (query.afterCursor() != null && query.orderColumn() != null) named.add(query.orderColumn());
+        named.stream().filter(column -> !knownCols.contains(column)).findFirst().ifPresent(column -> {
+            throw new IllegalArgumentException("Unknown column '" + column + "' on " + query.table());
+        });
+    }
+
+    private void requireKnownFilterColumns(String table, List<FilterSpec> filters) {
+        if (!access.enforced()) return;
+        Set<String> knownCols = schemaInfo.getColumns(table);
+        filters.stream().map(FilterSpec::column).filter(column -> !knownCols.contains(column)).findFirst()
+                .ifPresent(column -> {
+                    throw new IllegalArgumentException("Unknown column '" + column + "' on " + table);
+                });
+    }
 
     private String resolveTable(String table) {
         String schema = schemaInfo.getTableSchema(table);
@@ -322,7 +458,7 @@ public class RestQueryCompiler {
             List<String> parts = new ArrayList<>();
             for (int ci = 0; ci < ors.get(oi).conditions().size(); ci++) {
                 var filter = ors.get(oi).conditions().get(ci);
-                if (knownCols.contains(filter.column()) && readable(table, filter.column()))
+                if (knownCols.contains(filter.column()))
                     parts.add(buildFilterSql(filter, P_OR + oi + UNDERSCORE + ci, params, table));
             }
             if (!parts.isEmpty()) {
@@ -332,9 +468,11 @@ public class RestQueryCompiler {
         }
     }
 
-    private StringBuilder buildInnerSelect(String quotedTable, StringBuilder where, StringBuilder orderSql, int limit, int offset) {
+    private StringBuilder buildInnerSelect(String table, String quotedTable, StringBuilder where, StringBuilder orderSql,
+                                           int limit, int offset) {
         StringBuilder inner = new StringBuilder();
-        inner.append(SELECT).append(STAR).append(FROM).append(quotedTable).append(SPACE).append(ALIAS);
+        inner.append(SELECT).append(access.enforced() ? starFor(table, ALIAS) : STAR)
+                .append(FROM).append(quotedTable).append(SPACE).append(ALIAS);
         if (!where.isEmpty()) inner.append(WHERE).append(where);
         inner.append(orderSql);
         inner.append(LIMIT).append(limit > 0 ? limit : defaultMaxRows);
@@ -374,12 +512,11 @@ public class RestQueryCompiler {
     }
 
     private String buildJsonAgg(String table, List<String> columns, List<String> embedSql, Set<String> knownCols) {
-        // Fast path only when nothing to mask — rowToJson emits the whole row and
-        // cannot drop HIDE / NULL-mask columns, so it's unsafe when a masker is live.
-        if (columns.isEmpty() && embedSql.isEmpty() && RlsContext.columnMask() == null) {
+        // The inner select holds only the caller's columns, so the whole-row form is safe.
+        if (columns.isEmpty() && embedSql.isEmpty()) {
             return dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(ALIAS)));
         }
-        List<String> entries = maskedJsonEntries(table, columns.isEmpty() ? knownCols : columns, ALIAS);
+        List<String> entries = jsonEntries(columns.isEmpty() ? schemaInfo.getColumns(table) : columns, ALIAS);
         entries.addAll(embedSql);
         return dialect.coalesceArray(dialect.aggregateArray(dialect.buildObject(entries)));
     }
@@ -393,42 +530,17 @@ public class RestQueryCompiler {
                                    Set<String> knownCols, Map<String, Object> params) {
         String col = query.orderColumn();
         if (query.afterCursor() == null || col == null) return;
-        if (!knownCols.contains(col) || !readable(query.table(), col)) return;
+        if (!knownCols.contains(col)) return;
         if (!where.isEmpty()) where.append(AND);
         params.put(P_AFTER, convertValue(query.afterCursor(), query.table(), col));
         where.append(dialect.quoteIdentifier(col)).append(GT).append(PARAM_PREFIX).append(P_AFTER);
     }
 
-    /**
-     * True iff the column may be read by the current caller, i.e. no active
-     * column mask hides or nulls it. Masked columns are excluded from WHERE,
-     * ORDER BY, cursor, and OR conditions so they can't leak values through
-     * filtering/sorting (an inference oracle), mirroring the GraphQL FilterBuilder.
-     */
-    private boolean readable(String table, String column) {
-        ColumnMaskContributor masker = RlsContext.columnMask();
-        if (masker == null || table == null) return true;
-        return masker.decide(table, column) == ColumnMaskContributor.Decision.VISIBLE;
-    }
-
-    /**
-     * JSON object key/value entries for {@code cols} of {@code table}, applying
-     * column-level security (CLS): a HIDDEN column is dropped from the response,
-     * a NULLED column is emitted as {@code 'col', NULL}. Mirrors the GraphQL
-     * masking in {@code QueryBuilder} so REST doesn't leak protected columns.
-     */
-    private List<String> maskedJsonEntries(String table, java.util.Collection<String> cols, String alias) {
-        ColumnMaskContributor masker = RlsContext.columnMask();
+    /** JSON object key/value entries for {@code cols} read from {@code alias}. */
+    private List<String> jsonEntries(Collection<String> cols, String alias) {
         List<String> entries = new ArrayList<>();
         for (String col : cols) {
-            ColumnMaskContributor.Decision d = (masker == null || table == null)
-                ? ColumnMaskContributor.Decision.VISIBLE
-                : masker.decide(table, col);
-            switch (d) {
-                case HIDDEN -> { /* drop entirely */ }
-                case NULLED -> entries.add(sqlString(col) + COMMA_SEP + "NULL");
-                case VISIBLE -> entries.add(sqlString(col) + COMMA_SEP + alias + DOT + dialect.quoteIdentifier(col));
-            }
+            entries.add(sqlString(col) + COMMA_SEP + alias + DOT + dialect.quoteIdentifier(col));
         }
         return entries;
     }
@@ -467,7 +579,8 @@ public class RestQueryCompiler {
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String refTable = resolveTable(fk.refTable());
         List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter, params);
-        String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, fk.refTable()) : SELECT + ia + DOT_STAR;
+        String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, fk.refTable())
+                : SELECT + starFor(fk.refTable(), ia);
         String rowExpr = buildRowExpr(embed, oa, fk.refTable(), childEntries);
         // RLS on the embedded related table (aliased ia) — without this, an embed
         // (?select=*,fk(*)) would expose related rows the caller may not read.
@@ -484,7 +597,8 @@ public class RestQueryCompiler {
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String childTable = resolveTable(rev.childTable());
         List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter, params);
-        String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, rev.childTable()) : SELECT + ia + DOT_STAR;
+        String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, rev.childTable())
+                : SELECT + starFor(rev.childTable(), ia);
         String rowExpr = buildRowExpr(embed, oa, rev.childTable(), childEntries);
         // RLS on the embedded child table (aliased ia) — same leak guard as forward.
         StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(rev.fkColumn())
@@ -492,7 +606,7 @@ public class RestQueryCompiler {
         appendRls(ew, rev.childTable(), ia, RlsOp.SELECT, params);
         return sqlString(embed.relationName()) + COMMA_SEP + COALESCE + parens(
             parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM
-            + parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew)
+            + parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew + roleLimit(rev.childTable()))
             + SPACE + oa) + COMMA_SEP + EMPTY_JSON_ARRAY);
     }
 
@@ -502,23 +616,28 @@ public class RestQueryCompiler {
      * both the requested columns and the child embed entries.
      */
     private String buildRowExpr(EmbedSpec embed, String outerAlias, String table, List<String> childEntries) {
-        // rowToJson can't mask, so only use it when there's nothing to mask.
-        if (childEntries.isEmpty() && RlsContext.columnMask() == null) {
+        // The embed's inner select holds only the caller's columns, so the whole-row form is safe.
+        if (childEntries.isEmpty()) {
             return dialect.rowToJson(outerAlias + DOT_STAR);
         }
         List<String> cols = embed.columns().isEmpty() || embed.columns().contains(STAR)
             ? new ArrayList<>(schemaInfo.getColumns(table))
             : embed.columns();
-        List<String> entries = maskedJsonEntries(table, cols, outerAlias);
+        List<String> entries = jsonEntries(cols, outerAlias);
         entries.addAll(childEntries);
         return dialect.buildObject(entries);
     }
 
     private String buildEmbedSelect(EmbedSpec embed, String alias, String table) {
-        if (embed.columns().isEmpty() || embed.columns().contains(STAR)) return SELECT + alias + DOT + STAR;
+        if (embed.columns().isEmpty() || embed.columns().contains(STAR)) return SELECT + starFor(table, alias);
         Set<String> known = new HashSet<>(schemaInfo.getColumns(table));
+        if (access.enforced()) {
+            embed.columns().stream().filter(column -> !known.contains(column)).findFirst().ifPresent(column -> {
+                throw new IllegalArgumentException("Unknown column '" + column + "' on " + table);
+            });
+        }
         List<String> safe = embed.columns().stream().filter(known::contains).map(c -> alias + DOT + dialect.quoteIdentifier(c)).toList();
-        return safe.isEmpty() ? SELECT + alias + DOT + STAR : SELECT + String.join(COMMA_SEP, safe);
+        return safe.isEmpty() ? SELECT + starFor(table, alias) : SELECT + String.join(COMMA_SEP, safe);
     }
 
     private SchemaInfo.FkInfo findForwardFk(String table, String relName, String fkHint) {

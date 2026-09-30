@@ -762,9 +762,9 @@ INSERT INTO rls_orders (user_id, product, amount) VALUES
 GRANT SELECT, INSERT, UPDATE, DELETE ON rls_orders TO app_user;
 GRANT USAGE, SELECT ON SEQUENCE rls_orders_id_seq TO app_user;
 
--- Engine RLS table (no native RLS): the provisioning policy mock serves an
--- owner_id = {{currentUserId}} rule for hana.rls_notes, so the app composes the
--- WHERE clause from the fetched policy. Seeded per-test with the caller's userId.
+-- Engine-filtered table (no native RLS): the control-plane mock serves an
+-- owner_id = X-Excalibase-User-Id permission for hana.rls_notes, so the app composes
+-- the WHERE clause from the fetched document. Seeded per-test with the caller's userId.
 CREATE TABLE rls_notes (
     id        SERIAL PRIMARY KEY,
     owner_id  TEXT NOT NULL,
@@ -773,19 +773,24 @@ CREATE TABLE rls_notes (
 GRANT SELECT, INSERT, UPDATE, DELETE ON rls_notes TO app_user;
 GRANT USAGE, SELECT ON SEQUENCE rls_notes_id_seq TO app_user;
 
--- Engine RLS — relationship/EXISTS policy: rls_team_orders is visible only when
--- the caller has a membership row in rls_members for the order's org. Proves the
--- correlated subquery survives the compiler's table aliasing in the live stack.
+-- Relationship permission: rls_team_orders is visible only when the caller has a
+-- membership row in rls_members for the order's org, reached through the orgs both
+-- reference. Proves the correlated subquery survives the compiler's aliasing live.
+CREATE TABLE rls_orgs (
+    org_id TEXT PRIMARY KEY
+);
+INSERT INTO rls_orgs (org_id) VALUES ('orgA'), ('orgB');
+
 CREATE TABLE rls_members (
     member_user TEXT NOT NULL,
-    org_id      TEXT NOT NULL
+    org_id      TEXT NOT NULL REFERENCES rls_orgs(org_id)
 );
 INSERT INTO rls_members (member_user, org_id) VALUES
     ('alice', 'orgA'), ('bob', 'orgB');
 
 CREATE TABLE rls_team_orders (
     id     SERIAL PRIMARY KEY,
-    org_id TEXT NOT NULL,
+    org_id TEXT NOT NULL REFERENCES rls_orgs(org_id),
     title  TEXT NOT NULL
 );
 INSERT INTO rls_team_orders (org_id, title) VALUES
@@ -793,6 +798,7 @@ INSERT INTO rls_team_orders (org_id, title) VALUES
 GRANT SELECT, INSERT, UPDATE, DELETE ON rls_team_orders TO app_user;
 GRANT USAGE, SELECT ON SEQUENCE rls_team_orders_id_seq TO app_user;
 GRANT SELECT ON rls_members TO app_user;
+GRANT SELECT ON rls_orgs TO app_user;
 
 -- Engine RLS — JSON-path policy: ownership lives in a jsonb column.
 CREATE TABLE rls_profiles (

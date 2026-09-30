@@ -123,6 +123,10 @@ services:
       # Mock tenants run without TLS; real tenants need verify-full (the default).
       TENANT_DB_SSLMODE: disable
 
+      # Per-project permission documents (mocked by sc-mock-vault)
+      APP_SECURITY_RLS_POLICY_URL: http://sc-mock-vault:8080/api
+      APP_SECURITY_RLS_POLICY_PAT: test-pat
+
       APP_NATS_ENABLED: "false"
     ports:
       - "10004:10000"

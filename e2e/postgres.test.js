@@ -4,7 +4,7 @@
  */
 
 const { gql } = require('graphql-request');
-const { waitForApi, createClient } = require('./client');
+const { waitForApi, createClient, serviceToken } = require('./client');
 
 // Routes are project-scoped: /{projectId}/graphql and /{projectId}/api/v1.
 // The e2e project is 'e2e-test' (auth login is /auth/e2e-org/e2e-test/... so the
@@ -13,10 +13,14 @@ const API_BASE = (process.env.POSTGRES_API_URL || 'http://localhost:10000/graphq
 const DATA_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
 const API_URL = `${API_BASE}/${DATA_PROJECT}/graphql`;
 let client;
+// Functions (stored procedures, computed fields) reach only the service role until
+// function permissions exist (docs/features/permissions.md §6).
+let serviceClient;
 
 beforeAll(async () => {
   await waitForApi(API_URL);
   client = createClient(API_URL);
+  serviceClient = createClient(API_URL, { Authorization: `Bearer ${serviceToken(DATA_PROJECT)}` });
 });
 
 // ─── Schema introspection ─────────────────────────────────────────────────────
@@ -719,51 +723,56 @@ describe('Mutations — CRUD', () => {
 // ─── Computed fields (PostgreSQL functions) ───────────────────────────────────
 
 describe('Computed fields', () => {
+  test('a role is not served computed fields (they are functions)', async () => {
+    await expect(client.request(gql`{ hanaCustomer(limit: 1) { customer_id full_name } }`))
+      .rejects.toThrow('Unknown field(s): full_name');
+  });
+
   test('full_name field exists and is non-null', async () => {
-    const data = await client.request(gql`{ hanaCustomer(limit: 1) { customer_id first_name last_name full_name } }`);
+    const data = await serviceClient.request(gql`{ hanaCustomer(limit: 1) { customer_id first_name last_name full_name } }`);
     expect(data.hanaCustomer[0].full_name).not.toBeNull();
   });
 
   test('full_name equals first_name + space + last_name', async () => {
-    const data = await client.request(gql`{ hanaCustomer(limit: 1) { first_name last_name full_name } }`);
+    const data = await serviceClient.request(gql`{ hanaCustomer(limit: 1) { first_name last_name full_name } }`);
     const { first_name, last_name, full_name } = data.hanaCustomer[0];
     expect(full_name).toBe(`${first_name} ${last_name}`);
   });
 
   test('active_label is "Active" for active customers', async () => {
-    const data = await client.request(gql`{ hanaCustomer(where: { active: { eq: true } }, limit: 1) { active active_label } }`);
+    const data = await serviceClient.request(gql`{ hanaCustomer(where: { active: { eq: true } }, limit: 1) { active active_label } }`);
     expect(data.hanaCustomer[0].active_label).toBe('Active');
   });
 
   test('active_label is "Inactive" for inactive customers', async () => {
-    const data = await client.request(gql`{ hanaCustomer(where: { active: { eq: false } }, limit: 1) { active active_label } }`);
+    const data = await serviceClient.request(gql`{ hanaCustomer(where: { active: { eq: false } }, limit: 1) { active active_label } }`);
     expect(data.hanaCustomer[0].active_label).toBe('Inactive');
   });
 
   test('total_with_tax exists and is non-null', async () => {
-    const data = await client.request(gql`{ hanaOrders(limit: 1) { order_id total_amount total_with_tax } }`);
+    const data = await serviceClient.request(gql`{ hanaOrders(limit: 1) { order_id total_amount total_with_tax } }`);
     expect(data.hanaOrders[0].total_with_tax).not.toBeNull();
   });
 
   test('total_with_tax is 10% more than total_amount', async () => {
-    const data = await client.request(gql`{ hanaOrders(limit: 1) { total_amount total_with_tax } }`);
+    const data = await serviceClient.request(gql`{ hanaOrders(limit: 1) { total_amount total_with_tax } }`);
     const amount = Number(data.hanaOrders[0].total_amount);
     const withTax = Number(data.hanaOrders[0].total_with_tax);
     expect(withTax).toBeCloseTo(Math.round(amount * 1.1 * 100) / 100, 1);
   });
 
   test('is_high_value is true for high-value orders', async () => {
-    const data = await client.request(gql`{ hanaOrders(where: { total_amount: { gt: 200 } }, limit: 1) { total_amount is_high_value } }`);
+    const data = await serviceClient.request(gql`{ hanaOrders(where: { total_amount: { gt: 200 } }, limit: 1) { total_amount is_high_value } }`);
     expect(data.hanaOrders[0].is_high_value).toBe(true);
   });
 
   test('is_high_value is false for low-value orders', async () => {
-    const data = await client.request(gql`{ hanaOrders(where: { total_amount: { lt: 200 } }, limit: 1) { total_amount is_high_value } }`);
+    const data = await serviceClient.request(gql`{ hanaOrders(where: { total_amount: { lt: 200 } }, limit: 1) { total_amount is_high_value } }`);
     expect(data.hanaOrders[0].is_high_value).toBe(false);
   });
 
   test('computed fields work with pagination', async () => {
-    const data = await client.request(gql`{ hanaCustomer(limit: 3) { customer_id full_name active_label } }`);
+    const data = await serviceClient.request(gql`{ hanaCustomer(limit: 3) { customer_id full_name active_label } }`);
     expect(data.hanaCustomer.length).toBe(3);
     data.hanaCustomer.forEach(c => expect(c.full_name).not.toBeNull());
   });
@@ -842,18 +851,16 @@ describe('RLS (Row Level Security)', () => {
     expect(data.hanaRlsOrders.length).toBe(0);
   });
 
-  // ── Engine RLS feature tables are exposed in the schema ──
-  // Precise per-user filtering (relationship/JSON/claim) is asserted in the Java
+  // ── Permission-filtered tables exist only for the roles that hold a permission ──
+  // Precise per-user filtering (relationship/claim) is asserted in the Java
   // ProvisioningRlsIntegrationTest, which mints JWTs with known user ids and the
   // region claim. The "runs through the real aliased SQL path without error"
-  // proof lives in the authenticated JWT block below. NOTE: engine RLS is only
-  // applied to authenticated requests (a no-token request gets no RLS context),
-  // so anonymous row-count assertions are intentionally not made here.
-  test('engine-RLS feature tables (relationship/JSON/claim) are exposed', async () => {
+  // proof lives in the authenticated JWT block below.
+  test('tables anon holds no permission for are not in its schema', async () => {
     const schema = await client.request(gql`{ __type(name: "Query") { fields { name } } }`);
     const names = schema.__type.fields.map(f => f.name);
-    for (const t of ['hanaRlsTeamOrders', 'hanaRlsProfiles', 'hanaRlsRegional']) {
-      expect(names).toContain(t);
+    for (const t of ['hanaRlsNotes', 'hanaRlsTeamOrders', 'hanaRlsProfiles', 'hanaRlsRegional']) {
+      expect(names).not.toContain(t);
     }
   });
 
@@ -892,20 +899,21 @@ describe('Stored Procedures', () => {
     authClient = createClient(API_URL, { Authorization: `Bearer ${login.data.accessToken}` });
   });
 
-  test('anonymous procedure call is refused', async () => {
+  test('a role reaches no procedure', async () => {
     const res = await rawGraphql('mutation { callHanaGetCustomerOrderCount(p_customer_id: 1) }');
-    expect(res.status).toBe(401);
-    expect(res.data.errors[0].extensions.code).toBe('UNAUTHENTICATED');
+    expect(res.data.data?.callHanaGetCustomerOrderCount).toBeUndefined();
+    const signedIn = await authClient.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
+    expect(signedIn.__type.fields.map(f => f.name)).not.toContain('callHanaGetCustomerOrderCount');
   });
 
-  test('procedure mutation appears in schema', async () => {
-    const data = await client.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
+  test('procedure mutation appears in the service schema', async () => {
+    const data = await serviceClient.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
     const mutationNames = data.__type.fields.map(f => f.name);
     expect(mutationNames).toContain('callHanaGetCustomerOrderCount');
   });
 
   test('call procedure with IN param returns OUT param', async () => {
-    const data = await authClient.request(gql`
+    const data = await serviceClient.request(gql`
       mutation { callHanaGetCustomerOrderCount(p_customer_id: 1) }
     `);
     expect(data.callHanaGetCustomerOrderCount).toBeDefined();
@@ -923,8 +931,8 @@ describe('Stored Procedures', () => {
     await client.request(gql`mutation { updateHanaWallets(where: { wallet_id: { eq: 3 } }, input: { balance: 10.00 }) { wallet_id } }`);
   });
 
-  test('transfer_funds appears in schema', async () => {
-    const data = await client.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
+  test('transfer_funds appears in the service schema', async () => {
+    const data = await serviceClient.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
     const mutationNames = data.__type.fields.map(f => f.name);
     expect(mutationNames).toContain('callHanaTransferFunds');
   });
@@ -938,7 +946,7 @@ describe('Stored Procedures', () => {
     const bobBefore   = Number(before.hanaWallets.find(w => w.wallet_id == 2).balance);
 
     // Alice (wallet 1) transfers 200 to Bob (wallet 2)
-    const data = await authClient.request(gql`
+    const data = await serviceClient.request(gql`
       mutation { callHanaTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 200.00) }
     `);
     const result = JSON.parse(data.callHanaTransferFunds);
@@ -956,7 +964,7 @@ describe('Stored Procedures', () => {
 
   test('transfer_funds unhappy path — insufficient funds rejected, balances unchanged', async () => {
     // Charlie (wallet 3, balance=10) tries to send 500 → should fail
-    const data = await authClient.request(gql`
+    const data = await serviceClient.request(gql`
       mutation { callHanaTransferFunds(p_from_wallet_id: 3, p_to_wallet_id: 1, p_amount: 500.00) }
     `);
     const result = JSON.parse(data.callHanaTransferFunds);
@@ -1054,14 +1062,14 @@ describe('JWT Authentication (via excalibase-auth)', () => {
     expect(Array.isArray(res.data.data.hanaRlsTeamOrders)).toBe(true);
   });
 
-  test('authenticated JSON-path policy compiles & runs', async () => {
+  test('a table whose ownership lives in JSON has no permission, so it is not served', async () => {
+    // The permission grammar compares columns; a JSON-path owner cannot be expressed.
     const res = await rawGraphql(
       '{ hanaRlsProfiles { id } }',
       { Authorization: `Bearer ${accessToken}` },
     );
     expect(res.status).toBe(200);
-    expect(res.data.errors).toBeUndefined();
-    expect(Array.isArray(res.data.data.hanaRlsProfiles)).toBe(true);
+    expect(res.data.errors[0].message).toContain('Unknown field');
   });
 
   test('graphql rejects invalid JWT with 401', async () => {
@@ -1182,17 +1190,14 @@ describe('REST API — Read operations', () => {
     expect(res.data.data.length).toBeGreaterThanOrEqual(1);
   });
 
-  test('REST enforces engine RLS — anonymous gets 0 rows on an RLS table', async () => {
-    // The engine RLS (relationship/membership) policy on rls_team_orders must
-    // apply to REST exactly as it does to GraphQL. Anonymous → 0 rows. This is a
-    // regression guard for the bug where REST bypassed engine RLS entirely.
+  test('REST applies the same permissions — anon holds none on rls_team_orders, so it is not found', async () => {
+    // Regression guard for the bug where REST bypassed engine filtering entirely.
     const res = await restGet('/rls_team_orders');
-    expect(res.status).toBe(200);
-    expect(res.data.data.length).toBe(0);
+    expect(res.status).toBe(404);
   });
 
   test('GET with select returns only specified columns', async () => {
-    const res = await restGet('/customer?select=id,first_name');
+    const res = await restGet('/customer?select=customer_id,first_name');
     expect(res.status).toBe(200);
     expect(res.data.data[0].first_name).toBeTruthy();
     expect(res.data.data[0].last_name).toBeUndefined();
@@ -1295,8 +1300,6 @@ describe('REST API — Mutations', () => {
     const res = await restPost('/customer', {
       first_name: 'REST_TEST',
       last_name: 'USER',
-      store_id: 1,
-      address_id: 1,
     }, { 'Prefer': 'return=representation' });
     expect(res.status).toBe(201);
     expect(res.data.data.first_name).toBe('REST_TEST');
@@ -1335,8 +1338,6 @@ describe('REST API — Prefer: tx=rollback', () => {
     const res = await restPost('/customer', {
       first_name: 'ROLLBACK_TEST',
       last_name: 'SHOULD_NOT_EXIST',
-      store_id: 1,
-      address_id: 1,
     }, { 'Prefer': 'return=representation, tx=rollback' });
     expect(res.status).toBe(201);
     expect(res.data.data.first_name).toBe('ROLLBACK_TEST');

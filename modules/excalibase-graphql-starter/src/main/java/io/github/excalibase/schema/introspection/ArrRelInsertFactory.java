@@ -5,6 +5,8 @@ import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLTypeReference;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.TableAccess;
+import io.github.excalibase.security.RlsOp;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -22,9 +24,11 @@ import static io.github.excalibase.schema.GraphqlConstants.CREATE_INPUT_SUFFIX;
  */
 public final class ArrRelInsertFactory {
 
-    public Map<String, GraphQLInputObjectType> build(SchemaInfo schemaInfo) {
+    /** Only children the caller may insert into get a wrapper: a nested insert is an insert into the child. */
+    public Map<String, GraphQLInputObjectType> build(SchemaInfo schemaInfo, TableAccess access) {
         Map<String, GraphQLInputObjectType> arrRelTypeMap = new LinkedHashMap<>();
         for (Map.Entry<String, SchemaInfo.ReverseFkInfo> revEntry : schemaInfo.getAllReverseFks().entrySet()) {
+            if (!access.permits(revEntry.getValue().childTable(), RlsOp.INSERT)) continue;
             String childTypeName = NamingHelpers.typeName(revEntry.getValue().childTable());
             String arrRelTypeName = childTypeName + "ArrRelInsertInput";
             // Deduplicate: reuse existing ArrRelInsertInput if the same child type

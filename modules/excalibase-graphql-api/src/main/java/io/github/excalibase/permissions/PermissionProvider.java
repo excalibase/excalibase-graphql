@@ -14,4 +14,9 @@ public interface PermissionProvider extends ProjectCacheEvictor {
      * @throws PermissionsUnavailableException the document could not be read and nothing is cached
      */
     PermissionSet permissionsFor(String projectId);
+
+    /** False only for the stand-in used when no control plane is configured. */
+    default boolean configured() {
+        return true;
+    }
 }

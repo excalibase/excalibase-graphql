@@ -237,6 +237,16 @@ directly; a structural test fails the build if one does. The `service` role gets
 permits everything on every table and every tracked function, so the bypass is also decided in
 that one place.
 
+How the engine applies this today (see [Permission Enforcement](rls-architecture.md)):
+
+- A table the role cannot select is absent for every operation, writes included; so the
+  "insert but no select" case above does not arise yet.
+- Rows written by an upsert owe both the insert and the update `check`.
+- A `check` or filter that reaches another table sees the database as of the start of the
+  statement, so a nested insert's child cannot rely on its parent row in the same mutation.
+- Until function permissions (§6) are implemented, only `service` reaches functions, computed
+  fields included.
+
 ## 8. Where permissions come from, and failure
 
 The control plane serves a project's whole permission set in one response

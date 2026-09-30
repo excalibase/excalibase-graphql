@@ -1,5 +1,5 @@
 const { GraphQLClient, gql } = require('graphql-request');
-const { waitForApi } = require('./client');
+const { waitForApi, serviceToken } = require('./client');
 
 // Routes are project-scoped: /{projectId}/graphql and /{projectId}/api/v1. The
 // token's projectId claim is the projectName segment, so the path must match it.
@@ -12,6 +12,10 @@ const TEST_USER = { email: 'clinician@example.com', password: 'Pass123!', fullNa
 
 let token;
 let client;
+// Computed fields are functions: only the service role reaches them until function permissions exist.
+const serviceClient = () => new GraphQLClient(GRAPHQL_URL, {
+  headers: { Authorization: `Bearer ${serviceToken(PROJECT.projectName, `${__dirname}/study-cases/private.pem`)}` },
+});
 
 async function authPost(path, body) {
   const res = await fetch(`${AUTH_URL}${path}`, {
@@ -132,7 +136,7 @@ describe('Clinic GraphQL — Patients', () => {
   });
 
   test('computed field: patient age', async () => {
-    const data = await client.request(gql`{
+    const data = await serviceClient().request(gql`{
       clinicPatients(where: { id: { eq: 1 } }) { name patient_age }
     }`);
     expect(data.clinicPatients[0].patient_age).toBeGreaterThanOrEqual(40);

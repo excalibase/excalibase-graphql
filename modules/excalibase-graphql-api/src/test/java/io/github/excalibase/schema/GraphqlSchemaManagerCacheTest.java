@@ -1,10 +1,16 @@
 package io.github.excalibase.schema;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.config.datasource.TenantContext;
-import io.github.excalibase.rls.InMemoryPolicyProvider;
-import io.github.excalibase.rls.PolicyProvider;
+import io.github.excalibase.permissions.NoPermissionSource;
+import io.github.excalibase.permissions.PermissionProvider;
+import io.github.excalibase.permissions.PermissionSet;
+import io.github.excalibase.permissions.PermissionSetParser;
+import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.Principal;
+import io.github.excalibase.spi.SqlEngineFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -20,28 +26,69 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The engine cache is keyed by project <em>and</em> the role the request runs as,
- * because the schema a caller is served depends on both. Eviction has to drop every role variant of a
- * project: a grant change that narrows one role must not leave that role's older,
- * wider schema behind.
+ * A project's database is reflected once; each role gets its own engine built from that reflection
+ * and its plan, rebuilt when the permission document moves to a new version, and dropped with the
+ * reflection when the project's permissions or schema change.
  */
 class GraphqlSchemaManagerCacheTest {
 
+    private static final String ORDERS = "public.orders";
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private StubPermissions permissions;
     private CountingSchemaManager manager;
 
-    /** Stubs out introspection so the cache behaviour can be tested without a database. */
-    private static final class CountingSchemaManager extends GraphqlSchemaManager {
+    /** Serves one document per project, whose version the test moves. */
+    private static final class StubPermissions implements PermissionProvider {
+        private final List<String> reads = new ArrayList<>();
+        private long version = 1;
+        private boolean unavailable;
 
-        private final List<String> built = new ArrayList<>();
-
-        private CountingSchemaManager(PolicyProvider policyProvider) {
-            super(null, null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, null, policyProvider);
+        @Override
+        public PermissionSet permissionsFor(String projectId) {
+            reads.add(projectId);
+            if (unavailable) {
+                throw new PermissionsUnavailableException("control plane down");
+            }
+            return parse("{\"projectId\":\"" + projectId + "\",\"version\":" + version + ",\"tables\":["
+                    + "{\"table\":\"public.orders\",\"role\":\"user\","
+                    + "\"select\":{\"filter\":{},\"columns\":[\"id\"]}}"
+                    + "],\"functions\":[],\"functionPermissions\":[]}");
         }
 
         @Override
-        EngineState buildEngineState(String orgSlug, String projectId, String callerRole) {
-            built.add(projectId + "/" + callerRole);
-            return new EngineState(null, null, null, TableExposure.UNRESTRICTED, "public");
+        public void evict(String projectId) {
+            // nothing cached
+        }
+    }
+
+    /** Reflects a fixed schema without a database and counts reflections. */
+    private static final class CountingSchemaManager extends GraphqlSchemaManager {
+
+        private final List<String> reflected = new ArrayList<>();
+
+        private CountingSchemaManager(PermissionProvider permissionProvider, boolean jwtEnabled) {
+            super(null, null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, null, permissionProvider,
+                    jwtEnabled);
+        }
+
+        @Override
+        Reflection reflect(String orgSlug, String projectId) {
+            reflected.add(projectId);
+            SchemaInfo schema = new SchemaInfo();
+            schema.setTableSchema(ORDERS, "public");
+            schema.addColumn(ORDERS, "id", "integer");
+            schema.addColumn(ORDERS, "secret", "text");
+            schema.addPrimaryKey(ORDERS, "id");
+            return new Reflection(schema, "public", SqlEngineFactory.create("postgres"), null, (sql, params) -> false);
+        }
+    }
+
+    private static PermissionSet parse(String json) {
+        try {
+            return PermissionSetParser.parse(MAPPER.readTree(json));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException(e);
         }
     }
 
@@ -59,87 +106,118 @@ class GraphqlSchemaManagerCacheTest {
 
     @BeforeEach
     void setUp() {
-        manager = new CountingSchemaManager(new InMemoryPolicyProvider());
+        permissions = new StubPermissions();
+        manager = new CountingSchemaManager(permissions, true);
     }
 
     @Test
-    void resolveEngineState_whenSameProjectAndRole_buildsOnce() {
-        manager.resolveEngineState("acme", "proj-1", runningAs("user"));
-        manager.resolveEngineState("acme", "proj-1", runningAs("user"));
-
-        assertThat(manager.built).containsExactly("proj-1/user");
-    }
-
-    @Test
-    void resolveEngineState_whenRolesDiffer_buildsOneStatePerRole() {
+    void theDatabase_isReflectedOncePerProject_forEveryRole() {
         manager.resolveEngineState("acme", "proj-1", runningAs("user"));
         manager.resolveEngineState("acme", "proj-1", Principal.anonymous());
-        manager.resolveEngineState("acme", "proj-1", runningAs("editor"));
-
-        assertThat(manager.built).containsExactly("proj-1/user", "proj-1/anon", "proj-1/editor");
-    }
-
-    @Test
-    void resolveEngineState_whenServiceBypasses_buildsUnderTheServiceKey() {
-        manager.resolveEngineState("acme", "proj-1", service());
         manager.resolveEngineState("acme", "proj-1", service());
 
-        assertThat(manager.built).containsExactly("proj-1/service");
+        assertThat(manager.reflected).containsExactly("proj-1");
     }
 
     @Test
-    void resolveEngineState_whenServiceActsAsUser_sharesTheUserState() {
-        JwtClaims serviceClaims = service().claims();
-        manager.resolveEngineState("acme", "proj-1", new Principal("user", false, serviceClaims, Map.of()));
-        manager.resolveEngineState("acme", "proj-1", runningAs("user"));
+    void eachRole_isServedItsOwnView() {
+        var user = manager.resolveEngineState("acme", "proj-1", runningAs("user"));
+        var anon = manager.resolveEngineState("acme", "proj-1", Principal.anonymous());
+        var svc = manager.resolveEngineState("acme", "proj-1", service());
 
-        assertThat(manager.built).containsExactly("proj-1/user");
+        assertThat(user.compiler().schemaInfo().getColumns(ORDERS)).containsExactly("id");
+        assertThat(anon.compiler().schemaInfo().getTableNames()).isEmpty();
+        assertThat(svc.plan().allAccess()).isTrue();
+        assertThat(svc.compiler().schemaInfo().getColumns(ORDERS)).contains("secret");
     }
 
     @Test
-    void resolveEngineState_whenNoPrincipalButPermissionsApply_refusesToGuessARole() {
+    void theSameRoleAndDocument_reuseOneEngine() {
+        var first = manager.resolveEngineState("acme", "proj-1", runningAs("user"));
+        var second = manager.resolveEngineState("acme", "proj-1", runningAs("user"));
+
+        assertThat(second).isSameAs(first);
+    }
+
+    @Test
+    void aNewDocumentVersion_rebuildsTheRolesEngine() {
+        var first = manager.resolveEngineState("acme", "proj-1", runningAs("user"));
+        permissions.version = 2;
+
+        var second = manager.resolveEngineState("acme", "proj-1", runningAs("user"));
+
+        assertThat(second).isNotSameAs(first);
+        assertThat(second.permissionsVersion()).isEqualTo(2);
+        assertThat(manager.reflected).containsExactly("proj-1");
+    }
+
+    @Test
+    void service_needsNoDocument() {
+        permissions.unavailable = true;
+
+        assertThat(manager.resolveEngineState("acme", "proj-1", service()).plan().allAccess()).isTrue();
+        assertThat(permissions.reads).isEmpty();
+        assertThatThrownBy(() -> manager.resolveEngineState("acme", "proj-1", runningAs("user")))
+                .isInstanceOf(PermissionsUnavailableException.class);
+    }
+
+    @Test
+    void withoutAPermissionSource_onlyServiceIsServedTables() {
+        CountingSchemaManager unsourced = new CountingSchemaManager(new NoPermissionSource(), true);
+
+        assertThat(unsourced.resolveEngineState("acme", "proj-1", runningAs("user"))
+                .compiler().schemaInfo().getTableNames()).isEmpty();
+        assertThat(unsourced.resolveEngineState("acme", "proj-1", service())
+                .compiler().schemaInfo().getTableNames()).containsExactly(ORDERS);
+    }
+
+    @Test
+    void noPrincipalWhilePermissionsApply_refusesToGuessARole() {
         assertThatThrownBy(() -> manager.resolveEngineState("acme", "proj-1", null))
                 .isInstanceOf(IllegalStateException.class);
-        assertThat(manager.built).isEmpty();
+        assertThat(manager.reflected).isEmpty();
     }
 
     @Test
-    void resolveEngineState_whenNoPrincipalAndNoPermissionSource_servesTheWholeSchema() {
-        CountingSchemaManager insecureDev = new CountingSchemaManager(null);
-
-        insecureDev.resolveEngineState("acme", "proj-1", null);
-
-        assertThat(insecureDev.built).containsExactly("proj-1/service");
+    void mysqlWithAPermissionSource_isRefusedAtStartup() {
+        assertThatThrownBy(() -> new GraphqlSchemaManager(null, null, 30, "mysql", 15, 30, "", null, null,
+                permissions, true))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Postgres-only");
+        new GraphqlSchemaManager(null, null, 30, "mysql", 15, 30, "", null, null, new NoPermissionSource(), true);
+        new GraphqlSchemaManager(null, null, 30, "mysql", 15, 30, "", null, null, null, false);
     }
 
     @Test
-    void evict_whenCalled_dropsEveryRoleVariantOfThatProject() {
-        manager.resolveEngineState("acme", "proj-1", runningAs("user"));
-        manager.resolveEngineState("acme", "proj-1", Principal.anonymous());
+    void withAuthenticationOff_theWholeSchemaIsServed() {
+        CountingSchemaManager insecureDev = new CountingSchemaManager(null, false);
 
-        manager.evict("proj-1");
-        manager.resolveEngineState("acme", "proj-1", runningAs("user"));
-        manager.resolveEngineState("acme", "proj-1", Principal.anonymous());
-
-        assertThat(manager.built).containsExactly(
-                "proj-1/user", "proj-1/anon", "proj-1/user", "proj-1/anon");
+        assertThat(insecureDev.resolveEngineState("acme", "proj-1", null).plan().allAccess()).isTrue();
     }
 
     @Test
-    void evict_whenCalled_leavesOtherProjectsCached() {
-        manager.resolveEngineState("acme", "proj-1", Principal.anonymous());
+    void evict_dropsTheReflectionAndEveryRolesEngine() {
+        var user = manager.resolveEngineState("acme", "proj-1", runningAs("user"));
         manager.resolveEngineState("acme", "proj-2", Principal.anonymous());
 
         manager.evict("proj-1");
-        manager.resolveEngineState("acme", "proj-2", Principal.anonymous());
 
-        assertThat(manager.built).containsExactly("proj-1/anon", "proj-2/anon");
+        assertThat(manager.resolveEngineState("acme", "proj-1", runningAs("user"))).isNotSameAs(user);
+        manager.resolveEngineState("acme", "proj-2", Principal.anonymous());
+        assertThat(manager.reflected).containsExactly("proj-1", "proj-2", "proj-1");
     }
 
     @Test
-    void resolveEngineState_whenNoProject_returnsTheUnscopedStateWithoutBuilding() {
+    void noProject_returnsTheUnscopedStateWithoutReflecting() {
         assertThat(manager.resolveEngineState("acme", null, Principal.anonymous())).isNull();
-        assertThat(manager.built).isEmpty();
+        assertThat(manager.reflected).isEmpty();
+    }
+
+    @Test
+    void realtime_offersOnlyTablesTheRoleCanSelect() {
+        assertThat(manager.realtime("acme", "proj-1", runningAs("user"), "public_orders")).isPresent();
+        assertThat(manager.realtime("acme", "proj-1", runningAs("user"), "orders")).isPresent();
+        assertThat(manager.realtime("acme", "proj-1", Principal.anonymous(), "public_orders")).isEmpty();
     }
 
     /** The project comes from the request path; the role is the one the request runs as. */
@@ -159,25 +237,9 @@ class GraphqlSchemaManagerCacheTest {
         }
 
         @Test
-        void resolveEngineState_whenAnonymous_buildsForAnon() {
-            manager.resolveEngineState(Principal.anonymous());
-
-            assertThat(manager.built).containsExactly("proj-1/anon");
-        }
-
-        @Test
-        void resolveEngineState_whenSignedIn_buildsForTheActiveRole() {
-            manager.resolveEngineState(runningAs("editor"));
-
-            assertThat(manager.built).containsExactly("proj-1/editor");
-        }
-
-        @Test
-        void resolveEngineState_whenSignedInAndAnonymous_areSeparateCacheEntries() {
-            manager.resolveEngineState(runningAs("user"));
-            manager.resolveEngineState(Principal.anonymous());
-
-            assertThat(manager.built).containsExactly("proj-1/user", "proj-1/anon");
+        void planFor_isTheRequestProjectsPlanForTheRole() {
+            assertThat(manager.planFor(runningAs("user")).view().getTableNames()).containsExactly(ORDERS);
+            assertThat(manager.planFor(Principal.anonymous()).view().getTableNames()).isEmpty();
         }
     }
 }

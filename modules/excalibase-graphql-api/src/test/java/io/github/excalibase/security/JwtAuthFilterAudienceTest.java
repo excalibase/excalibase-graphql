@@ -6,9 +6,9 @@ import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import io.github.excalibase.config.datasource.TenantContext;
-import io.github.excalibase.rls.InMemoryPolicyProvider;
-import io.github.excalibase.rls.RlsPolicyEnforcer;
-import io.github.excalibase.rls.jdbc.QuoteStyle;
+import io.github.excalibase.schema.AccessPlans;
+import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.StubbedSchemaManager;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
@@ -52,8 +52,9 @@ class JwtAuthFilterAudienceTest {
         publicKey = (ECPublicKey) kp.getPublic();
     }
 
-    private static RlsPolicyEnforcer enforcer() {
-        return new RlsPolicyEnforcer(new InMemoryPolicyProvider(), QuoteStyle.ANSI);
+    private static AccessPlans enforcer() {
+        return StubbedSchemaManager.withDocument(new SchemaInfo(), StubbedSchemaManager.document(PROJECT),
+                (sql, params) -> false);
     }
 
     private String token(String audience, String tokenUse) throws Exception {

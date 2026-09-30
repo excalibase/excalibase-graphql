@@ -4,6 +4,7 @@ import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.config.datasource.TenantContext;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.Principal;
+import io.github.excalibase.spi.SqlEngineFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,13 +26,14 @@ class GraphqlSchemaManagerRoutingTest {
         private final List<String> tenantBuilds = new ArrayList<>();
 
         private RecordingManager(DynamicDataSourceManager dataSourceManager) {
-            super(null, null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, dataSourceManager, null);
+            super(null, null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, dataSourceManager, null, false);
         }
 
         @Override
-        EngineState buildTenantEngineState(String orgSlug, String projectId, String callerRole) {
+        Reflection reflectTenant(String orgSlug, String projectId) {
             tenantBuilds.add(projectId);
-            return new EngineState(null, null, null, TableExposure.UNRESTRICTED, "schema_of_" + projectId);
+            return new Reflection(new SchemaInfo(), "schema_of_" + projectId, SqlEngineFactory.create("postgres"),
+                    null, (sql, params) -> false);
         }
     }
 

@@ -1,0 +1,516 @@
+{
+ "request": {
+  "method": "GET",
+  "url": "/api/provision/kanban/permissions/"
+ },
+ "response": {
+  "status": 200,
+  "headers": {
+   "Content-Type": "application/json"
+  },
+  "jsonBody": {
+   "projectId": "kanban",
+   "version": 1,
+   "tables": [
+    {
+     "table": "kanban.attachments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.attachments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.comments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.comments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.issue_labels",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.issue_labels",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.issues",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.issues",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.labels",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.labels",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.organizations",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.organizations",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.projects",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.projects",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.sprint_board",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "kanban.sprint_board",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "kanban.sprints",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.sprints",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.time_entries",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.time_entries",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.user_workload",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "kanban.user_workload",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "kanban.users",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "kanban.users",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    }
+   ],
+   "functions": [],
+   "functionPermissions": []
+  }
+ }
+}

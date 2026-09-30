@@ -66,14 +66,6 @@
             <groupId>io.github.excalibase</groupId>
             <artifactId>excalibase-rest-api</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.github.excalibase</groupId>
-            <artifactId>excalibase-rls-core</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.github.excalibase</groupId>
-            <artifactId>excalibase-rls-jdbc</artifactId>
-        </dependency>
 
         <!--Graphql-->
         <dependency>

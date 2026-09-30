@@ -7,7 +7,7 @@ import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import io.github.excalibase.cdc.SubscriptionService;
-import io.github.excalibase.rls.RlsPolicyEnforcer;
+import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.BeforeAll;
@@ -187,16 +187,14 @@ class WebSocketRoleTest {
 
         private TextWebSocketHandler graphqlHandler() {
             GraphQLWebSocketHandler handler = new GraphQLWebSocketHandler(new SubscriptionService(), mapper,
-                    provider(jwtService), provider((RlsPolicyEnforcer) null), new WebSocketHeartbeat(0),
-                    provider((RealtimeExposureGate) null));
+                    provider(jwtService), new WebSocketHeartbeat(0), provider((AccessPlans) null));
             ReflectionTestUtils.setField(handler, "jwtEnabled", true);
             return handler;
         }
 
         private TextWebSocketHandler realtimeHandler() {
             RealtimeWebSocketHandler handler = new RealtimeWebSocketHandler(new SubscriptionService(), mapper,
-                    provider(jwtService), provider((RlsPolicyEnforcer) null), new WebSocketHeartbeat(0),
-                    provider((RealtimeExposureGate) null));
+                    provider(jwtService), new WebSocketHeartbeat(0), provider((AccessPlans) null));
             ReflectionTestUtils.setField(handler, "jwtEnabled", true);
             return handler;
         }

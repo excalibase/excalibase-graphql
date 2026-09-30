@@ -6,7 +6,7 @@ package io.github.excalibase.security;
  * <p>Carries a stable machine-readable {@link #code()} alongside the human
  * message so a client can tell an audience failure from an ordinary expiry
  * without parsing prose. Codes follow the same convention as
- * {@code RlsViolationException.CODE}: a constant per condition, not an enum.
+ * {@code PermissionCheckFailedException.CODE}: a constant per condition, not an enum.
  */
 public class JwtVerificationException extends RuntimeException {
 

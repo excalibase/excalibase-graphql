@@ -6,9 +6,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
-import io.github.excalibase.rls.RlsPolicyEnforcer;
+import io.github.excalibase.permissions.PermissionsUnavailableException;
+import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.security.JwtService;
-import io.github.excalibase.security.Principal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -52,8 +52,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
     private final JwtService jwtService;
-    private final RlsPolicyEnforcer rlsEnforcer;
-    private final RealtimeExposureGate exposureGate;
+    private final AccessPlans accessPlans;
 
     @Value("${app.security.jwt-enabled:true}")
     private boolean jwtEnabled;
@@ -68,15 +67,13 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     public RealtimeWebSocketHandler(SubscriptionService subscriptionService,
                                     ObjectMapper objectMapper,
                                     ObjectProvider<JwtService> jwtServiceProvider,
-                                    ObjectProvider<RlsPolicyEnforcer> rlsEnforcerProvider,
                                     WebSocketHeartbeat heartbeat,
-                                    ObjectProvider<RealtimeExposureGate> exposureGateProvider) {
+                                    ObjectProvider<AccessPlans> accessPlansProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.jwtService = jwtServiceProvider.getIfAvailable();
-        this.rlsEnforcer = rlsEnforcerProvider.getIfAvailable();
         this.heartbeat = heartbeat;
-        this.exposureGate = exposureGateProvider.getIfAvailable();
+        this.accessPlans = accessPlansProvider.getIfAvailable();
     }
 
     @Override
@@ -141,19 +138,19 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
             return;
         }
-        // Resource the CDC events belong to, matching how policies are keyed
-        // (schema-qualified table) so column masking can be applied per subscriber.
+        // A collection the role cannot select is refused like one that does not exist.
         String resource = (schema == null ? "public" : schema) + "." + collection;
-        // Exposure: CDC events never pass through the schema this caller was
-        // served, so a collection they were not granted has to be refused here.
-        // Same answer as a collection that does not exist — there is no such
-        // collection for them.
-        if (exposureGate != null && !exposureGate.permitsRead(session, resource)) {
-            sendError(session, id, "Unknown collection: " + collection);
+        RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, resource);
+        if (opening.delivery() == null) {
+            sendError(session, id, opening.unavailable() ? opening.refusal() : "Unknown collection: " + collection);
+            if (opening.unavailable()) {
+                closeUnavailable(session);
+            }
             return;
         }
+        RealtimeGate.Delivery delivery = opening.delivery();
         Disposable disposable = subscriptionService.subscribe(tenantId, key)
-                .subscribe(event -> dispatchEvent(session, id, filter, resource, event));
+                .subscribe(event -> dispatchEvent(session, id, filter, delivery, event));
         sessionSubs.put(id, disposable);
         log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, key);
     }
@@ -203,8 +200,16 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
+    private void closeUnavailable(WebSocketSession session) {
+        try {
+            session.close(CloseStatus.SERVICE_OVERLOAD.withReason(PermissionsUnavailableException.CODE));
+        } catch (IOException e) {
+            log.warn("Error closing session {}", session.getId(), e);
+        }
+    }
+
     private void dispatchEvent(WebSocketSession session, String subId,
-                                Map<String, Object> filter, String resource, CDCEvent event) {
+                                Map<String, Object> filter, RealtimeGate.Delivery delivery, CDCEvent event) {
         String op = switch (event.type() == null ? "" : event.type().toUpperCase()) {
             case "INSERT" -> "insert";
             case "UPDATE" -> "update";
@@ -223,13 +228,12 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        // Filter matching runs on the raw row (a masked column must not change
-        // which events the subscriber receives). Row-level security then decides
-        // whether this subscriber may see the row at all, and column-level
-        // security masks the payload per subscriber before it leaves the server.
-        if (!matchesFilter(doc, filter)) return;
-        Object payloadDoc = visibleDoc(session, resource, event.type(), doc);
-        if (payloadDoc == null) return;
+        // The role's permissions decide what of the change is theirs first; the subscriber's own filter
+        // then matches only what they may see, so a column they cannot read cannot steer delivery.
+        Object visible = delivery.render(event, objectMapper.convertValue(doc, Object.class)).orElse(null);
+        if (visible == null) return;
+        JsonNode payloadDoc = objectMapper.valueToTree(visible);
+        if (!matchesFilter(payloadDoc, filter)) return;
 
         try {
             var payload = new LinkedHashMap<String, Object>();
@@ -241,22 +245,6 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize realtime event for sub {}", subId, e);
         }
-    }
-
-    /**
-     * Row- and column-level security for a CDC event and this session's
-     * subscriber: null when the subscriber may not see it, otherwise the payload
-     * with hidden columns removed. Passes {@code doc} through unchanged when no
-     * engine is wired or no project context is resolvable (single-tenant).
-     */
-    private Object visibleDoc(WebSocketSession session, String resource, String eventType, JsonNode doc) {
-        Principal principal = GraphQLWebSocketHandler.principalOf(session);
-        // Project from the URL path is authoritative; the principal gives the user context
-        // (anonymous when absent, so owner/claim policies fail closed). service bypasses.
-        String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
-        if (rlsEnforcer == null || projectId == null || (principal != null && principal.bypass())) return doc;
-        Map<String, Object> change = objectMapper.convertValue(doc, new TypeReference<>() {});
-        return rlsEnforcer.renderChange(projectId, resource, principal, eventType, change).orElse(null);
     }
 
     private boolean matchesFilter(JsonNode doc, Map<String, Object> filter) {

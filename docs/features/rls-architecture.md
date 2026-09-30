@@ -1,233 +1,94 @@
-# RLS Engine Architecture & Project Routing
+# Permission Enforcement Architecture & Project Routing
 
-Design reference for the application-layer Row-Level-Security (RLS) engine: how
-policies are loaded, how a request is mapped to a project, and the rule that
-**RLS applies to every request** — authenticated or not.
+Design reference for how the engine enforces a project's [API permissions](permissions.md): how a
+request is mapped to a project and a role, where the rules are compiled, and the error contract.
+Permissions apply to **every request** — with or without a token.
 
-> This is the source of truth for the RLS request model. Update it when the
-> behaviour changes.
-
-## Why an app-layer engine (not native DB RLS)
-
-The engine composes the `WHERE` filter (and column projection) in the
-application, from policies fetched over HTTP from provisioning. It does **not**
-rely on native Postgres `ROW LEVEL SECURITY`. That keeps enforcement identical
-across any backing database (Postgres today, MySQL proven, Mongo later) — the
-same policy compiles to portable SQL. See `excalibase-rls` (engine) and the
-vendored `modules/excalibase-rls-*` copies the app runs.
+> This is the source of truth for the request model. Update it when the behaviour changes.
 
 ## Project routing — the project is in the URL
 
-A request must declare **which project** it targets, so the engine knows which
-policy set to load. `projectId` is a single **opaque id** that provisioning
-emits (e.g. `proj-237qoqksdb`). (`{org}/{project}` slash-form is legacy.)
+Every surface carries the project in its URL; there is no unscoped route. `projectId` is a single
+opaque segment that provisioning emits (e.g. `proj-237qoqksdb`).
 
-Every platform surface carries the project in its URL — there is **no unscoped
-route**. A request without a project in the path cannot resolve which policies
-apply, so it could not enforce RLS; such routes simply don't exist.
+| Surface        | Route                                     |
+|----------------|-------------------------------------------|
+| Auth           | `/auth/{projectId}/token`                 |
+| Functions      | `/functions/v1/{projectId}/{mod}.{fn}`    |
+| Permissions    | `/provision/{projectId}/permissions/`     |
+| **GraphQL**    | `/{projectId}/graphql`                    |
+| **REST**       | `/{projectId}/api/v1/{table}`             |
+| **GraphQL WS** | `/{projectId}/graphql` (upgrade)          |
+| **Realtime WS**| `/{projectId}/api/v1/realtime` (upgrade)  |
 
-| Surface       | Route                                   |
-|---------------|-----------------------------------------|
-| Auth          | `/auth/{projectId}/token`               |
-| Functions     | `/functions/v1/{projectId}/{mod}.{fn}`  |
-| Provisioning  | `/provision/{projectId}/rls-policies/`  |
-| **GraphQL**   | `/{projectId}/graphql`                  |
-| **REST**      | `/{projectId}/api/v1/{table}`           |
-| **GraphQL WS**| `/{projectId}/graphql` (upgrade)        |
-| **Realtime WS**| `/{projectId}/api/v1/realtime` (upgrade)|
+A token that names another project is refused (`project_mismatch`); an unknown project is `404`.
 
-`projectId` is a single opaque segment (e.g. `proj-237qoqksdb`).
+## One access plan per (project, role)
 
-`JwtAuthFilter.extractProjectId` reads it from the path; the controllers bind it
-only to make the route match. *How* a request reaches the app (ingress, host,
-gateway) is infra; the app's only job is to read `projectId` from the path and
-enforce. There is intentionally no fallback to a token-derived project — the
-path is the single source of truth.
+Each project's database is reflected once. For every role that calls it, the engine builds one
+immutable **access plan** (`io.github.excalibase.access.AccessPlan`) from that reflection and the
+role's slice of the project's permission document. The plan is built in exactly one place — where the
+schema manager assembles a role's engine — and everything else takes it from there:
 
-The token (when present) also carries `projectId`. When both the path and a
-token are present and **disagree, the request is rejected (403)** — a token
-cannot reach another project.
+| From the plan | Used by |
+|---|---|
+| the role's schema view (`view()`) and rights (`access()`) | the SQL compiler, GraphQL introspection, REST |
+| `guard(sessionVariables)` — select/update/delete filters, presets, checks | registered per request by `JwtAuthFilter` through `RlsContext`; the compilers AND it into every read and write |
+| `changes(table, sessionVariables)` — row matcher and column projection | both websocket handlers |
 
-**SDK alignment (separate repo, `excalibase-sdk-js`):** `graphqlEndpoint()` /
-`restEndpoint()` should include `${this.projectId}` to call the project-scoped
-routes (the SDK already holds the projectId; auth/functions already do this).
+`service` gets an all-access plan (every table and function, no guards). A deployment without a
+permission source serves `service` only (every other role gets an empty schema); with authentication
+off, the whole schema is served.
 
-## RLS applies on every request
+A permission that names a table, column or relationship the database lacks, or a literal its column
+cannot hold, is dropped when the plan is built and logged as `permission_invalid` — dropping denies.
 
-RLS is a property of the **resource**, not of the token. The user context only
-decides *which rows match*; absence of a user is not absence of RLS.
+No controller, compiler or websocket handler reads the permission source; `PermissionBoundaryTest`
+fails the build if one does.
 
-| Request                         | User context        | Result for a policied table |
-|---------------------------------|---------------------|------------------------------|
-| Valid token                     | token's user/claims | rows the user is allowed to see |
-| No token (anonymous)            | empty context       | owner/claim predicates match nothing → **0 rows (fail-closed)** |
-| Token for the wrong project     | —                   | **rejected** (path project ≠ token project) |
-| Table with **no** policy        | any                 | unrestricted (like Postgres: no policy = public) |
+## What each surface applies
 
-So a token-less or unauthorised caller never sees protected rows, and tables
-without a policy stay public.
+- **Reads**: the select filter is ANDed into every read of the table: lists, connections, counts,
+  aggregates, nested relationships and REST embeds. The role's limit caps each select, nested lists
+  included. A column outside the role's view cannot be selected, filtered, ordered or paged by.
+- **Writes**: only the permission's columns may be set; presets are written from literals or session
+  variables and cannot be set by the client. Update and delete reach rows passing their own filter
+  **and** the select filter. The permission's `check` is evaluated in the same SQL statement on the
+  written rows; if any row fails, the statement raises and the whole mutation rolls back. What a
+  mutation returns is limited to rows passing the select filter, with the select columns.
+- **Upsert** needs insert and update permission; the update half reaches only rows the update filter
+  passes, and every written row owes both checks.
+- **Realtime**: a subscription is accepted only for a table the role can select. Each change image is
+  judged in memory; one that needs the database (a relationship or `_exists`) is probed with
+  `SELECT EXISTS (...)` for an INSERT or an UPDATE's new image, and withheld for a DELETE or an
+  UPDATE's old image. Only the select columns are delivered.
+- **Functions**: until function permissions ship, only `service` reaches stored procedures and
+  computed fields.
 
-## Enforcement coverage per surface
+## Where permissions come from, and failure
 
-RLS must apply on **every** data path, not just GraphQL. Status:
+The engine reads `GET {policy-url}/provision/{projectId}/permissions/` with its service token and
+caches it for `app.security.rls.policy-ttl-ms`. A `policies.{projectId}.changed` NATS message drops
+the project's cached permissions, reflection and engines at once.
 
-| Path                                   | Read (visibility) | Write (WITH-CHECK) |
-|----------------------------------------|-------------------|--------------------|
-| GraphQL query                          | ✅                | n/a |
-| GraphQL mutation (insert/update/delete)| ✅ (coupling)     | ✅ `RlsContext.rowCheck()` |
-| REST `GET /{table}` + `totalCount`     | ✅                | n/a |
-| REST embeds `?select=*,fk(*)`          | ✅                | n/a |
-| REST `PATCH`/`DELETE`                  | ✅ (where + coupling) | ✅ `RowCheckContributor` (new image) |
-| REST `POST` (insert / bulk / upsert)   | n/a               | ✅ each candidate row; upsert's `ON CONFLICT DO UPDATE` is gated by the UPDATE policy (USING) |
-| REST `POST /rpc/{fn}` (stored proc)    | ⚠️ auth required (no anon when `jwt-enabled`); no in-function row filter | ⚠️ author's responsibility |
-| GraphQL WS subscriptions               | ✅ per-row + column-mask (in-memory matcher) | n/a |
-| Realtime WS subscriptions              | ✅ per-row + column-mask (in-memory matcher) | n/a |
+- Unknown project: refused, nothing cached.
+- Control plane unreachable: the cached document is served while it lasts; with none, `503`.
+- A document the grammar refuses: never applied; the last good copy stands in for at most one TTL
+  from the first refusal, then the project answers `503 permissions_unavailable` for every role but
+  `service`. Each refusal logs `permissions_document_refused` and increments
+  `excalibase_permissions_document_refused_total{project}`.
 
-The **read** leaks are closed (REST previously skipped engine RLS entirely —
-`RestQueryCompiler` now splices the predicate into selects, counts, and embeds,
-exactly like GraphQL's `FilterBuilder`).
+Permissions compile to Postgres SQL only: a MySQL deployment with a permission source refuses to start.
 
-**RPC** (`/rpc/{fn}`) is an opaque stored function — the engine can't inject a
-`WHERE` into its body, so per-row RLS is impossible in the app-layer model (same
-limit Hasura hits: it only filters `SETOF <table>` *output* against the return
-table's permission, not a function's internal reads). Current stance: **RPC
-requires a token when `jwt-enabled=true`** (no anonymous calls); row filtering
-inside a function is the author's responsibility. Planned enhancement: for
-functions returning `SETOF <table>`, wrap the call and apply that table's engine
-RLS to the output (needs return-type introspection + a rows-returning handler).
+## Error contract
 
-REST writes now enforce WITH-CHECK via the same `RowCheckContributor` the
-GraphQL mutation path uses (insert: each candidate row; update: the new image).
+| Condition | GraphQL | REST | WebSocket |
+|---|---|---|---|
+| a written row fails its check | `200`, `errors[0].extensions.code = permission_check_failed`, no `data` | `403`, `{ "code": "permission_check_failed", ... }` | — |
+| a method the role holds no permission for, on a table it can see | the field does not exist | `403`, `code: permission_denied` | — |
+| `Prefer: count=` without `allowAggregations` | `totalCount` / `…Aggregate` do not exist | `403`, `code: permission_denied` | — |
+| a table the role cannot select | `Unknown field` | `404` | subscription refused |
+| a session variable is missing or does not fit | `200`, `extensions.code = missing_session_variable` / `invalid_session_variable` | `400` with that `code` | subscription refused with that code |
+| permissions cannot be read | `503`, `code: permissions_unavailable` | `503` | session closed (`permissions_unavailable`) |
 
-WS subscriptions (both GraphQL `graphql-transport-ws` and the realtime REST
-protocol) now enforce per-row RLS and column masking on every CDC event via the
-in-memory `RowMatcher`/`ColumnMasker`: a subscriber receives an event only if the
-row is visible to them, with hidden/masked columns stripped. Relationship
-(`EXISTS`) policies can't be evaluated in-memory without a DB probe, so an event
-governed by one fails closed (dropped) rather than leaking.
-
-**Remaining gaps**, fix order: RPC `SETOF`-table output wrapping → realtime
-relationship-predicate evaluation (needs a DB lookup).
-
-## Error contract — `RLS_DENIED`
-
-Reads never error: a row the caller may not see is simply absent (0 rows,
-fail-closed — see above). **Writes** are different: a candidate row that fails
-the WITH-CHECK (insert/upsert of a row the caller could not own, or an update
-that would move a row out of their policy) is rejected *before any SQL runs*,
-and the rejection is a typed error, not database text.
-
-The engine raises one exception, `RlsViolationException`, carrying a stable
-code and only client-safe context — the operation, the table and (when known)
-the policy name. It never carries the SQL, column values or driver messages.
-Both surfaces format it from the same `RlsDeniedResponse`:
-
-| Surface | Status | Shape |
-|---|---|---|
-| GraphQL | `200` (GraphQL error) | `errors[0].extensions = { "code": "RLS_DENIED", "operation": "INSERT" \| "UPDATE" \| "UPSERT", "table": "<schema.table>" }`; `errors[0].message` is a short human message with no `ERROR:` / SQLSTATE / driver text; no `data` key |
-| REST | `403 Forbidden` | `{ "code": "RLS_DENIED", "message": "...", "details": { "operation": ..., "table": ... }, "error": "..." }` — PostgREST-style `code`/`message`/`details`; `error` mirrors `message` for clients still reading the legacy envelope |
-
-GraphQL example:
-
-```json
-{
-  "errors": [
-    {
-      "message": "Row-level security denied INSERT on rls_demo.notes",
-      "extensions": { "code": "RLS_DENIED", "operation": "INSERT", "table": "rls_demo.notes" }
-    }
-  ]
-}
-```
-
-`operation` is the caller's intent: a `create…(onConflict: …)` mutation or a
-REST `POST` with `Prefer: resolution=merge-duplicates` reports `UPSERT` even
-though the check applied is the INSERT policy. `policy` is added to the
-extensions / `details` only when the engine can attribute the denial to a
-single named policy. `DELETE` and the `ON CONFLICT DO UPDATE` half of an upsert
-are governed by the USING predicate and therefore affect 0 rows rather than
-raising — same as native Postgres.
-
-## Engine capabilities (Postgres-RLS parity)
-
-The engine matches native Postgres RLS for the policy classes it supports,
-pinned by a differential test harness (`DifferentialPostgresRlsTest`) that runs
-each case under native `CREATE POLICY` and compares row sets:
-
-- Scalar predicates: `EQ/NEQ/GT/GTE/LT/LTE/IN/NOT_IN/LIKE/NOT_LIKE/IS_NULL/IS_NOT_NULL`, NULL three-valued logic.
-- Composition: multiple ALLOW (OR / DNF), DENY (`AND NOT`), per role/user/group assignment.
-- `ALLOW`-write coupling: UPDATE/DELETE require SELECT-visibility.
-- Column-level: HIDE (= Postgres column GRANT), plus NULL/mask supersets.
-- **Relationship / `EXISTS`** subqueries (membership policies) → portable `EXISTS (SELECT 1 FROM rel WHERE rel.fk = outer.pk …)`.
-- **Custom claims**: any JWT claim as `{{claim}}` (e.g. `{{region}}`).
-- **JSON path**: `meta.field` → `meta->>'field'` (Postgres) / `JSON_EXTRACT` (MySQL).
-
-### Relationship correlation needs the query alias
-
-The SQL compiler aliases every table (`FROM t <randAlias>`). A relationship
-`EXISTS` must correlate back to that alias, not the table name (`"orders".col`
-fails with *missing FROM-clause entry*). The alias is threaded
-`RlsWhereContributor.contribute(table, alias, op)` →
-`RlsPolicyEnforcer.filterFor(…, alias)` → `JdbcEvaluator.compile(…, outerAlias)`.
-
-When an explicit alias is supplied, scalar rules are also qualified with it
-(`<alias>."owner_id" = :p`) rather than emitted bare. Bare columns are fine in a
-plain `FROM t <alias> WHERE …`, but ambiguous in `INSERT … ON CONFLICT DO UPDATE
-… WHERE …` because `EXCLUDED` shares the column names. Passing the target
-relation name as the alias makes the upsert's USING predicate unambiguous.
-Null-alias callers (differential harness, plain `UPDATE`/`DELETE`) keep the bare
-form, so that behaviour is unchanged.
-
-## Provisioning token — file-mounted and rotated in place
-
-Every call the engine makes to provisioning (policy fetch, tenant vault
-credentials) authenticates with a personal access token. The platform delivers
-that token as a **file** — a Kubernetes Secret or compose volume mounted at e.g.
-`/var/run/excalibase/graphql-token` — and rotates it in place without restarting
-the pod. The engine therefore reads the token through the file on every call
-rather than capturing it once at startup.
-
-| Property | Environment variable | Purpose |
-|----------|----------------------|---------|
-| `app.security.multi-tenant.provisioning-pat-file` | `APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT_FILE` | Path to the mounted token file |
-| `app.security.multi-tenant.provisioning-pat` | `PROVISIONING_PAT` | Literal token — standalone/dev fallback |
-| `app.security.rls.policy-pat-file` | `APP_SECURITY_RLS_POLICY_PAT_FILE` | Token file for the policy fetch, when it differs |
-| `app.security.rls.policy-pat` | `APP_SECURITY_RLS_POLICY_PAT` | Literal policy token — standalone/dev fallback |
-
-Behaviour:
-
-- When a `*-file` path is set and readable, its **trimmed contents** are the
-  token; the literal property is ignored.
-- The file is re-stat'ed at most **once every 5 seconds**, so a rotation is
-  picked up within 5 seconds with no restart and no per-request file read.
-- If the file becomes unreadable or empty (mid-rotation, remount), the last
-  known good token keeps being used — a rotation window never drops
-  authentication. The failure is logged as a warning; the token value itself is
-  never logged.
-- The `rls.policy-pat*` pair defaults to the `multi-tenant.provisioning-pat*`
-  pair, so a single mounted file covers both clients.
-- With no `*-file` path set, the literal environment value is used as before —
-  that is the standalone and dev path.
-
-## Open items
-
-- **SDK alignment** (`excalibase-sdk-js`, separate repo): `graphqlEndpoint()` /
-  `restEndpoint()` must include the project segment (use `this.projectName`,
-  which equals the token's `projectId`) — the unscoped routes are gone, so a
-  client that calls `/graphql` or `/api/v1` now gets a 404. Auth/functions
-  already build project-scoped URLs.
-- **WebSocket subscriptions** now upgrade at the project-scoped
-  `/{projectId}/graphql` and `/{projectId}/api/v1/realtime`. The project is read
-  from the URL path (authoritative for RLS, like the HTTP filter) via
-  `ProjectPathHandshakeInterceptor`; a token whose project disagrees with the
-  path is rejected. The CDC *sink* tenant (which NATS subject the events come
-  from) is a separate axis — it stays derived from the token/`tenant-in-subject`
-  mode, so single-tenant (`null` tenant) and multi-tenant (`cdc.{project}`)
-  routing are both unaffected.
-- **OpenAPI** `servers[].url` still emits `/api/v1` (cosmetic) — should reflect
-  the scoped base.
-- **Missing custom claim**: currently throws (typo protection). Postgres
-  `current_setting(x, true)` returns NULL (fail-closed). Decide whether an absent
-  *custom* claim should resolve to null to match Postgres.
-- **Realtime relationship predicates**: the in-memory matcher can't probe a
-  second table; needs a DB lookup (or claim-based modelling) — see subscriptions.
+Messages never contain SQL, SQLSTATE or row values.
