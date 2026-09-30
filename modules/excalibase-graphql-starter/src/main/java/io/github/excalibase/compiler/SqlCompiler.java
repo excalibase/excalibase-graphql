@@ -4,7 +4,7 @@ import graphql.language.*;
 import graphql.parser.Parser;
 import io.github.excalibase.*;
 import io.github.excalibase.schema.SchemaInfo;
-import io.github.excalibase.schema.TableExposure;
+import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.spi.MutationCompiler;
 
 import java.util.*;
@@ -28,23 +28,22 @@ public class SqlCompiler {
     }
 
     public SqlCompiler(SchemaInfo schemaInfo, String dbSchema, int maxRows, SqlDialect dialect, MutationCompiler mutationCompiler, int maxDepth) {
-        this(schemaInfo, dbSchema, maxRows, dialect, mutationCompiler, maxDepth, TableExposure.UNRESTRICTED);
+        this(schemaInfo, dbSchema, maxRows, dialect, mutationCompiler, maxDepth, TableAccess.UNRESTRICTED);
     }
 
     /**
-     * {@code schemaInfo} is already the caller's view — a table they may not read is
-     * not in it — so queries need no further gating. {@code exposure} only carries
-     * which mutation fields exist for tables that <em>are</em> in that view.
+     * {@code schemaInfo} is already the caller's view — a table or column they may not read is not
+     * in it — and {@code access} carries the rest of what the role may do on the tables that are.
      */
     public SqlCompiler(SchemaInfo schemaInfo, String dbSchema, int maxRows, SqlDialect dialect,
-                       MutationCompiler mutationCompiler, int maxDepth, TableExposure exposure) {
+                       MutationCompiler mutationCompiler, int maxDepth, TableAccess access) {
         this.schemaInfo = schemaInfo;
         this.dialect = dialect;
         this.maxDepth = maxDepth;
-        FilterBuilder filterBuilder = new FilterBuilder(dialect, maxRows, schemaInfo, dbSchema);
+        FilterBuilder filterBuilder = new FilterBuilder(dialect, maxRows, schemaInfo, dbSchema, access);
         this.queryBuilder = new QueryBuilder(schemaInfo, dialect, filterBuilder, dbSchema, maxRows, fragmentsHolder);
         this.mutationBuilder = new MutationBuilder(schemaInfo, dialect, filterBuilder, dbSchema, queryBuilder,
-                mutationCompiler, exposure);
+                mutationCompiler, access);
     }
 
     public SchemaInfo schemaInfo() { return schemaInfo; }

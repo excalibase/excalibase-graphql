@@ -223,22 +223,24 @@ public class QueryExecutionService {
         return "OUT".equals(param.mode()) || PROC_PARAM_MODE_INOUT.equals(param.mode());
     }
 
+    /**
+     * The data is kept as a JSON tree so a null field survives serialization: a mutation whose
+     * written row the role may not read answers {@code "field": null}, not a missing key.
+     */
     private ResponseEntity<Object> wrapResult(String json,
                                               SqlCompiler.CompiledQuery compiled) throws JsonProcessingException {
         if (json != null) {
             if (compiled.isProcedureCall()) {
                 return ResponseEntity.ok(Map.of("data", Map.of(compiled.mutationFieldName(), json)));
             }
-            Object result = objectMapper.readValue(json, Object.class);
-            return ResponseEntity.ok(Map.of("data", result));
+            return ResponseEntity.ok(Map.of("data", objectMapper.readTree(json)));
         }
         return ResponseEntity.ok(Map.of("data", Map.of()));
     }
 
     private ResponseEntity<Object> wrapTwoPhaseResult(String json) throws JsonProcessingException {
         if (json != null) {
-            Object result = objectMapper.readValue(json, Object.class);
-            return ResponseEntity.ok(Map.of("data", result));
+            return ResponseEntity.ok(Map.of("data", objectMapper.readTree(json)));
         }
         return ResponseEntity.ok(Map.of("data", Map.of()));
     }

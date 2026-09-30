@@ -156,18 +156,17 @@ Errors return a JSON body:
 }
 ```
 
-An RLS write denial (`403`) is typed — `code` is stable and `details` names
-the operation (`INSERT`, `UPDATE`, or `UPSERT` for
-`Prefer: resolution=merge-duplicates`) and the table. The message never
-contains database text; `error` mirrors `message` for older clients:
+A write whose rows fail the role's permission `check` (`403`) is typed and rolls
+back whole; a method the role holds no permission for on a table it can see is
+`403 permission_denied`. The message never contains database text; `error`
+mirrors `message` for older clients:
 
 ```json
 {
-  "code": "RLS_DENIED",
-  "message": "Row-level security denied INSERT on public.issues",
-  "details": { "operation": "INSERT", "table": "public.issues" },
-  "error": "Row-level security denied INSERT on public.issues"
+  "code": "permission_check_failed",
+  "message": "A written row does not pass the role's permission check",
+  "error": "A written row does not pass the role's permission check"
 }
 ```
 
-See [RLS error contract](../features/rls-architecture.md#error-contract--rls_denied).
+See the [error contract](../features/rls-architecture.md#error-contract).

@@ -186,9 +186,12 @@ try {
 
 | Code | Where | Meaning |
 |---|---|---|
-| `RLS_DENIED` | GraphQL `errors[].extensions.code`; REST `403` body `code` | A write the caller's row-level policy forbids. `operation` (`INSERT` / `UPDATE` / `UPSERT`) and `table` accompany it; the message never contains database text. Reads are filtered silently and never raise. |
+| `permission_check_failed` | GraphQL `errors[].extensions.code`; REST `403` body `code` | A written row fails the role's permission `check`; the whole write rolled back. The message never contains database text. Reads are filtered silently and never raise. |
+| `permission_denied` | REST `403` body `code` | The role holds no permission for this method's operation on a table it can see (or for `Prefer: count=`). |
+| `missing_session_variable` / `invalid_session_variable` | GraphQL `errors[].extensions.code`; REST `400` body `code` | A permission needs a session variable the request lacks, or one its column type cannot hold. |
+| `permissions_unavailable` | `503`, GraphQL-shaped body | The project's permissions cannot be read right now. |
 
-See the [RLS error contract](features/rls-architecture.md#error-contract--rls_denied).
+See the [error contract](features/rls-architecture.md#error-contract).
 
 ## Realtime
 

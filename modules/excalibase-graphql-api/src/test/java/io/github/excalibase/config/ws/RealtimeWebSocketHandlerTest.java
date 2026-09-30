@@ -3,11 +3,17 @@ package io.github.excalibase.config.ws;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.schema.AccessPlans;
+import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.StubbedSchemaManager;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -15,6 +21,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -33,28 +40,15 @@ class RealtimeWebSocketHandlerTest {
     void setUp() {
         subscriptionService = new SubscriptionService();
         mapper = new ObjectMapper();
-        org.springframework.beans.factory.ObjectProvider<io.github.excalibase.security.JwtService> noJwt =
-                new org.springframework.beans.factory.ObjectProvider<>() {
-                    @Override public io.github.excalibase.security.JwtService getObject() { return null; }
-                    @Override public io.github.excalibase.security.JwtService getObject(Object... args) { return null; }
-                    @Override public io.github.excalibase.security.JwtService getIfAvailable() { return null; }
-                    @Override public io.github.excalibase.security.JwtService getIfUnique() { return null; }
-                };
-        org.springframework.beans.factory.ObjectProvider<io.github.excalibase.rls.RlsPolicyEnforcer> noRls =
-                new org.springframework.beans.factory.ObjectProvider<>() {
-                    @Override public io.github.excalibase.rls.RlsPolicyEnforcer getObject() { return null; }
-                    @Override public io.github.excalibase.rls.RlsPolicyEnforcer getObject(Object... args) { return null; }
-                    @Override public io.github.excalibase.rls.RlsPolicyEnforcer getIfAvailable() { return null; }
-                    @Override public io.github.excalibase.rls.RlsPolicyEnforcer getIfUnique() { return null; }
-                };
-        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, noJwt, noRls, new WebSocketHeartbeat(0), provider((RealtimeExposureGate) null));
+        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, provider((JwtService) null),
+                new WebSocketHeartbeat(0), provider((AccessPlans) null));
     }
 
     private WebSocketSession session(List<String> sink) throws Exception {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.getId()).thenReturn("test-session-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
-        when(session.getAttributes()).thenReturn(new java.util.concurrent.ConcurrentHashMap<>());
+        when(session.getAttributes()).thenReturn(new ConcurrentHashMap<>());
         doAnswer(invocation -> {
             TextMessage msg = invocation.getArgument(0);
             sink.add(msg.getPayload());
@@ -171,8 +165,8 @@ class RealtimeWebSocketHandlerTest {
         assertThat(mapper.readTree(sent.getFirst()).get("op").asText()).isEqualTo("insert");
     }
 
-    private static <T> org.springframework.beans.factory.ObjectProvider<T> provider(T value) {
-        return new org.springframework.beans.factory.ObjectProvider<>() {
+    private static <T> ObjectProvider<T> provider(T value) {
+        return new ObjectProvider<>() {
             @Override public T getObject() { return value; }
             @Override public T getObject(Object... args) { return value; }
             @Override public T getIfAvailable() { return value; }
@@ -180,28 +174,51 @@ class RealtimeWebSocketHandlerTest {
         };
     }
 
-    @Test
-    @DisplayName("column HIDE policy masks the field in the realtime payload")
-    void columnMasking_dropsHiddenField() throws Exception {
-        var policyProvider = new io.github.excalibase.rls.InMemoryPolicyProvider();
-        policyProvider.putColumns("p1", List.of(new io.github.excalibase.rls.ColumnPolicy(
-                "h", "h", "public.things", java.util.Set.of("secret"),
-                io.github.excalibase.rls.Operation.ALL, io.github.excalibase.rls.MaskMode.HIDE,
-                null, null, 0, true, List.of(io.github.excalibase.rls.Assignment.all()))));
-        var enforcer = new io.github.excalibase.rls.RlsPolicyEnforcer(policyProvider);
-        var masking = new RealtimeWebSocketHandler(subscriptionService, mapper,
-                provider((io.github.excalibase.security.JwtService) null), provider(enforcer), new WebSocketHeartbeat(0), provider((RealtimeExposureGate) null));
+    private static final String ROLE = "app_authenticated";
 
-        var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
+    /** notes and things for {@code ROLE}, per the given select permissions. */
+    private RealtimeWebSocketHandler planned(String notesSelect, String thingsSelect) {
+        SchemaInfo schema = new SchemaInfo();
+        for (String table : List.of("public.notes", "public.things")) {
+            schema.setTableSchema(table, "public");
+            schema.addColumn(table, "id", "integer");
+            schema.addColumn(table, "secret", "text");
+            schema.addPrimaryKey(table, "id");
+        }
+        schema.addColumn("public.notes", "owner_id", "text");
+        schema.addColumn("public.things", "name", "text");
+        String document = StubbedSchemaManager.document("p1",
+                "{\"table\":\"public.notes\",\"role\":\"" + ROLE + "\",\"select\":" + notesSelect + "}",
+                "{\"table\":\"public.things\",\"role\":\"" + ROLE + "\",\"select\":" + thingsSelect + "}");
+        AccessPlans plans = StubbedSchemaManager.withDocument(schema, document, (sql, params) -> false);
+        return new RealtimeWebSocketHandler(subscriptionService, mapper, provider((JwtService) null),
+                new WebSocketHeartbeat(0), provider(plans));
+    }
+
+    private static final String OWNED_NOTES = "{\"filter\":{\"owner_id\":{\"_eq\":\"X-Excalibase-User-Id\"}},"
+            + "\"columns\":[\"id\",\"owner_id\"]}";
+    private static final String THING_NAMES = "{\"filter\":{},\"columns\":[\"id\",\"name\"]}";
+
+    private WebSocketSession userSession(List<String> sink) throws Exception {
+        WebSocketSession session = session(sink);
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
-        JwtClaims claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
+        JwtClaims claims = new JwtClaims("u-1", "p1", "acme", "demo", "", ROLE, "u@x.com", "authenticated", 0L,
+                Map.of("userId", "u-1"), null);
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY,
                 new Principal(claims.role(), false, claims, Map.of()));
-        masking.afterConnectionEstablished(session);
+        return session;
+    }
 
-        masking.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+    @Test
+    @DisplayName("only the select columns reach the realtime payload")
+    void columns_onlyTheSelectColumnsAreDelivered() throws Exception {
+        var planned = planned(OWNED_NOTES, THING_NAMES);
+        var sent = new ArrayList<String>();
+        WebSocketSession session = userSession(sent);
+        planned.afterConnectionEstablished(session);
+
+        planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "subscribe", "id", "s1", "collection", "things"))));
 
         subscriptionService.publish(null, new CDCEvent(
@@ -209,38 +226,19 @@ class RealtimeWebSocketHandlerTest {
 
         await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         var doc = mapper.readTree(sent.getFirst()).get("doc");
-        assertThat(doc.has("secret")).isFalse();               // HIDE → column dropped
-        assertThat(doc.get("name").asText()).isEqualTo("n");   // others untouched
+        assertThat(doc.has("secret")).isFalse();
+        assertThat(doc.get("name").asText()).isEqualTo("n");
         assertThat(doc.get("id").asInt()).isEqualTo(1);
     }
 
     @Test
-    @DisplayName("an UPDATE is judged on its old and new images, and each image is masked")
-    void update_judgedPerImageAndMasked() throws Exception {
-        var policyProvider = new io.github.excalibase.rls.InMemoryPolicyProvider();
-        policyProvider.put("p1", List.of(new io.github.excalibase.rls.Policy(
-                "own", "own", "public.notes", io.github.excalibase.rls.PolicyEffect.ALLOW,
-                io.github.excalibase.rls.Operation.ALL, io.github.excalibase.rls.LogicOperator.AND, 0, true,
-                List.of(new io.github.excalibase.rls.Rule("owner_id", io.github.excalibase.rls.FieldType.STRING,
-                        io.github.excalibase.rls.RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(io.github.excalibase.rls.Assignment.all()))));
-        policyProvider.putColumns("p1", List.of(new io.github.excalibase.rls.ColumnPolicy(
-                "h", "h", "public.notes", java.util.Set.of("secret"),
-                io.github.excalibase.rls.Operation.ALL, io.github.excalibase.rls.MaskMode.HIDE,
-                null, null, 0, true, List.of(io.github.excalibase.rls.Assignment.all()))));
-        var enforcer = new io.github.excalibase.rls.RlsPolicyEnforcer(policyProvider);
-        var filtered = new RealtimeWebSocketHandler(subscriptionService, mapper,
-                provider((io.github.excalibase.security.JwtService) null), provider(enforcer), new WebSocketHeartbeat(0), provider((RealtimeExposureGate) null));
-
+    @DisplayName("an UPDATE is judged on its old and new images, and each image is projected")
+    void update_judgedPerImageAndProjected() throws Exception {
+        var planned = planned(OWNED_NOTES, THING_NAMES);
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
-        JwtClaims claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY,
-                new Principal(claims.role(), false, claims, Map.of()));
-        filtered.afterConnectionEstablished(session);
-        filtered.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+        WebSocketSession session = userSession(sent);
+        planned.afterConnectionEstablished(session);
+        planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "subscribe", "id", "s1", "collection", "notes"))));
 
         subscriptionService.publish(null, new CDCEvent("UPDATE", "public", "notes",
@@ -259,32 +257,16 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
-    @DisplayName("owner row policy delivers only the subscriber's rows, drops others")
+    @DisplayName("the select filter delivers only the subscriber's rows, drops others")
     void rowFilter_deliversOnlyOwnRows() throws Exception {
-        var policyProvider = new io.github.excalibase.rls.InMemoryPolicyProvider();
-        policyProvider.put("p1", List.of(new io.github.excalibase.rls.Policy(
-                "own", "own", "public.notes", io.github.excalibase.rls.PolicyEffect.ALLOW,
-                io.github.excalibase.rls.Operation.ALL, io.github.excalibase.rls.LogicOperator.AND, 0, true,
-                List.of(new io.github.excalibase.rls.Rule("owner_id", io.github.excalibase.rls.FieldType.STRING,
-                        io.github.excalibase.rls.RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(io.github.excalibase.rls.Assignment.all()))));
-        var enforcer = new io.github.excalibase.rls.RlsPolicyEnforcer(policyProvider);
-        var filtered = new RealtimeWebSocketHandler(subscriptionService, mapper,
-                provider((io.github.excalibase.security.JwtService) null), provider(enforcer), new WebSocketHeartbeat(0), provider((RealtimeExposureGate) null));
-
+        var planned = planned(OWNED_NOTES, THING_NAMES);
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
-        JwtClaims claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
-        session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY,
-                new Principal(claims.role(), false, claims, Map.of()));
-        filtered.afterConnectionEstablished(session);
+        WebSocketSession session = userSession(sent);
+        planned.afterConnectionEstablished(session);
 
-        filtered.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+        planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "subscribe", "id", "s1", "collection", "notes"))));
 
-        // Another user's row must NOT be delivered; the subscriber's own row must.
         subscriptionService.publish(null, new CDCEvent(
                 "INSERT", "public", "notes", "{\"id\":1,\"owner_id\":\"u-2\"}", 0L));
         subscriptionService.publish(null, new CDCEvent(
@@ -293,6 +275,38 @@ class RealtimeWebSocketHandlerTest {
         await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         assertThat(sent).hasSize(1);
         assertThat(mapper.readTree(sent.getFirst()).get("doc").get("id").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a client filter on a column the role cannot read matches nothing")
+    void clientFilterOnHiddenColumn_neverSteersDelivery() throws Exception {
+        var planned = planned(OWNED_NOTES, THING_NAMES);
+        var sent = new ArrayList<String>();
+        WebSocketSession session = userSession(sent);
+        planned.afterConnectionEstablished(session);
+        planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "things", "filter", Map.of("secret", "x")))));
+
+        subscriptionService.publish(null, new CDCEvent(
+                "INSERT", "public", "things", "{\"id\":1,\"secret\":\"x\",\"name\":\"n\"}", 0L));
+
+        await().during(Duration.ofMillis(200)).atMost(Duration.ofMillis(500))
+                .untilAsserted(() -> assertThat(sent).isEmpty());
+    }
+
+    @Test
+    @DisplayName("a collection the role cannot select is refused as unknown")
+    void unselectableCollection_isRefused() throws Exception {
+        var planned = planned(OWNED_NOTES, THING_NAMES);
+        var sent = new ArrayList<String>();
+        WebSocketSession session = userSession(sent);
+        planned.afterConnectionEstablished(session);
+
+        planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "secrets"))));
+
+        assertThat(sent).hasSize(1);
+        assertThat(mapper.readTree(sent.getFirst()).get("message").asText()).contains("Unknown collection");
     }
 
     @Test
@@ -342,7 +356,7 @@ class RealtimeWebSocketHandlerTest {
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "subscribe", "id", "s2", "collection", "b"))));
 
-        handler.afterConnectionClosed(session, org.springframework.web.socket.CloseStatus.NORMAL);
+        handler.afterConnectionClosed(session, CloseStatus.NORMAL);
 
         subscriptionService.publish(null, new CDCEvent("INSERT", "public", "a", "{}", 0L));
         subscriptionService.publish(null, new CDCEvent("INSERT", "public", "b", "{}", 0L));

@@ -73,12 +73,17 @@ INSERT INTO rls_demo.ledger (id, amount, created_at) VALUES
     (2, 250.50, now()),
     (3,  99.99, now());
 
--- Relationship/EXISTS RLS: visibility of `orders` depends on a row existing in
--- `members` for the caller in the order's org. Proves correlated-subquery
--- policies survive the compiler's table aliasing.
+-- Relationship permissions: visibility of `orders` depends on a row existing in
+-- `members` for the caller in the order's org, reached through the orgs both
+-- reference. Proves correlated-subquery filters survive the compiler's aliasing.
+CREATE TABLE rls_demo.orgs (
+    org_id TEXT PRIMARY KEY
+);
+INSERT INTO rls_demo.orgs (org_id) VALUES ('orgA'), ('orgB');
+
 CREATE TABLE rls_demo.members (
     member_user UUID NOT NULL,
-    org_id      TEXT NOT NULL
+    org_id      TEXT NOT NULL REFERENCES rls_demo.orgs(org_id)
 );
 INSERT INTO rls_demo.members (member_user, org_id) VALUES
     ('11111111-1111-1111-1111-111111111111', 'orgA'),
@@ -86,7 +91,7 @@ INSERT INTO rls_demo.members (member_user, org_id) VALUES
 
 CREATE TABLE rls_demo.orders (
     id     BIGINT PRIMARY KEY,
-    org_id TEXT NOT NULL,
+    org_id TEXT NOT NULL REFERENCES rls_demo.orgs(org_id),
     title  TEXT NOT NULL
 );
 INSERT INTO rls_demo.orders (id, org_id, title) VALUES

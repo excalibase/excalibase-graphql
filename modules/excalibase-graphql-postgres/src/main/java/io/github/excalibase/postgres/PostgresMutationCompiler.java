@@ -3,10 +3,11 @@ package io.github.excalibase.postgres;
 import graphql.language.*;
 import io.github.excalibase.compiler.MutationBuilder;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.security.PermissionCheckFailedException;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
-import io.github.excalibase.security.RlsViolationException;
-import io.github.excalibase.security.RowCheckContributor;
+import io.github.excalibase.security.RlsWhereContributor;
+import io.github.excalibase.security.WriteGuard;
 import io.github.excalibase.spi.MutationCompiler;
 import io.github.excalibase.compiler.SqlCompiler;
 
@@ -94,54 +95,50 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias, params);
 
+        Map<String, List<Map<String, Object>>> nestedInserts = new LinkedHashMap<>();
+        Map<String, Object> row = insertRow(inputArg, variables, shared, nestedInserts);
+        shared.requireSettable(tableName, RlsOp.INSERT, row.keySet());
+        row = MutationBuilder.withPresets(row, shared.presets(tableName, RlsOp.INSERT));
+
         List<String> cols = new ArrayList<>();
         List<String> vals = new ArrayList<>();
-        Map<String, List<Map<String, Object>>> nestedInserts = new LinkedHashMap<>();
-        // Candidate row (column → raw value) for the RLS WITH-CHECK; nested FK
-        // sub-inserts are excluded — each child row is its own resource.
-        Map<String, Object> rowForCheck = new LinkedHashMap<>();
-
-        if (inputArg.getValue() instanceof ObjectValue inputOv) {
-            // Process AST fields directly to detect nested FK inserts
-            for (ObjectField of : inputOv.getObjectFields()) {
-                Optional<List<Map<String, Object>>> nestedRows = extractNestedData(of.getValue(), variables, shared);
-                if (nestedRows.isPresent()) {
-                    nestedInserts.put(of.getName(), nestedRows.get());
-                    continue;
-                }
-                cols.add(shared.dialect().quoteIdentifier(of.getName()));
-                String paramName = namedParam(P_INSERT, of.getName(), params.size());
-                String enumCast = shared.getEnumCastForMutation(tableName, of.getName());
-                Object value = shared.convertCompositeValue(tableName, of.getName(),
-                        MutationBuilder.extractValue(of.getValue(), variables));
-                vals.add(param(paramName) + enumCast);
-                params.put(paramName, value);
-                rowForCheck.put(of.getName(), MutationBuilder.extractValue(of.getValue(), variables));
-            }
-        } else {
-            // Variable reference — use existing extraction (no nested insert support)
-            Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
-            for (var entry : inputFields.entrySet()) {
-                cols.add(shared.dialect().quoteIdentifier(entry.getKey()));
-                String paramName = namedParam(P_INSERT, entry.getKey(), params.size());
-                String enumCast = shared.getEnumCastForMutation(tableName, entry.getKey());
-                Object value = shared.convertCompositeValue(tableName, entry.getKey(), entry.getValue());
-                vals.add(param(paramName) + enumCast);
-                params.put(paramName, value);
-                rowForCheck.put(entry.getKey(), entry.getValue());
-            }
+        for (var entry : row.entrySet()) {
+            cols.add(shared.dialect().quoteIdentifier(entry.getKey()));
+            String paramName = namedParam(P_INSERT, entry.getKey(), params.size());
+            vals.add(param(paramName) + shared.getEnumCastForMutation(tableName, entry.getKey()));
+            params.put(paramName, shared.convertCompositeValue(tableName, entry.getKey(), entry.getValue()));
         }
-
-        requireRowAllowed(tableName, rowForCheck, insertOperation(field, shared));
 
         String onConflictSql = parseOnConflict(field, shared, params, tableName);
+        List<WrittenRows> written = new ArrayList<>();
+        written.add(new WrittenRows(alias, tableName, onConflictSql.isEmpty()
+                ? List.of(RlsOp.INSERT) : List.of(RlsOp.INSERT, RlsOp.UPDATE)));
         String parentCte = shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
                 joinCols(cols), joinCols(vals), onConflictSql, objectSql);
+        String sql = nestedInserts.isEmpty() ? parentCte
+                : buildNestedInsertCte(parentCte, alias, tableName, nestedInserts, params, shared, written);
+        return guardedResult(sql, alias, tableName, written, params, shared);
+    }
 
-        if (nestedInserts.isEmpty()) {
-            return parentCte;
+    /**
+     * The input's column values; nested FK inserts (an object carrying a {@code data} array) are
+     * collected into {@code nestedInserts} instead, each child row being its own write.
+     */
+    private Map<String, Object> insertRow(Argument inputArg, Map<String, Object> variables, MutationBuilder shared,
+                                          Map<String, List<Map<String, Object>>> nestedInserts) {
+        if (!(inputArg.getValue() instanceof ObjectValue inputOv)) {
+            return shared.extractObjectFields(inputArg.getValue(), variables);
         }
-        return buildNestedInsertCte(parentCte, alias, tableName, nestedInserts, params, shared);
+        Map<String, Object> row = new LinkedHashMap<>();
+        for (ObjectField of : inputOv.getObjectFields()) {
+            Optional<List<Map<String, Object>>> nestedRows = extractNestedData(of.getValue(), variables, shared);
+            if (nestedRows.isPresent()) {
+                nestedInserts.put(of.getName(), nestedRows.get());
+            } else {
+                row.put(of.getName(), MutationBuilder.extractValue(of.getValue(), variables));
+            }
+        }
+        return row;
     }
 
     /**
@@ -166,7 +163,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
      */
     private String buildNestedInsertCte(String parentCte, String alias, String tableName,
                                          Map<String, List<Map<String, Object>>> nestedInserts,
-                                         Map<String, Object> params, MutationBuilder shared) {
+                                         Map<String, Object> params, MutationBuilder shared,
+                                         List<WrittenRows> written) {
         // Split at ") SELECT " to get CTE body and final SELECT
         int splitIdx = parentCte.lastIndexOf(") SELECT ");
         if (splitIdx == -1) return parentCte;
@@ -177,7 +175,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
         cteParts.add(parentCtePart);
 
         for (var nested : nestedInserts.entrySet()) {
-            String childCte = buildChildInsertCte(nested.getKey(), nested.getValue(), alias, tableName, params, shared);
+            String childCte = buildChildInsertCte(nested.getKey(), nested.getValue(), alias, tableName, params,
+                    shared, written);
             if (childCte != null) cteParts.add(childCte);
         }
 
@@ -185,16 +184,26 @@ public class PostgresMutationCompiler implements MutationCompiler {
         return String.join(", ", cteParts) + " " + finalSelect;
     }
 
-    /** Build a single child-table INSERT CTE for a nested-FK insert, or null if not applicable. */
+    /**
+     * Build a single child-table INSERT CTE for a nested-FK insert, or null if not applicable. Each
+     * child row obeys the child table's own insert permission: its columns, presets and check.
+     */
     private String buildChildInsertCte(String nestedFieldName, List<Map<String, Object>> rows,
                                         String alias, String tableName,
-                                        Map<String, Object> params, MutationBuilder shared) {
+                                        Map<String, Object> params, MutationBuilder shared,
+                                        List<WrittenRows> written) {
         if (rows.isEmpty()) return null;
 
         SchemaInfo.ReverseFkInfo revFk = shared.schemaInfo().getReverseFk(tableName, nestedFieldName);
         if (revFk == null) return null;
 
         String childTable = revFk.childTable();
+        if (!shared.access().permits(childTable, RlsOp.INSERT)) {
+            throw new IllegalArgumentException("Unknown field '" + nestedFieldName + "' in the input of "
+                    + tableName);
+        }
+        rows.forEach(row -> shared.requireSettable(childTable, RlsOp.INSERT, row.keySet()));
+        Map<String, Object> presets = shared.presets(childTable, RlsOp.INSERT);
         String fkCol = revFk.fkColumn();           // column in child table (e.g. order_id)
         String refCol = revFk.refColumns().get(0); // column in parent table (e.g. order_id)
 
@@ -205,16 +214,13 @@ public class PostgresMutationCompiler implements MutationCompiler {
         List<String> childCols = new ArrayList<>();
         childCols.add(shared.dialect().quoteIdentifier(fkCol));
         List<String> dataCols = new ArrayList<>(rows.get(0).keySet());
+        dataCols.addAll(presets.keySet());
         dataCols.forEach(col -> childCols.add(shared.dialect().quoteIdentifier(col)));
 
         // One SELECT row per data row, joined with UNION ALL
         List<String> selectRows = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
-            Map<String, Object> row = rows.get(i);
-            // WITH-CHECK each nested child row against the child table's INSERT
-            // policies — a nested insert must not be a hole through which a caller
-            // writes a row they couldn't write via a top-level createChild.
-            requireRowAllowed(childTable, row);
+            Map<String, Object> row = MutationBuilder.withPresets(rows.get(i), presets);
             List<String> rowVals = new ArrayList<>();
             rowVals.add(alias + DOT + shared.dialect().quoteIdentifier(refCol));
             for (String col : dataCols) {
@@ -231,6 +237,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
             selectRows.add(SELECT + joinCols(rowVals) + FROM + alias);
         }
 
+        written.add(new WrittenRows(childAlias, childTable, List.of(RlsOp.INSERT)));
         return childAlias + AS_OPEN
                 + INSERT_INTO + qualifiedChild + " " + parens(joinCols(childCols))
                 + " " + String.join(UNION_ALL, selectRows)
@@ -239,13 +246,12 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
     String compileBulkInsert(Field field, String tableName, Map<String, Object> params,
                              Map<String, Object> variables, MutationBuilder shared) {
-        // WITH-CHECK every row in the batch: one disallowed row rejects the
-        // whole mutation before any SQL runs.
-        MutationBuilder.BulkInsertParts bulk = shared.bulkInsertParts(field, tableName, params, variables,
-                true, row -> requireRowAllowed(tableName, row));
+        MutationBuilder.BulkInsertParts bulk = shared.bulkInsertParts(field, tableName, params, variables, true);
         if (bulk == null) return null;
-        return shared.dialect().cteBulkInsert(bulk.alias(), shared.qualifiedTable(tableName),
+        String sql = shared.dialect().cteBulkInsert(bulk.alias(), shared.qualifiedTable(tableName),
                 bulk.columns(), bulk.valueRows(), bulk.objectSql());
+        return guardedResult(sql, bulk.alias(), tableName,
+                List.of(new WrittenRows(bulk.alias(), tableName, List.of(RlsOp.INSERT))), params, shared);
     }
 
     String compileUpdate(Field field, String tableName, Map<String, Object> params,
@@ -253,29 +259,28 @@ public class PostgresMutationCompiler implements MutationCompiler {
         Argument inputArg = shared.findArg(field, ARG_INPUT);
         if (inputArg == null) return null;
 
+        if (!hasWhere(field, shared)) return null;
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
-        requireUpdateAllowed(tableName, inputFields);
+        if (inputFields.isEmpty()) return null;
         MutationBuilder.UpdateParts update = shared.updateParts(field, tableName, inputFields, P_UPDATE, params, true);
         String alias = update.alias();
-        String objectSql = update.objectSql();
-        List<String> setClauses = update.setClauses();
-        if (setClauses.isEmpty()) return null;
 
         StringBuilder whereSql = new StringBuilder();
         shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName, RlsOp.UPDATE);
-        if (whereSql.isEmpty()) return null;
 
-        return shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
-                joinCols(setClauses), whereSql.toString(), objectSql);
+        String sql = shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
+                joinCols(update.setClauses()), whereSql.toString(), update.objectSql());
+        return guardedResult(sql, alias, tableName,
+                List.of(new WrittenRows(alias, tableName, List.of(RlsOp.UPDATE))), params, shared);
     }
 
     String compileDelete(Field field, String tableName, Map<String, Object> params, MutationBuilder shared) {
+        if (!hasWhere(field, shared)) return null;
         String alias = shared.dialect().randAlias();
         String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias, params);
 
         StringBuilder whereSql = new StringBuilder();
         shared.filterBuilder().applyWhere(whereSql, field, alias, params, tableName, RlsOp.DELETE);
-        if (whereSql.isEmpty()) return null;
 
         return shared.dialect().cteDelete(alias, shared.qualifiedTable(tableName),
                 whereSql.toString(), objectSql);
@@ -287,7 +292,6 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (setArg == null) return null;
 
         Map<String, Object> setFields = shared.extractObjectFields(setArg.getValue(), variables);
-        requireUpdateAllowed(tableName, setFields);
         MutationBuilder.UpdateParts update = shared.updateParts(field, tableName, setFields, P_UC_SET, params, true);
         String alias = update.alias();
         String objectSql = update.objectSql();
@@ -299,11 +303,13 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String atMostParam = namedParam(P_UC_AT_MOST, params.size());
         params.put(atMostParam, atMost);
 
-        return shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
+        String sql = shared.dialect().cteUpdate(alias, shared.qualifiedTable(tableName),
                 joinCols(setClauses),
                 ctidSubquery(shared.qualifiedTable(tableName),
                         shared.dialect().quoteIdentifier(INNER_ALIAS), filterWhere, atMostParam),
                 objectSql);
+        return guardedResult(sql, alias, tableName,
+                List.of(new WrittenRows(alias, tableName, List.of(RlsOp.UPDATE))), params, shared);
     }
 
     String compileDeleteFromCollection(Field field, String tableName, Map<String, Object> params,
@@ -325,40 +331,54 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
     // === Private helpers ===
 
-    /**
-     * Rejects an INSERT whose candidate row no policy permits for the caller
-     * (the RLS WITH-CHECK). A no-op when no row-check contributor is registered
-     * (feature off / no JWT) or when policies permit the row.
-     */
-    private void requireRowAllowed(String tableName, Map<String, Object> row) {
-        requireRowAllowed(tableName, row, RlsOp.INSERT.name());
-    }
-
-    /** {@code operation} labels the caller's intent (INSERT vs UPSERT) in the error; the check is always the INSERT policy. */
-    private void requireRowAllowed(String tableName, Map<String, Object> row, String operation) {
-        RowCheckContributor check = RlsContext.rowCheck();
-        if (check != null && !check.permits(tableName, row, RlsOp.INSERT)) {
-            throw new RlsViolationException(operation, tableName);
-        }
-    }
-
-    private static String insertOperation(Field field, MutationBuilder shared) {
-        return shared.findArg(field, ARG_ON_CONFLICT) != null
-                ? RlsViolationException.OPERATION_UPSERT
-                : RlsOp.INSERT.name();
-    }
+    /** The rows one CTE writes, and the permission checks (INSERT, UPDATE or both) they must pass. */
+    private record WrittenRows(String cteAlias, String table, List<RlsOp> checks) {}
 
     /**
-     * Rejects an UPDATE whose new image (the SET columns) would move the row out
-     * of the caller's UPDATE policies — the WITH-CHECK half for updates. A no-op
-     * when no row-check contributor is registered (feature off / no JWT) or when
-     * no UPDATE policy governs a changed column.
+     * Finishes a mutation statement: what it returns is limited to rows passing the select filter (the
+     * role's columns are already all its type holds), and when any written row fails its permission
+     * check the statement raises, so the whole mutation rolls back.
      */
-    private void requireUpdateAllowed(String tableName, Map<String, Object> changedColumns) {
-        RowCheckContributor check = RlsContext.rowCheck();
-        if (check != null && !check.permitsUpdate(tableName, changedColumns)) {
-            throw new RlsViolationException(RlsOp.UPDATE.name(), tableName);
+    private String guardedResult(String sql, String outputAlias, String tableName, List<WrittenRows> written,
+                                 Map<String, Object> params, MutationBuilder shared) {
+        int split = sql.lastIndexOf(") SELECT ");
+        if (split == -1) return sql;
+        String ctePart = sql.substring(0, split + 1);
+        String selectPart = sql.substring(split + 2);
+        List<String> readable = new ArrayList<>();
+        shared.filterBuilder().appendRlsConditions(readable, tableName, outputAlias, params, RlsOp.SELECT);
+        if (!readable.isEmpty()) {
+            selectPart += WHERE + String.join(AND, readable);
         }
+        List<String> violations = violations(written, params, shared);
+        if (violations.isEmpty()) {
+            return ctePart + " " + selectPart;
+        }
+        String raise = PermissionCheckFailedException.raiseWhen(String.join(" OR ", violations));
+        return ctePart + " " + SELECT + "CASE WHEN " + raise + " IS NULL THEN (" + selectPart + ") END";
+    }
+
+    private List<String> violations(List<WrittenRows> written, Map<String, Object> params, MutationBuilder shared) {
+        WriteGuard guard = RlsContext.writeGuard();
+        List<String> violations = new ArrayList<>();
+        if (guard == null) return violations;
+        for (WrittenRows rows : written) {
+            for (RlsOp operation : rows.checks()) {
+                String rowAlias = shared.dialect().randAlias();
+                RlsWhereContributor.Contribution check = guard.check(rows.table(), rowAlias, operation);
+                if (check != null) {
+                    params.putAll(check.params());
+                    violations.add("EXISTS (" + SELECT + "1" + FROM + rows.cteAlias() + " " + rowAlias
+                            + WHERE + "(" + check.sql() + ") IS NOT TRUE)");
+                }
+            }
+        }
+        return violations;
+    }
+
+    /** An update or delete without a where argument is not compiled: it would reach every permitted row. */
+    private static boolean hasWhere(Field field, MutationBuilder shared) {
+        return shared.findArg(field, ARG_WHERE) != null || shared.findArg(field, ARG_FILTER) != null;
     }
 
     private String parseOnConflict(Field field, MutationBuilder shared,
@@ -387,19 +407,20 @@ public class PostgresMutationCompiler implements MutationCompiler {
             // argument does not exist — reported as such, never as a denial.
             throw new IllegalArgumentException("Unknown argument 'onConflict' on field '" + field.getName() + "'");
         }
+        shared.requireSettable(tableName, RlsOp.UPDATE, updateCols);
         return buildOnConflictClause(shared, params, tableName, constraint, updateCols);
     }
 
     /**
-     * {@code ON CONFLICT … DO UPDATE SET …} plus the RLS USING gate. DO UPDATE can
-     * overwrite a pre-existing row, so it's gated by the caller's UPDATE policy —
-     * an upsert on a known key must not silently overwrite another owner's row.
-     * Columns are qualified with the target relation name because a bare column in
+     * {@code ON CONFLICT … DO UPDATE SET …}, the update presets, and the update filter as the gate: DO
+     * UPDATE can overwrite a pre-existing row, so it reaches only rows the caller may update. Columns
+     * are qualified with the target relation name because a bare column in
      * {@code ON CONFLICT … WHERE} is ambiguous with {@code EXCLUDED}.
      */
     private String buildOnConflictClause(MutationBuilder shared, Map<String, Object> params,
                                          String tableName, String constraint, List<String> updateCols) {
-        String clause = " " + shared.dialect().onConflict(List.of(constraint), updateCols);
+        String clause = " " + shared.dialect().onConflict(List.of(constraint), updateCols)
+                + presetAssignments(shared, params, tableName);
         String targetRef = tableName.contains(".")
                 ? tableName.substring(tableName.lastIndexOf('.') + 1) : tableName;
         List<String> usingConds = new ArrayList<>();
@@ -409,6 +430,17 @@ public class PostgresMutationCompiler implements MutationCompiler {
             clause += WHERE + String.join(AND, usingConds);
         }
         return clause;
+    }
+
+    private String presetAssignments(MutationBuilder shared, Map<String, Object> params, String tableName) {
+        StringBuilder assignments = new StringBuilder();
+        shared.presets(tableName, RlsOp.UPDATE).forEach((column, value) -> {
+            String paramName = namedParam(P_UPDATE, column, params.size());
+            params.put(paramName, value);
+            assignments.append(", ").append(assignWithCast(shared.dialect().quoteIdentifier(column), paramName,
+                    shared.getEnumCastForMutation(tableName, column)));
+        });
+        return assignments.toString();
     }
 
     private int parseAtMost(Field field, Map<String, Object> variables, MutationBuilder shared) {
@@ -428,9 +460,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (filterArg != null && filterArg.getValue() instanceof ObjectValue filterOv) {
             shared.filterBuilder().buildFilterConditions(filterOv, innerAlias, params, conditions, tableName);
         }
-        // Enforce RLS on bulk-by-filter mutations too — otherwise the collection
-        // variants would be a write bypass of the single-row path's policy.
-        shared.filterBuilder().appendRlsConditions(conditions, tableName, params, op);
+        // The permission filter applies to bulk-by-filter mutations too, on the inner alias.
+        shared.filterBuilder().appendRlsConditions(conditions, tableName, innerAlias, params, op);
         if (!conditions.isEmpty()) {
             return WHERE + String.join(AND, conditions);
         }

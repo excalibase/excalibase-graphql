@@ -4,18 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
-import io.github.excalibase.rls.Assignment;
-import io.github.excalibase.rls.ColumnPolicy;
-import io.github.excalibase.rls.FieldType;
-import io.github.excalibase.rls.InMemoryPolicyProvider;
-import io.github.excalibase.rls.LogicOperator;
-import io.github.excalibase.rls.MaskMode;
-import io.github.excalibase.rls.Operation;
-import io.github.excalibase.rls.Policy;
-import io.github.excalibase.rls.PolicyEffect;
-import io.github.excalibase.rls.RlsPolicyEnforcer;
-import io.github.excalibase.rls.Rule;
-import io.github.excalibase.rls.RuleOperator;
+import io.github.excalibase.schema.AccessPlans;
+import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.StubbedSchemaManager;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.Principal;
@@ -30,7 +21,6 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,14 +31,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Unit tests for the RLS enforcement the GraphQL-over-WebSocket subscription
- * handler applies to CDC events per subscriber (audit C2): row-level visibility
- * and column-level masking, mirroring the query/REST paths.
+ * What the GraphQL-over-WebSocket handler delivers per subscriber (audit C2): only tables the role can
+ * select, only rows its select filter passes, only its select columns — decided by its access plan,
+ * as on the query and REST paths.
  */
 class GraphQLWebSocketHandlerTest {
 
+    private static final String ROLE = "app_authenticated";
+    private static final String OWNED = "{\"owner_id\":{\"_eq\":\"X-Excalibase-User-Id\"}}";
+
     private SubscriptionService subscriptionService;
     private ObjectMapper mapper;
+    private final List<String> probes = new ArrayList<>();
 
     @BeforeEach
     void setUp() {
@@ -65,9 +59,32 @@ class GraphQLWebSocketHandlerTest {
         };
     }
 
-    private GraphQLWebSocketHandler handler(RlsPolicyEnforcer enforcer) {
+    private static SchemaInfo schema() {
+        SchemaInfo schema = new SchemaInfo();
+        for (String table : List.of("public.notes", "public.things", "public.orgs")) {
+            schema.setTableSchema(table, "public");
+            schema.addColumn(table, "id", "integer");
+            schema.addPrimaryKey(table, "id");
+        }
+        schema.addColumn("public.notes", "owner_id", "text");
+        schema.addColumn("public.notes", "secret", "text");
+        schema.addColumn("public.notes", "org_id", "integer");
+        schema.addColumn("public.things", "secret", "text");
+        schema.addColumn("public.things", "name", "text");
+        schema.addColumn("public.orgs", "name", "text");
+        schema.addForeignKey("public.notes", "org_id", "public.orgs", "id");
+        return schema;
+    }
+
+    private static String entry(String table, String select) {
+        return "{\"table\":\"" + table + "\",\"role\":\"" + ROLE + "\",\"select\":" + select + "}";
+    }
+
+    private GraphQLWebSocketHandler handler(String... tableEntries) {
+        AccessPlans plans = StubbedSchemaManager.withDocument(schema(),
+                StubbedSchemaManager.document("p1", tableEntries), (sql, params) -> probes.add(sql));
         return new GraphQLWebSocketHandler(subscriptionService, mapper,
-                provider((JwtService) null), provider(enforcer), new WebSocketHeartbeat(0), provider((RealtimeExposureGate) null));
+                provider((JwtService) null), new WebSocketHeartbeat(0), provider(plans));
     }
 
     private WebSocketSession session(List<String> sink, String projectId, JwtClaims claims) throws Exception {
@@ -77,7 +94,7 @@ class GraphQLWebSocketHandlerTest {
         Map<String, Object> attrs = new ConcurrentHashMap<>();
         if (projectId != null) {
             attrs.put(GraphQLWebSocketHandler.SESSION_TENANT_KEY, projectId);
-            // The handshake interceptor sets the path project; RLS reads it.
+            // The handshake interceptor sets the path project; the plan is that project's.
             attrs.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, projectId);
         }
         if (claims != null) {
@@ -91,6 +108,11 @@ class GraphQLWebSocketHandlerTest {
             return null;
         }).when(session).sendMessage(any(TextMessage.class));
         return session;
+    }
+
+    private static JwtClaims user(String userId) {
+        return new JwtClaims(userId, "p1", "acme", "demo", "", ROLE, "u@x.com", "authenticated", 0L,
+                Map.of("userId", userId), null);
     }
 
     private static Principal principalOf(JwtClaims claims) {
@@ -113,23 +135,14 @@ class GraphQLWebSocketHandlerTest {
     }
 
     @Test
-    @DisplayName("owner row policy delivers only the subscriber's rows over GraphQL WS")
+    @DisplayName("the select filter delivers only the subscriber's rows over GraphQL WS")
     void rowFilter_deliversOnlyOwnRows() throws Exception {
-        var provider = new InMemoryPolicyProvider();
-        provider.put("p1", List.of(new Policy(
-                "own", "own", "public.notes", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
-                List.of(new Rule("owner_id", FieldType.STRING, RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(Assignment.all()))));
-        var handler = handler(new RlsPolicyEnforcer(provider));
-
+        var handler = handler(entry("public.notes", "{\"filter\":" + OWNED + ",\"columns\":\"*\"}"));
         var sent = new ArrayList<String>();
-        var claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
-        var session = session(sent, "p1", claims);
+        var session = session(sent, "p1", user("u-1"));
         handler.afterConnectionEstablished(session);
         subscribe(handler, session, "notesChanges");
 
-        // schema=null keeps the sink key the bare table (matching the snake table
-        // parsed from the query); resourceOf still resolves the policy key public.notes.
         subscriptionService.publish("p1", new CDCEvent(
                 "INSERT", null, "notes", "{\"id\":1,\"owner_id\":\"u-2\"}", 0L));
         subscriptionService.publish("p1", new CDCEvent(
@@ -141,17 +154,11 @@ class GraphQLWebSocketHandlerTest {
     }
 
     @Test
-    @DisplayName("column HIDE policy masks the field in the GraphQL WS payload")
-    void columnMasking_dropsHiddenField() throws Exception {
-        var provider = new InMemoryPolicyProvider();
-        provider.putColumns("p1", List.of(new ColumnPolicy(
-                "h", "h", "public.things", Set.of("secret"), Operation.ALL, MaskMode.HIDE,
-                null, null, 0, true, List.of(Assignment.all()))));
-        var handler = handler(new RlsPolicyEnforcer(provider));
-
+    @DisplayName("only the select columns reach the GraphQL WS payload")
+    void columns_onlyTheSelectColumnsAreDelivered() throws Exception {
+        var handler = handler(entry("public.things", "{\"filter\":{},\"columns\":[\"id\",\"name\"]}"));
         var sent = new ArrayList<String>();
-        var claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
-        var session = session(sent, "p1", claims);
+        var session = session(sent, "p1", user("u-1"));
         handler.afterConnectionEstablished(session);
         subscribe(handler, session, "thingsChanges");
 
@@ -166,18 +173,25 @@ class GraphQLWebSocketHandlerTest {
     }
 
     @Test
-    @DisplayName("a service session bypasses row and column policies")
-    void serviceSession_bypassesRowAndColumnPolicies() throws Exception {
-        var provider = new InMemoryPolicyProvider();
-        provider.put("p1", List.of(new Policy(
-                "own", "own", "public.things", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
-                List.of(new Rule("owner_id", FieldType.STRING, RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(Assignment.all()))));
-        provider.putColumns("p1", List.of(new ColumnPolicy(
-                "h", "h", "public.things", Set.of("secret"), Operation.ALL, MaskMode.HIDE,
-                null, null, 0, true, List.of(Assignment.all()))));
-        var handler = handler(new RlsPolicyEnforcer(provider));
+    @DisplayName("a table the role cannot select is refused at subscribe")
+    void unselectableTable_isRefused() throws Exception {
+        var handler = handler(entry("public.notes", "{\"filter\":{},\"columns\":\"*\"}"));
+        var sent = new ArrayList<String>();
+        var session = session(sent, "p1", user("u-1"));
+        handler.afterConnectionEstablished(session);
+        subscribe(handler, session, "thingsChanges");
 
+        subscriptionService.publish("p1", new CDCEvent("INSERT", null, "things", "{\"id\":1}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        assertThat(sent).hasSize(1);
+        assertThat(mapper.readTree(sent.getFirst()).get("type").asText()).isEqualTo("error");
+    }
+
+    @Test
+    @DisplayName("a service session sees every row and column")
+    void serviceSession_seesEverything() throws Exception {
+        var handler = handler(entry("public.things", "{\"filter\":{},\"columns\":[\"id\"]}"));
         var sent = new ArrayList<String>();
         var service = new JwtClaims("svc", "p1", "acme", "demo", "", "service", "apikey:1", "service", 1L);
         var session = session(sent, "p1", service);
@@ -192,21 +206,12 @@ class GraphQLWebSocketHandlerTest {
     }
 
     @Test
-    @DisplayName("an UPDATE is judged on its old and new images, and each image is masked")
-    void update_judgedPerImageAndMasked() throws Exception {
-        var provider = new InMemoryPolicyProvider();
-        provider.put("p1", List.of(new Policy(
-                "own", "own", "public.notes", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
-                List.of(new Rule("owner_id", FieldType.STRING, RuleOperator.EQ, "{{currentUserId}}")),
-                List.of(Assignment.all()))));
-        provider.putColumns("p1", List.of(new ColumnPolicy(
-                "h", "h", "public.notes", Set.of("secret"), Operation.ALL, MaskMode.HIDE,
-                null, null, 0, true, List.of(Assignment.all()))));
-        var handler = handler(new RlsPolicyEnforcer(provider));
-
+    @DisplayName("an UPDATE is judged on its old and new images, and each image is projected")
+    void update_judgedPerImageAndProjected() throws Exception {
+        var handler = handler(entry("public.notes",
+                "{\"filter\":" + OWNED + ",\"columns\":[\"id\",\"owner_id\"]}"));
         var sent = new ArrayList<String>();
-        var claims = JwtClaims.of("u-1", "p1", "acme", "demo", "app_authenticated", "u@x.com");
-        var session = session(sent, "p1", claims);
+        var session = session(sent, "p1", user("u-1"));
         handler.afterConnectionEstablished(session);
         subscribe(handler, session, "notesChanges");
 
@@ -226,9 +231,29 @@ class GraphQLWebSocketHandlerTest {
     }
 
     @Test
-    @DisplayName("no RLS engine wired: events pass through unfiltered (single-tenant)")
-    void noEngine_passthrough() throws Exception {
-        var handler = handler(null);
+    @DisplayName("a relationship filter asks the database for a row that exists, never for a deleted one")
+    void relationshipFilter_probesForExistingRowsOnly() throws Exception {
+        var handler = handler(entry("public.notes",
+                "{\"filter\":{\"publicOrgId\":{\"name\":{\"_eq\":\"acme\"}}},\"columns\":\"*\"}"),
+                entry("public.orgs", "{\"filter\":{},\"columns\":\"*\"}"));
+        var sent = new ArrayList<String>();
+        var session = session(sent, "p1", user("u-1"));
+        handler.afterConnectionEstablished(session);
+        subscribe(handler, session, "notesChanges");
+
+        subscriptionService.publish("p1", new CDCEvent("DELETE", null, "notes", "{\"id\":3,\"org_id\":1}", 0L));
+        subscriptionService.publish("p1", new CDCEvent("INSERT", null, "notes", "{\"id\":4,\"org_id\":1}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        assertThat(sent).hasSize(1);
+        assertThat(deliveredData(sent.getFirst()).get("id").asInt()).isEqualTo(4);
+        assertThat(probes).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("a session without a project passes events through (single-tenant)")
+    void noProject_passthrough() throws Exception {
+        var handler = handler();
         var sent = new ArrayList<String>();
         var session = session(sent, null, null);
         handler.afterConnectionEstablished(session);

@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import io.github.excalibase.security.TokenFileSource;
 import io.github.excalibase.security.TokenUnavailableException;
 import io.github.excalibase.security.UnknownProjectException;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -29,15 +31,20 @@ import java.util.function.LongSupplier;
  *
  * <ul>
  *   <li>404: the project does not exist; its cached copy is dropped and nothing is cached.</li>
- *   <li>Any other failure, including a document that breaks the grammar: the last good copy is served
- *       if there is one, else {@link PermissionsUnavailableException}. A refused document is never
- *       cached and never partly applied.</li>
+ *   <li>The control plane cannot be read: the last good copy is served if there is one, else
+ *       {@link PermissionsUnavailableException}.</li>
+ *   <li>A document that breaks the grammar is refused, never cached and never partly applied. The last
+ *       good copy stands in for at most one TTL from the first refusal; after that the project is
+ *       unavailable until a valid document arrives. Every refusal is logged and counted.</li>
  * </ul>
  */
 public final class ProvisioningPermissionProvider implements PermissionProvider {
 
     private static final Logger log = LoggerFactory.getLogger(ProvisioningPermissionProvider.class);
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
+
+    /** Counter of refused documents, tagged by project; Prometheus shows it with a {@code _total} suffix. */
+    public static final String REFUSED_METRIC = "excalibase.permissions.document.refused";
 
     /** A repeated key would otherwise let the last one silently win. */
     private static final ObjectMapper MAPPER = JsonMapper.builder()
@@ -51,20 +58,32 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
     private final TokenFileSource tokenSource;
     private final long ttlMillis;
     private final LongSupplier clock;
+    private final MeterRegistry meters;
     private final Map<String, Cached> cache = new ConcurrentHashMap<>();
+    private final Map<String, Long> firstRefusalAt = new ConcurrentHashMap<>();
 
     private record Cached(PermissionSet permissions, long fetchedAt) {}
 
-    public ProvisioningPermissionProvider(String baseUrl, TokenFileSource tokenSource, long ttlMillis) {
-        this(baseUrl, tokenSource, ttlMillis, System::currentTimeMillis);
+    /** A document the control plane served but the grammar refused. */
+    private static final class RefusedDocumentException extends PermissionsUnavailableException {
+        RefusedDocumentException(String message, Throwable cause) {
+            super(message, cause);
+        }
     }
 
-    ProvisioningPermissionProvider(String baseUrl, TokenFileSource tokenSource, long ttlMillis, LongSupplier clock) {
+    public ProvisioningPermissionProvider(String baseUrl, TokenFileSource tokenSource, long ttlMillis,
+                                          MeterRegistry meters) {
+        this(baseUrl, tokenSource, ttlMillis, System::currentTimeMillis, meters);
+    }
+
+    ProvisioningPermissionProvider(String baseUrl, TokenFileSource tokenSource, long ttlMillis, LongSupplier clock,
+                                   MeterRegistry meters) {
         String base = Objects.requireNonNull(baseUrl, "baseUrl");
         this.baseUrl = base.endsWith("/") ? base.substring(0, base.length() - 1) : base;
         this.tokenSource = Objects.requireNonNull(tokenSource, "tokenSource");
         this.ttlMillis = ttlMillis;
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.meters = Objects.requireNonNull(meters, "meters");
     }
 
     @Override
@@ -80,10 +99,13 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
         try {
             PermissionSet fresh = fetch(projectId);
             cache.put(projectId, new Cached(fresh, nowMs));
+            firstRefusalAt.remove(projectId);
             return fresh;
         } catch (UnknownProjectException e) {
             evict(projectId);
             throw e;
+        } catch (RefusedDocumentException e) {
+            return withinRefusalWindow(projectId, current, nowMs, e);
         } catch (PermissionsUnavailableException e) {
             if (current == null) {
                 throw e;
@@ -94,9 +116,22 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
         }
     }
 
+    /** The last good copy while the first refusal is younger than one TTL; unavailable after. */
+    private PermissionSet withinRefusalWindow(String projectId, Cached current, long nowMs,
+                                              RefusedDocumentException refusal) {
+        long since = firstRefusalAt.computeIfAbsent(projectId, ignored -> nowMs);
+        if (current == null || nowMs - since >= ttlMillis) {
+            throw refusal;
+        }
+        log.warn("permissions_stale project={} version={} reason=document_refused",
+                projectId, current.permissions().version());
+        return current.permissions();
+    }
+
     @Override
     public void evict(String projectId) {
         cache.remove(projectId);
+        firstRefusalAt.remove(projectId);
     }
 
     private PermissionSet fetch(String projectId) {
@@ -138,15 +173,16 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
         }
     }
 
-    private static PermissionSet parse(String projectId, String body) {
+    private PermissionSet parse(String projectId, String body) {
         PermissionSet permissions;
         try {
             permissions = PermissionSetParser.parse(MAPPER.readTree(body));
         } catch (IOException e) {
             throw new PermissionsUnavailableException("the permissions of " + projectId + " are not valid JSON", e);
         } catch (PermissionDocumentException e) {
-            log.error("permissions_refused project={} reason={}", projectId, e.getMessage());
-            throw new PermissionsUnavailableException("the permissions of " + projectId + " were refused", e);
+            log.error("permissions_document_refused project={} reason={}", projectId, e.getMessage());
+            Counter.builder(REFUSED_METRIC).tag("project", projectId).register(meters).increment();
+            throw new RefusedDocumentException("the permissions of " + projectId + " were refused", e);
         }
         if (!projectId.equals(permissions.projectId())) {
             throw new PermissionsUnavailableException(

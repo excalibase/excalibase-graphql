@@ -13,6 +13,11 @@ public final class NoPermissionSource implements PermissionProvider {
     }
 
     @Override
+    public boolean configured() {
+        return false;
+    }
+
+    @Override
     public void evict(String projectId) {
         // nothing is cached
     }

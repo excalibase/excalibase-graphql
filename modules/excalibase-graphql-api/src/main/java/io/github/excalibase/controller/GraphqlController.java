@@ -3,13 +3,15 @@ package io.github.excalibase.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
+import io.github.excalibase.permissions.PermissionEvaluationException;
+import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.PermissionCheckFailedException;
+import io.github.excalibase.security.PermissionErrors;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.SecurityConstants;
-import io.github.excalibase.security.RlsDeniedResponse;
-import io.github.excalibase.security.RlsViolationException;
 import io.github.excalibase.service.QueryExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -116,14 +118,24 @@ public class GraphqlController {
     }
 
     /**
-     * An RLS denial is a request error with a stable contract (RLS_DENIED plus
-     * operation/table); anything else is reduced to its SQL message as before.
+     * Permission failures carry a stable code in {@code extensions.code}: a written row that fails its
+     * check, or an expression that cannot apply to this request. Permissions that cannot be read refuse
+     * the request with 503. Anything else is reduced to its SQL message as before.
      */
     private static ResponseEntity<Object> errorResponse(Exception e) {
-        Optional<RlsViolationException> denied = RlsViolationException.find(e);
-        if (denied.isPresent()) {
-            log.info("GraphQL request denied by RLS: {}", denied.get().getMessage());
-            return ResponseEntity.ok(Map.of(ERRORS_KEY, List.of(RlsDeniedResponse.graphqlError(denied.get()))));
+        if (e instanceof PermissionsUnavailableException) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(ERRORS_KEY, List.of(
+                    PermissionErrors.graphqlError(PermissionsUnavailableException.CODE, "Permissions unavailable"))));
+        }
+        if (e instanceof PermissionEvaluationException evaluation) {
+            return ResponseEntity.ok(Map.of(ERRORS_KEY,
+                    List.of(PermissionErrors.graphqlError(evaluation.code(), evaluation.getMessage()))));
+        }
+        Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
+        if (failed.isPresent()) {
+            log.info("GraphQL mutation refused: {}", failed.get().getMessage());
+            return ResponseEntity.ok(Map.of(ERRORS_KEY,
+                    List.of(PermissionErrors.graphqlError(failed.get().code(), failed.get().getMessage()))));
         }
         log.warn("GraphQL request failed", e);
         return ResponseEntity.ok(Map.of(

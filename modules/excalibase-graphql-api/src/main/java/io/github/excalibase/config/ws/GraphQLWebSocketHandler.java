@@ -6,7 +6,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
-import io.github.excalibase.rls.RlsPolicyEnforcer;
+import io.github.excalibase.permissions.PermissionsUnavailableException;
+import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.Principal;
 import graphql.language.Document;
@@ -53,14 +54,10 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     /** The {@link Principal} the session runs as, resolved at the handshake and at connection_init. */
     static final String SESSION_PRINCIPAL_KEY = "excalibase.principal";
 
-    /** Sentinel: the CDC row must not be delivered to this subscriber under RLS. */
-    private static final Object RLS_DROP = new Object();
-
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
     private final JwtService jwtService;
-    private final RlsPolicyEnforcer rlsEnforcer;
-    private final RealtimeExposureGate exposureGate;
+    private final AccessPlans accessPlans;
 
     @Value("${app.security.jwt-enabled:true}")
     private boolean jwtEnabled;
@@ -83,15 +80,13 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     public GraphQLWebSocketHandler(SubscriptionService subscriptionService,
                                    ObjectMapper objectMapper,
                                    ObjectProvider<JwtService> jwtServiceProvider,
-                                   ObjectProvider<RlsPolicyEnforcer> rlsEnforcerProvider,
                                    WebSocketHeartbeat heartbeat,
-                                   ObjectProvider<RealtimeExposureGate> exposureGateProvider) {
+                                   ObjectProvider<AccessPlans> accessPlansProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.jwtService = jwtServiceProvider.getIfAvailable();
-        this.rlsEnforcer = rlsEnforcerProvider.getIfAvailable();
         this.heartbeat = heartbeat;
-        this.exposureGate = exposureGateProvider.getIfAvailable();
+        this.accessPlans = accessPlansProvider.getIfAvailable();
     }
 
     @Override
@@ -208,37 +203,50 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         String tableName = extracted[0];
         String fieldName = extracted[1];
 
+        RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, tableName);
+        if (opening.delivery() == null) {
+            sendError(session, id, opening.refusal());
+            if (opening.unavailable()) {
+                closeUnavailable(session);
+            }
+            return;
+        }
+        RealtimeGate.Delivery delivery = opening.delivery();
+
         String tenantId = (String) session.getAttributes().get(SESSION_TENANT_KEY);
         log.info("Starting subscription '{}' for tenant '{}' table '{}' (field: '{}'), session {}",
                 id, tenantId, tableName, fieldName, session.getId());
 
         // Subscribe to the table's event stream — scoped to the JWT's tenant (null in single-tenant mode)
         Disposable disposable = subscriptionService.subscribe(tenantId, tableName)
-                .subscribe(event -> {
-                    try {
-                        // Row-level + column-level security per subscriber: a CDC event
-                        // must reach a subscriber only if the row is visible to them, and
-                        // hidden/masked columns must be stripped before it leaves the server.
-                        Object data = renderEventData(session, event);
-                        if (data == RLS_DROP) return;
-                        Map<String, Object> changeData = Map.of(
-                                "operation", event.type(),
-                                "table", event.table(),
-                                "data", data,
-                                "timestamp", event.timestamp()
-                        );
-                        Map<String, Object> nextMsg = Map.of(
-                                "type", "next",
-                                "id", id,
-                                PAYLOAD, Map.of("data", Map.of(fieldName, changeData))
-                        );
-                        sendMessage(session, objectMapper.writeValueAsString(nextMsg));
-                    } catch (JsonProcessingException e) {
-                        log.error("Failed to serialize CDC event for subscription {}: ", id, e);
-                    }
-                });
+                .subscribe(event -> forward(session, id, fieldName, delivery, event));
 
         sessionSubs.put(id, disposable);
+    }
+
+    /** Sends one change, only as far as the subscriber's role may read it. */
+    private void forward(WebSocketSession session, String id, String fieldName, RealtimeGate.Delivery delivery,
+                         CDCEvent event) {
+        Optional<Object> data = delivery.render(event, parseEventData(event.data()));
+        if (data.isEmpty()) {
+            return;
+        }
+        Map<String, Object> changeData = Map.of(
+                "operation", event.type(),
+                "table", event.table(),
+                "data", data.get(),
+                "timestamp", event.timestamp()
+        );
+        Map<String, Object> nextMsg = Map.of(
+                "type", "next",
+                "id", id,
+                PAYLOAD, Map.of("data", Map.of(fieldName, changeData))
+        );
+        try {
+            sendMessage(session, objectMapper.writeValueAsString(nextMsg));
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize CDC event for subscription {}: ", id, e);
+        }
     }
 
     private Object parseEventData(String data) {
@@ -250,41 +258,13 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         }
     }
 
-    /**
-     * Applies row-level and column-level security to a CDC event for this
-     * session's subscriber. Returns {@link #RLS_DROP} when the row is not visible
-     * to the subscriber (fail-closed on relationship predicates the in-memory
-     * matcher can't evaluate); otherwise the parsed payload with hidden columns
-     * removed and NULL-masked columns nulled. Falls through to the raw payload
-     * when no engine is wired or no project context is resolvable (single-tenant).
-     */
-    @SuppressWarnings("unchecked")
-    private Object renderEventData(WebSocketSession session, CDCEvent event) {
-        Object parsed = parseEventData(event.data());
-        // Exposure: a CDC event reaches the subscriber without passing through the
-        // schema they were served, so this is the one place it has to be asked.
-        if (exposureGate != null && !exposureGate.permitsRead(session, resourceOf(event))) {
-            return RLS_DROP;
+    /** The permissions could not be read: the session is closed like any other request is refused. */
+    private void closeUnavailable(WebSocketSession session) {
+        try {
+            session.close(CloseStatus.SERVICE_OVERLOAD.withReason(PermissionsUnavailableException.CODE));
+        } catch (IOException e) {
+            log.warn("Error closing session {}", session.getId(), e);
         }
-        Principal principal = principalOf(session);
-        // service bypasses row and column policies, as on the query path.
-        if (rlsEnforcer == null || !(parsed instanceof Map) || (principal != null && principal.bypass())) {
-            return parsed;
-        }
-        // Project comes from the URL path (authoritative), like the HTTP filter;
-        // the principal supplies the user context (anonymous when absent → fail-closed).
-        String projectId = (String) session.getAttributes().get(SESSION_PROJECT_KEY);
-        if (projectId == null) return parsed;
-        Map<String, Object> change = (Map<String, Object>) parsed;
-        Optional<Map<String, Object>> visible =
-                rlsEnforcer.renderChange(projectId, resourceOf(event), principal, event.type(), change);
-        return visible.isPresent() ? visible.get() : RLS_DROP;
-    }
-
-    /** Schema-qualified policy resource key for a CDC event ({@code schema.table}). */
-    private static String resourceOf(CDCEvent event) {
-        String schema = (event.schema() == null || event.schema().isBlank()) ? "public" : event.schema();
-        return schema + "." + event.table();
     }
 
     private void handleComplete(WebSocketSession session, Map<String, Object> msg) {

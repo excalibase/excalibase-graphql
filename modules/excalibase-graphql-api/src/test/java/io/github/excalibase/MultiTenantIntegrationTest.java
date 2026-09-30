@@ -105,10 +105,20 @@ class MultiTenantIntegrationTest {
         exchange.close();
       });
 
+      servePermissions("proj_appa12345", "tenant.products");
+      servePermissions("proj_appb12345", "tenant.items");
       mockVault.start();
     } catch (Exception e) {
       throw new RuntimeException("Failed to set up mock vault", e);
     }
+  }
+
+  /** Signed-in users and anonymous callers may do anything with the tenant's one table. */
+  private static void servePermissions(String projectId, String table) {
+    String document = PermissionDocs.document(projectId,
+        PermissionDocs.entry(table, "user", PermissionDocs.everything()),
+        PermissionDocs.entry(table, "anon", PermissionDocs.everything()));
+    PermissionDocs.serve(mockVault, projectId, () -> document);
   }
 
   /**
@@ -173,6 +183,8 @@ class MultiTenantIntegrationTest {
     registry.add("app.security.multi-tenant.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
     registry.add("app.tenant-db.sslmode", () -> "disable");
     registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat-token");
+    registry.add("app.security.rls.policy-url", () -> "http://localhost:" + mockVaultPort + "/api");
+    registry.add("app.security.rls.policy-pat", () -> "test-pat-token");
   }
 
   @Autowired

@@ -1,5 +1,5 @@
 const { GraphQLClient, gql } = require('graphql-request');
-const { waitForApi } = require('./client');
+const { waitForApi, serviceToken } = require('./client');
 
 // Routes are project-scoped: /{projectId}/graphql (the e2e project is 'e2e-test').
 const API_BASE = (process.env.POSTGRES_API_URL || 'http://localhost:10000/graphql').replace(/\/graphql$/, '');
@@ -7,9 +7,13 @@ const DATA_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
 const API_URL = `${API_BASE}/${DATA_PROJECT}/graphql`;
 let client;
 
+// Computed fields are functions: only the service role reaches them until function permissions exist.
+let serviceClient;
+
 beforeAll(async () => {
   await waitForApi(API_URL);
   client = new GraphQLClient(API_URL);
+  serviceClient = new GraphQLClient(API_URL, { headers: { Authorization: `Bearer ${serviceToken(DATA_PROJECT)}` } });
 });
 
 // ─── Deep FK Chain (6 levels) ─────────────────────────────────────────────────
@@ -221,7 +225,7 @@ describe('Enum Types', () => {
 
 describe('Computed Fields', () => {
   test('computed fields visible in introspection', async () => {
-    const data = await client.request(gql`{
+    const data = await serviceClient.request(gql`{
       __type(name: "ComplexEmployee") { fields { name } }
     }`);
     const fields = data.__type.fields.map(f => f.name);
@@ -230,14 +234,14 @@ describe('Computed Fields', () => {
   });
 
   test('computed field returns correct value', async () => {
-    const data = await client.request(gql`{
+    const data = await serviceClient.request(gql`{
       complexEmployee(where: { id: { eq: 1 } }) { id name status full_title }
     }`);
     expect(data.complexEmployee[0].full_title).toBe('Alice CEO (active)');
   });
 
   test('task computed field is_overdue', async () => {
-    const data = await client.request(gql`{
+    const data = await serviceClient.request(gql`{
       __type(name: "ComplexTask") { fields { name } }
     }`);
     const fields = data.__type.fields.map(f => f.name);
@@ -249,7 +253,7 @@ describe('Computed Fields', () => {
 
 describe('Views', () => {
   test('multi-join view active_employees returns data', async () => {
-    const data = await client.request(gql`{
+    const data = await serviceClient.request(gql`{
       complexActiveEmployees { id name email team_name department_name company_name }
     }`);
     expect(data.complexActiveEmployees.length).toBeGreaterThanOrEqual(1);
@@ -257,7 +261,7 @@ describe('Views', () => {
   });
 
   test('materialized view project_summary returns data', async () => {
-    const data = await client.request(gql`{
+    const data = await serviceClient.request(gql`{
       complexProjectSummary { id name status budget member_count }
     }`);
     expect(data.complexProjectSummary.length).toBeGreaterThanOrEqual(1);
@@ -266,7 +270,7 @@ describe('Views', () => {
   });
 
   test('views have no mutations', async () => {
-    const data = await client.request(gql`{
+    const data = await serviceClient.request(gql`{
       __schema { mutationType { fields { name } } }
     }`);
     const mutations = data.__schema.mutationType.fields.map(f => f.name);

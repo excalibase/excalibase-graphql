@@ -1,0 +1,470 @@
+{
+ "request": {
+  "method": "GET",
+  "url": "/api/provision/shopify/permissions/"
+ },
+ "response": {
+  "status": 200,
+  "headers": {
+   "Content-Type": "application/json"
+  },
+  "jsonBody": {
+   "projectId": "shopify",
+   "version": 1,
+   "tables": [
+    {
+     "table": "shopify.categories",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.categories",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.customers",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.customers",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.order_items",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.order_items",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.order_summary",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "shopify.order_summary",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "shopify.orders",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.orders",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.payments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.payments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.product_catalog",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "shopify.product_catalog",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "shopify.product_variants",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.product_variants",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.products",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.products",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.reviews",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.reviews",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.wishlists",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "shopify.wishlists",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    }
+   ],
+   "functions": [],
+   "functionPermissions": []
+  }
+ }
+}

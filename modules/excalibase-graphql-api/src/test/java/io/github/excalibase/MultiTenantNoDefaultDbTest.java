@@ -74,6 +74,8 @@ class MultiTenantNoDefaultDbTest {
         exchange.getResponseBody().close();
       });
 
+      PermissionDocs.serve(mockVault, "proj_appa12345", () -> PermissionDocs.document("proj_appa12345",
+          PermissionDocs.entry("tenant.products", "user", PermissionDocs.everything())));
       mockVault.start();
     } catch (Exception e) {
       throw new RuntimeException("Failed to set up mock vault", e);
@@ -117,6 +119,8 @@ class MultiTenantNoDefaultDbTest {
     registry.add("app.security.multi-tenant.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
     registry.add("app.tenant-db.sslmode", () -> "disable");
     registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat");
+    registry.add("app.security.rls.policy-url", () -> "http://localhost:" + mockVaultPort + "/api");
+    registry.add("app.security.rls.policy-pat", () -> "test-pat");
   }
 
   @Autowired

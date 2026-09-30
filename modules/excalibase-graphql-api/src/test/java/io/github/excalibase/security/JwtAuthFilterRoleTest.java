@@ -5,9 +5,11 @@ import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import io.github.excalibase.rls.InMemoryPolicyProvider;
-import io.github.excalibase.rls.RlsPolicyEnforcer;
-import io.github.excalibase.rls.jdbc.QuoteStyle;
+import io.github.excalibase.permissions.PermissionProvider;
+import io.github.excalibase.permissions.PermissionSet;
+import io.github.excalibase.permissions.PermissionsUnavailableException;
+import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.StubbedSchemaManager;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -83,9 +85,34 @@ class JwtAuthFilterRoleTest {
 
     private static MockHttpServletResponse run(MockHttpServletRequest request, FilterChain chain) throws Exception {
         MockHttpServletResponse response = new MockHttpServletResponse();
-        RlsPolicyEnforcer enforcer = new RlsPolicyEnforcer(new InMemoryPolicyProvider(), QuoteStyle.ANSI);
-        new JwtAuthFilter(jwtService, enforcer).doFilter(request, response, chain);
+        var plans = StubbedSchemaManager.withDocument(new SchemaInfo(),
+                StubbedSchemaManager.document(PROJECT), (sql, params) -> false);
+        new JwtAuthFilter(jwtService, plans).doFilter(request, response, chain);
         return response;
+    }
+
+    @Test
+    void unreadablePermissions_refuseTheRequestWith503() throws Exception {
+        Capture capture = new Capture();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        PermissionProvider down = new PermissionProvider() {
+            @Override
+            public PermissionSet permissionsFor(String projectId) {
+                throw new PermissionsUnavailableException("control plane down");
+            }
+
+            @Override
+            public void evict(String projectId) {
+                // nothing cached
+            }
+        };
+
+        new JwtAuthFilter(jwtService, StubbedSchemaManager.withProvider(new SchemaInfo(), down))
+                .doFilter(request(token(Map.of("role", "user")), null), response, capture.chain);
+
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(response.getContentAsString()).contains("permissions_unavailable");
+        assertThat(capture.principal.get()).isNull();
     }
 
     @Test

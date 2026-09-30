@@ -18,6 +18,8 @@ import io.github.excalibase.schema.introspection.QueryFieldsAssembler;
 import io.github.excalibase.schema.introspection.TableObjectTypeFactory;
 import io.github.excalibase.schema.introspection.WhereInputFactory;
 
+import io.github.excalibase.security.RlsOp;
+
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -41,16 +43,16 @@ public class IntrospectionHandler {
     private final GraphQLSchema schema;
 
     public IntrospectionHandler(SchemaInfo schemaInfo) {
-        this(schemaInfo, TableExposure.UNRESTRICTED);
+        this(schemaInfo, TableAccess.UNRESTRICTED);
     }
 
     /**
      * {@code schemaInfo} is the caller's view of the database, so what they may not
-     * read is already missing from it; {@code exposure} adds which of the remaining
-     * tables they may write.
+     * read is already missing from it; {@code access} adds what they may do with the
+     * remaining tables.
      */
-    public IntrospectionHandler(SchemaInfo schemaInfo, TableExposure exposure) {
-        this.schema = buildSchema(schemaInfo, exposure);
+    public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access) {
+        this.schema = buildSchema(schemaInfo, access);
         this.graphQL = GraphQL.newGraphQL(this.schema).build();
     }
 
@@ -71,7 +73,7 @@ public class IntrospectionHandler {
         return response;
     }
 
-    private GraphQLSchema buildSchema(SchemaInfo schemaInfo, TableExposure exposure) {
+    private GraphQLSchema buildSchema(SchemaInfo schemaInfo, TableAccess access) {
         // Step 1: build enums, shared filter inputs, per-enum filter inputs.
         Map<String, GraphQLEnumType> enumTypes = new EnumTypeFactory().build(schemaInfo);
         FilterInputCatalog.FilterInputs filters = FilterInputCatalog.INPUTS;
@@ -80,16 +82,18 @@ public class IntrospectionHandler {
         // Step 2: per-table where/create/object types. ArrRel is built first so
         // CreateInput can embed the wrapper types; both sides of the create-input
         // ↔ arr-rel cycle are broken via GraphQLTypeReference inside ArrRelInsertFactory.
-        Map<String, GraphQLInputObjectType> arrRelTypes = new ArrRelInsertFactory().build(schemaInfo);
+        Map<String, GraphQLInputObjectType> arrRelTypes = new ArrRelInsertFactory().build(schemaInfo, access);
         Map<String, GraphQLInputObjectType> whereTypes = buildWhereTypes(schemaInfo, enumTypes, enumFilters, filters);
-        Map<String, GraphQLInputObjectType> createInputs = buildCreateInputs(schemaInfo, enumTypes, arrRelTypes);
+        MutationFieldsAssembler.Inputs inputs = new MutationFieldsAssembler.Inputs(
+                buildInputs(schemaInfo, access, enumTypes, arrRelTypes, RlsOp.INSERT),
+                buildInputs(schemaInfo, access, enumTypes, arrRelTypes, RlsOp.UPDATE), whereTypes);
         Map<String, GraphQLObjectType> tableTypes = buildTableTypes(schemaInfo, enumTypes);
 
         // Step 3: assemble Query + Mutation root types.
         GraphQLObjectType.Builder queryBuilder = newObject().name(TYPE_QUERY);
-        new QueryFieldsAssembler().build(schemaInfo, tableTypes, whereTypes).forEach(queryBuilder::field);
+        new QueryFieldsAssembler().build(schemaInfo, tableTypes, whereTypes, access).forEach(queryBuilder::field);
         GraphQLObjectType.Builder mutationBuilder = newObject().name(TYPE_MUTATION);
-        new MutationFieldsAssembler().build(schemaInfo, tableTypes, createInputs, whereTypes, exposure)
+        new MutationFieldsAssembler().build(schemaInfo, tableTypes, inputs, access)
                 .forEach(mutationBuilder::field);
 
         // Step 4: schema assembly with additional types.
@@ -114,15 +118,21 @@ public class IntrospectionHandler {
         return whereTypes;
     }
 
-    private Map<String, GraphQLInputObjectType> buildCreateInputs(SchemaInfo schemaInfo,
-                                                                  Map<String, GraphQLEnumType> enumTypes,
-                                                                  Map<String, GraphQLInputObjectType> arrRelTypes) {
-        Map<String, GraphQLInputObjectType> createInputs = new LinkedHashMap<>();
-        CreateInputFactory createFactory = new CreateInputFactory();
+    /** Insert or update inputs for the tables the caller may write, holding only the columns it may set. */
+    private Map<String, GraphQLInputObjectType> buildInputs(SchemaInfo schemaInfo, TableAccess access,
+                                                            Map<String, GraphQLEnumType> enumTypes,
+                                                            Map<String, GraphQLInputObjectType> arrRelTypes,
+                                                            RlsOp operation) {
+        Map<String, GraphQLInputObjectType> inputs = new LinkedHashMap<>();
+        CreateInputFactory factory = new CreateInputFactory();
         for (String table : schemaInfo.getTableNames()) {
-            createInputs.put(table, createFactory.buildFor(table, schemaInfo, enumTypes, arrRelTypes));
+            if (schemaInfo.isView(table) || !access.permits(table, operation)) continue;
+            var columns = access.settableColumns(table, operation, schemaInfo);
+            inputs.put(table, operation == RlsOp.INSERT
+                    ? factory.buildFor(table, columns, schemaInfo, enumTypes, arrRelTypes)
+                    : factory.buildUpdateFor(table, columns, schemaInfo, enumTypes));
         }
-        return createInputs;
+        return inputs;
     }
 
     private Map<String, GraphQLObjectType> buildTableTypes(SchemaInfo schemaInfo,

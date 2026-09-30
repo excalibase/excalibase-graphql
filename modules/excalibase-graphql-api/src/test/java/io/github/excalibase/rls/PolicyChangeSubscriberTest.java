@@ -1,5 +1,6 @@
 package io.github.excalibase.rls;
 
+import io.github.excalibase.permissions.PermissionProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,10 +30,10 @@ import java.util.List;
 class PolicyChangeSubscriberTest {
 
     @Mock
-    private PolicyProvider policyProvider;
+    private PermissionProvider policyProvider;
 
     private PolicyChangeSubscriber subscriber() {
-        return new PolicyChangeSubscriber(policyProvider, false, "nats://localhost:4222");
+        return new PolicyChangeSubscriber(List.of(policyProvider), false, "nats://localhost:4222");
     }
 
     @Test
@@ -140,7 +141,7 @@ class PolicyChangeSubscriberTest {
     @DisplayName("start() is a safe no-op when NATS is disabled")
     void start_natsDisabled_noConnectAttempt() {
         PolicyChangeSubscriber subscriber =
-                new PolicyChangeSubscriber(policyProvider, false, "nats://unreachable:4222");
+                new PolicyChangeSubscriber(List.of(policyProvider), false, "nats://unreachable:4222");
 
         assertThatCode(subscriber::start).doesNotThrowAnyException();
         assertThat(subscriber.isRunning()).isFalse();

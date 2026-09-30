@@ -1,0 +1,112 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/api/provision/app-b/permissions/"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "jsonBody": {
+      "projectId": "app-b",
+      "version": 1,
+      "tables": [
+        {
+          "table": "tenant.items",
+          "role": "anon",
+          "select": {
+            "filter": {},
+            "columns": "*",
+            "allowAggregations": true
+          },
+          "insert": {
+            "check": {},
+            "columns": "*",
+            "set": {}
+          },
+          "update": {
+            "filter": {},
+            "check": {},
+            "columns": "*",
+            "set": {}
+          },
+          "delete": {
+            "filter": {}
+          }
+        },
+        {
+          "table": "tenant.items",
+          "role": "user",
+          "select": {
+            "filter": {},
+            "columns": "*",
+            "allowAggregations": true
+          },
+          "insert": {
+            "check": {},
+            "columns": "*",
+            "set": {}
+          },
+          "update": {
+            "filter": {},
+            "check": {},
+            "columns": "*",
+            "set": {}
+          },
+          "delete": {
+            "filter": {}
+          }
+        },
+        {
+          "table": "tenant.shared_counters",
+          "role": "anon",
+          "select": {
+            "filter": {},
+            "columns": "*",
+            "allowAggregations": true
+          },
+          "insert": {
+            "check": {},
+            "columns": "*",
+            "set": {}
+          },
+          "update": {
+            "filter": {},
+            "check": {},
+            "columns": "*",
+            "set": {}
+          },
+          "delete": {
+            "filter": {}
+          }
+        },
+        {
+          "table": "tenant.shared_counters",
+          "role": "user",
+          "select": {
+            "filter": {},
+            "columns": "*",
+            "allowAggregations": true
+          },
+          "insert": {
+            "check": {},
+            "columns": "*",
+            "set": {}
+          },
+          "update": {
+            "filter": {},
+            "check": {},
+            "columns": "*",
+            "set": {}
+          },
+          "delete": {
+            "filter": {}
+          }
+        }
+      ],
+      "functions": [],
+      "functionPermissions": []
+    }
+  }
+}

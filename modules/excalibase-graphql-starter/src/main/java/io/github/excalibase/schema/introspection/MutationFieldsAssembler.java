@@ -7,7 +7,7 @@ import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLObjectType;
 import io.github.excalibase.schema.SchemaInfo;
-import io.github.excalibase.schema.TableExposure;
+import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.RlsOp;
 
 import java.util.ArrayList;
@@ -32,23 +32,20 @@ import static io.github.excalibase.schema.GraphqlConstants.UPDATE_PREFIX;
  */
 public final class MutationFieldsAssembler {
 
-    public List<GraphQLFieldDefinition> build(SchemaInfo schemaInfo,
-                                       Map<String, GraphQLObjectType> tableTypes,
-                                       Map<String, GraphQLInputObjectType> createInputs,
-                                       Map<String, GraphQLInputObjectType> whereTypes) {
-        return build(schemaInfo, tableTypes, createInputs, whereTypes, TableExposure.UNRESTRICTED);
-    }
+    /** The caller's insert inputs, update inputs and where inputs, keyed by table. */
+    public record Inputs(Map<String, GraphQLInputObjectType> create,
+                         Map<String, GraphQLInputObjectType> update,
+                         Map<String, GraphQLInputObjectType> where) {}
 
     public List<GraphQLFieldDefinition> build(SchemaInfo schemaInfo,
                                        Map<String, GraphQLObjectType> tableTypes,
-                                       Map<String, GraphQLInputObjectType> createInputs,
-                                       Map<String, GraphQLInputObjectType> whereTypes,
-                                       TableExposure exposure) {
+                                       Inputs inputs,
+                                       TableAccess access) {
         List<GraphQLFieldDefinition> fields = new ArrayList<>();
         for (String table : schemaInfo.getTableNames()) {
             // Skip views — they are read-only
             if (schemaInfo.isView(table)) continue;
-            fields.addAll(buildCrudFields(table, tableTypes, createInputs, whereTypes, exposure));
+            fields.addAll(buildCrudFields(table, tableTypes, inputs, access));
         }
         for (Map.Entry<String, SchemaInfo.ProcedureInfo> procEntry : schemaInfo.getStoredProcedures().entrySet()) {
             fields.add(buildProcedureField(procEntry.getKey(), procEntry.getValue()));
@@ -57,21 +54,19 @@ public final class MutationFieldsAssembler {
     }
 
     /**
-     * Emits only the mutations the caller was granted: the operations in
-     * {@code exposure} decide which fields exist, so an ungranted write is absent
+     * Emits only the mutations the caller holds: an operation it has no permission for is absent
      * from the schema rather than refused at execution time.
      */
     private List<GraphQLFieldDefinition> buildCrudFields(String table,
                                                          Map<String, GraphQLObjectType> tableTypes,
-                                                         Map<String, GraphQLInputObjectType> createInputs,
-                                                         Map<String, GraphQLInputObjectType> whereTypes,
-                                                         TableExposure exposure) {
+                                                         Inputs inputs,
+                                                         TableAccess access) {
         String typeName = NamingHelpers.typeName(table);
         GraphQLObjectType type = tableTypes.get(table);
-        GraphQLInputObjectType createInput = createInputs.get(table);
-        GraphQLInputObjectType whereType = whereTypes.get(table);
+        GraphQLInputObjectType whereType = inputs.where().get(table);
         List<GraphQLFieldDefinition> crud = new ArrayList<>(4);
-        if (exposure.permits(table, RlsOp.INSERT)) {
+        if (access.permits(table, RlsOp.INSERT)) {
+            GraphQLInputObjectType createInput = inputs.create().get(table);
             crud.add(newFieldDefinition()
                     .name(CREATE_PREFIX + typeName)
                     .type(type)
@@ -83,15 +78,15 @@ public final class MutationFieldsAssembler {
                     .argument(GraphQLArgument.newArgument().name(ARG_INPUTS).type(GraphQLList.list(createInput)).build())
                     .build());
         }
-        if (exposure.permits(table, RlsOp.UPDATE)) {
+        if (access.permits(table, RlsOp.UPDATE)) {
             crud.add(newFieldDefinition()
                     .name(UPDATE_PREFIX + typeName)
                     .type(GraphQLList.list(type))
                     .argument(GraphQLArgument.newArgument().name(ARG_WHERE).type(whereType).build())
-                    .argument(GraphQLArgument.newArgument().name(ARG_INPUT).type(createInput).build())
+                    .argument(GraphQLArgument.newArgument().name(ARG_INPUT).type(inputs.update().get(table)).build())
                     .build());
         }
-        if (exposure.permits(table, RlsOp.DELETE)) {
+        if (access.permits(table, RlsOp.DELETE)) {
             crud.add(newFieldDefinition()
                     .name(DELETE_PREFIX + typeName)
                     .type(GraphQLList.list(type))

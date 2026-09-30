@@ -16,12 +16,11 @@ public interface SchemaProvider {
     SqlDialect resolveDialect(Principal principal);
 
     /**
-     * Which operations the caller may run on the tables of the schema they were
-     * served. Unrestricted by default so a provider that does not implement
-     * exposure filtering keeps serving its whole schema.
+     * What the caller may do with the tables of the schema they were served. Unrestricted by default,
+     * for a provider serving a deployment without permissions.
      */
-    default TableExposure resolveExposure(Principal principal) {
-        return TableExposure.UNRESTRICTED;
+    default TableAccess resolveAccess(Principal principal) {
+        return TableAccess.UNRESTRICTED;
     }
 
     String getDatabaseType();

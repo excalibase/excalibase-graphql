@@ -500,66 +500,56 @@ class FilterBuilderTest {
     }
 
     @Nested
-    @DisplayName("column-level security gates filter and order (audit H4)")
-    class MaskedColumnGating {
+    @DisplayName("a column outside the caller's schema cannot steer the query (audit H4)")
+    class UnreadableColumnGating {
 
-        /** Hides "salary", keeps everything else VISIBLE. */
-        private void installMasker() {
-            io.github.excalibase.security.RlsContext.setColumnMask((table, column) ->
-                "salary".equals(column)
-                    ? io.github.excalibase.security.ColumnMaskContributor.Decision.HIDDEN
-                    : io.github.excalibase.security.ColumnMaskContributor.Decision.VISIBLE);
+        /** The caller's view of users: salary is a real column the role may not select, so it is absent. */
+        private FilterBuilder viewWithoutSalary() {
+            SchemaInfo view = new SchemaInfo();
+            view.addColumn("users", "id", "integer");
+            view.addColumn("users", "name", "text");
+            return new FilterBuilder(dialect, 100, view, "public");
         }
 
         @Test
-        @DisplayName("filter on a HIDDEN column is dropped, visible columns remain")
-        void filterOnHiddenColumn_dropped() {
-            installMasker();
-            try {
-                Field field = parseField("{ users(where: { salary: { gt: 100000 }, id: { eq: 1 } }) { id } }");
-                Map<String, Object> params = new HashMap<>();
-                List<String> conditions = new ArrayList<>();
+        @DisplayName("filter on a column outside the view is refused")
+        void filterOnUnreadableColumn_refused() {
+            Field field = parseField("{ users(where: { salary: { gt: 100000 }, id: { eq: 1 } }) { id } }");
 
-                filterBuilder.buildWhereConditions(field, "t", params, conditions, "users");
-
-                assertThat(conditions).noneMatch(c -> c.contains("salary"));
-                assertThat(conditions).anyMatch(c -> c.contains("\"id\""));
-            } finally {
-                io.github.excalibase.security.RlsContext.clear();
-            }
+            assertThatThrownBy(() -> viewWithoutSalary().buildWhereConditions(field, "t", new HashMap<>(),
+                    new ArrayList<>(), "users"))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("salary");
         }
 
         @Test
-        @DisplayName("order by a HIDDEN column is dropped")
-        void orderByHiddenColumn_dropped() {
-            installMasker();
-            try {
-                Field field = parseField("{ users(orderBy: { salary: DESC, id: ASC }) { id } }");
-                StringBuilder sql = new StringBuilder("SELECT * FROM users t");
+        @DisplayName("order by a column outside the view is refused")
+        void orderByUnreadableColumn_refused() {
+            Field field = parseField("{ users(orderBy: { salary: DESC, id: ASC }) { id } }");
 
-                filterBuilder.applyOrderBy(sql, field, "t", "users");
-
-                assertThat(sql.toString()).doesNotContain("salary");
-                assertThat(sql.toString()).contains("\"id\"");
-            } finally {
-                io.github.excalibase.security.RlsContext.clear();
-            }
+            assertThatThrownBy(() -> viewWithoutSalary().applyOrderBy(new StringBuilder(), field, "t", "users"))
+                    .isInstanceOf(IllegalArgumentException.class);
         }
 
         @Test
-        @DisplayName("parseOrderBy drops HIDDEN column from cursor order")
-        void parseOrderBy_dropsHiddenColumn() {
-            installMasker();
-            try {
-                Field field = parseField("{ users(orderBy: { salary: DESC, id: ASC }) { id } }");
+        @DisplayName("cursor order by a column outside the view is refused")
+        void parseOrderBy_refusesUnreadableColumn() {
+            Field field = parseField("{ users(orderBy: { salary: DESC, id: ASC }) { id } }");
 
-                List<String[]> pairs = filterBuilder.parseOrderBy(field, "users");
+            assertThatThrownBy(() -> viewWithoutSalary().parseOrderBy(field, "users"))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
 
-                assertThat(pairs).noneMatch(p -> p[0].equals("salary"));
-                assertThat(pairs).anyMatch(p -> p[0].equals("id"));
-            } finally {
-                io.github.excalibase.security.RlsContext.clear();
-            }
+        @Test
+        @DisplayName("columns of the view stay usable")
+        void readableColumns_compile() {
+            Field field = parseField("{ users(where: { id: { eq: 1 } }, orderBy: { name: ASC }) { id } }");
+            List<String> conditions = new ArrayList<>();
+
+            viewWithoutSalary().buildWhereConditions(field, "t", new HashMap<>(), conditions, "users");
+
+            assertThat(conditions).singleElement().asString().contains("\"id\"");
+            assertThat(viewWithoutSalary().parseOrderBy(field, "users")).hasSize(1);
         }
     }
 }

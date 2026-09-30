@@ -18,6 +18,8 @@ public class SchemaInfo {
     private final Map<String, Set<String>> tableColumns = new HashMap<>();
     // table → column → type
     private final Map<String, Map<String, String>> columnTypes = new HashMap<>();
+    // table → column → type, for columns a role may write but not read: typed, never listed
+    private final Map<String, Map<String, String>> writeOnlyColumnTypes = new HashMap<>();
     // table → primary key columns (ordered)
     private final Map<String, List<String>> primaryKeys = new HashMap<>();
     // table.fieldName → FkInfo (forward FK: fieldName = schemaFieldName(schema, fkColumn))
@@ -65,6 +67,7 @@ public class SchemaInfo {
         tableSchema.remove(table);
         Set<String> cols = tableColumns.remove(table);
         columnTypes.remove(table);
+        writeOnlyColumnTypes.remove(table);
         primaryKeys.remove(table);
         viewNames.remove(table);
         computedFields.remove(table);
@@ -80,6 +83,7 @@ public class SchemaInfo {
         tableSchema.clear();
         tableColumns.clear();
         columnTypes.clear();
+        writeOnlyColumnTypes.clear();
         primaryKeys.clear();
         forwardFks.clear();
         reverseFks.clear();
@@ -100,6 +104,11 @@ public class SchemaInfo {
     public void addColumn(String table, String column, String type) {
         tableColumns.computeIfAbsent(table, k -> new LinkedHashSet<>()).add(column);
         columnTypes.computeIfAbsent(table, k -> new HashMap<>()).put(column, type);
+    }
+
+    /** A column a role may write but not read: its type is known, but it is not one of the table's columns. */
+    public void addWriteOnlyColumn(String table, String column, String type) {
+        writeOnlyColumnTypes.computeIfAbsent(table, k -> new HashMap<>()).put(column, type);
     }
 
     public void setTableSchema(String table, String schema) {
@@ -203,7 +212,8 @@ public class SchemaInfo {
     }
     public Set<String> getColumns(String table) { return tableColumns.getOrDefault(table, Set.of()); }
     public String getColumnType(String table, String col) {
-        return columnTypes.getOrDefault(table, Map.of()).get(col);
+        String type = columnTypes.getOrDefault(table, Map.of()).get(col);
+        return type != null ? type : writeOnlyColumnTypes.getOrDefault(table, Map.of()).get(col);
     }
     public String getPrimaryKey(String table) {
         List<String> pks = primaryKeys.get(table);

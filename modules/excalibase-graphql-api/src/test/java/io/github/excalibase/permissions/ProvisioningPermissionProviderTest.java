@@ -3,6 +3,8 @@ package io.github.excalibase.permissions;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.excalibase.security.TokenFileSource;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.github.excalibase.security.UnknownProjectException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -88,9 +90,16 @@ class ProvisioningPermissionProviderTest {
         return provider(new TokenFileSource(null, "svc-graphql-token"), ttlMillis);
     }
 
+    private final SimpleMeterRegistry meters = new SimpleMeterRegistry();
+
     private ProvisioningPermissionProvider provider(TokenFileSource token, long ttlMillis) {
         return new ProvisioningPermissionProvider("http://localhost:" + port + "/api/", token, ttlMillis,
-                () -> now[0]);
+                () -> now[0], meters);
+    }
+
+    private double refusals() {
+        Counter counter = meters.find(ProvisioningPermissionProvider.REFUSED_METRIC).tag("project", "proj1").counter();
+        return counter == null ? 0 : counter.count();
     }
 
     @Test
@@ -226,6 +235,52 @@ class ProvisioningPermissionProviderTest {
         now[0] += 5_000;
 
         assertThat(provider.permissionsFor("proj1")).isEqualTo(good);
+    }
+
+    @Test
+    void anInvalidDocument_keepsTheGoodOneOnlyForOneTtlFromTheFirstRefusal() {
+        ProvisioningPermissionProvider provider = provider(1_000);
+        PermissionSet good = provider.permissionsFor("proj1");
+
+        body = "{\"projectId\":\"proj1\",\"version\":8,\"enforced\":false}";
+        now[0] += 5_000;
+        assertThat(provider.permissionsFor("proj1")).isEqualTo(good);
+        now[0] += 999;
+        assertThat(provider.permissionsFor("proj1")).isEqualTo(good);
+        now[0] += 1;
+
+        assertThatThrownBy(() -> provider.permissionsFor("proj1"))
+                .isInstanceOf(PermissionsUnavailableException.class);
+        assertThat(refusals()).isEqualTo(3);
+    }
+
+    @Test
+    void aValidDocumentAfterRefusals_startsTheWindowAfresh() {
+        ProvisioningPermissionProvider provider = provider(1_000);
+        provider.permissionsFor("proj1");
+        body = "{\"projectId\":\"proj1\",\"version\":8,\"enforced\":false}";
+        now[0] += 5_000;
+        provider.permissionsFor("proj1");
+
+        body = DOCUMENT;
+        now[0] += 5_000;
+        provider.permissionsFor("proj1");
+        body = "{\"projectId\":\"proj1\",\"version\":9,\"enforced\":false}";
+        now[0] += 5_000;
+
+        assertThat(provider.permissionsFor("proj1").version()).isEqualTo(7L);
+    }
+
+    @Test
+    void anUnreachableControlPlane_isNotARefusal() {
+        ProvisioningPermissionProvider provider = provider(1_000);
+        PermissionSet good = provider.permissionsFor("proj1");
+
+        status = 503;
+        now[0] += 50_000;
+
+        assertThat(provider.permissionsFor("proj1")).isEqualTo(good);
+        assertThat(refusals()).isZero();
     }
 
     @Test

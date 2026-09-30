@@ -1,0 +1,516 @@
+{
+ "request": {
+  "method": "GET",
+  "url": "/api/provision/clinic/permissions/"
+ },
+ "response": {
+  "status": 200,
+  "headers": {
+   "Content-Type": "application/json"
+  },
+  "jsonBody": {
+   "projectId": "clinic",
+   "version": 1,
+   "tables": [
+    {
+     "table": "clinic.appointments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.appointments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.diagnoses",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.diagnoses",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.doctor_availability",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.doctor_availability",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.doctors",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.doctors",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.lab_results",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.lab_results",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.lab_tests",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.lab_tests",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.medications",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.medications",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.patient_history",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "clinic.patient_history",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "clinic.patients",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.patients",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.prescriptions",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.prescriptions",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.specializations",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.specializations",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     },
+     "insert": {
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "update": {
+      "filter": {},
+      "check": {},
+      "columns": "*",
+      "set": {}
+     },
+     "delete": {
+      "filter": {}
+     }
+    },
+    {
+     "table": "clinic.upcoming_appointments",
+     "role": "anon",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    },
+    {
+     "table": "clinic.upcoming_appointments",
+     "role": "user",
+     "select": {
+      "filter": {},
+      "columns": "*",
+      "allowAggregations": true
+     }
+    }
+   ],
+   "functions": [],
+   "functionPermissions": []
+  }
+ }
+}

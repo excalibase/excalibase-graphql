@@ -4,14 +4,15 @@ import graphql.language.*;
 import io.github.excalibase.*;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
-import io.github.excalibase.schema.TableExposure;
+import io.github.excalibase.schema.TableAccess;
+import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.WriteGuard;
 import io.github.excalibase.spi.MutationCompiler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.*;
-import java.util.function.Consumer;
 
 import static io.github.excalibase.compiler.SqlKeywords.P_BULK_INSERT;
 import static io.github.excalibase.compiler.SqlKeywords.assignWithCast;
@@ -39,24 +40,24 @@ public class MutationBuilder {
     private final QueryBuilder queryBuilder;
 
     private final MutationCompiler mutationCompiler;
-    private final TableExposure exposure;
+    private final TableAccess access;
 
     public MutationBuilder(SchemaInfo schemaInfo, SqlDialect dialect, FilterBuilder filterBuilder,
                            String dbSchema, QueryBuilder queryBuilder, MutationCompiler mutationCompiler) {
         this(schemaInfo, dialect, filterBuilder, dbSchema, queryBuilder, mutationCompiler,
-                TableExposure.UNRESTRICTED);
+                TableAccess.UNRESTRICTED);
     }
 
     public MutationBuilder(SchemaInfo schemaInfo, SqlDialect dialect, FilterBuilder filterBuilder,
                            String dbSchema, QueryBuilder queryBuilder, MutationCompiler mutationCompiler,
-                           TableExposure exposure) {
+                           TableAccess access) {
         this.schemaInfo = schemaInfo;
         this.dialect = dialect;
         this.filterBuilder = filterBuilder;
         this.dbSchema = dbSchema;
         this.queryBuilder = queryBuilder;
         this.mutationCompiler = mutationCompiler;
-        this.exposure = exposure == null ? TableExposure.UNRESTRICTED : exposure;
+        this.access = access == null ? TableAccess.UNRESTRICTED : access;
     }
 
     // === Accessors for dialect-specific compilers ===
@@ -150,7 +151,7 @@ public class MutationBuilder {
             return null;
         }
         RlsOp operation = operationOf(mutationFieldName);
-        return (operation == null || exposure.permits(tableName, operation)) ? tableName : null;
+        return (operation == null || access.permits(tableName, operation)) ? tableName : null;
     }
 
     /**
@@ -159,7 +160,26 @@ public class MutationBuilder {
      * already exist, so it needs UPDATE on top of INSERT.
      */
     public boolean permitsUpsert(String tableName) {
-        return exposure.permits(tableName, RlsOp.UPDATE);
+        return access.permits(tableName, RlsOp.UPDATE);
+    }
+
+    public TableAccess access() {
+        return access;
+    }
+
+    /**
+     * Refuses a column the caller may not set for {@code operation}: one the role's permission does not
+     * list, a preset one, or one the table does not have. Without this a client could write any real
+     * column by naming it.
+     */
+    public void requireSettable(String tableName, RlsOp operation, Collection<String> columns) {
+        Set<String> settable = access.settableColumns(tableName, operation, schemaInfo);
+        for (String column : columns) {
+            if (!settable.contains(column)) {
+                throw new IllegalArgumentException("Unknown column '" + column + "' in "
+                        + operation.name().toLowerCase(Locale.ROOT) + " of " + tableName);
+            }
+        }
     }
 
     private static RlsOp operationOf(String mutationFieldName) {
@@ -203,24 +223,26 @@ public class MutationBuilder {
     public record UpdateParts(String alias, String objectSql, List<String> setClauses) {}
 
     /**
-     * Builds the parts of {@code createMany} every dialect shares; {@code null}
-     * without an {@code inputs} argument or rows. {@code rowCheck} runs per row.
+     * Builds the parts of {@code createMany} every dialect shares; {@code null} without an
+     * {@code inputs} argument or rows. Every row may set only the columns the caller may insert, and
+     * the permission's presets are written into every row.
      */
     public BulkInsertParts bulkInsertParts(Field field, String tableName, Map<String, Object> params,
-                                           Map<String, Object> variables, boolean castParams,
-                                           Consumer<Map<String, Object>> rowCheck) {
+                                           Map<String, Object> variables, boolean castParams) {
         Argument inputsArg = findArg(field, ARG_INPUTS);
         if (inputsArg == null) return null;
         List<Map<String, Object>> rows = extractArrayOfObjects(inputsArg.getValue(), variables);
         if (rows.isEmpty()) return null;
+        rows.forEach(row -> requireSettable(tableName, RlsOp.INSERT, row.keySet()));
+        Map<String, Object> presets = presets(tableName, RlsOp.INSERT);
 
         String alias = dialect.randAlias();
         String objectSql = queryBuilder.buildObject(field.getSelectionSet(), tableName, alias, params);
         List<String> colNames = new ArrayList<>(rows.getFirst().keySet());
+        colNames.addAll(presets.keySet());
         List<String> valueRows = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
-            Map<String, Object> row = rows.get(i);
-            rowCheck.accept(row);
+            Map<String, Object> row = withPresets(rows.get(i), presets);
             List<String> vals = new ArrayList<>();
             for (String col : colNames) {
                 String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
@@ -234,21 +256,35 @@ public class MutationBuilder {
     }
 
     /**
-     * Builds the result object and SET clauses of an UPDATE from {@code setFields};
-     * the result object is built first so its RLS binds precede the SET binds.
+     * Builds the result object and SET clauses of an UPDATE from {@code setFields} plus the
+     * permission's presets; the result object is built first so its binds precede the SET binds.
      */
     public UpdateParts updateParts(Field field, String tableName, Map<String, Object> setFields,
                                    String paramPrefix, Map<String, Object> params, boolean castParams) {
+        requireSettable(tableName, RlsOp.UPDATE, setFields.keySet());
         String alias = dialect.randAlias();
         String objectSql = queryBuilder.buildObject(field.getSelectionSet(), tableName, alias, params);
         List<String> setClauses = new ArrayList<>();
-        for (var entry : setFields.entrySet()) {
+        for (var entry : withPresets(setFields, presets(tableName, RlsOp.UPDATE)).entrySet()) {
             String paramName = namedParam(paramPrefix, entry.getKey(), params.size());
             setClauses.add(assignWithCast(dialect.quoteIdentifier(entry.getKey()), paramName,
                     castFor(tableName, entry.getKey(), castParams)));
             params.put(paramName, entry.getValue());
         }
         return new UpdateParts(alias, objectSql, setClauses);
+    }
+
+    /** The values the caller's permission presets for {@code operation}; empty without a guard. */
+    public Map<String, Object> presets(String tableName, RlsOp operation) {
+        WriteGuard guard = RlsContext.writeGuard();
+        return guard == null ? Map.of() : guard.presets(tableName, operation);
+    }
+
+    /** {@code row} with the presets written over it; a preset always wins. */
+    public static Map<String, Object> withPresets(Map<String, Object> row, Map<String, Object> presets) {
+        Map<String, Object> merged = new LinkedHashMap<>(row);
+        merged.putAll(presets);
+        return merged;
     }
 
     private String castFor(String tableName, String colName, boolean castParams) {

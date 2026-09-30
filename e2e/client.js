@@ -135,4 +135,24 @@ async function waitFor(arr, predicate, timeoutMs = 15000) {
   throw new Error(`waitFor timed out after ${timeoutMs}ms. Events: ${JSON.stringify(arr)}`);
 }
 
-module.exports = { waitForApi, createClient, psql, mysqlExec, subscribeGraphQL, waitFor };
+/**
+ * A secret-key (service) token for {@code projectId}, signed with the e2e keypair that
+ * generate-keys.sh made and excalibase-auth publishes. Only the service role reaches stored
+ * procedures and computed fields until function permissions exist.
+ */
+function serviceToken(projectId, keyFile = `${__dirname}/private.pem`) {
+  const crypto = require('crypto');
+  const fs = require('fs');
+  const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const header = encode({ alg: 'ES256', typ: 'JWT' });
+  const claims = encode({
+    sub: 'apikey:1', keyId: 1, projectId, aud: [`excalibase:${projectId}`],
+    role: 'service', scope: 'service', exp: Math.floor(Date.now() / 1000) + 3600,
+  });
+  const signature = crypto.sign('sha256', Buffer.from(`${header}.${claims}`), {
+    key: fs.readFileSync(keyFile), dsaEncoding: 'ieee-p1363',
+  });
+  return `${header}.${claims}.${signature.toString('base64url')}`;
+}
+
+module.exports = { waitForApi, createClient, psql, mysqlExec, subscribeGraphQL, waitFor, serviceToken };

@@ -6,17 +6,16 @@ import io.github.excalibase.config.datasource.TenantDbSslMode;
 import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
-import io.github.excalibase.rls.InMemoryPolicyProvider;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
-import io.github.excalibase.rls.PolicyProvider;
-import io.github.excalibase.rls.ProvisioningPolicyProvider;
-import io.github.excalibase.rls.RlsPolicyEnforcer;
+import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.GraphqlSchemaManager;
-import io.github.excalibase.rls.jdbc.QuoteStyle;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.TokenFileSource;
 import io.github.excalibase.service.VaultCredentialService;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -61,67 +60,36 @@ public class JwtSecurityConfig {
     }
 
     /**
-     * RLS/CLS policy source. When {@code app.security.rls.policy-url} is set,
-     * policies are fetched from the provisioning service over HTTP and cached per
-     * project with the shared provisioning token source; otherwise an empty
-     * in-memory provider is used (RLS is a no-op until
-     * policies are pushed in). The choice is made at runtime rather than via
-     * {@code @ConditionalOnProperty} so it survives GraalVM AOT, which evaluates
-     * build-time conditions when the property may be absent.
-     */
-    @Bean
-    public PolicyProvider policyProvider(
-            @Value("${app.security.rls.policy-url:}") String policyUrl,
-            TokenFileSource provisioningTokenSource,
-            @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs) {
-        if (policyUrl != null && !policyUrl.isBlank()) {
-            return new ProvisioningPolicyProvider(policyUrl, provisioningTokenSource, policyTtlMs);
-        }
-        return new InMemoryPolicyProvider();
-    }
-
-    /**
-     * Per-project permission documents (docs/features/permissions.md §8), read from the same control
-     * plane, token and TTL as the policies. Without a policy URL there is no source, and every read is
-     * refused rather than answered with an empty document.
+     * Per-project permission documents (docs/features/permissions.md §8), read from the control plane
+     * with the shared provisioning token and cached for the policy TTL. Without a policy URL there is
+     * no source, and every read is refused rather than answered with an empty document.
      */
     @Bean
     public PermissionProvider permissionProvider(
             @Value("${app.security.rls.policy-url:}") String policyUrl,
             TokenFileSource provisioningTokenSource,
-            @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs) {
+            @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs,
+            ObjectProvider<MeterRegistry> meterRegistry) {
         if (policyUrl != null && !policyUrl.isBlank()) {
-            return new ProvisioningPermissionProvider(policyUrl, provisioningTokenSource, policyTtlMs);
+            return new ProvisioningPermissionProvider(policyUrl, provisioningTokenSource, policyTtlMs,
+                    meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
         }
         return new NoPermissionSource();
     }
 
     @Bean
-    public RlsPolicyEnforcer rlsPolicyEnforcer(PolicyProvider policyProvider,
-            @Value("${app.database-type:postgres}") String databaseType) {
-        // MySQL/MariaDB quote identifiers with backticks; everything else uses
-        // ANSI double quotes. Mis-quoting silently mis-filters, so it's keyed
-        // off the configured database type rather than guessed at query time.
-        QuoteStyle quoteStyle = "mysql".equalsIgnoreCase(databaseType)
-                ? QuoteStyle.BACKTICK
-                : QuoteStyle.ANSI;
-        return new RlsPolicyEnforcer(policyProvider, quoteStyle);
-    }
-
-    @Bean
-    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, RlsPolicyEnforcer rlsPolicyEnforcer) {
-        return new JwtAuthFilter(jwtService, rlsPolicyEnforcer);
+    public JwtAuthFilter jwtAuthFilter(JwtService jwtService, AccessPlans accessPlans) {
+        return new JwtAuthFilter(jwtService, accessPlans);
     }
 
     /**
-     * Invalidates a project's cached policies on a NATS {@code policies.{id}.changed}
-     * signal from provisioning, so Studio edits converge immediately rather than
-     * waiting out the policy-cache TTL (which stays as the fail-safe). Enablement is
-     * read at runtime from {@code app.nats.enabled}; disabled = safe no-op.
+     * Invalidates a project's cached permissions and engines on a NATS {@code policies.{id}.changed}
+     * signal from provisioning, so Studio edits converge immediately rather than waiting out the
+     * cache TTL (which stays as the fail-safe). Enablement is read at runtime from
+     * {@code app.nats.enabled}; disabled = safe no-op.
      */
     @Bean
     public PolicyChangeSubscriber policyChangeSubscriber(
-            PolicyProvider policyProvider,
             PermissionProvider permissionProvider,
             GraphqlSchemaManager schemaManager,
             @Value("${app.nats.enabled:false}") boolean natsEnabled,
@@ -129,14 +97,14 @@ public class JwtSecurityConfig {
             @Value("${app.nats.username:}") String natsUsername,
             @Value("${app.nats.password:}") String natsPassword,
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
-        return new PolicyChangeSubscriber(List.of(policyProvider, permissionProvider, schemaManager::evict),
+        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict),
                 natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 
     /**
      * Per-project database routing, present only when
      * {@code app.security.multi-tenant.provisioning-url} is set to something. Decided
-     * at runtime like {@link #policyProvider}: {@code @ConditionalOnProperty} would
+     * at runtime like {@link #permissionProvider}: {@code @ConditionalOnProperty} would
      * also match the blank default and route single-database requests to a vault
      * that does not exist. A null bean leaves every optional injection point empty.
      */

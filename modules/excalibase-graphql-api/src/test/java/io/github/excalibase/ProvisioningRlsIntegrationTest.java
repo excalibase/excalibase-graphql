@@ -7,6 +7,9 @@ import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
+import io.github.excalibase.schema.AccessPlans;
+import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,9 +32,11 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -40,9 +45,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * End-to-end proof that {@link io.github.excalibase.rls.ProvisioningPolicyProvider}
- * drives engine RLS: an owner policy is served over HTTP from a stub provisioning
- * server, and the engine filters the SELECT accordingly. No Postgres-native RLS.
+ * End-to-end proof that the project's permission document, served over HTTP from a stub control
+ * plane, drives what each role reads and writes. No Postgres-native RLS: every filter observed was
+ * composed by the engine from the document.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -52,6 +57,7 @@ class ProvisioningRlsIntegrationTest {
     private static final String ALICE = "11111111-1111-1111-1111-111111111111";
     private static final String BOB = "22222222-2222-2222-2222-222222222222";
     private static final String PROJECT = "proj-rls";
+    private static final String ROLE = "app_authenticated";
 
     @Container
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
@@ -62,73 +68,18 @@ class ProvisioningRlsIntegrationTest {
     static HttpServer stub;
     static int stubPort;
 
-    private static final String OWNER_POLICY = """
-            [
-              {
-                "id": "owner-docs",
-                "projectId": "proj-rls",
-                "name": "owner-docs",
-                "resource": "rls_demo.docs",
-                "effect": "ALLOW",
-                "operations": ["SELECT", "INSERT", "UPDATE", "DELETE"],
-                "ruleLogic": "AND",
-                "priority": 0,
-                "enabled": true,
-                "rules": [
-                  {"field": "owner_id", "fieldType": "UUID", "operator": "EQ", "value": "{{currentUserId}}"}
-                ],
-                "assignments": [{"targetType": "ALL"}]
-              },
-              {
-                "id": "orders-membership",
-                "name": "orders-membership",
-                "resource": "rls_demo.orders",
-                "effect": "ALLOW",
-                "operations": ["SELECT"],
-                "ruleLogic": "AND",
-                "enabled": true,
-                "rules": [],
-                "relations": [
-                  {
-                    "relatedResource": "rls_demo.members",
-                    "foreignKey": "org_id",
-                    "parentKey": "org_id",
-                    "subLogic": "AND",
-                    "subRules": [
-                      {"field": "member_user", "fieldType": "UUID", "operator": "EQ", "value": "{{currentUserId}}"}
-                    ]
-                  }
-                ],
-                "assignments": [{"targetType": "ALL"}]
-              },
-              {
-                "id": "profiles-json-owner",
-                "name": "profiles-json-owner",
-                "resource": "rls_demo.profiles",
-                "effect": "ALLOW",
-                "operations": ["SELECT"],
-                "ruleLogic": "AND",
-                "enabled": true,
-                "rules": [
-                  {"field": "meta.owner", "fieldType": "UUID", "operator": "EQ", "value": "{{currentUserId}}"}
-                ],
-                "assignments": [{"targetType": "ALL"}]
-              },
-              {
-                "id": "regional-claim",
-                "name": "regional-claim",
-                "resource": "rls_demo.regional",
-                "effect": "ALLOW",
-                "operations": ["SELECT"],
-                "ruleLogic": "AND",
-                "enabled": true,
-                "rules": [
-                  {"field": "region", "fieldType": "STRING", "operator": "EQ", "value": "{{region}}"}
-                ],
-                "assignments": [{"targetType": "ALL"}]
-              }
-            ]
-            """;
+    /** Owner-scoped docs, membership-scoped orders, claim-scoped regions; anon holds nothing. */
+    private static final String PERMISSIONS = PermissionDocs.document(PROJECT,
+            PermissionDocs.entry("rls_demo.docs", ROLE,
+                    PermissionDocs.select(PermissionDocs.OWNED, "\"*\""),
+                    PermissionDocs.insert(PermissionDocs.OWNED, "\"*\"", "{}"),
+                    PermissionDocs.update(PermissionDocs.OWNED, PermissionDocs.OWNED, "\"*\"", "{}"),
+                    PermissionDocs.delete(PermissionDocs.OWNED)),
+            PermissionDocs.entry("rls_demo.orders", ROLE, PermissionDocs.select(
+                    "{\"rlsDemoOrgId\":{\"rlsDemoMembers\":{\"member_user\":{\"_eq\":\"X-Excalibase-User-Id\"}}}}",
+                    "\"*\"")),
+            PermissionDocs.entry("rls_demo.regional", ROLE,
+                    PermissionDocs.select("{\"region\":{\"_eq\":\"X-Excalibase-Region\"}}", "\"*\"")));
 
     static {
         try {
@@ -141,14 +92,73 @@ class ProvisioningRlsIntegrationTest {
             stub = HttpServer.create(new InetSocketAddress(0), 0);
             stubPort = stub.getAddress().getPort();
             serve("/.well-known/jwks.json", buildJwks(publicKey));
-            serve("/api/provision/" + PROJECT + "/rls-policies/", OWNER_POLICY);
-            serve("/api/provision/" + PROJECT + "/column-policies/", "[]");
-            serve("/api/provision/" + PROJECT + "/table-grants/",
-                    "{\"projectId\":\"" + PROJECT + "\",\"enforced\":false,\"grants\":[]}");
+            PermissionDocs.serve(stub, PROJECT, () -> PERMISSIONS);
             stub.start();
         } catch (Exception e) {
             throw new RuntimeException("stub setup failed", e);
         }
+    }
+
+    @Test
+    void rest_insertWithCheck_rollsTheRowBack() throws Exception {
+        mockMvc.perform(post("/" + PROJECT + "/api/v1/docs")
+                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"id\": 93, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/" + PROJECT + "/api/v1/docs?id=eq.93")
+                        .header("Authorization", "Bearer " + jwt(BOB)).header("Accept-Profile", "rls_demo"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(0)));
+    }
+
+    @Test
+    void rest_methodWithoutPermission_isForbidden() throws Exception {
+        mockMvc.perform(delete("/" + PROJECT + "/api/v1/orders?id=eq.1")
+                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("permission_denied"));
+    }
+
+    // ---- realtime: judged by the same select filter, probing the database for relationships ----
+
+    @Autowired
+    private AccessPlans accessPlans;
+
+    private AccessPlans.RealtimeAccess realtimeFor(String userId, String table) {
+        JwtClaims claims = new JwtClaims(userId, PROJECT, null, null, "", ROLE, null, "authenticated", 0L,
+                Map.of("userId", userId), null);
+        return accessPlans.realtime(null, PROJECT, new Principal(ROLE, false, claims, Map.of()), table).orElseThrow();
+    }
+
+    @Test
+    void realtime_ownerFilter_deliversOnlyTheOwnersRowsWithTheirColumns() {
+        AccessPlans.RealtimeAccess docs = realtimeFor(ALICE, "rls_demo.docs");
+
+        assertThat(docs.filter().render("INSERT", Map.of("id", 1, "owner_id", ALICE, "title", "t"), docs.probes()))
+                .contains(Map.of("id", 1, "owner_id", ALICE, "title", "t"));
+        assertThat(docs.filter().render("INSERT", Map.of("id", 3, "owner_id", BOB, "title", "t"), docs.probes()))
+                .isEmpty();
+    }
+
+    @Test
+    void realtime_relationshipFilter_probesTheDatabase() {
+        AccessPlans.RealtimeAccess orders = realtimeFor(ALICE, "rls_demo.orders");
+
+        assertThat(orders.filter().render("INSERT", Map.of("id", 1, "org_id", "orgA", "title", "a"),
+                orders.probes())).isPresent();
+        assertThat(orders.filter().render("INSERT", Map.of("id", 3, "org_id", "orgB", "title", "b"),
+                orders.probes())).isEmpty();
+        assertThat(orders.filter().render("DELETE", Map.of("id", 1, "org_id", "orgA", "title", "a"),
+                orders.probes())).isEmpty();
+    }
+
+    @Test
+    void realtime_aTableTheRoleCannotSelect_offersNoSubscription() {
+        JwtClaims claims = new JwtClaims(ALICE, PROJECT, null, null, "", ROLE, null, "authenticated", 0L,
+                Map.of("userId", ALICE), null);
+        assertThat(accessPlans.realtime(null, PROJECT, new Principal(ROLE, false, claims, Map.of()),
+                "rls_demo.members")).isEmpty();
     }
 
     private static void serve(String path, String body) {
@@ -229,13 +239,13 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void projectScopedUrl_anonymous_failsClosed() throws Exception {
-        // No token, project from the path → RLS still applies → owner policy
-        // matches nothing for an anonymous user → zero rows (not all rows).
+        // No token runs as anon, which holds no permission on docs: the table is not in its schema.
         mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body("{ rlsDemoDocs { id } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(0)));
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andExpect(jsonPath("$.errors[0].message", containsString("rlsDemoDocs")));
     }
 
     @Test
@@ -269,8 +279,8 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void relationshipPolicyFiltersOrdersByMembership() throws Exception {
-        // Alice ∈ orgA → sees the two orgA orders; correlated EXISTS subquery must
-        // resolve against the compiler's aliased outer table.
+        // Alice ∈ orgA → sees the two orgA orders; the relationship's correlated EXISTS
+        // must resolve against the compiler's aliased outer table.
         mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header("Authorization", "Bearer " + jwt(ALICE))
                         .contentType(MediaType.APPLICATION_JSON)
@@ -285,16 +295,6 @@ class ProvisioningRlsIntegrationTest {
                         .content(body("{ rlsDemoOrders { id org_id } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.rlsDemoOrders", hasSize(1)));
-    }
-
-    @Test
-    void jsonPathPolicyFiltersProfilesByOwner() throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoProfiles { id } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoProfiles", hasSize(2)));
     }
 
     @Test
@@ -318,11 +318,9 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void rest_anonymous_failsClosed() throws Exception {
-        // REST must enforce engine RLS exactly like GraphQL: anonymous → 0 rows
-        // on an owner-policied table (the bug was REST bypassing RLS entirely).
+        // REST applies the same permissions as GraphQL: a table anon cannot select does not exist.
         mockMvc.perform(get("/" + PROJECT + "/api/v1/docs").header("Accept-Profile", "rls_demo"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data", hasSize(0)));
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -336,10 +334,9 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void rest_relationshipPolicy_filtersByMembership() throws Exception {
-        // anonymous → EXISTS(members …) matches nothing → 0 rows (REST relationship RLS)
+        // anonymous holds no permission on orders → not found
         mockMvc.perform(get("/" + PROJECT + "/api/v1/orders").header("Accept-Profile", "rls_demo"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data", hasSize(0)));
+                .andExpect(status().isNotFound());
         // alice ∈ orgA → her two orgA orders
         mockMvc.perform(get("/" + PROJECT + "/api/v1/orders")
                         .header("Authorization", "Bearer " + jwt(ALICE))
@@ -367,9 +364,7 @@ class ProvisioningRlsIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("RLS_DENIED"))
-                .andExpect(jsonPath("$.details.operation").value("INSERT"))
-                .andExpect(jsonPath("$.details.table").value("rls_demo.docs"))
+                .andExpect(jsonPath("$.code").value("permission_check_failed"))
                 .andExpect(jsonPath("$.message", not(containsString("ERROR:"))))
                 .andExpect(jsonPath("$.message", not(containsString("SQLSTATE"))))
                 .andExpect(jsonPath("$.message", not(containsString("violates"))));
@@ -383,9 +378,7 @@ class ProvisioningRlsIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("RLS_DENIED"))
-                .andExpect(jsonPath("$.details.operation").value("UPSERT"))
-                .andExpect(jsonPath("$.details.table").value("rls_demo.docs"));
+                .andExpect(jsonPath("$.code").value("permission_check_failed"));
     }
 
     @Test
@@ -408,9 +401,7 @@ class ProvisioningRlsIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"owner_id\": \"" + BOB + "\"}"))
                 .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("RLS_DENIED"))
-                .andExpect(jsonPath("$.details.operation").value("UPDATE"))
-                .andExpect(jsonPath("$.details.table").value("rls_demo.docs"))
+                .andExpect(jsonPath("$.code").value("permission_check_failed"))
                 .andExpect(jsonPath("$.message", not(containsString("ERROR:"))))
                 .andExpect(jsonPath("$.message", not(containsString("violates"))));
     }

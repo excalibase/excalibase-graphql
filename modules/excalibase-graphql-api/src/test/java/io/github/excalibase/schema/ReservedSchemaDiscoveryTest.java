@@ -34,7 +34,8 @@ class ReservedSchemaDiscoveryTest {
                 reservedSchemasConfig,
                 null,
                 null,
-                null);
+                null,
+                false);
     }
 
     private JdbcTemplate jdbcReturning(List<String> schemas) {

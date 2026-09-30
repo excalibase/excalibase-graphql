@@ -3,8 +3,6 @@ package io.github.excalibase.compiler;
 import graphql.language.*;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
-import io.github.excalibase.security.ColumnMaskContributor;
-import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.SqlDialect;
 
@@ -20,13 +18,13 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 public class QueryBuilder {
 
     private static final String CTE_HAS_NEXT = "_has_next";
+    private static final String TYPENAME = "__typename";
 
     private final SchemaInfo schemaInfo;
     private final SqlDialect dialect;
     private final FilterBuilder filterBuilder;
     private final VectorSearchBuilder vectorSearchBuilder;
     private final String dbSchema;
-    private final int maxRows;
     @SuppressWarnings("java:S5164") // ThreadLocal lifecycle is owned by SqlCompiler which calls remove() in finally
     private final ThreadLocal<Map<String, FragmentDefinition>> fragmentsHolder;
 
@@ -38,7 +36,6 @@ public class QueryBuilder {
         this.filterBuilder = filterBuilder;
         this.vectorSearchBuilder = new VectorSearchBuilder(dialect);
         this.dbSchema = dbSchema;
-        this.maxRows = maxRows;
         this.fragmentsHolder = fragmentsHolder;
     }
 
@@ -57,12 +54,13 @@ public class QueryBuilder {
 
         // Parse distinctOn argument
         List<String> distinctOnCols = parseDistinctOn(field);
+        distinctOnCols.forEach(column -> filterBuilder.requireColumn(tableName, column));
 
         // Parse vector argument (k-NN search). When present, it takes precedence
         // over user-supplied orderBy and limit — the embedding similarity order
         // IS the sort. Absent/invalid input returns Optional.empty() and we fall
         // through to the normal ORDER BY / LIMIT path.
-        Optional<VectorSearchBuilder.VectorClause> vectorClause = extractVectorClause(field, alias, params);
+        Optional<VectorSearchBuilder.VectorClause> vectorClause = extractVectorClause(field, tableName, alias, params);
 
         StringBuilder sql = new StringBuilder();
         sql.append(SELECT).append(dialect.coalesceArray(dialect.aggregateArray(objectSql)));
@@ -79,7 +77,7 @@ public class QueryBuilder {
         filterBuilder.applyWhere(sql, field, alias, params, tableName);
 
         appendListOrderBy(sql, field, alias, tableName, distinctOnCols, vectorClause);
-        appendListLimit(sql, field, params, vectorClause);
+        appendListLimit(sql, field, tableName, params, vectorClause);
 
         sql.append(") ").append(alias);
         return sql.toString();
@@ -92,14 +90,15 @@ public class QueryBuilder {
         if (vectorClause.isPresent()) {
             sql.append(ORDER_BY).append(vectorClause.get().orderByFragment());
         } else if (!distinctOnCols.isEmpty()) {
-            sql.append(ORDER_BY).append(joinCols(buildDistinctOnOrderClauses(field, alias, distinctOnCols)));
+            sql.append(ORDER_BY).append(joinCols(buildDistinctOnOrderClauses(field, alias, tableName, distinctOnCols)));
         } else {
             filterBuilder.applyOrderBy(sql, field, alias, tableName);
         }
     }
 
     /** DISTINCT ON requires distinct columns first; then append any user ORDER BY columns not already covered. */
-    private List<String> buildDistinctOnOrderClauses(Field field, String alias, List<String> distinctOnCols) {
+    private List<String> buildDistinctOnOrderClauses(Field field, String alias, String tableName,
+                                                     List<String> distinctOnCols) {
         List<String> orderClauses = new ArrayList<>();
         for (String col : distinctOnCols) {
             orderClauses.add(alias + "." + dialect.quoteIdentifier(col) + " " + ASC);
@@ -109,6 +108,7 @@ public class QueryBuilder {
                 .findFirst().orElse(null);
         if (orderByArg != null && orderByArg.getValue() instanceof ObjectValue ov) {
             for (ObjectField of : ov.getObjectFields()) {
+                filterBuilder.requireColumn(tableName, of.getName());
                 if (!distinctOnCols.contains(of.getName())) {
                     String dir = of.getValue() instanceof EnumValue ev ? ev.getName() : ASC;
                     orderClauses.add(alias + "." + dialect.quoteIdentifier(of.getName()) + " " + dir);
@@ -119,15 +119,15 @@ public class QueryBuilder {
     }
 
     /** LIMIT precedence: vector.limitOverride > user/argument limit. */
-    private void appendListLimit(StringBuilder sql, Field field, Map<String, Object> params,
+    private void appendListLimit(StringBuilder sql, Field field, String tableName, Map<String, Object> params,
                                  Optional<VectorSearchBuilder.VectorClause> vectorClause) {
         if (vectorClause.isPresent() && vectorClause.get().limitOverride() != null) {
-            int vlimit = Math.min(vectorClause.get().limitOverride(), maxRows);
+            int vlimit = Math.min(vectorClause.get().limitOverride(), filterBuilder.rowCap(tableName));
             String paramName = "p_limit_" + params.size();
             sql.append(LIMIT).append(":").append(paramName);
             params.put(paramName, vlimit);
         } else {
-            filterBuilder.applyLimit(sql, field, params);
+            filterBuilder.applyLimit(sql, field, params, tableName);
         }
     }
 
@@ -139,13 +139,17 @@ public class QueryBuilder {
      * to the normal ORDER BY / LIMIT path.
      */
     private Optional<VectorSearchBuilder.VectorClause> extractVectorClause(
-            Field field, String alias, Map<String, Object> params) {
+            Field field, String tableName, String alias, Map<String, Object> params) {
         Argument vectorArg = field.getArguments().stream()
                 .filter(a -> ARG_VECTOR.equals(a.getName()))
                 .findFirst().orElse(null);
         if (vectorArg == null || !(vectorArg.getValue() instanceof ObjectValue ov)) {
             return Optional.empty();
         }
+        ov.getObjectFields().stream()
+                .filter(vectorField -> "column".equals(vectorField.getName()))
+                .forEach(vectorField -> filterBuilder.requireColumn(tableName,
+                        String.valueOf(filterBuilder.extractValue(vectorField.getValue()))));
         return vectorSearchBuilder.build(ov, alias, schemaInfo, params);
     }
 
@@ -166,6 +170,9 @@ public class QueryBuilder {
     // === Aggregates ===
 
     public String compileAggregate(Field field, String tableName, Map<String, Object> params) {
+        if (!filterBuilder.access().allowsAggregations(tableName)) {
+            throw new IllegalArgumentException("Unknown field(s): " + field.getName());
+        }
         String alias = dialect.randAlias();
         List<String> parts = new ArrayList<>();
 
@@ -182,8 +189,9 @@ public class QueryBuilder {
                 // Nested per-column aggregate -- sum(total_amount), avg(total_amount), etc.
                 List<String> colParts = new ArrayList<>();
                 for (Selection<?> colSel : aggField.getSelectionSet().getSelections()) {
-                    if (colSel instanceof Field colField) {
+                    if (colSel instanceof Field colField && !TYPENAME.equals(colField.getName())) {
                         String col = colField.getName();
+                        filterBuilder.requireColumn(tableName, col);
                         String subAlias = dialect.randAlias();
                         StringBuilder subSql = new StringBuilder();
                         subSql.append(SELECT).append(aggName).append("(").append(subAlias).append(".").append(dialect.quoteIdentifier(col)).append(")").append(FROM)
@@ -193,6 +201,8 @@ public class QueryBuilder {
                     }
                 }
                 parts.add("'" + aggName + "', " + dialect.buildObject(colParts));
+            } else {
+                requireTypename(aggName);
             }
         }
 
@@ -206,14 +216,15 @@ public class QueryBuilder {
         String pk = getPk(tableName);
 
         ConnectionSelections sel = parseConnectionSelections(field);
-        PaginationArgs pagination = parsePaginationArgs(field);
+        requireConnectionAllowed(tableName, pk, sel);
+        PaginationArgs pagination = parsePaginationArgs(field, tableName);
 
         // Determine order columns (default: PK ASC)
         List<String[]> orderCols = filterBuilder.parseOrderBy(field, tableName);
         if (orderCols.isEmpty()) orderCols.add(new String[]{pk, ASC});
 
         boolean isForward = (pagination.last == null);
-        int forwardLimit = (pagination.first != null) ? pagination.first : maxRows;
+        int forwardLimit = (pagination.first != null) ? pagination.first : filterBuilder.rowCap(tableName);
         int limit = isForward ? forwardLimit : pagination.last;
 
         // === Build CTE-based Connection SQL ===
@@ -228,16 +239,7 @@ public class QueryBuilder {
                 && (sel.pageInfoFields.isEmpty() || sel.pageInfoFields.contains(FIELD_HAS_NEXT_PAGE));
         boolean needsHasPrev = sel.wantsPageInfo
                 && (sel.pageInfoFields.isEmpty() || sel.pageInfoFields.contains(FIELD_HAS_PREVIOUS_PAGE));
-
-        if (needsHasNext) {
-            appendHasNextCte(sql, block, recordsCte, limit, params);
-        }
-        if (needsHasPrev) {
-            appendHasPrevCte(sql, block, pagination.afterCursor, isForward);
-        }
-        if (sel.wantsTotalCount) {
-            appendTotalCountCte(sql, field, tableName, block, params);
-        }
+        appendOptionalCtes(sql, field, tableName, ctx, sel, needsHasNext, needsHasPrev, params);
 
         // === Final SELECT from CTEs ===
         String pageBlock = dialect.randAlias();
@@ -255,6 +257,31 @@ public class QueryBuilder {
 
         sql.append(" ").append(SELECT).append(dialect.buildObject(rootParts));
         return sql.toString();
+    }
+
+    private void appendOptionalCtes(StringBuilder sql, Field field, String tableName, ConnectionCtx ctx,
+                                    ConnectionSelections sel, boolean needsHasNext, boolean needsHasPrev,
+                                    Map<String, Object> params) {
+        if (needsHasNext) {
+            appendHasNextCte(sql, ctx.block, ctx.recordsCte, ctx.limit, params);
+        }
+        if (needsHasPrev) {
+            appendHasPrevCte(sql, ctx.block, ctx.pagination.afterCursor, ctx.isForward);
+        }
+        if (sel.wantsTotalCount) {
+            appendTotalCountCte(sql, field, tableName, ctx.block, params);
+        }
+    }
+
+    /**
+     * Cursors are primary-key values and {@code totalCount} is an aggregate, so a connection needs a
+     * key the caller can read, and a count needs the role's aggregation right.
+     */
+    private void requireConnectionAllowed(String tableName, String pk, ConnectionSelections sel) {
+        filterBuilder.requireColumn(tableName, pk);
+        if (sel.wantsTotalCount && !filterBuilder.access().allowsAggregations(tableName)) {
+            throw new IllegalArgumentException("Unknown field 'totalCount' on " + tableName);
+        }
     }
 
     /** Bag of booleans/sets describing which connection sub-fields the caller requested. */
@@ -288,6 +315,8 @@ public class QueryBuilder {
             } else if (FIELD_PAGE_INFO.equals(fname)) {
                 wantsPageInfo = true;
                 collectPageInfoFields(childField, pageInfoFields);
+            } else {
+                requireTypename(fname);
             }
         }
         return new ConnectionSelections(edgesNodeSS, wantsCursor, wantsTotalCount, wantsPageInfo, pageInfoFields);
@@ -295,12 +324,16 @@ public class QueryBuilder {
 
     private SelectionSet parseEdgesSelections(Field edgesField, SelectionSet current) {
         if (edgesField.getSelectionSet() == null) return current;
+        SelectionSet node = current;
         for (Selection<?> es : edgesField.getSelectionSet().getSelections()) {
-            if (es instanceof Field ef && FIELD_NODE.equals(ef.getName())) {
-                return ef.getSelectionSet();
+            if (!(es instanceof Field ef)) continue;
+            if (FIELD_NODE.equals(ef.getName())) {
+                node = ef.getSelectionSet();
+            } else if (!FIELD_CURSOR.equals(ef.getName())) {
+                requireTypename(ef.getName());
             }
         }
-        return current;
+        return node;
     }
 
     private boolean edgeWantsCursor(Field edgesField) {
@@ -318,7 +351,8 @@ public class QueryBuilder {
         }
     }
 
-    private PaginationArgs parsePaginationArgs(Field field) {
+    private PaginationArgs parsePaginationArgs(Field field, String tableName) {
+        int cap = filterBuilder.rowCap(tableName);
         Integer first = null;
         Integer last = null;
         String afterCursor = null;
@@ -328,10 +362,10 @@ public class QueryBuilder {
             String argName = arg.getName();
             if (ARG_FIRST.equals(argName)) {
                 Integer value = filterBuilder.resolveIntArg(arg.getValue(), vars);
-                if (value != null) first = Math.min(value, maxRows);
+                if (value != null) first = Math.min(value, cap);
             } else if (ARG_LAST.equals(argName)) {
                 Integer value = filterBuilder.resolveIntArg(arg.getValue(), vars);
-                if (value != null) last = Math.min(value, maxRows);
+                if (value != null) last = Math.min(value, cap);
             } else if (ARG_AFTER.equals(argName)) {
                 afterCursor = filterBuilder.resolveStringArg(arg.getValue(), vars);
             } else if (ARG_BEFORE.equals(argName)) {
@@ -473,24 +507,15 @@ public class QueryBuilder {
         Set<String> columns = schemaInfo.getColumns(tableName);
 
         for (Field field : flattenSelections(selectionSet, fragmentsHolder.get())) {
+            if (TYPENAME.equals(field.getName())) continue;
             String pair = buildFieldPair(field, tableName, alias, columns, params);
-            if (pair != null) pairs.add(pair);
+            if (pair == null) {
+                throw unknownField(field.getName());
+            }
+            pairs.add(pair);
         }
 
         return dialect.buildObject(pairs);
-    }
-
-    /**
-     * Consults the active request's {@link ColumnMaskContributor} for one column,
-     * defaulting to {@link ColumnMaskContributor.Decision#VISIBLE} when no masker
-     * is registered or the table is unknown.
-     */
-    private ColumnMaskContributor.Decision columnMaskDecision(String tableName, String columnName) {
-        ColumnMaskContributor masker = RlsContext.columnMask();
-        if (masker == null || tableName == null) {
-            return ColumnMaskContributor.Decision.VISIBLE;
-        }
-        return masker.decide(tableName, columnName);
     }
 
     /** Resolve a single selection field into its JSON pair, or null if not recognized. */
@@ -499,13 +524,7 @@ public class QueryBuilder {
         String name = field.getName();
 
         if (columns.contains(name)) {
-            // Column-level security: HIDDEN drops the column from the response
-            // object, NULLED emits a null value, VISIBLE renders normally.
-            return switch (columnMaskDecision(tableName, name)) {
-                case HIDDEN -> null;
-                case NULLED -> "'" + name + "', NULL";
-                case VISIBLE -> buildColumnPair(field, tableName, alias, name);
-            };
+            return buildColumnPair(field, tableName, alias, name);
         }
 
         SchemaInfo.FkInfo fk = schemaInfo.getForwardFk(tableName, name);
@@ -574,8 +593,19 @@ public class QueryBuilder {
         }
         appendNestedRls(joinConds, rfk.childTable(), subAlias, params);
         return "'" + name + "', (" + SELECT + dialect.coalesceArray(dialect.aggregateArray(subObj))
-                + FROM + qualifiedTable(rfk.childTable()) + " " + subAlias
-                + WHERE + String.join(AND, joinConds) + ")";
+                + FROM + childRows(rfk.childTable(), subAlias, joinConds, params) + ")";
+    }
+
+    /** The child rows of a nested list, capped by the role's own limit on the child table when it has one. */
+    private String childRows(String childTable, String subAlias, List<String> joinConds, Map<String, Object> params) {
+        String rows = qualifiedTable(childTable) + " " + subAlias + WHERE + String.join(AND, joinConds);
+        Integer roleLimit = filterBuilder.roleRowLimit(childTable);
+        if (roleLimit == null) {
+            return rows;
+        }
+        String limitParam = namedParam(P_LIMIT, params.size());
+        params.put(limitParam, roleLimit);
+        return "(" + SELECT + subAlias + ".*" + FROM + rows + LIMIT + PARAM_PREFIX + limitParam + ") " + subAlias;
     }
 
     /**
@@ -604,6 +634,17 @@ public class QueryBuilder {
             }
         }
         return null;
+    }
+
+    /** {@code __typename} is the one field every type answers; anything else unknown fails the request. */
+    private static void requireTypename(String fieldName) {
+        if (!TYPENAME.equals(fieldName)) {
+            throw unknownField(fieldName);
+        }
+    }
+
+    static IllegalArgumentException unknownField(String fieldName) {
+        return new IllegalArgumentException("Unknown field(s): " + fieldName);
     }
 
     // === Fragment expansion ===

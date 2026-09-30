@@ -23,6 +23,7 @@ public final class GraphqlConstants {
     public static final String EDGE_SUFFIX = "Edge";
     public static final String WHERE_INPUT_SUFFIX = "WhereInput";
     public static final String CREATE_INPUT_SUFFIX = "CreateInput";
+    public static final String UPDATE_INPUT_SUFFIX = "UpdateInput";
 
     // --- Argument names ---
     public static final String ARG_WHERE = "where";

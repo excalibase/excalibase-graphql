@@ -6,16 +6,15 @@ import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;
 import io.github.excalibase.rest.parser.OrderParser;
 import io.github.excalibase.rest.parser.SelectParser;
+import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaProvider;
-import io.github.excalibase.schema.TableExposure;
+import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.PermissionCheckFailedException;
+import io.github.excalibase.security.PermissionErrors;
 import io.github.excalibase.security.Principal;
-import io.github.excalibase.security.RlsContext;
-import io.github.excalibase.security.RlsDeniedResponse;
 import io.github.excalibase.security.RlsOp;
-import io.github.excalibase.security.RlsViolationException;
-import io.github.excalibase.security.RowCheckContributor;
 import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Pattern;
@@ -92,8 +91,9 @@ public class RestApiController {
             @RequestHeader(value = "Accept-Profile", required = false) String acceptProfile,
             @RequestParam Map<String, String> allParams, HttpServletRequest request) {
 
-        var ctx = resolveContext(table, acceptProfile, request);
-        if (ctx == null) return notFound();
+        var resolved = resolveContext(table, acceptProfile, request);
+        if (resolved.refusal() != null) return resolved.refusal();
+        var ctx = resolved.context();
 
         var parsed = parseSelectParams(select, order, allParams);
         String accept = request.getHeader("Accept");
@@ -140,6 +140,9 @@ public class RestApiController {
     private ResponseEntity<Object> handlePaginated(RequestContext ctx, ParsedParams parsed, int limit, int offset, String prefer) {
         int clamped = Math.clamp(limit, 1, maxRows);
         boolean count = preferContains(prefer, "count=exact");
+        if (count && !ctx.access().allowsAggregations(ctx.tableKey())) {
+            return permissionDenied("Counting rows of " + ctx.tableKey() + " is not permitted");
+        }
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, count));
         var resp = executeInTx(compiled, rows -> {
             var response = new LinkedHashMap<String, Object>();
@@ -162,16 +165,11 @@ public class RestApiController {
             @RequestHeader(value = "Content-Profile", required = false) String cp,
             HttpServletRequest request) {
 
-        var ctx = resolveContext(table, cp, request);
-        if (ctx == null) return notFound();
+        var resolved = resolveContext(table, cp, request);
+        if (resolved.refusal() != null) return resolved.refusal();
+        var ctx = resolved.context();
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
         boolean mergeDuplicates = preferContains(prefer, "resolution=merge-duplicates");
-
-        // RLS WITH-CHECK: the candidate row(s) must satisfy the caller's INSERT
-        // policy — else they could insert rows they'd never be allowed to read.
-        String operation = mergeDuplicates ? RlsViolationException.OPERATION_UPSERT : RlsOp.INSERT.name();
-        ResponseEntity<Object> insertViolation = checkInsertRows(ctx.tableKey(), body, operation);
-        if (insertViolation != null) return insertViolation;
 
         RestQueryCompiler.CompiledResult compiled = switch (body) {
             case List<?> list -> ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list);
@@ -256,8 +254,9 @@ public class RestApiController {
             @RequestHeader(value = "Prefer", required = false) String prefer, @RequestHeader(value = "Content-Profile", required = false) String cp,
             @RequestParam Map<String, String> allParams, HttpServletRequest request) {
 
-        var ctx = resolveContext(table, cp, request);
-        if (ctx == null) return notFound();
+        var resolved = resolveContext(table, cp, request);
+        if (resolved.refusal() != null) return resolved.refusal();
+        var ctx = resolved.context();
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "At least one filter is required"));
 
@@ -268,49 +267,38 @@ public class RestApiController {
 
 
     private ResponseEntity<Object> mutate(String table, Map<String, Object> body, String prefer, String cp, Map<String, String> allParams, HttpServletRequest request) {
-        var ctx = resolveContext(table, cp, request);
-        if (ctx == null) return notFound();
+        var resolved = resolveContext(table, cp, request);
+        if (resolved.refusal() != null) return resolved.refusal();
+        var ctx = resolved.context();
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "At least one filter is required"));
-
-        // RLS WITH-CHECK: the new image (SET columns) must keep the row within the
-        // caller's UPDATE policy — e.g. can't reassign owner_id to someone else.
-        RowCheckContributor check = RlsContext.rowCheck();
-        if (check != null && !check.permitsUpdate(ctx.tableKey(), body)) {
-            return rlsViolation(RlsOp.UPDATE.name(), ctx.tableKey());
-        }
 
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
         Integer maxAffected = parseMaxAffected(prefer);
         return executeDml(ctx.compiler().compileUpdate(ctx.tableKey(), body, filters), rollback, maxAffected, prefer, HttpStatus.OK, null);
     }
 
-    /** RLS WITH-CHECK for insert: rejects any candidate row the caller's INSERT
-     *  policy forbids. Handles both single-object and bulk-array bodies. No-op
-     *  when no row-check contributor is registered (auth off / no policy). */
-    @SuppressWarnings("unchecked")
-    private ResponseEntity<Object> checkInsertRows(String tableKey, Object body, String operation) {
-        RowCheckContributor check = RlsContext.rowCheck();
-        if (check == null) return null;
-        List<Map<String, Object>> rows = switch (body) {
-            case Map<?, ?> single -> List.of((Map<String, Object>) single);
-            case List<?> list -> (List<Map<String, Object>>) list;
-            default -> List.of();
-        };
-        for (Map<String, Object> row : rows) {
-            if (!check.permits(tableKey, row, RlsOp.INSERT)) return rlsViolation(operation, tableKey);
-        }
-        return null;
+    private static ResponseEntity<Object> permissionDenied(String message) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(PermissionErrors.restBody(PermissionErrors.PERMISSION_DENIED, message));
     }
 
-    private static ResponseEntity<Object> rlsViolation(String operation, String table) {
-        return rlsViolation(new RlsViolationException(operation, table));
+    private static ResponseEntity<Object> checkFailed(PermissionCheckFailedException failed) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(PermissionErrors.restBody(failed.code(), failed.getMessage()));
     }
 
-    private static ResponseEntity<Object> rlsViolation(RlsViolationException denied) {
-        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(RlsDeniedResponse.restBody(denied));
+    /** A permission expression that cannot apply to this request: its code, never a guessed answer. */
+    @ExceptionHandler(PermissionEvaluationException.class)
+    public ResponseEntity<Object> permissionEvaluationFailed(PermissionEvaluationException e) {
+        return ResponseEntity.badRequest().body(PermissionErrors.restBody(e.code(), e.getMessage()));
     }
 
+    /** A request naming a column, operator or shape this caller's schema does not have. */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Object> badRequest(IllegalArgumentException e) {
+        return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, e.getMessage()));
+    }
 
     @FunctionalInterface
     private interface QueryResultHandler {
@@ -338,10 +326,10 @@ public class RestApiController {
                 if (rollback) status.setRollbackOnly();
                 return buildDmlResponse(json, prefer, successStatus, table, rollback);
             } catch (Exception e) {
-                Optional<RlsViolationException> denied = RlsViolationException.find(e);
-                if (denied.isPresent()) {
+                Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
+                if (failed.isPresent()) {
                     status.setRollbackOnly();
-                    return rlsViolation(denied.get());
+                    return checkFailed(failed.get());
                 }
                 log.warn("rest_dml_failed", e);
                 return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(KEY_ERROR, "Mutation execution failed"));
@@ -368,7 +356,7 @@ public class RestApiController {
                                                     String table, boolean rollback) {
         List<String> applied = new ArrayList<>();
         if (rollback) applied.add(PREFER_TX_ROLLBACK);
-        boolean returnRepresentation = preferContains(prefer, "return=representation") && json != null;
+        boolean returnRepresentation = preferContains(prefer, "return=representation");
         ResponseEntity<Object> resp;
         if (returnRepresentation) {
             applied.add("return=representation");
@@ -376,7 +364,8 @@ public class RestApiController {
             if (successStatus == HttpStatus.CREATED && table != null) {
                 builder.header("Location", "/api/v1/" + table);
             }
-            resp = builder.body(Map.of("data", parseJson(json)));
+            // A written row the role may not read is not represented: an empty array, never the row.
+            resp = builder.body(Map.of("data", json == null ? List.of() : parseJson(json)));
         } else {
             resp = ResponseEntity.status(successStatus).body(null);
         }
@@ -405,7 +394,11 @@ public class RestApiController {
     }
 
 
-    private record RequestContext(String tableKey, RestQueryCompiler compiler, SchemaInfo schemaInfo) {}
+    private record RequestContext(String tableKey, RestQueryCompiler compiler, SchemaInfo schemaInfo,
+                                  TableAccess access) {}
+
+    /** The request's table, or the refusal the caller gets instead. */
+    private record Resolved(RequestContext context, ResponseEntity<Object> refusal) {}
 
     private record ParsedParams(List<String> columns, List<RestQueryCompiler.FilterSpec> filters,
                                 List<RestQueryCompiler.OrCondition> orConditions, List<RestQueryCompiler.EmbedSpec> embeds,
@@ -422,21 +415,23 @@ public class RestApiController {
     }
 
     /**
-     * Resolves the table this request addresses, or null when there is none to
-     * address — which the callers turn into the 404 they already returned for an
-     * unknown table. A table the caller may not read is absent from their
-     * {@link SchemaInfo}, and one they may read but not write for this HTTP method
-     * is equally not there for this request: same answer, no separate denial.
+     * Resolves the table this request addresses. A table the caller cannot select is absent from
+     * their schema and answers 404, like one that does not exist; on a table they can see, a method
+     * whose operation they hold no permission for answers 403 {@code permission_denied}.
      */
-    private RequestContext resolveContext(String table, String profileHeader, HttpServletRequest request) {
+    private Resolved resolveContext(String table, String profileHeader, HttpServletRequest request) {
         var principal = getPrincipal(request);
         String schema = resolveSchema(profileHeader, principal);
-        if (schema == null) return null;
+        if (schema == null) return new Resolved(null, notFound());
         String tableKey = schema + DOT + table;
         var schemaInfo = schemaProvider.resolveSchemaInfo(principal);
-        if (!schemaInfo.hasTable(tableKey)) return null;
-        if (!permitsMethod(schemaProvider.resolveExposure(principal), tableKey, request)) return null;
-        return new RequestContext(tableKey, new RestQueryCompiler(schemaInfo, schemaProvider.resolveDialect(principal), schema, maxRows), schemaInfo);
+        if (!schemaInfo.hasTable(tableKey)) return new Resolved(null, notFound());
+        TableAccess access = schemaProvider.resolveAccess(principal);
+        if (!permitsMethod(access, tableKey, request)) {
+            return new Resolved(null, permissionDenied(request.getMethod() + " is not permitted on " + table));
+        }
+        var compiler = new RestQueryCompiler(schemaInfo, schemaProvider.resolveDialect(principal), schema, maxRows, access);
+        return new Resolved(new RequestContext(tableKey, compiler, schemaInfo, access), null);
     }
 
     /**
@@ -444,15 +439,15 @@ public class RestApiController {
      * {@code Prefer: resolution=merge-duplicates} upserts, which rewrites existing
      * rows, so it needs UPDATE as well as INSERT.
      */
-    private boolean permitsMethod(TableExposure exposure, String tableKey, HttpServletRequest request) {
+    private boolean permitsMethod(TableAccess access, String tableKey, HttpServletRequest request) {
         String prefer = request.getHeader("Prefer");
         return switch (request.getMethod()) {
-            case "POST" -> exposure.permits(tableKey, RlsOp.INSERT)
+            case "POST" -> access.permits(tableKey, RlsOp.INSERT)
                     && (!preferContains(prefer, "resolution=merge-duplicates")
-                        || exposure.permits(tableKey, RlsOp.UPDATE));
-            case "PATCH", "PUT" -> exposure.permits(tableKey, RlsOp.UPDATE);
-            case "DELETE" -> exposure.permits(tableKey, RlsOp.DELETE);
-            default -> exposure.permits(tableKey, RlsOp.SELECT);
+                        || access.permits(tableKey, RlsOp.UPDATE));
+            case "PATCH", "PUT" -> access.permits(tableKey, RlsOp.UPDATE);
+            case "DELETE" -> access.permits(tableKey, RlsOp.DELETE);
+            default -> access.permits(tableKey, RlsOp.SELECT);
         };
     }
 
