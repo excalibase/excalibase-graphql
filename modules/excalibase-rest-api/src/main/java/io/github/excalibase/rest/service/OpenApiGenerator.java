@@ -1,6 +1,8 @@
 package io.github.excalibase.rest.service;
 
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.TableAccess;
+import io.github.excalibase.security.RlsOp;
 
 import java.util.*;
 
@@ -21,6 +23,14 @@ public final class OpenApiGenerator {
     private OpenApiGenerator() {}
 
     public static Map<String, Object> generate(SchemaInfo schemaInfo, String defaultSchema) {
+        return generate(schemaInfo, TableAccess.UNRESTRICTED, defaultSchema);
+    }
+
+    /**
+     * The spec one caller is served: a path per table it may reach, with only the methods it holds. A
+     * table it may insert into but not select has only POST, typed by the columns it may set.
+     */
+    public static Map<String, Object> generate(SchemaInfo schemaInfo, TableAccess access, String defaultSchema) {
         Map<String, Object> spec = new LinkedHashMap<>();
         spec.put("openapi", "3.0.3");
         spec.put("info", Map.of(
@@ -41,34 +51,50 @@ public final class OpenApiGenerator {
         Map<String, Object> paths = new LinkedHashMap<>();
         Map<String, Object> schemas = new LinkedHashMap<>();
 
-        for (String tableKey : schemaInfo.getTableNames()) {
+        for (String tableKey : schemaInfo.getMutableTableNames()) {
             String schema = schemaInfo.getTableSchema(tableKey);
             if (schema != null && !schema.equals(defaultSchema)) continue;
 
             String raw = tableKey.contains(".") ? tableKey.substring(tableKey.indexOf('.') + 1) : tableKey;
             String typeName = capitalize(raw);
-            boolean isView = schemaInfo.isView(tableKey);
+            boolean readable = schemaInfo.hasTable(tableKey);
 
             Map<String, Object> properties = new LinkedHashMap<>();
-            for (String col : schemaInfo.getColumns(tableKey)) {
+            Set<String> shown = readable ? schemaInfo.getColumns(tableKey)
+                    : access.settableColumns(tableKey, RlsOp.INSERT, schemaInfo);
+            for (String col : shown) {
                 String type = schemaInfo.getColumnType(tableKey, col);
                 properties.put(col, mapColumnType(type));
             }
             schemas.put(typeName, Map.of(K_TYPE, T_OBJECT, "properties", properties));
 
-            Map<String, Object> pathItem = new LinkedHashMap<>();
-            pathItem.put("get", buildGetOp(raw, typeName));
-            if (!isView) {
-                pathItem.put("post", buildPostOp(raw, typeName));
-                pathItem.put("patch", buildPatchOp(raw, typeName));
-                pathItem.put("delete", buildDeleteOp(raw));
-            }
-            paths.put("/" + raw, pathItem);
+            paths.put("/" + raw, pathItem(schemaInfo, access, tableKey, raw, typeName));
         }
 
         spec.put("paths", paths);
         spec.put("components", Map.of("schemas", schemas));
         return spec;
+    }
+
+    /** The methods the caller holds on one table; a write-only table is never read, updated or deleted. */
+    private static Map<String, Object> pathItem(SchemaInfo schemaInfo, TableAccess access, String tableKey,
+                                                String raw, String typeName) {
+        boolean readable = schemaInfo.hasTable(tableKey);
+        boolean writable = !schemaInfo.isView(tableKey);
+        Map<String, Object> pathItem = new LinkedHashMap<>();
+        if (readable && access.permits(tableKey, RlsOp.SELECT)) {
+            pathItem.put("get", buildGetOp(raw, typeName));
+        }
+        if (writable && access.permits(tableKey, RlsOp.INSERT)) {
+            pathItem.put("post", buildPostOp(raw, typeName));
+        }
+        if (writable && readable && access.permits(tableKey, RlsOp.UPDATE)) {
+            pathItem.put("patch", buildPatchOp(raw, typeName));
+        }
+        if (writable && readable && access.permits(tableKey, RlsOp.DELETE)) {
+            pathItem.put("delete", buildDeleteOp(raw));
+        }
+        return pathItem;
     }
 
     private static Map<String, Object> buildGetOp(String table, String typeName) {

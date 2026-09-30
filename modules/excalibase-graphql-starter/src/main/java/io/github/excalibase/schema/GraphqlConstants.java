@@ -23,6 +23,8 @@ public final class GraphqlConstants {
     public static final String WHERE_INPUT_SUFFIX = "WhereInput";
     public static final String CREATE_INPUT_SUFFIX = "CreateInput";
     public static final String UPDATE_INPUT_SUFFIX = "UpdateInput";
+    /** Contains an underscore, which no table-derived type name has, so it cannot collide with one. */
+    public static final String INSERT_RESULT_SUFFIX = "_InsertResult";
 
     // --- Argument names ---
     public static final String ARG_WHERE = "where";
@@ -62,6 +64,7 @@ public final class GraphqlConstants {
     public static final String FIELD_START_CURSOR = "startCursor";
     public static final String FIELD_END_CURSOR = "endCursor";
     public static final String FIELD_COUNT = "count";
+    public static final String FIELD_AFFECTED_ROWS = "affected_rows";
 
     // --- Aggregate function names ---
     public static final String AGG_SUM = "sum";

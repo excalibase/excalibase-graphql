@@ -146,7 +146,8 @@ value    := JSON literal | session variable | [values] for _in/_nin | true/false
 
 ## 5. How each surface applies them
 
-**GraphQL schema.** Built per (project, role): a table appears only with a select permission; its
+**GraphQL schema.** Built per (project, role): a table appears only with a select permission (for insert without
+select, see below); its
 type holds only the permitted columns; relationship fields appear only when the role can select
 the target table; `…Aggregate`/`totalCount` only with `allowAggregations`; `create…`, `update…`,
 `delete…` fields only with that operation's permission; input types hold only the permitted,
@@ -172,8 +173,29 @@ select cannot be used in `where`, `orderBy` or cursors either.
   the select filter and to the select columns. A role with insert but no select permission gets the
   affected-row count only. `affected_rows` counts every row written.
 
-**REST.** Same permissions. A table the role cannot select answers 404; on a table it can see, a
-method whose operation it has no permission for answers 403 `permission_denied`.
+**Insert without select** (a public contact form: `anon` may insert into `messages`, never read it).
+The table is write-only for that role:
+- GraphQL: no `Query` field (list, connection, aggregate), no type for its rows, no relationship to
+  or from it (so it neither takes nor is a nested insert). `Mutation` has `create<T>(input:)` and
+  `createMany<T>(inputs:)`, both returning `<T>_InsertResult { affected_rows: Int! }` (the underscore
+  keeps the name clear of every table-derived type). The input holds the permitted, non-preset
+  insert columns; presets and `check` apply as for any insert, and a failed check rolls the whole
+  statement back. `onConflict` needs update permission, so it is not offered; update and delete need
+  select (their filter includes it), so a document giving them without select has them dropped and
+  logged as `permission_invalid`. Selecting anything but `affected_rows`/`__typename` answers
+  `Unknown field(s)`.
+- REST: `POST /<table>` (object or array) answers 201 with no body; with
+  `Prefer: return=representation` 201 `{"data": []}`, the same answer as for any written row the role
+  may not read. There is no count header on writes. A failed check is 403 `permission_check_failed`.
+  `Prefer: resolution=merge-duplicates` (upsert) is 403 `permission_denied`. `GET`, `PATCH`, `PUT`
+  and `DELETE` answer 404, as for a table that does not exist. The OpenAPI document lists only
+  `post` for it, typed by the settable columns.
+- Realtime: no subscription. Tracked functions returning the table: not callable.
+
+**REST.** Same permissions. A table the role cannot select answers 404 (a POST to a table it may
+insert into but not select excepted, above); on a table it can see, a method whose operation it has
+no permission for answers 403 `permission_denied`. The OpenAPI document lists only the methods the
+role holds.
 
 **Realtime** (GraphQL subscriptions and the realtime channel). A subscription is accepted only for
 a table the role can select. Each change is delivered only when its row passes the select filter,
@@ -282,8 +304,6 @@ that one place.
 
 How the engine applies this today (see [Permission Enforcement](rls-architecture.md)):
 
-- A table the role cannot select is absent for every operation, writes included; so the
-  "insert but no select" case above does not arise yet.
 - Rows written by an upsert owe both the insert and the update `check`.
 - A `check` or filter that reaches another table sees the database as of the start of the
   statement, so a nested insert's child cannot rely on its parent row in the same mutation.
@@ -381,4 +401,7 @@ column default instead), and the PARTIAL/HASH/CUSTOM masks (never implemented). 
 - Update and delete also require the row to pass the select filter (Postgres row-security
   semantics, pinned by the engine's differential tests against native Postgres).
 - Function exposure is fixed by volatility (Hasura lets a `VOLATILE` function be exposed as a query).
+- A table a role may insert into but not select has no relationships for that role, so nested inserts
+  never reach it or start from it; Hasura's insert-only role keeps them. `create<T>` answers
+  `<T>_InsertResult` rather than Hasura's `<t>_mutation_response`, and has no `returning`.
 - The bypass role is named `service` and comes from a secret API key, not an admin secret header.

@@ -89,14 +89,14 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
         return compiled(check.get(), tableName, alias);
     }
 
+    /** Empty (denied) for every read of a table the role may insert into but not select. */
     private static Optional<BoolExp> filterFor(TableRules rules, RlsOp op) {
-        BoolExp select = rules.select().filter();
-        return switch (op) {
+        return rules.select().map(TableRules.SelectRule::filter).flatMap(select -> switch (op) {
             case SELECT -> Optional.of(select);
             case UPDATE -> rules.update().map(update -> both(update.filter(), select));
             case DELETE -> rules.delete().map(delete -> both(delete.filter(), select));
-            case INSERT -> Optional.empty();
-        };
+            case INSERT -> Optional.<BoolExp>empty();
+        });
     }
 
     private static BoolExp both(BoolExp first, BoolExp second) {

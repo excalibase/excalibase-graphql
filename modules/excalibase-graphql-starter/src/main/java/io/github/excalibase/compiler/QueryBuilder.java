@@ -543,6 +543,22 @@ public class QueryBuilder {
         return dialect.buildObject(pairs);
     }
 
+    /**
+     * {@code { affected_rows }} over the rows a write returned, for a caller who may not read them; an
+     * aggregate, so the statement answers one object however many rows were written.
+     */
+    public String buildAffectedRows(SelectionSet selectionSet) {
+        List<String> pairs = new ArrayList<>();
+        for (Field field : flattenSelections(selectionSet, fragmentsHolder.get())) {
+            if (FIELD_AFFECTED_ROWS.equals(field.getName())) {
+                pairs.add("'" + FIELD_AFFECTED_ROWS + "', count(*)");
+            } else {
+                requireTypename(field.getName());
+            }
+        }
+        return dialect.buildObject(pairs);
+    }
+
     /** Resolve a single selection field into its JSON pair, or null if not recognized. */
     private String buildFieldPair(Field field, String tableName, String alias, Set<String> columns,
                                   Map<String, Object> params) {

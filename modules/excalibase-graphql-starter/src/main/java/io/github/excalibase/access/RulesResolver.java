@@ -60,17 +60,24 @@ final class RulesResolver {
         }
         Optional<SelectRule> select = entry.select().flatMap(permission -> valid(table, "select",
                 () -> select(table, permission)));
-        if (select.isEmpty()) {
-            return Optional.empty();
-        }
         boolean writable = !reflected.isView(table);
-        return Optional.of(new TableRules(table, select.get(),
-                entry.insert().filter(ignored -> writable)
-                        .flatMap(permission -> valid(table, "insert", () -> insert(table, permission))),
+        Optional<InsertRule> insert = entry.insert().filter(ignored -> writable)
+                .flatMap(permission -> valid(table, "insert", () -> insert(table, permission)));
+        if (select.isEmpty()) {
+            return insert.map(held -> insertOnly(entry, held));
+        }
+        return Optional.of(new TableRules(table, select, insert,
                 entry.update().filter(ignored -> writable)
                         .flatMap(permission -> valid(table, "update", () -> update(table, permission))),
                 entry.delete().filter(ignored -> writable)
                         .flatMap(permission -> valid(table, "delete", () -> delete(table, permission)))));
+    }
+
+    /** Insert without select; an update or delete beside it is dropped, as it would reach no row. */
+    private TableRules insertOnly(TablePermissions entry, InsertRule insert) {
+        entry.update().ifPresent(ignored -> invalid(entry.table(), "update", "needs a select permission"));
+        entry.delete().ifPresent(ignored -> invalid(entry.table(), "delete", "needs a select permission"));
+        return new TableRules(entry.table(), Optional.empty(), Optional.of(insert), Optional.empty(), Optional.empty());
     }
 
     private SelectRule select(String table, SelectPermission permission) {

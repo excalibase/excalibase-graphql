@@ -1,11 +1,14 @@
 package io.github.excalibase.rest.service;
 
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.TableAccess;
+import io.github.excalibase.security.RlsOp;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -243,5 +246,28 @@ class OpenApiGeneratorTest {
         Map<String, Object> paths = (Map<String, Object>) spec.get("paths");
 
         assertThat(paths).containsKey("/floating");
+    }
+
+    @Test
+    @DisplayName("a role's spec lists only the operations it holds; an insert-only table has only POST")
+    void generate_withAccess_listsOnlyPermittedOperations() {
+        SchemaInfo view = new SchemaInfo();
+        view.setTableSchema("public.orders", "public");
+        view.addColumn("public.orders", "id", "integer");
+        view.setTableSchema("public.messages", "public");
+        view.addWriteOnlyColumn("public.messages", "body", "text");
+        view.addWriteOnlyTable("public.messages");
+        TableAccess access = TableAccess.enforcing(Map.of(
+                "public.orders", new TableAccess.Rights(Set.of(RlsOp.SELECT), Set.of(), Set.of(), null, false),
+                "public.messages", new TableAccess.Rights(Set.of(RlsOp.INSERT), Set.of("body"), Set.of(), null, false)));
+
+        Map<String, Object> spec = OpenApiGenerator.generate(view, access, "public");
+        Map<String, Object> paths = (Map<String, Object>) spec.get("paths");
+        Map<String, Object> schemas = (Map<String, Object>) ((Map<String, Object>) spec.get("components")).get("schemas");
+
+        assertThat((Map<String, Object>) paths.get("/orders")).containsOnlyKeys("get");
+        assertThat((Map<String, Object>) paths.get("/messages")).containsOnlyKeys("post");
+        assertThat((Map<String, Object>) ((Map<String, Object>) schemas.get("Messages")).get("properties"))
+                .containsOnlyKeys("body");
     }
 }

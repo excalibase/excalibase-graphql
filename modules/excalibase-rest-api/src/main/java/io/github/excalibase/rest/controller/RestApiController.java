@@ -76,7 +76,8 @@ public class RestApiController {
     public ResponseEntity<Object> openapi(HttpServletRequest request) {
         var principal = getPrincipal(request);
         var schemaInfo = schemaProvider.resolveSchemaInfo(principal);
-        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.resolveDefaultSchema(principal)));
+        return ResponseEntity.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.resolveAccess(principal),
+                schemaProvider.resolveDefaultSchema(principal)));
     }
 
     @GetMapping("/{table}")
@@ -447,8 +448,9 @@ public class RestApiController {
 
     /**
      * Resolves the table this request addresses. A table the caller cannot select is absent from
-     * their schema and answers 404, like one that does not exist; on a table they can see, a method
-     * whose operation they hold no permission for answers 403 {@code permission_denied}.
+     * their schema and answers 404, like one that does not exist, except to a POST when the caller may
+     * insert into it; on a table they can see, a method whose operation they hold no permission for
+     * answers 403 {@code permission_denied}.
      */
     private Resolved resolveContext(String table, String profileHeader, HttpServletRequest request) {
         var principal = getPrincipal(request);
@@ -456,7 +458,8 @@ public class RestApiController {
         if (schema == null) return new Resolved(null, notFound());
         String tableKey = schema + DOT + table;
         var schemaInfo = schemaProvider.resolveSchemaInfo(principal);
-        if (!schemaInfo.hasTable(tableKey)) return new Resolved(null, notFound());
+        boolean insertOnly = schemaInfo.isWriteOnlyTable(tableKey) && "POST".equals(request.getMethod());
+        if (!schemaInfo.hasTable(tableKey) && !insertOnly) return new Resolved(null, notFound());
         TableAccess access = schemaProvider.resolveAccess(principal);
         if (!permitsMethod(access, tableKey, request)) {
             return new Resolved(null, permissionDenied(request.getMethod() + " is not permitted on " + table));

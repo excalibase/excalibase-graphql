@@ -53,7 +53,7 @@ class ChangeFilterTest {
     private static ChangeFilter filter(String filter, String columns) {
         AccessPlan plan = AccessPlan.forRole(AccessFixture.schema(), user(entry(ORDERS,
                 "\"select\":{\"filter\":" + filter + ",\"columns\":" + columns + "}")));
-        return new SelectChangeFilter(ORDERS, plan.rules(ORDERS).orElseThrow().select(), plan.reflected(),
+        return new SelectChangeFilter(ORDERS, plan.rules(ORDERS).orElseThrow().select().orElseThrow(), plan.reflected(),
                 new SessionBinding(SESSION), new IncompleteImageWarning(() -> Instant.EPOCH));
     }
 

@@ -20,6 +20,8 @@ public class SchemaInfo {
     private final Map<String, Map<String, String>> columnTypes = new HashMap<>();
     // table → column → type, for columns a role may write but not read: typed, never listed
     private final Map<String, Map<String, String>> writeOnlyColumnTypes = new HashMap<>();
+    // tables a role may insert into but not read: no columns, no read path, only their write-only columns
+    private final Set<String> writeOnlyTables = new LinkedHashSet<>();
     // table → primary key columns (ordered)
     private final Map<String, List<String>> primaryKeys = new HashMap<>();
     // table.fieldName → FkInfo (forward FK: fieldName = schemaFieldName(schema, fkColumn))
@@ -68,6 +70,7 @@ public class SchemaInfo {
         Set<String> cols = tableColumns.remove(table);
         columnTypes.remove(table);
         writeOnlyColumnTypes.remove(table);
+        writeOnlyTables.remove(table);
         primaryKeys.remove(table);
         viewNames.remove(table);
         computedFields.remove(table);
@@ -84,6 +87,7 @@ public class SchemaInfo {
         tableColumns.clear();
         columnTypes.clear();
         writeOnlyColumnTypes.clear();
+        writeOnlyTables.clear();
         primaryKeys.clear();
         forwardFks.clear();
         reverseFks.clear();
@@ -109,6 +113,29 @@ public class SchemaInfo {
     /** A column a role may write but not read: its type is known, but it is not one of the table's columns. */
     public void addWriteOnlyColumn(String table, String column, String type) {
         writeOnlyColumnTypes.computeIfAbsent(table, k -> new HashMap<>()).put(column, type);
+    }
+
+    /**
+     * A table the role may insert into but not read. It is not one of {@link #getTableNames()}, so no read
+     * path sees it; only the insert does, through its write-only columns.
+     */
+    public void addWriteOnlyTable(String table) {
+        writeOnlyTables.add(table);
+    }
+
+    public Set<String> getWriteOnlyTableNames() {
+        return Collections.unmodifiableSet(writeOnlyTables);
+    }
+
+    public boolean isWriteOnlyTable(String table) {
+        return writeOnlyTables.contains(table);
+    }
+
+    /** The readable tables, then the write-only ones: every table a mutation can name. */
+    public Set<String> getMutableTableNames() {
+        Set<String> tables = new LinkedHashSet<>(tableColumns.keySet());
+        tables.addAll(writeOnlyTables);
+        return tables;
     }
 
     public void setTableSchema(String table, String schema) {
