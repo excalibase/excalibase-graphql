@@ -12,6 +12,7 @@ import io.github.excalibase.schema.introspection.ArrRelInsertFactory;
 import io.github.excalibase.schema.introspection.CompositeTypeFactory;
 import io.github.excalibase.schema.introspection.CreateInputFactory;
 import io.github.excalibase.schema.introspection.EnumTypeFactory;
+import io.github.excalibase.schema.introspection.FunctionFieldsAssembler;
 import io.github.excalibase.schema.introspection.FilterInputCatalog;
 import io.github.excalibase.schema.introspection.MutationFieldsAssembler;
 import io.github.excalibase.schema.introspection.QueryFieldsAssembler;
@@ -52,7 +53,12 @@ public class IntrospectionHandler {
      * remaining tables.
      */
     public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access) {
-        this.schema = buildSchema(schemaInfo, access);
+        this(schemaInfo, access, ExposedFunctions.NONE);
+    }
+
+    /** As above, plus a root field per tracked function the caller may call. */
+    public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions) {
+        this.schema = buildSchema(schemaInfo, access, functions == null ? ExposedFunctions.NONE : functions);
         this.graphQL = GraphQL.newGraphQL(this.schema).build();
     }
 
@@ -73,7 +79,7 @@ public class IntrospectionHandler {
         return response;
     }
 
-    private GraphQLSchema buildSchema(SchemaInfo schemaInfo, TableAccess access) {
+    private GraphQLSchema buildSchema(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions) {
         // Step 1: build enums, shared filter inputs, per-enum filter inputs.
         Map<String, GraphQLEnumType> enumTypes = new EnumTypeFactory().build(schemaInfo);
         FilterInputCatalog.FilterInputs filters = FilterInputCatalog.INPUTS;
@@ -92,8 +98,13 @@ public class IntrospectionHandler {
         // Step 3: assemble Query + Mutation root types.
         GraphQLObjectType.Builder queryBuilder = newObject().name(TYPE_QUERY);
         new QueryFieldsAssembler().build(schemaInfo, tableTypes, whereTypes, access).forEach(queryBuilder::field);
+        FunctionFieldsAssembler functionFields = new FunctionFieldsAssembler();
+        functionFields.build(functions, ExposedFunction.Operation.QUERY, tableTypes, whereTypes)
+                .forEach(queryBuilder::field);
         GraphQLObjectType.Builder mutationBuilder = newObject().name(TYPE_MUTATION);
         new MutationFieldsAssembler().build(schemaInfo, tableTypes, inputs, access)
+                .forEach(mutationBuilder::field);
+        functionFields.build(functions, ExposedFunction.Operation.MUTATION, tableTypes, whereTypes)
                 .forEach(mutationBuilder::field);
 
         // Step 4: schema assembly with additional types.

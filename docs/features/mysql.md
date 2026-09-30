@@ -232,32 +232,10 @@ Forward and reverse FK fields are automatically added to the schema:
 }
 ```
 
-### Stored Procedures
+### Stored procedures
 
-See [Stored Procedures](stored-procedures.md) for full details. MySQL example:
-
-```graphql
-# Call a stored procedure
-mutation {
-  callExcalibaseGetCustomerOrderCount(p_customer_id: 1)
-}
-
-# Transfer funds (IN/OUT params)
-mutation {
-  callExcalibaseTransferFunds(
-    p_from_wallet_id: 1
-    p_to_wallet_id: 2
-    p_amount: 200.00
-  )
-}
-```
-
-Results are returned as a JSON string. Parse on the client:
-
-```js
-const result = JSON.parse(data.callExcalibaseTransferFunds);
-console.log(result.p_status); // "SUCCESS"
-```
+Not exposed. Only tracked functions are reachable, and tracking, like permissions, is
+Postgres-only (see [Functions](functions.md)).
 
 ## Filtering Operators
 

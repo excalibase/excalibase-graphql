@@ -1,7 +1,10 @@
 package io.github.excalibase;
 
 import io.github.excalibase.schema.IntrospectionHandler;
+import io.github.excalibase.schema.ExposedFunction;
+import io.github.excalibase.schema.ExposedFunctions;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.TableAccess;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -154,36 +157,46 @@ class IntrospectionHandlerTest {
     // === Stored procedures with compound keys — must prefix ===
 
     @Test
-    void buildSchema_storedProcWithCompoundKey_prefixedMutationName() {
+    void buildSchema_computedFields_areReflectedButNotFields() {
         SchemaInfo info = new SchemaInfo();
         info.addColumn("hana.users", "id", "integer");
         info.addPrimaryKey("hana.users", "id");
         info.setTableSchema("hana.users", "hana");
+        info.addComputedField("hana.users", "users_label", "text");
 
-        // Stored procedure with compound key
-        info.addStoredProcedure("hana.transfer_funds",
-                new SchemaInfo.ProcedureInfo("transfer_funds", java.util.List.of(
-                        new SchemaInfo.ProcParam("IN", "amount", "numeric"))));
+        String type = new IntrospectionHandler(info).execute(
+                "{ __type(name: \"HanaUsers\") { fields { name } } }", Map.of()).toString();
 
-        IntrospectionHandler handler = new IntrospectionHandler(info);
+        assertTrue(type.contains("name=id"), type);
+        assertFalse(type.contains("label"), type);
+    }
 
-        // Mutation name should be prefixed: callHanaTransferFunds
-        Map<String, Object> result = handler.execute(
-                "{ __schema { mutationType { fields { name } } } }", Map.of());
+    @Test
+    void buildSchema_reflectedFunctions_areNotFields_unlessExposed() {
+        SchemaInfo info = new SchemaInfo();
+        info.addColumn("hana.users", "id", "integer");
+        info.addPrimaryKey("hana.users", "id");
+        info.setTableSchema("hana.users", "hana");
+        info.addFunction("hana.search_users", new SchemaInfo.FunctionInfo("hana", "search_users",
+                SchemaInfo.RoutineKind.FUNCTION, SchemaInfo.Volatility.STABLE, false, true, "hana.users",
+                java.util.List.of(new SchemaInfo.FunctionArg("p_query", "text", "i", false)), 1));
 
-        assertNotNull(result);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) result.get("data");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> schema = (Map<String, Object>) data.get("__schema");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> mutationType = (Map<String, Object>) schema.get("mutationType");
-        assertNotNull(mutationType);
-        @SuppressWarnings("unchecked")
-        java.util.List<Map<String, Object>> fields = (java.util.List<Map<String, Object>>) mutationType.get("fields");
-        java.util.List<String> fieldNames = fields.stream().map(f -> (String) f.get("name")).toList();
-        assertTrue(fieldNames.contains("callHanaTransferFunds"),
-                "Should have callHanaTransferFunds — got: " + fieldNames);
+        String untracked = new IntrospectionHandler(info).execute(
+                "{ __schema { queryType { fields { name } } } }", Map.of()).toString();
+        assertFalse(untracked.contains("hanaSearchUsers"), untracked);
+
+        ExposedFunction search = new ExposedFunction(
+                "hana.search_users", ExposedFunction.Operation.QUERY, "hanaSearchUsers",
+                "hana.users", true,
+                java.util.List.of(new ExposedFunction.Argument("p_query", "text", true)),
+                null, false);
+        IntrospectionHandler handler = new IntrospectionHandler(info, TableAccess.UNRESTRICTED,
+                ExposedFunctions.of(java.util.List.of(search)));
+        String exposed = handler.execute("{ __type(name: \"Query\") { fields { name type { kind ofType { name } } "
+                + "args { name type { kind ofType { name } } } } } }", Map.of()).toString();
+
+        assertTrue(exposed.contains("name=hanaSearchUsers, type={kind=LIST, ofType={name=HanaUsers}}"), exposed);
+        assertTrue(exposed.contains("name=p_query, type={kind=NON_NULL, ofType={name=String}}"), exposed);
     }
 
     // === Typed filter inputs: DateTime, Boolean, Float ===
@@ -370,11 +383,11 @@ class IntrospectionHandlerTest {
         info.addPrimaryKey("schema_b.users", "id");
         info.setTableSchema("schema_b.users", "schema_b");
 
-        // Same proc name in two schemas
-        info.addStoredProcedure("schema_a.do_stuff",
-                new SchemaInfo.ProcedureInfo("do_stuff", java.util.List.of()));
-        info.addStoredProcedure("schema_b.do_stuff",
-                new SchemaInfo.ProcedureInfo("do_stuff", java.util.List.of()));
+        // Same routine name in two schemas
+        info.addFunction("schema_a.do_stuff", new SchemaInfo.FunctionInfo("schema_a", "do_stuff",
+                SchemaInfo.RoutineKind.PROCEDURE, null, false, false, null, java.util.List.of(), 1));
+        info.addFunction("schema_b.do_stuff", new SchemaInfo.FunctionInfo("schema_b", "do_stuff",
+                SchemaInfo.RoutineKind.PROCEDURE, null, false, false, null, java.util.List.of(), 1));
 
         assertDoesNotThrow(() -> new IntrospectionHandler(info));
     }

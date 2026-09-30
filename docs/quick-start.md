@@ -50,7 +50,7 @@ Sample tables:
 - `users`, `posts`, `comments`, `tasks` — blog-style demo data with custom enum/composite types
 - `customer`, `orders`, `products`, `order_items` — e-commerce data with FK relationships
 - `enhanced_types` — JSON/JSONB, arrays, INET, CIDR, MACADDR, BYTEA, XML, TIMESTAMPTZ
-- `wallets` — for stored procedure testing
+- `wallets` — for tracked function testing
 - `rls_orders` — Row-Level Security demo table
 
 Views: `active_customers`, `posts_with_authors`, `enhanced_types_summary` (materialized)
@@ -128,11 +128,14 @@ Stored procedures: `get_customer_order_count`, `transfer_funds`
 }
 ```
 
-### Stored Procedure
+### Tracked function
+
+Functions are reachable only when the project tracks them ([Functions](features/functions.md)).
+The e2e fixture tracks `hana.transfer_between_wallets` for the `user` role:
 
 ```graphql
 mutation {
-  callHanaTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 100.00)
+  hanaTransferBetweenWallets(p_from: 1, p_to: 2, p_amount: 100.00) { wallet_id balance }
 }
 ```
 
@@ -229,5 +232,5 @@ ports:
 - [API Reference →](graphql/index.md) — full schema documentation
 - [Filtering →](graphql/filtering.md) — all filter operators with examples
 - [MySQL Support →](features/mysql.md) — MySQL-specific guide
-- [Stored Procedures →](features/stored-procedures.md) — calling procedures from GraphQL
+- [Functions →](features/functions.md) — calling tracked functions from GraphQL and REST
 - [Subscriptions →](features/subscriptions.md) — real-time CDC subscriptions (PostgreSQL)

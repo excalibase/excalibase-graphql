@@ -1,6 +1,7 @@
 package io.github.excalibase.compiler;
 
 import graphql.language.*;
+import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.RlsOp;
@@ -49,6 +50,30 @@ public class QueryBuilder {
     // === List query ===
 
     public String compileList(Field field, String tableName, Map<String, Object> params) {
+        return compileRows(field, tableName, qualifiedTable(tableName), params);
+    }
+
+    /**
+     * The rows a tracked function returns, read like a list of its return table: the role's select
+     * filter on that table, its columns and its row cap apply, as do the caller's where, orderBy,
+     * limit and offset. A single-row function answers one object or null.
+     */
+    public String compileFunction(Field field, ExposedFunction function, String callSql, Map<String, Object> params) {
+        if (function.returnsSet()) {
+            return compileRows(field, function.returnTable(), callSql, params);
+        }
+        String alias = dialect.randAlias();
+        String objectSql = buildObject(field.getSelectionSet(), function.returnTable(), alias, params);
+        List<String> conditions = new ArrayList<>();
+        // A single-row function that returns NULL still yields one row, with every column NULL.
+        conditions.add("NOT (" + alias + " IS NULL)");
+        filterBuilder.buildWhereConditions(field, alias, params, conditions, function.returnTable());
+        return SELECT + objectSql + FROM + "(" + SELECT + alias + ".*" + FROM + callSql + " " + alias
+                + WHERE + String.join(AND, conditions) + LIMIT + "1) " + alias;
+    }
+
+    /** A list read of {@code tableName}'s rows from {@code source}: the table itself, or a function call. */
+    private String compileRows(Field field, String tableName, String source, Map<String, Object> params) {
         String alias = dialect.randAlias();
         String objectSql = buildObject(field.getSelectionSet(), tableName, alias, params);
 
@@ -71,7 +96,7 @@ public class QueryBuilder {
         }
 
         sql.append(alias).append(".*");
-        sql.append(FROM).append(qualifiedTable(tableName)).append(" ").append(alias);
+        sql.append(FROM).append(source).append(" ").append(alias);
 
         // WHERE from arguments
         filterBuilder.applyWhere(sql, field, alias, params, tableName);
@@ -537,7 +562,8 @@ public class QueryBuilder {
             return buildReverseFkPair(field, alias, name, rfk, params);
         }
 
-        return buildComputedFieldPair(tableName, alias, name);
+        // A computed field is a function nobody tracks: reflected, never served.
+        return null;
     }
 
     private String buildColumnPair(Field field, String tableName, String alias, String name) {
@@ -620,20 +646,6 @@ public class QueryBuilder {
     private void appendNestedRls(List<String> joinConds, String relatedTable, String subAlias,
                                  Map<String, Object> params) {
         filterBuilder.appendRlsConditions(joinConds, relatedTable, subAlias, params, RlsOp.SELECT);
-    }
-
-    private String buildComputedFieldPair(String tableName, String alias, String name) {
-        List<SchemaInfo.ComputedField> computed = schemaInfo.getComputedFields(tableName);
-        if (computed == null) return null;
-        String rawTable = tableName.contains(".") ? tableName.substring(tableName.indexOf('.') + 1) : tableName;
-        for (SchemaInfo.ComputedField cf : computed) {
-            // Match: field name = function name, or function name = tableName_fieldName
-            if (cf.functionName().equals(name) || cf.functionName().equals(rawTable + "_" + name)) {
-                String funcCall = schemaInfo.resolveSchema(tableName, dbSchema) + "." + dialect.quoteIdentifier(cf.functionName()) + "(" + alias + ")";
-                return "'" + name + "', " + funcCall;
-            }
-        }
-        return null;
     }
 
     /** {@code __typename} is the one field every type answers; anything else unknown fails the request. */

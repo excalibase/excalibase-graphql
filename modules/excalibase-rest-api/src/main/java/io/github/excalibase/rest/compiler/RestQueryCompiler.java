@@ -86,6 +86,25 @@ public class RestQueryCompiler {
     }
 
     public CompiledResult compileSelect(SelectQuery query) {
+        return select(query, resolveTable(query.table()), new LinkedHashMap<>(), false);
+    }
+
+    /**
+     * The rows a tracked function returns, read like {@code query.table()} (its return table): the
+     * caller's select filter, columns and row cap on that table apply, as do the request's filters,
+     * select, order, limit and offset. {@code callSql} is the call, its parameters already in
+     * {@code params}. A single-row function skips the all-NULL row it yields when it returns NULL.
+     */
+    public CompiledResult compileFunctionSelect(SelectQuery query, String callSql, Map<String, Object> params,
+                                                boolean singleRow) {
+        if (query.includeCount()) {
+            throw new IllegalArgumentException("Counting the rows of a function is not supported");
+        }
+        return select(query, callSql, params, singleRow);
+    }
+
+    private CompiledResult select(SelectQuery query, String quotedTable, Map<String, Object> params,
+                                  boolean singleRow) {
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(query.table()));
         requirePermittedSelect(query, knownCols);
         List<String> columns = query.columns().stream().filter(knownCols::contains).toList();
@@ -93,9 +112,6 @@ public class RestQueryCompiler {
                 .filter(o -> knownCols.contains(o.column())).toList() : null;
         List<FilterSpec> allFilters = query.filters().stream()
                 .filter(f -> knownCols.contains(f.column())).toList();
-
-        String quotedTable = resolveTable(query.table());
-        Map<String, Object> params = new LinkedHashMap<>();
 
         // k-NN search is not a predicate — it modifies ORDER BY + LIMIT — so the vector
         // FilterSpec must not land in buildWhere. Only the first vector filter is honored.
@@ -105,6 +121,10 @@ public class RestQueryCompiler {
         StringBuilder where = buildWhere(filters, P_FILTER, params, query.table());
         appendOrConditions(where, query.orConditions(), knownCols, params, query.table());
         appendAfterCursor(where, query, knownCols, params);
+        if (singleRow) {
+            if (!where.isEmpty()) where.append(AND);
+            where.append("NOT (").append(ALIAS).append(" IS NULL)");
+        }
 
         // RLS: filter rows the caller may not read (the inner SELECT aliases the
         // table as ALIAS, so relationship/EXISTS predicates correlate to it).

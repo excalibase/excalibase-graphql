@@ -14,21 +14,11 @@ final class NamingHelpers {
 
     /** Derive the GraphQL type name from a table key. Compound keys always prefix. */
     static String typeName(String tableKey) {
-        if (tableKey.contains(".")) {
-            String schema = tableKey.substring(0, tableKey.indexOf('.'));
-            String rawTable = tableKey.substring(tableKey.indexOf('.') + 1);
-            return NamingUtils.schemaTypeName(schema, rawTable);
-        }
-        return NamingUtils.capitalize(tableKey);
+        return NamingUtils.typeNameOf(tableKey);
     }
 
     /** Derive the GraphQL field name from a table key. Compound keys always prefix. */
     static String fieldName(String tableKey) {
-        if (tableKey.contains(".")) {
-            String schema = tableKey.substring(0, tableKey.indexOf('.'));
-            String rawTable = tableKey.substring(tableKey.indexOf('.') + 1);
-            return NamingUtils.schemaFieldName(schema, rawTable);
-        }
-        return NamingUtils.toLowerCamelCase(tableKey);
+        return NamingUtils.fieldNameOf(tableKey);
     }
 }

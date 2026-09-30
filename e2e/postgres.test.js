@@ -13,8 +13,6 @@ const API_BASE = (process.env.POSTGRES_API_URL || 'http://localhost:10000/graphq
 const DATA_PROJECT = process.env.E2E_PROJECT_ID || 'e2e-test';
 const API_URL = `${API_BASE}/${DATA_PROJECT}/graphql`;
 let client;
-// Functions (stored procedures, computed fields) reach only the service role until
-// function permissions exist (docs/features/permissions.md §6).
 let serviceClient;
 
 beforeAll(async () => {
@@ -721,60 +719,20 @@ describe('Mutations — CRUD', () => {
 });
 
 // ─── Computed fields (PostgreSQL functions) ───────────────────────────────────
+// Reflected but not exposed for GA: they are functions nobody tracks, and an untracked
+// function is unreachable for every role, service included (docs/features/functions.md).
 
 describe('Computed fields', () => {
-  test('a role is not served computed fields (they are functions)', async () => {
+  test('a role is not served computed fields', async () => {
     await expect(client.request(gql`{ hanaCustomer(limit: 1) { customer_id full_name } }`))
       .rejects.toThrow('Unknown field(s): full_name');
   });
 
-  test('full_name field exists and is non-null', async () => {
-    const data = await serviceClient.request(gql`{ hanaCustomer(limit: 1) { customer_id first_name last_name full_name } }`);
-    expect(data.hanaCustomer[0].full_name).not.toBeNull();
-  });
-
-  test('full_name equals first_name + space + last_name', async () => {
-    const data = await serviceClient.request(gql`{ hanaCustomer(limit: 1) { first_name last_name full_name } }`);
-    const { first_name, last_name, full_name } = data.hanaCustomer[0];
-    expect(full_name).toBe(`${first_name} ${last_name}`);
-  });
-
-  test('active_label is "Active" for active customers', async () => {
-    const data = await serviceClient.request(gql`{ hanaCustomer(where: { active: { eq: true } }, limit: 1) { active active_label } }`);
-    expect(data.hanaCustomer[0].active_label).toBe('Active');
-  });
-
-  test('active_label is "Inactive" for inactive customers', async () => {
-    const data = await serviceClient.request(gql`{ hanaCustomer(where: { active: { eq: false } }, limit: 1) { active active_label } }`);
-    expect(data.hanaCustomer[0].active_label).toBe('Inactive');
-  });
-
-  test('total_with_tax exists and is non-null', async () => {
-    const data = await serviceClient.request(gql`{ hanaOrders(limit: 1) { order_id total_amount total_with_tax } }`);
-    expect(data.hanaOrders[0].total_with_tax).not.toBeNull();
-  });
-
-  test('total_with_tax is 10% more than total_amount', async () => {
-    const data = await serviceClient.request(gql`{ hanaOrders(limit: 1) { total_amount total_with_tax } }`);
-    const amount = Number(data.hanaOrders[0].total_amount);
-    const withTax = Number(data.hanaOrders[0].total_with_tax);
-    expect(withTax).toBeCloseTo(Math.round(amount * 1.1 * 100) / 100, 1);
-  });
-
-  test('is_high_value is true for high-value orders', async () => {
-    const data = await serviceClient.request(gql`{ hanaOrders(where: { total_amount: { gt: 200 } }, limit: 1) { total_amount is_high_value } }`);
-    expect(data.hanaOrders[0].is_high_value).toBe(true);
-  });
-
-  test('is_high_value is false for low-value orders', async () => {
-    const data = await serviceClient.request(gql`{ hanaOrders(where: { total_amount: { lt: 200 } }, limit: 1) { total_amount is_high_value } }`);
-    expect(data.hanaOrders[0].is_high_value).toBe(false);
-  });
-
-  test('computed fields work with pagination', async () => {
-    const data = await serviceClient.request(gql`{ hanaCustomer(limit: 3) { customer_id full_name active_label } }`);
-    expect(data.hanaCustomer.length).toBe(3);
-    data.hanaCustomer.forEach(c => expect(c.full_name).not.toBeNull());
+  test('neither is service', async () => {
+    await expect(serviceClient.request(gql`{ hanaOrders(limit: 1) { order_id total_with_tax } }`))
+      .rejects.toThrow('Unknown field(s): total_with_tax');
+    const data = await serviceClient.request(gql`{ __type(name: "HanaCustomer") { fields { name } } }`);
+    expect(data.__type.fields.map(f => f.name)).not.toContain('full_name');
   });
 });
 
@@ -883,11 +841,15 @@ describe('RLS (Row Level Security)', () => {
   });
 });
 
-// ─── Stored Procedures ────────────────────────────────────────────────────────
+// ─── Tracked functions ───────────────────────────────────────────────────────
+// Only functions the project tracks are reachable (docs/features/permissions.md §6).
+// Procedures are reflected but never exposed, to any role. wallets_with_balance_at_least
+// is a STABLE query anyone who may select wallets can call (inferred); transfer_between_wallets
+// is a VOLATILE mutation only the user role holds a function permission for.
 
-describe('Stored Procedures', () => {
-  // A procedure body is opaque to RLS, so calls need a token (same as REST /rpc).
+describe('Tracked functions', () => {
   let authClient;
+  let authHeader;
 
   beforeAll(async () => {
     await authPost(`/auth/${PROJECT_ID}/register`, {
@@ -896,84 +858,65 @@ describe('Stored Procedures', () => {
     const login = await authPost(`/auth/${PROJECT_ID}/login`, {
       email: 'alice-e2e@test.com', password: 'secret123',
     });
-    authClient = createClient(API_URL, { Authorization: `Bearer ${login.data.accessToken}` });
-  });
-
-  test('a role reaches no procedure', async () => {
-    const res = await rawGraphql('mutation { callHanaGetCustomerOrderCount(p_customer_id: 1) }');
-    expect(res.data.data?.callHanaGetCustomerOrderCount).toBeUndefined();
-    const signedIn = await authClient.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
-    expect(signedIn.__type.fields.map(f => f.name)).not.toContain('callHanaGetCustomerOrderCount');
-  });
-
-  test('procedure mutation appears in the service schema', async () => {
-    const data = await serviceClient.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
-    const mutationNames = data.__type.fields.map(f => f.name);
-    expect(mutationNames).toContain('callHanaGetCustomerOrderCount');
-  });
-
-  test('call procedure with IN param returns OUT param', async () => {
-    const data = await serviceClient.request(gql`
-      mutation { callHanaGetCustomerOrderCount(p_customer_id: 1) }
-    `);
-    expect(data.callHanaGetCustomerOrderCount).toBeDefined();
-    const result = JSON.parse(data.callHanaGetCustomerOrderCount);
-    expect(result).toHaveProperty('p_count');
-    expect(Number(result.p_count)).toBeGreaterThanOrEqual(0);
-  });
-
-  // ── transfer_funds: complex procedure with balance check ─────────────────
-
-  beforeAll(async () => {
+    authHeader = { Authorization: `Bearer ${login.data.accessToken}` };
+    authClient = createClient(API_URL, authHeader);
     // Reset wallet balances so transfer tests are idempotent across repeated runs
     await client.request(gql`mutation { updateHanaWallets(where: { wallet_id: { eq: 1 } }, input: { balance: 1000.00 }) { wallet_id } }`);
     await client.request(gql`mutation { updateHanaWallets(where: { wallet_id: { eq: 2 } }, input: { balance: 500.00 }) { wallet_id } }`);
     await client.request(gql`mutation { updateHanaWallets(where: { wallet_id: { eq: 3 } }, input: { balance: 10.00 }) { wallet_id } }`);
   });
 
-  test('transfer_funds appears in the service schema', async () => {
-    const data = await serviceClient.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
-    const mutationNames = data.__type.fields.map(f => f.name);
-    expect(mutationNames).toContain('callHanaTransferFunds');
+  const mutationNames = async (someClient) => {
+    const data = await someClient.request(gql`{ __type(name: "Mutation") { fields { name } } }`);
+    return data.__type.fields.map(f => f.name);
+  };
+
+  test('a procedure is reachable by no role, service included', async () => {
+    const res = await rawGraphql('mutation { callHanaTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 1) }');
+    expect(res.data.data?.callHanaTransferFunds).toBeUndefined();
+    expect(await mutationNames(serviceClient)).not.toContain('callHanaTransferFunds');
+    expect(await mutationNames(authClient)).not.toContain('callHanaTransferFunds');
   });
 
-  test('transfer_funds happy path — sufficient balance moves money', async () => {
-    // Read balances before transfer
-    const before = await client.request(gql`
-      { hanaWallets(orderBy: { wallet_id: ASC }) { wallet_id balance } }
+  test('a STABLE function is inferred from the select permission on its return table', async () => {
+    const data = await client.request(gql`
+      { hanaWalletsWithBalanceAtLeast(p_min: 100, where: { wallet_id: { lt: 3 } }) { wallet_id balance } }
     `);
-    const aliceBefore = Number(before.hanaWallets.find(w => w.wallet_id == 1).balance);
-    const bobBefore   = Number(before.hanaWallets.find(w => w.wallet_id == 2).balance);
-
-    // Alice (wallet 1) transfers 200 to Bob (wallet 2)
-    const data = await serviceClient.request(gql`
-      mutation { callHanaTransferFunds(p_from_wallet_id: 1, p_to_wallet_id: 2, p_amount: 200.00) }
-    `);
-    const result = JSON.parse(data.callHanaTransferFunds);
-    expect(result.p_status).toBe('SUCCESS');
-
-    // Verify balances changed by exactly 200
-    const after = await client.request(gql`
-      { hanaWallets(orderBy: { wallet_id: ASC }) { wallet_id balance } }
-    `);
-    const aliceAfter = Number(after.hanaWallets.find(w => w.wallet_id == 1).balance);
-    const bobAfter   = Number(after.hanaWallets.find(w => w.wallet_id == 2).balance);
-    expect(aliceAfter).toBeCloseTo(aliceBefore - 200, 2);
-    expect(bobAfter).toBeCloseTo(bobBefore + 200, 2);
+    expect(data.hanaWalletsWithBalanceAtLeast.map(w => Number(w.wallet_id))).toEqual([1, 2]);
   });
 
-  test('transfer_funds unhappy path — insufficient funds rejected, balances unchanged', async () => {
-    // Charlie (wallet 3, balance=10) tries to send 500 → should fail
-    const data = await serviceClient.request(gql`
-      mutation { callHanaTransferFunds(p_from_wallet_id: 3, p_to_wallet_id: 1, p_amount: 500.00) }
-    `);
-    const result = JSON.parse(data.callHanaTransferFunds);
-    expect(result.p_status).toMatch(/ERROR.*Insufficient/i);
+  test('REST GET /rpc calls the query function with its arguments as query parameters', async () => {
+    const res = await fetch(`${REST_URL}/rpc/wallets_with_balance_at_least?p_min=100&select=wallet_id&order=wallet_id.desc`, {
+      headers: { 'Accept-Profile': 'hana' },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.map(w => Number(w.wallet_id))).toEqual([2, 1]);
+    expect(body.data[0].balance).toBeUndefined();
+  });
 
-    // Verify Charlie's balance is still 10, not negative (constraint not violated)
-    const wallets = await client.request(gql`
-      { hanaWallets(orderBy: { wallet_id: ASC }) { wallet_id balance } }
+  test('the VOLATILE function is a mutation only the user role holds', async () => {
+    expect(await mutationNames(client)).not.toContain('hanaTransferBetweenWallets');
+    expect(await mutationNames(authClient)).toContain('hanaTransferBetweenWallets');
+    expect(await mutationNames(serviceClient)).toContain('hanaTransferBetweenWallets');
+  });
+
+  test('transfer happy path — moves money and returns both wallets', async () => {
+    const data = await authClient.request(gql`
+      mutation { hanaTransferBetweenWallets(p_from: 1, p_to: 2, p_amount: 200.00) { wallet_id balance } }
     `);
+    const byId = Object.fromEntries(data.hanaTransferBetweenWallets.map(w => [Number(w.wallet_id), Number(w.balance)]));
+    expect(byId[1]).toBeCloseTo(800, 2);
+    expect(byId[2]).toBeCloseTo(700, 2);
+  });
+
+  test('transfer unhappy path — insufficient funds rejected, balances unchanged', async () => {
+    const res = await rawGraphql(
+      'mutation { hanaTransferBetweenWallets(p_from: 3, p_to: 1, p_amount: 500.00) { wallet_id } }',
+      authHeader,
+    );
+    expect(res.data.errors?.[0]?.message).toMatch(/Insufficient funds/i);
+    const wallets = await client.request(gql`{ hanaWallets(orderBy: { wallet_id: ASC }) { wallet_id balance } }`);
     const charlie = wallets.hanaWallets.find(w => w.wallet_id == 3);
     expect(Number(charlie.balance)).toBeCloseTo(10.00, 2);
   });

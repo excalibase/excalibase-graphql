@@ -11,8 +11,8 @@ import java.util.TreeMap;
 /**
  * Builds the schema one role is served: its selectable tables with only their selectable columns,
  * and relationships only where both tables and every join column are selectable. Columns the role
- * may write but not read are typed without being listed. Functions and computed fields are left out
- * for every role (spec §6 is not in force yet), so nothing that runs arbitrary SQL is reachable.
+ * may write but not read are typed without being listed. Functions are not part of the view: the ones
+ * a role may call are the plan's tracked functions. Computed fields are left out for every role.
  */
 final class RoleView {
 

@@ -89,6 +89,22 @@ class PostgresSchemaLoaderIntegrationTest {
                 ) LANGUAGE plpgsql AS $$
                 BEGIN counter := counter + 1; done := true; END $$
                 """);
+        jdbc.execute("""
+                CREATE FUNCTION loader_test.search_users(p_query text, p_limit int DEFAULT 10)
+                RETURNS SETOF loader_test.users LANGUAGE sql STABLE
+                AS $$ SELECT * FROM loader_test.users WHERE email LIKE p_query LIMIT p_limit $$
+                """);
+        jdbc.execute("""
+                CREATE FUNCTION loader_test.newest_user() RETURNS loader_test.users
+                LANGUAGE sql VOLATILE SECURITY DEFINER
+                AS $$ SELECT * FROM loader_test.users ORDER BY id DESC LIMIT 1 $$
+                """);
+        jdbc.execute("""
+                CREATE FUNCTION loader_test.active_rows() RETURNS SETOF loader_test.active_users
+                LANGUAGE sql IMMUTABLE AS $$ SELECT * FROM loader_test.active_users $$
+                """);
+        jdbc.execute("CREATE FUNCTION loader_test.twice(x int) RETURNS int LANGUAGE sql AS $$ SELECT x * 2 $$");
+        jdbc.execute("CREATE FUNCTION loader_test.twice(x text) RETURNS text LANGUAGE sql AS $$ SELECT x || x $$");
     }
 
     @AfterAll
@@ -171,15 +187,49 @@ class PostgresSchemaLoaderIntegrationTest {
     }
 
     @Test
-    @DisplayName("loadStoredProcedures captures procedures with OUT/INOUT params")
-    void loadStoredProcedures_captureInOutParams() {
+    @DisplayName("loadFunctions reflects a procedure as a procedure, with its argument modes")
+    void loadFunctions_procedure() {
         SchemaInfo info = new SchemaInfo();
-        new PostgresSchemaLoader().loadStoredProcedures(jdbc, "loader_test", info);
+        new PostgresSchemaLoader().loadFunctions(jdbc, "loader_test", info);
 
-        assertThat(info.getStoredProcedures()).containsKey("do_work");
-        var proc = info.getStoredProcedures().get("do_work");
-        assertThat(proc.inParams()).isNotEmpty();
-        assertThat(proc.outParams()).isNotEmpty();
+        var proc = info.getFunction("do_work");
+        assertThat(proc.kind()).isEqualTo(SchemaInfo.RoutineKind.PROCEDURE);
+        assertThat(proc.args()).extracting(SchemaInfo.FunctionArg::mode).containsExactly("i", "b", "o");
+    }
+
+    @Test
+    @DisplayName("loadFunctions reflects volatility, set-ness, the return table and argument defaults")
+    void loadFunctions_setReturningFunction() {
+        SchemaInfo info = new SchemaInfo();
+        new PostgresSchemaLoader().loadFunctions(jdbc, "loader_test", info);
+
+        var search = info.getFunction("search_users");
+        assertThat(search.kind()).isEqualTo(SchemaInfo.RoutineKind.FUNCTION);
+        assertThat(search.volatility()).isEqualTo(SchemaInfo.Volatility.STABLE);
+        assertThat(search.returnsSet()).isTrue();
+        assertThat(search.securityDefiner()).isFalse();
+        assertThat(search.returnTable()).isEqualTo("loader_test.users");
+        assertThat(search.overloads()).isEqualTo(1);
+        assertThat(search.args()).containsExactly(
+                new SchemaInfo.FunctionArg("p_query", "text", "i", false),
+                new SchemaInfo.FunctionArg("p_limit", "integer", "i", true));
+    }
+
+    @Test
+    @DisplayName("loadFunctions reflects a single-row SECURITY DEFINER function, a view return and overloads")
+    void loadFunctions_singleRowViewAndOverloads() {
+        SchemaInfo info = new SchemaInfo();
+        new PostgresSchemaLoader().loadFunctions(jdbc, "loader_test", info);
+
+        var newest = info.getFunction("newest_user");
+        assertThat(newest.returnsSet()).isFalse();
+        assertThat(newest.securityDefiner()).isTrue();
+        assertThat(newest.volatility()).isEqualTo(SchemaInfo.Volatility.VOLATILE);
+        assertThat(newest.returnTable()).isEqualTo("loader_test.users");
+        assertThat(info.getFunction("active_rows").returnTable()).isEqualTo("loader_test.active_users");
+        assertThat(info.getFunction("active_rows").volatility()).isEqualTo(SchemaInfo.Volatility.IMMUTABLE);
+        assertThat(info.getFunction("compute_discount").returnTable()).isNull();
+        assertThat(info.getFunction("twice").overloads()).isEqualTo(2);
     }
 
     @Test
@@ -194,7 +244,9 @@ class PostgresSchemaLoaderIntegrationTest {
         assertThat(info.getViewNames()).contains("active_users", "user_stats");
         assertThat(info.getCompositeTypes()).containsKey("address");
         assertThat(info.getEnumTypes()).containsKey("priority");
-        assertThat(info.getStoredProcedures()).containsKey("do_work");
+        assertThat(info.getFunctions()).containsKeys("do_work", "search_users");
+        assertThat(info.getFunction("search_users").returnTable()).isEqualTo("loader_test.users");
+        assertThat(info.getFunction("twice").overloads()).isEqualTo(2);
     }
 
     @Test

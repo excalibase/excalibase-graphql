@@ -120,8 +120,10 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     "project_unavailable");
             return false;
         }
+        Map<String, String> sessionVariables = principal.sessionVariables(projectId);
+        RlsContext.setSessionVariables(sessionVariables);
         if (plan != null && !plan.allAccess()) {
-            RequestGuard guard = plan.guard(principal.sessionVariables(projectId));
+            RequestGuard guard = plan.guard(sessionVariables);
             RlsContext.set(guard);
             RlsContext.setWriteGuard(guard);
         }

@@ -7,7 +7,6 @@ import graphql.schema.GraphQLOutputType;
 import graphql.schema.GraphQLTypeReference;
 import io.github.excalibase.schema.SchemaInfo;
 
-import java.util.List;
 import java.util.Map;
 
 import static graphql.schema.GraphQLFieldDefinition.newFieldDefinition;
@@ -27,7 +26,6 @@ public final class TableObjectTypeFactory {
         String typeName = NamingHelpers.typeName(tableKey);
         GraphQLObjectType.Builder typeBuilder = newObject().name(typeName);
         addScalarColumns(tableKey, schemaInfo, enumTypes, typeBuilder);
-        addComputedFields(tableKey, schemaInfo, typeBuilder);
         addForwardFkFields(tableKey, schemaInfo, typeBuilder);
         addReverseFkFields(tableKey, schemaInfo, typeBuilder);
         return typeBuilder.build();
@@ -45,25 +43,6 @@ public final class TableObjectTypeFactory {
             typeBuilder.field(newFieldDefinition()
                     .name(col)
                     .type(colType)
-                    .build());
-        }
-    }
-
-    private void addComputedFields(String table,
-                                   SchemaInfo schemaInfo,
-                                   GraphQLObjectType.Builder typeBuilder) {
-        List<SchemaInfo.ComputedField> computed = schemaInfo.getComputedFields(table);
-        if (computed == null) return;
-        String rawTable = table.contains(".") ? table.substring(table.indexOf('.') + 1) : table;
-        for (SchemaInfo.ComputedField cf : computed) {
-            // Field name: strip table prefix if present (e.g., "customer_full_name" → "full_name")
-            String cfName = cf.functionName();
-            if (cfName.startsWith(rawTable + "_")) {
-                cfName = cfName.substring(rawTable.length() + 1);
-            }
-            typeBuilder.field(newFieldDefinition()
-                    .name(cfName)
-                    .type(TypeMapping.mapColumnType(cf.returnType()))
                     .build());
         }
     }

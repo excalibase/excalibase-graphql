@@ -137,8 +137,8 @@ async function waitFor(arr, predicate, timeoutMs = 15000) {
 
 /**
  * A secret-key (service) token for {@code projectId}, signed with the e2e keypair that
- * generate-keys.sh made and excalibase-auth publishes. Only the service role reaches stored
- * procedures and computed fields until function permissions exist.
+ * generate-keys.sh made and excalibase-auth publishes. Service reaches every table and every
+ * tracked function.
  */
 function serviceToken(projectId, keyFile = `${__dirname}/private.pem`) {
   const crypto = require('crypto');

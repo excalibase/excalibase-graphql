@@ -3,8 +3,12 @@ package io.github.excalibase.compiler;
 import graphql.language.*;
 import graphql.parser.Parser;
 import io.github.excalibase.*;
+import io.github.excalibase.schema.ExposedFunction;
+import io.github.excalibase.schema.ExposedFunctions;
+import io.github.excalibase.schema.GraphqlConstants;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
+import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.spi.MutationCompiler;
 
 import java.util.*;
@@ -15,6 +19,11 @@ import java.util.*;
  */
 public class SqlCompiler {
 
+    /** Arguments of a function field that shape its rows rather than its call. */
+    private static final Set<String> ROW_ARGUMENTS = Set.of(GraphqlConstants.ARG_WHERE, GraphqlConstants.ARG_FILTER,
+            GraphqlConstants.ARG_ORDER_BY, GraphqlConstants.ARG_LIMIT, GraphqlConstants.ARG_OFFSET,
+            GraphqlConstants.ARG_DISTINCT_ON, GraphqlConstants.ARG_VECTOR);
+
     private final SchemaInfo schemaInfo;
     private final QueryBuilder queryBuilder;
     private final MutationBuilder mutationBuilder;
@@ -22,6 +31,8 @@ public class SqlCompiler {
 
     private final SqlDialect dialect;
     private final int maxDepth;
+    private final ExposedFunctions functions;
+    private final FilterBuilder filterBuilder;
 
     public SqlCompiler(SchemaInfo schemaInfo, String dbSchema, int maxRows, SqlDialect dialect, MutationCompiler mutationCompiler) {
         this(schemaInfo, dbSchema, maxRows, dialect, mutationCompiler, 0);
@@ -37,10 +48,18 @@ public class SqlCompiler {
      */
     public SqlCompiler(SchemaInfo schemaInfo, String dbSchema, int maxRows, SqlDialect dialect,
                        MutationCompiler mutationCompiler, int maxDepth, TableAccess access) {
+        this(schemaInfo, dbSchema, maxRows, dialect, mutationCompiler, maxDepth, access, ExposedFunctions.NONE);
+    }
+
+    /** As above, plus the tracked functions the caller may call; no other function is reachable. */
+    public SqlCompiler(SchemaInfo schemaInfo, String dbSchema, int maxRows, SqlDialect dialect,
+                       MutationCompiler mutationCompiler, int maxDepth, TableAccess access,
+                       ExposedFunctions functions) {
         this.schemaInfo = schemaInfo;
         this.dialect = dialect;
         this.maxDepth = maxDepth;
-        FilterBuilder filterBuilder = new FilterBuilder(dialect, maxRows, schemaInfo, dbSchema, access);
+        this.functions = functions == null ? ExposedFunctions.NONE : functions;
+        this.filterBuilder = new FilterBuilder(dialect, maxRows, schemaInfo, dbSchema, access);
         this.queryBuilder = new QueryBuilder(schemaInfo, dialect, filterBuilder, dbSchema, maxRows, fragmentsHolder);
         this.mutationBuilder = new MutationBuilder(schemaInfo, dialect, filterBuilder, dbSchema, queryBuilder,
                 mutationCompiler, access);
@@ -49,6 +68,8 @@ public class SqlCompiler {
     public SchemaInfo schemaInfo() { return schemaInfo; }
 
     public SqlDialect dialect() { return dialect; }
+
+    public ExposedFunctions functions() { return functions; }
 
     public CompiledQuery compile(String queryString) {
         return compile(queryString, Map.of());
@@ -110,16 +131,19 @@ public class SqlCompiler {
     private CompiledQuery compileMutationOperation(OperationDefinition op, Map<String, Object> params,
                                                    Map<String, Object> variables) {
         List<MutationFragment> mutFragments = new ArrayList<>();
+        List<String> unresolvedFields = new ArrayList<>();
         for (Selection<?> sel : op.getSelectionSet().getSelections()) {
             if (sel instanceof Field field) {
-                CompiledQuery earlyExit = processMutationSelection(field, params, variables, mutFragments);
+                CompiledQuery earlyExit = processMutationSelection(field, params, variables, mutFragments,
+                        unresolvedFields);
                 if (earlyExit != null) return earlyExit;
             }
         }
+        requireKnown(unresolvedFields);
         if (mutFragments.isEmpty()) {
             return new CompiledQuery("SELECT " + dialect.buildObject(List.of()), params);
         }
-        if (mutFragments.size() == 1) {
+        if (mutFragments.size() == 1 && mutFragments.getFirst().rawSql() != null) {
             // Single mutation — use existing wrapped path (backward compatible)
             String wrapped = dialect.wrapMutationResult(mutFragments.get(0).rawSql(), mutFragments.get(0).fieldName());
             return new CompiledQuery(wrapped, params);
@@ -136,17 +160,28 @@ public class SqlCompiler {
                 compileRootQueryField(field, params, rootResults, unresolvedFields);
             }
         }
-        if (rootResults.isEmpty() && !unresolvedFields.isEmpty()) {
-            throw new IllegalArgumentException("Unknown field(s): " + String.join(", ", unresolvedFields));
-        }
+        requireKnown(unresolvedFields);
         String sql = "SELECT " + dialect.buildObject(rootResults);
         return new CompiledQuery(sql, params);
+    }
+
+    /** A root field the caller's schema does not have fails the whole operation, never silently. */
+    private static void requireKnown(List<String> unresolvedFields) {
+        if (!unresolvedFields.isEmpty()) {
+            throw new IllegalArgumentException("Unknown field(s): " + String.join(", ", unresolvedFields));
+        }
     }
 
     /** Compile a single root-level query field, appending to rootResults or unresolvedFields. */
     private void compileRootQueryField(Field field, Map<String, Object> params,
                                        List<String> rootResults, List<String> unresolvedFields) {
         String fieldName = field.getName();
+        String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
+        Optional<ExposedFunction> function = functions.field(fieldName, ExposedFunction.Operation.QUERY);
+        if (function.isPresent()) {
+            rootResults.add("'" + responseKey + "', (" + compileFunctionCall(field, function.get(), params) + ")");
+            return;
+        }
         String tableName = queryBuilder.resolveTableName(fieldName);
         if (tableName == null) {
             unresolvedFields.add(fieldName);
@@ -160,33 +195,35 @@ public class SqlCompiler {
         } else {
             sql = queryBuilder.compileList(field, tableName, params);
         }
-        String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
         rootResults.add("'" + responseKey + "', (" + sql + ")");
     }
 
     /**
      * Process a single mutation selection — either appending to {@code mutFragments}
-     * or returning a {@link CompiledQuery} if an early exit is needed (stored procedure
-     * call or MySQL two-phase mutation). Returns {@code null} to keep processing.
+     * or returning a {@link CompiledQuery} if an early exit is needed (MySQL two-phase
+     * mutation). Returns {@code null} to keep processing.
      */
     private CompiledQuery processMutationSelection(Field field, Map<String, Object> params,
                                                    Map<String, Object> variables,
-                                                   List<MutationFragment> mutFragments) {
+                                                   List<MutationFragment> mutFragments,
+                                                   List<String> unresolvedFields) {
         String fieldName = field.getName();
+        String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
 
-        // Stored procedure calls — single call, return immediately
-        if (fieldName.startsWith("call")) {
-            String procNameResolved = mutationBuilder.resolveStoredProcedure(fieldName.substring("call".length()));
-            if (procNameResolved != null) {
-                ProcedureCallInfo callInfo = mutationBuilder.buildProcedureCallInfo(field, procNameResolved, variables);
-                if (callInfo != null) {
-                    return new CompiledQuery(null, params, null, null, true, fieldName, callInfo);
-                }
-            }
+        Optional<ExposedFunction> function = functions.field(fieldName, ExposedFunction.Operation.MUTATION);
+        if (function.isPresent()) {
+            mutFragments.add(new MutationFragment(responseKey, null, compileFunctionCall(field, function.get(), params)));
+            return null;
         }
 
         CompiledQuery frag = mutationBuilder.compileMutationFragment(field, fieldName, params, variables);
-        if (frag == null) return null;
+        if (frag == null) {
+            if (mutationBuilder.isMutationField(fieldName)) {
+                throw new IllegalArgumentException("Invalid arguments for " + fieldName);
+            }
+            unresolvedFields.add(fieldName);
+            return null;
+        }
 
         // MySQL two-phase mutations cannot be combined — execute immediately (single path)
         if (frag.isTwoPhase()) {
@@ -194,9 +231,25 @@ public class SqlCompiler {
         }
 
         // Use alias as response key if present (e.g. "c1: createX(...)")
-        String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
-        mutFragments.add(new MutationFragment(responseKey, frag.sql()));
+        mutFragments.add(new MutationFragment(responseKey, frag.sql(), null));
         return null;
+    }
+
+    /**
+     * A tracked function called with the field's own arguments; {@code where}, {@code orderBy},
+     * {@code limit} and {@code offset} apply to its rows, never to the call.
+     */
+    private String compileFunctionCall(Field field, ExposedFunction function, Map<String, Object> params) {
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        for (Argument argument : field.getArguments()) {
+            boolean unboundVariable = argument.getValue() instanceof VariableReference variable
+                    && !FilterBuilder.boundVariables().containsKey(variable.getName());
+            if (!ROW_ARGUMENTS.contains(argument.getName()) && !unboundVariable) {
+                arguments.put(argument.getName(), filterBuilder.extractValue(argument.getValue()));
+            }
+        }
+        String call = FunctionCall.sql(function, arguments, RlsContext.sessionVariables(), dialect, params);
+        return queryBuilder.compileFunction(field, function, call, params);
     }
 
     /**
@@ -213,6 +266,10 @@ public class SqlCompiler {
         List<String> objectEntries = new ArrayList<>();
 
         for (MutationFragment fragment : fragments) {
+            if (fragment.rawSql() == null) {
+                objectEntries.add("'" + fragment.fieldName() + "', (" + fragment.selectSql() + ")");
+                continue;
+            }
             // Split at last ") SELECT" boundary to separate CTE body from SELECT clause
             int splitIdx = fragment.rawSql().lastIndexOf(") SELECT ");
             if (splitIdx == -1) continue;
@@ -228,11 +285,12 @@ public class SqlCompiler {
             objectEntries.add("'" + fragment.fieldName() + "', (" + selectPart + ")");
         }
 
-        String sql = String.join(", ", cteParts) + " SELECT jsonb_build_object(" + String.join(", ", objectEntries) + ")";
-        return new CompiledQuery(sql, params);
+        String sql = String.join(", ", cteParts) + " SELECT " + dialect.buildObject(objectEntries);
+        return new CompiledQuery(sql.trim(), params);
     }
 
-    private record MutationFragment(String fieldName, String rawSql) {}
+    /** A table mutation's CTE statement ({@code rawSql}), or a function call's rows ({@code selectSql}). */
+    private record MutationFragment(String fieldName, String rawSql, String selectSql) {}
 
     private int measureDepth(SelectionSet selectionSet, Map<String, FragmentDefinition> fragments) {
         if (selectionSet == null || selectionSet.getSelections().isEmpty()) return 0;
@@ -269,26 +327,13 @@ public class SqlCompiler {
         return false;
     }
 
-    public record CompiledQuery(String sql, Map<String, Object> params, String dmlSql, String lastInsertIdParam,
-                                boolean isProcedureCall, String mutationFieldName,
-                                ProcedureCallInfo procedureCallInfo) {
+    public record CompiledQuery(String sql, Map<String, Object> params, String dmlSql, String lastInsertIdParam) {
         public CompiledQuery(String sql, Map<String, Object> params) {
-            this(sql, params, null, null, false, null, null);
-        }
-        public CompiledQuery(String sql, Map<String, Object> params, String dmlSql, String lastInsertIdParam) {
-            this(sql, params, dmlSql, lastInsertIdParam, false, null, null);
-        }
-        public CompiledQuery(String sql, Map<String, Object> params, String dmlSql, String lastInsertIdParam,
-                             boolean isProcedureCall, String mutationFieldName) {
-            this(sql, params, dmlSql, lastInsertIdParam, isProcedureCall, mutationFieldName, null);
+            this(sql, params, null, null);
         }
         /** True when this is a MySQL two-phase mutation (DML separate from SELECT) */
         public boolean isTwoPhase() { return dmlSql != null; }
         /** True when DELETE needs SELECT-before-DML ordering */
         public boolean isDeleteBeforeSelect() { return MutationBuilder.MUTATION_DELETE.equals(lastInsertIdParam); }
     }
-
-    /** Info needed to execute a stored procedure via CALL with CallableStatement */
-    public record ProcedureCallInfo(String qualifiedName, List<ProcedureCallParam> allParams) {}
-    public record ProcedureCallParam(String name, String mode, String type, Object value) {}
 }

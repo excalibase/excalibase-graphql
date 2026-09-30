@@ -615,13 +615,14 @@ class RestControllerIntegrationTest {
   class RpcEndpoint {
 
     @Test
-    @DisplayName("POST /api/v1/rpc/add_numbers calls function")
-    void rpcCall() throws Exception {
+    @DisplayName("POST /api/v1/rpc/add_numbers: an untracked function is not found, even with authentication off")
+    void rpcUntracked() throws Exception {
       mockMvc.perform(post(BASE + "/rpc/add_numbers")
               .contentType(MediaType.APPLICATION_JSON)
               .content("{\"a\":3,\"b\":4}"))
-          .andExpect(status().isOk())
-          .andExpect(jsonPath("$.result", is(7)));
+          .andExpect(status().isNotFound());
+      mockMvc.perform(get(BASE + "/rpc/add_numbers?a=3&b=4"))
+          .andExpect(status().isNotFound());
     }
 
     @Test

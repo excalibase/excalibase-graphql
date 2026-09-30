@@ -3,6 +3,7 @@ package io.github.excalibase;
 import com.sun.net.httpserver.HttpServer;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.function.Supplier;
 
 /** Permission documents (docs/features/permissions.md §8) for integration tests, and serving them. */
@@ -22,6 +23,26 @@ public final class PermissionDocs {
     public static String document(String projectId, long version, String... tableEntries) {
         return "{\"projectId\":\"" + projectId + "\",\"version\":" + version + ",\"tables\":["
                 + String.join(",", tableEntries) + "],\"functions\":[],\"functionPermissions\":[]}";
+    }
+
+    /** A whole document at {@code version} with tracked functions and function permissions. */
+    public static String document(String projectId, long version, List<String> tableEntries,
+                                  List<String> functions, List<String> functionPermissions) {
+        return "{\"projectId\":\"" + projectId + "\",\"version\":" + version + ",\"tables\":["
+                + String.join(",", tableEntries) + "],\"functions\":[" + String.join(",", functions)
+                + "],\"functionPermissions\":[" + String.join(",", functionPermissions) + "]}";
+    }
+
+    /** One {@code functions} entry; {@code sessionArgument} may be null. */
+    public static String tracked(String function, String exposedAs, boolean inferPermissions, String sessionArgument) {
+        return "{\"function\":\"" + function + "\",\"exposedAs\":\"" + exposedAs + "\",\"inferPermissions\":"
+                + inferPermissions + ",\"sessionArgument\":"
+                + (sessionArgument == null ? "null" : "\"" + sessionArgument + "\"") + "}";
+    }
+
+    /** One {@code functionPermissions} entry. */
+    public static String callable(String function, String role) {
+        return "{\"function\":\"" + function + "\",\"role\":\"" + role + "\"}";
     }
 
     /** One {@code tables} entry; {@code operations} is the JSON after the names, e.g. {@code "select":{...}}. */

@@ -23,6 +23,11 @@ public interface SchemaProvider {
         return TableAccess.UNRESTRICTED;
     }
 
+    /** The tracked functions the caller may call; none by default, so nothing untracked is reachable. */
+    default ExposedFunctions resolveFunctions(Principal principal) {
+        return ExposedFunctions.NONE;
+    }
+
     String getDatabaseType();
 
     /**

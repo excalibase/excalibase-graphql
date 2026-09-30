@@ -7,13 +7,15 @@ import io.github.excalibase.rest.parser.FilterParser;
 import io.github.excalibase.rest.parser.OrderParser;
 import io.github.excalibase.rest.parser.SelectParser;
 import io.github.excalibase.permissions.PermissionEvaluationException;
+import io.github.excalibase.compiler.FunctionCall;
+import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaProvider;
 import io.github.excalibase.schema.TableAccess;
-import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.PermissionCheckFailedException;
 import io.github.excalibase.security.PermissionErrors;
 import io.github.excalibase.security.Principal;
+import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
@@ -59,18 +61,15 @@ public class RestApiController {
     private final TransactionTemplate txTemplate;
     private final ObjectMapper mapper;
     private final int maxRows;
-    private final boolean jwtEnabled;
 
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
-                             @Value("${app.max-rows:30}") int maxRows,
-                             @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
+                             @Value("${app.max-rows:30}") int maxRows) {
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
         this.mapper = mapper;
         this.maxRows = maxRows;
-        this.jwtEnabled = jwtEnabled;
     }
 
     @GetMapping(produces = "application/openapi+json")
@@ -186,52 +185,84 @@ public class RestApiController {
         return executeDml(compiled, rollback, null, prefer, HttpStatus.CREATED, table);
     }
 
-    @PostMapping(path = "/rpc/{function}")
-    public ResponseEntity<Object> rpc(
+    /** A query function with its arguments as query parameters; the other parameters read its rows. */
+    @GetMapping("/rpc/{function}")
+    public ResponseEntity<Object> rpcGet(
             @PathVariable @Pattern(regexp = IDENT_REGEX) String function,
-            @RequestBody(required = false) Map<String, Object> params,
-            @RequestHeader(value = "Content-Profile", required = false) String cp,
+            @RequestParam Map<String, String> allParams,
+            @RequestHeader(value = "Accept-Profile", required = false) String profile,
             HttpServletRequest request) {
+        return rpc(function, profile, allParams, null, request);
+    }
 
-        var claims = getClaims(request);
+    /** Any tracked function, with its arguments as a JSON object; query parameters read its rows. */
+    @PostMapping("/rpc/{function}")
+    public ResponseEntity<Object> rpcPost(
+            @PathVariable @Pattern(regexp = IDENT_REGEX) String function,
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestParam Map<String, String> allParams,
+            @RequestHeader(value = "Content-Profile", required = false) String profile,
+            HttpServletRequest request) {
+        return rpc(function, profile, allParams, body == null ? Map.of() : body, request);
+    }
+
+    /**
+     * Calls a tracked function the caller may call (404 otherwise, as for a function that does not
+     * exist); a mutation function answers only POST. Its rows obey the return table's select permission,
+     * and the request's filters, select, order, limit and offset apply to them. The function body runs
+     * with the database privileges of the engine's connection, or of its owner when SECURITY DEFINER.
+     *
+     * @param body the arguments of a POST, or null for a GET, whose arguments are query parameters
+     */
+    private ResponseEntity<Object> rpc(String function, String profile, Map<String, String> allParams,
+                                       Map<String, Object> body, HttpServletRequest request) {
         var principal = getPrincipal(request);
-        String schema = resolveSchema(cp, principal);
+        String schema = resolveSchema(profile, principal);
         if (schema == null) return notFound();
-        // RPC executes an opaque stored function, so the engine cannot inject a
-        // row-level filter into its body (unlike compiled table queries). It is
-        // therefore NOT anonymous-safe. When auth is enabled, require a valid
-        // token (row-level filtering inside a function stays the author's
-        // responsibility, as in PostgREST/Hasura for non-SETOF functions). Checked
-        // before revealing whether the function exists, to avoid enumeration. When
-        // auth is disabled (jwt-enabled=false, trusted/dev), RPC runs unauthenticated
-        // like the rest of the surface.
-        if (jwtEnabled && claims == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of(KEY_ERROR, "Authentication required for RPC"));
+        Optional<ExposedFunction> found = schemaProvider.resolveFunctions(principal).named(schema + DOT + function);
+        if (found.isEmpty()) return notFound();
+        ExposedFunction callable = found.get();
+        if (body == null && callable.operation() == ExposedFunction.Operation.MUTATION) {
+            return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED).header("Allow", "POST")
+                    .body(Map.of(KEY_ERROR, function + " changes data: call it with POST"));
         }
-        var schemaInfo = schemaProvider.resolveSchemaInfo(principal);
-        if (!schemaInfo.getStoredProcedures().containsKey(schema + DOT + function)) return notFound();
-
-        try {
-            var dialect = schemaProvider.resolveDialect(principal);
-            var ps = new MapSqlParameterSource();
-            StringBuilder args = new StringBuilder();
-            if (params != null) {
-                int i = 0;
-                for (var entry : params.entrySet()) {
-                    if (i > 0) args.append(COMMA_SEP);
-                    String pn = "rpc_" + (i++);
-                    args.append(PARAM_PREFIX).append(pn);
-                    ps.addValue(pn, entry.getValue());
+        Map<String, Object> arguments = new LinkedHashMap<>();
+        Map<String, String> readParams = new LinkedHashMap<>(allParams);
+        if (body == null) {
+            callable.arguments().forEach(argument -> {
+                if (readParams.containsKey(argument.name())) {
+                    arguments.put(argument.name(), readParams.remove(argument.name()));
                 }
-            }
-            String sql = SELECT + dialect.quoteIdentifier(schema) + DOT + dialect.quoteIdentifier(function) + parens(args.toString());
-            var result = namedJdbc.queryForMap(sql, ps);
-            Object value = result.values().iterator().next();
-            return ResponseEntity.ok(Map.of("result", value != null ? value : "null"));
-        } catch (Exception e) {
-            log.warn("rest_rpc_failed function={}", function, e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(KEY_ERROR, "RPC execution failed"));
+            });
+        } else {
+            arguments.putAll(body);
+        }
+        var dialect = schemaProvider.resolveDialect(principal);
+        Map<String, Object> params = new LinkedHashMap<>();
+        String call = FunctionCall.sql(callable, arguments, RlsContext.sessionVariables(), dialect, params);
+        var parsed = parseSelectParams(readParams.get("select"), readParams.get("order"), readParams);
+        var compiler = new RestQueryCompiler(schemaProvider.resolveSchemaInfo(principal), dialect, schema, maxRows,
+                schemaProvider.resolveAccess(principal));
+        var query = new RestQueryCompiler.SelectQuery(callable.returnTable(), parsed.columns, parsed.filters,
+                parsed.orConditions, parsed.embeds, parsed.orderSpecs,
+                Math.clamp(intParam(readParams, "limit", maxRows), 1, maxRows), intParam(readParams, "offset", 0), false);
+        var compiled = compiler.compileFunctionSelect(query, call, params, !callable.returnsSet());
+        return executeInTx(compiled, rows -> {
+            List<?> data = parseJsonList(rows.get("body"));
+            if (callable.returnsSet()) return ResponseEntity.ok(Map.of("data", data));
+            Map<String, Object> single = new LinkedHashMap<>();
+            single.put("data", data.isEmpty() ? null : data.getFirst());
+            return ResponseEntity.ok(single);
+        });
+    }
+
+    private static int intParam(Map<String, String> params, String name, int fallback) {
+        String value = params.get(name);
+        if (value == null) return fallback;
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException _) {
+            throw new IllegalArgumentException("Invalid " + name + ": " + value);
         }
     }
 
@@ -485,8 +516,6 @@ public class RestApiController {
     }
 
     private static ResponseEntity<Object> notFound() { return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(KEY_ERROR, "Not found")); }
-
-    private JwtClaims getClaims(HttpServletRequest request) { return (JwtClaims) request.getAttribute(SecurityConstants.JWT_CLAIMS_ATTR); }
 
     private Principal getPrincipal(HttpServletRequest request) { return (Principal) request.getAttribute(SecurityConstants.PRINCIPAL_ATTR); }
 

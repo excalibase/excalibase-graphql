@@ -165,10 +165,9 @@ filters). Both REST and GraphQL clients see consistent 403 status.
 
 ## Limitations / known gaps
 
-- **REST `/rpc/{function}`** still runs without `request.*` session vars
-  (pre-existing gap, separate from this feature). Role switching does fire
-  for it because the resolved role is set globally per request via
-  `RoleContext`, but the RLS user-id session variable is not.
+- **REST `/rpc/{function}`** calls only tracked functions; a function reads
+  the caller through its declared session argument, not `request.*` session
+  vars (see [Functions](functions.md)).
 - **Schema introspection cache is per-tenant, not per-role.** Anon users still
   see the same GraphQL type set as authenticated users — empty results, but
   the type name is exposed. Adding per-role cache keys is deferred.

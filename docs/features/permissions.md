@@ -150,7 +150,10 @@ value    := JSON literal | session variable | [values] for _in/_nin | true/false
 type holds only the permitted columns; relationship fields appear only when the role can select
 the target table; `…Aggregate`/`totalCount` only with `allowAggregations`; `create…`, `update…`,
 `delete…` fields only with that operation's permission; input types hold only the permitted,
-non-preset columns. Introspection shows the same schema.
+non-preset columns. Introspection shows the same schema. A field the role's schema does not have — root query or
+mutation field, or a selection — fails the request with `Unknown field(s): <name>` and no `data`;
+a mutation field the role has but whose arguments cannot compile fails with
+`Invalid arguments for <name>`.
 
 **Reads.** The select filter is ANDed into every read of the table, including nested relationship
 reads, connection cursors, counts and the embedded reads REST performs. Columns the role may not
@@ -189,7 +192,25 @@ when:
 
 How it is exposed follows its volatility and cannot be overridden: `STABLE`/`IMMUTABLE` → a query
 field (GraphQL `Query`, REST `GET`/`POST /rpc/<fn>`), `VOLATILE` → a mutation field (GraphQL
-`Mutation`, REST `POST /rpc/<fn>`).
+`Mutation`, REST `POST /rpc/<fn>`; `GET` answers 405).
+
+The engine re-checks every tracked function against the live catalog each time it builds a role's
+schema. A tracked function is **not exposed to anyone** (and the engine logs
+`function_invalid function=<name> reason=<why>`) when:
+
+- it no longer exists, is a procedure, is overloaded, or does not return rows of a served table or
+  view;
+- its `exposedAs` does not match its volatility (`QUERY` needs `STABLE`/`IMMUTABLE`, `MUTATION`
+  needs `VOLATILE`), including after the function is redefined;
+- an argument is not a named `IN` argument, is named like a row argument (`where`, `filter`,
+  `orderBy`, `limit`, `offset`, `distinctOn`, `vector`, `select`, `order`, `or`, `and`, `not`,
+  `first`, `after`), or has a type name the engine does not cast to;
+- its `sessionArgument` is not one of its `json`/`jsonb` arguments;
+- its GraphQL field name (schema prefix + camelCase, like a table: `public.search_notes` →
+  `publicSearchNotes`) collides with a field a table gives the schema, or with an earlier tracked
+  function's.
+
+An invalid function is dropped, never exposed in a wider or guessed form.
 
 **Who may call it.**
 - `STABLE`/`IMMUTABLE`: every role with a select permission on the return table, unless the
@@ -197,8 +218,9 @@ field (GraphQL `Query`, REST `GET`/`POST /rpc/<fn>`), `VOLATILE` → a mutation 
   explicit function permission.
 - `VOLATILE`: only roles given an explicit function permission, and only if they can also select
   the return table.
-- `service` may call every tracked function. Untracked functions are unreachable for every role,
-  `service` included.
+- `service` may call every valid tracked function. Untracked functions are unreachable for every
+  role, `service` included. `service` reads the permission document only for the tracked functions:
+  when it cannot be read, `service` is still served every table, and no function.
 
 **What it returns.** The engine runs
 
@@ -211,9 +233,26 @@ that permission's `limit`. What the function reads or writes inside its body is 
 these permissions; it runs with the database privileges of the connection (or of its owner when
 it is `SECURITY DEFINER`). The engine never claims a function runs "as the caller".
 
+- Arguments are passed by name (`"arg" => CAST(:value AS <type>)`); an unknown argument or a missing
+  one without a default fails the request.
+- A set-returning function answers a list and also takes the list arguments of its return table
+  (GraphQL `where`, `orderBy`, `limit`, `offset`; REST filters, `select=`, `order=`, `limit`,
+  `offset`) and exposes its relationships. A single-row function answers one object, or `null` when
+  it returns no row, a NULL row, or a row the role may not select.
+- A `VOLATILE` function runs in the request's one statement and transaction; its writes stand even
+  when the rows it returns are filtered out. A filter that reaches another table sees the database
+  as of the start of the statement, not the function's own writes.
+- REST answers `{"data": [...]}` (set-returning) or `{"data": {...}|null}` (single row); counting
+  (`Prefer: count=…`) is not supported on functions.
+
 **Session argument.** When a tracked function names a `json`/`jsonb` argument as its
-`sessionArgument`, the engine passes the request's session variables in it; the client cannot
-supply that argument.
+`sessionArgument`, the engine passes the request's session variables in it, as one object keyed by
+lower-cased variable name (`{"x-excalibase-role": "user", "x-excalibase-user-id": "…", …}`); the
+client cannot supply that argument.
+
+Procedures are reflected but never exposed; the earlier `call<Procedure>` mutations and the untyped
+`/rpc` call were removed. Computed fields (functions of one table row) are reflected but not exposed
+for GA either. Tracked functions, like permissions, are Postgres-only.
 
 The engine never changes Postgres `EXECUTE` privileges.
 
@@ -244,8 +283,9 @@ How the engine applies this today (see [Permission Enforcement](rls-architecture
 - Rows written by an upsert owe both the insert and the update `check`.
 - A `check` or filter that reaches another table sees the database as of the start of the
   statement, so a nested insert's child cannot rely on its parent row in the same mutation.
-- Until function permissions (§6) are implemented, only `service` reaches functions, computed
-  fields included.
+- Computed fields (functions of one table row) are reflected but not exposed for GA, to any role,
+  `service` included: they are untracked functions. A later step may let a function be tracked as a
+  computed field.
 
 ## 8. Where permissions come from, and failure
 

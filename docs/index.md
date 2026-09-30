@@ -45,7 +45,7 @@ auth + multi-schema routing. **Pick the protocol that fits the call site.**
 - **Mutations** — create, update, delete, bulk create (GraphQL + REST)
 - **Relationships** — foreign keys become GraphQL fields automatically
 - **Stored procedures** — call via GraphQL mutations
-- **Computed fields** — PostgreSQL functions exposed as GraphQL fields
+- **Tracked functions** — PostgreSQL functions exposed per role, rows filtered by the return table's permissions
 - **Multi-Schema** — connect to multiple schemas simultaneously with automatic prefix naming
 - **Real-time subscriptions** — live table-change events via
   [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS (GraphQL)
@@ -62,7 +62,7 @@ auth + multi-schema routing. **Pick the protocol that fits the call site.**
 | Database | Status | Version | Notes |
 |----------|--------|---------|-------|
 | **PostgreSQL** | ✅ Supported | 15+ | Full feature set |
-| **MySQL** | ✅ Supported | 8.4+ | CRUD, ENUM/JSON, views, stored procedures |
+| **MySQL** | ✅ Supported | 8.4+ | CRUD, ENUM/JSON, views |
 | **MongoDB** | 🔄 Planned | — | Coming soon |
 
 ---
@@ -238,7 +238,7 @@ docker pull excalibase/excalibase-graphql:native
 - [REST overview →](rest/index.md) — endpoints, filters, mutations, pagination
 - [Quick Start →](quick-start.md) — Docker setup, sample queries
 - [MySQL Support →](features/mysql.md) — MySQL-specific guide
-- [Stored Procedures →](features/stored-procedures.md) — IN/OUT params, examples
+- [Functions →](features/functions.md) — tracked functions, per-role, filtered results
 - [Full-Text & Vector Search →](features/search-and-vector.md) — FTS on `tsvector`, k-NN on pgvector
 - [Real-Time Subscriptions →](features/subscriptions.md) — CDC setup
 - [Row-Level Security →](features/user-context-rls.md) — Per-user data isolation

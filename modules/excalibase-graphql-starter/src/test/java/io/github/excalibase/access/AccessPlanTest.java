@@ -37,7 +37,7 @@ class AccessPlanTest {
         AccessPlan plan = plan();
 
         assertThat(plan.view().getTableNames()).isEmpty();
-        assertThat(plan.view().getStoredProcedures()).isEmpty();
+        assertThat(plan.functions().all()).isEmpty();
     }
 
     @Test
@@ -156,10 +156,10 @@ class AccessPlanTest {
     }
 
     @Test
-    void functionsAndComputedFields_areNotServedToARole() {
+    void untrackedFunctionsAndComputedFields_areNotServedToARole() {
         AccessPlan plan = plan(entry(ORDERS, selectAll()));
 
-        assertThat(plan.view().getStoredProcedures()).isEmpty();
+        assertThat(plan.functions().all()).isEmpty();
         assertThat(plan.view().getComputedFields(ORDERS)).isNull();
     }
 
@@ -178,7 +178,7 @@ class AccessPlanTest {
 
         assertThat(plan.allAccess()).isTrue();
         assertThat(plan.view().getTableNames()).isEqualTo(REFLECTED.getTableNames());
-        assertThat(plan.view().getStoredProcedures()).containsKey("public.do_thing");
+        assertThat(plan.functions().all()).isEmpty();
         assertThat(plan.access().permits(ORDERS, RlsOp.DELETE)).isTrue();
         assertThat(plan.access().allowsAggregations(ORDERS)).isTrue();
         assertThat(plan.access().settableColumns(ORDERS, RlsOp.INSERT, plan.view()))

@@ -10,8 +10,6 @@ import graphql.language.Value;
 import graphql.language.VariableReference;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.schema.SchemaInfo;
-import io.github.excalibase.schema.SchemaInfo.ProcParam;
-import io.github.excalibase.schema.SchemaInfo.ProcedureInfo;
 import io.github.excalibase.spi.MutationCompiler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -126,111 +124,6 @@ class MutationBuilderTest {
         @DisplayName("unknown type name returns null")
         void unknownName_returnsNull() {
             assertThat(mutationBuilder.lookupTable("Ghost")).isNull();
-        }
-    }
-
-    @Nested
-    @DisplayName("resolveStoredProcedure lookup order")
-    class ResolveStoredProcedure {
-        @Test
-        @DisplayName("snake_case procedure name matches")
-        void snakeCaseProc_resolves() {
-            schemaInfo.addStoredProcedure("pay_rental", new ProcedureInfo("pay_rental", List.of()));
-
-            assertThat(mutationBuilder.resolveStoredProcedure("PayRental")).isEqualTo("pay_rental");
-        }
-
-        @Test
-        @DisplayName("all-lowercase proc name matches when snake_case absent")
-        void lowercaseFallback() {
-            schemaInfo.addStoredProcedure("pingproc", new ProcedureInfo("pingproc", List.of()));
-
-            assertThat(mutationBuilder.resolveStoredProcedure("PingProc")).isEqualTo("pingproc");
-        }
-
-        @Test
-        @DisplayName("compound key (schema.name) matches via schemaTypeName")
-        void compoundKey_resolves() {
-            schemaInfo.addStoredProcedure("hana.transfer_funds",
-                    new ProcedureInfo("transfer_funds", List.of()));
-
-            assertThat(mutationBuilder.resolveStoredProcedure("HanaTransferFunds")).isEqualTo("hana.transfer_funds");
-        }
-
-        @Test
-        @DisplayName("unknown procedure returns null")
-        void unknownProc_returnsNull() {
-            assertThat(mutationBuilder.resolveStoredProcedure("Ghost")).isNull();
-        }
-    }
-
-    @Nested
-    @DisplayName("buildProcedureCallInfo")
-    class BuildProcedureCallInfo {
-        @Test
-        @DisplayName("returns null when the procedure is unknown")
-        void unknownProc_returnsNull() {
-            Field field = fieldWithArgs("callFoo");
-            assertThat(mutationBuilder.buildProcedureCallInfo(field, "foo", Map.of())).isNull();
-        }
-
-        @Test
-        @DisplayName("IN parameters bind values from matching GraphQL arguments")
-        void inParam_boundFromArgument() {
-            ProcedureInfo proc = new ProcedureInfo("pay_rental",
-                    List.of(new ProcParam("IN", "rental_id", "integer")));
-            schemaInfo.addStoredProcedure("pay_rental", proc);
-
-            Argument arg = Argument.newArgument("rental_id", IntValue.of(42)).build();
-            Field field = fieldWithArgs("payRental", arg);
-
-            var info = mutationBuilder.buildProcedureCallInfo(field, "pay_rental", Map.of());
-
-            assertThat(info.qualifiedName()).contains("pay_rental");
-            assertThat(info.allParams()).hasSize(1);
-            assertThat(((Number) info.allParams().get(0).value()).intValue()).isEqualTo(42);
-        }
-
-        @Test
-        @DisplayName("OUT parameters have null value, still included in the list")
-        void outParam_hasNullValue() {
-            ProcedureInfo proc = new ProcedureInfo("do_work",
-                    List.of(new ProcParam("OUT", "done", "boolean")));
-            schemaInfo.addStoredProcedure("do_work", proc);
-
-            var info = mutationBuilder.buildProcedureCallInfo(fieldWithArgs("doWork"), "do_work", Map.of());
-
-            assertThat(info.allParams()).hasSize(1);
-            assertThat(info.allParams().get(0).mode()).isEqualTo("OUT");
-            assertThat(info.allParams().get(0).value()).isNull();
-        }
-
-        @Test
-        @DisplayName("INOUT parameters bind value AND declare OUT mode")
-        void inoutParam_boundAndRegistered() {
-            ProcedureInfo proc = new ProcedureInfo("inout_p",
-                    List.of(new ProcParam("INOUT", "counter", "integer")));
-            schemaInfo.addStoredProcedure("inout_p", proc);
-
-            Argument arg = Argument.newArgument("counter", IntValue.of(5)).build();
-            Field field = fieldWithArgs("inoutP", arg);
-
-            var info = mutationBuilder.buildProcedureCallInfo(field, "inout_p", Map.of());
-
-            assertThat(info.allParams()).hasSize(1);
-            assertThat(info.allParams().get(0).mode()).isEqualTo("INOUT");
-            assertThat(((Number) info.allParams().get(0).value()).intValue()).isEqualTo(5);
-        }
-
-        @Test
-        @DisplayName("qualified proc name (schema.name) is preserved in output")
-        void qualifiedProcName_preservesSchema() {
-            ProcedureInfo proc = new ProcedureInfo("transfer_funds", List.of());
-            schemaInfo.addStoredProcedure("hana.transfer_funds", proc);
-
-            var info = mutationBuilder.buildProcedureCallInfo(fieldWithArgs("x"), "hana.transfer_funds", Map.of());
-
-            assertThat(info.qualifiedName()).startsWith("hana.");
         }
     }
 

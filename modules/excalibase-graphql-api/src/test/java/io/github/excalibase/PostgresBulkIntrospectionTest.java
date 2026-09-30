@@ -115,13 +115,14 @@ class PostgresBulkIntrospectionTest {
     }
 
     @Test
-    void loadAll_returnsStoredProcedures() {
+    void loadAll_returnsProceduresAsReflectedRoutines() {
         Map<String, SchemaInfo> perSchema = new LinkedHashMap<>();
         loader.loadAll(jdbcTemplate, List.of("schema_a", "schema_b"), perSchema);
 
         SchemaInfo a = perSchema.get("schema_a");
-        Map<String, SchemaInfo.ProcedureInfo> procs = a.getStoredProcedures();
-        assertTrue(procs.containsKey("reset_user"), "schema_a should have reset_user proc");
+        SchemaInfo.FunctionInfo reset = a.getFunction("reset_user");
+        assertNotNull(reset, "schema_a should have reset_user proc");
+        assertEquals(SchemaInfo.RoutineKind.PROCEDURE, reset.kind());
     }
 
     // === Single schema still works ===
