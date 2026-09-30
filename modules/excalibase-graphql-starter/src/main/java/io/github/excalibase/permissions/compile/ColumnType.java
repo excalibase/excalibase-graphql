@@ -42,6 +42,12 @@ public final class ColumnType {
             entry("timestamp without time zone", Kind.TIMESTAMP), entry("timestamp", Kind.TIMESTAMP),
             entry("date", Kind.DATE));
 
+    private static final Map<Kind, String> BUILT_IN_NAMES = Map.ofEntries(
+            entry(Kind.SMALLINT, "smallint"), entry(Kind.INTEGER, "integer"), entry(Kind.BIGINT, "bigint"),
+            entry(Kind.NUMERIC, "numeric"), entry(Kind.REAL, "real"), entry(Kind.DOUBLE, "double precision"),
+            entry(Kind.BOOLEAN, "boolean"), entry(Kind.UUID, "uuid"), entry(Kind.TEXT, "text"),
+            entry(Kind.TIMESTAMPTZ, "timestamptz"), entry(Kind.TIMESTAMP, "timestamp"), entry(Kind.DATE, "date"));
+
     /** Text ordering depends on the database collation, so only the database may decide it. */
     private static final Set<Kind> UNORDERED_IN_MEMORY = Set.of(Kind.TEXT, Kind.ENUM, Kind.OTHER);
 
@@ -104,6 +110,12 @@ public final class ColumnType {
     /** Where a parameter goes in SQL; types bound as text are cast to the column's type. */
     String placeholder(String paramName) {
         return castTarget == null ? ":" + paramName : "CAST(:" + paramName + " AS " + castTarget + ")";
+    }
+
+    /** A parameter cast to this type whatever it binds as, so a row of them is typed even when a value is null. */
+    String typedPlaceholder(String paramName) {
+        String target = castTarget == null ? BUILT_IN_NAMES.get(kind) : castTarget;
+        return "CAST(:" + paramName + " AS " + target + ")";
     }
 
     boolean textual() {

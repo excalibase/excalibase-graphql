@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import java.sql.Connection;
@@ -86,6 +88,23 @@ class PermissionExpressionDifferentialTest {
             String key = DifferentialFixture.key(testCase.table(), row);
             Outcome outcome = predicate.test(row);
             assertJudged(testCase.judge(), outcome, oracle.contains(key), key);
+        }
+    }
+
+    /** A deleted row is judged by its image alone, so the probe must agree with the policy on every row. */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("cases")
+    void imageProbe_agreesWithNativePostgres(Case testCase) throws SQLException {
+        TreeSet<String> oracle = nativeRows(testCase.table(), testCase.nativeSql());
+        BoolExp expression = parse(testCase.expression());
+        NamedParameterJdbcTemplate jdbc = new NamedParameterJdbcTemplate(dataSource);
+
+        for (Map<String, Object> row : allRows(testCase.table())) {
+            String key = DifferentialFixture.key(testCase.table(), row);
+            SqlFragment probe = RowProbe.ofImage(expression, testCase.table(), row, schema,
+                    new SessionBinding(VARIABLES), new ParamNamer("probe")).orElseThrow();
+            Boolean kept = jdbc.queryForObject(probe.sql(), new MapSqlParameterSource(probe.params()), Boolean.class);
+            assertThat(kept).as("row %s", key).isEqualTo(oracle.contains(key));
         }
     }
 

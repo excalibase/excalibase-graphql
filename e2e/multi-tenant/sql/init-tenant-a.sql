@@ -35,3 +35,14 @@ CREATE TABLE tenant.shared_counters (
     label TEXT NOT NULL,
     value INTEGER NOT NULL
 );
+
+-- owned_notes: each user selects only their own rows, and not `secret`. Realtime
+-- on a table sets REPLICA IDENTITY FULL (the control plane does it when realtime
+-- is enabled), so a delete carries the whole old row and can be judged per user.
+CREATE TABLE tenant.owned_notes (
+    id SERIAL PRIMARY KEY,
+    owner_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    secret TEXT
+);
+ALTER TABLE tenant.owned_notes REPLICA IDENTITY FULL;

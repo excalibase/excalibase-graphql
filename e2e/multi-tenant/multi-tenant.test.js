@@ -370,6 +370,51 @@ describe('CDC subscription isolation (per-tenant watcher-go → NATS → WS)', (
   }, 30000);
 });
 
+// A subscription is a live view of the rows the role may select: a delete reaches
+// every subscriber who could see the row, with only their select columns, and no one
+// else. tenant.owned_notes publishes complete old rows (REPLICA IDENTITY FULL).
+describe('CDC deletes under a row filter (tenant A, owner-only select)', () => {
+  const OWNED_NOTES = 'subscription { tenantOwnedNotesChanges { operation table data } }';
+  let aliceSub;
+  let daveSub;
+
+  afterEach(() => {
+    if (aliceSub) { aliceSub.close(); aliceSub = null; }
+    if (daveSub) { daveSub.close(); daveSub = null; }
+  });
+
+  const userIdOf = (token) => String(JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).userId);
+  const changeOf = (sub, operation, title) =>
+    sub.events.find((ev) => ev.operation === operation && ev.data && ev.data.title === title);
+
+  test('a delete reaches only the subscriber who could see the row, without columns they cannot select', async () => {
+    const aliceToken = await getTokenA();
+    const daveToken = await registerAndLogin(TENANT_A, 'dave@acme.com', 'Pass123!', 'Dave A');
+    const alice = userIdOf(aliceToken);
+    const dave = userIdOf(daveToken);
+    aliceSub = subscribeWithJwt(aliceToken, OWNED_NOTES);
+    daveSub = subscribeWithJwt(daveToken, OWNED_NOTES);
+    await Promise.all([aliceSub.ready, daveSub.ready]);
+
+    psqlOn('mt-tenant-a-postgres', 'tenant_a_db',
+      `INSERT INTO tenant.owned_notes (owner_id, title, secret) VALUES ('${alice}', 'MT_DEL_A', 's-a'), ('${dave}', 'MT_DEL_D', 's-d')`);
+    await waitFor(aliceSub.events, () => changeOf(aliceSub, 'INSERT', 'MT_DEL_A'));
+    await waitFor(daveSub.events, () => changeOf(daveSub, 'INSERT', 'MT_DEL_D'));
+
+    psqlOn('mt-tenant-a-postgres', 'tenant_a_db', "DELETE FROM tenant.owned_notes WHERE title IN ('MT_DEL_A', 'MT_DEL_D')");
+    await waitFor(aliceSub.events, () => changeOf(aliceSub, 'DELETE', 'MT_DEL_A'));
+    await waitFor(daveSub.events, () => changeOf(daveSub, 'DELETE', 'MT_DEL_D'));
+    await new Promise((r) => setTimeout(r, 2000));
+
+    expect(Object.keys(changeOf(aliceSub, 'DELETE', 'MT_DEL_A').data).sort()).toEqual(['id', 'owner_id', 'title']);
+    expect(changeOf(aliceSub, 'DELETE', 'MT_DEL_A').data.owner_id).toBe(alice);
+    expect(changeOf(aliceSub, 'DELETE', 'MT_DEL_D')).toBeUndefined();
+    expect(changeOf(aliceSub, 'INSERT', 'MT_DEL_D')).toBeUndefined();
+    expect(changeOf(daveSub, 'DELETE', 'MT_DEL_A')).toBeUndefined();
+    expect(changeOf(daveSub, 'INSERT', 'MT_DEL_A')).toBeUndefined();
+  }, 45000);
+});
+
 // tokenA / tokenB are hoisted to module scope (assigned in beforeAll above).
 async function getTokenA() { return tokenA; }
 async function getTokenB() { return tokenB; }

@@ -103,6 +103,22 @@
           "delete": {
             "filter": {}
           }
+        },
+        {
+          "table": "tenant.owned_notes",
+          "role": "user",
+          "select": {
+            "filter": {
+              "owner_id": {
+                "_eq": "X-Excalibase-User-Id"
+              }
+            },
+            "columns": [
+              "id",
+              "owner_id",
+              "title"
+            ]
+          }
         }
       ],
       "functions": [],

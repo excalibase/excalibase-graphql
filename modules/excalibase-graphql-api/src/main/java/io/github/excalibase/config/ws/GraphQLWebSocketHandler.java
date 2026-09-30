@@ -3,6 +3,7 @@ package io.github.excalibase.config.ws;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
@@ -56,6 +57,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
 
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
+    private final ObjectReader changeReader;
     private final JwtService jwtService;
     private final AccessPlans accessPlans;
 
@@ -84,6 +86,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                                    ObjectProvider<AccessPlans> accessPlansProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
+        this.changeReader = RealtimeGate.changeReader(objectMapper);
         this.jwtService = jwtServiceProvider.getIfAvailable();
         this.heartbeat = heartbeat;
         this.accessPlans = accessPlansProvider.getIfAvailable();
@@ -252,7 +255,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     private Object parseEventData(String data) {
         if (data == null || data.isBlank()) return "";
         try {
-            return objectMapper.readValue(data, Object.class);
+            return changeReader.readValue(data);
         } catch (Exception _) {
             return data;
         }

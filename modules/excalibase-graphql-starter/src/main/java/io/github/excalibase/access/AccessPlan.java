@@ -107,7 +107,8 @@ public final class AccessPlan {
             return reflected.hasTable(table) ? Optional.of(ChangeFilter.PASS_THROUGH) : Optional.empty();
         }
         SessionBinding binding = new SessionBinding(sessionVariables);
-        return rules(table).map(held -> new SelectChangeFilter(table, held.select(), reflected, binding));
+        return rules(table).map(held -> new SelectChangeFilter(table, held.select(), reflected, binding,
+                IncompleteImageWarning.SHARED));
     }
 
     SchemaInfo reflected() {
