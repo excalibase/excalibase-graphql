@@ -225,15 +225,48 @@ class GraphqlSchemaManagerCacheTest {
     @DisplayName("request principal")
     class RequestPrincipal {
 
-        @AfterEach
-        void clearTenant() {
-            TenantContext.clear();
-        }
 
         @BeforeEach
         void setTenant() {
             TenantContext.setTenantId("proj-1");
             TenantContext.setOrgSlug("acme");
+        }
+
+        @AfterEach
+        void finishRequest() {
+            manager.requestFinished();
+            TenantContext.clear();
+        }
+
+        @Test
+        void oneRequest_readsThePermissionDocumentOnce() {
+            Principal user = runningAs("user");
+
+            manager.planFor(user);
+            manager.resolveEngineState(user);
+            manager.resolveAccess(user);
+            manager.resolveDefaultSchema(user);
+
+            assertThat(permissions.reads).containsExactly("proj-1");
+        }
+
+        @Test
+        void theNextRequest_readsTheDocumentAgain() {
+            Principal user = runningAs("user");
+            manager.planFor(user);
+
+            manager.requestFinished();
+            manager.planFor(user);
+
+            assertThat(permissions.reads).containsExactly("proj-1", "proj-1");
+        }
+
+        @Test
+        void anotherPrincipalOnTheSameThread_isNotServedTheFirstOnesEngine() {
+            manager.planFor(runningAs("user"));
+
+            assertThat(manager.planFor(Principal.anonymous()).view().getTableNames()).isEmpty();
+            assertThat(permissions.reads).containsExactly("proj-1", "proj-1");
         }
 
         @Test

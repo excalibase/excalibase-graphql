@@ -16,6 +16,9 @@ public interface AccessPlans {
     /** The plan of the request's project (from its path) for the role {@code principal} runs as. */
     AccessPlan planFor(Principal principal);
 
+    /** The request that called {@link #planFor} has ended; nothing it resolved may be reused. */
+    void requestFinished();
+
     /**
      * What a realtime subscription on {@code subscriptionKey} ({@code schema_table}, or a bare table in
      * the project's default schema) may deliver, or empty when the role cannot select that table.

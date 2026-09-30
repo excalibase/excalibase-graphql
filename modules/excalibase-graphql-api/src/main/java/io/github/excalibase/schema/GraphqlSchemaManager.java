@@ -33,6 +33,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
@@ -82,6 +83,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     private final AtomicReference<Reflection> defaultReflection = new AtomicReference<>();
     private final TTLCache<String, Reflection> reflections;
     private final TTLCache<EngineKey, EngineState> tenantEngineStates;
+    private final ThreadLocal<RequestEngine> requestEngine = new ThreadLocal<>();
 
     public GraphqlSchemaManager(
             JdbcTemplate jdbcTemplate,
@@ -186,11 +188,28 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      */
     public EngineState resolveEngineState(Principal principal) {
         String projectId = TenantContext.getTenantId();
+        RequestEngine resolved = requestEngine.get();
+        if (resolved != null && resolved.principal() == principal && Objects.equals(resolved.projectId(), projectId)) {
+            return resolved.state();
+        }
         String orgSlug = TenantContext.getOrgSlug();
         if (orgSlug == null && principal != null && principal.claims() != null) {
             orgSlug = principal.claims().orgSlug();
         }
-        return resolveEngineState(orgSlug, projectId, principal);
+        EngineState state = resolveEngineState(orgSlug, projectId, principal);
+        if (principal != null) {
+            requestEngine.set(new RequestEngine(principal, projectId, state));
+        }
+        return state;
+    }
+
+    /**
+     * Ends the request's reuse of its resolved engine. The authentication filter resolves it first; the
+     * controllers then read that same engine rather than asking the permission source again.
+     */
+    @Override
+    public void requestFinished() {
+        requestEngine.remove();
     }
 
     /**
@@ -264,6 +283,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     Reflection reflect(String orgSlug, String projectId) {
         return dataSourceManager != null ? reflectTenant(orgSlug, projectId) : defaultReflection.get();
     }
+
+    /** The engine one request resolved, reused for the rest of that request on this thread. */
+    private record RequestEngine(Principal principal, String projectId, EngineState state) {}
 
     @Override
     public AccessPlan planFor(Principal principal) {

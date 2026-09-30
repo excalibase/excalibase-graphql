@@ -98,6 +98,14 @@ app:
       unknown-project-cache:            # vault 404s remembered so a missing project costs one vault call per TTL
         max-entries: 10000              # LRU bound: random project ids cannot grow memory past this
         ttl-seconds: 30                 # a project created after a 404 is reachable once this expires
+    permissions:
+      # How long a project's cached permissions keep being served while the control plane cannot be
+      # read, counted from the first failed refresh. After it every role but service gets 503
+      # permissions_unavailable until a refresh succeeds. Must be greater than 0.
+      max-stale-ms: ${APP_SECURITY_PERMISSIONS_MAX_STALE_MS:300000}
+      # Through such an outage the control plane is asked at most once per this interval per project;
+      # requests in between answer from the cache or with 503 at once. Must be greater than 0.
+      retry-interval-ms: ${APP_SECURITY_PERMISSIONS_RETRY_INTERVAL_MS:2000}
   tenant-db:
     # verify-full: connect with the vault record's client certificate (sslcert/sslkey)
     # and verify the server against its sslrootcert; a record without them is refused.

@@ -12,6 +12,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.support.StaticListableBeanFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
@@ -25,17 +26,31 @@ class PermissionEvictionWiringTest {
     @Test
     void permissionProvider_readsFromProvisioningWhenThePolicyUrlIsSet() {
         PermissionProvider provider = new JwtSecurityConfig()
-                .permissionProvider("http://provisioning/api", TOKEN, 30_000, METERS);
+                .permissionProvider("http://provisioning/api", TOKEN, 30_000, 300_000, 2_000, METERS);
 
         assertThat(provider).isInstanceOf(ProvisioningPermissionProvider.class);
     }
 
     @Test
     void permissionProvider_withoutAPolicyUrl_hasNoSource() {
-        assertThat(new JwtSecurityConfig().permissionProvider("", TOKEN, 30_000, METERS))
+        assertThat(new JwtSecurityConfig().permissionProvider("", TOKEN, 30_000, 300_000, 2_000, METERS))
                 .isInstanceOf(NoPermissionSource.class);
-        assertThat(new JwtSecurityConfig().permissionProvider(null, TOKEN, 30_000, METERS))
+        assertThat(new JwtSecurityConfig().permissionProvider(null, TOKEN, 30_000, 300_000, 2_000, METERS))
                 .isInstanceOf(NoPermissionSource.class);
+    }
+
+    @Test
+    void permissionProvider_refusesAWindowOrIntervalThatIsNotPositive_withOrWithoutASource() {
+        JwtSecurityConfig config = new JwtSecurityConfig();
+
+        assertThatThrownBy(() -> config.permissionProvider("http://provisioning/api", TOKEN, 30_000, 0, 2_000, METERS))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("app.security.permissions.max-stale-ms");
+        assertThatThrownBy(() -> config.permissionProvider("", TOKEN, 30_000, -5, 2_000, METERS))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> config.permissionProvider("", TOKEN, 30_000, 300_000, 0, METERS))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("app.security.permissions.retry-interval-ms");
     }
 
     @Test
