@@ -149,7 +149,9 @@ class ProvisioningRlsIntegrationTest {
                 orders.probes())).isPresent();
         assertThat(orders.filter().render("INSERT", Map.of("id", 3, "org_id", "orgB", "title", "b"),
                 orders.probes())).isEmpty();
-        assertThat(orders.filter().render("DELETE", Map.of("id", 1, "org_id", "orgA", "title", "a"),
+        assertThat(orders.filter().render("DELETE", Map.of("id", 90, "org_id", "orgA", "title", "gone"),
+                orders.probes())).contains(Map.of("id", 90, "org_id", "orgA", "title", "gone"));
+        assertThat(orders.filter().render("DELETE", Map.of("id", 91, "org_id", "orgB", "title", "gone"),
                 orders.probes())).isEmpty();
     }
 

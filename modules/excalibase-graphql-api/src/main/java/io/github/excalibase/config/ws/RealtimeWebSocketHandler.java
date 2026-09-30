@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
@@ -51,6 +52,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
+    private final ObjectReader changeReader;
     private final JwtService jwtService;
     private final AccessPlans accessPlans;
 
@@ -71,6 +73,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                                     ObjectProvider<AccessPlans> accessPlansProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
+        this.changeReader = RealtimeGate.changeReader(objectMapper);
         this.jwtService = jwtServiceProvider.getIfAvailable();
         this.heartbeat = heartbeat;
         this.accessPlans = accessPlansProvider.getIfAvailable();
@@ -218,11 +221,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         };
         if (op == null) return;
 
-        JsonNode doc;
+        Object doc;
         try {
             doc = (event.data() == null || event.data().isBlank())
-                    ? objectMapper.createObjectNode()
-                    : objectMapper.readTree(event.data());
+                    ? Map.of()
+                    : changeReader.readValue(event.data());
         } catch (Exception e) {
             log.debug("Failed to parse CDC data for sub {}: {}", subId, e.getMessage());
             return;
@@ -230,7 +233,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
         // The role's permissions decide what of the change is theirs first; the subscriber's own filter
         // then matches only what they may see, so a column they cannot read cannot steer delivery.
-        Object visible = delivery.render(event, objectMapper.convertValue(doc, Object.class)).orElse(null);
+        Object visible = delivery.render(event, doc).orElse(null);
         if (visible == null) return;
         JsonNode payloadDoc = objectMapper.valueToTree(visible);
         if (!matchesFilter(payloadDoc, filter)) return;

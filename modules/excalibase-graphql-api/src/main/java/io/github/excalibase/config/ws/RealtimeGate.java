@@ -1,5 +1,8 @@
 package io.github.excalibase.config.ws;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
@@ -46,6 +49,11 @@ final class RealtimeGate {
             }
             return access.filter().render(event.type(), asRow(data), access.probes()).map(Object.class::cast);
         }
+    }
+
+    /** Reads a change's JSON with fractional numbers exact, so a numeric column is judged as the database holds it. */
+    static ObjectReader changeReader(ObjectMapper objectMapper) {
+        return objectMapper.readerFor(Object.class).with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
     }
 
     static Opening open(AccessPlans plans, WebSocketSession session, String subscriptionKey) {

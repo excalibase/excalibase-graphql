@@ -179,7 +179,11 @@ method whose operation it has no permission for answers 403 `permission_denied`.
 a table the role can select. Each change is delivered only when its row passes the select filter,
 with only the select columns. An UPDATE's old and new images are judged separately. A filter that
 needs another table (a relationship or `_exists`) is evaluated against the database for that row;
-if that probe fails, the change is not delivered.
+if that probe fails, the change is not delivered. A DELETE (and an UPDATE's old image) is judged by
+the old row's own values, so it reaches everyone who could see the row, even after the row is gone.
+That needs every column the filter reads and the select columns in the image: enabling realtime on
+a table sets `REPLICA IDENTITY FULL`. An image missing any of them is not delivered, and the engine
+logs `realtime_image_incomplete table=…` at most once a minute per table.
 
 ## 6. Functions
 
