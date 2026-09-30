@@ -64,10 +64,15 @@ public final class AccessPlan {
         Objects.requireNonNull(reflected, "reflected");
         Map<String, TableRules> rules = RulesResolver.resolve(reflected, permissions);
         ExposedFunctions functions = FunctionResolver.resolve(reflected, permissions.trackedFunctions(),
-                function -> rules.containsKey(function.returnTable())
+                function -> selectable(rules, function.returnTable())
                         && (permissions.explicitlyPermittedFunctions().contains(function.function())
                             || inferred(permissions, function)));
         return new AccessPlan(reflected, RoleView.build(reflected, rules), rightsOf(rules), rules, false, functions);
+    }
+
+    private static boolean selectable(Map<String, TableRules> rules, String table) {
+        TableRules held = rules.get(table);
+        return held != null && held.select().isPresent();
     }
 
     private static boolean inferred(RolePermissions permissions, ExposedFunction function) {
@@ -107,8 +112,8 @@ public final class AccessPlan {
             return reflected.hasTable(table) ? Optional.of(ChangeFilter.PASS_THROUGH) : Optional.empty();
         }
         SessionBinding binding = new SessionBinding(sessionVariables);
-        return rules(table).map(held -> new SelectChangeFilter(table, held.select(), reflected, binding,
-                IncompleteImageWarning.SHARED));
+        return rules(table).flatMap(TableRules::select)
+                .map(select -> new SelectChangeFilter(table, select, reflected, binding, IncompleteImageWarning.SHARED));
     }
 
     SchemaInfo reflected() {
@@ -124,12 +129,14 @@ public final class AccessPlan {
         rules.forEach((table, held) -> rights.put(table, new TableAccess.Rights(operations(held),
                 held.insert().map(TableRules.InsertRule::columns).orElse(Set.of()),
                 held.update().map(TableRules.UpdateRule::columns).orElse(Set.of()),
-                held.select().limit(), held.select().aggregations())));
+                held.select().map(TableRules.SelectRule::limit).orElse(null),
+                held.select().map(TableRules.SelectRule::aggregations).orElse(false))));
         return TableAccess.enforcing(rights);
     }
 
     private static Set<RlsOp> operations(TableRules held) {
-        Set<RlsOp> operations = EnumSet.of(RlsOp.SELECT);
+        Set<RlsOp> operations = EnumSet.noneOf(RlsOp.class);
+        held.select().ifPresent(ignored -> operations.add(RlsOp.SELECT));
         held.insert().ifPresent(ignored -> operations.add(RlsOp.INSERT));
         held.update().ifPresent(ignored -> operations.add(RlsOp.UPDATE));
         held.delete().ifPresent(ignored -> operations.add(RlsOp.DELETE));

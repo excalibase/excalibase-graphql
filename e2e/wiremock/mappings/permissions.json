@@ -1271,6 +1271,25 @@
      }
     },
     {
+     "table": "hana.contact_messages",
+     "role": "anon",
+     "insert": {
+      "check": {
+       "email": {
+        "_like": "%@%"
+       }
+      },
+      "columns": [
+       "email",
+       "body",
+       "source"
+      ],
+      "set": {
+       "source": "contact-form"
+      }
+     }
+    },
+    {
      "table": "hana.custom_types_test",
      "role": "anon",
      "select": {

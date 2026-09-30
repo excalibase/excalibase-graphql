@@ -4,7 +4,9 @@ import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLList;
+import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLOutputType;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.RlsOp;
@@ -13,7 +15,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static graphql.Scalars.GraphQLInt;
 import static graphql.schema.GraphQLFieldDefinition.newFieldDefinition;
+import static graphql.schema.GraphQLObjectType.newObject;
+import static io.github.excalibase.schema.GraphqlConstants.FIELD_AFFECTED_ROWS;
+import static io.github.excalibase.schema.GraphqlConstants.INSERT_RESULT_SUFFIX;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_INPUT;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_INPUTS;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_WHERE;
@@ -24,7 +30,8 @@ import static io.github.excalibase.schema.GraphqlConstants.UPDATE_PREFIX;
 
 /**
  * Generates {@code create}, {@code createMany}, {@code update}, {@code delete}
- * mutation fields per mutable table. Views are skipped (read-only).
+ * mutation fields per mutable table. Views are skipped (read-only). A table the caller may insert
+ * into but not select has only the two create fields, answering {@code { affected_rows }}.
  */
 public final class MutationFieldsAssembler {
 
@@ -38,7 +45,7 @@ public final class MutationFieldsAssembler {
                                        Inputs inputs,
                                        TableAccess access) {
         List<GraphQLFieldDefinition> fields = new ArrayList<>();
-        for (String table : schemaInfo.getTableNames()) {
+        for (String table : schemaInfo.getMutableTableNames()) {
             // Skip views — they are read-only
             if (schemaInfo.isView(table)) continue;
             fields.addAll(buildCrudFields(table, tableTypes, inputs, access));
@@ -57,19 +64,25 @@ public final class MutationFieldsAssembler {
         String typeName = NamingHelpers.typeName(table);
         GraphQLObjectType type = tableTypes.get(table);
         GraphQLInputObjectType whereType = inputs.where().get(table);
+        boolean readable = type != null;
         List<GraphQLFieldDefinition> crud = new ArrayList<>(4);
         if (access.permits(table, RlsOp.INSERT)) {
             GraphQLInputObjectType createInput = inputs.create().get(table);
+            GraphQLObjectType insertResult = readable ? null : insertResultType(typeName);
             crud.add(newFieldDefinition()
                     .name(CREATE_PREFIX + typeName)
-                    .type(type)
+                    .type(readable ? type : insertResult)
                     .argument(GraphQLArgument.newArgument().name(ARG_INPUT).type(createInput).build())
                     .build());
+            GraphQLOutputType many = readable ? GraphQLList.list(type) : insertResult;
             crud.add(newFieldDefinition()
                     .name(CREATE_MANY_PREFIX + typeName)
-                    .type(GraphQLList.list(type))
+                    .type(many)
                     .argument(GraphQLArgument.newArgument().name(ARG_INPUTS).type(GraphQLList.list(createInput)).build())
                     .build());
+        }
+        if (!readable) {
+            return crud;
         }
         if (access.permits(table, RlsOp.UPDATE)) {
             crud.add(newFieldDefinition()
@@ -87,5 +100,12 @@ public final class MutationFieldsAssembler {
                     .build());
         }
         return crud;
+    }
+
+    /** Hasura's mutation response without {@code returning}: the caller may not read what it wrote. */
+    private static GraphQLObjectType insertResultType(String typeName) {
+        return newObject().name(typeName + INSERT_RESULT_SUFFIX)
+                .field(newFieldDefinition().name(FIELD_AFFECTED_ROWS).type(GraphQLNonNull.nonNull(GraphQLInt)).build())
+                .build();
     }
 }

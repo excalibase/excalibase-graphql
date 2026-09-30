@@ -5,6 +5,8 @@ import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.RlsOp;
 import org.junit.jupiter.api.Test;
 
+import java.util.Map;
+
 import static io.github.excalibase.access.AccessFixture.AUDIT;
 import static io.github.excalibase.access.AccessFixture.CUSTOMERS;
 import static io.github.excalibase.access.AccessFixture.ORDERS;
@@ -170,6 +172,79 @@ class AccessPlanTest {
         assertThat(plan.view().isView(ORDER_VIEW)).isTrue();
         assertThat(plan.access().permits(ORDER_VIEW, RlsOp.SELECT)).isTrue();
         assertThat(plan.access().permits(ORDER_VIEW, RlsOp.DELETE)).isFalse();
+    }
+
+    // ---- insert without select (spec §5) ----
+
+    private static final String INSERT_NOTE = "\"insert\":{\"check\":{\"note\":{\"_neq\":\"\"}},\"columns\":[\"note\"],"
+            + "\"set\":{\"id\":7}}";
+
+    @Test
+    void insertWithoutSelect_isAWriteOnlyTable_readableNowhere() {
+        AccessPlan plan = plan(entry(AUDIT, INSERT_NOTE));
+
+        assertThat(plan.view().hasTable(AUDIT)).isFalse();
+        assertThat(plan.view().getTableNames()).isEmpty();
+        assertThat(plan.view().getWriteOnlyTableNames()).containsExactly(AUDIT);
+        assertThat(plan.view().getColumns(AUDIT)).isEmpty();
+        assertThat(plan.view().getColumnType(AUDIT, "note")).isEqualTo("text");
+        assertThat(plan.view().getColumnType(AUDIT, "id")).isEqualTo("integer");
+        assertThat(plan.view().getTableSchema(AUDIT)).isEqualTo("public");
+    }
+
+    @Test
+    void insertWithoutSelect_permitsOnlyTheInsert_withItsColumnsLessPresets() {
+        AccessPlan plan = plan(entry(AUDIT, INSERT_NOTE));
+
+        assertThat(plan.access().permits(AUDIT, RlsOp.INSERT)).isTrue();
+        assertThat(plan.access().permits(AUDIT, RlsOp.SELECT)).isFalse();
+        assertThat(plan.access().settableColumns(AUDIT, RlsOp.INSERT, plan.view())).containsExactly("note");
+        assertThat(plan.access().allowsAggregations(AUDIT)).isFalse();
+        assertThat(plan.access().rowLimit(AUDIT)).isNull();
+    }
+
+    @Test
+    void updateAndDeleteWithoutSelect_areDropped_evenBesideAnInsert() {
+        AccessPlan plan = plan(entry(AUDIT, INSERT_NOTE
+                + ",\"update\":{\"filter\":{},\"check\":{},\"columns\":\"*\",\"set\":{}},\"delete\":{\"filter\":{}}"));
+
+        assertThat(plan.access().permits(AUDIT, RlsOp.INSERT)).isTrue();
+        assertThat(plan.access().permits(AUDIT, RlsOp.UPDATE)).isFalse();
+        assertThat(plan.access().permits(AUDIT, RlsOp.DELETE)).isFalse();
+    }
+
+    @Test
+    void insertWithoutSelect_hasNoRealtime() {
+        AccessPlan plan = plan(entry(AUDIT, INSERT_NOTE));
+
+        assertThat(plan.changes(AUDIT, Map.of())).isEmpty();
+    }
+
+    @Test
+    void insertWithoutSelect_onAView_isNothing() {
+        AccessPlan plan = plan(entry(ORDER_VIEW, "\"insert\":{\"check\":{},\"columns\":\"*\",\"set\":{}}"));
+
+        assertThat(plan.view().getWriteOnlyTableNames()).isEmpty();
+        assertThat(plan.access().permits(ORDER_VIEW, RlsOp.INSERT)).isFalse();
+    }
+
+    @Test
+    void anInsertOnlyTable_hasNoRelationships() {
+        AccessPlan plan = plan(entry(ORDERS, "\"insert\":{\"check\":{},\"columns\":\"*\",\"set\":{}}"),
+                entry(CUSTOMERS, selectAll()));
+
+        assertThat(plan.view().getAllForwardFks()).isEmpty();
+        assertThat(plan.view().getAllReverseFks()).isEmpty();
+    }
+
+    @Test
+    void selectAndInsert_isUnchanged_notWriteOnly() {
+        AccessPlan plan = plan(entry(ORDERS, selectAll() + ",\"insert\":{\"check\":{},\"columns\":\"*\",\"set\":{}}"));
+
+        assertThat(plan.view().hasTable(ORDERS)).isTrue();
+        assertThat(plan.view().getWriteOnlyTableNames()).isEmpty();
+        assertThat(plan.access().permits(ORDERS, RlsOp.SELECT)).isTrue();
+        assertThat(plan.access().permits(ORDERS, RlsOp.INSERT)).isTrue();
     }
 
     @Test

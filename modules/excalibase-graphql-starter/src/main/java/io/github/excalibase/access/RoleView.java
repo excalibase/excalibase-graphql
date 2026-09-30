@@ -11,7 +11,8 @@ import java.util.TreeMap;
 /**
  * Builds the schema one role is served: its selectable tables with only their selectable columns,
  * and relationships only where both tables and every join column are selectable. Columns the role
- * may write but not read are typed without being listed. Functions are not part of the view: the ones
+ * may write but not read are typed without being listed; a table it may insert into but not select
+ * is a write-only table, reachable by nothing that reads. Functions are not part of the view: the ones
  * a role may call are the plan's tracked functions. Computed fields are left out for every role.
  */
 final class RoleView {
@@ -32,7 +33,7 @@ final class RoleView {
 
     private static void copyTable(SchemaInfo reflected, SchemaInfo view, TableRules rules) {
         String table = rules.table();
-        Set<String> readable = rules.select().columns();
+        Set<String> readable = rules.select().map(TableRules.SelectRule::columns).orElse(Set.of());
         readable.forEach(column -> copyColumn(reflected, view, table, column, false));
         writeOnly(rules, readable).forEach(column -> copyColumn(reflected, view, table, column, true));
         String schema = reflected.getTableSchema(table);
@@ -41,6 +42,9 @@ final class RoleView {
         }
         if (reflected.isView(table)) {
             view.addView(table);
+        }
+        if (rules.insertOnly()) {
+            view.addWriteOnlyTable(table);
         }
         if (reflected.hasPrimaryKey(table) && readable.containsAll(reflected.getPrimaryKeys(table))) {
             reflected.getPrimaryKeys(table).forEach(key -> view.addPrimaryKey(table, key));
@@ -99,7 +103,7 @@ final class RoleView {
 
     private static boolean selectable(Map<String, TableRules> rules, String table, Collection<String> columns) {
         TableRules held = rules.get(table);
-        return held != null && held.select().columns().containsAll(columns);
+        return held != null && held.select().map(select -> select.columns().containsAll(columns)).orElse(false);
     }
 
     /** A forward-FK key is {@code <table>.<field>}; the table is everything before the last dot. */

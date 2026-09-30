@@ -100,6 +100,17 @@ class RequestGuardTest {
     }
 
     @Test
+    void insertWithoutSelect_deniesEveryRead_whileItsCheckAndPresetsApply() {
+        RequestGuard guard = guard(entry(AUDIT,
+                "\"insert\":{\"check\":{\"note\":{\"_neq\":\"\"}},\"columns\":[\"note\"],\"set\":{\"id\":7}}"));
+
+        assertThat(guard.contribute(AUDIT, "a", RlsOp.SELECT).sql()).isEqualTo("FALSE");
+        assertThat(guard.contribute(AUDIT, "a", RlsOp.UPDATE).sql()).isEqualTo("FALSE");
+        assertThat(guard.check(AUDIT, "w", RlsOp.INSERT).sql()).isEqualTo("w.\"note\" <> :perm_p0");
+        assertThat(((Number) guard.presets(AUDIT, RlsOp.INSERT).get("id")).intValue()).isEqualTo(7);
+    }
+
+    @Test
     void allAccess_addsNoGuard() {
         RequestGuard guard = AccessPlan.allAccess(AccessFixture.schema()).guard(Map.of());
 

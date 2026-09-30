@@ -12,10 +12,16 @@ import java.util.Set;
 
 /**
  * One role's permissions on one table, resolved against the reflected schema: every column named here
- * exists, and an operation that is absent does not exist for the role.
+ * exists, and an operation that is absent does not exist for the role. Without a select only an insert
+ * can be held: update and delete are narrowed by the select filter, so they need one.
  */
-record TableRules(String table, SelectRule select, Optional<InsertRule> insert, Optional<UpdateRule> update,
-                  Optional<DeleteRule> delete) {
+record TableRules(String table, Optional<SelectRule> select, Optional<InsertRule> insert,
+                  Optional<UpdateRule> update, Optional<DeleteRule> delete) {
+
+    /** True when the role may insert into the table but not read it. */
+    boolean insertOnly() {
+        return select.isEmpty();
+    }
 
     /** @param limit the role's own row cap, or null */
     record SelectRule(BoolExp filter, Set<String> columns, Integer limit, boolean aggregations) {

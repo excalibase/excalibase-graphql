@@ -93,10 +93,10 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (inputArg == null) return null;
 
         String alias = shared.dialect().randAlias();
-        String objectSql = shared.queryBuilder().buildObject(field.getSelectionSet(), tableName, alias, params);
+        String objectSql = shared.resultObject(field, tableName, alias, params);
 
         Map<String, List<Map<String, Object>>> nestedInserts = new LinkedHashMap<>();
-        Map<String, Object> row = insertRow(inputArg, variables, shared, nestedInserts);
+        Map<String, Object> row = insertRow(inputArg, tableName, variables, shared, nestedInserts);
         shared.requireSettable(tableName, RlsOp.INSERT, row.keySet());
         row = MutationBuilder.withPresets(row, shared.presets(tableName, RlsOp.INSERT));
 
@@ -121,17 +121,20 @@ public class PostgresMutationCompiler implements MutationCompiler {
     }
 
     /**
-     * The input's column values; nested FK inserts (an object carrying a {@code data} array) are
-     * collected into {@code nestedInserts} instead, each child row being its own write.
+     * The input's column values; nested FK inserts (a relationship's object carrying a {@code data}
+     * array) are collected into {@code nestedInserts} instead, each child row being its own write. Any
+     * other name is a column, refused later when the caller may not set it.
      */
-    private Map<String, Object> insertRow(Argument inputArg, Map<String, Object> variables, MutationBuilder shared,
-                                          Map<String, List<Map<String, Object>>> nestedInserts) {
+    private Map<String, Object> insertRow(Argument inputArg, String tableName, Map<String, Object> variables,
+                                          MutationBuilder shared, Map<String, List<Map<String, Object>>> nestedInserts) {
         if (!(inputArg.getValue() instanceof ObjectValue inputOv)) {
             return shared.extractObjectFields(inputArg.getValue(), variables);
         }
         Map<String, Object> row = new LinkedHashMap<>();
         for (ObjectField of : inputOv.getObjectFields()) {
-            Optional<List<Map<String, Object>>> nestedRows = extractNestedData(of.getValue(), variables, shared);
+            boolean relationship = shared.schemaInfo().getReverseFk(tableName, of.getName()) != null;
+            Optional<List<Map<String, Object>>> nestedRows = relationship
+                    ? extractNestedData(of.getValue(), variables, shared) : Optional.empty();
             if (nestedRows.isPresent()) {
                 nestedInserts.put(of.getName(), nestedRows.get());
             } else {
@@ -250,6 +253,9 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (bulk == null) return null;
         String sql = shared.dialect().cteBulkInsert(bulk.alias(), shared.qualifiedTable(tableName),
                 bulk.columns(), bulk.valueRows(), bulk.objectSql());
+        if (!shared.returnsRows(tableName)) {
+            sql = countingWrittenRows(sql, bulk.alias(), bulk.objectSql());
+        }
         return guardedResult(sql, bulk.alias(), tableName,
                 List.of(new WrittenRows(bulk.alias(), tableName, List.of(RlsOp.INSERT))), params, shared);
     }
@@ -335,9 +341,19 @@ public class PostgresMutationCompiler implements MutationCompiler {
     private record WrittenRows(String cteAlias, String table, List<RlsOp> checks) {}
 
     /**
+     * {@code sql} answering one aggregate over every row the CTE wrote instead of one object per row: an
+     * insert the caller may not read back returns {@code { affected_rows }}.
+     */
+    private static String countingWrittenRows(String sql, String alias, String affectedRowsObject) {
+        int split = sql.lastIndexOf(") SELECT ");
+        return sql.substring(0, split + 1) + " " + SELECT + affectedRowsObject + FROM + alias;
+    }
+
+    /**
      * Finishes a mutation statement: what it returns is limited to rows passing the select filter (the
      * role's columns are already all its type holds), and when any written row fails its permission
-     * check the statement raises, so the whole mutation rolls back.
+     * check the statement raises, so the whole mutation rolls back. A caller who may not read the
+     * table gets the count of every written row, never a row.
      */
     private String guardedResult(String sql, String outputAlias, String tableName, List<WrittenRows> written,
                                  Map<String, Object> params, MutationBuilder shared) {
@@ -346,7 +362,9 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String ctePart = sql.substring(0, split + 1);
         String selectPart = sql.substring(split + 2);
         List<String> readable = new ArrayList<>();
-        shared.filterBuilder().appendRlsConditions(readable, tableName, outputAlias, params, RlsOp.SELECT);
+        if (shared.returnsRows(tableName)) {
+            shared.filterBuilder().appendRlsConditions(readable, tableName, outputAlias, params, RlsOp.SELECT);
+        }
         if (!readable.isEmpty()) {
             selectPart += WHERE + String.join(AND, readable);
         }

@@ -176,20 +176,40 @@ public class MutationBuilder {
         return null;
     }
 
+    /** A readable table, or one the caller may only insert into; the operation's permission decides the rest. */
     String lookupTable(String typeName) {
         String snake = NamingUtils.camelToSnakeCase(typeName);
-        if (schemaInfo.hasTable(snake)) return snake;
+        if (writable(snake)) return snake;
         String lower = typeName.toLowerCase();
-        if (schemaInfo.hasTable(lower)) return lower;
+        if (writable(lower)) return lower;
 
         // Compound keys: match prefixed type name (e.g., "TestSchemaCustomer" → "test_schema.customer")
-        for (String table : schemaInfo.getTableNames()) {
+        for (String table : schemaInfo.getMutableTableNames()) {
             if (!table.contains(".")) continue;
             String schema = table.substring(0, table.indexOf('.'));
             String rawTable = table.substring(table.indexOf('.') + 1);
             if (NamingUtils.schemaTypeName(schema, rawTable).equals(typeName)) return table;
         }
         return null;
+    }
+
+    private boolean writable(String table) {
+        return schemaInfo.hasTable(table) || schemaInfo.isWriteOnlyTable(table);
+    }
+
+    /** False for a table the caller may insert into but not select: its writes answer only a count. */
+    public boolean returnsRows(String tableName) {
+        return access.permits(tableName, RlsOp.SELECT);
+    }
+
+    /**
+     * What a write of {@code tableName} returns per row: the row as the caller reads it, or, when the
+     * caller may not read the table, the {@code affected_rows} aggregate over the written rows.
+     */
+    public String resultObject(Field field, String tableName, String alias, Map<String, Object> params) {
+        return returnsRows(tableName)
+                ? queryBuilder.buildObject(field.getSelectionSet(), tableName, alias, params)
+                : queryBuilder.buildAffectedRows(field.getSelectionSet());
     }
 
     // === Shared helpers (public, used by dialect-specific mutation compilers) ===
@@ -215,7 +235,7 @@ public class MutationBuilder {
         Map<String, Object> presets = presets(tableName, RlsOp.INSERT);
 
         String alias = dialect.randAlias();
-        String objectSql = queryBuilder.buildObject(field.getSelectionSet(), tableName, alias, params);
+        String objectSql = resultObject(field, tableName, alias, params);
         List<String> colNames = new ArrayList<>(rows.getFirst().keySet());
         colNames.addAll(presets.keySet());
         List<String> valueRows = new ArrayList<>();

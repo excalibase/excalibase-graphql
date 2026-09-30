@@ -350,13 +350,19 @@ public class RestQueryCompiler {
 
     /**
      * What a write returns: the written rows passing the select filter, with the caller's columns
-     * only. When any written row fails its permission check the statement raises, so the whole write
-     * rolls back.
+     * only, or none when the caller may not select the table. When any written row fails its permission
+     * check the statement raises, so the whole write rolls back.
      */
     private String output(String table, String cte, boolean many, List<RlsOp> checks, Map<String, Object> params) {
-        StringBuilder readable = new StringBuilder();
-        appendRls(readable, table, cte, RlsOp.SELECT, params);
-        String rows = SELECT + starFor(table, cte) + FROM + cte + (readable.isEmpty() ? "" : WHERE + readable);
+        String rows;
+        if (access.permits(table, RlsOp.SELECT)) {
+            StringBuilder readable = new StringBuilder();
+            appendRls(readable, table, cte, RlsOp.SELECT, params);
+            rows = SELECT + starFor(table, cte) + FROM + cte + (readable.isEmpty() ? "" : WHERE + readable);
+        } else {
+            // Insert without select: the rows are written, none is represented.
+            rows = SELECT + "NULL" + FROM + cte + WHERE + "FALSE";
+        }
         String json = many ? dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(OUT))) : dialect.rowToJson(OUT);
         String result = SELECT + json + FROM + parens(rows) + SPACE + OUT;
         List<String> violations = violations(table, cte, checks, params);

@@ -803,6 +803,17 @@ CREATE TABLE rls_notes (
 GRANT SELECT, INSERT, UPDATE, DELETE ON rls_notes TO app_user;
 GRANT USAGE, SELECT ON SEQUENCE rls_notes_id_seq TO app_user;
 
+-- Insert without select: the control-plane mock lets anon insert into hana.contact_messages
+-- (email must contain '@', source is preset) and gives no role a select on it.
+CREATE TABLE contact_messages (
+    id      SERIAL PRIMARY KEY,
+    email   TEXT NOT NULL,
+    body    TEXT NOT NULL,
+    source  TEXT NOT NULL DEFAULT 'unknown'
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON contact_messages TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE contact_messages_id_seq TO app_user;
+
 -- Relationship permission: rls_team_orders is visible only when the caller has a
 -- membership row in rls_members for the order's org, reached through the orgs both
 -- reference. Proves the correlated subquery survives the compiler's aliasing live.

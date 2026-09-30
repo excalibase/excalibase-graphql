@@ -41,6 +41,15 @@ class FunctionExposureTest {
     }
 
     @Test
+    void aReturnTableTheRoleMayOnlyInsertInto_makesNoFunctionCallable() {
+        AccessPlan plan = userPlan(List.of(entry(ORDERS, "\"insert\":{\"check\":{},\"columns\":\"*\",\"set\":{}}")),
+                List.of(tracked(SEARCH, "QUERY", true, null), tracked(PLACE, "MUTATION", false, "session")),
+                List.of(callable(SEARCH), callable(PLACE)));
+
+        assertThat(callableBy(plan)).isEmpty();
+    }
+
+    @Test
     void anUntrackedFunction_isNeverCallable() {
         assertThat(callableBy(withOrders())).isEmpty();
     }

@@ -1276,6 +1276,86 @@ describe('REST API — Mutations', () => {
   });
 });
 
+// ─── Insert without select (contact form) ────────────────────────────────────
+// The control-plane mock lets anon insert into hana.contact_messages (check: email contains '@',
+// preset: source = 'contact-form') and gives no role a select on it.
+
+describe('Insert without select — anon contact form', () => {
+  const { psql } = require('./client');
+
+  function rowsWith(body, source) {
+    const where = source ? `body = '${body}' AND source = '${source}'` : `body = '${body}'`;
+    const out = psql(`SELECT count(*) FROM hana.contact_messages WHERE ${where};`);
+    return Number(out.match(/^\s*(\d+)\s*$/m)[1]);
+  }
+
+  test('GraphQL create writes the row with its preset and answers only affected_rows', async () => {
+    const res = await rawGraphql(
+      'mutation { createHanaContactMessages(input: { email: "e2e@test.com", body: "e2e-gql" }) { affected_rows } }');
+    expect(res.data.errors).toBeUndefined();
+    expect(res.data.data.createHanaContactMessages).toEqual({ affected_rows: 1 });
+    expect(rowsWith('e2e-gql', 'contact-form')).toBe(1);
+  });
+
+  test('GraphQL createMany counts every written row', async () => {
+    const res = await rawGraphql('mutation { createManyHanaContactMessages(inputs: ['
+      + '{ email: "a@test.com", body: "e2e-many" }, { email: "b@test.com", body: "e2e-many" }]) { affected_rows } }');
+    expect(res.data.errors).toBeUndefined();
+    expect(res.data.data.createManyHanaContactMessages.affected_rows).toBe(2);
+    expect(rowsWith('e2e-many')).toBe(2);
+  });
+
+  test('a failed check rolls the insert back', async () => {
+    const res = await rawGraphql(
+      'mutation { createHanaContactMessages(input: { email: "no-at-sign", body: "e2e-bad" }) { affected_rows } }');
+    expect(res.data.errors[0].extensions.code).toBe('permission_check_failed');
+    expect(rowsWith('e2e-bad')).toBe(0);
+  });
+
+  test('the preset column cannot be set by the client', async () => {
+    const res = await rawGraphql('mutation { createHanaContactMessages(input: '
+      + '{ email: "e2e@test.com", body: "e2e-forged", source: "forged" }) { affected_rows } }');
+    expect(res.data.errors[0].message).toContain('source');
+    expect(rowsWith('e2e-forged')).toBe(0);
+  });
+
+  test('there is no read path: no query field, no row fields on the result', async () => {
+    const read = await rawGraphql('{ hanaContactMessages { id } }');
+    expect(read.data.errors[0].message).toContain('Unknown field');
+    const peek = await rawGraphql(
+      'mutation { createHanaContactMessages(input: { email: "e2e@test.com", body: "e2e-peek" }) { id } }');
+    expect(peek.data.errors[0].message).toContain('Unknown field(s): id');
+  });
+
+  test('introspection shows only the create fields and the affected_rows type', async () => {
+    const query = await client.request(gql`{ __schema { queryType { fields { name } } } }`);
+    expect(query.__schema.queryType.fields.map(f => f.name)).not.toContain('hanaContactMessages');
+    const mutation = await client.request(gql`{ __schema { mutationType { fields { name type { name } } } } }`);
+    const mutations = mutation.__schema.mutationType.fields.filter(f => f.name.includes('ContactMessages'));
+    expect(mutations.map(f => f.name).sort()).toEqual(['createHanaContactMessages', 'createManyHanaContactMessages']);
+    mutations.forEach(f => expect(f.type.name).toBe('HanaContactMessages_InsertResult'));
+    const result = await client.request(gql`{ __type(name: "HanaContactMessages_InsertResult") { fields { name } } }`);
+    expect(result.__type.fields.map(f => f.name)).toEqual(['affected_rows']);
+  });
+
+  test('REST POST is 201; return=representation answers an empty data array', async () => {
+    const minimal = await restPost('/contact_messages', { email: 'r@test.com', body: 'e2e-rest' });
+    expect(minimal.status).toBe(201);
+    const represented = await restPost('/contact_messages', { email: 'r@test.com', body: 'e2e-rest-rep' },
+      { Prefer: 'return=representation' });
+    expect(represented.status).toBe(201);
+    expect(represented.data).toEqual({ data: [] });
+    expect(rowsWith('e2e-rest', 'contact-form')).toBe(1);
+    expect(rowsWith('e2e-rest-rep', 'contact-form')).toBe(1);
+  });
+
+  test('REST GET, PATCH and DELETE are 404', async () => {
+    expect((await restGet('/contact_messages')).status).toBe(404);
+    expect((await restPatch('/contact_messages?id=eq.1', { body: 'x' })).status).toBe(404);
+    expect((await restDelete('/contact_messages?id=eq.1')).status).toBe(404);
+  });
+});
+
 describe('REST API — Prefer: tx=rollback', () => {
   test('POST with tx=rollback does not persist', async () => {
     const res = await restPost('/customer', {

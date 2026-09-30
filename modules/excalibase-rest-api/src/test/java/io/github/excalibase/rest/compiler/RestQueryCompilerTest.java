@@ -710,4 +710,43 @@ class RestQueryCompilerTest {
       assertTrue(result.sql().contains("SELECT * FROM"), result.sql());
     }
   }
+
+  @Nested
+  class InsertWithoutSelect {
+
+    private RestQueryCompiler insertOnly() {
+      SchemaInfo view = new SchemaInfo();
+      view.setTableSchema("public.messages", "public");
+      view.addWriteOnlyColumn("public.messages", "body", "text");
+      view.addWriteOnlyTable("public.messages");
+      TableAccess access = TableAccess.enforcing(Map.of("public.messages",
+          new TableAccess.Rights(Set.of(RlsOp.INSERT), Set.of("body"), Set.of(), null, false)));
+      return new RestQueryCompiler(view, dialect, "public", 30, access);
+    }
+
+    @Test
+    @DisplayName("an insert the role cannot read back represents no row")
+    void insert_representsNoRow() {
+      var result = insertOnly().compileInsert("public.messages", Map.of("body", "hi"));
+
+      assertTrue(result.sql().contains("INSERT INTO \"public\".\"messages\""), result.sql());
+      assertTrue(result.sql().contains("WHERE FALSE"), result.sql());
+      assertFalse(result.sql().contains("SELECT  FROM"), result.sql());
+    }
+
+    @Test
+    @DisplayName("a bulk insert the role cannot read back represents no row")
+    void bulkInsert_representsNoRow() {
+      var result = insertOnly().compileBulkInsert("public.messages", List.of(Map.of("body", "a"), Map.of("body", "b")));
+
+      assertTrue(result.sql().contains("WHERE FALSE"), result.sql());
+    }
+
+    @Test
+    @DisplayName("a column outside the insert permission is refused")
+    void insert_unknownColumn_isRefused() {
+      assertThrows(IllegalArgumentException.class,
+          () -> insertOnly().compileInsert("public.messages", Map.of("body", "hi", "source", "x")));
+    }
+  }
 }

@@ -1,9 +1,11 @@
 package io.github.excalibase.schema;
 
+import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLTypeUtil;
 import io.github.excalibase.security.RlsOp;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -79,6 +81,72 @@ class IntrospectionHandlerAccessTest {
         GraphQLInputObjectType update = (GraphQLInputObjectType) schema.getType("PublicOrdersUpdateInput");
         assertThat(create.getFieldDefinitions()).extracting(GraphQLInputObjectField::getName).containsExactly("total");
         assertThat(update.getFieldDefinitions()).extracting(GraphQLInputObjectField::getName).containsExactly("status");
+    }
+
+    // ---- insert without select ----
+
+    private static final String MESSAGES = "public.messages";
+
+    /** What an insert-only role is served: the table's insert columns typed, nothing listed as readable. */
+    private static SchemaInfo insertOnlyView() {
+        SchemaInfo view = new SchemaInfo();
+        view.setTableSchema(MESSAGES, "public");
+        view.addWriteOnlyColumn(MESSAGES, "email", "text");
+        view.addWriteOnlyColumn(MESSAGES, "body", "text");
+        view.addWriteOnlyColumn(MESSAGES, "source", "text");
+        view.addWriteOnlyTable(MESSAGES);
+        return view;
+    }
+
+    private static TableAccess insertOnly() {
+        return TableAccess.enforcing(Map.of(MESSAGES, new TableAccess.Rights(Set.of(RlsOp.INSERT),
+                Set.of("email", "body"), Set.of(), null, false)));
+    }
+
+    @Test
+    void insertOnly_hasNoQueryField_andNoReadType() {
+        var schema = new IntrospectionHandler(insertOnlyView(), insertOnly()).getSchema();
+
+        assertThat(names(schema.getQueryType().getFieldDefinitions())).noneMatch(name -> name.contains("Messages"));
+        assertThat(schema.getType("PublicMessages")).isNull();
+        assertThat(schema.getType("PublicMessagesWhereInput")).isNull();
+        assertThat(schema.getType("PublicMessagesConnection")).isNull();
+    }
+
+    @Test
+    void insertOnly_hasCreateAndCreateMany_returningOnlyTheAffectedRowCount() {
+        var schema = new IntrospectionHandler(insertOnlyView(), insertOnly()).getSchema();
+        GraphQLObjectType mutation = schema.getMutationType();
+
+        assertThat(names(mutation.getFieldDefinitions()))
+                .containsExactlyInAnyOrder("createPublicMessages", "createManyPublicMessages");
+        GraphQLObjectType result = (GraphQLObjectType) schema.getType("PublicMessages_InsertResult");
+        assertThat(names(result.getFieldDefinitions())).containsExactly("affected_rows");
+        assertThat(GraphQLTypeUtil.simplePrint(result.getFieldDefinition("affected_rows").getType())).isEqualTo("Int!");
+        assertThat(GraphQLTypeUtil.simplePrint(mutation.getFieldDefinition("createPublicMessages").getType()))
+                .isEqualTo("PublicMessages_InsertResult");
+        assertThat(GraphQLTypeUtil.simplePrint(mutation.getFieldDefinition("createManyPublicMessages").getType()))
+                .isEqualTo("PublicMessages_InsertResult");
+    }
+
+    @Test
+    void insertOnly_inputHoldsOnlyTheSettableColumns_andNoOnConflict() {
+        var schema = new IntrospectionHandler(insertOnlyView(), insertOnly()).getSchema();
+
+        GraphQLInputObjectType create = (GraphQLInputObjectType) schema.getType("PublicMessagesCreateInput");
+        assertThat(create.getFieldDefinitions()).extracting(GraphQLInputObjectField::getName)
+                .containsExactlyInAnyOrder("email", "body");
+        assertThat(schema.getMutationType().getFieldDefinition("createPublicMessages").getArguments())
+                .extracting(GraphQLArgument::getName).containsExactly("input");
+    }
+
+    @Test
+    void selectAndInsert_stillReturnTheRowType() {
+        var schema = handler(access(Set.of(RlsOp.SELECT, RlsOp.INSERT), false)).getSchema();
+
+        assertThat(GraphQLTypeUtil.simplePrint(schema.getMutationType().getFieldDefinition("createPublicOrders").getType()))
+                .isEqualTo("PublicOrders");
+        assertThat(schema.getType("PublicOrders_InsertResult")).isNull();
     }
 
     @Test

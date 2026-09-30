@@ -136,7 +136,7 @@ public class IntrospectionHandler {
                                                             RlsOp operation) {
         Map<String, GraphQLInputObjectType> inputs = new LinkedHashMap<>();
         CreateInputFactory factory = new CreateInputFactory();
-        for (String table : schemaInfo.getTableNames()) {
+        for (String table : schemaInfo.getMutableTableNames()) {
             if (schemaInfo.isView(table) || !access.permits(table, operation)) continue;
             var columns = access.settableColumns(table, operation, schemaInfo);
             inputs.put(table, operation == RlsOp.INSERT
