@@ -168,9 +168,8 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
     }
 
     /**
-     * {@code enforced} is read as a field and never inferred: a payload without it
-     * is an older control plane that does not know about exposure, not a project
-     * that wants everything hidden.
+     * {@code enforced} must be an explicit boolean: a payload without it is refused
+     * like any other bad answer, never read as "off" (which would expose every table).
      */
     private TableGrants parseGrants(String projectId, JsonNode root) {
         List<TableGrant> grants = new ArrayList<>();
@@ -183,8 +182,11 @@ public final class ProvisioningPolicyProvider implements PolicyProvider {
                     text(node, "role"),
                     node.path("enabled").asBoolean(true)));
         }
-        return new TableGrants(textOr(root, "projectId", projectId),
-                root.path("enforced").asBoolean(false), grants);
+        JsonNode enforced = root.get("enforced");
+        if (enforced == null || !enforced.isBoolean()) {
+            throw new PolicyFetchException("table grants for " + projectId + " carry no boolean \"enforced\"");
+        }
+        return new TableGrants(textOr(root, "projectId", projectId), enforced.booleanValue(), grants);
     }
 
     // JSON shape is 1:1 with provisioning's domain/rls.go.

@@ -3,6 +3,9 @@ package io.github.excalibase.config;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.config.datasource.TenantDataSourceFactory;
 import io.github.excalibase.config.datasource.TenantDbSslMode;
+import io.github.excalibase.permissions.NoPermissionSource;
+import io.github.excalibase.permissions.PermissionProvider;
+import io.github.excalibase.permissions.ProvisioningPermissionProvider;
 import io.github.excalibase.rls.InMemoryPolicyProvider;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.rls.PolicyProvider;
@@ -77,6 +80,22 @@ public class JwtSecurityConfig {
         return new InMemoryPolicyProvider();
     }
 
+    /**
+     * Per-project permission documents (docs/features/permissions.md §8), read from the same control
+     * plane, token and TTL as the policies. Without a policy URL there is no source, and every read is
+     * refused rather than answered with an empty document.
+     */
+    @Bean
+    public PermissionProvider permissionProvider(
+            @Value("${app.security.rls.policy-url:}") String policyUrl,
+            TokenFileSource provisioningTokenSource,
+            @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs) {
+        if (policyUrl != null && !policyUrl.isBlank()) {
+            return new ProvisioningPermissionProvider(policyUrl, provisioningTokenSource, policyTtlMs);
+        }
+        return new NoPermissionSource();
+    }
+
     @Bean
     public RlsPolicyEnforcer rlsPolicyEnforcer(PolicyProvider policyProvider,
             @Value("${app.database-type:postgres}") String databaseType) {
@@ -103,13 +122,14 @@ public class JwtSecurityConfig {
     @Bean
     public PolicyChangeSubscriber policyChangeSubscriber(
             PolicyProvider policyProvider,
+            PermissionProvider permissionProvider,
             GraphqlSchemaManager schemaManager,
             @Value("${app.nats.enabled:false}") boolean natsEnabled,
             @Value("${app.nats.url:nats://localhost:4222}") String natsUrl,
             @Value("${app.nats.username:}") String natsUsername,
             @Value("${app.nats.password:}") String natsPassword,
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
-        return new PolicyChangeSubscriber(List.of(policyProvider, schemaManager::evict),
+        return new PolicyChangeSubscriber(List.of(policyProvider, permissionProvider, schemaManager::evict),
                 natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 

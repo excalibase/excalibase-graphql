@@ -250,6 +250,41 @@ permissions. There is no "enforced" switch anywhere: permissions always apply.
   engine replica drops that project's cached permissions and built schemas at once. The cache TTL
   remains the fallback.
 
+### 8.1 Wire format
+
+The engine authenticates with its service token (capability `policies:read`) and reads:
+
+```json
+{
+  "projectId": "proj-abc",
+  "version": 42,
+  "tables": [
+    {
+      "table": "public.orders",
+      "role": "user",
+      "select": { "filter": {"owner_id": {"_eq": "X-Excalibase-User-Id"}}, "columns": ["id","owner_id","total"], "limit": 100, "allowAggregations": false },
+      "insert": { "check": {}, "columns": "*", "set": {"owner_id": "X-Excalibase-User-Id"} },
+      "update": { "filter": {}, "check": {}, "columns": ["status"], "set": {} },
+      "delete": { "filter": {} }
+    }
+  ],
+  "functions": [
+    { "function": "public.search_orders", "exposedAs": "QUERY", "inferPermissions": true, "sessionArgument": null }
+  ],
+  "functionPermissions": [
+    { "function": "public.search_orders", "role": "editor" }
+  ]
+}
+```
+
+One `tables` entry per (table, role); an operation key is present only when that permission exists.
+The three arrays are always present. `table` and `function` are schema-qualified lower-case names,
+roles follow §1 and are never `service`, `version` grows with every write, and expressions follow §4
+(depth at most 16, at most 200 nodes). The engine reads the document strictly: an unknown key, a
+repeated key, a missing `filter`/`check`, a function permission for an untracked function or any
+other deviation refuses the **whole** document — it is never partly applied and never cached, and the
+last good copy (else 503 `permissions_unavailable`) is served instead.
+
 ## 9. What happens to row policies, column policies and table grants
 
 They are folded into permission objects and the old stores are removed:
