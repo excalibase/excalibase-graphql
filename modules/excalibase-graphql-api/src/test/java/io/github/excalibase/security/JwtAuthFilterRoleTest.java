@@ -8,6 +8,7 @@ import com.nimbusds.jwt.SignedJWT;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
+import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.StubbedSchemaManager;
 import jakarta.servlet.FilterChain;
@@ -32,6 +33,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /** The HTTP edge resolves one role per request and hands it on as the request's {@link Principal}. */
 class JwtAuthFilterRoleTest {
@@ -113,6 +115,30 @@ class JwtAuthFilterRoleTest {
         assertThat(response.getStatus()).isEqualTo(503);
         assertThat(response.getContentAsString()).contains("permissions_unavailable");
         assertThat(capture.principal.get()).isNull();
+    }
+
+    @Test
+    void theRequestsResolvedEngine_isReleasedWhenTheRequestEnds() throws Exception {
+        AccessPlans plans = mock(AccessPlans.class);
+
+        new JwtAuthFilter(jwtService, plans).doFilter(request(token(Map.of("role", "user")), null),
+                new MockHttpServletResponse(), new Capture().chain);
+
+        verify(plans).planFor(any());
+        verify(plans).requestFinished();
+    }
+
+    @Test
+    void theRequestsResolvedEngine_isReleasedWhenPermissionsAreUnavailable() throws Exception {
+        AccessPlans plans = mock(AccessPlans.class);
+        when(plans.planFor(any())).thenThrow(new PermissionsUnavailableException("control plane down"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        new JwtAuthFilter(jwtService, plans).doFilter(request(token(Map.of("role", "user")), null),
+                response, new Capture().chain);
+
+        assertThat(response.getStatus()).isEqualTo(503);
+        verify(plans).requestFinished();
     }
 
     @Test

@@ -4,6 +4,7 @@ import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.config.datasource.TenantDataSourceFactory;
 import io.github.excalibase.config.datasource.TenantDbSslMode;
 import io.github.excalibase.permissions.NoPermissionSource;
+import io.github.excalibase.permissions.PermissionCachePolicy;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
@@ -61,17 +62,22 @@ public class JwtSecurityConfig {
 
     /**
      * Per-project permission documents (docs/features/permissions.md §8), read from the control plane
-     * with the shared provisioning token and cached for the policy TTL. Without a policy URL there is
-     * no source, and every read is refused rather than answered with an empty document.
+     * with the shared provisioning token and cached for the policy TTL. Through a control-plane outage the
+     * cached copy is served for at most max-stale, then every role but service gets 503; the control plane
+     * is asked at most once per retry interval meanwhile. Without a policy
+     * URL there is no source, and every read is refused rather than answered with an empty document.
      */
     @Bean
     public PermissionProvider permissionProvider(
             @Value("${app.security.rls.policy-url:}") String policyUrl,
             TokenFileSource provisioningTokenSource,
             @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs,
+            @Value("${app.security.permissions.max-stale-ms:300000}") long maxStaleMs,
+            @Value("${app.security.permissions.retry-interval-ms:2000}") long retryIntervalMs,
             ObjectProvider<MeterRegistry> meterRegistry) {
+        PermissionCachePolicy policy = new PermissionCachePolicy(policyTtlMs, maxStaleMs, retryIntervalMs);
         if (policyUrl != null && !policyUrl.isBlank()) {
-            return new ProvisioningPermissionProvider(policyUrl, provisioningTokenSource, policyTtlMs,
+            return new ProvisioningPermissionProvider(policyUrl, provisioningTokenSource, policy,
                     meterRegistry.getIfAvailable(SimpleMeterRegistry::new));
         }
         return new NoPermissionSource();

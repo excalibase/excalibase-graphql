@@ -79,6 +79,9 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         } finally {
             RlsContext.clear();
             clearTenantContext(pathProjectId);
+            if (accessPlans != null) {
+                accessPlans.requestFinished();
+            }
         }
     }
 

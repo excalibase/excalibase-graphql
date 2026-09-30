@@ -254,8 +254,24 @@ The control plane serves a project's whole permission set in one response
 permissions. There is no "enforced" switch anywhere: permissions always apply.
 
 - Unknown project (404) → the request is refused; nothing is cached for it.
-- Control plane unreachable with nothing cached → 503 `permissions_unavailable`. With a cached set,
-  the cached set is served until it can be refreshed.
+- Control plane cannot be read (connection refused, timeout, a non-200 answer other than 404, or no
+  service token) with nothing cached → 503 `permissions_unavailable`. With a cached set, the cached set
+  is served for at most `app.security.permissions.max-stale-ms` (env
+  `APP_SECURITY_PERMISSIONS_MAX_STALE_MS`, default 300000 = 5 minutes, must be greater than 0 or the
+  engine refuses to start), counted per project from the first failed refresh. After that every role
+  except `service` gets 503 `permissions_unavailable` (GraphQL and REST; a WebSocket is closed) until a
+  refresh succeeds, which ends the outage and restarts the count for the next one. `service` never reads
+  the document, so it is served throughout. A cached set is refreshed only after the cache TTL
+  (`app.security.rls.policy-ttl-ms`), so the longest a set can be served stale is TTL + max-stale.
+- An outage does not multiply control-plane calls: concurrent reads of a project share one fetch, a
+  request reads the document at most once, and during an outage a project's refresh is attempted at
+  most once per `app.security.permissions.retry-interval-ms` (env
+  `APP_SECURITY_PERMISSIONS_RETRY_INTERVAL_MS`, default 2000, must be greater than 0). Requests between
+  attempts are answered from the cached set while the window is open, else with 503 at once.
+- An outage is loud: every failed attempt logs ERROR `permissions_fetch_failed project=… stale_for_ms=…`
+  and increments `excalibase_permissions_fetch_failed_total{project}`; the window closing logs ERROR
+  `permissions_stale_expired` once per outage; `excalibase_permissions_stale_seconds{project}` shows
+  how long refreshes have been failing (0 when fresh).
 - A change (permission, tracked function, schema DDL) publishes `policies.{projectId}.changed`; every
   engine replica drops that project's cached permissions and built schemas at once. The cache TTL
   remains the fallback.
