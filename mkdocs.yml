@@ -127,7 +127,6 @@ nav:
       - API Permissions: features/permissions.md
       - Permission Enforcement: features/rls-architecture.md
       - CORS (per-project origins): features/cors.md
-      - Postgres Role Switching: features/postgres-role-switching.md
   - Database Compatibility: database-compatibility.md
   - SDK (TypeScript): sdk.md
   - Testing: testing.md
