@@ -8,7 +8,6 @@ import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
-import io.github.excalibase.schema.introspection.ArrRelInsertFactory;
 import io.github.excalibase.schema.introspection.CompositeTypeFactory;
 import io.github.excalibase.schema.introspection.CreateInputFactory;
 import io.github.excalibase.schema.introspection.EnumTypeFactory;
@@ -16,6 +15,7 @@ import io.github.excalibase.schema.introspection.FunctionFieldsAssembler;
 import io.github.excalibase.schema.introspection.FilterInputCatalog;
 import io.github.excalibase.schema.introspection.MutationFieldsAssembler;
 import io.github.excalibase.schema.introspection.QueryFieldsAssembler;
+import io.github.excalibase.schema.introspection.RelationshipInsertFactory;
 import io.github.excalibase.schema.introspection.TableObjectTypeFactory;
 import io.github.excalibase.schema.introspection.WhereInputFactory;
 
@@ -58,7 +58,14 @@ public class IntrospectionHandler {
 
     /** As above, plus a root field per tracked function the caller may call. */
     public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions) {
-        this.schema = buildSchema(schemaInfo, access, functions == null ? ExposedFunctions.NONE : functions);
+        this(schemaInfo, access, functions, true);
+    }
+
+    /** As above; {@code nestedInserts} is false for a store whose mutation compiler cannot nest inserts. */
+    public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
+                                boolean nestedInserts) {
+        this.schema = buildSchema(schemaInfo, access, functions == null ? ExposedFunctions.NONE : functions,
+                nestedInserts);
         this.graphQL = GraphQL.newGraphQL(this.schema).build();
     }
 
@@ -79,16 +86,17 @@ public class IntrospectionHandler {
         return response;
     }
 
-    private GraphQLSchema buildSchema(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions) {
+    private GraphQLSchema buildSchema(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
+                                      boolean nestedInserts) {
         // Step 1: build enums, shared filter inputs, per-enum filter inputs.
         Map<String, GraphQLEnumType> enumTypes = new EnumTypeFactory().build(schemaInfo);
         FilterInputCatalog.FilterInputs filters = FilterInputCatalog.INPUTS;
         Map<String, GraphQLInputObjectType> enumFilters = FilterInputCatalog.buildEnumFilters(enumTypes);
 
-        // Step 2: per-table where/create/object types. ArrRel is built first so
-        // CreateInput can embed the wrapper types; both sides of the create-input
-        // ↔ arr-rel cycle are broken via GraphQLTypeReference inside ArrRelInsertFactory.
-        Map<String, GraphQLInputObjectType> arrRelTypes = new ArrRelInsertFactory().build(schemaInfo, access);
+        // Step 2: per-table where/create/object types. The nested-insert wrappers are built first so
+        // CreateInput can embed them; the create-input ↔ wrapper cycle is broken by type references.
+        Map<String, GraphQLInputObjectType> arrRelTypes = new RelationshipInsertFactory().build(schemaInfo,
+                nestedInserts);
         Map<String, GraphQLInputObjectType> whereTypes = buildWhereTypes(schemaInfo, enumTypes, enumFilters, filters);
         MutationFieldsAssembler.Inputs inputs = new MutationFieldsAssembler.Inputs(
                 buildInputs(schemaInfo, access, enumTypes, arrRelTypes, RlsOp.INSERT),
@@ -164,7 +172,7 @@ public class IntrospectionHandler {
         schemaBuilder.additionalType(ExtendedScalars.GraphQLBigInteger);
         // Register enum types as additional types so they're discoverable via __type
         enumTypes.values().forEach(schemaBuilder::additionalType);
-        // Register ArrRelInsertInput types for nested FK insert validation
+        // Register the nested-insert wrapper types
         arrRelTypes.values().forEach(schemaBuilder::additionalType);
         // Register composite types as GraphQL object types
         new CompositeTypeFactory().build(schemaInfo).forEach(schemaBuilder::additionalType);

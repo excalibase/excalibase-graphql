@@ -192,12 +192,14 @@ select cannot be used in `where`, `orderBy` or cursors either.
 
 **Insert without select** (a public contact form: `anon` may insert into `messages`, never read it).
 The table is write-only for that role:
-- GraphQL: no `Query` field (list, connection, aggregate), no type for its rows, no relationship to
-  or from it (so it neither takes nor is a nested insert). `Mutation` has `create<T>(input:)` and
+- GraphQL: no `Query` field (list, connection, aggregate), no type for its rows, and no relationship
+  field to or from it on any read type; nested inserts into or from it work as for any table (below).
+  `Mutation` has `create<T>(input:)` and
   `createMany<T>(inputs:)`, both returning `<T>_InsertResult { affected_rows: Int! }` (the underscore
   keeps the name clear of every table-derived type). The input holds the permitted, non-preset
   insert columns; presets and `check` apply as for any insert, and a failed check rolls the whole
-  statement back. `onConflict` needs update permission, so it is not offered; update and delete need
+  statement back. A nested insert answers the count of every row it wrote, nested rows included.
+  `onConflict` needs update permission, so it is not offered; update and delete need
   select (their filter includes it), so a document giving them without select has them dropped and
   logged as `permission_invalid`. Selecting anything but `affected_rows`/`__typename` answers
   `Unknown field(s)`.
@@ -208,6 +210,36 @@ The table is write-only for that role:
   and `DELETE` answer 404, as for a table that does not exist. The OpenAPI document lists only
   `post` for it, typed by the settable columns.
 - Realtime: no subscription. Tracked functions returning the table: not callable.
+
+**Nested inserts** (GraphQL `create<T>` and `createMany<T>`; Postgres only, MySQL offers none), as in Hasura:
+- A row's insert input has one field per relationship the role may insert through: an array
+  relationship (`<child>: { data: [<Child>CreateInput!]! }`, the reverse foreign key) or an object
+  relationship (`<fk field>: { data: <Parent>CreateInput! }`, the foreign key on this table). The role
+  needs **insert** permission on both tables, never select. Field names are the ones the unfiltered
+  schema gives the foreign key. A relationship the role cannot insert through is not in the input, and
+  sending it fails the request before anything is written.
+- Every nested row obeys its own table's insert permission: its `columns`, its `set` presets and its
+  `check`. The key a row takes from the row it hangs off is filled by the engine and is not the client's
+  to send (`cannot insert "<col>" columns as their values are already being determined by parent
+  insert`); neither is a foreign key beside the object relationship that fills it (`cannot insert object
+  relationship "<rel>" as "<col>" column values are already determined`). A preset on that column wins.
+- Order (Hasura's): the row an object relationship points at, then the row, then the rows of each array
+  relationship, each as its own statement, in input order. Rows that nest others are inserted one at a
+  time; the rows of one relationship that nest nothing share one statement. A `null` relationship or an
+  empty `data` list inserts nothing.
+- Each statement evaluates its own rows' `check`. A check that reaches another table (a relationship or
+  `_exists`) sees every row written by earlier statements of the mutation and none written later: a
+  child's check can rely on its parent row, a parent's check cannot rely on its children (Hasura fails
+  that case the same way). Rows of one statement do not see each other.
+- The whole mutation (every root field, every nested row) runs in one transaction. Any failed check,
+  constraint or validation rolls all of it back; `permission_check_failed` is the answer for a check.
+- What it answers: `create<T>` the row and `createMany<T>` the rows, limited to the select filter and
+  columns, evaluated after every insert, so a relationship field shows the nested rows the role may
+  select; a relationship to a table the role cannot select is not a field (`Unknown field(s)`). A role
+  that cannot select the root table gets `affected_rows`, counting every row written, nested ones
+  included.
+- When an operation holds a nested insert, all its root fields run as separate statements in order in
+  that one transaction, so a later field sees what an earlier one wrote.
 
 **REST.** Same permissions. A table the role cannot select answers 404 (a POST to a table it may
 insert into but not select excepted, above); on a table it can see, a method whose operation it has
@@ -322,8 +354,9 @@ that one place.
 How the engine applies this today (see [Permission Enforcement](rls-architecture.md)):
 
 - Rows written by an upsert owe both the insert and the update `check`.
-- A `check` or filter that reaches another table sees the database as of the start of the
-  statement, so a nested insert's child cannot rely on its parent row in the same mutation.
+- A `check` or filter that reaches another table sees the database as of the start of its statement.
+  A nested insert runs one statement per table and level (§5), so a child's check sees its parent row;
+  rows written by the same statement are not seen.
 - Computed fields (functions of one table row) are reflected but not exposed for GA, to any role,
   `service` included: they are untracked functions. A later step may let a function be tracked as a
   computed field.
@@ -419,7 +452,10 @@ a role may not select is absent from its schema rather than returned as null.
 - Update and delete also require the row to pass the select filter (Postgres row-security
   semantics, pinned by the engine's differential tests against native Postgres).
 - Function exposure is fixed by volatility (Hasura lets a `VOLATILE` function be exposed as a query).
-- A table a role may insert into but not select has no relationships for that role, so nested inserts
-  never reach it or start from it; Hasura's insert-only role keeps them. `create<T>` answers
-  `<T>_InsertResult` rather than Hasura's `<t>_mutation_response`, and has no `returning`.
+- `create<T>` of a table the role may insert into but not select answers `<T>_InsertResult` rather than
+  Hasura's `<t>_mutation_response`, and has no `returning`; a role that can select the table gets the
+  row (`create<T>`) or rows (`createMany<T>`) directly instead of `returning`.
+- Nested inserts have no `on_conflict` inside a relationship (Hasura offers it); only the root
+  `create<T>` takes `onConflict`. A relationship is a foreign key, so there is no `insertion_order` for
+  manually defined relationships.
 - The bypass role is named `service` and comes from a secret API key, not an admin secret header.

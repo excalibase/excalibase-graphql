@@ -83,6 +83,28 @@ public class QueryExecutionService {
         }
     }
 
+    /**
+     * Runs a mutation of ordered statements (a nested insert) in one connection and transaction, whatever
+     * the request's path: a failure anywhere rolls back every statement.
+     */
+    public ResponseEntity<Object> executeSequence(SqlCompiler.CompiledQuery compiled)
+            throws SQLException, JsonProcessingException {
+        try (Connection conn = dataSource.getConnection()) {
+            boolean autoCommit = conn.getAutoCommit();
+            try {
+                conn.setAutoCommit(false);
+                String json = new MutationSequenceRunner(conn, compiled.params()).run(compiled.sequence());
+                conn.commit();
+                return wrapResult(json);
+            } catch (SQLException | JsonProcessingException | RuntimeException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(autoCommit);
+            }
+        }
+    }
+
     private ResponseEntity<Object> dispatchInsideTx(Connection conn,
                                                     SqlCompiler.CompiledQuery compiled,
                                                     MapSqlParameterSource params,

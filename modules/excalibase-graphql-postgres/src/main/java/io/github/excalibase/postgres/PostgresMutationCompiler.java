@@ -1,15 +1,15 @@
 package io.github.excalibase.postgres;
 
 import graphql.language.*;
+import io.github.excalibase.compiler.InsertRow;
+import io.github.excalibase.compiler.InsertRowParser;
 import io.github.excalibase.compiler.MutationBuilder;
-import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.compiler.MutationSequence;
 import io.github.excalibase.security.PermissionCheckFailedException;
-import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
-import io.github.excalibase.security.RlsWhereContributor;
-import io.github.excalibase.security.WriteGuard;
 import io.github.excalibase.spi.MutationCompiler;
 import io.github.excalibase.compiler.SqlCompiler;
+import io.github.excalibase.postgres.WriteChecks.WrittenRows;
 
 import java.util.*;
 import static io.github.excalibase.schema.GraphqlConstants.*;
@@ -25,9 +25,16 @@ public class PostgresMutationCompiler implements MutationCompiler {
     }
 
     @Override
+    public boolean supportsNestedInserts() {
+        return true;
+    }
+
+    @Override
     public SqlCompiler.CompiledQuery compileMutation(Field field, String fieldName,
                                                      Map<String, Object> params, Map<String, Object> variables,
                                                      MutationBuilder shared) {
+        Optional<MutationSequence> nested = nestedInsert(field, fieldName, params, variables, shared);
+        if (nested.isPresent()) return SqlCompiler.CompiledQuery.sequenced(nested.get(), params);
         String sql = routeMutation(field, fieldName, params, variables, shared);
         if (sql == null) return null;
         return new SqlCompiler.CompiledQuery(shared.dialect().wrapMutationResult(sql, fieldName), params);
@@ -37,10 +44,34 @@ public class PostgresMutationCompiler implements MutationCompiler {
     public SqlCompiler.CompiledQuery compileMutationFragment(Field field, String fieldName,
                                                              Map<String, Object> params, Map<String, Object> variables,
                                                              MutationBuilder shared) {
+        Optional<MutationSequence> nested = nestedInsert(field, fieldName, params, variables, shared);
+        if (nested.isPresent()) return SqlCompiler.CompiledQuery.sequenced(nested.get(), params);
         String sql = routeMutation(field, fieldName, params, variables, shared);
         if (sql == null) return null;
         // Return raw CTE SQL without wrapping — SqlCompiler combines multiple fragments
         return new SqlCompiler.CompiledQuery(sql, params);
+    }
+
+    /**
+     * A {@code create} or {@code createMany} some of whose rows nest others through relationships, as the
+     * ordered statements Hasura runs for it; empty for any other mutation, which stays one statement.
+     */
+    private Optional<MutationSequence> nestedInsert(Field field, String fieldName, Map<String, Object> params,
+                                                    Map<String, Object> variables, MutationBuilder shared) {
+        boolean many = fieldName.startsWith(CREATE_MANY_PREFIX);
+        if (!many && !fieldName.startsWith(CREATE_PREFIX)) return Optional.empty();
+        String typePart = fieldName.substring((many ? CREATE_MANY_PREFIX : CREATE_PREFIX).length());
+        String tableName = shared.resolveMutationTable(typePart, fieldName);
+        Argument rowsArg = shared.findArg(field, many ? ARG_INPUTS : ARG_INPUT);
+        if (tableName == null || rowsArg == null) return Optional.empty();
+        InsertRowParser parser = new InsertRowParser(shared.schemaInfo(), variables);
+        List<InsertRow> rows = many ? parser.rows(tableName, rowsArg.getValue())
+                : List.of(parser.row(tableName, rowsArg.getValue()));
+        if (rows.stream().allMatch(InsertRow::flat)) return Optional.empty();
+        String onConflictSql = many ? "" : parseOnConflict(field, shared, params, tableName);
+        String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
+        return Optional.of(new MutationSequence(List.of(new PostgresNestedInsert(shared, params)
+                .field(field, responseKey, tableName, rows, many, onConflictSql))));
     }
 
     private String routeMutation(Field field, String fieldName,
@@ -95,8 +126,8 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String alias = shared.dialect().randAlias();
         String objectSql = shared.resultObject(field, tableName, alias, params);
 
-        Map<String, List<Map<String, Object>>> nestedInserts = new LinkedHashMap<>();
-        Map<String, Object> row = insertRow(inputArg, tableName, variables, shared, nestedInserts);
+        Map<String, Object> row = new InsertRowParser(shared.schemaInfo(), variables)
+                .row(tableName, inputArg.getValue()).columns();
         shared.requireSettable(tableName, RlsOp.INSERT, row.keySet());
         row = MutationBuilder.withPresets(row, shared.presets(tableName, RlsOp.INSERT));
 
@@ -110,146 +141,20 @@ public class PostgresMutationCompiler implements MutationCompiler {
         }
 
         String onConflictSql = parseOnConflict(field, shared, params, tableName);
-        List<WrittenRows> written = new ArrayList<>();
-        written.add(new WrittenRows(alias, tableName, onConflictSql.isEmpty()
+        List<WrittenRows> written = List.of(new WrittenRows(alias, tableName, onConflictSql.isEmpty()
                 ? List.of(RlsOp.INSERT) : List.of(RlsOp.INSERT, RlsOp.UPDATE)));
-        String parentCte = shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
+        String sql = shared.dialect().cteInsert(alias, shared.qualifiedTable(tableName),
                 joinCols(cols), joinCols(vals), onConflictSql, objectSql);
-        String sql = nestedInserts.isEmpty() ? parentCte
-                : buildNestedInsertCte(parentCte, alias, tableName, nestedInserts, params, shared, written);
         return guardedResult(sql, alias, tableName, written, params, shared);
-    }
-
-    /**
-     * The input's column values; nested FK inserts (a relationship's object carrying a {@code data}
-     * array) are collected into {@code nestedInserts} instead, each child row being its own write. Any
-     * other name is a column, refused later when the caller may not set it.
-     */
-    private Map<String, Object> insertRow(Argument inputArg, String tableName, Map<String, Object> variables,
-                                          MutationBuilder shared, Map<String, List<Map<String, Object>>> nestedInserts) {
-        if (!(inputArg.getValue() instanceof ObjectValue inputOv)) {
-            return shared.extractObjectFields(inputArg.getValue(), variables);
-        }
-        Map<String, Object> row = new LinkedHashMap<>();
-        for (ObjectField of : inputOv.getObjectFields()) {
-            boolean relationship = shared.schemaInfo().getReverseFk(tableName, of.getName()) != null;
-            Optional<List<Map<String, Object>>> nestedRows = relationship
-                    ? extractNestedData(of.getValue(), variables, shared) : Optional.empty();
-            if (nestedRows.isPresent()) {
-                nestedInserts.put(of.getName(), nestedRows.get());
-            } else {
-                row.put(of.getName(), MutationBuilder.extractValue(of.getValue(), variables));
-            }
-        }
-        return row;
-    }
-
-    /**
-     * Returns the data rows if this Value is a nested insert pattern (an ObjectValue
-     * carrying a "data" ArrayValue), or Optional.empty() if the Value is a plain
-     * scalar/column argument.
-     */
-    private Optional<List<Map<String, Object>>> extractNestedData(Value<?> value, Map<String, Object> variables,
-                                                                    MutationBuilder shared) {
-        if (!(value instanceof ObjectValue ov)) return Optional.empty();
-        ObjectField dataField = ov.getObjectFields().stream()
-                .filter(f -> "data".equals(f.getName())).findFirst().orElse(null);
-        if (dataField == null || !(dataField.getValue() instanceof ArrayValue av)) return Optional.empty();
-        return Optional.of(av.getValues().stream()
-                .map(v -> shared.extractObjectFields(v, variables))
-                .toList());
-    }
-
-    /**
-     * Builds a CTE chain: parent INSERT + one child INSERT CTE per nested FK relationship.
-     * Child rows SELECT the parent PK from the parent CTE alias, other columns from params.
-     */
-    private String buildNestedInsertCte(String parentCte, String alias, String tableName,
-                                         Map<String, List<Map<String, Object>>> nestedInserts,
-                                         Map<String, Object> params, MutationBuilder shared,
-                                         List<WrittenRows> written) {
-        // Split at ") SELECT " to get CTE body and final SELECT
-        int splitIdx = parentCte.lastIndexOf(") SELECT ");
-        if (splitIdx == -1) return parentCte;
-        String parentCtePart = parentCte.substring(0, splitIdx + 1); // WITH "alias" AS (... RETURNING *)
-        String finalSelect = parentCte.substring(splitIdx + 2);       // SELECT objectSql FROM "alias"
-
-        List<String> cteParts = new ArrayList<>();
-        cteParts.add(parentCtePart);
-
-        for (var nested : nestedInserts.entrySet()) {
-            String childCte = buildChildInsertCte(nested.getKey(), nested.getValue(), alias, tableName, params,
-                    shared, written);
-            if (childCte != null) cteParts.add(childCte);
-        }
-
-        if (cteParts.size() == 1) return parentCte;
-        return String.join(", ", cteParts) + " " + finalSelect;
-    }
-
-    /**
-     * Build a single child-table INSERT CTE for a nested-FK insert, or null if not applicable. Each
-     * child row obeys the child table's own insert permission: its columns, presets and check.
-     */
-    private String buildChildInsertCte(String nestedFieldName, List<Map<String, Object>> rows,
-                                        String alias, String tableName,
-                                        Map<String, Object> params, MutationBuilder shared,
-                                        List<WrittenRows> written) {
-        if (rows.isEmpty()) return null;
-
-        SchemaInfo.ReverseFkInfo revFk = shared.schemaInfo().getReverseFk(tableName, nestedFieldName);
-        if (revFk == null) return null;
-
-        String childTable = revFk.childTable();
-        if (!shared.access().permits(childTable, RlsOp.INSERT)) {
-            throw new IllegalArgumentException("Unknown field '" + nestedFieldName + "' in the input of "
-                    + tableName);
-        }
-        rows.forEach(row -> shared.requireSettable(childTable, RlsOp.INSERT, row.keySet()));
-        Map<String, Object> presets = shared.presets(childTable, RlsOp.INSERT);
-        String fkCol = revFk.fkColumn();           // column in child table (e.g. order_id)
-        String refCol = revFk.refColumns().get(0); // column in parent table (e.g. order_id)
-
-        String childAlias = shared.dialect().randAlias();
-        String qualifiedChild = shared.qualifiedTable(childTable);
-
-        // Columns: FK col from parent, then data columns from first row
-        List<String> childCols = new ArrayList<>();
-        childCols.add(shared.dialect().quoteIdentifier(fkCol));
-        List<String> dataCols = new ArrayList<>(rows.get(0).keySet());
-        dataCols.addAll(presets.keySet());
-        dataCols.forEach(col -> childCols.add(shared.dialect().quoteIdentifier(col)));
-
-        // One SELECT row per data row, joined with UNION ALL
-        List<String> selectRows = new ArrayList<>();
-        for (int i = 0; i < rows.size(); i++) {
-            Map<String, Object> row = MutationBuilder.withPresets(rows.get(i), presets);
-            List<String> rowVals = new ArrayList<>();
-            rowVals.add(alias + DOT + shared.dialect().quoteIdentifier(refCol));
-            for (String col : dataCols) {
-                String paramName = namedParam(P_NESTED_INSERT, col + "_" + i, params.size());
-                // Cast + convert each child value exactly like the top-level insert.
-                // The child CTE is INSERT ... SELECT, where a bare bind param is
-                // typed as varchar — without the cast, a uuid/enum/jsonb/etc. child
-                // column rejects it ("is of type X but expression is of type
-                // character varying").
-                String enumCast = shared.getEnumCastForMutation(childTable, col);
-                params.put(paramName, shared.convertCompositeValue(childTable, col, row.get(col)));
-                rowVals.add(param(paramName) + enumCast);
-            }
-            selectRows.add(SELECT + joinCols(rowVals) + FROM + alias);
-        }
-
-        written.add(new WrittenRows(childAlias, childTable, List.of(RlsOp.INSERT)));
-        return childAlias + AS_OPEN
-                + INSERT_INTO + qualifiedChild + " " + parens(joinCols(childCols))
-                + " " + String.join(UNION_ALL, selectRows)
-                + RETURNING_ALL;
     }
 
     String compileBulkInsert(Field field, String tableName, Map<String, Object> params,
                              Map<String, Object> variables, MutationBuilder shared) {
-        MutationBuilder.BulkInsertParts bulk = shared.bulkInsertParts(field, tableName, params, variables, true);
+        Argument inputsArg = shared.findArg(field, ARG_INPUTS);
+        if (inputsArg == null) return null;
+        List<Map<String, Object>> rows = new InsertRowParser(shared.schemaInfo(), variables)
+                .rows(tableName, inputsArg.getValue()).stream().map(InsertRow::columns).toList();
+        MutationBuilder.BulkInsertParts bulk = shared.bulkInsertParts(field, tableName, rows, params, true);
         if (bulk == null) return null;
         String sql = shared.dialect().cteBulkInsert(bulk.alias(), shared.qualifiedTable(tableName),
                 bulk.columns(), bulk.valueRows(), bulk.objectSql());
@@ -337,9 +242,6 @@ public class PostgresMutationCompiler implements MutationCompiler {
 
     // === Private helpers ===
 
-    /** The rows one CTE writes, and the permission checks (INSERT, UPDATE or both) they must pass. */
-    private record WrittenRows(String cteAlias, String table, List<RlsOp> checks) {}
-
     /**
      * {@code sql} answering one aggregate over every row the CTE wrote instead of one object per row: an
      * insert the caller may not read back returns {@code { affected_rows }}.
@@ -368,30 +270,12 @@ public class PostgresMutationCompiler implements MutationCompiler {
         if (!readable.isEmpty()) {
             selectPart += WHERE + String.join(AND, readable);
         }
-        List<String> violations = violations(written, params, shared);
+        List<String> violations = WriteChecks.violations(written, params, shared);
         if (violations.isEmpty()) {
             return ctePart + " " + selectPart;
         }
         String raise = PermissionCheckFailedException.raiseWhen(String.join(" OR ", violations));
         return ctePart + " " + SELECT + "CASE WHEN " + raise + " IS NULL THEN (" + selectPart + ") END";
-    }
-
-    private List<String> violations(List<WrittenRows> written, Map<String, Object> params, MutationBuilder shared) {
-        WriteGuard guard = RlsContext.writeGuard();
-        List<String> violations = new ArrayList<>();
-        if (guard == null) return violations;
-        for (WrittenRows rows : written) {
-            for (RlsOp operation : rows.checks()) {
-                String rowAlias = shared.dialect().randAlias();
-                RlsWhereContributor.Contribution check = guard.check(rows.table(), rowAlias, operation);
-                if (check != null) {
-                    params.putAll(check.params());
-                    violations.add("EXISTS (" + SELECT + "1" + FROM + rows.cteAlias() + " " + rowAlias
-                            + WHERE + "(" + check.sql() + ") IS NOT TRUE)");
-                }
-            }
-        }
-        return violations;
     }
 
     /** An update or delete without a where argument is not compiled: it would reach every permitted row. */

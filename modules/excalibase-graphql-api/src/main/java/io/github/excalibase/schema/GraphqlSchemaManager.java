@@ -167,7 +167,8 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
                 plan.functions());
         IntrospectionHandler handler = null;
         try {
-            handler = new IntrospectionHandler(view, plan.access(), plan.functions());
+            handler = new IntrospectionHandler(view, plan.access(), plan.functions(),
+                    reflection.engine().mutationCompiler().supportsNestedInserts());
         } catch (Exception e) {
             log.warn("IntrospectionHandler failed to build schema", e);
         }

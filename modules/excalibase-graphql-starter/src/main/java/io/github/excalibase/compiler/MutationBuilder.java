@@ -229,7 +229,13 @@ public class MutationBuilder {
                                            Map<String, Object> variables, boolean castParams) {
         Argument inputsArg = findArg(field, ARG_INPUTS);
         if (inputsArg == null) return null;
-        List<Map<String, Object>> rows = extractArrayOfObjects(inputsArg.getValue(), variables);
+        return bulkInsertParts(field, tableName, extractArrayOfObjects(inputsArg.getValue(), variables), params,
+                castParams);
+    }
+
+    /** As above, from rows already read from the {@code inputs} argument. */
+    public BulkInsertParts bulkInsertParts(Field field, String tableName, List<Map<String, Object>> rows,
+                                           Map<String, Object> params, boolean castParams) {
         if (rows.isEmpty()) return null;
         rows.forEach(row -> requireSettable(tableName, RlsOp.INSERT, row.keySet()));
         Map<String, Object> presets = presets(tableName, RlsOp.INSERT);

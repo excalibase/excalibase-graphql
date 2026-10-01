@@ -1290,6 +1290,50 @@
      }
     },
     {
+     "table": "hana.web_orders",
+     "role": "anon",
+     "insert": {
+      "check": {
+       "source": {
+        "_eq": "web"
+       }
+      },
+      "columns": [
+       "email"
+      ],
+      "set": {
+       "source": "web"
+      }
+     }
+    },
+    {
+     "table": "hana.web_order_items",
+     "role": "anon",
+     "insert": {
+      "check": {
+       "_and": [
+        {
+         "qty": {
+          "_gt": 0
+         }
+        },
+        {
+         "hanaOrderId": {
+          "email": {
+           "_like": "%@%"
+          }
+         }
+        }
+       ]
+      },
+      "columns": [
+       "sku",
+       "qty"
+      ],
+      "set": {}
+     }
+    },
+    {
      "table": "hana.custom_types_test",
      "role": "anon",
      "select": {

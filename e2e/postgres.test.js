@@ -1356,6 +1356,79 @@ describe('Insert without select — anon contact form', () => {
   });
 });
 
+// ─── Nested insert without select (web order) ────────────────────────────────
+// The control-plane mock lets anon insert into hana.web_orders (preset: source = 'web', check: that
+// preset) and hana.web_order_items (check: qty > 0 and the item's order has an email with '@'), and
+// gives no role a select on either.
+
+describe('Nested insert without select — anon web order with line items', () => {
+  const { psql } = require('./client');
+
+  function count(sql) {
+    return Number(psql(sql).match(/^\s*(\d+)\s*$/m)[1]);
+  }
+
+  function ordersFor(email) {
+    return count(`SELECT count(*) FROM hana.web_orders WHERE email = '${email}' AND source = 'web';`);
+  }
+
+  function itemsFor(email) {
+    return count(`SELECT count(*) FROM hana.web_order_items i JOIN hana.web_orders o ON o.id = i.order_id
+      WHERE o.email = '${email}';`);
+  }
+
+  function order(email, items) {
+    return `mutation { createHanaWebOrders(input: { email: "${email}", hanaWebOrderItems: { data: [${items}] } })
+      { affected_rows } }`;
+  }
+
+  test('anon submits an order with its items and gets back only the count of every row', async () => {
+    const res = await rawGraphql(order('nest@test.com', '{ sku: "a", qty: 1 }, { sku: "b", qty: 2 }'));
+    expect(res.data.errors).toBeUndefined();
+    expect(res.data.data.createHanaWebOrders).toEqual({ affected_rows: 3 });
+    expect(ordersFor('nest@test.com')).toBe(1);
+    expect(itemsFor('nest@test.com')).toBe(2);
+  });
+
+  test('an item failing its check rolls back the order too', async () => {
+    const res = await rawGraphql(order('nest-bad@test.com', '{ sku: "a", qty: 1 }, { sku: "b", qty: 0 }'));
+    expect(res.data.errors[0].extensions.code).toBe('permission_check_failed');
+    expect(ordersFor('nest-bad@test.com')).toBe(0);
+  });
+
+  test("an item's check reads the order inserted with it", async () => {
+    const res = await rawGraphql(order('no-at-sign', '{ sku: "a", qty: 1 }'));
+    expect(res.data.errors[0].extensions.code).toBe('permission_check_failed');
+    expect(count("SELECT count(*) FROM hana.web_orders WHERE email = 'no-at-sign';")).toBe(0);
+  });
+
+  test("the order's key is not the item's to send", async () => {
+    const res = await rawGraphql(order('nest-key@test.com', '{ sku: "a", qty: 1, order_id: 1 }'));
+    expect(res.data.errors[0].message).toContain('order_id');
+    expect(ordersFor('nest-key@test.com')).toBe(0);
+  });
+
+  test('neither table can be read back', async () => {
+    for (const query of ['{ hanaWebOrders { id } }', '{ hanaWebOrderItems { id } }']) {
+      const res = await rawGraphql(query);
+      expect(res.data.errors[0].message).toContain('Unknown field');
+    }
+    const peek = await rawGraphql(`mutation { createHanaWebOrders(input: { email: "peek@test.com",
+      hanaWebOrderItems: { data: [{ sku: "a", qty: 1 }] } }) { id } }`);
+    expect(peek.data.errors[0].message).toContain('Unknown field(s): id');
+    expect(ordersFor('peek@test.com')).toBe(0);
+  });
+
+  test('introspection offers the nested field typed by the item insert input', async () => {
+    const input = await client.request(gql`{ __type(name: "HanaWebOrdersCreateInput") { inputFields { name } } }`);
+    expect(input.__type.inputFields.map(f => f.name).sort()).toEqual(['email', 'hanaWebOrderItems']);
+    const wrapper = await client.request(gql`{ __type(name: "HanaWebOrderItemsArrRelInsertInput") {
+      inputFields { name type { kind ofType { kind ofType { kind ofType { name } } } } } } }`);
+    expect(wrapper.__type.inputFields[0].name).toBe('data');
+    expect(wrapper.__type.inputFields[0].type.ofType.ofType.ofType.name).toBe('HanaWebOrderItemsCreateInput');
+  });
+});
+
 describe('REST API — Prefer: tx=rollback', () => {
   test('POST with tx=rollback does not persist', async () => {
     const res = await restPost('/customer', {

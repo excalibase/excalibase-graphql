@@ -139,6 +139,9 @@ public class GraphqlController {
     private ResponseEntity<Object> dispatchCompiled(SqlCompiler.CompiledQuery compiled,
                                                     GraphqlSchemaManager.EngineState state,
                                                     String userId, JwtClaims claims) throws SQLException, JsonProcessingException {
+        if (compiled.isSequenced()) {
+            return queryExecutor.executeSequence(compiled);
+        }
         MapSqlParameterSource params = new MapSqlParameterSource(compiled.params());
         boolean isPostgres = "postgres".equalsIgnoreCase(schemaManager.getDatabaseType());
 

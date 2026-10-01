@@ -25,4 +25,9 @@ public interface MutationCompiler {
                                                               MutationBuilder shared) {
         return compileMutation(field, fieldName, params, variables, shared);
     }
+
+    /** True when inserts may nest rows through relationships; only then does the schema offer them. */
+    default boolean supportsNestedInserts() {
+        return false;
+    }
 }

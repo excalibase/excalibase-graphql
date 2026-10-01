@@ -28,6 +28,9 @@ public class SchemaInfo {
     private final Map<String, FkInfo> forwardFks = new HashMap<>();
     // table.fieldName → ReverseFkInfo (reverse FK: fieldName = schemaFieldName(schema, childTable))
     private final Map<String, ReverseFkInfo> reverseFks = new HashMap<>();
+    // a role's relationships a nested insert may go through, keyed like the FKs above; unset = every FK
+    private Map<String, ReverseFkInfo> arrayInsertRelationships;
+    private Map<String, FkInfo> objectInsertRelationships;
     // enum name → list of enum values
     private final Map<String, List<String>> enumTypes = new HashMap<>();
     // "table.column" → enum type name (e.g. "priority_level")
@@ -91,6 +94,8 @@ public class SchemaInfo {
         primaryKeys.clear();
         forwardFks.clear();
         reverseFks.clear();
+        arrayInsertRelationships = null;
+        objectInsertRelationships = null;
         enumTypes.clear();
         columnEnumType.clear();
         computedFields.clear();
@@ -259,6 +264,33 @@ public class SchemaInfo {
     public Map<String, ReverseFkInfo> getAllReverseFks() { return Collections.unmodifiableMap(reverseFks); }
     public ReverseFkInfo getReverseFk(String table, String fieldName) { return reverseFks.get(table + "." + fieldName); }
     public String getEnumType(String table, String column) { return columnEnumType.get(table + "." + column); }
+
+    /**
+     * Fixes the relationships a nested insert may go through, which a role holds by its insert
+     * permissions rather than its select ones. Until this is called they are every foreign key.
+     */
+    public void setInsertRelationships(Map<String, ReverseFkInfo> arrays, Map<String, FkInfo> objects) {
+        arrayInsertRelationships = Map.copyOf(arrays);
+        objectInsertRelationships = Map.copyOf(objects);
+    }
+
+    /** Array relationships ({@code table.field} → the child table) a nested insert may go through. */
+    public Map<String, ReverseFkInfo> getArrayInsertRelationships() {
+        return arrayInsertRelationships != null ? arrayInsertRelationships : getAllReverseFks();
+    }
+
+    /** Object relationships ({@code table.field} → the referenced table) a nested insert may go through. */
+    public Map<String, FkInfo> getObjectInsertRelationships() {
+        return objectInsertRelationships != null ? objectInsertRelationships : getAllForwardFks();
+    }
+
+    public ReverseFkInfo getArrayInsertRelationship(String table, String fieldName) {
+        return getArrayInsertRelationships().get(table + "." + fieldName);
+    }
+
+    public FkInfo getObjectInsertRelationship(String table, String fieldName) {
+        return getObjectInsertRelationships().get(table + "." + fieldName);
+    }
     public List<ComputedField> getComputedFields(String table) { return computedFields.get(table); }
     public Map<String, List<String>> getEnumTypes() { return Collections.unmodifiableMap(enumTypes); }
     public boolean isView(String tableName) { return viewNames.contains(tableName); }

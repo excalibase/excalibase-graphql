@@ -814,6 +814,22 @@ CREATE TABLE contact_messages (
 GRANT SELECT, INSERT, UPDATE, DELETE ON contact_messages TO app_user;
 GRANT USAGE, SELECT ON SEQUENCE contact_messages_id_seq TO app_user;
 
+-- Nested insert without select: anon submits a web order with its line items and can read back
+-- neither (hana.web_orders / hana.web_order_items); an item's check reads the order inserted with it.
+CREATE TABLE web_orders (
+    id      SERIAL PRIMARY KEY,
+    email   TEXT NOT NULL,
+    source  TEXT NOT NULL DEFAULT 'unknown'
+);
+CREATE TABLE web_order_items (
+    id        SERIAL PRIMARY KEY,
+    order_id  INT NOT NULL REFERENCES web_orders (id),
+    sku       TEXT NOT NULL,
+    qty       INT NOT NULL
+);
+GRANT SELECT, INSERT, UPDATE, DELETE ON web_orders, web_order_items TO app_user;
+GRANT USAGE, SELECT ON SEQUENCE web_orders_id_seq, web_order_items_id_seq TO app_user;
+
 -- Relationship permission: rls_team_orders is visible only when the caller has a
 -- membership row in rls_members for the order's org, reached through the orgs both
 -- reference. Proves the correlated subquery survives the compiler's aliasing live.

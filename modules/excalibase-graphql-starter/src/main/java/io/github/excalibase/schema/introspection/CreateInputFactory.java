@@ -8,14 +8,15 @@ import io.github.excalibase.schema.SchemaInfo;
 
 import java.util.Collection;
 import java.util.Map;
+import java.util.TreeMap;
 
 import static io.github.excalibase.schema.GraphqlConstants.CREATE_INPUT_SUFFIX;
 import static io.github.excalibase.schema.GraphqlConstants.UPDATE_INPUT_SUFFIX;
 
 /**
  * Builds the per-table {@code TableNameCreateInput} input object with one
- * field per column plus one nested-insert {@code ArrRelInsertInput} field
- * per reverse FK. Enum-backed columns are typed with the matching
+ * field per column plus one nested-insert field per insert relationship of the
+ * table ({@code ArrRelInsertInput} or {@code ObjRelInsertInput}). Enum-backed columns are typed with the matching
  * {@link GraphQLEnumType}; everything else falls through
  * {@link TypeMapping#mapInputType(String)}.
  */
@@ -26,12 +27,12 @@ public final class CreateInputFactory {
                                     Collection<String> columns,
                                     SchemaInfo schemaInfo,
                                     Map<String, GraphQLEnumType> enumTypes,
-                                    Map<String, GraphQLInputObjectType> arrRelTypes) {
+                                    Map<String, GraphQLInputObjectType> relationTypes) {
         String typeName = NamingHelpers.typeName(tableKey);
         GraphQLInputObjectType.Builder createBuilder = GraphQLInputObjectType.newInputObject()
                 .name(typeName + CREATE_INPUT_SUFFIX);
         addColumnFields(tableKey, columns, schemaInfo, enumTypes, createBuilder);
-        addReverseFkFields(tableKey, schemaInfo, arrRelTypes, createBuilder);
+        addRelationshipFields(tableKey, columns, schemaInfo, relationTypes, createBuilder);
         return createBuilder.build();
     }
 
@@ -61,24 +62,34 @@ public final class CreateInputFactory {
         }
     }
 
-    // Reverse FK nested insert fields — each reverse relation exposed as an
-    // ArrRelInsertInput child keyed on the child type name.
-    private void addReverseFkFields(String table,
-                                    SchemaInfo schemaInfo,
-                                    Map<String, GraphQLInputObjectType> arrRelTypes,
-                                    GraphQLInputObjectType.Builder createBuilder) {
+    /**
+     * One field per relationship a nested insert may go through, typed by the wrapper of the other
+     * table; a relationship named like one of the table's columns is left out, the column wins.
+     */
+    private void addRelationshipFields(String table,
+                                       Collection<String> columns,
+                                       SchemaInfo schemaInfo,
+                                       Map<String, GraphQLInputObjectType> relationTypes,
+                                       GraphQLInputObjectType.Builder createBuilder) {
         String prefix = table + ".";
-        for (Map.Entry<String, SchemaInfo.ReverseFkInfo> revEntry : schemaInfo.getAllReverseFks().entrySet()) {
-            if (!revEntry.getKey().startsWith(prefix)) continue;
-            String revFieldName = revEntry.getKey().substring(prefix.length());
-            String childTypeName = NamingHelpers.typeName(revEntry.getValue().childTable());
-            GraphQLInputObjectType arrRelType = arrRelTypes.get(childTypeName + "ArrRelInsertInput");
-            if (arrRelType != null) {
-                createBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                        .name(revFieldName)
-                        .type(arrRelType)
-                        .build());
+        Map<String, String> fieldTypes = new TreeMap<>();
+        schemaInfo.getArrayInsertRelationships().forEach((key, relation) -> {
+            if (key.startsWith(prefix)) {
+                fieldTypes.put(key.substring(prefix.length()), NamingHelpers.typeName(relation.childTable())
+                        + RelationshipInsertFactory.ARRAY_SUFFIX);
             }
-        }
+        });
+        schemaInfo.getObjectInsertRelationships().forEach((key, relation) -> {
+            if (key.startsWith(prefix)) {
+                fieldTypes.put(key.substring(prefix.length()), NamingHelpers.typeName(relation.refTable())
+                        + RelationshipInsertFactory.OBJECT_SUFFIX);
+            }
+        });
+        fieldTypes.forEach((field, typeName) -> {
+            GraphQLInputObjectType wrapper = relationTypes.get(typeName);
+            if (wrapper != null && !columns.contains(field) && schemaInfo.getColumnType(table, field) == null) {
+                createBuilder.field(GraphQLInputObjectField.newInputObjectField().name(field).type(wrapper).build());
+            }
+        });
     }
 }
