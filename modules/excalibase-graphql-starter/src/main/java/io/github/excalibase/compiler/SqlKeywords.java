@@ -110,6 +110,9 @@ public final class SqlKeywords {
     public static final String P_FILTER_COUNT = "fc_";
     public static final String P_WHERE_FILTER = "wf_";
     public static final String P_NESTED_INSERT = "ni_";
+    public static final String P_NESTED_ROW = "nrow_";
+    public static final String P_NESTED_ROWS = "nrows_";
+    public static final String P_NESTED_COUNT = "ncount_";
     public static final String P_DELETE_FILTER = "df_";
     public static final String AS_BODY = " AS body";
     public static final String AS_TOTAL_COUNT = " AS total_count";

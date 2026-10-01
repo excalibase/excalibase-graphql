@@ -143,6 +143,9 @@ public class SqlCompiler {
         if (mutFragments.isEmpty()) {
             return new CompiledQuery("SELECT " + dialect.buildObject(List.of()), params);
         }
+        if (mutFragments.stream().anyMatch(fragment -> fragment.nested() != null)) {
+            return CompiledQuery.sequenced(sequence(mutFragments), params);
+        }
         if (mutFragments.size() == 1 && mutFragments.getFirst().rawSql() != null) {
             // Single mutation — use existing wrapped path (backward compatible)
             String wrapped = dialect.wrapMutationResult(mutFragments.get(0).rawSql(), mutFragments.get(0).fieldName());
@@ -212,7 +215,8 @@ public class SqlCompiler {
 
         Optional<ExposedFunction> function = functions.field(fieldName, ExposedFunction.Operation.MUTATION);
         if (function.isPresent()) {
-            mutFragments.add(new MutationFragment(responseKey, null, compileFunctionCall(field, function.get(), params)));
+            mutFragments.add(new MutationFragment(responseKey, null, compileFunctionCall(field, function.get(), params),
+                    null));
             return null;
         }
 
@@ -231,7 +235,17 @@ public class SqlCompiler {
         }
 
         // Use alias as response key if present (e.g. "c1: createX(...)")
-        mutFragments.add(new MutationFragment(responseKey, frag.sql(), null));
+        if (frag.isSequenced()) {
+            for (MutationSequence.Step step : frag.sequence().steps()) {
+                mutFragments.add(switch (step) {
+                    case MutationSequence.NestedInsert nested -> new MutationFragment(responseKey, null, null, nested);
+                    case MutationSequence.Statement statement ->
+                            new MutationFragment(responseKey, statement.sql(), null, null);
+                });
+            }
+            return null;
+        }
+        mutFragments.add(new MutationFragment(responseKey, frag.sql(), null, null));
         return null;
     }
 
@@ -289,8 +303,30 @@ public class SqlCompiler {
         return new CompiledQuery(sql.trim(), params);
     }
 
-    /** A table mutation's CTE statement ({@code rawSql}), or a function call's rows ({@code selectSql}). */
-    private record MutationFragment(String fieldName, String rawSql, String selectSql) {}
+    /**
+     * Every field as its own statement, in order: a table mutation's CTE statement answers its value as
+     * it stands, a function call's rows through a SELECT, a nested insert through its own steps.
+     */
+    private static MutationSequence sequence(List<MutationFragment> fragments) {
+        List<MutationSequence.Step> steps = new ArrayList<>();
+        for (MutationFragment fragment : fragments) {
+            if (fragment.nested() != null) {
+                steps.add(fragment.nested());
+            } else if (fragment.rawSql() != null) {
+                steps.add(new MutationSequence.Statement(fragment.fieldName(), fragment.rawSql()));
+            } else {
+                steps.add(new MutationSequence.Statement(fragment.fieldName(), "SELECT (" + fragment.selectSql() + ")"));
+            }
+        }
+        return new MutationSequence(steps);
+    }
+
+    /**
+     * A table mutation's CTE statement ({@code rawSql}), a function call's rows ({@code selectSql}), or a
+     * nested insert run as ordered statements ({@code nested}).
+     */
+    private record MutationFragment(String fieldName, String rawSql, String selectSql,
+                                    MutationSequence.NestedInsert nested) {}
 
     private int measureDepth(SelectionSet selectionSet, Map<String, FragmentDefinition> fragments) {
         if (selectionSet == null || selectionSet.getSelections().isEmpty()) return 0;
@@ -327,10 +363,20 @@ public class SqlCompiler {
         return false;
     }
 
-    public record CompiledQuery(String sql, Map<String, Object> params, String dmlSql, String lastInsertIdParam) {
+    /** @param sequence set instead of {@code sql} when the mutation runs as ordered statements */
+    public record CompiledQuery(String sql, Map<String, Object> params, String dmlSql, String lastInsertIdParam,
+                                MutationSequence sequence) {
         public CompiledQuery(String sql, Map<String, Object> params) {
-            this(sql, params, null, null);
+            this(sql, params, null, null, null);
         }
+        public CompiledQuery(String sql, Map<String, Object> params, String dmlSql, String lastInsertIdParam) {
+            this(sql, params, dmlSql, lastInsertIdParam, null);
+        }
+        public static CompiledQuery sequenced(MutationSequence sequence, Map<String, Object> params) {
+            return new CompiledQuery(null, params, null, null, sequence);
+        }
+        /** True when the mutation runs as ordered statements in one transaction (a nested insert). */
+        public boolean isSequenced() { return sequence != null; }
         /** True when this is a MySQL two-phase mutation (DML separate from SELECT) */
         public boolean isTwoPhase() { return dmlSql != null; }
         /** True when DELETE needs SELECT-before-DML ordering */

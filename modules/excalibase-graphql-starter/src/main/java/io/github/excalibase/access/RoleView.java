@@ -12,7 +12,9 @@ import java.util.TreeMap;
  * Builds the schema one role is served: its selectable tables with only their selectable columns,
  * and relationships only where both tables and every join column are selectable. Columns the role
  * may write but not read are typed without being listed; a table it may insert into but not select
- * is a write-only table, reachable by nothing that reads. Functions are not part of the view: the ones
+ * is a write-only table, reachable by nothing that reads. A nested insert goes through a relationship
+ * when the role may insert into both of its tables, whatever it may select, as in Hasura; such
+ * relationships keep the names the unfiltered schema gives them. Functions are not part of the view: the ones
  * a role may call are the plan's tracked functions. Computed fields are left out for every role.
  */
 final class RoleView {
@@ -24,6 +26,7 @@ final class RoleView {
         SchemaInfo view = new SchemaInfo();
         rules.values().forEach(table -> copyTable(reflected, view, table));
         copyForeignKeys(reflected, view, rules);
+        copyInsertRelationships(reflected, view, rules);
         reflected.getEnumTypes().forEach((name, labels) -> labels.forEach(label -> view.addEnumValue(name, label)));
         reflected.getCompositeTypes().forEach((name, fields) ->
                 fields.forEach(field -> view.addCompositeTypeField(name, field.name(), field.type())));
@@ -87,6 +90,27 @@ final class RoleView {
                 addForeignKey(view, fromTable, fk);
             }
         });
+    }
+
+    private static void copyInsertRelationships(SchemaInfo reflected, SchemaInfo view, Map<String, TableRules> rules) {
+        Map<String, SchemaInfo.ReverseFkInfo> arrays = new TreeMap<>();
+        reflected.getAllReverseFks().forEach((key, relation) -> {
+            if (insertable(rules, owner(key)) && insertable(rules, relation.childTable())) {
+                arrays.put(key, relation);
+            }
+        });
+        Map<String, SchemaInfo.FkInfo> objects = new TreeMap<>();
+        reflected.getAllForwardFks().forEach((key, relation) -> {
+            if (insertable(rules, owner(key)) && insertable(rules, relation.refTable())) {
+                objects.put(key, relation);
+            }
+        });
+        view.setInsertRelationships(arrays, objects);
+    }
+
+    private static boolean insertable(Map<String, TableRules> rules, String table) {
+        TableRules held = rules.get(table);
+        return held != null && held.insert().isPresent();
     }
 
     private static void addForeignKey(SchemaInfo view, String fromTable, SchemaInfo.FkInfo fk) {

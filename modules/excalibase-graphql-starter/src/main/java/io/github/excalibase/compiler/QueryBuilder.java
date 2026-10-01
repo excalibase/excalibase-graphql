@@ -548,10 +548,15 @@ public class QueryBuilder {
      * aggregate, so the statement answers one object however many rows were written.
      */
     public String buildAffectedRows(SelectionSet selectionSet) {
+        return buildAffectedRows(selectionSet, "count(*)");
+    }
+
+    /** As above, with the count given by {@code countSql}, e.g. a nested insert's rows over several statements. */
+    public String buildAffectedRows(SelectionSet selectionSet, String countSql) {
         List<String> pairs = new ArrayList<>();
         for (Field field : flattenSelections(selectionSet, fragmentsHolder.get())) {
             if (FIELD_AFFECTED_ROWS.equals(field.getName())) {
-                pairs.add("'" + FIELD_AFFECTED_ROWS + "', count(*)");
+                pairs.add("'" + FIELD_AFFECTED_ROWS + "', " + countSql);
             } else {
                 requireTypename(field.getName());
             }
