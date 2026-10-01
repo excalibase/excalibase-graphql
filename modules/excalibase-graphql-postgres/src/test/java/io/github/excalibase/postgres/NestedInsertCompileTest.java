@@ -150,7 +150,8 @@ class NestedInsertCompileTest {
 
     @Test
     void anUnreadableChild_isNoFieldOfTheReadableParent() {
-        assertThatThrownBy(() -> compiler(true).compile("mutation { createPublicOrders(input: {"
+        SqlCompiler compiler = compiler(true);
+        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
                 + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\" }] } }) { id publicOrderItems { sku } } }"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown field(s): publicOrderItems");
@@ -158,7 +159,8 @@ class NestedInsertCompileTest {
 
     @Test
     void theForeignKeyFilledByTheParent_cannotBeSent() {
-        assertThatThrownBy(() -> compiler(false).compile("mutation { createPublicOrders(input: {"
+        SqlCompiler compiler = compiler(false);
+        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
                 + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\", order_id: 9 }] } }) { affected_rows } }"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("cannot insert \"order_id\" columns as their values are already being determined by parent insert");
@@ -166,7 +168,8 @@ class NestedInsertCompileTest {
 
     @Test
     void anObjectRelationshipBesideItsForeignKey_isRefused() {
-        assertThatThrownBy(() -> compiler(false).compile("mutation { createPublicOrders(input: {"
+        SqlCompiler compiler = compiler(false);
+        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
                 + " customer_id: 3, publicCustomerId: { data: { name: \"c\" } } }) { affected_rows } }"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("cannot insert object relationship \"publicCustomerId\" as \"customer_id\" column values are already determined");
@@ -174,7 +177,8 @@ class NestedInsertCompileTest {
 
     @Test
     void aChildColumnOutsideItsInsertPermission_isRefused() {
-        assertThatThrownBy(() -> compiler(false).compile("mutation { createPublicOrders(input: {"
+        SqlCompiler compiler = compiler(false);
+        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
                 + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\", id: 1 }] } }) { affected_rows } }"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown column 'id' in insert of public.order_items");
@@ -182,7 +186,8 @@ class NestedInsertCompileTest {
 
     @Test
     void aRelationshipTheRoleCannotInsertThrough_isNoField() {
-        assertThatThrownBy(() -> compiler(false).compile("mutation { createPublicCustomers(input: {"
+        SqlCompiler compiler = compiler(false);
+        assertThatThrownBy(() -> compiler.compile("mutation { createPublicCustomers(input: {"
                 + " name: \"c\", publicOrders: { data: [{ note: \"n\" }] } }) { affected_rows } }"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("publicOrders");
@@ -190,7 +195,8 @@ class NestedInsertCompileTest {
 
     @Test
     void aRelationshipWithoutData_isRefused() {
-        assertThatThrownBy(() -> compiler(false).compile("mutation { createPublicOrders(input: {"
+        SqlCompiler compiler = compiler(false);
+        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
                 + " note: \"n\", publicOrderItems: { } }) { affected_rows } }"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("data");

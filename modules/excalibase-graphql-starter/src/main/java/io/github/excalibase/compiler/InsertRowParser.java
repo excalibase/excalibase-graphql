@@ -55,11 +55,12 @@ public final class InsertRowParser {
 
     private List<InsertRow> rowsOf(String table, Object value) {
         Object resolved = resolve(value);
-        List<?> elements = resolved instanceof ArrayValue array ? array.getValues()
-                : resolved instanceof List<?> list ? list : null;
-        if (elements == null) {
-            throw new IllegalArgumentException("The rows inserted into " + table + " must be a list");
-        }
+        List<?> elements = switch (resolved) {
+            case ArrayValue array -> array.getValues();
+            case List<?> list -> list;
+            case null, default -> throw new IllegalArgumentException("The rows inserted into " + table
+                    + " must be a list");
+        };
         return elements.stream().map(element -> rowOf(table, element)).toList();
     }
 
@@ -117,13 +118,12 @@ public final class InsertRowParser {
     /** The {@code data} of a relationship input, its only field. */
     private Object data(String table, String relationship, Object value) {
         Map<String, Object> fields = new LinkedHashMap<>();
-        if (value instanceof ObjectValue object) {
-            object.getObjectFields().forEach(field -> fields.put(field.getName(), resolve(field.getValue())));
-        } else if (value instanceof Map<?, ?> map) {
-            map.forEach((key, field) -> fields.put(key.toString(), field));
-        } else {
-            throw new IllegalArgumentException("Relationship '" + relationship + "' in the input of " + table
-                    + " must be an object with 'data'");
+        switch (value) {
+            case ObjectValue object ->
+                    object.getObjectFields().forEach(field -> fields.put(field.getName(), resolve(field.getValue())));
+            case Map<?, ?> map -> map.forEach((key, field) -> fields.put(key.toString(), field));
+            default -> throw new IllegalArgumentException("Relationship '" + relationship + "' in the input of "
+                    + table + " must be an object with 'data'");
         }
         fields.keySet().stream().filter(name -> !DATA.equals(name)).findFirst().ifPresent(name -> {
             throw new IllegalArgumentException("Unknown field '" + name + "' in relationship '" + relationship
