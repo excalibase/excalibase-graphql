@@ -57,6 +57,23 @@ matched case-insensitively), on both the GraphQL WS and the realtime endpoint. A
 upgrade request's headers is used when the payload names none. The same rules and errors apply;
 the socket is closed with a `connection_error` carrying the code.
 
+### 1.2 Verifying tokens
+
+The engine verifies every bearer token before it resolves a role; a token that fails is a 401 and
+never falls back to `anon`. Configure one key source:
+
+```yaml
+app:
+  security:
+    jwt-enabled: true                 # false only together with insecure-dev-mode (local development)
+    auth:
+      jwks-url: https://auth.example.com/.well-known/jwks.json   # excalibase-auth or any OIDC provider
+      # hmac-secret: ...              # HS256 shared secret, standalone mode
+      require-aud: true               # aud must cover the project in the URL path
+```
+
+Any OIDC provider that publishes a JWKS endpoint works (excalibase-auth, Auth0, Keycloak, …).
+
 ## 2. Session variables
 
 Permissions refer to the caller through session variables, written as strings that start with
@@ -375,24 +392,25 @@ repeated key, a missing `filter`/`check`, a function permission for an untracked
 other deviation refuses the **whole** document — it is never partly applied and never cached, and the
 last good copy (else 503 `permissions_unavailable`) is served instead.
 
-## 9. What happens to row policies, column policies and table grants
+## 9. Row policies, column policies and table grants are gone
 
-They are folded into permission objects and the old stores are removed:
+Permissions are the only access model. The earlier row policies, column policies, table grants and
+the platform-wide switch that could turn enforcement off no longer exist, in the engine or in the
+control plane. What each of them said is written as a permission:
 
-| Old | New |
+| Old | Permission |
 |-----|-----|
-| row policy, ALLOW, assigned to role R, operation O | ORed into the `filter` (select/update/delete) or `check` (insert) of R's O permission |
+| row policy, ALLOW, for role R, operation O | ORed into the `filter` (select/update/delete) or `check` (insert) of R's O permission |
 | row policy, DENY | ANDed as `_not` into the same expression |
-| row policy assigned to `ALL` | copied to every role that has a permission on the table, and to `anon` and `user` |
+| row policy for every role | repeated in each role's permission |
 | rule `{{currentUserId}}` / a custom claim `{{x}}` | `X-Excalibase-User-Id` / `X-Excalibase-X` |
 | relationship rule | `_exists` |
 | column policy HIDE or NULL for role R | the column is left out of R's select `columns` |
-| table grant (anon/authenticated, operations) | a permission object with an empty filter for `anon`/`user` |
+| table grant (role, operations) | a permission object with an empty filter for that role |
 
-Not carried over, because Hasura has no equivalent: policies assigned to a single user id or a
-group (groups were never populated), time variables (`{{now}}`, `{{daysAgo:N}}` — use a view or a
-column default instead), and the PARTIAL/HASH/CUSTOM masks (never implemented). A NULL mask becomes
-"column not selectable": the field is absent instead of returning null.
+There is no equivalent for a rule on a single user id or a group, for time variables (`{{now}}`,
+`{{daysAgo:N}}` — use a view or a column default instead) or for PARTIAL/HASH/CUSTOM masks. A column
+a role may not select is absent from its schema rather than returned as null.
 
 ## 10. Differences from Hasura, on purpose
 

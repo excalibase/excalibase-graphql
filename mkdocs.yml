@@ -125,7 +125,6 @@ nav:
       - Full-Text & Vector Search: features/search-and-vector.md
       - Real-Time Subscriptions: features/subscriptions.md
       - API Permissions: features/permissions.md
-      - Row-Level Security: features/user-context-rls.md
       - Permission Enforcement: features/rls-architecture.md
       - CORS (per-project origins): features/cors.md
       - Postgres Role Switching: features/postgres-role-switching.md

@@ -8,8 +8,8 @@ a least-privileged role, and forgetting to write an RLS policy on a table
 becomes "permission denied" instead of a silent leak.
 
 This layers **on top of** the existing JWT-based RLS context (the
-`request.user_id` / `request.project_id` / `request.role` `set_config` flow at
-`/features/user-context-rls`). Nothing about that flow changes — role switching
+`request.user_id` / `request.project_id` / `request.role` `set_config` flow).
+Nothing about that flow changes — role switching
 plus session vars run inside the same transaction.
 
 ## How it works
