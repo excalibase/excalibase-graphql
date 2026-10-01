@@ -24,7 +24,7 @@
 | 🔍 | **Rich filtering** — `eq/neq/gt/lt/in`, regex, FTS, JSON paths, vectors, arrays — per your DB | [Filtering](docs/graphql/filtering.md) · [DB compat](docs/database-compatibility.md) |
 | 🧭 | **Vector k-NN search** — pgvector-backed, cosine/L2/IP distance, HNSW indexes | [Search & Vector](docs/features/search-and-vector.md) |
 | 📡 | **Realtime subscriptions** — WebSocket, backed by WAL via NATS CDC; one endpoint serves REST + NoSQL + GraphQL | [Realtime](docs/nosql/realtime.md) · [GraphQL subs](docs/features/subscriptions.md) |
-| 🔐 | **Row-level security** — native Postgres RLS, enforced via `request.user_id` session var | [RLS](docs/features/user-context-rls.md) |
+| 🔐 | **API permissions** — Hasura-style, one object per table, role and operation: rows, columns and write checks | [Permissions](docs/features/permissions.md) |
 | 🗄️ | **Tracked functions** — Postgres functions returning table rows, per-role, results filtered by the return table's permissions | [Functions](docs/features/functions.md) |
 | 🔑 | **Composite keys, FK relations, views** — forward + reverse FK fields auto-wired | [GraphQL](docs/graphql/index.md) |
 | 📄 | **Cursor pagination** — Relay-spec GraphQL connections + PostgREST-style REST + keyset for NoSQL | [Pagination](docs/nosql/pagination.md) |

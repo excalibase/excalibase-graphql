@@ -46,9 +46,9 @@ the table name to a specific schema. This matches
 ## Authentication
 
 Same JWT flow as GraphQL — attach `Authorization: Bearer <jwt>` to every
-request. The JWT carries the project claim used for Row-Level Security and
-per-tenant routing. See [Row-Level Security](../features/user-context-rls.md)
-for the full auth model.
+request. The token decides the role the request runs as, and that role's
+[API permissions](../features/permissions.md) decide which tables, rows and
+columns it reaches.
 
 ```bash
 curl https://api.example.com/api/v1/issues?limit=10 \
@@ -133,5 +133,5 @@ Same query as GraphQL:
 - **[Mutations](mutations.md)** — POST / PATCH / PUT / DELETE with returning
 - **[Pagination](pagination.md)** — `limit` / `offset` / `Range` / `count=exact`
 - **[Full-Text & Vector Search](../features/search-and-vector.md)** — `plfts`, `phfts`, `wfts`, `fts`, `vector`
-- **[Row-Level Security](../features/user-context-rls.md)** — per-user data isolation
+- **[API permissions](../features/permissions.md)** — per-role tables, rows and columns
 - **[Choose Your Protocol](../choose-your-protocol.md)** — when to pick REST vs GraphQL

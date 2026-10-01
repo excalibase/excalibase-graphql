@@ -49,7 +49,7 @@ auth + multi-schema routing. **Pick the protocol that fits the call site.**
 - **Multi-Schema** — connect to multiple schemas simultaneously with automatic prefix naming
 - **Real-time subscriptions** — live table-change events via
   [excalibase-watcher](https://github.com/excalibase/excalibase-watcher) + NATS (GraphQL)
-- **Row-Level Security** — per-request user context for RLS policies (PostgreSQL)
+- **API permissions** — Hasura-style per-role row and column rules
 - **Per-project CORS** — each project's browser-origin allowlist, resolved from
   the URL path and enforced on GraphQL, REST and WebSocket upgrades
 - **Typed filter inputs** — `IntFilterInput`, `FloatFilterInput`, `DateTimeFilterInput`,
@@ -194,18 +194,19 @@ See [GraphQL overview](graphql/index.md) and [REST mutations](rest/mutations.md)
 REST has `Prefer: count=exact` for total row counts but no sum/avg/min/max
 in one call — aggregate over the full set is a GraphQL-native feature.
 
-### Row-Level Security (PostgreSQL)
+### API permissions
 
-Send a JWT — Excalibase verifies it and sets the `userId` claim as a
-PostgreSQL session variable so RLS policies filter rows automatically:
+Send a JWT — Excalibase verifies it, runs the request as the token's role and
+applies that role's permissions: which tables exist, which rows and which
+columns it sees:
 
 ```http
 POST /{projectId}/graphql
 Authorization: Bearer eyJhbGciOiJFUzI1NiJ9...
 ```
 
-Both protocols honor the same JWT + RLS context. See
-[RLS docs →](features/user-context-rls.md).
+Both protocols, and realtime, apply the same permissions. See
+[API permissions →](features/permissions.md).
 
 ---
 
@@ -241,5 +242,5 @@ docker pull excalibase/excalibase-graphql:native
 - [Functions →](features/functions.md) — tracked functions, per-role, filtered results
 - [Full-Text & Vector Search →](features/search-and-vector.md) — FTS on `tsvector`, k-NN on pgvector
 - [Real-Time Subscriptions →](features/subscriptions.md) — CDC setup
-- [Row-Level Security →](features/user-context-rls.md) — Per-user data isolation
+- [API permissions →](features/permissions.md) — per-role tables, rows and columns
 - [Enhanced PostgreSQL Types →](features/enhanced-postgresql-types.md) — JSON, arrays, network types
