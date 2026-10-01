@@ -23,42 +23,19 @@ app:
 
 **See:** [Real-Time Subscriptions Documentation](./subscriptions.md)
 
-### Postgres Role Switching
-
-**Property:** `app.security.postgres.role-switching.anon-role`
-**Type:** `string`
-**Default:** unset (feature off)
-
-When set, excalibase issues `SET LOCAL ROLE` per request based on the JWT
-`scope` claim —  Replaces the
-previously-aspirational `app.security.role-based-schema` flag (now archived).
-
-```yaml
-app:
-  security:
-    postgres:
-      role-switching:
-        anon-role: app_anon
-        authenticated-default-role: app_authenticated
-        service-role: app_service
-        allowed-roles: [app_admin]
-```
-
-**See:** [Postgres Role Switching](./postgres-role-switching.md)
-
 ## Configuration Patterns
 
 ### Environment Variables
 
 ```yaml
 app:
-  security:
-    role-based-schema: ${ROLE_BASED_SECURITY:true}
+  nats:
+    enabled: ${APP_NATS_ENABLED:false}
 ```
 
 ```bash
-export ROLE_BASED_SECURITY=false  # Disable temporarily
-export ROLE_BASED_SECURITY=true   # Enable
+export APP_NATS_ENABLED=true   # Enable
+export APP_NATS_ENABLED=false  # Disable
 ```
 
 ### Profile-Specific Configuration
@@ -66,13 +43,13 @@ export ROLE_BASED_SECURITY=true   # Enable
 ```yaml
 # application-dev.yaml
 app:
-  security:
-    role-based-schema: false  # Simplified for development
+  nats:
+    enabled: false  # No watcher in local development
 
-# application-prod.yaml  
+# application-prod.yaml
 app:
-  security:
-    role-based-schema: true   # Full security in production
+  nats:
+    enabled: true   # Subscriptions fed by excalibase-watcher
 ```
 
 ### Runtime Toggle (Future)
