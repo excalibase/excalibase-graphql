@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.http.server.ServletServerHttpResponse;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -18,6 +19,8 @@ import java.util.HashMap;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Browsers do not apply CORS to WebSockets, so the upgrade checks Origin
@@ -101,6 +104,39 @@ class WebSocketOriginInterceptorTest {
 
         assertThat(open.beforeHandshake(new ServletServerHttpRequest(upgrade("https://evil.example")),
                 new ServletServerHttpResponse(new MockHttpServletResponse()), HANDLER, new HashMap<>())).isTrue();
+    }
+
+    @Test
+    @DisplayName("a web origin on a non-servlet request cannot be resolved to a project and is refused")
+    void nonServletRequestIsRefused() {
+        ServerHttpRequest request = mock(ServerHttpRequest.class);
+        HttpHeaders headers = new HttpHeaders();
+        headers.setOrigin(LISTED);
+        when(request.getHeaders()).thenReturn(headers);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(interceptor.beforeHandshake(request, new ServletServerHttpResponse(response), HANDLER, new HashMap<>()))
+                .isFalse();
+        assertThat(response.getStatus()).isEqualTo(403);
+    }
+
+    @Test
+    @DisplayName("an origin with no scheme separator is checked as a web origin and refused")
+    void originWithoutSchemeIsRefused() {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(handshake("app.example.com", response)).isFalse();
+        assertThat(response.getStatus()).isEqualTo(403);
+    }
+
+    @Test
+    @DisplayName("the after-handshake hook does nothing")
+    void afterHandshakeIsANoOp() {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        interceptor.afterHandshake(new ServletServerHttpRequest(upgrade(LISTED)),
+                new ServletServerHttpResponse(response), HANDLER, null);
+
+        assertThat(response.getStatus()).isEqualTo(200);
     }
 
     @Test

@@ -110,6 +110,18 @@ class BrowserEnforcedCorsProcessorTest {
     }
 
     @Test
+    @DisplayName("a configuration that allows credentials keeps granting them on actual requests")
+    void credentialedConfigurationGrantsCredentials() throws Exception {
+        CorsConfiguration credentialed = ProjectCorsConfigurationSource.configFor(List.of(LISTED));
+        credentialed.setAllowCredentials(true);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        processor.processRequest(credentialed, actual("GET", LISTED), response);
+
+        assertThat(response.getHeader(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS)).isEqualTo("true");
+    }
+
+    @Test
     @DisplayName("a request without Origin is not CORS and passes untouched")
     void noOriginIsUntouched() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/p1/graphql");
