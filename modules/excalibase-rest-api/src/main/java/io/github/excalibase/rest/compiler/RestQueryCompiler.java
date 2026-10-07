@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.VectorSearchBuilder;
+import io.github.excalibase.errors.ColumnValueCheck;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.PermissionCheckFailedException;
@@ -328,17 +329,18 @@ public class RestQueryCompiler {
     /**
      * {@code row} as it will be written: only columns the caller may set for {@code op}, then the
      * permission's presets over it. Without permissions an unknown column is skipped, as before; with
-     * them it is refused, so a client cannot write a column by naming it.
+     * them it is refused (see {@link TableAccess#requireSettable}), so a client cannot write a column by
+     * naming it.
      */
     private Map<String, Object> writable(String table, RlsOp op, Map<String, Object> row) {
+        if (access.enforced()) {
+            access.requireSettable(table, op, row.keySet(), schemaInfo);
+        }
         Set<String> settable = access.settableColumns(table, op, schemaInfo);
         Map<String, Object> written = new LinkedHashMap<>();
         for (var entry : row.entrySet()) {
             if (settable.contains(entry.getKey())) {
                 written.put(entry.getKey(), entry.getValue());
-            } else if (access.enforced()) {
-                throw new IllegalArgumentException("Unknown column '" + entry.getKey() + "' in "
-                        + op.name().toLowerCase(Locale.ROOT) + " of " + table);
             }
         }
         WriteGuard guard = RlsContext.writeGuard();
@@ -908,7 +910,8 @@ public class RestQueryCompiler {
                 String json = (value instanceof String stringValue) ? stringValue : toJsonString(value);
                 yield new SqlParameterValue(Types.OTHER, json);
             }
-            default -> value;
+            // Range types (tsrange, int4range, ...): the server parses the literal.
+            default -> type.endsWith("range") ? new SqlParameterValue(Types.OTHER, value.toString()) : value;
         };
     }
 
@@ -930,6 +933,7 @@ public class RestQueryCompiler {
         }
         String type = schemaInfo.getColumnType(table, column);
         if (type == null) return value;
+        ColumnValueCheck.require(table, column, type, value);
         try {
             return switch (type.toLowerCase()) {
                 case "integer", "int4", "serial" -> Integer.parseInt(value);

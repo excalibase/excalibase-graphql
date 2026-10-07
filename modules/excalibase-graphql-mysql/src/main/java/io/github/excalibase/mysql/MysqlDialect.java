@@ -1,8 +1,11 @@
 package io.github.excalibase.mysql;
 
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.errors.DataError;
 
+import java.sql.SQLException;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -13,6 +16,11 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
  * Uses MySQL-specific JSON functions and syntax.
  */
 public class MysqlDialect implements SqlDialect {
+
+    @Override
+    public Optional<DataError> describeError(SQLException failure) {
+        return MysqlErrors.describe(failure);
+    }
 
     @Override
     public String buildObject(List<String> keyValuePairs) {

@@ -1,6 +1,7 @@
 package io.github.excalibase.compiler;
 
 import graphql.language.*;
+import io.github.excalibase.errors.ColumnValueCheck;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.RlsContext;
@@ -226,10 +227,14 @@ public class FilterBuilder {
                                   Map<String, Object> params, List<String> conditions, String tableName) {
         String opName = op.getName();
         switch (opName) {
-            case FILTER_EQ, FILTER_NEQ, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE ->
-                    applyComparison(opName, op, col, colRef, paramCast, params, conditions);
-            case FILTER_IN, FILTER_NOT_IN, "nin" ->
-                    applyInList(opName, op, col, colRef, paramCast, params, conditions);
+            case FILTER_EQ, FILTER_NEQ, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE -> {
+                requireTypedValues(tableName, col, op.getValue());
+                applyComparison(opName, op, col, colRef, paramCast, params, conditions);
+            }
+            case FILTER_IN, FILTER_NOT_IN, "nin" -> {
+                requireTypedValues(tableName, col, op.getValue());
+                applyInList(opName, op, col, colRef, paramCast, params, conditions);
+            }
             case FILTER_LIKE, FILTER_ILIKE, FILTER_STARTS_WITH, FILTER_ENDS_WITH, FILTER_CONTAINS ->
                     applyStringPattern(opName, op, col, colRef, params, conditions, tableName);
             case FILTER_SEARCH, FILTER_WEB_SEARCH, FILTER_PHRASE_SEARCH, FILTER_RAW_SEARCH ->
@@ -244,6 +249,25 @@ public class FilterBuilder {
                 String paramName = nextParam("p_" + col + "_" + opName, params);
                 conditions.add(colRef + " = :" + paramName + paramCast);
                 params.put(paramName, extractValue(op.getValue()));
+            }
+        }
+    }
+
+    /** Refuses a value the column's type cannot hold, naming the column, before the query runs. */
+    private void requireTypedValues(String tableName, String col, Value<?> value) {
+        if (schemaInfo == null || tableName == null) return;
+        String type = schemaInfo.getColumnType(tableName, col);
+        List<Object> values = new ArrayList<>();
+        if (value instanceof ArrayValue array) {
+            array.getValues().forEach(item -> values.add(extractValue(item)));
+        } else {
+            values.add(extractValue(value));
+        }
+        for (Object each : values) {
+            if (each instanceof Collection<?> items) {
+                items.forEach(item -> ColumnValueCheck.require(tableName, col, type, item));
+            } else {
+                ColumnValueCheck.require(tableName, col, type, each);
             }
         }
     }

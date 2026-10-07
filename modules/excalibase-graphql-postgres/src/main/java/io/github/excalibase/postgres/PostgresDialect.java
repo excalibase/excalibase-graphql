@@ -1,7 +1,9 @@
 package io.github.excalibase.postgres;
 
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.errors.DataError;
 
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,6 +18,11 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 public class PostgresDialect implements SqlDialect {
 
     private static final String JSONB_CAST = "::jsonb";
+
+    @Override
+    public Optional<DataError> describeError(SQLException failure) {
+        return PostgresErrors.describe(failure);
+    }
 
     @Override
     public String buildObject(List<String> keyValuePairs) {

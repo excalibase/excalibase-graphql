@@ -577,4 +577,40 @@ class MysqlIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.testTask[0].testAssignedTo.first_name").value("Alice"));
     }
+
+    // === Database refusals carry their reason (EXC-559) ===
+
+    @Test
+    @Order(200)
+    void aDuplicateKey_isAUniqueViolationNamingTheKey() throws Exception {
+        mockMvc.perform(post("/test-proj/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("mutation { createTestCustomer(input: { customer_id: 1, first_name: \"A\", "
+                                + "last_name: \"B\" }) { customer_id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("unique_violation"))
+                .andExpect(jsonPath("$.errors[0].extensions.constraint").value("PRIMARY"));
+    }
+
+    @Test
+    @Order(201)
+    void aMissingParent_isAForeignKeyViolationWithoutTheSchema() throws Exception {
+        mockMvc.perform(post("/test-proj/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("mutation { createTestOrders(input: { customer_id: 99999, total_amount: 1.5 }) "
+                                + "{ order_id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("foreign_key_violation"))
+                .andExpect(jsonPath("$.errors[0].message", not(containsString("`test`"))));
+    }
+
+    @Test
+    @Order(202)
+    void aMalformedNumberFilter_namesTheColumn() throws Exception {
+        mockMvc.perform(post("/test-proj/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("{ testCustomer(where: { customer_id: { eq: \"abc\" } }) { customer_id } }")))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("invalid_value"))
+                .andExpect(jsonPath("$.errors[0].extensions.column").value("customer_id"));
+    }
 }

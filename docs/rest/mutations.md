@@ -138,23 +138,38 @@ See [Functions](../features/functions.md).
 
 ## Error responses
 
-| Status | Meaning |
-|---|---|
-| `400 Bad Request` | Malformed filter, bad URL encoding, invalid JSON body |
-| `401 Unauthorized` | Missing/invalid JWT |
-| `403 Forbidden` | RLS policy rejected the row |
-| `404 Not Found` | Missing `Accept-Profile` / `Content-Profile` header in multi-schema mode, or unknown table |
-| `409 Conflict` | PK/unique constraint violation without `Prefer: resolution=merge-duplicates` |
-| `500 Internal Server Error` | SQL error, usually type coercion or missing column |
+| Status | `code` | Meaning |
+|---|---|---|
+| `400` | `foreign_key_violation` | The referenced row does not exist, or a referencing row still does (`constraint` names the key) |
+| `400` | `check_violation` | A `CHECK` constraint failed (`constraint` names it) |
+| `400` | `not_null_violation` | A required column has no value (`column` names it) |
+| `400` | `exclusion_violation` | An `EXCLUDE` constraint failed (`constraint` names it) |
+| `400` | `raised_exception` | A trigger or function raised an error (Postgres `RAISE EXCEPTION`, MySQL `SIGNAL`); `message` is the raised message only |
+| `400` | `invalid_value` | A value the column's type cannot hold, in a filter or the body (`column` names it when known) |
+| `400` | — | Malformed filter, unknown column or operator, invalid JSON body (`error` says which) |
+| `401` | — | Missing/invalid JWT |
+| `403` | `permission_denied` | A method the role holds no permission for, or a column it may not write (`column` names it); a column the permission presets says it is set by the server |
+| `403` | `permission_check_failed` | A written row does not pass the role's permission `check` |
+| `404` | — | Missing `Accept-Profile` / `Content-Profile` header in multi-schema mode, or unknown table |
+| `409` | `unique_violation` | Primary key or unique constraint violation without `Prefer: resolution=merge-duplicates` (`constraint` names it) |
+| `500` | `internal_error` | A fault on the server's side; the body says nothing more and the cause is logged |
 
-Errors return a JSON body:
+Errors return a JSON body with a stable `code`, a `message`, the same text in
+`error` for older clients, and the `constraint` or `column` it is about when
+known:
 
 ```json
 {
-  "error": "Query execution failed",
-  "details": "ERROR: duplicate key value violates unique constraint \"issues_pkey\""
+  "code": "unique_violation",
+  "message": "duplicate key value violates unique constraint \"issues_pkey\"",
+  "error": "duplicate key value violates unique constraint \"issues_pkey\"",
+  "constraint": "issues_pkey"
 }
 ```
+
+The message is the database's primary message only: never the PL/pgSQL context
+(`Where: PL/pgSQL function … line N`), the `Detail` line with row values, the
+SQL text or a stack trace.
 
 A write whose rows fail the role's permission `check` (`403`) is typed and rolls
 back whole; a method the role holds no permission for on a table it can see is

@@ -1,7 +1,12 @@
 package io.github.excalibase.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import graphql.GraphQLException;
+import io.github.excalibase.SqlDialect;
+import io.github.excalibase.compiler.SqlCompilationException;
 import io.github.excalibase.compiler.SqlCompiler;
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
@@ -42,6 +47,7 @@ public class GraphqlController {
     private static final String VARIABLES_KEY = "variables";
     private static final String ERRORS_KEY = "errors";
     private static final String MESSAGE_KEY = "message";
+    private static final String INTERNAL_ERROR = "internal_error";
 
     private final GraphqlSchemaManager schemaManager;
     private final QueryExecutionService queryExecutor;
@@ -90,15 +96,16 @@ public class GraphqlController {
         final String finalQuery = query;
 
         return observability.observe(query, null, () -> {
+            GraphqlSchemaManager.EngineState state = null;
             try {
-                GraphqlSchemaManager.EngineState state = schemaManager.resolveEngineState(principal);
+                state = schemaManager.resolveEngineState(principal);
                 if (state.compiler().isIntrospection(finalQuery)) {
                     return handleIntrospection(state, finalQuery, variables);
                 }
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
                 return dispatchCompiled(compiled, state, finalUserId, finalClaims);
             } catch (Exception e) {
-                return errorResponse(e);
+                return errorResponse(e, state == null ? null : state.compiler().dialect());
             }
         });
     }
@@ -106,9 +113,11 @@ public class GraphqlController {
     /**
      * Permission failures carry a stable code in {@code extensions.code}: a written row that fails its
      * check, or an expression that cannot apply to this request. Permissions that cannot be read refuse
-     * the request with 503. Anything else is reduced to its SQL message as before.
+     * the request with 503. A failure the client can act on (a violated constraint, a raised message, a
+     * malformed value, a column it may not write) carries its code too; a request the compiler rejects
+     * keeps its message; anything else is the server's fault, logged here and answered 500 without detail.
      */
-    private static ResponseEntity<Object> errorResponse(Exception e) {
+    private static ResponseEntity<Object> errorResponse(Exception e, SqlDialect dialect) {
         if (e instanceof PermissionsUnavailableException) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(ERRORS_KEY, List.of(
                     PermissionErrors.graphqlError(PermissionsUnavailableException.CODE, "Permissions unavailable"))));
@@ -123,9 +132,24 @@ public class GraphqlController {
             return ResponseEntity.ok(Map.of(ERRORS_KEY,
                     List.of(PermissionErrors.graphqlError(failed.get().code(), failed.get().getMessage()))));
         }
-        log.warn("GraphQL request failed", e);
-        return ResponseEntity.ok(Map.of(
-                ERRORS_KEY, List.of(Map.of(MESSAGE_KEY, extractErrorMessage(e)))));
+        Optional<DataError> dataError = DataErrors.describe(e, dialect);
+        if (dataError.isPresent()) {
+            log.info("GraphQL request refused: {}", dataError.get().code());
+            return ResponseEntity.ok(Map.of(ERRORS_KEY, List.of(dataError.get().graphqlError())));
+        }
+        if (isRequestError(e)) {
+            return ResponseEntity.ok(Map.of(ERRORS_KEY, List.of(Map.of(MESSAGE_KEY,
+                    e.getMessage() == null ? "Invalid request" : e.getMessage()))));
+        }
+        log.error("GraphQL request failed", e);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(ERRORS_KEY,
+                List.of(PermissionErrors.graphqlError(INTERNAL_ERROR, "Internal server error"))));
+    }
+
+    /** A request the compiler or parser rejected: its message names the request's own mistake. */
+    private static boolean isRequestError(Exception e) {
+        return e instanceof IllegalArgumentException || e instanceof SqlCompilationException
+                || e instanceof GraphQLException || e instanceof UnsupportedOperationException;
     }
 
     private ResponseEntity<Object> handleIntrospection(GraphqlSchemaManager.EngineState state,
@@ -157,19 +181,5 @@ public class GraphqlController {
             return queryExecutor.executeTwoPhase(compiled, params, state.mutationExecutor());
         }
         return queryExecutor.executeQuery(compiled, params);
-    }
-
-    private static String extractErrorMessage(Exception e) {
-        String message = e.getMessage();
-        if (message == null) return "Internal error";
-
-        int sqlError = message.indexOf("ERROR:");
-        if (sqlError >= 0) return message.substring(sqlError);
-
-        if (message.contains("StatementCallback") || message.contains("PreparedStatementCallback")) {
-            int bracket = message.indexOf("; ");
-            if (bracket > 0) return message.substring(bracket + 2);
-        }
-        return message;
     }
 }

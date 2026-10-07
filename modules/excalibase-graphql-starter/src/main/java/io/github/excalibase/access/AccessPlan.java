@@ -129,6 +129,8 @@ public final class AccessPlan {
         rules.forEach((table, held) -> rights.put(table, new TableAccess.Rights(operations(held),
                 held.insert().map(TableRules.InsertRule::columns).orElse(Set.of()),
                 held.update().map(TableRules.UpdateRule::columns).orElse(Set.of()),
+                held.insert().map(rule -> rule.presets().keySet()).orElse(Set.of()),
+                held.update().map(rule -> rule.presets().keySet()).orElse(Set.of()),
                 held.select().map(TableRules.SelectRule::limit).orElse(null),
                 held.select().map(TableRules.SelectRule::aggregations).orElse(false))));
         return TableAccess.enforcing(rights);
