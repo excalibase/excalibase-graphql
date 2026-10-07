@@ -4,6 +4,8 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,6 +14,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultMatcher;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -22,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
@@ -32,9 +37,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * End-to-end proof that CORS on the data plane is decided per project from the
  * allowlist provisioning serves on {@code /api/projects/{id}/info}: an allowed
- * origin is echoed on GraphQL, REST and the WebSocket upgrade; a foreign origin,
- * a project with no origins and an unknown project are refused; non-project
- * routes keep the platform default.
+ * origin is echoed on GraphQL and REST; an unlisted origin's request is served
+ * without a grant (the browser blocks it) and its preflight refused; the
+ * WebSocket upgrade, which browsers do not guard, refuses unlisted web origins
+ * itself; non-project routes keep the platform default.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -125,13 +131,31 @@ class ProjectCorsIntegrationTest {
     }
 
     @Test
-    @DisplayName("GraphQL: an origin not on the allowlist is refused without CORS headers")
-    void graphqlDeniedOrigin() throws Exception {
+    @DisplayName("GraphQL: an unlisted origin is served but granted nothing, so a browser cannot read it")
+    void graphqlUnlistedOriginServedWithoutGrant() throws Exception {
         mockMvc.perform(post("/" + PROJECT + "/graphql")
                         .header(HttpHeaders.ORIGIN, OTHER)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(TYPENAME_QUERY))
-                .andExpect(status().isForbidden())
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist(ALLOW_ORIGIN))
+                .andExpect(header().stringValues(HttpHeaders.VARY, hasItem(HttpHeaders.ORIGIN)));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"capacitor://localhost", "tauri://localhost", "null", "http://localhost:5173"})
+    @DisplayName("GraphQL and REST: native-app and proxied origins are served, never refused for their Origin")
+    void nativeAndProxiedOriginsAreServed(String origin) throws Exception {
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header(HttpHeaders.ORIGIN, origin)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(TYPENAME_QUERY))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist(ALLOW_ORIGIN));
+
+        mockMvc.perform(get("/" + PROJECT + "/api/v1/customer")
+                        .header(HttpHeaders.ORIGIN, origin))
+                .andExpect(status().isOk())
                 .andExpect(header().doesNotExist(ALLOW_ORIGIN));
     }
 
@@ -177,34 +201,51 @@ class ProjectCorsIntegrationTest {
 
         mockMvc.perform(get("/" + PROJECT + "/api/v1/customer")
                         .header(HttpHeaders.ORIGIN, OTHER))
-                .andExpect(status().isForbidden())
+                .andExpect(status().isOk())
                 .andExpect(header().doesNotExist(ALLOW_ORIGIN));
     }
 
     @Test
-    @DisplayName("WebSocket upgrade: the handshake is origin-checked against the project's allowlist")
-    void websocketHandshakeFollowsProjectAllowlist() throws Exception {
-        mockMvc.perform(get("/" + PROJECT + "/graphql")
-                        .header(HttpHeaders.ORIGIN, OTHER)
-                        .header(HttpHeaders.UPGRADE, "websocket")
-                        .header(HttpHeaders.CONNECTION, "Upgrade"))
+    @DisplayName("WebSocket upgrade: an unlisted web origin is refused at the handshake on both routes")
+    void websocketRefusesUnlistedWebOrigin() throws Exception {
+        mockMvc.perform(wsUpgrade("/" + PROJECT + "/graphql", OTHER))
                 .andExpect(status().isForbidden())
                 .andExpect(header().doesNotExist(ALLOW_ORIGIN));
 
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/realtime")
-                        .header(HttpHeaders.ORIGIN, OTHER)
-                        .header(HttpHeaders.UPGRADE, "websocket")
-                        .header(HttpHeaders.CONNECTION, "Upgrade"))
+        mockMvc.perform(wsUpgrade("/" + PROJECT + "/api/v1/realtime", OTHER))
                 .andExpect(status().isForbidden());
+    }
 
-        // An allowed origin reaches the handshake handler (which then fails on the
-        // missing Sec-WebSocket-* headers MockMvc cannot supply); what matters is
-        // that the CORS layer let it through with the origin echoed.
-        mockMvc.perform(get("/" + PROJECT + "/graphql")
-                        .header(HttpHeaders.ORIGIN, ALLOWED)
+    // An admitted upgrade reaches the handshake handler, which then fails on the
+    // Sec-WebSocket-* headers MockMvc cannot supply; what matters is that the
+    // origin check let it through rather than answering 403.
+    @ParameterizedTest
+    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", "null"})
+    @DisplayName("WebSocket upgrade: a listed web origin and native-app origins pass the origin check")
+    void websocketAdmitsListedAndNativeOrigins(String origin) throws Exception {
+        mockMvc.perform(wsUpgrade("/" + PROJECT + "/api/v1/realtime", origin))
+                .andExpect(PASSED_ORIGIN_CHECK);
+        mockMvc.perform(wsUpgrade("/" + PROJECT + "/graphql", origin))
+                .andExpect(PASSED_ORIGIN_CHECK);
+    }
+
+    @Test
+    @DisplayName("WebSocket upgrade: no Origin (server-side client) passes the origin check")
+    void websocketAdmitsNoOrigin() throws Exception {
+        mockMvc.perform(get("/" + PROJECT + "/api/v1/realtime")
                         .header(HttpHeaders.UPGRADE, "websocket")
                         .header(HttpHeaders.CONNECTION, "Upgrade"))
-                .andExpect(header().string(ALLOW_ORIGIN, ALLOWED));
+                .andExpect(PASSED_ORIGIN_CHECK);
+    }
+
+    private static final ResultMatcher PASSED_ORIGIN_CHECK =
+            result -> assertThat(result.getResponse().getStatus()).as("refused by the origin check").isNotEqualTo(403);
+
+    private static MockHttpServletRequestBuilder wsUpgrade(String path, String origin) {
+        return get(path)
+                .header(HttpHeaders.ORIGIN, origin)
+                .header(HttpHeaders.UPGRADE, "websocket")
+                .header(HttpHeaders.CONNECTION, "Upgrade");
     }
 
     @Test
