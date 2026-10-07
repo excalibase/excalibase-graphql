@@ -68,52 +68,33 @@ See [excalibase-watcher on GitHub](https://github.com/excalibase/excalibase-watc
 
 ## GraphQL Schema
 
-Excalibase automatically generates subscription types for each table in your database:
+Every table the caller's role can select (views excluded) has a `<field>Changes`
+subscription, and introspection reports them under `__schema.subscriptionType`:
 
 ```graphql
 type Subscription {
-  # Subscribe to customer table changes
-  hanaCustomerChanges: HanaCustomerChangeEvent!
-
-  # Subscribe to orders table changes
-  hanaOrdersChanges: HanaOrdersChangeEvent!
-
-  # Health check heartbeat
-  health: String
+  hanaCustomerChanges: ChangeEvent
+  hanaOrdersChanges: ChangeEvent
 }
 
-# Event structure for table changes
-type HanaCustomerChangeEvent {
-  table: String!                            # Table name
-  schema: String                            # Database schema
-  operation: HanaCustomerChangeOperation!   # INSERT, UPDATE, DELETE, ERROR
-  timestamp: String!                        # ISO 8601 timestamp
-  data: HanaCustomerSubscriptionData        # Row data (structure varies by operation)
-  error: String                             # Error message (null if no error)
-}
-
-enum HanaCustomerChangeOperation {
-  INSERT
-  UPDATE
-  DELETE
-  ERROR
-}
-
-# Data payload varies by operation type
-type HanaCustomerSubscriptionData {
-  # For INSERT: direct column values
-  # For DELETE: primary key only (REPLICA IDENTITY DEFAULT)
-  customer_id: Int
-  first_name: String
-  last_name: String
-  email: String
-  active: Boolean
-
-  # For UPDATE: the updated row is nested under "new"
-  old: HanaCustomerSubscriptionData  # Previous values (if available)
-  new: HanaCustomerSubscriptionData  # Updated values
+type ChangeEvent {
+  operation: String   # INSERT, UPDATE, DELETE
+  table: String       # the table's name
+  data: JSON          # the row, cut to the role's columns; for UPDATE, { old, new }
+  timestamp: String   # when the change happened, ISO-8601 UTC (e.g. 2026-10-07T10:00:00Z)
 }
 ```
+
+`<field>` is the table's query field name (`hanaCustomer` for `hana.customer`). A table
+of the project's default schema may also be named without its schema prefix
+(`customerChanges` for `public.customer`); both receive the same changes. A field that
+names no table the role can select is refused with an `error` message instead of
+being subscribed silently.
+
+`data` reads like REST and GraphQL queries: timestamp columns arrive as `row_to_json`
+writes them (`2026-10-07T10:00:00.123+00:00`), not as the database's text output
+(`2026-10-07 10:00:00.123+00`). On the single-tenant path, which serves no permissions,
+the row is passed through unchanged.
 
 ## Operation Types
 

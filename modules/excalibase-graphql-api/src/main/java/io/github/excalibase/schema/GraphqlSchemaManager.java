@@ -322,7 +322,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         }
         return tableFor(state, subscriptionKey).flatMap(table ->
                 state.plan().changes(table, sessionVariables(principal, projectId))
-                        .map(filter -> new RealtimeAccess(table, filter, state.probes())));
+                        .map(filter -> new RealtimeAccess(table, filter, state.probes(), state.plan().view())));
     }
 
     private static Map<String, String> sessionVariables(Principal principal, String projectId) {

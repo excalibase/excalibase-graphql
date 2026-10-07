@@ -14,13 +14,14 @@ curl -X POST https://api.example.com/api/v1/issues \
   -H "Authorization: Bearer $JWT" \
   -H "Content-Type: application/json" \
   -H "Content-Profile: kanban" \
+  -H "Prefer: return=representation" \
   -d '{"title": "New issue", "status": "todo", "priority": "high"}'
 ```
 
-Returns the created row:
+Returns `201` with the created row (see [Response shape](#response-shape)):
 
 ```json
-[{ "id": 42, "title": "New issue", "status": "todo", "priority": "high", "created_at": "2026-04-16T01:00:00Z" }]
+{ "data": { "id": 42, "title": "New issue", "status": "todo", "priority": "high", "created_at": "2026-04-16T01:00:00+00:00" } }
 ```
 
 **Bulk insert** — send an array:
@@ -100,6 +101,16 @@ Bulk delete with a broader filter:
 curl -X DELETE "https://api.example.com/api/v1/issues?status=eq.done&created_at=lt.2024-01-01" \
   -H "Content-Profile: kanban"
 ```
+
+## Response shape
+
+A write answers `{"data": ...}` when representation is requested
+(`Prefer: return=representation`): a single-object `POST` answers the row as an
+object, while an array `POST`, `PATCH`, `PUT` and `DELETE` answer an array of rows.
+This is kept as it is for existing clients; send a one-element array to always get an
+array back. A row the role may not read is not represented. A tracked function that
+returns a single row answers `{"data": {...}}`, or `{"data": null}` when it returns no
+row; a set-returning one answers `{"data": [...]}`.
 
 ## Returning a representation
 
