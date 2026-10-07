@@ -1,5 +1,6 @@
 package io.github.excalibase.config;
 
+import io.github.excalibase.cors.BrowserEnforcedCorsProcessor;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.KnownProjectFilter;
 import io.github.excalibase.security.KnownProjects;
@@ -24,8 +25,13 @@ public class SecurityConfig {
         // CORS runs here, ahead of auth, so a preflight never needs a token and the
         // per-project origin check covers every servlet path (incl. WS upgrades) of a
         // known project.
+        // Actual requests are served whatever their Origin; only listed origins are
+        // granted, and the browser enforces the rest (see BrowserEnforcedCorsProcessor).
+        CorsFilter corsFilter = new CorsFilter(corsConfigurationSource);
+        corsFilter.setCorsProcessor(new BrowserEnforcedCorsProcessor());
         http.csrf(csrf -> csrf.disable()) // NOSONAR
-            .cors(cors -> cors.configurationSource(corsConfigurationSource))
+            .cors(cors -> cors.disable())
+            .addFilterAt(corsFilter, CorsFilter.class)
             .authorizeHttpRequests(auth -> auth.anyRequest().permitAll());
 
         // An unknown project is refused first: it needs no CORS answer and no token

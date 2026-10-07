@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.servlet.handler.AbstractHandlerMapping;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -45,13 +46,16 @@ public class WebSocketConfig implements WebSocketConfigurer {
     private final GraphQLWebSocketHandler graphQLWebSocketHandler;
     private final RealtimeWebSocketHandler realtimeWebSocketHandler;
     private final JwtService jwtService;
+    private final CorsConfigurationSource corsConfigurationSource;
 
     public WebSocketConfig(GraphQLWebSocketHandler graphQLWebSocketHandler,
                            RealtimeWebSocketHandler realtimeWebSocketHandler,
-                           ObjectProvider<JwtService> jwtServiceProvider) {
+                           ObjectProvider<JwtService> jwtServiceProvider,
+                           CorsConfigurationSource corsConfigurationSource) {
         this.graphQLWebSocketHandler = graphQLWebSocketHandler;
         this.realtimeWebSocketHandler = realtimeWebSocketHandler;
         this.jwtService = jwtServiceProvider.getIfAvailable();
+        this.corsConfigurationSource = corsConfigurationSource;
     }
 
     @Override
@@ -84,6 +88,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
         WebSocketHttpRequestHandler handler = new WebSocketHttpRequestHandler(
                 wsHandler, new DefaultHandshakeHandler());
         List<HandshakeInterceptor> interceptors = new ArrayList<>();
+        // Browsers skip CORS on WebSockets, so the project's allowlist is checked here first.
+        interceptors.add(new WebSocketOriginInterceptor(corsConfigurationSource));
         // Path project is authoritative for RLS — always captured, even without JWT.
         interceptors.add(new ProjectPathHandshakeInterceptor());
         if (jwtService != null) {
