@@ -1,6 +1,7 @@
 package io.github.excalibase.compiler;
 
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.RlsOp;
@@ -120,6 +121,7 @@ class MutationBuilderAccessTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("owner_id");
         assertThatThrownBy(() -> builder.requireSettable(TABLE, RlsOp.UPDATE, List.of("id")))
-                .isInstanceOf(IllegalArgumentException.class);
+                .isInstanceOf(DataErrorException.class)
+                .hasMessageContaining("may not be set");
     }
 }

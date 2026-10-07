@@ -1,5 +1,9 @@
 package io.github.excalibase;
 
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrors;
+
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 
@@ -53,6 +57,15 @@ public interface SqlDialect {
 
     /** DISTINCT ON clause for deduplication. PG: DISTINCT ON ("col1", "col2") */
     String distinctOn(List<String> columns, String alias);
+
+    /**
+     * The client error behind a database failure, or empty when it is a server fault. Overridden by
+     * dialects whose driver reports the constraint, column or raised message; the default reads only
+     * the SQLSTATE.
+     */
+    default Optional<DataError> describeError(SQLException failure) {
+        return DataErrors.fromSqlState(failure);
+    }
 
     /** Parameter cast suffix for non-standard types. PG: ::uuid, ::jsonb, etc. Empty string if no cast needed. */
     default String paramCast(String columnType) { return ""; }

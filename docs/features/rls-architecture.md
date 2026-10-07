@@ -92,5 +92,12 @@ Permissions compile to Postgres SQL only: a MySQL deployment with a permission s
 | a table the role cannot select | `Unknown field` | `404` | subscription refused |
 | a session variable is missing or does not fit | `200`, `extensions.code = missing_session_variable` / `invalid_session_variable` | `400` with that `code` | subscription refused with that code |
 | permissions cannot be read | `503`, `code: permissions_unavailable` | `503` | session closed (`permissions_unavailable`) |
+| a write names a column the role can read but may not set, or one the permission presets | `200`, `extensions.code = permission_denied` | `403`, `code: permission_denied` | — |
+| a write names a column outside the role's view | `200`, `Unknown column` | `400`, `Unknown column` | — |
+| the database refuses the write (unique, foreign key, check, not-null, exclusion, RAISE) | `200`, `extensions.code` = `unique_violation` / `foreign_key_violation` / … with `constraint` or `column` | `409` for `unique_violation`, else `400`, same `code` | — |
+| a filter value the column's type cannot hold | `200`, `extensions.code = invalid_value`, `extensions.column` | `400`, `code: invalid_value`, `column` | — |
+| a fault on the server's side | `500`, `extensions.code = internal_error` | `500`, `code: internal_error` | — |
 
-Messages never contain SQL, SQLSTATE or row values.
+Messages never contain SQL, SQLSTATE, PL/pgSQL context or stored row values; a
+value appears only when the client sent it (a malformed filter value) or a
+`RAISE` message includes it.

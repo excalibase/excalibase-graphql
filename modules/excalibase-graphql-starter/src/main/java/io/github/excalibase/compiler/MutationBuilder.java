@@ -148,16 +148,10 @@ public class MutationBuilder {
     /**
      * Refuses a column the caller may not set for {@code operation}: one the role's permission does not
      * list, a preset one, or one the table does not have. Without this a client could write any real
-     * column by naming it.
+     * column by naming it. See {@link TableAccess#requireSettable} for how each is reported.
      */
     public void requireSettable(String tableName, RlsOp operation, Collection<String> columns) {
-        Set<String> settable = access.settableColumns(tableName, operation, schemaInfo);
-        for (String column : columns) {
-            if (!settable.contains(column)) {
-                throw new IllegalArgumentException("Unknown column '" + column + "' in "
-                        + operation.name().toLowerCase(Locale.ROOT) + " of " + tableName);
-            }
-        }
+        access.requireSettable(tableName, operation, columns, schemaInfo);
     }
 
     private static RlsOp operationOf(String mutationFieldName) {

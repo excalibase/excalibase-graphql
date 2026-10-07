@@ -1,6 +1,7 @@
 package io.github.excalibase.rest.compiler;
 
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.postgres.PostgresDialect;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
@@ -127,6 +128,36 @@ class RestQueryCompilerTest {
       var filters = List.of(new RestQueryCompiler.FilterSpec("name", "eq", "Widget", true));
       var result = compiler.compileSelect("public.products", List.of(), filters, null, 30, 0, false);
       assertTrue(result.sql().contains("NOT") || result.sql().contains("<>"));
+    }
+  }
+
+  @Nested
+  @DisplayName("a filter value its column's type cannot hold is refused naming the column")
+  class MalformedFilterValues {
+
+    @Test
+    void aBadNumber_isAnInvalidValue() {
+      var filters = List.of(new RestQueryCompiler.FilterSpec("price", "gt", "cheap", false));
+      DataErrorException refused = assertThrows(DataErrorException.class, () ->
+          compiler.compileSelect("public.products", List.of(), filters, null, 30, 0, false));
+      assertEquals("invalid_value", refused.error().code());
+      assertEquals("price", refused.error().column());
+    }
+
+    @Test
+    void aBadIntegerInAnInList_isAnInvalidValue() {
+      var filters = List.of(new RestQueryCompiler.FilterSpec("id", "in", "(1,two)", false));
+      assertThrows(DataErrorException.class, () ->
+          compiler.compileSelect("public.products", List.of(), filters, null, 30, 0, false));
+    }
+
+    @Test
+    void aBadUuid_isAnInvalidValue() {
+      schema.addColumn("public.products", "ref", "uuid");
+      var filters = List.of(new RestQueryCompiler.FilterSpec("ref", "eq", "nope", false));
+      DataErrorException refused = assertThrows(DataErrorException.class, () ->
+          compiler.compileDelete("public.products", filters));
+      assertTrue(refused.getMessage().contains("'ref'"), refused.getMessage());
     }
   }
 
@@ -667,6 +698,16 @@ class RestQueryCompilerTest {
     void insert_refusesUnsettableColumns() {
       assertThrows(IllegalArgumentException.class, () ->
           roleCompiler().compileInsert("public.products", Map.of("name", "x", "price", 1)));
+    }
+
+    @Test
+    @DisplayName("a column the role can read but not write is permission_denied, not unknown")
+    void insert_aReadableColumnItMayNotSet_isForbidden() {
+      DataErrorException refused = assertThrows(DataErrorException.class, () ->
+          roleCompiler().compileInsert("public.products", Map.of("name", "x", "id", 1)));
+      assertEquals(403, refused.error().status());
+      assertEquals("permission_denied", refused.error().code());
+      assertEquals("id", refused.error().column());
     }
 
     @Test

@@ -1,6 +1,8 @@
 package io.github.excalibase.rest.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.SqlDialect;
+import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;
@@ -20,8 +22,6 @@ import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.constraints.Pattern;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -48,7 +48,6 @@ public class RestApiController {
 
     private static final String IDENT_REGEX = "^[A-Za-z_]\\w{0,62}$";
 
-    private static final Logger log = LoggerFactory.getLogger(RestApiController.class);
     private static final Set<String> RESERVED_PARAMS = Set.of("select", "order", "limit", "offset", "or", "first", "after");
     private static final MediaType SINGULAR_TYPE = MediaType.parseMediaType("application/vnd.pgrst.object+json");
     private static final MediaType CSV_TYPE = MediaType.parseMediaType("text/csv");
@@ -112,7 +111,7 @@ public class RestApiController {
 
     private ResponseEntity<Object> handleSingular(RequestContext ctx, ParsedParams parsed) {
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, 2, 0, false));
-        return executeInTx(compiled, rows -> {
+        return executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
             List<?> data = parseJsonList(rows.get("body"));
             if (data.size() != 1) return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).body(Map.of(KEY_ERROR, "Expected 1 row, got " + data.size()));
             return ResponseEntity.ok().contentType(SINGULAR_TYPE).body(data.get(0));
@@ -123,14 +122,14 @@ public class RestApiController {
         int clamped = Math.clamp(limit, 1, maxRows);
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, false));
         List<String> csvCols = parsed.columns.isEmpty() ? new ArrayList<>(ctx.schemaInfo().getColumns(ctx.tableKey())) : parsed.columns;
-        return executeInTx(compiled, rows -> buildCsvResponse(rows, csvCols));
+        return executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> buildCsvResponse(rows, csvCols));
     }
 
     private ResponseEntity<Object> handleCursor(RequestContext ctx, ParsedParams parsed, int first, String after) {
         int fetchLimit = Math.min(first, maxRows);
         String orderCol = parsed.orderSpecs.isEmpty() ? null : parsed.orderSpecs.get(0).column();
         var query = new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, fetchLimit + 1, 0, false, after, orderCol);
-        return executeInTx(ctx.compiler().compileSelect(query), rows -> {
+        return executeInTx(ctx.compiler().compileSelect(query), ctx.scope(parsed.allFilters()), rows -> {
             List<?> data = parseJsonList(rows.get("body"));
             boolean hasNext = data.size() > fetchLimit;
             return ResponseEntity.ok(Map.of("data", hasNext ? data.subList(0, fetchLimit) : data, "pageInfo", Map.of("hasNextPage", hasNext)));
@@ -144,7 +143,7 @@ public class RestApiController {
             return permissionDenied("Counting rows of " + ctx.tableKey() + " is not permitted");
         }
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, count));
-        var resp = executeInTx(compiled, rows -> {
+        var resp = executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
             var response = new LinkedHashMap<String, Object>();
             response.put("data", parseJsonList(rows.get("body")));
             if (count && rows.containsKey("total_count")) {
@@ -183,7 +182,7 @@ public class RestApiController {
         };
         if (compiled == null) return ResponseEntity.badRequest().body(Map.of(KEY_ERROR, "Body must be JSON object or array"));
 
-        return executeDml(compiled, rollback, null, prefer, HttpStatus.CREATED, table);
+        return executeDml(compiled, ctx.scope(List.of()), rollback, null, prefer, HttpStatus.CREATED, table);
     }
 
     /** A query function with its arguments as query parameters; the other parameters read its rows. */
@@ -248,7 +247,7 @@ public class RestApiController {
                 parsed.orConditions, parsed.embeds, parsed.orderSpecs,
                 Math.clamp(intParam(readParams, "limit", maxRows), 1, maxRows), intParam(readParams, "offset", 0), false);
         var compiled = compiler.compileFunctionSelect(query, call, params, !callable.returnsSet());
-        return executeInTx(compiled, rows -> {
+        return executeInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
             List<?> data = parseJsonList(rows.get("body"));
             if (callable.returnsSet()) return ResponseEntity.ok(Map.of("data", data));
             Map<String, Object> single = new LinkedHashMap<>();
@@ -294,7 +293,8 @@ public class RestApiController {
 
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
         Integer maxAffected = parseMaxAffected(prefer);
-        return executeDml(ctx.compiler().compileDelete(ctx.tableKey(), filters), rollback, maxAffected, prefer, HttpStatus.OK, null);
+        return executeDml(ctx.compiler().compileDelete(ctx.tableKey(), filters), ctx.scope(filters), rollback, maxAffected,
+                prefer, HttpStatus.OK, null);
     }
 
 
@@ -307,7 +307,8 @@ public class RestApiController {
 
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
         Integer maxAffected = parseMaxAffected(prefer);
-        return executeDml(ctx.compiler().compileUpdate(ctx.tableKey(), body, filters), rollback, maxAffected, prefer, HttpStatus.OK, null);
+        return executeDml(ctx.compiler().compileUpdate(ctx.tableKey(), body, filters), ctx.scope(filters), rollback,
+                maxAffected, prefer, HttpStatus.OK, null);
     }
 
     private static ResponseEntity<Object> permissionDenied(String message) {
@@ -326,6 +327,12 @@ public class RestApiController {
         return ResponseEntity.badRequest().body(PermissionErrors.restBody(e.code(), e.getMessage()));
     }
 
+    /** A request the engine refused before it ran: a column it may not write, a malformed value. */
+    @ExceptionHandler(DataErrorException.class)
+    public ResponseEntity<Object> dataError(DataErrorException e) {
+        return RestErrors.response(e.error());
+    }
+
     /** A request naming a column, operator or shape this caller's schema does not have. */
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Object> badRequest(IllegalArgumentException e) {
@@ -337,19 +344,24 @@ public class RestApiController {
         ResponseEntity<Object> handle(Map<String, Object> rows);
     }
 
-    private ResponseEntity<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, QueryResultHandler handler) {
+    /** What a failure is judged against: the dialect that reads its error, the filters that may name its column. */
+    private record ErrorScope(SqlDialect dialect, List<RestQueryCompiler.FilterSpec> filters) {}
+
+    private ResponseEntity<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
+                                               QueryResultHandler handler) {
         return txTemplate.execute(status -> {
             try {
                 var rows = namedJdbc.queryForMap(compiled.sql(), new MapSqlParameterSource(compiled.params()));
                 return handler.handle(rows);
             } catch (Exception e) {
-                log.warn("rest_query_failed", e);
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(KEY_ERROR, "Query execution failed"));
+                status.setRollbackOnly();
+                return RestErrors.of(e, scope.dialect(), scope.filters(), "Query execution failed");
             }
         });
     }
 
-    private ResponseEntity<Object> executeDml(RestQueryCompiler.CompiledResult compiled, boolean rollback, Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
+    private ResponseEntity<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
+                                              Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         return txTemplate.execute(status -> {
             try {
                 String json = executeDmlQuery(compiled);
@@ -363,8 +375,8 @@ public class RestApiController {
                     status.setRollbackOnly();
                     return checkFailed(failed.get());
                 }
-                log.warn("rest_dml_failed", e);
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(KEY_ERROR, "Mutation execution failed"));
+                status.setRollbackOnly();
+                return RestErrors.of(e, scope.dialect(), scope.filters(), "Mutation execution failed");
             }
         });
     }
@@ -427,14 +439,25 @@ public class RestApiController {
 
 
     private record RequestContext(String tableKey, RestQueryCompiler compiler, SchemaInfo schemaInfo,
-                                  TableAccess access) {}
+                                  TableAccess access, SqlDialect dialect) {
+        ErrorScope scope(List<RestQueryCompiler.FilterSpec> filters) {
+            return new ErrorScope(dialect, filters);
+        }
+    }
 
     /** The request's table, or the refusal the caller gets instead. */
     private record Resolved(RequestContext context, ResponseEntity<Object> refusal) {}
 
     private record ParsedParams(List<String> columns, List<RestQueryCompiler.FilterSpec> filters,
                                 List<RestQueryCompiler.OrCondition> orConditions, List<RestQueryCompiler.EmbedSpec> embeds,
-                                List<RestQueryCompiler.OrderBySpec> orderSpecs) {}
+                                List<RestQueryCompiler.OrderBySpec> orderSpecs) {
+        /** Every filter the request names, the {@code or} conditions included. */
+        List<RestQueryCompiler.FilterSpec> allFilters() {
+            List<RestQueryCompiler.FilterSpec> all = new ArrayList<>(filters);
+            orConditions.forEach(or -> all.addAll(or.conditions()));
+            return all;
+        }
+    }
 
     private ParsedParams parseSelectParams(String select, String order, Map<String, String> allParams) {
         var selectResult = SelectParser.parse(select);
@@ -464,8 +487,9 @@ public class RestApiController {
         if (!permitsMethod(access, tableKey, request)) {
             return new Resolved(null, permissionDenied(request.getMethod() + " is not permitted on " + table));
         }
-        var compiler = new RestQueryCompiler(schemaInfo, schemaProvider.resolveDialect(principal), schema, maxRows, access);
-        return new Resolved(new RequestContext(tableKey, compiler, schemaInfo, access), null);
+        SqlDialect dialect = schemaProvider.resolveDialect(principal);
+        var compiler = new RestQueryCompiler(schemaInfo, dialect, schema, maxRows, access);
+        return new Resolved(new RequestContext(tableKey, compiler, schemaInfo, access, dialect), null);
     }
 
     /**

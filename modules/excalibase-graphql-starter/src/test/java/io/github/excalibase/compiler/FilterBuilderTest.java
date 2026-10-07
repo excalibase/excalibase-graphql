@@ -6,6 +6,7 @@ import graphql.language.OperationDefinition;
 import graphql.language.Selection;
 import graphql.parser.Parser;
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.schema.SchemaInfo;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -550,6 +551,46 @@ class FilterBuilderTest {
 
             assertThat(conditions).singleElement().asString().contains("\"id\"");
             assertThat(viewWithoutSalary().parseOrderBy(field, "users")).hasSize(1);
+        }
+    }
+
+    @Nested
+    @DisplayName("filter values the column's type cannot hold")
+    class MalformedValues {
+
+        private FilterBuilder typed() {
+            SchemaInfo schema = new SchemaInfo();
+            schema.addColumn("users", "id", "uuid");
+            schema.addColumn("users", "age", "integer");
+            return new FilterBuilder(dialect, 100, schema, "public");
+        }
+
+        private void build(FilterBuilder fb, String query) {
+            fb.buildWhereConditions(parseField(query), "t", new HashMap<>(), new ArrayList<>(), "users");
+        }
+
+        @Test
+        void aBadUuid_isAnInvalidValueNamingTheColumn() {
+            FilterBuilder fb = typed();
+            assertThatThrownBy(() -> build(fb, "{ users(where: { id: { eq: \"nope\" } }) { id } }"))
+                    .isInstanceOf(DataErrorException.class)
+                    .hasMessageContaining("'id'");
+        }
+
+        @Test
+        void aBadNumberInAnInList_isRefused() {
+            FilterBuilder fb = typed();
+            assertThatThrownBy(() -> build(fb, "{ users(where: { age: { in: [\"1\", \"x\"] } }) { id } }"))
+                    .isInstanceOf(DataErrorException.class)
+                    .hasMessageContaining("'age'");
+        }
+
+        @Test
+        void wellFormedValues_compile() {
+            List<String> conditions = new ArrayList<>();
+            typed().buildWhereConditions(parseField("{ users(where: { id: { eq: \"a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11\" }, "
+                    + "age: { in: [1, 2] } }) { id } }"), "t", new HashMap<>(), conditions, "users");
+            assertThat(conditions).hasSize(2);
         }
     }
 }
