@@ -5,6 +5,7 @@ import graphql.ExecutionResult;
 import graphql.GraphQL;
 import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLEnumType;
+import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
@@ -16,17 +17,20 @@ import io.github.excalibase.schema.introspection.FilterInputCatalog;
 import io.github.excalibase.schema.introspection.MutationFieldsAssembler;
 import io.github.excalibase.schema.introspection.QueryFieldsAssembler;
 import io.github.excalibase.schema.introspection.RelationshipInsertFactory;
+import io.github.excalibase.schema.introspection.SubscriptionFieldsAssembler;
 import io.github.excalibase.schema.introspection.TableObjectTypeFactory;
 import io.github.excalibase.schema.introspection.WhereInputFactory;
 
 import io.github.excalibase.security.RlsOp;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static graphql.schema.GraphQLObjectType.newObject;
 import static io.github.excalibase.schema.GraphqlConstants.TYPE_MUTATION;
 import static io.github.excalibase.schema.GraphqlConstants.TYPE_QUERY;
+import static io.github.excalibase.schema.GraphqlConstants.TYPE_SUBSCRIPTION;
 
 /**
  * Builds a GraphQL-Java schema from SchemaInfo metadata for introspection queries only.
@@ -120,6 +124,10 @@ public class IntrospectionHandler {
         GraphQLSchema.Builder schemaBuilder = GraphQLSchema.newSchema().query(queryBuilder.build());
         if (!mutationType.getFieldDefinitions().isEmpty()) {
             schemaBuilder.mutation(mutationType);
+        }
+        List<GraphQLFieldDefinition> subscriptions = new SubscriptionFieldsAssembler().build(schemaInfo);
+        if (!subscriptions.isEmpty()) {
+            schemaBuilder.subscription(newObject().name(TYPE_SUBSCRIPTION).fields(subscriptions).build());
         }
         registerAdditionalTypes(schemaBuilder, schemaInfo, enumTypes, arrRelTypes);
         return schemaBuilder.build();

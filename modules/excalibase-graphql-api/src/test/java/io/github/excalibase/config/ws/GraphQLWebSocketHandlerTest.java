@@ -71,6 +71,8 @@ class GraphQLWebSocketHandlerTest {
         schema.addColumn("public.notes", "org_id", "integer");
         schema.addColumn("public.things", "secret", "text");
         schema.addColumn("public.things", "name", "text");
+        schema.addColumn("public.things", "made_at", "timestamp with time zone");
+        schema.addColumn("public.things", "seen_at", "timestamp without time zone");
         schema.addColumn("public.orgs", "name", "text");
         schema.addForeignKey("public.notes", "org_id", "public.orgs", "id");
         return schema;
@@ -144,9 +146,9 @@ class GraphQLWebSocketHandlerTest {
         subscribe(handler, session, "notesChanges");
 
         subscriptionService.publish("p1", new CDCEvent(
-                "INSERT", null, "notes", "{\"id\":1,\"owner_id\":\"u-2\"}", 0L));
+                "INSERT", "public", "notes", "{\"id\":1,\"owner_id\":\"u-2\"}", 0L));
         subscriptionService.publish("p1", new CDCEvent(
-                "INSERT", null, "notes", "{\"id\":2,\"owner_id\":\"u-1\"}", 0L));
+                "INSERT", "public", "notes", "{\"id\":2,\"owner_id\":\"u-1\"}", 0L));
 
         await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         assertThat(sent).hasSize(1);
@@ -163,7 +165,7 @@ class GraphQLWebSocketHandlerTest {
         subscribe(handler, session, "thingsChanges");
 
         subscriptionService.publish("p1", new CDCEvent(
-                "INSERT", null, "things", "{\"id\":1,\"secret\":\"x\",\"name\":\"n\"}", 0L));
+                "INSERT", "public", "things", "{\"id\":1,\"secret\":\"x\",\"name\":\"n\"}", 0L));
 
         await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         JsonNode data = deliveredData(sent.getFirst());
@@ -181,7 +183,7 @@ class GraphQLWebSocketHandlerTest {
         handler.afterConnectionEstablished(session);
         subscribe(handler, session, "thingsChanges");
 
-        subscriptionService.publish("p1", new CDCEvent("INSERT", null, "things", "{\"id\":1}", 0L));
+        subscriptionService.publish("p1", new CDCEvent("INSERT", "public", "things", "{\"id\":1}", 0L));
 
         await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         assertThat(sent).hasSize(1);
@@ -199,7 +201,7 @@ class GraphQLWebSocketHandlerTest {
         subscribe(handler, session, "thingsChanges");
 
         subscriptionService.publish("p1", new CDCEvent(
-                "INSERT", null, "things", "{\"id\":1,\"owner_id\":\"someone\",\"secret\":\"x\"}", 0L));
+                "INSERT", "public", "things", "{\"id\":1,\"owner_id\":\"someone\",\"secret\":\"x\"}", 0L));
 
         await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         assertThat(deliveredData(sent.getFirst()).get("secret").asText()).isEqualTo("x");
@@ -215,10 +217,10 @@ class GraphQLWebSocketHandlerTest {
         handler.afterConnectionEstablished(session);
         subscribe(handler, session, "notesChanges");
 
-        subscriptionService.publish("p1", new CDCEvent("UPDATE", null, "notes",
+        subscriptionService.publish("p1", new CDCEvent("UPDATE", "public", "notes",
                 "{\"old\":{\"id\":1,\"owner_id\":\"u-2\",\"secret\":\"x\"},"
                         + "\"new\":{\"id\":1,\"owner_id\":\"u-2\",\"secret\":\"y\"}}", 0L));
-        subscriptionService.publish("p1", new CDCEvent("UPDATE", null, "notes",
+        subscriptionService.publish("p1", new CDCEvent("UPDATE", "public", "notes",
                 "{\"old\":{\"id\":2,\"owner_id\":\"u-1\",\"secret\":\"x\"},"
                         + "\"new\":{\"id\":2,\"owner_id\":\"u-1\",\"secret\":\"y\"}}", 0L));
 
@@ -241,8 +243,8 @@ class GraphQLWebSocketHandlerTest {
         handler.afterConnectionEstablished(session);
         subscribe(handler, session, "notesChanges");
 
-        subscriptionService.publish("p1", new CDCEvent("DELETE", null, "notes", "{\"id\":3,\"org_id\":1}", 0L));
-        subscriptionService.publish("p1", new CDCEvent("INSERT", null, "notes", "{\"id\":4,\"org_id\":1}", 0L));
+        subscriptionService.publish("p1", new CDCEvent("DELETE", "public", "notes", "{\"id\":3,\"org_id\":1}", 0L));
+        subscriptionService.publish("p1", new CDCEvent("INSERT", "public", "notes", "{\"id\":4,\"org_id\":1}", 0L));
 
         await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         assertThat(sent).hasSize(1);
@@ -264,5 +266,54 @@ class GraphQLWebSocketHandlerTest {
 
         await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
         assertThat(deliveredData(sent.getFirst()).get("id").asInt()).isEqualTo(7);
+    }
+
+    @Test
+    @DisplayName("the schema-prefixed field and the bare one both deliver the table's changes")
+    void prefixedAndBareFieldNames_bothDeliver() throws Exception {
+        var handler = handler(entry("public.things", "{\"filter\":{},\"columns\":\"*\"}"));
+        var sent = new ArrayList<String>();
+        var session = session(sent, "p1", user("u-1"));
+        handler.afterConnectionEstablished(session);
+        subscribe(handler, session, "publicThingsChanges");
+
+        subscriptionService.publish("p1", new CDCEvent("INSERT", "public", "things", "{\"id\":5}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        assertThat(deliveredData(sent.getFirst()).get("id").asInt()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("a field that names no table is refused, never silently subscribed")
+    void anUnknownField_isRefused() throws Exception {
+        var handler = handler(entry("public.things", "{\"filter\":{},\"columns\":\"*\"}"));
+        var sent = new ArrayList<String>();
+        var session = session(sent, "p1", user("u-1"));
+        handler.afterConnectionEstablished(session);
+        subscribe(handler, session, "thingyChanges");
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        assertThat(mapper.readTree(sent.getFirst()).get("type").asText()).isEqualTo("error");
+    }
+
+    @Test
+    @DisplayName("times read like REST: the change's timestamp in ISO-8601, timestamp columns as row_to_json writes them")
+    void timestamps_matchTheRestFormat() throws Exception {
+        var handler = handler(entry("public.things", "{\"filter\":{},\"columns\":\"*\"}"));
+        var sent = new ArrayList<String>();
+        var session = session(sent, "p1", user("u-1"));
+        handler.afterConnectionEstablished(session);
+        subscribe(handler, session, "thingsChanges");
+
+        subscriptionService.publish("p1", new CDCEvent("INSERT", "public", "things",
+                "{\"id\":1,\"name\":\"2026-10-07 10:00:00+00\",\"made_at\":\"2026-10-07 10:00:00.123+00\","
+                        + "\"seen_at\":\"2026-10-07 10:00:00\"}", 1_791_367_200_000L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
+        JsonNode change = mapper.readTree(sent.getFirst()).get("payload").get("data").get("thingsChanges");
+        assertThat(change.get("timestamp").asText()).isEqualTo("2026-10-07T10:00:00Z");
+        assertThat(change.get("data").get("made_at").asText()).isEqualTo("2026-10-07T10:00:00.123+00:00");
+        assertThat(change.get("data").get("seen_at").asText()).isEqualTo("2026-10-07T10:00:00");
+        assertThat(change.get("data").get("name").asText()).isEqualTo("2026-10-07 10:00:00+00");
     }
 }

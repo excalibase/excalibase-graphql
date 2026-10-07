@@ -337,6 +337,13 @@ class TrackedFunctionIntegrationTest {
     }
 
     @Test
+    void restRpc_aSingleRowFunctionWithNoRow_answersDataNull() throws Exception {
+        restGet("no_note")
+                .andExpect(status().isOk())
+                .andExpect(content().json("{\"data\":null}", true));
+    }
+
+    @Test
     void restPost_callsAQueryFunction_withAJsonBody() throws Exception {
         restPost("search_notes", "{\"p_query\":\"%a%\"}", "order", "id.desc")
                 .andExpect(status().isOk())

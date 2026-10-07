@@ -50,6 +50,7 @@ public final class GraphqlConstants {
 
     // --- Built-in type names ---
     public static final String TYPE_QUERY = "Query";
+    public static final String TYPE_SUBSCRIPTION = "Subscription";
     public static final String TYPE_MUTATION = "Mutation";
     public static final String TYPE_PAGE_INFO = "PageInfo";
 

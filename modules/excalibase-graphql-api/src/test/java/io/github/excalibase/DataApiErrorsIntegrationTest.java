@@ -278,6 +278,28 @@ class DataApiErrorsIntegrationTest {
         }
 
         @Test
+        void aQueryMixingIntrospectionAndData_answersBoth() throws Exception {
+            graphql("query Mixed { __typename __schema { queryType { name } } "
+                    + "publicCustomers(where: { id: { eq: 1 } }) { email } }")
+                    .andExpect(jsonPath("$.errors").doesNotExist())
+                    .andExpect(jsonPath("$.data.__typename").value("Query"))
+                    .andExpect(jsonPath("$.data.__schema.queryType.name").value("Query"))
+                    .andExpect(jsonPath("$.data.publicCustomers[0].email").value("alice@example.com"));
+        }
+
+        @Test
+        void aDataErrorInAMixedQuery_isReported() throws Exception {
+            graphql("{ __typename publicOrders(where: { ref: { eq: \"nope\" } }) { id } }")
+                    .andExpect(jsonPath("$.errors[0].extensions.code").value("invalid_value"));
+        }
+
+        @Test
+        void introspection_namesTheSubscriptions() throws Exception {
+            graphql("{ __schema { subscriptionType { fields { name } } } }")
+                    .andExpect(content().string(containsString("publicOrdersChanges")));
+        }
+
+        @Test
         void aMalformedFilterValue_namesTheColumn() throws Exception {
             graphql("{ publicOrders(where: { ref: { eq: \"not-a-uuid\" } }) { id } }")
                     .andExpect(jsonPath("$.errors[0].extensions.code").value("invalid_value"))

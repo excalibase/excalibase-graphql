@@ -25,6 +25,9 @@ public interface AccessPlans {
      */
     Optional<RealtimeAccess> realtime(String orgSlug, String projectId, Principal principal, String subscriptionKey);
 
-    /** @param table the table key changes are judged against */
-    record RealtimeAccess(String table, ChangeFilter filter, ProbeRunner probes) {}
+    /**
+     * @param table the table key changes are judged against
+     * @param view  the role's view of the schema, whose column types shape what is delivered
+     */
+    record RealtimeAccess(String table, ChangeFilter filter, ProbeRunner probes, SchemaInfo view) {}
 }

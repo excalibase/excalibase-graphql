@@ -13,11 +13,16 @@ import java.util.List;
 import java.util.Map;
 
 import static graphql.Scalars.GraphQLBoolean;
+import static graphql.Scalars.GraphQLFloat;
 import static graphql.Scalars.GraphQLInt;
 import static graphql.Scalars.GraphQLString;
 import static graphql.schema.GraphQLFieldDefinition.newFieldDefinition;
 import static graphql.schema.GraphQLObjectType.newObject;
 import static io.github.excalibase.schema.GraphqlConstants.AGGREGATE_SUFFIX;
+import static io.github.excalibase.schema.GraphqlConstants.AGG_AVG;
+import static io.github.excalibase.schema.GraphqlConstants.AGG_MAX;
+import static io.github.excalibase.schema.GraphqlConstants.AGG_MIN;
+import static io.github.excalibase.schema.GraphqlConstants.AGG_SUM;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_AFTER;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_BEFORE;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_FIRST;
@@ -78,7 +83,7 @@ public final class QueryFieldsAssembler {
                 fields.add(buildConnectionField(fName, tName, type, whereType, pageInfoType, aggregations));
             }
             if (aggregations) {
-                fields.add(buildAggregateField(fName, tName));
+                fields.add(buildAggregateField(fName, tName, numericColumns(schemaInfo, table), whereType));
             }
         }
         return fields;
@@ -132,12 +137,35 @@ public final class QueryFieldsAssembler {
                 .build();
     }
 
-    private GraphQLFieldDefinition buildAggregateField(String fName, String tName) {
+    /**
+     * {@code count}, and {@code sum}/{@code avg}/{@code min}/{@code max} over the numeric columns the role
+     * can read, all narrowed by the same {@code where} as the list field.
+     */
+    private GraphQLFieldDefinition buildAggregateField(String fName, String tName, List<String> numericColumns,
+                                                       GraphQLInputObjectType whereType) {
+        GraphQLObjectType.Builder aggregate = newObject().name(tName + AGGREGATE_SUFFIX)
+                .field(newFieldDefinition().name(FIELD_COUNT).type(GraphQLInt).build());
+        if (!numericColumns.isEmpty()) {
+            GraphQLObjectType.Builder columns = newObject().name(tName + AGGREGATE_SUFFIX + "Columns");
+            numericColumns.forEach(column -> columns.field(newFieldDefinition().name(column).type(GraphQLFloat).build()));
+            GraphQLObjectType columnsType = columns.build();
+            for (String function : List.of(AGG_SUM, AGG_AVG, AGG_MIN, AGG_MAX)) {
+                aggregate.field(newFieldDefinition().name(function).type(columnsType).build());
+            }
+        }
         return newFieldDefinition()
                 .name(fName + AGGREGATE_SUFFIX)
-                .type(newObject().name(tName + AGGREGATE_SUFFIX)
-                        .field(newFieldDefinition().name(FIELD_COUNT).type(GraphQLInt).build())
-                        .build())
+                .type(aggregate.build())
+                .argument(GraphQLArgument.newArgument().name(ARG_WHERE).type(whereType).build())
                 .build();
+    }
+
+    private static List<String> numericColumns(SchemaInfo schemaInfo, String table) {
+        return schemaInfo.getColumns(table).stream()
+                .filter(column -> {
+                    String type = schemaInfo.getColumnType(table, column);
+                    return TypeMapping.isIntegerType(type) || TypeMapping.isFloatType(type);
+                })
+                .toList();
     }
 }

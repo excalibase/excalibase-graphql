@@ -1,6 +1,7 @@
 package io.github.excalibase.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import graphql.GraphQLException;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.SqlCompilationException;
@@ -31,6 +32,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -46,6 +48,7 @@ public class GraphqlController {
     private static final Logger log = LoggerFactory.getLogger(GraphqlController.class);
     private static final String VARIABLES_KEY = "variables";
     private static final String ERRORS_KEY = "errors";
+    private static final String DATA_KEY = "data";
     private static final String MESSAGE_KEY = "message";
     private static final String INTERNAL_ERROR = "internal_error";
 
@@ -100,7 +103,13 @@ public class GraphqlController {
             try {
                 state = schemaManager.resolveEngineState(principal);
                 if (state.compiler().isIntrospection(finalQuery)) {
-                    return handleIntrospection(state, finalQuery, variables);
+                    ResponseEntity<Object> introspection = handleIntrospection(state, finalQuery, variables);
+                    Optional<String> dataPart = MixedQuery.dataPart(finalQuery);
+                    if (dataPart.isEmpty()) {
+                        return introspection;
+                    }
+                    SqlCompiler.CompiledQuery compiled = state.compiler().compile(dataPart.get(), variables);
+                    return merge(introspection, dispatchCompiled(compiled, state, finalUserId, finalClaims));
                 }
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
                 return dispatchCompiled(compiled, state, finalUserId, finalClaims);
@@ -157,7 +166,32 @@ public class GraphqlController {
         if (state.introspectionHandler() != null) {
             return ResponseEntity.ok(state.introspectionHandler().execute(query, variables));
         }
-        return ResponseEntity.ok(Map.of("data", Map.of("__schema", Map.of("queryType", Map.of("name", "Query")))));
+        return ResponseEntity.ok(Map.of(DATA_KEY, Map.of("__schema", Map.of("queryType", Map.of("name", "Query")))));
+    }
+
+    /**
+     * One answer for a query that selects introspection and data: the introspection result in the query's
+     * field order, each data field replaced by what the database answered. A data error answers alone.
+     */
+    @SuppressWarnings("unchecked")
+    private static ResponseEntity<Object> merge(ResponseEntity<Object> introspection, ResponseEntity<Object> data) {
+        if (!(data.getBody() instanceof Map<?, ?> dataBody) || dataBody.containsKey(ERRORS_KEY)
+                || !(introspection.getBody() instanceof Map<?, ?> introspectionBody)) {
+            return data;
+        }
+        Map<String, Object> merged = new LinkedHashMap<>();
+        if (introspectionBody.get(DATA_KEY) instanceof Map<?, ?> introspected) {
+            merged.putAll((Map<String, Object>) introspected);
+        }
+        if (dataBody.get(DATA_KEY) instanceof JsonNode answered) {
+            answered.properties().forEach(field -> merged.put(field.getKey(), field.getValue()));
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put(DATA_KEY, merged);
+        if (introspectionBody.containsKey(ERRORS_KEY)) {
+            body.put(ERRORS_KEY, introspectionBody.get(ERRORS_KEY));
+        }
+        return ResponseEntity.ok(body);
     }
 
     private ResponseEntity<Object> dispatchCompiled(SqlCompiler.CompiledQuery compiled,

@@ -1,6 +1,8 @@
 package io.github.excalibase.rest.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.NullNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
@@ -250,8 +252,9 @@ public class RestApiController {
         return executeInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
             List<?> data = parseJsonList(rows.get("body"));
             if (callable.returnsSet()) return ResponseEntity.ok(Map.of("data", data));
-            Map<String, Object> single = new LinkedHashMap<>();
-            single.put("data", data.isEmpty() ? null : data.getFirst());
+            // A JSON tree keeps "data": null; the API's non-null inclusion would drop it from a map.
+            ObjectNode single = mapper.createObjectNode();
+            single.set("data", data.isEmpty() ? NullNode.getInstance() : mapper.valueToTree(data.getFirst()));
             return ResponseEntity.ok(single);
         });
     }

@@ -29,6 +29,7 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import reactor.core.Disposable;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -221,7 +222,10 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                 id, tenantId, tableName, fieldName, session.getId());
 
         // Subscribe to the table's event stream — scoped to the JWT's tenant (null in single-tenant mode)
-        Disposable disposable = subscriptionService.subscribe(tenantId, tableName)
+        // Changes are published under schema_table: subscribe to the table the field resolved to, so a
+        // bare field name of the default schema receives them too.
+        String sinkKey = delivery.access() == null ? tableName : delivery.access().table().replace('.', '_');
+        Disposable disposable = subscriptionService.subscribe(tenantId, sinkKey)
                 .subscribe(event -> forward(session, id, fieldName, delivery, event));
 
         sessionSubs.put(id, disposable);
@@ -238,7 +242,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                 "operation", event.type(),
                 "table", event.table(),
                 "data", data.get(),
-                "timestamp", event.timestamp()
+                "timestamp", Instant.ofEpochMilli(event.timestamp()).toString()
         );
         Map<String, Object> nextMsg = Map.of(
                 "type", "next",

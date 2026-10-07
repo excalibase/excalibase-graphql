@@ -98,11 +98,12 @@ For every table and view, three query fields are generated:
 
 ### Aggregate Query
 
-PostgreSQL aggregate fields return nested per-column results:
+PostgreSQL aggregate fields return nested per-column results over the numeric columns,
+narrowed by the same `where` as the list field (introspection shows both):
 
 ```graphql
 {
-  hanaOrdersAggregate {
+  hanaOrdersAggregate(where: { status: { eq: "paid" } }) {
     count
     sum { total_amount }
     avg { total_amount }
@@ -481,11 +482,16 @@ See [Subscriptions →](../features/subscriptions.md) for setup and configuratio
 
 ## Type Mappings
 
+`BIGINT` is a string in GraphQL and a number in REST, on purpose: a 64-bit integer does
+not fit a JavaScript number, and GraphQL's `Int` is 32-bit, so GraphQL follows the common
+`BigInteger`/`Long`-as-string convention while REST keeps PostgREST's JSON numbers.
+
 ### PostgreSQL
 
 | DB Type | GraphQL Type |
 |---------|-------------|
-| `INTEGER`, `BIGINT`, `SMALLINT` | `Int` |
+| `INTEGER`, `SMALLINT` | `Int` |
+| `BIGINT` | `BigInteger`, sent as a string (`"9007199254740993"`) |
 | `REAL`, `DOUBLE PRECISION`, `NUMERIC` | `Float` |
 | `TEXT`, `VARCHAR`, `CHAR` | `String` |
 | `BOOLEAN` | `Boolean` |

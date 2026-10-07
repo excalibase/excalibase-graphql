@@ -47,7 +47,8 @@ final class RealtimeGate {
             if (!(parsed instanceof Map<?, ?> data)) {
                 return Optional.empty();
             }
-            return access.filter().render(event.type(), asRow(data), access.probes()).map(Object.class::cast);
+            return access.filter().render(event.type(), asRow(data), access.probes())
+                    .map(visible -> RestTimeFormat.apply(visible, access.table(), access.view()));
         }
     }
 
