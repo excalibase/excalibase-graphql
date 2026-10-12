@@ -21,7 +21,7 @@ public class QueryBuilder {
 
     private static final String CTE_HAS_NEXT = "_has_next";
     private static final String TYPENAME = "__typename";
-    private static final Pattern GRAPHQL_NAME = Pattern.compile("[_A-Za-z][_0-9A-Za-z]*");
+    private static final Pattern GRAPHQL_NAME = Pattern.compile("[_A-Za-z]\\w*");
 
     private final SchemaInfo schemaInfo;
     private final SqlDialect dialect;
@@ -620,10 +620,9 @@ public class QueryBuilder {
         if (udtName != null && schemaInfo.isCompositeType(udtName) && field.getSelectionSet() != null) {
             // Decompose composite type into jsonb_build_object with selected sub-fields
             String colRef = alias + "." + dialect.quoteIdentifier(name);
-            List<String> subParts = new ArrayList<>();
-            for (Field subField : flattenSelections(field.getSelectionSet(), fragmentsHolder.get())) {
-                subParts.add(jsonKey(subField) + ", (" + colRef + ")." + dialect.quoteIdentifier(subField.getName()));
-            }
+            List<String> subParts = flattenSelections(field.getSelectionSet(), fragmentsHolder.get()).stream()
+                    .map(subField -> jsonKey(subField) + ", (" + colRef + ")." + dialect.quoteIdentifier(subField.getName()))
+                    .toList();
             return dialect.buildObject(subParts);
         }
 

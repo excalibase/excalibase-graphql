@@ -5,6 +5,7 @@ import io.github.excalibase.spi.SqlEngineFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Loads table/column/FK metadata from PostgreSQL information_schema.
@@ -33,7 +34,7 @@ public class SchemaInfo {
     private Map<String, FkInfo> objectInsertRelationships;
     // the second name of a relationship whose own name is its key column's ("publicHomeTeamId"); derived
     // from the FKs and columns above on first use, dropped whenever they change
-    private volatile RelationshipAliases relationshipAliases;
+    private final AtomicReference<RelationshipAliases> relationshipAliases = new AtomicReference<>();
     // enum name → list of enum values
     private final Map<String, List<String>> enumTypes = new HashMap<>();
     // "table.column" → enum type name (e.g. "priority_level")
@@ -72,7 +73,7 @@ public class SchemaInfo {
     }
 
     public void removeTable(String table) {
-        relationshipAliases = null;
+        relationshipAliases.set(null);
         tableSchema.remove(table);
         Set<String> cols = tableColumns.remove(table);
         columnTypes.remove(table);
@@ -90,7 +91,7 @@ public class SchemaInfo {
     }
 
     public void clearAll() {
-        relationshipAliases = null;
+        relationshipAliases.set(null);
         tableSchema.clear();
         tableColumns.clear();
         columnTypes.clear();
@@ -116,7 +117,7 @@ public class SchemaInfo {
     }
 
     public void addColumn(String table, String column, String type) {
-        relationshipAliases = null;
+        relationshipAliases.set(null);
         tableColumns.computeIfAbsent(table, k -> new LinkedHashSet<>()).add(column);
         columnTypes.computeIfAbsent(table, k -> new HashMap<>()).put(column, type);
     }
@@ -158,7 +159,7 @@ public class SchemaInfo {
     }
 
     public void addForeignKey(String fromTable, String fromCol, String toTable, String toCol) {
-        relationshipAliases = null;
+        relationshipAliases.set(null);
         String fwdFieldName = fkColumnFieldName(fromTable, fromCol);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(List.of(fromCol), toTable, List.of(toCol)));
@@ -182,7 +183,7 @@ public class SchemaInfo {
 
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
                                  String toTable, List<String> toCols) {
-        relationshipAliases = null;
+        relationshipAliases.set(null);
         String fwdFieldName = fkFieldName(toTable);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(fromCols, toTable, toCols));
@@ -300,10 +301,10 @@ public class SchemaInfo {
     }
 
     private RelationshipAliases relationshipAliases() {
-        RelationshipAliases current = relationshipAliases;
+        RelationshipAliases current = relationshipAliases.get();
         if (current == null) {
             current = RelationshipAliases.of(this);
-            relationshipAliases = current;
+            relationshipAliases.set(current);
         }
         return current;
     }
