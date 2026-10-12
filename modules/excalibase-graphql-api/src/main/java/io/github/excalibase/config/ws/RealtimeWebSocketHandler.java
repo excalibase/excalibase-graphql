@@ -53,6 +53,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
     private final ObjectReader changeReader;
+    private final ObjectMapper changeWriter;
     private final JwtService jwtService;
     private final AccessPlans accessPlans;
 
@@ -74,6 +75,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.changeReader = RealtimeGate.changeReader(objectMapper);
+        this.changeWriter = RealtimeGate.changeWriter(objectMapper);
         this.jwtService = jwtServiceProvider.getIfAvailable();
         this.heartbeat = heartbeat;
         this.accessPlans = accessPlansProvider.getIfAvailable();
@@ -235,7 +237,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         // then matches only what they may see, so a column they cannot read cannot steer delivery.
         Object visible = delivery.render(event, doc).orElse(null);
         if (visible == null) return;
-        JsonNode payloadDoc = objectMapper.valueToTree(visible);
+        JsonNode payloadDoc = changeWriter.valueToTree(visible);
         if (!matchesFilter(payloadDoc, filter)) return;
 
         try {
@@ -244,7 +246,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             payload.put("id", subId);
             payload.put("op", op);
             payload.put("doc", payloadDoc);
-            sendMessage(session, objectMapper.writeValueAsString(payload));
+            sendMessage(session, changeWriter.writeValueAsString(payload));
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize realtime event for sub {}", subId, e);
         }

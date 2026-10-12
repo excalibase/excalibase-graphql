@@ -5,6 +5,7 @@ import io.github.excalibase.spi.SqlEngineFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Loads table/column/FK metadata from PostgreSQL information_schema.
@@ -31,6 +32,9 @@ public class SchemaInfo {
     // a role's relationships a nested insert may go through, keyed like the FKs above; unset = every FK
     private Map<String, ReverseFkInfo> arrayInsertRelationships;
     private Map<String, FkInfo> objectInsertRelationships;
+    // the second name of a relationship whose own name is its key column's ("publicHomeTeamId"); derived
+    // from the FKs and columns above on first use, dropped whenever they change
+    private final AtomicReference<RelationshipAliases> relationshipAliases = new AtomicReference<>();
     // enum name → list of enum values
     private final Map<String, List<String>> enumTypes = new HashMap<>();
     // "table.column" → enum type name (e.g. "priority_level")
@@ -69,6 +73,7 @@ public class SchemaInfo {
     }
 
     public void removeTable(String table) {
+        relationshipAliases.set(null);
         tableSchema.remove(table);
         Set<String> cols = tableColumns.remove(table);
         columnTypes.remove(table);
@@ -86,6 +91,7 @@ public class SchemaInfo {
     }
 
     public void clearAll() {
+        relationshipAliases.set(null);
         tableSchema.clear();
         tableColumns.clear();
         columnTypes.clear();
@@ -111,6 +117,7 @@ public class SchemaInfo {
     }
 
     public void addColumn(String table, String column, String type) {
+        relationshipAliases.set(null);
         tableColumns.computeIfAbsent(table, k -> new LinkedHashSet<>()).add(column);
         columnTypes.computeIfAbsent(table, k -> new HashMap<>()).put(column, type);
     }
@@ -152,6 +159,7 @@ public class SchemaInfo {
     }
 
     public void addForeignKey(String fromTable, String fromCol, String toTable, String toCol) {
+        relationshipAliases.set(null);
         String fwdFieldName = fkColumnFieldName(fromTable, fromCol);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(List.of(fromCol), toTable, List.of(toCol)));
@@ -175,6 +183,7 @@ public class SchemaInfo {
 
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
                                  String toTable, List<String> toCols) {
+        relationshipAliases.set(null);
         String fwdFieldName = fkFieldName(toTable);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(fromCols, toTable, toCols));
@@ -184,7 +193,7 @@ public class SchemaInfo {
     }
 
     /** Derive FK field name from the FK column name. No guessing, no stripping. */
-    private String fkColumnFieldName(String tableKey, String fkColumn) {
+    static String fkColumnFieldName(String tableKey, String fkColumn) {
         if (tableKey.contains(".")) {
             String schema = tableKey.substring(0, tableKey.indexOf('.'));
             return NamingUtils.schemaFieldName(schema, fkColumn);
@@ -193,7 +202,7 @@ public class SchemaInfo {
     }
 
     /** Derive FK field name from table key. Handles compound keys ("public.users" → "publicUsers"). */
-    private String fkFieldName(String tableKey) {
+    static String fkFieldName(String tableKey) {
         if (tableKey.contains(".")) {
             String schema = tableKey.substring(0, tableKey.indexOf('.'));
             String rawTable = tableKey.substring(tableKey.indexOf('.') + 1);
@@ -259,10 +268,46 @@ public class SchemaInfo {
         List<String> pks = primaryKeys.get(table);
         return pks != null && !pks.isEmpty();
     }
-    public FkInfo getForwardFk(String table, String fieldName) { return forwardFks.get(table + "." + fieldName); }
+    /** The object relationship {@code fieldName} of {@code table}, by its own name or its alias. */
+    public FkInfo getForwardFk(String table, String fieldName) {
+        return forwardFks.get(relationshipKey(table, fieldName));
+    }
     public Map<String, FkInfo> getAllForwardFks() { return Collections.unmodifiableMap(forwardFks); }
     public Map<String, ReverseFkInfo> getAllReverseFks() { return Collections.unmodifiableMap(reverseFks); }
-    public ReverseFkInfo getReverseFk(String table, String fieldName) { return reverseFks.get(table + "." + fieldName); }
+    /** The array relationship {@code fieldName} of {@code table}, by its own name or its alias. */
+    public ReverseFkInfo getReverseFk(String table, String fieldName) {
+        return reverseFks.get(relationshipKey(table, fieldName));
+    }
+
+    /**
+     * The name a relationship is better known by, or null when it has none: an object relationship named
+     * after its key column is also named without the column's {@code _id} ({@code publicHomeTeamId} →
+     * {@code publicHomeTeam}), and one of several array relationships from the same table is also named by
+     * its key ({@code publicMatchesHomeTeamId} → {@code publicMatchesByHomeTeam}). The first name keeps
+     * working; it is the deprecated one.
+     */
+    public String getRelationshipAlias(String table, String fieldName) {
+        String alias = relationshipAliases().byCanonical().get(table + "." + fieldName);
+        return alias == null ? null : alias.substring(table.length() + 1);
+    }
+
+    /** {@code table.fieldName}, with an alias replaced by the relationship's own name. */
+    private String relationshipKey(String table, String fieldName) {
+        String key = table + "." + fieldName;
+        if (forwardFks.containsKey(key) || reverseFks.containsKey(key)) {
+            return key;
+        }
+        return relationshipAliases().byAlias().getOrDefault(key, key);
+    }
+
+    private RelationshipAliases relationshipAliases() {
+        RelationshipAliases current = relationshipAliases.get();
+        if (current == null) {
+            current = RelationshipAliases.of(this);
+            relationshipAliases.set(current);
+        }
+        return current;
+    }
     public String getEnumType(String table, String column) { return columnEnumType.get(table + "." + column); }
 
     /**
@@ -285,11 +330,11 @@ public class SchemaInfo {
     }
 
     public ReverseFkInfo getArrayInsertRelationship(String table, String fieldName) {
-        return getArrayInsertRelationships().get(table + "." + fieldName);
+        return getArrayInsertRelationships().get(relationshipKey(table, fieldName));
     }
 
     public FkInfo getObjectInsertRelationship(String table, String fieldName) {
-        return getObjectInsertRelationships().get(table + "." + fieldName);
+        return getObjectInsertRelationships().get(relationshipKey(table, fieldName));
     }
     public List<ComputedField> getComputedFields(String table) { return computedFields.get(table); }
     public Map<String, List<String>> getEnumTypes() { return Collections.unmodifiableMap(enumTypes); }

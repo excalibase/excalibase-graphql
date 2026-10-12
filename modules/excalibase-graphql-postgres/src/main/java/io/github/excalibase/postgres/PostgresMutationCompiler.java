@@ -137,7 +137,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
             cols.add(shared.dialect().quoteIdentifier(entry.getKey()));
             String paramName = namedParam(P_INSERT, entry.getKey(), params.size());
             vals.add(param(paramName) + shared.getEnumCastForMutation(tableName, entry.getKey()));
-            params.put(paramName, shared.convertCompositeValue(tableName, entry.getKey(), entry.getValue()));
+            params.put(paramName, shared.bindValue(tableName, entry.getKey(), entry.getValue()));
         }
 
         String onConflictSql = parseOnConflict(field, shared, params, tableName);
@@ -338,7 +338,7 @@ public class PostgresMutationCompiler implements MutationCompiler {
         StringBuilder assignments = new StringBuilder();
         shared.presets(tableName, RlsOp.UPDATE).forEach((column, value) -> {
             String paramName = namedParam(P_UPDATE, column, params.size());
-            params.put(paramName, value);
+            params.put(paramName, shared.bindValue(tableName, column, value));
             assignments.append(", ").append(assignWithCast(shared.dialect().quoteIdentifier(column), paramName,
                     shared.getEnumCastForMutation(tableName, column)));
         });

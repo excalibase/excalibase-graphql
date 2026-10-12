@@ -1,5 +1,6 @@
 package io.github.excalibase.config.ws;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
@@ -39,6 +40,12 @@ final class RealtimeGate {
     /** One subscription's delivery rule; {@code access} is null for the pass-through path. */
     record Delivery(AccessPlans.RealtimeAccess access) {
 
+        /** As {@link #render}, with values written the way a GraphQL query reads them. */
+        Optional<Object> renderForGraphql(CDCEvent event, Object parsed) {
+            return render(event, parsed)
+                    .map(visible -> access == null ? visible : GraphqlChangeFormat.apply(visible, access.table(), access.view()));
+        }
+
         /** The payload the subscriber may see, or empty when this change is not theirs. */
         Optional<Object> render(CDCEvent event, Object parsed) {
             if (access == null) {
@@ -55,6 +62,12 @@ final class RealtimeGate {
     /** Reads a change's JSON with fractional numbers exact, so a numeric column is judged as the database holds it. */
     static ObjectReader changeReader(ObjectMapper objectMapper) {
         return objectMapper.readerFor(Object.class).with(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
+    }
+
+    /** Writes a change with its null columns: a null value is a value, the API's non-null inclusion would drop it. */
+    static ObjectMapper changeWriter(ObjectMapper objectMapper) {
+        return objectMapper.copy().setDefaultPropertyInclusion(
+                JsonInclude.Value.construct(JsonInclude.Include.ALWAYS, JsonInclude.Include.ALWAYS));
     }
 
     static Opening open(AccessPlans plans, WebSocketSession session, String subscriptionKey) {

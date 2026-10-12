@@ -88,7 +88,14 @@ public final class CreateInputFactory {
         fieldTypes.forEach((field, typeName) -> {
             GraphQLInputObjectType wrapper = relationTypes.get(typeName);
             if (wrapper != null && !columns.contains(field) && schemaInfo.getColumnType(table, field) == null) {
-                createBuilder.field(GraphQLInputObjectField.newInputObjectField().name(field).type(wrapper).build());
+                String alias = schemaInfo.getRelationshipAlias(table, field);
+                GraphQLInputObjectField.Builder ownName = GraphQLInputObjectField.newInputObjectField()
+                        .name(field).type(wrapper);
+                if (alias != null) {
+                    createBuilder.field(GraphQLInputObjectField.newInputObjectField().name(alias).type(wrapper).build());
+                    ownName.deprecate("Use " + alias);
+                }
+                createBuilder.field(ownName.build());
             }
         });
     }

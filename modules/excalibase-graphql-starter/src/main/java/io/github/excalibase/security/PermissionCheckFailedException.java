@@ -1,5 +1,6 @@
 package io.github.excalibase.security;
 
+import java.sql.SQLException;
 import java.util.Optional;
 
 /**
@@ -37,7 +38,9 @@ public class PermissionCheckFailedException extends RuntimeException {
             if (current instanceof PermissionCheckFailedException failed) {
                 return Optional.of(failed);
             }
-            if (current.getMessage() != null && current.getMessage().contains(SQL_MARKER)) {
+            // Only the database's own error: a wrapper's message also quotes the statement, marker included.
+            if (current instanceof SQLException && current.getMessage() != null
+                    && current.getMessage().contains(SQL_MARKER)) {
                 return Optional.of(new PermissionCheckFailedException());
             }
             current = current.getCause() == current ? null : current.getCause();

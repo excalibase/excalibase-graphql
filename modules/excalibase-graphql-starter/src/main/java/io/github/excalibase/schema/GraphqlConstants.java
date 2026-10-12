@@ -21,6 +21,7 @@ public final class GraphqlConstants {
     public static final String AGGREGATE_SUFFIX = "Aggregate";
     public static final String EDGE_SUFFIX = "Edge";
     public static final String WHERE_INPUT_SUFFIX = "WhereInput";
+    public static final String ORDER_BY_INPUT_SUFFIX = "OrderByInput";
     public static final String CREATE_INPUT_SUFFIX = "CreateInput";
     public static final String UPDATE_INPUT_SUFFIX = "UpdateInput";
     /** Contains an underscore, which no table-derived type name has, so it cannot collide with one. */
@@ -53,6 +54,7 @@ public final class GraphqlConstants {
     public static final String TYPE_SUBSCRIPTION = "Subscription";
     public static final String TYPE_MUTATION = "Mutation";
     public static final String TYPE_PAGE_INFO = "PageInfo";
+    public static final String TYPE_ORDER_DIRECTION = "OrderDirection";
 
     // --- PageInfo / Connection fields ---
     public static final String FIELD_EDGES = "edges";

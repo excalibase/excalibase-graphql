@@ -2,9 +2,7 @@ package io.github.excalibase.config.ws;
 
 import io.github.excalibase.schema.SchemaInfo;
 
-import java.util.LinkedHashMap;
 import java.util.Locale;
-import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -18,24 +16,12 @@ final class RestTimeFormat {
 
     private static final Pattern PG_TEXT = Pattern.compile(
             "(\\d{4,}-\\d{2}-\\d{2}) (\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?)(?:([+-]\\d{2})(?::?(\\d{2}))?(?::?(\\d{2}))?)?");
-    private static final String IMAGE_OLD = "old";
-    private static final String IMAGE_NEW = "new";
 
     private RestTimeFormat() {
     }
 
     static Object apply(Object rendered, String table, SchemaInfo view) {
-        if (!(rendered instanceof Map<?, ?> row)) {
-            return rendered;
-        }
-        Map<String, Object> written = new LinkedHashMap<>();
-        row.forEach((key, value) -> {
-            String column = String.valueOf(key);
-            boolean image = (IMAGE_OLD.equals(column) || IMAGE_NEW.equals(column)) && value instanceof Map<?, ?>
-                    && view.getColumnType(table, column) == null;
-            written.put(column, image ? apply(value, table, view) : format(value, view.getColumnType(table, column)));
-        });
-        return written;
+        return ChangeImages.mapColumns(rendered, table, view, RestTimeFormat::format);
     }
 
     private static Object format(Object value, String type) {

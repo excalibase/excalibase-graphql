@@ -314,39 +314,55 @@ Every query accepts a `where` argument with per-column filter inputs.
 
 ### Forward (Many-to-One)
 
-When a table has a FK column, a relationship field is added. **Include the FK column** in your selection — the resolver needs it to fetch the related row:
+A FK column adds an object relationship named after the column without its `_id`
+(`customer_id` → `hanaCustomer`, `home_team_id` → `publicHomeTeam`):
 
 ```graphql
 {
   hanaOrders {
     order_id
-    customer_id       # required — resolver reads this value
     hanaCustomer {
       first_name
       last_name
     }
-    total_amount
   }
 }
 ```
 
+The older name built from the whole column (`hanaCustomerId`) still answers and is marked deprecated in
+introspection. A name that would clash with a column or another relationship is not added.
+
 ### Reverse (One-to-Many)
 
-The referenced table gets a list field for all rows that point to it:
+The referenced table gets a list field for the rows that point to it. It takes the same `where`,
+`orderBy`, `limit` and `offset` as a table's list (the role's own row limit still applies):
 
 ```graphql
 {
   hanaCustomer {
     customer_id
     first_name
-    hanaOrders {
+    hanaOrders(where: { status: { eq: "paid" } }, orderBy: { order_date: DESC }, limit: 5) {
       order_id
       total_amount
-      status
     }
   }
 }
 ```
+
+When a table points at another through several FKs (`matches.home_team_id`, `matches.away_team_id`),
+each list is named by its key: `publicMatchesByHomeTeam`, `publicMatchesByAwayTeam`. The older names
+(`publicMatchesHomeTeamId`, ...) still answer and are deprecated.
+
+### Aliases
+
+Aliases work at every depth, inside relationships, connections, aggregates and mutation results:
+`{ publicMatches { matchId: id home: publicHomeTeam { teamName: name } } }`.
+
+### bigint
+
+bigint columns are read as strings (JSON numbers lose precision past 2^53), in queries and in
+subscription changes alike. The same string is accepted back in filters and writes, on GraphQL and REST.
 
 ### Composite Foreign Keys (PostgreSQL)
 

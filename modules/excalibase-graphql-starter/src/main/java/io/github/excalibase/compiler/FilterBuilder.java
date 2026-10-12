@@ -229,11 +229,11 @@ public class FilterBuilder {
         switch (opName) {
             case FILTER_EQ, FILTER_NEQ, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE -> {
                 requireTypedValues(tableName, col, op.getValue());
-                applyComparison(opName, op, col, colRef, paramCast, params, conditions);
+                applyComparison(opName, op, new ColumnRef(tableName, col, colRef, paramCast), params, conditions);
             }
             case FILTER_IN, FILTER_NOT_IN, "nin" -> {
                 requireTypedValues(tableName, col, op.getValue());
-                applyInList(opName, op, col, colRef, paramCast, params, conditions);
+                applyInList(opName, op, new ColumnRef(tableName, col, colRef, paramCast), params, conditions);
             }
             case FILTER_LIKE, FILTER_ILIKE, FILTER_STARTS_WITH, FILTER_ENDS_WITH, FILTER_CONTAINS ->
                     applyStringPattern(opName, op, col, colRef, params, conditions, tableName);
@@ -248,9 +248,18 @@ public class FilterBuilder {
             default -> {
                 String paramName = nextParam("p_" + col + "_" + opName, params);
                 conditions.add(colRef + " = :" + paramName + paramCast);
-                params.put(paramName, extractValue(op.getValue()));
+                params.put(paramName, typedValue(tableName, col, extractValue(op.getValue())));
             }
         }
+    }
+
+    /** A filtered column: its table and name, its qualified reference and the cast its parameters take. */
+    private record ColumnRef(String table, String column, String ref, String paramCast) {}
+
+    /** {@code value} bound as the column's type holds it, e.g. a bigint sent as the string reads return. */
+    private Object typedValue(String tableName, String col, Object value) {
+        if (schemaInfo == null || tableName == null) return value;
+        return NumericInput.coerce(schemaInfo.getColumnType(tableName, col), value);
     }
 
     /** Refuses a value the column's type cannot hold, naming the column, before the query runs. */
@@ -273,8 +282,10 @@ public class FilterBuilder {
     }
 
     /** Handles eq, neq, gt, gte, lt, lte. eq/neq special-case NULL literal. */
-    private void applyComparison(String opName, ObjectField op, String col, String colRef,
-                                 String paramCast, Map<String, Object> params, List<String> conditions) {
+    private void applyComparison(String opName, ObjectField op, ColumnRef target,
+                                 Map<String, Object> params, List<String> conditions) {
+        String col = target.column();
+        String colRef = target.ref();
         if (FILTER_EQ.equals(opName) && op.getValue() instanceof NullValue) {
             conditions.add(colRef + IS_NULL);
             return;
@@ -302,23 +313,24 @@ public class FilterBuilder {
             default -> "_" + opName;
         };
         String paramName = nextParam("p_" + col + suffix, params);
-        conditions.add(colRef + sqlOp + ":" + paramName + paramCast);
-        params.put(paramName, extractValue(op.getValue()));
+        conditions.add(colRef + sqlOp + ":" + paramName + target.paramCast());
+        params.put(paramName, typedValue(target.table(), col, extractValue(op.getValue())));
     }
 
     /** Handles FILTER_IN, FILTER_NOT_IN, "nin". */
-    private void applyInList(String opName, ObjectField op, String col, String colRef,
-                             String paramCast, Map<String, Object> params, List<String> conditions) {
+    private void applyInList(String opName, ObjectField op, ColumnRef target,
+                             Map<String, Object> params, List<String> conditions) {
+        String col = target.column();
         if (!(op.getValue() instanceof ArrayValue av)) return;
         boolean negate = FILTER_NOT_IN.equals(opName) || "nin".equals(opName);
         String suffix = negate ? "_notin" : "_in";
         List<String> inParams = new ArrayList<>();
         for (int i = 0; i < av.getValues().size(); i++) {
             String paramName = nextParam("p_" + col + suffix + i, params);
-            inParams.add(":" + paramName + paramCast);
-            params.put(paramName, extractValue(av.getValues().get(i)));
+            inParams.add(":" + paramName + target.paramCast());
+            params.put(paramName, typedValue(target.table(), col, extractValue(av.getValues().get(i))));
         }
-        conditions.add(colRef + (negate ? " NOT IN (" : IN + "(") + joinCols(inParams) + ")");
+        conditions.add(target.ref() + (negate ? " NOT IN (" : IN + "(") + joinCols(inParams) + ")");
     }
 
     /** Handles LIKE, ILIKE, startsWith, endsWith, contains (text variant). */
@@ -607,6 +619,37 @@ public class FilterBuilder {
                     params.put(offParam, value);
                 }
             }
+        }
+    }
+
+    /**
+     * LIMIT and OFFSET for a nested list: the caller's {@code limit} within the caller's own row limit on
+     * {@code tableName}. Without either a nested list stays uncapped; an offset alone is capped like a list.
+     */
+    public void applyNestedLimit(StringBuilder sql, Field field, Map<String, Object> params, String tableName) {
+        Integer limit = roleRowLimit(tableName);
+        Integer offset = null;
+        for (Argument arg : field.getArguments()) {
+            Integer value = resolveIntArg(arg.getValue(), boundVariables());
+            if (value == null) continue;
+            if (ARG_LIMIT.equals(arg.getName())) {
+                limit = limit == null ? value : Math.min(value, limit);
+            } else if (ARG_OFFSET.equals(arg.getName())) {
+                offset = value;
+            }
+        }
+        if (limit == null && offset != null) {
+            limit = rowCap(tableName);
+        }
+        if (limit != null) {
+            String limitParam = namedParam(P_LIMIT, params.size());
+            sql.append(LIMIT).append(PARAM_PREFIX).append(limitParam);
+            params.put(limitParam, limit);
+        }
+        if (offset != null) {
+            String offsetParam = "offset_" + params.size();
+            sql.append(" OFFSET :").append(offsetParam);
+            params.put(offsetParam, offset);
         }
     }
 

@@ -208,7 +208,7 @@ final class PostgresNestedInsert {
 
     private String bind(String table, String column, Object value) {
         String name = namedParam(P_NESTED_INSERT, column, params.size());
-        params.put(name, shared.convertCompositeValue(table, column, value));
+        params.put(name, shared.bindValue(table, column, value));
         return param(name) + shared.getEnumCastForMutation(table, column);
     }
 

@@ -5,6 +5,7 @@ import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLObjectType;
+import graphql.schema.GraphQLTypeReference;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
 
@@ -29,6 +30,7 @@ import static io.github.excalibase.schema.GraphqlConstants.ARG_FIRST;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_LAST;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_LIMIT;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_OFFSET;
+import static io.github.excalibase.schema.GraphqlConstants.ARG_ORDER_BY;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_WHERE;
 import static io.github.excalibase.schema.GraphqlConstants.CONNECTION_SUFFIX;
 import static io.github.excalibase.schema.GraphqlConstants.EDGE_SUFFIX;
@@ -78,7 +80,8 @@ public final class QueryFieldsAssembler {
             GraphQLObjectType type = tableTypes.get(table);
             GraphQLInputObjectType whereType = whereTypes.get(table);
             boolean aggregations = access.allowsAggregations(table);
-            fields.add(buildListField(fName, type, whereType));
+            fields.add(buildListField(fName, type, whereType, !schemaInfo.getColumns(table).isEmpty()
+                    ? OrderByInputFactory.typeName(table) : null));
             if (!access.enforced() || schemaInfo.getColumns(table).contains(schemaInfo.getPrimaryKey(table))) {
                 fields.add(buildConnectionField(fName, tName, type, whereType, pageInfoType, aggregations));
             }
@@ -100,11 +103,17 @@ public final class QueryFieldsAssembler {
 
     private GraphQLFieldDefinition buildListField(String fName,
                                                   GraphQLObjectType type,
-                                                  GraphQLInputObjectType whereType) {
-        return newFieldDefinition()
+                                                  GraphQLInputObjectType whereType,
+                                                  String orderByTypeName) {
+        GraphQLFieldDefinition.Builder field = newFieldDefinition()
                 .name(fName)
                 .type(GraphQLList.list(type))
-                .argument(GraphQLArgument.newArgument().name(ARG_WHERE).type(whereType).build())
+                .argument(GraphQLArgument.newArgument().name(ARG_WHERE).type(whereType).build());
+        if (orderByTypeName != null) {
+            field.argument(GraphQLArgument.newArgument().name(ARG_ORDER_BY)
+                    .type(GraphQLTypeReference.typeRef(orderByTypeName)).build());
+        }
+        return field
                 .argument(GraphQLArgument.newArgument().name(ARG_LIMIT).type(GraphQLInt).build())
                 .argument(GraphQLArgument.newArgument().name(ARG_OFFSET).type(GraphQLInt).build())
                 .build();
