@@ -159,6 +159,8 @@ CREATE TABLE IF NOT EXISTS customer (
     create_date DATE NOT NULL DEFAULT CURRENT_DATE,
     last_update TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+-- Realtime delivers a delete only with the whole former row, which Postgres sends under FULL identity.
+ALTER TABLE customer REPLICA IDENTITY FULL;
 
 -- Insert customer sample data
 INSERT INTO customer (customer_id, first_name, last_name, email, active, create_date, last_update) VALUES
