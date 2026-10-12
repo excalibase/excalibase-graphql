@@ -164,7 +164,7 @@ class RealtimeDeleteIntegrationTest {
 
         JsonNode aliceChange = alice.nextChange();
         assertThat(aliceChange.get("operation").asText()).isEqualTo("DELETE");
-        assertThat(MAPPER.convertValue(aliceChange.get("data"), Map.class)).isEqualTo(Map.of("id", 201, "owner_id", ALICE));
+        assertThat(MAPPER.convertValue(aliceChange.get("data"), Map.class)).isEqualTo(Map.of("id", "201", "owner_id", ALICE));
         assertThat(bob.nextChange().get("data").get("id").asInt()).isEqualTo(202);
         publish("INSERT", "notes", "{\"id\": 203, \"owner_id\": \"" + ALICE + "\", \"title\": \"t\"}");
         assertThat(alice.nextChange().get("data").get("id").asInt()).as("Bob's delete never reached Alice").isEqualTo(203);
@@ -216,6 +216,31 @@ class RealtimeDeleteIntegrationTest {
         JsonNode change = alice.nextChange();
         assertThat(change.get("data").get("id").asInt()).isEqualTo(402);
         assertThat(change.get("data").get("amount").decimalValue()).isEqualTo(new BigDecimal("100.01"));
+    }
+
+    @Test
+    void aGraphqlChange_readsLikeAGraphqlQuery_bigintAsAStringAndNullKept() throws Exception {
+        Subscriber alice = graphqlSubscriber(ALICE, "rlsDemoOrdersChanges");
+
+        publish("INSERT", "orders", "{\"id\": 1, \"org_id\": \"orgA\", \"title\": null}");
+
+        JsonNode data = alice.nextChange().get("data");
+        assertThat(data.get("id").isTextual()).as("bigint arrives as the string a query returns").isTrue();
+        assertThat(data.get("id").asText()).isEqualTo("1");
+        assertThat(data.has("title")).as("a null column is sent, not dropped").isTrue();
+        assertThat(data.get("title").isNull()).isTrue();
+    }
+
+    @Test
+    void aRestRealtimeChange_readsLikeRest_bigintAsANumberAndNullKept() throws Exception {
+        Subscriber alice = realtimeSubscriber(ALICE, "orders");
+
+        publish("INSERT", "orders", "{\"id\": 1, \"org_id\": \"orgA\", \"title\": null}");
+
+        JsonNode doc = alice.nextMessage().get("doc");
+        assertThat(doc.get("id").isNumber()).isTrue();
+        assertThat(doc.has("title")).as("a null column is sent, not dropped").isTrue();
+        assertThat(doc.get("title").isNull()).isTrue();
     }
 
     @Test

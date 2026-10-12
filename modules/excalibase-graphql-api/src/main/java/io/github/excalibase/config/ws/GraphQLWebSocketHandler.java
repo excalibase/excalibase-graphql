@@ -59,6 +59,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
     private final ObjectReader changeReader;
+    private final ObjectMapper changeWriter;
     private final JwtService jwtService;
     private final AccessPlans accessPlans;
 
@@ -88,6 +89,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.changeReader = RealtimeGate.changeReader(objectMapper);
+        this.changeWriter = RealtimeGate.changeWriter(objectMapper);
         this.jwtService = jwtServiceProvider.getIfAvailable();
         this.heartbeat = heartbeat;
         this.accessPlans = accessPlansProvider.getIfAvailable();
@@ -234,7 +236,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     /** Sends one change, only as far as the subscriber's role may read it. */
     private void forward(WebSocketSession session, String id, String fieldName, RealtimeGate.Delivery delivery,
                          CDCEvent event) {
-        Optional<Object> data = delivery.render(event, parseEventData(event.data()));
+        Optional<Object> data = delivery.renderForGraphql(event, parseEventData(event.data()));
         if (data.isEmpty()) {
             return;
         }
@@ -250,7 +252,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                 PAYLOAD, Map.of("data", Map.of(fieldName, changeData))
         );
         try {
-            sendMessage(session, objectMapper.writeValueAsString(nextMsg));
+            sendMessage(session, changeWriter.writeValueAsString(nextMsg));
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize CDC event for subscription {}: ", id, e);
         }

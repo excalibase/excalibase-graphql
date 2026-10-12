@@ -23,4 +23,13 @@ class PermissionCheckFailedExceptionTest {
                 .get().extracting(PermissionCheckFailedException::code).isEqualTo("permission_check_failed");
         assertThat(PermissionCheckFailedException.find(new RuntimeException("other"))).isEmpty();
     }
+
+    @Test
+    void find_ignoresAWrapperThatOnlyQuotesTheStatement() {
+        RuntimeException grammar = new RuntimeException("bad SQL grammar [SELECT CAST(CASE WHEN x THEN "
+                + "'excalibase_permission_check_failed' END AS integer)]", new SQLException(
+                "ERROR: column \"match_id\" is of type bigint but expression is of type character varying"));
+
+        assertThat(PermissionCheckFailedException.find(grammar)).isEmpty();
+    }
 }

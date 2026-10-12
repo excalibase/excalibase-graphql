@@ -3,6 +3,7 @@ package io.github.excalibase.rest.compiler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.compiler.NumericInput;
 import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.errors.ColumnValueCheck;
 import io.github.excalibase.schema.SchemaInfo;
@@ -910,8 +911,9 @@ public class RestQueryCompiler {
                 String json = (value instanceof String stringValue) ? stringValue : toJsonString(value);
                 yield new SqlParameterValue(Types.OTHER, json);
             }
-            // Range types (tsrange, int4range, ...): the server parses the literal.
-            default -> type.endsWith("range") ? new SqlParameterValue(Types.OTHER, value.toString()) : value;
+            // Range types (int4range, ...) the server parses; a number sent as a string is bound as one.
+            default -> type.endsWith("range") ? new SqlParameterValue(Types.OTHER, value.toString())
+                    : NumericInput.coerce(type, value);
         };
     }
 

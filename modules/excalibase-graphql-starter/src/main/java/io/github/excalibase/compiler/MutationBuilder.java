@@ -245,7 +245,7 @@ public class MutationBuilder {
             for (String col : colNames) {
                 String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
                 vals.add(param(paramName) + castFor(tableName, col, castParams));
-                params.put(paramName, row.get(col));
+                params.put(paramName, bindValue(tableName, col, row.get(col)));
             }
             valueRows.add(parens(joinCols(vals)));
         }
@@ -267,7 +267,7 @@ public class MutationBuilder {
             String paramName = namedParam(paramPrefix, entry.getKey(), params.size());
             setClauses.add(assignWithCast(dialect.quoteIdentifier(entry.getKey()), paramName,
                     castFor(tableName, entry.getKey(), castParams)));
-            params.put(paramName, entry.getValue());
+            params.put(paramName, bindValue(tableName, entry.getKey(), entry.getValue()));
         }
         return new UpdateParts(alias, objectSql, setClauses);
     }
@@ -308,6 +308,12 @@ public class MutationBuilder {
             if (!cast.isEmpty()) return cast;
         }
         return "";
+    }
+
+    /** {@code value} as a write binds it: a composite as its tuple, a number sent as a string as the number. */
+    public Object bindValue(String tableName, String colName, Object value) {
+        return NumericInput.coerce(schemaInfo.getColumnType(tableName, colName),
+                convertCompositeValue(tableName, colName, value));
     }
 
     public Object convertCompositeValue(String tableName, String colName, Object value) {

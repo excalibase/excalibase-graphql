@@ -15,6 +15,7 @@ import io.github.excalibase.schema.introspection.EnumTypeFactory;
 import io.github.excalibase.schema.introspection.FunctionFieldsAssembler;
 import io.github.excalibase.schema.introspection.FilterInputCatalog;
 import io.github.excalibase.schema.introspection.MutationFieldsAssembler;
+import io.github.excalibase.schema.introspection.OrderByInputFactory;
 import io.github.excalibase.schema.introspection.QueryFieldsAssembler;
 import io.github.excalibase.schema.introspection.RelationshipInsertFactory;
 import io.github.excalibase.schema.introspection.SubscriptionFieldsAssembler;
@@ -178,6 +179,8 @@ public class IntrospectionHandler {
                                          Map<String, GraphQLInputObjectType> arrRelTypes) {
         // Register extended scalar types
         schemaBuilder.additionalType(ExtendedScalars.GraphQLBigInteger);
+        // The order inputs lists and nested lists name by reference
+        new OrderByInputFactory().build(schemaInfo).values().forEach(schemaBuilder::additionalType);
         // Register enum types as additional types so they're discoverable via __type
         enumTypes.values().forEach(schemaBuilder::additionalType);
         // Register the nested-insert wrapper types

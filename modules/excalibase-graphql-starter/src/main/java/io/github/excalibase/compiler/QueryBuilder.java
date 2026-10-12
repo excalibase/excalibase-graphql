@@ -8,6 +8,7 @@ import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.SqlDialect;
 
 import java.util.*;
+import java.util.regex.Pattern;
 import static io.github.excalibase.schema.GraphqlConstants.*;
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
@@ -20,6 +21,7 @@ public class QueryBuilder {
 
     private static final String CTE_HAS_NEXT = "_has_next";
     private static final String TYPENAME = "__typename";
+    private static final Pattern GRAPHQL_NAME = Pattern.compile("[_A-Za-z][_0-9A-Za-z]*");
 
     private final SchemaInfo schemaInfo;
     private final SqlDialect dialect;
@@ -209,7 +211,7 @@ public class QueryBuilder {
                 StringBuilder countSql = new StringBuilder();
                 countSql.append(SELECT).append(COUNT_ALL).append(FROM).append(qualifiedTable(tableName)).append(" ").append(alias);
                 filterBuilder.applyWhere(countSql, field, alias, params, tableName);
-                parts.add("'count', (" + countSql + ")");
+                parts.add(jsonKey(aggField) + ", (" + countSql + ")");
             } else if (Set.of(AGG_SUM, AGG_AVG, AGG_MIN, AGG_MAX).contains(aggName) && aggField.getSelectionSet() != null) {
                 // Nested per-column aggregate -- sum(total_amount), avg(total_amount), etc.
                 List<String> colParts = new ArrayList<>();
@@ -222,10 +224,10 @@ public class QueryBuilder {
                         subSql.append(SELECT).append(aggName).append("(").append(subAlias).append(".").append(dialect.quoteIdentifier(col)).append(")").append(FROM)
                                 .append(qualifiedTable(tableName)).append(" ").append(subAlias);
                         filterBuilder.applyWhere(subSql, field, subAlias, params, tableName);
-                        colParts.add("'" + col + "', (" + subSql + ")");
+                        colParts.add(jsonKey(colField) + ", (" + subSql + ")");
                     }
                 }
-                parts.add("'" + aggName + "', " + dialect.buildObject(colParts));
+                parts.add(jsonKey(aggField) + ", " + dialect.buildObject(colParts));
             } else {
                 requireTypename(aggName);
             }
@@ -261,9 +263,9 @@ public class QueryBuilder {
         appendRecordsCte(sql, field, tableName, ctx, params);
 
         boolean needsHasNext = sel.wantsPageInfo
-                && (sel.pageInfoFields.isEmpty() || sel.pageInfoFields.contains(FIELD_HAS_NEXT_PAGE));
+                && (sel.pageInfoFields.isEmpty() || sel.pageInfoFields.containsValue(FIELD_HAS_NEXT_PAGE));
         boolean needsHasPrev = sel.wantsPageInfo
-                && (sel.pageInfoFields.isEmpty() || sel.pageInfoFields.contains(FIELD_HAS_PREVIOUS_PAGE));
+                && (sel.pageInfoFields.isEmpty() || sel.pageInfoFields.containsValue(FIELD_HAS_PREVIOUS_PAGE));
         appendOptionalCtes(sql, field, tableName, ctx, sel, needsHasNext, needsHasPrev, params);
 
         // === Final SELECT from CTEs ===
@@ -271,12 +273,15 @@ public class QueryBuilder {
         String edgesSub = buildEdgesSubquery(tableName, pk, pageBlock, recordsCte, sel, limit, params);
 
         List<String> rootParts = new ArrayList<>();
-        rootParts.add("'edges', " + dialect.coalesceArray("(" + edgesSub + ")"));
+        if (sel.keys.containsKey(FIELD_EDGES)) {
+            rootParts.add(jsonKey(sel.keys.get(FIELD_EDGES)) + ", " + dialect.coalesceArray("(" + edgesSub + ")"));
+        }
         if (sel.wantsTotalCount) {
-            rootParts.add("'totalCount', (" + SELECT + "val" + FROM + dialect.cteName(block, "_total") + ")");
+            rootParts.add(jsonKey(sel.keys.get(FIELD_TOTAL_COUNT)) + ", (" + SELECT + "val" + FROM
+                    + dialect.cteName(block, "_total") + ")");
         }
         if (sel.wantsPageInfo) {
-            rootParts.add("'pageInfo', " + buildPageInfoObject(ctx, sel.pageInfoFields,
+            rootParts.add(jsonKey(sel.keys.get(FIELD_PAGE_INFO)) + ", " + buildPageInfoObject(ctx, sel.pageInfoFields,
                     needsHasNext, needsHasPrev));
         }
 
@@ -309,10 +314,14 @@ public class QueryBuilder {
         }
     }
 
-    /** Bag of booleans/sets describing which connection sub-fields the caller requested. */
+    /**
+     * Which connection sub-fields the caller requested; {@code keys} holds each one's response key (by
+     * field name: edges, node, cursor, totalCount, pageInfo) and {@code pageInfoFields} each pageInfo
+     * field's name by response key.
+     */
     private record ConnectionSelections(SelectionSet edgesNodeSS, boolean wantsCursor,
                                         boolean wantsTotalCount, boolean wantsPageInfo,
-                                        Set<String> pageInfoFields) {}
+                                        Map<String, String> pageInfoFields, Map<String, String> keys) {}
 
     /** Pagination argument values extracted from the Field. */
     private record PaginationArgs(Integer first, Integer last, String afterCursor, String beforeCursor) {}
@@ -327,52 +336,51 @@ public class QueryBuilder {
         boolean wantsCursor = false;
         boolean wantsTotalCount = false;
         boolean wantsPageInfo = false;
-        Set<String> pageInfoFields = new HashSet<>();
+        Map<String, String> pageInfoFields = new LinkedHashMap<>();
+        Map<String, String> keys = new HashMap<>();
 
         for (Selection<?> selection : field.getSelectionSet().getSelections()) {
             if (!(selection instanceof Field childField)) continue;
             String fname = childField.getName();
             if (FIELD_EDGES.equals(fname)) {
-                edgesNodeSS = parseEdgesSelections(childField, edgesNodeSS);
-                wantsCursor = wantsCursor || edgeWantsCursor(childField);
+                keys.put(FIELD_EDGES, responseKey(childField));
+                edgesNodeSS = parseEdgesSelections(childField, edgesNodeSS, keys);
+                wantsCursor = wantsCursor || keys.containsKey(FIELD_CURSOR);
             } else if (FIELD_TOTAL_COUNT.equals(fname)) {
+                keys.put(FIELD_TOTAL_COUNT, responseKey(childField));
                 wantsTotalCount = true;
             } else if (FIELD_PAGE_INFO.equals(fname)) {
+                keys.put(FIELD_PAGE_INFO, responseKey(childField));
                 wantsPageInfo = true;
                 collectPageInfoFields(childField, pageInfoFields);
             } else {
                 requireTypename(fname);
             }
         }
-        return new ConnectionSelections(edgesNodeSS, wantsCursor, wantsTotalCount, wantsPageInfo, pageInfoFields);
+        return new ConnectionSelections(edgesNodeSS, wantsCursor, wantsTotalCount, wantsPageInfo, pageInfoFields, keys);
     }
 
-    private SelectionSet parseEdgesSelections(Field edgesField, SelectionSet current) {
+    private SelectionSet parseEdgesSelections(Field edgesField, SelectionSet current, Map<String, String> keys) {
         if (edgesField.getSelectionSet() == null) return current;
         SelectionSet node = current;
         for (Selection<?> es : edgesField.getSelectionSet().getSelections()) {
             if (!(es instanceof Field ef)) continue;
             if (FIELD_NODE.equals(ef.getName())) {
+                keys.put(FIELD_NODE, responseKey(ef));
                 node = ef.getSelectionSet();
-            } else if (!FIELD_CURSOR.equals(ef.getName())) {
+            } else if (FIELD_CURSOR.equals(ef.getName())) {
+                keys.put(FIELD_CURSOR, responseKey(ef));
+            } else {
                 requireTypename(ef.getName());
             }
         }
         return node;
     }
 
-    private boolean edgeWantsCursor(Field edgesField) {
-        if (edgesField.getSelectionSet() == null) return false;
-        for (Selection<?> es : edgesField.getSelectionSet().getSelections()) {
-            if (es instanceof Field ef && FIELD_CURSOR.equals(ef.getName())) return true;
-        }
-        return false;
-    }
-
-    private void collectPageInfoFields(Field pageInfoField, Set<String> acc) {
+    private void collectPageInfoFields(Field pageInfoField, Map<String, String> acc) {
         if (pageInfoField.getSelectionSet() == null) return;
         for (Selection<?> ps : pageInfoField.getSelectionSet().getSelections()) {
-            if (ps instanceof Field pf) acc.add(pf.getName());
+            if (ps instanceof Field pf) acc.put(responseKey(pf), pf.getName());
         }
     }
 
@@ -475,12 +483,13 @@ public class QueryBuilder {
                                       ConnectionSelections sel, int limit, Map<String, Object> params) {
         List<String> edgeParts = new ArrayList<>();
         if (sel.wantsCursor) {
-            edgeParts.add("'cursor', " + dialect.encodeCursor(pageBlock + "." + dialect.quoteIdentifier(pk)));
+            edgeParts.add(jsonKey(sel.keys.get(FIELD_CURSOR)) + ", "
+                    + dialect.encodeCursor(pageBlock + "." + dialect.quoteIdentifier(pk)));
         }
-        String nodeObj = sel.edgesNodeSS != null
-                ? buildObject(sel.edgesNodeSS, tableName, pageBlock, params)
-                : dialect.buildObject(List.of());
-        edgeParts.add("'node', " + nodeObj);
+        if (sel.keys.containsKey(FIELD_NODE)) {
+            edgeParts.add(jsonKey(sel.keys.get(FIELD_NODE)) + ", "
+                    + buildObject(sel.edgesNodeSS, tableName, pageBlock, params));
+        }
         String edgeObj = dialect.buildObject(edgeParts);
 
         StringBuilder edgesSub = new StringBuilder();
@@ -493,30 +502,47 @@ public class QueryBuilder {
         return edgesSub.toString();
     }
 
-    private String buildPageInfoObject(ConnectionCtx ctx, Set<String> pageInfoFields,
+    /**
+     * {@code pageInfoFields} maps each requested field's response key to its name; none requested means
+     * both page flags under their own names.
+     */
+    private String buildPageInfoObject(ConnectionCtx ctx, Map<String, String> pageInfoFields,
                                        boolean needsHasNext, boolean needsHasPrev) {
+        Map<String, String> requested = pageInfoFields.isEmpty()
+                ? Map.of(FIELD_HAS_NEXT_PAGE, FIELD_HAS_NEXT_PAGE, FIELD_HAS_PREVIOUS_PAGE, FIELD_HAS_PREVIOUS_PAGE)
+                : pageInfoFields;
         List<String> piParts = new ArrayList<>();
-        if (needsHasNext) {
-            if (ctx.isForward) {
-                piParts.add("'hasNextPage', " + dialect.jsonBool("(" + SELECT + "val" + FROM + dialect.cteName(ctx.block, CTE_HAS_NEXT) + ")"));
+        requested.forEach((key, name) -> {
+            String value = pageInfoValue(ctx, name, needsHasNext, needsHasPrev);
+            if (value != null) {
+                piParts.add(jsonKey(key) + ", " + value);
             } else {
-                piParts.add("'hasNextPage', " + dialect.jsonBoolLiteral(ctx.pagination.beforeCursor != null));
+                requireTypename(name);
             }
+        });
+        return dialect.buildObject(piParts);
+    }
+
+    private String pageInfoValue(ConnectionCtx ctx, String name, boolean needsHasNext, boolean needsHasPrev) {
+        if (FIELD_HAS_NEXT_PAGE.equals(name) && needsHasNext) {
+            return ctx.isForward
+                    ? dialect.jsonBool("(" + SELECT + "val" + FROM + dialect.cteName(ctx.block, CTE_HAS_NEXT) + ")")
+                    : dialect.jsonBoolLiteral(ctx.pagination.beforeCursor != null);
         }
-        if (needsHasPrev) {
+        if (FIELD_HAS_PREVIOUS_PAGE.equals(name) && needsHasPrev) {
             String cte = ctx.isForward ? "_has_prev" : CTE_HAS_NEXT;
-            piParts.add("'hasPreviousPage', " + dialect.jsonBool("(" + SELECT + "val" + FROM + dialect.cteName(ctx.block, cte) + ")"));
+            return dialect.jsonBool("(" + SELECT + "val" + FROM + dialect.cteName(ctx.block, cte) + ")");
         }
-        if (pageInfoFields.contains(FIELD_START_CURSOR)) {
+        if (FIELD_START_CURSOR.equals(name)) {
             String pkTextExpr = "(" + SELECT + "CAST(" + dialect.quoteIdentifier(ctx.pk) + " AS CHAR)" + FROM + ctx.recordsCte + LIMIT + "1)";
-            piParts.add("'startCursor', (" + SELECT + dialect.encodeCursor(pkTextExpr) + ")");
+            return "(" + SELECT + dialect.encodeCursor(pkTextExpr) + ")";
         }
-        if (pageInfoFields.contains(FIELD_END_CURSOR)) {
+        if (FIELD_END_CURSOR.equals(name)) {
             String pkTextExpr = "(" + SELECT + "CAST(" + dialect.quoteIdentifier(ctx.pk) + " AS CHAR)" + FROM + ctx.recordsCte +
                     ORDER_BY + dialect.quoteIdentifier(ctx.pk) + " " + DESC + LIMIT + "1)";
-            piParts.add("'endCursor', (" + SELECT + dialect.encodeCursor(pkTextExpr) + ")");
+            return "(" + SELECT + dialect.encodeCursor(pkTextExpr) + ")";
         }
-        return dialect.buildObject(piParts);
+        return null;
     }
 
     // === JSON object builder (recursive with FK traversal) ===
@@ -556,7 +582,7 @@ public class QueryBuilder {
         List<String> pairs = new ArrayList<>();
         for (Field field : flattenSelections(selectionSet, fragmentsHolder.get())) {
             if (FIELD_AFFECTED_ROWS.equals(field.getName())) {
-                pairs.add("'" + FIELD_AFFECTED_ROWS + "', " + countSql);
+                pairs.add(jsonKey(field) + ", " + countSql);
             } else {
                 requireTypename(field.getName());
             }
@@ -568,26 +594,27 @@ public class QueryBuilder {
     private String buildFieldPair(Field field, String tableName, String alias, Set<String> columns,
                                   Map<String, Object> params) {
         String name = field.getName();
+        String key = jsonKey(field);
 
         if (columns.contains(name)) {
-            return buildColumnPair(field, tableName, alias, name);
+            return key + ", " + buildColumnValue(field, tableName, alias, name);
         }
 
         SchemaInfo.FkInfo fk = schemaInfo.getForwardFk(tableName, name);
         if (fk != null) {
-            return buildForwardFkPair(field, alias, name, fk, params);
+            return key + ", " + buildForwardFkValue(field, alias, fk, params);
         }
 
         SchemaInfo.ReverseFkInfo rfk = schemaInfo.getReverseFk(tableName, name);
         if (rfk != null) {
-            return buildReverseFkPair(field, alias, name, rfk, params);
+            return key + ", " + buildReverseFkValue(field, alias, rfk, params);
         }
 
         // A computed field is a function nobody tracks: reflected, never served.
         return null;
     }
 
-    private String buildColumnPair(Field field, String tableName, String alias, String name) {
+    private String buildColumnValue(Field field, String tableName, String alias, String name) {
         // Check if this is a composite type column with a selection set
         String udtName = schemaInfo.getEnumType(tableName, name);
         if (udtName != null && schemaInfo.isCompositeType(udtName) && field.getSelectionSet() != null) {
@@ -595,10 +622,9 @@ public class QueryBuilder {
             String colRef = alias + "." + dialect.quoteIdentifier(name);
             List<String> subParts = new ArrayList<>();
             for (Field subField : flattenSelections(field.getSelectionSet(), fragmentsHolder.get())) {
-                String subName = subField.getName();
-                subParts.add("'" + subName + "', (" + colRef + ")." + dialect.quoteIdentifier(subName));
+                subParts.add(jsonKey(subField) + ", (" + colRef + ")." + dialect.quoteIdentifier(subField.getName()));
             }
-            return "'" + name + "', " + dialect.buildObject(subParts);
+            return dialect.buildObject(subParts);
         }
 
         // Scalar column
@@ -609,11 +635,11 @@ public class QueryBuilder {
         if (enumType != null && schemaInfo.getEnumTypes().containsKey(enumType)) {
             colRef = dialect.enumToText(colRef);
         }
-        return "'" + name + "', " + colRef;
+        return colRef;
     }
 
-    private String buildForwardFkPair(Field field, String alias, String name, SchemaInfo.FkInfo fk,
-                                      Map<String, Object> params) {
+    private String buildForwardFkValue(Field field, String alias, SchemaInfo.FkInfo fk,
+                                       Map<String, Object> params) {
         String subAlias = dialect.randAlias();
         String subObj = buildObject(field.getSelectionSet(), fk.refTable(), subAlias, params);
         // Build multi-column WHERE join for composite FKs
@@ -623,36 +649,35 @@ public class QueryBuilder {
                     + " = " + alias + "." + dialect.quoteIdentifier(fk.fkColumns().get(i)));
         }
         appendNestedRls(joinConds, fk.refTable(), subAlias, params);
-        return "'" + name + "', (" + SELECT + subObj
+        return "(" + SELECT + subObj
                 + FROM + qualifiedTable(fk.refTable()) + " " + subAlias
                 + WHERE + String.join(AND, joinConds) + ")";
     }
 
-    private String buildReverseFkPair(Field field, String alias, String name, SchemaInfo.ReverseFkInfo rfk,
-                                      Map<String, Object> params) {
+    /**
+     * A nested list: the child rows joined to this row, narrowed by the field's {@code where} and the
+     * role's select filter, in its {@code orderBy}, and paged by its {@code limit}/{@code offset} within
+     * the role's own row limit on the child table.
+     */
+    private String buildReverseFkValue(Field field, String alias, SchemaInfo.ReverseFkInfo rfk,
+                                       Map<String, Object> params) {
+        String childTable = rfk.childTable();
         String subAlias = dialect.randAlias();
-        String subObj = buildObject(field.getSelectionSet(), rfk.childTable(), subAlias, params);
+        String subObj = buildObject(field.getSelectionSet(), childTable, subAlias, params);
         // Build multi-column WHERE join for composite FKs
-        List<String> joinConds = new ArrayList<>();
+        List<String> conditions = new ArrayList<>();
         for (int i = 0; i < rfk.fkColumns().size(); i++) {
-            joinConds.add(subAlias + "." + dialect.quoteIdentifier(rfk.fkColumns().get(i))
+            conditions.add(subAlias + "." + dialect.quoteIdentifier(rfk.fkColumns().get(i))
                     + " = " + alias + "." + dialect.quoteIdentifier(rfk.refColumns().get(i)));
         }
-        appendNestedRls(joinConds, rfk.childTable(), subAlias, params);
-        return "'" + name + "', (" + SELECT + dialect.coalesceArray(dialect.aggregateArray(subObj))
-                + FROM + childRows(rfk.childTable(), subAlias, joinConds, params) + ")";
-    }
-
-    /** The child rows of a nested list, capped by the role's own limit on the child table when it has one. */
-    private String childRows(String childTable, String subAlias, List<String> joinConds, Map<String, Object> params) {
-        String rows = qualifiedTable(childTable) + " " + subAlias + WHERE + String.join(AND, joinConds);
-        Integer roleLimit = filterBuilder.roleRowLimit(childTable);
-        if (roleLimit == null) {
-            return rows;
-        }
-        String limitParam = namedParam(P_LIMIT, params.size());
-        params.put(limitParam, roleLimit);
-        return "(" + SELECT + subAlias + ".*" + FROM + rows + LIMIT + PARAM_PREFIX + limitParam + ") " + subAlias;
+        filterBuilder.buildWhereConditions(field, subAlias, params, conditions, childTable);
+        StringBuilder rows = new StringBuilder(SELECT).append(subAlias).append(".*")
+                .append(FROM).append(qualifiedTable(childTable)).append(" ").append(subAlias)
+                .append(WHERE).append(String.join(AND, conditions));
+        filterBuilder.applyOrderBy(rows, field, subAlias, childTable);
+        filterBuilder.applyNestedLimit(rows, field, params, childTable);
+        return "(" + SELECT + dialect.coalesceArray(dialect.aggregateArray(subObj))
+                + FROM + "(" + rows + ") " + subAlias + ")";
     }
 
     /**
@@ -667,6 +692,24 @@ public class QueryBuilder {
     private void appendNestedRls(List<String> joinConds, String relatedTable, String subAlias,
                                  Map<String, Object> params) {
         filterBuilder.appendRlsConditions(joinConds, relatedTable, subAlias, params, RlsOp.SELECT);
+    }
+
+    /** The key a field answers under: its alias when it has one, else its name. */
+    static String responseKey(Field field) {
+        return field.getAlias() != null ? field.getAlias() : field.getName();
+    }
+
+    /** A field's response key as the SQL string literal a JSON object is built with. */
+    static String jsonKey(Field field) {
+        return jsonKey(responseKey(field));
+    }
+
+    /** {@code key} as a SQL string literal; a GraphQL name never holds a quote, anything else is refused. */
+    static String jsonKey(String key) {
+        if (key == null || !GRAPHQL_NAME.matcher(key).matches()) {
+            throw new IllegalArgumentException("Invalid field name: " + key);
+        }
+        return "'" + key + "'";
     }
 
     /** {@code __typename} is the one field every type answers; anything else unknown fails the request. */
