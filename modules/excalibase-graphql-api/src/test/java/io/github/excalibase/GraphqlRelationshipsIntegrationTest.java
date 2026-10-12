@@ -225,8 +225,8 @@ class GraphqlRelationshipsIntegrationTest {
     }
 
     @Test
-    void aPermissionFilter_mayNameARelationshipByEitherName() throws Exception {
-        // The same relationship resolves under both names wherever a name is looked up.
+    void oneSelection_mayNameARelationshipByEitherName() throws Exception {
+        // Permission rules under either name: PermissionRelationshipNamesIntegrationTest.
         graphql("{ publicMatches(where: { id: { eq: \"1\" } }) { publicHomeTeam { name } publicHomeTeamId { name } } }")
                 .andExpect(jsonPath("$.data.publicMatches[0].publicHomeTeam.name").value("Lions"))
                 .andExpect(jsonPath("$.data.publicMatches[0].publicHomeTeamId.name").value("Lions"));
