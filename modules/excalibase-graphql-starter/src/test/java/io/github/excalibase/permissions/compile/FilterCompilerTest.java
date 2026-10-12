@@ -98,6 +98,15 @@ class FilterCompilerTest {
     }
 
     @Test
+    void aRelationshipNamedByItsIdLikeNameOrItsAlias_compilesToTheSameJoin() {
+        String idLike = compile("{\"publicOrgId\": {\"name\": {\"_eq\": \"acme\"}}}", NOTES).sql();
+        String alias = compile("{\"publicOrg\": {\"name\": {\"_eq\": \"acme\"}}}", NOTES).sql();
+
+        assertThat(SCHEMA.getRelationshipAlias(NOTES, "publicOrgId")).isEqualTo("publicOrg");
+        assertThat(alias).isEqualTo(idLike);
+    }
+
+    @Test
     void compositeRelationship_joinsEveryColumnPair() {
         SqlFragment fragment = compile("{\"publicMembers\": {}}", NOTES);
 
