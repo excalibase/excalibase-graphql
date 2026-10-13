@@ -16,6 +16,9 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -30,6 +33,9 @@ public class NatsCDCService {
     // A failed schema reload is retried a few times, spaced out, then given up.
     private static final Duration REDELIVERY_DELAY = Duration.ofSeconds(5);
     private static final int MAX_DELIVERIES = 5;
+    // JetStream's "consumer not found" (API code 10014, HTTP-style 404).
+    private static final int CONSUMER_NOT_FOUND = 10014;
+    private static final int NOT_FOUND = 404;
 
     private final SubscriptionService subscriptionService;
     private final ObjectMapper objectMapper;
@@ -66,10 +72,14 @@ public class NatsCDCService {
     @Value("${app.nats.inbox-prefix:}")
     private String natsInboxPrefix;
 
+    @Value("${app.nats.resubscribe-interval:5s}")
+    private Duration resubscribeInterval = Duration.ofSeconds(5);
+
     private Connection natsConnection;
     private Dispatcher dispatcher;
     private JetStreamSubscription subscription;
     private final AtomicBoolean running = new AtomicBoolean(false);
+    private ScheduledExecutorService watchdog;
 
     public NatsCDCService(SubscriptionService subscriptionService, ObjectMapper objectMapper) {
         this.subscriptionService = subscriptionService;
@@ -90,54 +100,96 @@ public class NatsCDCService {
             log.info("NATS CDC service disabled (app.nats.enabled=false)");
             return;
         }
+        ensureSubscribed();
+        // The stream may not exist yet, NATS may be down, or a restart may have
+        // dropped this replica's consumer: check again until stopped (EXC-612).
+        watchdog = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "nats-cdc-resubscribe");
+            thread.setDaemon(true);
+            return thread;
+        });
+        long period = resubscribeInterval.toMillis();
+        watchdog.scheduleWithFixedDelay(this::ensureSubscribed, period, period, TimeUnit.MILLISECONDS);
+    }
+
+    /** Connects and subscribes when not subscribed, or when the server no longer has the consumer. */
+    synchronized void ensureSubscribed() {
         try {
-            Options options = NatsOptionsFactory
-                    .builder(natsUrl, natsUsername, natsPassword, natsInboxPrefix)
-                    .connectionListener((conn, type) ->
-                            log.debug("NATS connection event: {}", type))
-                    .build();
-
-            natsConnection = Nats.connect(options);
-            JetStream js = natsConnection.jetStream();
-            dispatcher = natsConnection.createDispatcher();
-
-            // Realtime is live fan-out: every replica needs every event, and a
-            // replica that restarts has no clients left to replay history to.
-            String subject = subjectPrefix + ".>";
-            ConsumerConfiguration cc = ConsumerConfiguration.builder()
-                    .deliverPolicy(DeliverPolicy.New)
-                    .maxDeliver(MAX_DELIVERIES)
-                    .build();
-            PushSubscribeOptions opts = PushSubscribeOptions.builder()
-                    .stream(streamName)
-                    .configuration(cc)
-                    .build();
-
-            subscription = js.subscribe(subject, dispatcher, this::handleMessage, false, opts);
-            running.set(true);
-            log.info("NATS CDC service started - subscribing to '{}' on stream '{}'", subject, streamName);
-
+            if (natsConnection == null) {
+                natsConnection = Nats.connect(NatsOptionsFactory
+                        .builder(natsUrl, natsUsername, natsPassword, natsInboxPrefix)
+                        .connectionListener((conn, type) -> log.debug("NATS connection event: {}", type))
+                        .build());
+                dispatcher = natsConnection.createDispatcher();
+            }
+            if (subscription != null && consumerAlive()) {
+                return;
+            }
+            if (subscription != null) {
+                log.warn("NATS CDC consumer is gone from stream '{}'; subscribing again", streamName);
+                dispatcher.unsubscribe(subscription);
+                subscription = null;
+                running.set(false);
+            }
+            subscribe();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Interrupted while starting NATS CDC service", e);
         } catch (Exception e) {
-            log.error("Failed to start NATS CDC service", e);
+            log.warn("NATS CDC service not subscribed yet, retrying in {}: {}", resubscribeInterval, e.getMessage());
+        }
+    }
+
+    private void subscribe() throws IOException, JetStreamApiException {
+        // Realtime is live fan-out: every replica needs every event, and a
+        // replica that restarts has no clients left to replay history to.
+        String subject = subjectPrefix + ".>";
+        ConsumerConfiguration cc = ConsumerConfiguration.builder()
+                .deliverPolicy(DeliverPolicy.New)
+                .maxDeliver(MAX_DELIVERIES)
+                .build();
+        PushSubscribeOptions opts = PushSubscribeOptions.builder()
+                .stream(streamName)
+                .configuration(cc)
+                .build();
+        JetStream js = natsConnection.jetStream();
+        subscription = js.subscribe(subject, dispatcher, this::handleMessage, false, opts);
+        running.set(true);
+        log.info("NATS CDC service started - subscribing to '{}' on stream '{}'", subject, streamName);
+    }
+
+    /** False only when the server answers that the consumer does not exist; unknown otherwise counts as alive. */
+    private boolean consumerAlive() {
+        if (natsConnection.getStatus() != Connection.Status.CONNECTED) {
+            return true;
+        }
+        try {
+            // The client answers null, not an error, for a consumer the server lacks.
+            return subscription.getConsumerInfo() != null;
+        } catch (JetStreamApiException e) {
+            return e.getApiErrorCode() != CONSUMER_NOT_FOUND && e.getErrorCode() != NOT_FOUND;
+        } catch (IOException | IllegalStateException e) {
+            return true;
         }
     }
 
     @PreDestroy
     public void stop() {
-        if (dispatcher != null && subscription != null) {
-            dispatcher.unsubscribe(subscription);
+        if (watchdog != null) {
+            watchdog.shutdownNow();
         }
-        try {
-            if (natsConnection != null) {
-                natsConnection.close();
+        synchronized (this) {
+            if (dispatcher != null && subscription != null) {
+                dispatcher.unsubscribe(subscription);
             }
-        } catch (InterruptedException _) {
-            Thread.currentThread().interrupt();
+            try {
+                if (natsConnection != null) {
+                    natsConnection.close();
+                }
+            } catch (InterruptedException _) {
+                Thread.currentThread().interrupt();
+            }
+            running.set(false);
         }
-        running.set(false);
         log.info("NATS CDC service stopped");
     }
 
