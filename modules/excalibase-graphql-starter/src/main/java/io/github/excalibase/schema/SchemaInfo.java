@@ -6,6 +6,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiPredicate;
 
 /**
  * Loads table/column/FK metadata from PostgreSQL information_schema.
@@ -27,14 +28,18 @@ public class SchemaInfo {
     private final Map<String, List<String>> primaryKeys = new HashMap<>();
     // table.fieldName → FkInfo (forward FK: fieldName = schemaFieldName(schema, fkColumn))
     private final Map<String, FkInfo> forwardFks = new HashMap<>();
-    // table.fieldName → ReverseFkInfo (reverse FK: fieldName = schemaFieldName(schema, childTable))
+    // table.fieldName → ReverseFkInfo (reverse FK: fieldName = the child table's, see addReverseFk)
     private final Map<String, ReverseFkInfo> reverseFks = new HashMap<>();
+    // table.childFieldName → every key of that child table pointing at the table, which together decide the names
+    private final Map<String, List<ReverseFkInfo>> reverseFkGroups = new HashMap<>();
     // a role's relationships a nested insert may go through, keyed like the FKs above; unset = every FK
     private Map<String, ReverseFkInfo> arrayInsertRelationships;
     private Map<String, FkInfo> objectInsertRelationships;
     // the second name of a relationship whose own name is its key column's ("publicHomeTeamId"); derived
     // from the FKs and columns above on first use, dropped whenever they change
     private final AtomicReference<RelationshipAliases> relationshipAliases = new AtomicReference<>();
+    // the schema whose relationships were copied, whose aliases this one keeps (see copyRelationships)
+    private SchemaInfo aliasSource;
     // enum name → list of enum values
     private final Map<String, List<String>> enumTypes = new HashMap<>();
     // "table.column" → enum type name (e.g. "priority_level")
@@ -100,6 +105,8 @@ public class SchemaInfo {
         primaryKeys.clear();
         forwardFks.clear();
         reverseFks.clear();
+        reverseFkGroups.clear();
+        aliasSource = null;
         arrayInsertRelationships = null;
         objectInsertRelationships = null;
         enumTypes.clear();
@@ -163,22 +170,7 @@ public class SchemaInfo {
         String fwdFieldName = fkColumnFieldName(fromTable, fromCol);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(List.of(fromCol), toTable, List.of(toCol)));
-
-        // Reverse FK: use child table name — unique across different child tables.
-        // On collision (same child table, multiple FK columns to same parent), disambiguate.
-        String baseRevName = fkFieldName(fromTable);
-        String revKey = toTable + "." + baseRevName;
-        if (reverseFks.containsKey(revKey)) {
-            ReverseFkInfo existing = reverseFks.remove(revKey);
-            String existingFkCol = existing.fkColumns().get(0);
-            String existingSuffix = NamingUtils.capitalize(NamingUtils.toLowerCamelCase(existingFkCol));
-            reverseFks.put(toTable + "." + baseRevName + existingSuffix, existing);
-            String newSuffix = NamingUtils.capitalize(NamingUtils.toLowerCamelCase(fromCol));
-            reverseFks.put(toTable + "." + baseRevName + newSuffix,
-                    new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
-        } else {
-            reverseFks.put(revKey, new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
-        }
+        addReverseFk(toTable, new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
     }
 
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
@@ -187,9 +179,58 @@ public class SchemaInfo {
         String fwdFieldName = fkFieldName(toTable);
         forwardFks.put(fromTable + "." + fwdFieldName,
                 new FkInfo(fromCols, toTable, toCols));
-        String revFieldName = fkFieldName(fromTable);
-        reverseFks.put(toTable + "." + revFieldName,
-                new ReverseFkInfo(fromTable, fromCols, toCols));
+        addReverseFk(toTable, new ReverseFkInfo(fromTable, fromCols, toCols));
+    }
+
+    /**
+     * An array relationship is named after its child table; when several keys of one child table point at
+     * the same table, every one of them is also named after its key columns. The names depend only on
+     * which keys exist, never on the order they are added in.
+     */
+    private void addReverseFk(String toTable, ReverseFkInfo relation) {
+        String baseKey = toTable + "." + fkFieldName(relation.childTable());
+        List<ReverseFkInfo> group = reverseFkGroups.computeIfAbsent(baseKey, k -> new ArrayList<>());
+        if (group.contains(relation)) {
+            return;
+        }
+        group.forEach(member -> reverseFks.remove(reverseFkKey(baseKey, member, group.size() > 1)));
+        group.add(relation);
+        group.forEach(member -> reverseFks.put(reverseFkKey(baseKey, member, group.size() > 1), member));
+    }
+
+    private static String reverseFkKey(String baseKey, ReverseFkInfo relation, boolean shared) {
+        if (!shared) {
+            return baseKey;
+        }
+        StringBuilder key = new StringBuilder(baseKey);
+        relation.fkColumns().forEach(column ->
+                key.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(column))));
+        return key.toString();
+    }
+
+    /**
+     * Takes the relationships of {@code source} that {@code keep} accepts (given the referencing table and
+     * the key), under the names and aliases {@code source} gave them, so a filtered copy of a schema names
+     * every relationship it keeps exactly as the whole schema does. Meant for a schema with no keys of its own.
+     */
+    public void copyRelationships(SchemaInfo source, BiPredicate<String, FkInfo> keep) {
+        relationshipAliases.set(null);
+        aliasSource = source;
+        source.forwardFks.forEach((key, fk) -> {
+            if (keep.test(owner(key), fk)) {
+                forwardFks.put(key, fk);
+            }
+        });
+        source.reverseFks.forEach((key, relation) -> {
+            if (keep.test(relation.childTable(), new FkInfo(relation.fkColumns(), owner(key), relation.refColumns()))) {
+                reverseFks.put(key, relation);
+            }
+        });
+    }
+
+    /** A relationship key is {@code <table>.<field>}; the table is everything before the last dot. */
+    private static String owner(String key) {
+        return key.substring(0, key.lastIndexOf('.'));
     }
 
     /** Derive FK field name from the FK column name. No guessing, no stripping. */
@@ -303,7 +344,9 @@ public class SchemaInfo {
     private RelationshipAliases relationshipAliases() {
         RelationshipAliases current = relationshipAliases.get();
         if (current == null) {
-            current = RelationshipAliases.of(this);
+            current = aliasSource == null
+                    ? RelationshipAliases.of(this)
+                    : aliasSource.relationshipAliases().within(this);
             relationshipAliases.set(current);
         }
         return current;

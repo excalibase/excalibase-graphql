@@ -54,6 +54,18 @@ record RelationshipAliases(Map<String, String> byAlias, Map<String, String> byCa
         return new RelationshipAliases(Map.copyOf(byAlias), Map.copyOf(byCanonical));
     }
 
+    /** These aliases restricted to the relationships {@code schema} has, where the name is still free there. */
+    RelationshipAliases within(SchemaInfo schema) {
+        Map<String, String> kept = byAlias.entrySet().stream()
+                .filter(entry -> schema.getAllForwardFks().containsKey(entry.getValue())
+                        || schema.getAllReverseFks().containsKey(entry.getValue()))
+                .filter(entry -> isFree(schema, entry.getKey()))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        Map<String, String> canonical = kept.entrySet().stream()
+                .collect(Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
+        return new RelationshipAliases(Map.copyOf(kept), Map.copyOf(canonical));
+    }
+
     private static void propose(Map<String, String> proposed, Set<String> clashing, String alias, String canonical) {
         if (alias.equals(canonical) || proposed.putIfAbsent(alias, canonical) != null) {
             clashing.add(alias);

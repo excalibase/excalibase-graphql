@@ -13,8 +13,8 @@ import java.util.TreeMap;
  * and relationships only where both tables and every join column are selectable. Columns the role
  * may write but not read are typed without being listed; a table it may insert into but not select
  * is a write-only table, reachable by nothing that reads. A nested insert goes through a relationship
- * when the role may insert into both of its tables, whatever it may select, as in Hasura; such
- * relationships keep the names the unfiltered schema gives them. Functions are not part of the view: the ones
+ * when the role may insert into both of its tables, whatever it may select, as in Hasura. Every
+ * relationship keeps the name the unfiltered schema gives it. Functions are not part of the view: the ones
  * a role may call are the plan's tracked functions. Computed fields are left out for every role.
  */
 final class RoleView {
@@ -82,14 +82,9 @@ final class RoleView {
         }
     }
 
-    /** Replayed in a stable order so reverse-relationship names do not depend on hash order. */
+    /** Copied under the reflected names, so a relationship is called the same whatever role asks. */
     private static void copyForeignKeys(SchemaInfo reflected, SchemaInfo view, Map<String, TableRules> rules) {
-        new TreeMap<>(reflected.getAllForwardFks()).forEach((key, fk) -> {
-            String fromTable = owner(key);
-            if (joinable(rules, fromTable, fk)) {
-                addForeignKey(view, fromTable, fk);
-            }
-        });
+        view.copyRelationships(reflected, (fromTable, fk) -> joinable(rules, fromTable, fk));
     }
 
     private static void copyInsertRelationships(SchemaInfo reflected, SchemaInfo view, Map<String, TableRules> rules) {
@@ -111,14 +106,6 @@ final class RoleView {
     private static boolean insertable(Map<String, TableRules> rules, String table) {
         TableRules held = rules.get(table);
         return held != null && held.insert().isPresent();
-    }
-
-    private static void addForeignKey(SchemaInfo view, String fromTable, SchemaInfo.FkInfo fk) {
-        if (fk.isComposite()) {
-            view.addCompositeForeignKey(fromTable, fk.fkColumns(), fk.refTable(), fk.refColumns());
-        } else {
-            view.addForeignKey(fromTable, fk.fkColumn(), fk.refTable(), fk.refColumn());
-        }
     }
 
     private static boolean joinable(Map<String, TableRules> rules, String fromTable, SchemaInfo.FkInfo fk) {
