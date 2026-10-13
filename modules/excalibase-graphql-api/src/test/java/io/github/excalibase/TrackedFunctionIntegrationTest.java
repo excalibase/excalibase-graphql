@@ -349,7 +349,11 @@ class TrackedFunctionIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[*].id", containsInAnyOrder(3, 1)))
                 .andExpect(jsonPath("$.data[0].id").value(3));
-        restPost("search_notes", "{}").andExpect(status().isBadRequest());
+        // EXC-610: an rpc refusal has the same shape as every other error: a code, a message, an error.
+        restPost("search_notes", "{}").andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("bad_request"))
+                .andExpect(jsonPath("$.message").value(containsString("Missing argument p_query")))
+                .andExpect(jsonPath("$.error").value(containsString("Missing argument p_query")));
     }
 
     @Test
