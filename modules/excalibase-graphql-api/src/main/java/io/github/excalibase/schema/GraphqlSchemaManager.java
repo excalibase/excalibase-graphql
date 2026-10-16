@@ -9,6 +9,7 @@ import io.github.excalibase.config.datasource.TenantContext;
 import io.github.excalibase.config.datasource.TenantDatabase;
 import io.github.excalibase.access.AccessPlan;
 import io.github.excalibase.access.ProbeRunner;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
@@ -117,15 +118,19 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     /**
-     * Permission filters compile to Postgres SQL only, so a MySQL deployment with a permission source
-     * is refused at startup rather than served unfiltered. Without a source, authentication on means
-     * only the service role reaches tables.
+     * Permissions compile to the database's own SQL (Postgres and MySQL), so a database the compiler does
+     * not speak is refused at startup rather than served unfiltered. Without a source, authentication on
+     * means only the service role reaches tables.
      */
     private void requireSupportedPermissions() {
         boolean sourced = permissionProvider != null && permissionProvider.configured();
-        if (jwtEnabled && sourced && MYSQL.equalsIgnoreCase(databaseType)) {
-            throw new IllegalStateException("Permissions are Postgres-only: a MySQL deployment cannot use "
-                    + "app.security.rls.policy-url. Unset it, or serve this database with Postgres.");
+        if (jwtEnabled && sourced) {
+            try {
+                SqlEngineFactory.create(databaseType).dialect().permissionDialect();
+            } catch (IllegalArgumentException | UnsupportedOperationException e) {
+                throw new IllegalStateException("Permissions cannot be compiled for database type " + databaseType
+                        + ", so app.security.rls.policy-url cannot be used with it", e);
+            }
         }
         if (jwtEnabled && !sourced) {
             log.warn("permissions_source_missing: app.security.rls.policy-url is blank, so only the service "
@@ -150,7 +155,8 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         defaultReflection.set(reflection);
         // Requests without a project get the configured database whole: there is no project to hold
         // permissions for. Every project-scoped request is built per role below.
-        engineState.set(assemble(reflection, AccessPlan.allAccess(schemaInfo), NO_DOCUMENT));
+        engineState.set(assemble(reflection, AccessPlan.allAccess(engine.dialect().permissionDialect(), schemaInfo),
+                NO_DOCUMENT));
         reflections.clear();
         tenantEngineStates.clear();
     }
@@ -262,14 +268,16 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * schema is served — and no function is tracked.
      */
     private EngineState build(Reflection reflection, String projectId, String role, PermissionSet permissions) {
-        requireEnforceable(reflection, projectId, role);
+        PermissionDialect dialect = permissionDialect(reflection, projectId, role);
         AccessPlan plan;
         if (Principal.SERVICE.equals(role)) {
-            plan = AccessPlan.allAccess(reflection.schema(), permissions == null ? List.of() : permissions.functions());
+            plan = AccessPlan.allAccess(dialect, reflection.schema(),
+                    permissions == null ? List.of() : permissions.functions());
         } else if (permissions == null) {
-            plan = AccessPlan.forRole(reflection.schema(), new RolePermissions(role, Map.of(), List.of(), Set.of()));
+            plan = AccessPlan.forRole(dialect, reflection.schema(),
+                    new RolePermissions(role, Map.of(), List.of(), Set.of()));
         } else {
-            plan = AccessPlan.forRole(reflection.schema(), permissions.forRole(role));
+            plan = AccessPlan.forRole(dialect, reflection.schema(), permissions.forRole(role));
         }
         EngineState state = assemble(reflection, plan, permissions == null ? NO_DOCUMENT : permissions.version());
         log.info("built_engine project={} role={} tables={} served_tables={} functions={}", projectId, role,
@@ -282,11 +290,15 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * Permission filters compile to Postgres SQL only (ADR 0041 decision 3), so on a MySQL project every role
      * but service, which no filter applies to, is refused rather than served unfiltered.
      */
-    private void requireEnforceable(Reflection reflection, String projectId, String role) {
-        if (permissionsSourced() && !Principal.SERVICE.equals(role)
-                && MYSQL.equalsIgnoreCase(reflection.databaseType())) {
-            log.warn("permissions_not_enforceable project={} role={} engine=mysql", projectId, role);
-            throw new PermissionsUnavailableException("Permissions cannot yet be enforced on a MySQL project");
+    /** The SQL this project's permissions compile to; a database the compiler does not speak serves no role. */
+    private PermissionDialect permissionDialect(Reflection reflection, String projectId, String role) {
+        try {
+            return reflection.engine().dialect().permissionDialect();
+        } catch (UnsupportedOperationException e) {
+            log.warn("permissions_not_enforceable project={} role={} engine={}", projectId, role,
+                    reflection.databaseType());
+            throw new PermissionsUnavailableException("Permissions cannot be enforced on a "
+                    + reflection.databaseType() + " project");
         }
     }
 
