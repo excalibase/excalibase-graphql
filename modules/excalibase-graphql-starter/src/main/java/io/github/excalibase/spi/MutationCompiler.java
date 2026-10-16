@@ -24,7 +24,7 @@ public interface MutationCompiler {
     /**
      * Returns the raw CTE SQL fragment (before wrapping in jsonb_build_object for the field name).
      * Used by SqlCompiler to combine multiple mutations into a single transaction.
-     * Default: delegates to compileMutation (MySQL two-phase path is unchanged).
+     * Default: delegates to compileMutation.
      */
     default SqlCompiler.CompiledQuery compileMutationFragment(Field field, String fieldName,
                                                               Map<String, Object> params, Map<String, Object> variables,

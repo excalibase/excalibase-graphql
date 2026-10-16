@@ -149,5 +149,6 @@ to any role, `service` included: they are untracked functions, so a request sele
 
 Procedures are reflected but never exposed, to any role. The earlier `call<Procedure>` GraphQL
 mutations and the untyped `POST /rpc/<fn>` that returned a bare value were removed; wrap the logic
-in a function that returns rows of a table and track it. Tracked functions, like permissions, are
-Postgres-only: a MySQL deployment exposes no routines.
+in a function that returns rows of a table and track it. Tracked functions are
+Postgres-only: a MySQL function returns a scalar, not rows of a table, so a MySQL deployment exposes
+no routines and refuses tracking one.

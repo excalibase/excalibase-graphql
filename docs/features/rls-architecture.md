@@ -80,7 +80,8 @@ the project's cached permissions, reflection and engines at once.
   `service`. Each refusal logs `permissions_document_refused` and increments
   `excalibase_permissions_document_refused_total{project}`.
 
-Permissions compile to Postgres SQL only: a MySQL deployment with a permission source refuses to start.
+Permissions compile to Postgres and MySQL SQL. A database the compiler does not speak refuses to start
+with a permission source rather than serve rows unfiltered.
 
 ## Error contract
 

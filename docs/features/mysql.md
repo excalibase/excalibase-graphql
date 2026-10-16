@@ -234,8 +234,23 @@ Forward and reverse FK fields are automatically added to the schema:
 
 ### Stored procedures
 
-Not exposed. Only tracked functions are reachable, and tracking, like permissions, is
-Postgres-only (see [Functions](functions.md)).
+Not exposed. Only tracked functions are reachable, and tracking is Postgres-only: a MySQL
+function returns a scalar, not rows of a table, so no table permission could apply to its result
+(see [Functions](functions.md)).
+
+### Permissions
+
+Permissions apply to MySQL projects as they do to Postgres ones: the same document compiles to MySQL
+SQL, and a differential suite checks every case against native Postgres RLS on identical data.
+
+- `TIMESTAMP` compares in UTC whatever the session time zone; `ENUM` compares by declaration order;
+  `FLOAT` compares at single precision; `NaN`/`Infinity` (which MySQL cannot store) match nothing.
+- Text compares under the column's own collation, so on `utf8mb4_0900_ai_ci` `_eq: "alpha"` keeps
+  "Alpha". Realtime asks the database for such rows instead of deciding in memory, so it delivers
+  exactly the rows a query returns.
+- MySQL cannot return the rows a write touches, so writes lock and key them first. A write needs a
+  primary key; an insert must supply it or let `AUTO_INCREMENT` generate it; updating a primary key
+  column is refused; `onConflict` is refused.
 
 ## Filtering Operators
 

@@ -40,7 +40,7 @@ class AccessPlanTest {
         SchemaInfo reflected = AccessFixture.schema();
         reflected.addFullTextColumn(CUSTOMERS, "name");
 
-        AccessPlan plan = AccessPlan.forRole(reflected, user(entry(CUSTOMERS, selectAll())));
+        AccessPlan plan = AccessPlan.forRole(POSTGRES, reflected, user(entry(CUSTOMERS, selectAll())));
 
         assertThat(plan.view().isFullTextColumn(CUSTOMERS, "name")).isTrue();
         assertThat(plan.view().isFullTextColumn(CUSTOMERS, "email")).isFalse();
