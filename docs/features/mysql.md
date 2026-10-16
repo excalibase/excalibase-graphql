@@ -265,6 +265,40 @@ Postgres-only (see [Functions](functions.md)).
 | Custom composite types | Supported | N/A |
 | Array types | Supported | N/A |
 
+## REST API
+
+The PostgREST-compatible REST API (`/{projectId}/api/v1/{table}`) serves MySQL with the same surface as
+GraphQL: `select` with to-one and to-many embeds, filters, `order` (including `nullsfirst`/`nullslast`),
+`limit`/`offset`, `Prefer: count=exact`, inserts, bulk inserts, updates, deletes and
+`Prefer: resolution=merge-duplicates` upserts.
+
+MySQL has no `RETURNING`, so `Prefer: return=representation` reads the written rows back by primary key:
+
+| Write | How the rows come back |
+|-------|------------------------|
+| Insert | One statement per row; read back by the key sent, or the `AUTO_INCREMENT` key generated |
+| Update | Keys of the matched rows locked (`FOR UPDATE`) before the update, then read back (a changed key is followed) |
+| Delete | Rows read, locked, before they are deleted |
+| Upsert | `INSERT … AS incoming ON DUPLICATE KEY UPDATE`, read back by the key sent; without every key column it is a plain insert |
+
+Filters run natively where MySQL has the operator: `match`/`imatch` (`REGEXP_LIKE`), `cs`/`cd`/`haskey`
+(`JSON_CONTAINS`, `JSON_CONTAINS_PATH`) and `fts`/`plfts`/`phfts` (`MATCH … AGAINST`, the column needs its own
+`FULLTEXT` index).
+
+An upsert that collides on a unique key other than the primary key fails with `409 unique_violation`, as on
+Postgres. Before `ON DUPLICATE KEY UPDATE` runs, the other unique keys are checked in the same transaction
+(`SELECT … FOR UPDATE`), so the statement never updates a row the request did not address.
+
+Refused with `400` and a message naming MySQL, never ignored:
+
+- array, range, JSON path, web-search and vector operators (`ov`, `sl`, `arraylength`, `jsonpath`, `wfts`, `vector`, …)
+- `return=representation` (or `max-affected`) on a table without a primary key, or an insert whose key is neither sent nor generated
+- RPC (`/rpc/{function}`): functions are not tracked on MySQL
+- permission checks on written rows and upserts under an update permission filter
+
+A filter on a column the table does not have is a `400` naming the column on every database, also inside
+`or=(…)`: a typo never returns every row.
+
 ## Limitations
 
 - **CDC / Subscriptions** — real-time subscriptions via Change Data Capture are PostgreSQL-only for now

@@ -56,6 +56,7 @@ public class RestApiController {
     private static final String KEY_ERROR = "error";
     private static final String BAD_REQUEST = "bad_request";
     private static final String PREFER_TX_ROLLBACK = "tx=rollback";
+    private static final String PREFER_REPRESENTATION = "return=representation";
     private static final String HDR_PREFERENCE_APPLIED = "Preference-Applied";
 
     private final SchemaProvider schemaProvider;
@@ -223,6 +224,10 @@ public class RestApiController {
         String schema = resolveSchema(profile, principal);
         if (schema == null) return notFound();
         Optional<ExposedFunction> found = schemaProvider.resolveFunctions(principal).named(schema + DOT + function);
+        var dialect = schemaProvider.resolveDialect(principal);
+        if (!dialect.supportsFunctions()) {
+            throw new IllegalArgumentException("Functions are not supported on " + dialect.databaseName());
+        }
         if (found.isEmpty()) return notFound();
         ExposedFunction callable = found.get();
         if (body == null && callable.operation() == ExposedFunction.Operation.MUTATION) {
@@ -240,7 +245,6 @@ public class RestApiController {
         } else {
             arguments.putAll(body);
         }
-        var dialect = schemaProvider.resolveDialect(principal);
         Map<String, Object> params = new LinkedHashMap<>();
         String call = FunctionCall.sql(callable, arguments, RlsContext.sessionVariables(), dialect, params);
         var parsed = parseSelectParams(readParams.get("select"), readParams.get("order"), readParams);
@@ -368,7 +372,8 @@ public class RestApiController {
                                               Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         return txTemplate.execute(status -> {
             try {
-                String json = executeDmlQuery(compiled);
+                boolean represent = maxAffected != null || preferContains(prefer, PREFER_REPRESENTATION);
+                String json = executeDmlQuery(compiled, represent);
                 ResponseEntity<Object> overflow = checkMaxAffected(json, maxAffected, status);
                 if (overflow != null) return overflow;
                 if (rollback) status.setRollbackOnly();
@@ -379,13 +384,18 @@ public class RestApiController {
                     status.setRollbackOnly();
                     return checkFailed(failed.get());
                 }
+                if (e instanceof IllegalArgumentException refused) {
+                    status.setRollbackOnly();
+                    return ResponseEntity.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
+                }
                 status.setRollbackOnly();
                 return RestErrors.of(e, scope.dialect(), scope.filters(), "Mutation execution failed");
             }
         });
     }
 
-    private String executeDmlQuery(RestQueryCompiler.CompiledResult compiled) {
+    private String executeDmlQuery(RestQueryCompiler.CompiledResult compiled, boolean represent) {
+        if (compiled.write() != null) return compiled.write().run(namedJdbc, represent);
         List<String> rows = namedJdbc.queryForList(compiled.sql(), new MapSqlParameterSource(compiled.params()), String.class);
         return rows.isEmpty() ? null : rows.get(0);
     }
@@ -404,10 +414,10 @@ public class RestApiController {
                                                     String table, boolean rollback) {
         List<String> applied = new ArrayList<>();
         if (rollback) applied.add(PREFER_TX_ROLLBACK);
-        boolean returnRepresentation = preferContains(prefer, "return=representation");
+        boolean returnRepresentation = preferContains(prefer, PREFER_REPRESENTATION);
         ResponseEntity<Object> resp;
         if (returnRepresentation) {
-            applied.add("return=representation");
+            applied.add(PREFER_REPRESENTATION);
             var builder = ResponseEntity.status(successStatus);
             if (successStatus == HttpStatus.CREATED && table != null) {
                 builder.header("Location", "/api/v1/" + table);

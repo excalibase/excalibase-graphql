@@ -33,6 +33,14 @@ CREATE TABLE task (
     FOREIGN KEY (assigned_to) REFERENCES customer(customer_id)
 );
 
+-- Unique key besides the primary key
+CREATE TABLE member (
+    id INT PRIMARY KEY,
+    email VARCHAR(100),
+    name VARCHAR(50),
+    UNIQUE KEY member_email (email)
+);
+
 -- View (read-only)
 CREATE VIEW active_customers AS
     SELECT customer_id, first_name, last_name, email
@@ -64,3 +72,7 @@ INSERT INTO task (title, status, priority, assigned_to) VALUES
     ('Fix bug', 'done', 'high', 1),
     ('Write docs', 'todo', 'low', 2),
     ('Deploy', 'in_progress', 'critical', 1);
+
+INSERT INTO member (id, email, name) VALUES
+    (1, 'a@example.com', 'Ann'),
+    (2, 'b@example.com', 'Ben');

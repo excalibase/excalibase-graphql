@@ -29,8 +29,8 @@ Excalibase supports **PostgreSQL** as its primary target with full operator cove
 
 | Operator | Postgres | MySQL |
 |----------|----------|-------|
-| `regex`   | `~`  (case-sensitive)    | ⚠️ **not yet wired** (MySQL uses `REGEXP BINARY`) |
-| `iregex`  | `~*` (case-insensitive)  | ⚠️ **not yet wired** (MySQL uses `REGEXP`) |
+| `regex`   | `~`  (case-sensitive)    | ✅ `REGEXP_LIKE(col, :p, 'c')` |
+| `iregex`  | `~*` (case-insensitive)  | ✅ `REGEXP_LIKE(col, :p, 'i')` |
 
 ### Full-text search
 

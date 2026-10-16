@@ -195,11 +195,25 @@ class RestQueryCompilerTest {
     }
 
     @Test
-    @DisplayName("unknown columns in filter are ignored")
-    void filterUnknownColumnIgnored() {
+    @DisplayName("an unknown column in a filter is refused, never dropped (a typo must not return every row)")
+    void filterUnknownColumnRefused() {
       var filters = List.of(new RestQueryCompiler.FilterSpec("hacked", "eq", "x", false));
-      var result = compiler.compileSelect("public.products", List.of(), filters, null, 30, 0, false);
-      assertFalse(result.sql().contains("hacked"));
+      List<String> noCols = List.of();
+      var refused = assertThrows(IllegalArgumentException.class,
+          () -> compiler.compileSelect("public.products", noCols, filters, null, 30, 0, false));
+      assertTrue(refused.getMessage().contains("'hacked'"), refused.getMessage());
+
+      var ors = List.of(new RestQueryCompiler.OrCondition(List.of(
+          new RestQueryCompiler.FilterSpec("id", "eq", "1", false),
+          new RestQueryCompiler.FilterSpec("hacked", "eq", "x", false))));
+      var orQuery = new RestQueryCompiler.SelectQuery("public.products", noCols, List.of(), ors, List.of(), null,
+          30, 0, false);
+      var orRefused = assertThrows(IllegalArgumentException.class, () -> compiler.compileSelect(orQuery));
+      assertTrue(orRefused.getMessage().contains("'hacked'"), orRefused.getMessage());
+
+      Map<String, Object> input = Map.of("name", "x");
+      assertThrows(IllegalArgumentException.class, () -> compiler.compileUpdate("public.products", input, filters));
+      assertThrows(IllegalArgumentException.class, () -> compiler.compileDelete("public.products", filters));
     }
 
     @Test
