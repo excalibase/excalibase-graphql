@@ -193,10 +193,12 @@ class GraphqlSchemaManagerCacheTest {
     @DisplayName("on a MySQL project only service is served while permissions compile to Postgres alone")
     void mysqlProject_refusesEveryRoleButService() {
         CountingSchemaManager mysqlProject = new CountingSchemaManager(permissions, true, "mysql");
+        Principal user = runningAs("user");
+        Principal anonymous = Principal.anonymous();
 
-        assertThatThrownBy(() -> mysqlProject.resolveEngineState("acme", "proj-1", runningAs("user")))
+        assertThatThrownBy(() -> mysqlProject.resolveEngineState("acme", "proj-1", user))
                 .isInstanceOf(PermissionsUnavailableException.class);
-        assertThatThrownBy(() -> mysqlProject.resolveEngineState("acme", "proj-1", Principal.anonymous()))
+        assertThatThrownBy(() -> mysqlProject.resolveEngineState("acme", "proj-1", anonymous))
                 .isInstanceOf(PermissionsUnavailableException.class);
         assertThat(mysqlProject.resolveEngineState("acme", "proj-1", service()).plan().allAccess()).isTrue();
     }

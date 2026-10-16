@@ -1,6 +1,7 @@
 package io.github.excalibase.mysql;
 
 import io.github.excalibase.compiler.TwoPhaseWrite;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
 import java.util.List;
 import java.util.Map;
@@ -23,11 +24,23 @@ sealed interface MysqlWrite extends TwoPhaseWrite {
      * predicate on those keys; {@code keyAssignments} are the key columns the write sets, by key position.
      */
     record Update(String lockSql, String updateHead, Map<Integer, Object> keyAssignments,
-                  KeyedRead readBack) implements MysqlWrite {}
+                  KeyedRead readBack) implements MysqlWrite {
+
+        /** The UPDATE of exactly the {@code locked} rows, their key values bound into {@code params}. */
+        String updateSql(List<List<Object>> locked, MapSqlParameterSource params) {
+            return updateHead + KeyPredicate.of(readBack.keyRefs(), locked, params, "locked_key");
+        }
+    }
 
     /** The rows are read before they are deleted. */
     record Delete(String selectSql, String deleteSql) implements MysqlWrite {}
 
     /** Reads rows by key: {@code head}, a predicate on {@code keyRefs}, then {@code tail}. */
-    record KeyedRead(String head, String tail, List<String> keyRefs) {}
+    record KeyedRead(String head, String tail, List<String> keyRefs) {
+
+        /** The read of exactly the {@code written} rows, their key values bound into {@code params}. */
+        String sql(List<List<Object>> written, MapSqlParameterSource params) {
+            return head + KeyPredicate.of(keyRefs, written, params, "written_key") + tail;
+        }
+    }
 }

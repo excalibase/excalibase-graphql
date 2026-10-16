@@ -198,7 +198,8 @@ class MysqlFilterIntegrationTest {
             Map<String, Object> variables = Map.of("w", Map.of("id", Map.of("eq", 99)));
             SqlCompiler.CompiledQuery compiled = compiler().compile(
                     "mutation($w: DocWhereInput) { deleteDoc(where: $w) { id } }", variables);
-            assertThat(compiled.dmlSql()).contains("WHERE").contains("`id` = :");
+            assertThat(compiled.write()).isInstanceOfSatisfying(MysqlWrite.Delete.class, delete ->
+                    assertThat(delete.deleteSql()).contains("WHERE").contains("`id` = :"));
         }
     }
 }

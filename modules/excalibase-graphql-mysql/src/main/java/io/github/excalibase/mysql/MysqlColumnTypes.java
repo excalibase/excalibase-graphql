@@ -16,11 +16,11 @@ import java.util.regex.Pattern;
 final class MysqlColumnTypes {
 
     static final String BOOLEAN = "boolean";
-    static final String DATETIME = "timestamp";
-    static final String TIMESTAMP = "timestamptz";
+    static final String WITHOUT_ZONE = "timestamp";
+    static final String WITH_ZONE = "timestamptz";
 
     private static final String ENUM_SUFFIX = "_enum";
-    private static final Pattern GRAPHQL_NAME = Pattern.compile("[_A-Za-z][_0-9A-Za-z]*");
+    private static final Pattern GRAPHQL_NAME = Pattern.compile("[_A-Za-z]\\w*");
     private static final List<String> RESERVED_ENUM_VALUES = List.of("true", "false", "null");
 
     private MysqlColumnTypes() {
@@ -31,8 +31,9 @@ final class MysqlColumnTypes {
         String declared = columnType == null ? type : columnType.toLowerCase(Locale.ROOT);
         switch (type) {
             case "tinyint" -> info.addColumn(table, column, declared.startsWith("tinyint(1)") ? BOOLEAN : type);
-            case "datetime" -> info.addColumn(table, column, DATETIME);
-            case "timestamp" -> info.addColumn(table, column, TIMESTAMP);
+            case "datetime" -> info.addColumn(table, column, WITHOUT_ZONE);
+            // A MySQL TIMESTAMP is stored in UTC and read in the session zone: a timestamp with zone.
+            case WITHOUT_ZONE -> info.addColumn(table, column, WITH_ZONE);
             case "enum" -> registerEnum(info, table, column, columnType);
             default -> info.addColumn(table, column, type);
         }
@@ -64,11 +65,12 @@ final class MysqlColumnTypes {
         List<String> labels = new ArrayList<>();
         StringBuilder label = new StringBuilder();
         boolean quoted = false;
-        for (int i = 0; i < body.length(); i++) {
+        int i = 0;
+        while (i < body.length()) {
             char c = body.charAt(i);
-            if (c == '\'' && quoted && i + 1 < body.length() && body.charAt(i + 1) == '\'') {
+            boolean doubledQuote = c == '\'' && quoted && i + 1 < body.length() && body.charAt(i + 1) == '\'';
+            if (doubledQuote) {
                 label.append('\'');
-                i++;
             } else if (c == '\'') {
                 quoted = !quoted;
             } else if (c == ',' && !quoted) {
@@ -77,6 +79,7 @@ final class MysqlColumnTypes {
             } else if (quoted) {
                 label.append(c);
             }
+            i += doubledQuote ? 2 : 1;
         }
         labels.add(label.toString());
         return Optional.of(List.copyOf(labels));

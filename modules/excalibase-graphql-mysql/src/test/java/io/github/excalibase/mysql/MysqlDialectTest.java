@@ -13,7 +13,7 @@ class MysqlDialectTest {
     @DisplayName("a boolean column renders as a JSON boolean, null kept")
     void booleanColumn() {
         assertThat(dialect.selectColumn("a.`b`", "boolean")).isEqualTo(
-                "CASE WHEN a.`b` IS NULL THEN NULL WHEN a.`b` THEN CAST('true' AS JSON) ELSE CAST('false' AS JSON) END");
+                "IF(a.`b` IS NULL, NULL, IF(a.`b`, CAST('true' AS JSON), CAST('false' AS JSON)))");
     }
 
     @Test

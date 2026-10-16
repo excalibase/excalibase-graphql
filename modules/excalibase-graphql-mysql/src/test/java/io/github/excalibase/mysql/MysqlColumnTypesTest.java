@@ -5,7 +5,6 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -64,8 +63,8 @@ class MysqlColumnTypesTest {
     void enumLabelsAreParsed() {
         assertThat(MysqlColumnTypes.enumLabels("enum('a,b','it''s','c')"))
                 .contains(List.of("a,b", "it's", "c"));
-        assertThat(MysqlColumnTypes.enumLabels("varchar(10)")).isEqualTo(Optional.empty());
-        assertThat(MysqlColumnTypes.enumLabels(null)).isEqualTo(Optional.empty());
+        assertThat(MysqlColumnTypes.enumLabels("varchar(10)")).isNotPresent();
+        assertThat(MysqlColumnTypes.enumLabels(null)).isNotPresent();
     }
 
     @Test

@@ -162,10 +162,10 @@ public class MysqlDialect implements SqlDialect {
     public String selectColumn(String colRef, String dataType) {
         if (dataType == null) return colRef;
         return switch (dataType) {
-            case MysqlColumnTypes.BOOLEAN -> "CASE WHEN " + colRef + " IS NULL THEN NULL WHEN " + colRef
-                    + " THEN " + jsonBoolLiteral(true) + " ELSE " + jsonBoolLiteral(false) + " END";
-            case MysqlColumnTypes.DATETIME -> isoDateTime(colRef);
-            case MysqlColumnTypes.TIMESTAMP -> "CONCAT(" + isoDateTime("CONVERT_TZ(" + colRef
+            case MysqlColumnTypes.BOOLEAN -> "IF(" + colRef + " IS NULL, NULL, IF(" + colRef + ", "
+                    + jsonBoolLiteral(true) + ", " + jsonBoolLiteral(false) + "))";
+            case MysqlColumnTypes.WITHOUT_ZONE -> isoDateTime(colRef);
+            case MysqlColumnTypes.WITH_ZONE -> "CONCAT(" + isoDateTime("CONVERT_TZ(" + colRef
                     + ", @@session.time_zone, " + UTC + ")") + ", " + UTC + ")";
             default -> colRef + suffixCast(dataType);
         };
@@ -174,7 +174,7 @@ public class MysqlDialect implements SqlDialect {
     /** MySQL reads an offset but not {@code Z}, which is what ISO 8601 clients send for UTC. */
     @Override
     public Object bindValue(String columnType, Object value) {
-        boolean dateTime = MysqlColumnTypes.DATETIME.equals(columnType) || MysqlColumnTypes.TIMESTAMP.equals(columnType);
+        boolean dateTime = MysqlColumnTypes.WITHOUT_ZONE.equals(columnType) || MysqlColumnTypes.WITH_ZONE.equals(columnType);
         if (dateTime && value instanceof String text && (text.endsWith("Z") || text.endsWith("z"))) {
             return text.substring(0, text.length() - 1) + "+00:00";
         }

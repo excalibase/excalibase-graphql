@@ -76,7 +76,7 @@ public class MysqlMutationExecutor implements MutationExecutor {
         if (locked.isEmpty()) {
             return read(update.readBack(), locked, params, namedJdbc);
         }
-        namedJdbc.update(update.updateHead() + KeyPredicate.of(keyRefs, locked, params, "locked_key"), params);
+        namedJdbc.update(update.updateSql(locked, params), params);
         List<List<Object>> written = new ArrayList<>();
         for (List<Object> key : locked) {
             List<Object> after = new ArrayList<>(key);
@@ -95,7 +95,6 @@ public class MysqlMutationExecutor implements MutationExecutor {
 
     private static String read(MysqlWrite.KeyedRead readBack, List<List<Object>> keys, MapSqlParameterSource params,
                                NamedParameterJdbcTemplate namedJdbc) {
-        String predicate = KeyPredicate.of(readBack.keyRefs(), keys, params, "written_key");
-        return namedJdbc.queryForObject(readBack.head() + predicate + readBack.tail(), params, String.class);
+        return namedJdbc.queryForObject(readBack.sql(keys, params), params, String.class);
     }
 }

@@ -79,7 +79,8 @@ class QueryExecutionServiceTest {
         Connection connection = mock(Connection.class);
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.getAutoCommit()).thenReturn(true);
-        when(connection.createStatement()).thenReturn(mock(Statement.class));
+        Statement statement = mock(Statement.class);
+        when(connection.createStatement()).thenReturn(statement);
         MutationExecutor exec = (c, p, jdbc) -> {
             jdbc.getJdbcTemplate().execute("INSERT INTO users (name) VALUES ('a')");
             jdbc.getJdbcTemplate().execute("SELECT 1");
@@ -106,7 +107,10 @@ class QueryExecutionServiceTest {
             throw new IllegalArgumentException("duplicate key");
         };
 
-        assertThatThrownBy(() -> service.executeInContext(twoPhase(), new MapSqlParameterSource(), exec))
+        CompiledQuery write = twoPhase();
+        MapSqlParameterSource params = new MapSqlParameterSource();
+
+        assertThatThrownBy(() -> service.executeInContext(write, params, exec))
                 .isInstanceOf(IllegalArgumentException.class);
 
         verify(connection).rollback();
