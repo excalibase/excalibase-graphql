@@ -1,0 +1,24 @@
+select_all
+SELECT coalesce(jsonb_agg(row_to_json(c)), '[]'::jsonb) AS body FROM (SELECT * FROM "public"."products" c LIMIT 30) c
+select_columns_count
+SELECT coalesce(jsonb_agg(jsonb_build_object('id', c."id", 'name', c."name")), '[]'::jsonb) AS body, (SELECT count(*) FROM "public"."products") AS total_count FROM (SELECT * FROM "public"."products" c LIMIT 10 OFFSET 5) c
+select_filters_order
+SELECT coalesce(jsonb_agg(row_to_json(c)), '[]'::jsonb) AS body, (SELECT count(*) FROM "public"."products" WHERE "id" > :fc_0 AND "name" ILIKE :fc_1 AND "name" ~ :fc_2 AND "name" ~* :fc_3 AND "price" IS DISTINCT FROM :fc_4 AND "price" IS NULL AND "id" IN (:fc_6_0, :fc_6_1) AND NOT "name" LIKE :fc_7 AND "metadata" @> :fc_8::jsonb AND "tags" && :fc_9 AND to_tsvector("name") @@ to_tsquery(:fc_10)) AS total_count FROM (SELECT * FROM "public"."products" c WHERE "id" > :f_0 AND "name" ILIKE :f_1 AND "name" ~ :f_2 AND "name" ~* :f_3 AND "price" IS DISTINCT FROM :f_4 AND "price" IS NULL AND "id" IN (:f_6_0, :f_6_1) AND NOT "name" LIKE :f_7 AND "metadata" @> :f_8::jsonb AND "tags" && :f_9 AND to_tsvector("name") @@ to_tsquery(:f_10) AND ("id" = :or_0_0 OR "id" = :or_0_1) ORDER BY c."price" DESC NULLS LAST, c."name" ASC NULLS FIRST, c."id" ASC LIMIT 30) c
+select_embeds
+SELECT coalesce(jsonb_agg(jsonb_build_object('id', c."id", 'orders', COALESCE((SELECT json_agg(jsonb_build_object('id', r1."id", 'quantity', r1."quantity", 'products', (SELECT row_to_json(r3.*) FROM (SELECT r2."name" FROM "public"."products" r2 WHERE r2."id" = r1."product_id") r3))) FROM (SELECT r0.* FROM "public"."orders" r0 WHERE r0."product_id" = c."id") r1), '[]'::json))), '[]'::jsonb) AS body FROM (SELECT * FROM "public"."products" c LIMIT 30) c
+select_forward_embed
+SELECT coalesce(jsonb_agg(jsonb_build_object('id', c."id", 'products', (SELECT row_to_json(r1.*) FROM (SELECT r0.* FROM "public"."products" r0 WHERE r0."id" = c."product_id") r1))), '[]'::jsonb) AS body FROM (SELECT * FROM "public"."orders" c LIMIT 30) c
+select_cursor
+SELECT coalesce(jsonb_agg(row_to_json(c)), '[]'::jsonb) AS body FROM (SELECT * FROM "public"."products" c WHERE "id" > :p_after_ ORDER BY c."price" DESC NULLS LAST, c."name" ASC NULLS FIRST, c."id" ASC LIMIT 11) c
+insert
+WITH ins AS (INSERT INTO "public"."products"("name") VALUES (:ins_0) RETURNING *) SELECT row_to_json(out) FROM (SELECT ins.* FROM ins) out
+bulk_insert
+WITH ins AS (INSERT INTO "public"."products"("name") VALUES (:ins_0_name), (:ins_1_name) RETURNING *) SELECT coalesce(jsonb_agg(row_to_json(out)), '[]'::jsonb) FROM (SELECT ins.* FROM ins) out
+upsert
+WITH ins AS (INSERT INTO "public"."products"("id", "name") VALUES (:ins_0, :ins_1) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING *) SELECT row_to_json(out) FROM (SELECT ins.* FROM ins) out
+upsert_nothing
+WITH ins AS (INSERT INTO "public"."products"("id") VALUES (:ins_0) ON CONFLICT ("id") DO NOTHING RETURNING *) SELECT row_to_json(out) FROM (SELECT ins.* FROM ins) out
+update
+WITH upd AS (UPDATE "public"."products" SET "name" = :upd_0 WHERE "id" = :wf_0 RETURNING *) SELECT coalesce(jsonb_agg(row_to_json(out)), '[]'::jsonb) FROM (SELECT upd.* FROM upd) out
+delete
+WITH del AS (DELETE FROM "public"."products" WHERE "id" = :df_0 RETURNING *) SELECT coalesce(jsonb_agg(row_to_json(out)), '[]'::jsonb) FROM (SELECT del.* FROM del) out

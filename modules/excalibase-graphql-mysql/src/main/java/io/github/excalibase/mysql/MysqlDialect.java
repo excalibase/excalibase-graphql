@@ -72,6 +72,36 @@ public class MysqlDialect implements SqlDialect {
     }
 
     @Override
+    public boolean supportsRowToJson() {
+        return false;
+    }
+
+    @Override
+    public String databaseName() {
+        return "MySQL";
+    }
+
+    @Override
+    public String isDistinctFrom(String colRef, String paramRef) {
+        return "NOT (" + colRef + " <=> " + paramRef + ")";
+    }
+
+    @Override
+    public boolean parsesUntypedParameters() {
+        return false;
+    }
+
+    @Override
+    public boolean supportsFunctions() {
+        return false;
+    }
+
+    @Override
+    public String fullTextDocument(String colRef) {
+        return colRef;
+    }
+
+    @Override
     public String buildObject(List<String> keyValuePairs) {
         return "JSON_OBJECT(" + String.join(", ", keyValuePairs) + ")";
     }

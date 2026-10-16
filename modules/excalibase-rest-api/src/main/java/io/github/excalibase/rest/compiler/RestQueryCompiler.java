@@ -1,11 +1,8 @@
 package io.github.excalibase.rest.compiler;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
-import io.github.excalibase.compiler.NumericInput;
 import io.github.excalibase.compiler.VectorSearchBuilder;
-import io.github.excalibase.errors.ColumnValueCheck;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.PermissionCheckFailedException;
@@ -13,9 +10,7 @@ import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.security.WriteGuard;
-import org.springframework.jdbc.core.SqlParameterValue;
 
-import java.sql.Types;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -23,7 +18,6 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 
 public class RestQueryCompiler {
 
-    private static final int MAX_IN_LIST = 1000;
     private static final int MAX_BULK_ROWS = 1000;
     private static final String CTE_INS = "ins";
     private static final String CTE_UPD = "upd";
@@ -31,6 +25,7 @@ public class RestQueryCompiler {
     private static final String ALIAS = "c";
     private static final String OUT = "out";
     private static final String CHECK_ALIAS = "chk";
+    private static final String INCOMING = "incoming";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -39,8 +34,15 @@ public class RestQueryCompiler {
     private final String defaultSchema;
     private final int defaultMaxRows;
     private final TableAccess access;
+    private final ParamValues values;
+    private final RestFilterSql filterSql;
 
-    public record CompiledResult(String sql, Map<String, Object> params) {}
+    /** {@code write} runs a write on a database without RETURNING in place of {@code sql}. */
+    public record CompiledResult(String sql, Map<String, Object> params, KeyedWrite write) {
+        public CompiledResult(String sql, Map<String, Object> params) {
+            this(sql, params, null);
+        }
+    }
     public record FilterSpec(String column, String operator, String value, boolean negated) {}
     public record OrderBySpec(String column, String direction, String nulls) {}
     public record OrCondition(List<FilterSpec> conditions) {}
@@ -80,6 +82,8 @@ public class RestQueryCompiler {
         this.defaultSchema = defaultSchema;
         this.defaultMaxRows = maxRows;
         this.access = access == null ? TableAccess.UNRESTRICTED : access;
+        this.values = new ParamValues(schemaInfo, dialect.parsesUntypedParameters());
+        this.filterSql = new RestFilterSql(dialect, values);
     }
 
     public CompiledResult compileSelect(String table, List<String> columns, List<FilterSpec> filters,
@@ -99,6 +103,9 @@ public class RestQueryCompiler {
      */
     public CompiledResult compileFunctionSelect(SelectQuery query, String callSql, Map<String, Object> params,
                                                 boolean singleRow) {
+        if (!dialect.supportsFunctions()) {
+            throw new IllegalArgumentException("Functions are not supported on " + dialect.databaseName());
+        }
         if (query.includeCount()) {
             throw new IllegalArgumentException("Counting the rows of a function is not supported");
         }
@@ -112,8 +119,11 @@ public class RestQueryCompiler {
         List<String> columns = query.columns().stream().filter(knownCols::contains).toList();
         List<OrderBySpec> orderBy = query.orderBy() != null ? query.orderBy().stream()
                 .filter(o -> knownCols.contains(o.column())).toList() : null;
-        List<FilterSpec> allFilters = query.filters().stream()
-                .filter(f -> knownCols.contains(f.column())).toList();
+        requireKnownFilterColumns(query.table(), query.filters());
+        if (query.orConditions() != null) {
+            query.orConditions().forEach(or -> requireKnownFilterColumns(query.table(), or.conditions()));
+        }
+        List<FilterSpec> allFilters = query.filters();
 
         // k-NN search is not a predicate — it modifies ORDER BY + LIMIT — so the vector
         // FilterSpec must not land in buildWhere. Only the first vector filter is honored.
@@ -121,7 +131,7 @@ public class RestQueryCompiler {
         VectorSearchBuilder.VectorClause vectorClause = splitVectorFilter(allFilters, filters, params);
 
         StringBuilder where = buildWhere(filters, P_FILTER, params, query.table());
-        appendOrConditions(where, query.orConditions(), knownCols, params, query.table());
+        appendOrConditions(where, query.orConditions(), params, query.table());
         appendAfterCursor(where, query, knownCols, params);
         if (singleRow) {
             if (!where.isEmpty()) where.append(AND);
@@ -162,7 +172,7 @@ public class RestQueryCompiler {
                                                                Map<String, Object> params) {
         VectorSearchBuilder.VectorClause vectorClause = null;
         for (FilterSpec filter : allFilters) {
-            requireSupported(filter);
+            filterSql.requireSupported(filter);
             if ("vector".equals(filter.operator()) && vectorClause == null) {
                 vectorClause = compileVectorFilter(filter, ALIAS, params);
             } else {
@@ -198,6 +208,19 @@ public class RestQueryCompiler {
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
         Map<String, Object> row = writable(table, RlsOp.INSERT, input);
+        Map<String, Object> bound = new LinkedHashMap<>();
+        String insert = insertSql(table, quotedTable, row, params, bound);
+        if (keyedWrites()) {
+            var keyed = keyed(table, quotedTable, List.of(RlsOp.INSERT));
+            return new CompiledResult(insert, params, keyed.insert(List.of(new KeyedWrites.Insert(insert, params, bound)), false));
+        }
+        String cte = WITH + CTE_INS + AS_OPEN + insert + RETURNING_ALL;
+        return new CompiledResult(cte + SPACE + output(table, CTE_INS, false, List.of(RlsOp.INSERT), params), params);
+    }
+
+    /** {@code INSERT INTO t(cols) VALUES (...)} of {@code row}, its values bound in {@code params} and {@code bound}. */
+    private String insertSql(String table, String quotedTable, Map<String, Object> row, Map<String, Object> params,
+                             Map<String, Object> bound) {
         List<String> cols = new ArrayList<>();
         List<String> vals = new ArrayList<>();
         int i = 0;
@@ -205,11 +228,10 @@ public class RestQueryCompiler {
             String pn = P_INSERT + (i++);
             cols.add(dialect.quoteIdentifier(entry.getKey()));
             vals.add(PARAM_PREFIX + pn);
-            params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
+            params.put(pn, values.coerceParam(table, entry.getKey(), entry.getValue()));
+            bound.put(entry.getKey(), params.get(pn));
         }
-        String cte = WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
-                + parens(joinCols(cols)) + VALUES + parens(String.join(COMMA_SEP, vals)) + RETURNING_ALL;
-        return new CompiledResult(cte + SPACE + output(table, CTE_INS, false, List.of(RlsOp.INSERT), params), params);
+        return INSERT_INTO + quotedTable + parens(joinCols(cols)) + VALUES + parens(String.join(COMMA_SEP, vals));
     }
 
     public CompiledResult compileBulkInsert(String table, List<Map<String, Object>> rows) {
@@ -222,13 +244,16 @@ public class RestQueryCompiler {
         Set<String> allCols = new LinkedHashSet<>();
         written.forEach(row -> allCols.addAll(row.keySet()));
         List<String> colNames = allCols.stream().toList();
+        if (keyedWrites()) {
+            return keyedBulkInsert(table, quotedTable, written, colNames);
+        }
 
         List<String> valueRows = new ArrayList<>();
         for (int rowIndex = 0; rowIndex < written.size(); rowIndex++) {
             List<String> vals = new ArrayList<>();
             for (String col : colNames) {
                 String pn = P_INSERT + rowIndex + UNDERSCORE + col;
-                params.put(pn, coerceParam(table, col, written.get(rowIndex).getOrDefault(col, null)));
+                params.put(pn, values.coerceParam(table, col, written.get(rowIndex).getOrDefault(col, null)));
                 vals.add(PARAM_PREFIX + pn);
             }
             valueRows.add(parens(String.join(COMMA_SEP, vals)));
@@ -240,6 +265,23 @@ public class RestQueryCompiler {
         return new CompiledResult(cte + SPACE + output(table, CTE_INS, true, List.of(RlsOp.INSERT), params), params);
     }
 
+    /** One statement per row, so each row's generated key is known; a column a row omits is NULL, as in one VALUES. */
+    private CompiledResult keyedBulkInsert(String table, String quotedTable, List<Map<String, Object>> written,
+                                           List<String> colNames) {
+        List<KeyedWrites.Insert> inserts = new ArrayList<>();
+        Map<String, Object> allParams = new LinkedHashMap<>();
+        for (Map<String, Object> row : written) {
+            Map<String, Object> full = new LinkedHashMap<>();
+            colNames.forEach(col -> full.put(col, row.get(col)));
+            Map<String, Object> params = new LinkedHashMap<>();
+            Map<String, Object> bound = new LinkedHashMap<>();
+            inserts.add(new KeyedWrites.Insert(insertSql(table, quotedTable, full, params, bound), params, bound));
+            allParams.putAll(params);
+        }
+        var keyed = keyed(table, quotedTable, List.of(RlsOp.INSERT));
+        return new CompiledResult(inserts.getFirst().sql(), allParams, keyed.insert(inserts, true));
+    }
+
     /**
      * INSERT … ON CONFLICT DO UPDATE: the insert half obeys the insert permission, the update half the
      * update permission's columns, presets and filter, and every written row must pass both checks.
@@ -248,22 +290,45 @@ public class RestQueryCompiler {
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
         Map<String, Object> row = writable(table, RlsOp.INSERT, input);
-        List<String> cols = new ArrayList<>();
-        List<String> vals = new ArrayList<>();
-        int i = 0;
-        for (var entry : row.entrySet()) {
-            String pn = P_INSERT + (i++);
-            cols.add(dialect.quoteIdentifier(entry.getKey()));
-            vals.add(PARAM_PREFIX + pn);
-            params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
+        if (keyedWrites()) {
+            return keyedUpsert(table, quotedTable, input, row, conflictCols);
         }
+        String insert = insertSql(table, quotedTable, row, params, new LinkedHashMap<>());
         String onConflict = ON_CONFLICT + parens(String.join(COMMA_SEP,
                 conflictCols.stream().map(dialect::quoteIdentifier).toList()))
                 + doUpdate(table, input, conflictCols, params);
-        String cte = WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
-                + parens(joinCols(cols)) + VALUES + parens(String.join(COMMA_SEP, vals)) + onConflict + RETURNING_ALL;
+        String cte = WITH + CTE_INS + AS_OPEN + insert + onConflict + RETURNING_ALL;
         return new CompiledResult(cte + SPACE
                 + output(table, CTE_INS, false, List.of(RlsOp.INSERT, RlsOp.UPDATE), params), params);
+    }
+
+    /**
+     * {@code INSERT … AS incoming ON DUPLICATE KEY UPDATE}. Without every key column sent no existing row can
+     * conflict on the key, so it is a plain insert. The update half cannot carry a filter, so an update
+     * permission filter is refused.
+     */
+    private CompiledResult keyedUpsert(String table, String quotedTable, Map<String, Object> input,
+                                       Map<String, Object> row, List<String> conflictCols) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        Map<String, Object> bound = new LinkedHashMap<>();
+        String insert = insertSql(table, quotedTable, row, params, bound);
+        var keyed = keyed(table, quotedTable, List.of(RlsOp.INSERT, RlsOp.UPDATE));
+        List<String> keys = schemaInfo.hasPrimaryKey(table) ? schemaInfo.getPrimaryKeys(table) : List.of();
+        if (keys.isEmpty() || !keys.stream().allMatch(key -> bound.get(key) != null)) {
+            return new CompiledResult(insert, params, keyed.insert(List.of(new KeyedWrites.Insert(insert, params, bound)), false));
+        }
+        StringBuilder filter = new StringBuilder();
+        appendRls(filter, table, dialect.quoteIdentifier(INCOMING), RlsOp.UPDATE, new LinkedHashMap<>());
+        if (!filter.isEmpty()) {
+            throw new IllegalArgumentException("Upsert under an update permission filter is not supported on "
+                    + dialect.databaseName());
+        }
+        List<String> sets = upsertSets(table, input, conflictCols, params, INCOMING);
+        if (sets.isEmpty()) {
+            return new CompiledResult(insert, params, keyed.upsert(new KeyedWrites.Insert(insert, params, bound), true));
+        }
+        String upsert = insert + " AS " + INCOMING + " ON DUPLICATE KEY UPDATE " + String.join(COMMA_SEP, sets);
+        return new CompiledResult(upsert, params, keyed.upsert(new KeyedWrites.Insert(upsert, params, bound), false));
     }
 
     /**
@@ -273,6 +338,17 @@ public class RestQueryCompiler {
      */
     private String doUpdate(String table, Map<String, Object> input, List<String> conflictCols,
                             Map<String, Object> params) {
+        List<String> updateSets = upsertSets(table, input, conflictCols, params, EXCLUDED);
+        if (updateSets.isEmpty()) return DO_NOTHING;
+        String targetRef = table.contains(".") ? table.substring(table.lastIndexOf('.') + 1) : table;
+        StringBuilder usingWhere = new StringBuilder();
+        appendRls(usingWhere, table, dialect.quoteIdentifier(targetRef), RlsOp.UPDATE, params);
+        return DO_UPDATE + SET + String.join(COMMA_SEP, updateSets) + (usingWhere.isEmpty() ? "" : WHERE + usingWhere);
+    }
+
+    /** The upsert's update assignments: a sent column takes the incoming row's value, a preset its own. */
+    private List<String> upsertSets(String table, Map<String, Object> input, List<String> conflictCols,
+                                    Map<String, Object> params, String incomingRef) {
         Map<String, Object> changed = new LinkedHashMap<>(input);
         conflictCols.forEach(changed::remove);
         Map<String, Object> updated = writable(table, RlsOp.UPDATE, changed);
@@ -281,18 +357,14 @@ public class RestQueryCompiler {
         for (var entry : updated.entrySet()) {
             String qCol = dialect.quoteIdentifier(entry.getKey());
             if (changed.containsKey(entry.getKey())) {
-                updateSets.add(qCol + ASSIGN + EXCLUDED + DOT + qCol);
+                updateSets.add(qCol + ASSIGN + incomingRef + DOT + qCol);
             } else {
                 String pn = P_UPDATE + "p" + (i++);
                 updateSets.add(qCol + ASSIGN + PARAM_PREFIX + pn);
-                params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
+                params.put(pn, values.coerceParam(table, entry.getKey(), entry.getValue()));
             }
         }
-        if (updateSets.isEmpty()) return DO_NOTHING;
-        String targetRef = table.contains(".") ? table.substring(table.lastIndexOf('.') + 1) : table;
-        StringBuilder usingWhere = new StringBuilder();
-        appendRls(usingWhere, table, dialect.quoteIdentifier(targetRef), RlsOp.UPDATE, params);
-        return DO_UPDATE + SET + String.join(COMMA_SEP, updateSets) + (usingWhere.isEmpty() ? "" : WHERE + usingWhere);
+        return updateSets;
     }
 
     public CompiledResult compileUpdate(String table, Map<String, Object> input, List<FilterSpec> filters) {
@@ -301,18 +373,24 @@ public class RestQueryCompiler {
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
         List<String> setClauses = new ArrayList<>();
+        Map<String, Object> set = new LinkedHashMap<>();
         int i = 0;
         for (var entry : writable(table, RlsOp.UPDATE, input).entrySet()) {
             String pn = P_UPDATE + (i++);
             setClauses.add(dialect.quoteIdentifier(entry.getKey()) + ASSIGN + PARAM_PREFIX + pn);
-            params.put(pn, coerceParam(table, entry.getKey(), entry.getValue()));
+            params.put(pn, values.coerceParam(table, entry.getKey(), entry.getValue()));
+            set.put(entry.getKey(), params.get(pn));
         }
         if (setClauses.isEmpty()) throw new IllegalArgumentException("Update sets no column");
         StringBuilder where = buildWhere(filters, P_WHERE_FILTER, params, table);
         // Rows the caller may update, and read: the update filter carries the select filter.
         appendRls(where, table, null, RlsOp.UPDATE, params);
-        String cte = WITH + CTE_UPD + AS_OPEN + UPDATE + quotedTable
-                + SET + String.join(COMMA_SEP, setClauses) + WHERE + where + RETURNING_ALL;
+        String update = UPDATE + quotedTable + SET + String.join(COMMA_SEP, setClauses) + WHERE + where;
+        if (keyedWrites()) {
+            var keyed = keyed(table, quotedTable, List.of(RlsOp.UPDATE));
+            return new CompiledResult(update, params, keyed.update(update, where.toString(), params, set));
+        }
+        String cte = WITH + CTE_UPD + AS_OPEN + update + RETURNING_ALL;
         return new CompiledResult(cte + SPACE + output(table, CTE_UPD, true, List.of(RlsOp.UPDATE), params), params);
     }
 
@@ -324,8 +402,41 @@ public class RestQueryCompiler {
         StringBuilder where = buildWhere(filters, P_DELETE_FILTER, params, table);
         // Rows the caller may delete, and read: the delete filter carries the select filter.
         appendRls(where, table, null, RlsOp.DELETE, params);
-        String cte = WITH + CTE_DEL + AS_OPEN + DELETE_FROM + quotedTable + WHERE + where + RETURNING_ALL;
+        String delete = DELETE_FROM + quotedTable + WHERE + where;
+        if (keyedWrites()) {
+            var keyed = keyed(table, quotedTable, List.of());
+            return new CompiledResult(delete, params, keyed.delete(delete, where.toString(), params));
+        }
+        String cte = WITH + CTE_DEL + AS_OPEN + delete + RETURNING_ALL;
         return new CompiledResult(cte + SPACE + output(table, CTE_DEL, true, List.of(), params), params);
+    }
+
+    /** No RETURNING: the write runs as statements whose rows are read back by key. */
+    private boolean keyedWrites() {
+        return !dialect.supportsReturning();
+    }
+
+    /**
+     * How {@code table}'s written rows are read back: the caller's columns, passing the select filter, or none
+     * when the caller may not select it. A permission check on the written rows cannot run without RETURNING,
+     * so one is refused.
+     */
+    private KeyedWrites keyed(String table, String quotedTable, List<RlsOp> checks) {
+        WriteGuard guard = RlsContext.writeGuard();
+        if (guard != null && checks.stream().anyMatch(op -> guard.check(table, CHECK_ALIAS, op) != null)) {
+            throw new IllegalArgumentException("Permission checks on written rows are not supported on "
+                    + dialect.databaseName());
+        }
+        KeyedWrites.ReadBack readBack = null;
+        if (access.permits(table, RlsOp.SELECT)) {
+            Map<String, Object> params = new LinkedHashMap<>();
+            StringBuilder readable = new StringBuilder();
+            appendRls(readable, table, ALIAS, RlsOp.SELECT, params);
+            readBack = new KeyedWrites.ReadBack(dialect.buildObject(jsonEntries(schemaInfo.getColumns(table), ALIAS)),
+                    readable.toString(), params);
+        }
+        List<String> keys = schemaInfo.hasPrimaryKey(table) ? schemaInfo.getPrimaryKeys(table) : List.of();
+        return new KeyedWrites(dialect, table, quotedTable, ALIAS, keys, readBack);
     }
 
     /**
@@ -436,8 +547,8 @@ public class RestQueryCompiler {
         });
     }
 
+    /** A filter on a column the table lacks is refused, with or without permissions: a typo must not match every row. */
     private void requireKnownFilterColumns(String table, List<FilterSpec> filters) {
-        if (!access.enforced()) return;
         Set<String> knownCols = schemaInfo.getColumns(table);
         filters.stream().map(FilterSpec::column).filter(column -> !knownCols.contains(column)).findFirst()
                 .ifPresent(column -> {
@@ -457,7 +568,7 @@ public class RestQueryCompiler {
         int fc = 0;
         for (FilterSpec filter : filters) {
             if (!where.isEmpty()) where.append(AND);
-            where.append(buildFilterSql(filter, prefix + (fc++), params, table));
+            where.append(filterSql.sql(filter, prefix + (fc++), params, table));
         }
         return where;
     }
@@ -482,14 +593,13 @@ public class RestQueryCompiler {
         where.append("(").append(rls.sql()).append(")");
     }
 
-    private void appendOrConditions(StringBuilder where, List<OrCondition> ors, Set<String> knownCols, Map<String, Object> params, String table) {
+    private void appendOrConditions(StringBuilder where, List<OrCondition> ors, Map<String, Object> params, String table) {
         if (ors == null) return;
         for (int oi = 0; oi < ors.size(); oi++) {
             List<String> parts = new ArrayList<>();
             for (int ci = 0; ci < ors.get(oi).conditions().size(); ci++) {
                 var filter = ors.get(oi).conditions().get(ci);
-                if (knownCols.contains(filter.column()))
-                    parts.add(buildFilterSql(filter, P_OR + oi + UNDERSCORE + ci, params, table));
+                parts.add(filterSql.sql(filter, P_OR + oi + UNDERSCORE + ci, params, table));
             }
             if (!parts.isEmpty()) {
                 if (!where.isEmpty()) where.append(AND);
@@ -516,9 +626,10 @@ public class RestQueryCompiler {
             sql.append(ORDER_BY);
             List<String> parts = new ArrayList<>();
             for (OrderBySpec orderSpec : orderBy) {
-                String part = ALIAS + DOT + dialect.quoteIdentifier(orderSpec.column()) + SPACE + validateDirection(orderSpec.direction());
-                if (orderSpec.nulls() != null) part += SPACE + validateNulls(orderSpec.nulls());
-                parts.add(part);
+                String colRef = ALIAS + DOT + dialect.quoteIdentifier(orderSpec.column());
+                String direction = validateDirection(orderSpec.direction());
+                parts.add(orderSpec.nulls() == null ? colRef + SPACE + direction
+                        : dialect.orderByNulls(colRef, direction, validateNulls(orderSpec.nulls())));
             }
             sql.append(String.join(COMMA_SEP, parts));
         }
@@ -535,15 +646,16 @@ public class RestQueryCompiler {
         throw new IllegalArgumentException("Invalid ORDER BY direction: " + direction);
     }
 
+    /** The NULLS position, FIRST or LAST. */
     private static String validateNulls(String nulls) {
-        if ("NULLS FIRST".equalsIgnoreCase(nulls)) return "NULLS FIRST";
-        if ("NULLS LAST".equalsIgnoreCase(nulls)) return "NULLS LAST";
+        if ("NULLS FIRST".equalsIgnoreCase(nulls)) return "FIRST";
+        if ("NULLS LAST".equalsIgnoreCase(nulls)) return "LAST";
         throw new IllegalArgumentException("Invalid ORDER BY NULLS clause: " + nulls);
     }
 
     private String buildJsonAgg(String table, List<String> columns, List<String> embedSql, Set<String> knownCols) {
         // The inner select holds only the caller's columns, so the whole-row form is safe.
-        if (columns.isEmpty() && embedSql.isEmpty()) {
+        if (columns.isEmpty() && embedSql.isEmpty() && dialect.supportsRowToJson()) {
             return dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(ALIAS)));
         }
         List<String> entries = jsonEntries(columns.isEmpty() ? schemaInfo.getColumns(table) : columns, ALIAS);
@@ -562,7 +674,7 @@ public class RestQueryCompiler {
         if (query.afterCursor() == null || col == null) return;
         if (!knownCols.contains(col)) return;
         if (!where.isEmpty()) where.append(AND);
-        params.put(P_AFTER, convertValue(query.afterCursor(), query.table(), col));
+        params.put(P_AFTER, values.convertValue(query.afterCursor(), query.table(), col));
         where.append(dialect.quoteIdentifier(col)).append(GT).append(PARAM_PREFIX).append(P_AFTER);
     }
 
@@ -634,10 +746,14 @@ public class RestQueryCompiler {
         StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(rev.fkColumn())
             + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(rev.refColumns().get(0)));
         appendRls(ew, rev.childTable(), ia, RlsOp.SELECT, params);
+        String children = parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew + roleLimit(rev.childTable()))
+                + SPACE + oa;
+        if (!dialect.supportsRowToJson()) {
+            return sqlString(embed.relationName()) + COMMA_SEP
+                    + parens(SELECT + dialect.coalesceArray(dialect.aggregateArray(rowExpr)) + FROM + children);
+        }
         return sqlString(embed.relationName()) + COMMA_SEP + COALESCE + parens(
-            parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM
-            + parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew + roleLimit(rev.childTable()))
-            + SPACE + oa) + COMMA_SEP + EMPTY_JSON_ARRAY);
+            parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM + children) + COMMA_SEP + EMPTY_JSON_ARRAY);
     }
 
     /**
@@ -647,8 +763,11 @@ public class RestQueryCompiler {
      */
     private String buildRowExpr(EmbedSpec embed, String outerAlias, String table, List<String> childEntries) {
         // The embed's inner select holds only the caller's columns, so the whole-row form is safe.
-        if (childEntries.isEmpty()) {
+        if (childEntries.isEmpty() && dialect.supportsRowToJson()) {
             return dialect.rowToJson(outerAlias + DOT_STAR);
+        }
+        if (childEntries.isEmpty()) {
+            return dialect.buildObject(jsonEntries(embedColumns(embed, table), outerAlias));
         }
         List<String> cols = embed.columns().isEmpty() || embed.columns().contains(STAR)
             ? new ArrayList<>(schemaInfo.getColumns(table))
@@ -656,6 +775,14 @@ public class RestQueryCompiler {
         List<String> entries = jsonEntries(cols, outerAlias);
         entries.addAll(childEntries);
         return dialect.buildObject(entries);
+    }
+
+    /** The columns {@link #buildEmbedSelect} selects. */
+    private List<String> embedColumns(EmbedSpec embed, String table) {
+        Set<String> known = schemaInfo.getColumns(table);
+        List<String> named = embed.columns().contains(STAR) ? List.of()
+                : embed.columns().stream().filter(known::contains).toList();
+        return named.isEmpty() ? new ArrayList<>(known) : named;
     }
 
     private String buildEmbedSelect(EmbedSpec embed, String alias, String table) {
@@ -700,283 +827,5 @@ public class RestQueryCompiler {
         if (fkHint != null && !fkColumn.equals(fkHint)) return false;
         String raw = targetTable.contains(DOT) ? targetTable.substring(targetTable.indexOf(DOT) + 1) : targetTable;
         return raw.equals(relName);
-    }
-
-
-    /** Refuses an operator the database cannot run; it is never compiled into SQL the database would reject. */
-    private void requireSupported(FilterSpec filter) {
-        if (!dialect.filterCapabilities().restOperators().contains(filter.operator())) {
-            throw new IllegalArgumentException("Filter operator '" + filter.operator() + "' on column '"
-                    + filter.column() + "' is not supported by this database");
-        }
-    }
-
-    private String buildFilterSql(FilterSpec filter, String paramName, Map<String, Object> params, String table) {
-        requireSupported(filter);
-        String colRef = dialect.quoteIdentifier(filter.column());
-        String neg = filter.negated() ? NOT : "";
-        String op = filter.operator();
-
-        return switch (op) {
-            case "eq", "neq", "gt", "gte", "lt", "lte" ->
-                    comparisonSql(op, filter, paramName, params, colRef, neg, table);
-            case "like", "ilike", "startswith", "endswith", "match", "imatch" ->
-                    patternSql(op, filter, paramName, params, colRef, neg);
-            case "is", "isnotnull", "isdistinct" ->
-                    nullSql(op, filter, paramName, params, colRef, neg, table);
-            case "in", "notin" ->
-                    buildInSql(filter, colRef, neg, paramName, params, "notin".equals(op), table);
-            case "haskey",
-                 "jsoncontains", "contains", "cs",
-                 "jsoncontained", "containedin", "cd",
-                 "jsonpath", "jsonpathexists",
-                 "arraycontains", "arrayhasall",
-                 "arrayhasany", "ov" ->
-                    jsonOrArraySql(op, filter, paramName, params, colRef, neg, table);
-            case "arraylength" -> {
-                params.put(paramName, convertValue(filter.value(), table, filter.column()));
-                yield neg + FN_ARRAY_LENGTH + parens(colRef + COMMA_SEP + "1") + ASSIGN + PARAM_PREFIX + paramName;
-            }
-            case "fts", "plfts", "phfts", "wfts" ->
-                    tsFilter(params, paramName, filter, neg, colRef, ftsFunction(op));
-            case "sl", "sr", "nxl", "nxr", "adj" ->
-                    rangeSql(op, filter, paramName, params, colRef, neg, table);
-            default -> throw new IllegalArgumentException("Unsupported filter operator: " + op);
-        };
-    }
-
-    private String comparisonSql(String op, FilterSpec filter, String paramName,
-                                  Map<String, Object> params, String colRef, String neg, String table) {
-        String sqlOp = switch (op) {
-            case "eq" -> ASSIGN;
-            case "neq" -> NEQ;
-            case "gt" -> GT;
-            case "gte" -> GTE;
-            case "lt" -> LT;
-            case "lte" -> LTE;
-            default -> throw new IllegalStateException(op);
-        };
-        return comparison(params, paramName, filter, neg, colRef, sqlOp, table);
-    }
-
-    private String patternSql(String op, FilterSpec filter, String paramName,
-                               Map<String, Object> params, String colRef, String neg) {
-        return switch (op) {
-            case "like" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value().replace('*', '%'));
-            case "ilike" -> {
-                params.put(paramName, filter.value().replace('*', '%'));
-                yield neg + dialect.ilike(colRef, PARAM_PREFIX + paramName);
-            }
-            case "startswith" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value() + "%");
-            case "endswith" -> stringFilter(params, paramName, neg, colRef, LIKE, "%" + filter.value());
-            case "match" -> stringFilter(params, paramName, neg, colRef, REGEX_MATCH, filter.value());
-            case "imatch" -> stringFilter(params, paramName, neg, colRef, REGEX_IMATCH, filter.value());
-            default -> throw new IllegalStateException(op);
-        };
-    }
-
-    private String nullSql(String op, FilterSpec filter, String paramName,
-                            Map<String, Object> params, String colRef, String neg, String table) {
-        return switch (op) {
-            case "is" -> isFilter(neg, colRef, filter.value());
-            case "isnotnull" -> neg + colRef + IS_NOT_NULL;
-            case "isdistinct" -> {
-                params.put(paramName, convertValue(filter.value(), table, filter.column()));
-                yield neg + colRef + IS_DISTINCT_FROM + PARAM_PREFIX + paramName;
-            }
-            default -> throw new IllegalStateException(op);
-        };
-    }
-
-    /**
-     * jsonpath / jsonpathexists use the jsonb_path_exists function form instead of the {@code @?}
-     * operator — the {@code ?} character collides with JDBC placeholder parsing in Spring's
-     * NamedParameterJdbcTemplate. Array operators bind the raw {@code {a,b,c}} literal via
-     * convertValue so Postgres parses it as the column's array type.
-     */
-    private String jsonOrArraySql(String op, FilterSpec filter, String paramName,
-                                    Map<String, Object> params, String colRef, String neg, String table) {
-        String expr = switch (op) {
-            case "haskey" -> FN_JSONB_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName);
-            case "jsoncontains", "contains", "cs" -> colRef + CONTAINS + PARAM_PREFIX + paramName + CAST_JSONB;
-            case "jsoncontained", "containedin", "cd" -> colRef + CONTAINED_BY + PARAM_PREFIX + paramName + CAST_JSONB;
-            case "jsonpath", "jsonpathexists" -> FN_JSONB_PATH_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName + CAST_JSONPATH);
-            case "arraycontains", "arrayhasall" -> colRef + CONTAINS + PARAM_PREFIX + paramName;
-            case "arrayhasany", "ov" -> colRef + OVERLAPS + PARAM_PREFIX + paramName;
-            default -> throw new IllegalStateException(op);
-        };
-        return jsonFilter(params, paramName, filter, neg, expr, table);
-    }
-
-    private String ftsFunction(String op) {
-        return switch (op) {
-            case "fts" -> FN_TO_TSQUERY;
-            case "plfts" -> FN_PLAINTO_TSQUERY;
-            case "phfts" -> FN_PHRASETO_TSQUERY;
-            case "wfts" -> FN_WEBSEARCH_TSQUERY;
-            default -> throw new IllegalStateException(op);
-        };
-    }
-
-    private String rangeSql(String op, FilterSpec filter, String paramName,
-                             Map<String, Object> params, String colRef, String neg, String table) {
-        String rangeOp = switch (op) {
-            case "sl" -> STRICTLY_LEFT;
-            case "sr" -> STRICTLY_RIGHT;
-            case "nxl" -> NO_EXTEND_LEFT;
-            case "nxr" -> NO_EXTEND_RIGHT;
-            case "adj" -> ADJACENT;
-            default -> throw new IllegalStateException(op);
-        };
-        return jsonFilter(params, paramName, filter, neg, colRef + rangeOp + PARAM_PREFIX + paramName, table);
-    }
-
-    private String comparison(Map<String, Object> params, String pn, FilterSpec filter, String neg, String col, String op, String table) {
-        params.put(pn, convertValue(filter.value(), table, filter.column()));
-        return neg + col + op + PARAM_PREFIX + pn;
-    }
-
-    private String stringFilter(Map<String, Object> params, String pn, String neg, String col, String op, String val) {
-        params.put(pn, val);
-        return neg + col + op + PARAM_PREFIX + pn;
-    }
-
-    private String jsonFilter(Map<String, Object> params, String pn, FilterSpec filter, String neg, String expr, String table) {
-        // Route the bind through convertValue so json/jsonb and array columns
-        // get Types.OTHER coercion — Postgres then parses the string against
-        // the actual column type. Without this, raw String binds produce
-        // `varchar` on both sides and lose against `jsonb` / `text[]`.
-        params.put(pn, convertValue(filter.value(), table, filter.column()));
-        return neg + expr;
-    }
-
-    private String tsFilter(Map<String, Object> params, String pn, FilterSpec filter, String neg, String col, String functionName) {
-        params.put(pn, filter.value());
-        return neg + FN_TO_TSVECTOR + parens(col) + MATCH_TSQUERY + functionName + parens(PARAM_PREFIX + pn);
-    }
-
-    private String isFilter(String neg, String col, String value) {
-        return switch (value.toLowerCase()) {
-            case "true" -> neg + col + IS_TRUE;
-            case "false" -> neg + col + IS_FALSE;
-            default -> neg + col + IS_NULL; // "null" and anything else → IS NULL check
-        };
-    }
-
-    private String buildInSql(FilterSpec filter, String col, String neg, String pn, Map<String, Object> params, boolean not, String table) {
-        String inner = filter.value();
-        if (inner.startsWith("(") && inner.endsWith(")")) inner = inner.substring(1, inner.length() - 1);
-        String[] items = inner.split(",");
-        if (items.length > MAX_IN_LIST) throw new IllegalArgumentException("IN list exceeds maximum of " + MAX_IN_LIST);
-        List<String> ph = new ArrayList<>();
-        for (int i = 0; i < items.length; i++) {
-            String param = pn + UNDERSCORE + i;
-            // Coerce each item through the same type-aware path as eq/neq/gt/…
-            // so int columns get Integer bindings and enum columns get a
-            // Types.OTHER cast. Without this, `?id=in.(1,2,3)` binds three
-            // Strings and Postgres rejects the whole query.
-            params.put(param, convertValue(items[i].trim(), table, filter.column()));
-            ph.add(PARAM_PREFIX + param);
-        }
-        return neg + col + (not ? NOT_IN : IN) + parens(String.join(COMMA_SEP, ph));
-    }
-
-    /**
-     * Coerce a value from a JSON body (Object) for binding.
-     *
-     * <p>Uses {@code Types.OTHER} for PostgreSQL-specific types so the server — not the
-     * JDBC driver — performs the cast.  Timestamps accept many input formats (ISO-8601,
-     * RFC-2822, "epoch", "now", etc.); binding as {@code Types.OTHER} sends the value as
-     * an untyped text literal and lets PostgreSQL's input function resolve the format,
-     * exactly like {@code '2026-05-01T14:00:00Z'::timestamptz}.
-     */
-    private Object coerceParam(String table, String column, Object value) {
-        if (value == null) return null;
-        if (schemaInfo.getEnumType(table, column) != null) {
-            return new SqlParameterValue(Types.OTHER, value.toString());
-        }
-        String type = schemaInfo.getColumnType(table, column);
-        if (type == null) return value;
-        return switch (type.toLowerCase()) {
-            // Temporal types — with/without timezone, short aliases, array forms (_timestamp = pg ARRAY udt_name)
-            case "timestamp", "timestamptz",
-                 "timestamp with time zone", "timestamp without time zone",
-                 "_timestamp", "_timestamptz", "timestamp[]", "timestamptz[]" ->
-                new SqlParameterValue(Types.OTHER, value.toString());
-            case "date", "_date", "date[]" ->
-                new SqlParameterValue(Types.OTHER, value.toString());
-            case "time", "timetz",
-                 "time with time zone", "time without time zone",
-                 "_time", "_timetz", "time[]", "timetz[]" ->
-                new SqlParameterValue(Types.OTHER, value.toString());
-            case "interval", "_interval", "interval[]" ->
-                new SqlParameterValue(Types.OTHER, value.toString());
-            // Other opaque server types
-            case "uuid", "_uuid", "uuid[]" ->
-                new SqlParameterValue(Types.OTHER, value.toString());
-            case "_text", "text[]" ->
-                new SqlParameterValue(Types.OTHER, value.toString());
-            // JSONB/JSON: Map/List from JSON body must be serialized to a JSON string first
-            case "jsonb", "json", "_jsonb", "_json", "jsonb[]", "json[]" -> {
-                String json = (value instanceof String stringValue) ? stringValue : toJsonString(value);
-                yield new SqlParameterValue(Types.OTHER, json);
-            }
-            // Range types (int4range, ...) the server parses; a number sent as a string is bound as one.
-            default -> type.endsWith("range") ? new SqlParameterValue(Types.OTHER, value.toString())
-                    : NumericInput.coerce(type, value);
-        };
-    }
-
-    private String toJsonString(Object value) {
-        try {
-            return MAPPER.writeValueAsString(value);
-        } catch (JsonProcessingException _) {
-            return value.toString();
-        }
-    }
-
-    /**
-     * Coerce a filter value (String) for binding — converts to Java type for numeric columns,
-     * delegates PostgreSQL-specific types to server-side casting via {@code Types.OTHER}.
-     */
-    private Object convertValue(String value, String table, String column) {
-        if (schemaInfo.getEnumType(table, column) != null) {
-            return new SqlParameterValue(Types.OTHER, value);
-        }
-        String type = schemaInfo.getColumnType(table, column);
-        if (type == null) return value;
-        ColumnValueCheck.require(table, column, type, value);
-        try {
-            return switch (type.toLowerCase()) {
-                case "integer", "int4", "serial" -> Integer.parseInt(value);
-                case "bigint", "int8", "bigserial" -> Long.parseLong(value);
-                case "numeric", "decimal", "float8", "double precision" -> Double.parseDouble(value);
-                case "real", "float4" -> Float.parseFloat(value);
-                case "boolean", "bool" -> Boolean.parseBoolean(value);
-                // Temporal types — server handles all format variations
-                case "timestamp", "timestamptz",
-                     "timestamp with time zone", "timestamp without time zone",
-                     "_timestamp", "_timestamptz", "timestamp[]", "timestamptz[]" ->
-                    new SqlParameterValue(Types.OTHER, value);
-                case "date", "_date", "date[]" ->
-                    new SqlParameterValue(Types.OTHER, value);
-                case "time", "timetz",
-                     "time with time zone", "time without time zone",
-                     "_time", "_timetz", "time[]", "timetz[]" ->
-                    new SqlParameterValue(Types.OTHER, value);
-                case "interval", "_interval", "interval[]" ->
-                    new SqlParameterValue(Types.OTHER, value);
-                // Other opaque server types
-                case "uuid", "_uuid", "uuid[]" ->
-                    new SqlParameterValue(Types.OTHER, value);
-                case "jsonb", "json", "_jsonb", "_json", "jsonb[]", "json[]" ->
-                    new SqlParameterValue(Types.OTHER, value);
-                case "_text", "text[]" ->
-                    new SqlParameterValue(Types.OTHER, value);
-                default -> value;
-            };
-        } catch (NumberFormatException _) {
-            return value;
-        }
     }
 }

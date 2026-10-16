@@ -25,6 +25,36 @@ public interface SqlDialect {
         return "row_to_json(" + alias + ")";
     }
 
+    /** Whether {@link #rowToJson} exists; without it a row's JSON names every column. MySQL: false */
+    default boolean supportsRowToJson() {
+        return true;
+    }
+
+    /** The database's name as a client reads it in a refusal. */
+    default String databaseName() {
+        return "Postgres";
+    }
+
+    /** {@code colRef} differs from {@code paramRef}, NULL being a value. MySQL: {@code NOT (col <=> :param)} */
+    default String isDistinctFrom(String colRef, String paramRef) {
+        return colRef + " IS DISTINCT FROM " + paramRef;
+    }
+
+    /** Whether a value bound untyped is parsed by the server as its column's type. MySQL: false, it is text */
+    default boolean parsesUntypedParameters() {
+        return true;
+    }
+
+    /** The document a full-text search of a text column matches. MySQL: the column, under its FULLTEXT index */
+    default String fullTextDocument(String colRef) {
+        return "to_tsvector(" + colRef + ")";
+    }
+
+    /** Whether tracked database functions can be called. MySQL: false (its routines are not reflected) */
+    default boolean supportsFunctions() {
+        return true;
+    }
+
     /** Quote an identifier. PG: "id", MySQL: `id` */
     String quoteIdentifier(String id);
 
