@@ -551,3 +551,107 @@ describe('Stored procedures', () => {
     expect(mutationNames).not.toContain('callHanaTransferFunds');
   });
 });
+
+// ─── Operators MySQL runs natively (EXC-615) ─────────────────────────────────
+// Regex runs through REGEXP_LIKE, JSON through JSON_CONTAINS / JSON_CONTAINS_PATH,
+// and full-text search through MATCH ... AGAINST on a column with its own FULLTEXT index.
+
+describe('Native MySQL filter operators', () => {
+  test('regex is case-sensitive, iregex is not', async () => {
+    const upper = await client.request(gql`{ hanaCustomer(where: { first_name: { regex: "^MA" } }) { first_name } }`);
+    const lower = await client.request(gql`{ hanaCustomer(where: { first_name: { regex: "^ma" } }) { first_name } }`);
+    const insensitive = await client.request(gql`{ hanaCustomer(where: { first_name: { iregex: "^ma" } }) { first_name } }`);
+    expect(upper.hanaCustomer.map(r => r.first_name).sort()).toEqual(['MARIA', 'MARY']);
+    expect(lower.hanaCustomer).toEqual([]);
+    expect(insensitive.hanaCustomer.length).toBe(upper.hanaCustomer.length);
+  });
+
+  test('contains and containedBy compare JSON documents', async () => {
+    const contains = await client.request(gql`{ hanaProductDetail(where: { attributes: { contains: { color: "blue" } } }) { product_id } }`);
+    expect(contains.hanaProductDetail.map(r => r.product_id)).toEqual([1]);
+    const containedBy = await client.request(gql`{
+      hanaProductDetail(where: { metadata: { containedBy: { sku: "WGT-B-002", warehouse: "US-WEST", extra: 1 } } }) { product_id }
+    }`);
+    expect(containedBy.hanaProductDetail.map(r => r.product_id)).toEqual([2]);
+  });
+
+  test('hasKey, hasKeys and hasAnyKeys check top-level keys', async () => {
+    const data = await client.request(gql`{
+      one: hanaProductDetail(where: { attributes: { hasKey: "waterproof" } }) { product_id }
+      all: hanaProductDetail(where: { metadata: { hasKeys: ["sku", "warranty_years"] } }, orderBy: { product_id: ASC }) { product_id }
+      any: hanaProductDetail(where: { attributes: { hasAnyKeys: ["battery", "max_load"] } }, orderBy: { product_id: ASC }) { product_id }
+    }`);
+    expect(data.one.map(r => r.product_id)).toEqual([2]);
+    expect(data.all.map(r => r.product_id)).toEqual([3, 5]);
+    expect(data.any.map(r => r.product_id)).toEqual([3, 5]);
+  });
+
+  test('search needs every word, phraseSearch keeps them together, rawSearch is boolean mode', async () => {
+    const data = await client.request(gql`{
+      search: hanaArticle(where: { body: { search: "quick fox" } }, orderBy: { article_id: ASC }) { title }
+      phrase: hanaArticle(where: { body: { phraseSearch: "brown fox" } }) { title }
+      raw: hanaArticle(where: { body: { rawSearch: "brown -fox" } }) { title }
+    }`);
+    expect(data.search.map(r => r.title)).toEqual(['Foxes', 'Silver']);
+    expect(data.phrase.map(r => r.title)).toEqual(['Foxes']);
+    expect(data.raw.map(r => r.title)).toEqual(['Dogs']);
+  });
+
+  test('a where passed whole as a variable is applied', async () => {
+    const data = await client.request(
+      gql`query($w: HanaCustomerWhereInput) { hanaCustomer(where: $w) { first_name } }`,
+      { w: { first_name: { eq: 'MARY' } } },
+    );
+    expect(data.hanaCustomer.map(r => r.first_name)).toEqual(['MARY']);
+  });
+
+  // One type per request: graphql-java refuses an introspection asking for input fields more than once.
+  const inputFields = async (name) => {
+    const data = await client.request(gql`query($name: String!) { __type(name: $name) { inputFields { name } } }`, { name });
+    return data.__type ? data.__type.inputFields.map(f => f.name) : null;
+  };
+
+  test('the schema offers only what MySQL runs', async () => {
+    const jsonOps = await inputFields('JsonFilterInput');
+    expect(jsonOps).toEqual(expect.arrayContaining(['contains', 'containedBy', 'hasKey', 'hasKeys', 'hasAnyKeys']));
+    expect(jsonOps).not.toContain('eq');
+    expect(await inputFields('TsvectorFilterInput')).toBeNull();
+    const searchOps = await inputFields('SearchableStringFilterInput');
+    expect(searchOps).toEqual(expect.arrayContaining(['search', 'phraseSearch', 'rawSearch', 'regex']));
+    expect(searchOps).not.toContain('webSearch');
+  });
+});
+
+describe('Filters MySQL cannot run fail loudly', () => {
+  test('webSearch is an error, not every row', async () => {
+    await expect(client.request(gql`{ hanaArticle(where: { body: { webSearch: "fox" } }) { title } }`))
+      .rejects.toThrow(/webSearch/);
+  });
+
+  test('search on a column without its own FULLTEXT index is an error naming the index', async () => {
+    await expect(client.request(gql`{ hanaArticle(where: { summary: { search: "foxes" } }) { title } }`))
+      .rejects.toThrow(/FULLTEXT index/);
+  });
+
+  test('JSON equality is an error', async () => {
+    await expect(client.request(gql`{ hanaProductDetail(where: { metadata: { eq: { sku: "x" } } }) { product_id } }`))
+      .rejects.toThrow(/'eq'/);
+  });
+
+  test('an unknown operator is an error', async () => {
+    await expect(client.request(gql`{ hanaCustomer(where: { first_name: { sounds_like: "MARY" } }) { customer_id } }`))
+      .rejects.toThrow(/sounds_like/);
+  });
+
+  test('a non-list in is an error', async () => {
+    await expect(client.request(gql`{ hanaCustomer(where: { customer_id: { in: 1 } }) { customer_id } }`))
+      .rejects.toThrow(/takes a list/);
+  });
+
+  test('onConflict is an error, not ignored', async () => {
+    await expect(client.request(gql`
+      mutation { createHanaWallets(input: { wallet_id: 1, owner_name: "Alice", balance: 1 },
+        onConflict: { constraint: "PRIMARY", update_columns: ["balance"] }) { wallet_id } }
+    `)).rejects.toThrow(/onConflict/);
+  });
+});

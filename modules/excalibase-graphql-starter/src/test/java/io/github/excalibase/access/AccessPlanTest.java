@@ -35,6 +35,17 @@ class AccessPlanTest {
     }
 
     @Test
+    void aReadableColumnKeepsItsFullTextIndex() {
+        SchemaInfo reflected = AccessFixture.schema();
+        reflected.addFullTextColumn(CUSTOMERS, "name");
+
+        AccessPlan plan = AccessPlan.forRole(reflected, user(entry(CUSTOMERS, selectAll())));
+
+        assertThat(plan.view().isFullTextColumn(CUSTOMERS, "name")).isTrue();
+        assertThat(plan.view().isFullTextColumn(CUSTOMERS, "email")).isFalse();
+    }
+
+    @Test
     void noPermissions_meansAnEmptyView() {
         AccessPlan plan = plan();
 
