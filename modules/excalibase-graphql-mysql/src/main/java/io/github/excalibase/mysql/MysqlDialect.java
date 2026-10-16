@@ -3,6 +3,7 @@ package io.github.excalibase.mysql;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataError;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -20,6 +21,11 @@ public class MysqlDialect implements SqlDialect {
 
     private static final FilterCapabilities FILTER_CAPABILITIES = new MysqlFilterCapabilities();
     private static final String UTC = "'+00:00'";
+
+    @Override
+    public PermissionDialect permissionDialect() {
+        return PermissionDialect.MYSQL;
+    }
 
     @Override
     public Optional<DataError> describeError(SQLException failure) {

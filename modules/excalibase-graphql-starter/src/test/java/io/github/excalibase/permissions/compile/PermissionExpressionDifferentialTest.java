@@ -26,6 +26,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeSet;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.NOTES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.U1;
 import static io.github.excalibase.permissions.compile.FixtureSchema.U2;
@@ -81,7 +82,7 @@ class PermissionExpressionDifferentialTest {
     @MethodSource("cases")
     void rowPredicate_agreesWithNativePostgres(Case testCase) throws SQLException {
         TreeSet<String> oracle = nativeRows(testCase.table(), testCase.nativeSql());
-        RowPredicate predicate = RowPredicate.compile(parse(testCase.expression()), testCase.table(), schema,
+        RowPredicate predicate = RowPredicate.compile(POSTGRES, parse(testCase.expression()), testCase.table(), schema,
                 new SessionBinding(VARIABLES));
 
         for (Map<String, Object> row : allRows(testCase.table())) {
@@ -101,7 +102,7 @@ class PermissionExpressionDifferentialTest {
 
         for (Map<String, Object> row : allRows(testCase.table())) {
             String key = DifferentialFixture.key(testCase.table(), row);
-            SqlFragment probe = RowProbe.ofImage(expression, testCase.table(), row, schema,
+            SqlFragment probe = RowProbe.ofImage(POSTGRES, expression, testCase.table(), row, schema,
                     new SessionBinding(VARIABLES), new ParamNamer("probe")).orElseThrow();
             Boolean kept = jdbc.queryForObject(probe.sql(), new MapSqlParameterSource(probe.params()), Boolean.class);
             assertThat(kept).as("row %s", key).isEqualTo(oracle.contains(key));
@@ -133,7 +134,7 @@ class PermissionExpressionDifferentialTest {
         assertThatThrownBy(() -> engineRows(NOTES, expression))
                 .isInstanceOf(PermissionEvaluationException.class)
                 .extracting("code").isEqualTo("invalid_session_variable");
-        assertThatThrownBy(() -> RowPredicate.compile(parse("{\"org_id\": {\"_in\": \"X-Excalibase-User-Ids\"}}"),
+        assertThatThrownBy(() -> RowPredicate.compile(POSTGRES, parse("{\"org_id\": {\"_in\": \"X-Excalibase-User-Ids\"}}"),
                 NOTES, schema, new SessionBinding(VARIABLES)))
                 .extracting("code").isEqualTo("invalid_session_variable");
     }

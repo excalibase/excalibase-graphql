@@ -3,95 +3,92 @@ package io.github.excalibase.permissions.compile;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.schema.SchemaInfo;
 
-import java.time.Instant;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.util.Locale;
-import java.util.Map;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
-
-import static java.util.Map.entry;
 
 /**
  * The SQL type of a column, as far as permission values care: how a value converts to it, how it
- * binds, and whether two values of it can be compared in memory exactly as Postgres compares them.
+ * binds, and whether two values of it can be compared in memory exactly as the database compares them.
  */
 public final class ColumnType {
 
     public enum Kind {
         SMALLINT, INTEGER, BIGINT, NUMERIC, REAL, DOUBLE, BOOLEAN, UUID, TEXT, TIMESTAMPTZ, TIMESTAMP, DATE,
-        /** A Postgres enum: labels compare equal as text, but order by declaration. */
+        /** An enum: labels compare equal as text, but order by declaration. */
         ENUM,
         /** Any other type: bound as text and cast by the database, never compared in memory. */
         OTHER
     }
 
-    private static final Map<String, Kind> KINDS = Map.ofEntries(
-            entry("smallint", Kind.SMALLINT), entry("int2", Kind.SMALLINT),
-            entry("integer", Kind.INTEGER), entry("int", Kind.INTEGER), entry("int4", Kind.INTEGER),
-            entry("bigint", Kind.BIGINT), entry("int8", Kind.BIGINT),
-            entry("numeric", Kind.NUMERIC), entry("decimal", Kind.NUMERIC),
-            entry("real", Kind.REAL), entry("float4", Kind.REAL),
-            entry("double precision", Kind.DOUBLE), entry("float8", Kind.DOUBLE),
-            entry("boolean", Kind.BOOLEAN), entry("bool", Kind.BOOLEAN),
-            entry("uuid", Kind.UUID),
-            entry("text", Kind.TEXT), entry("character varying", Kind.TEXT), entry("varchar", Kind.TEXT),
-            entry("timestamp with time zone", Kind.TIMESTAMPTZ), entry("timestamptz", Kind.TIMESTAMPTZ),
-            entry("timestamp without time zone", Kind.TIMESTAMP), entry("timestamp", Kind.TIMESTAMP),
-            entry("date", Kind.DATE));
-
-    private static final Map<Kind, String> BUILT_IN_NAMES = Map.ofEntries(
-            entry(Kind.SMALLINT, "smallint"), entry(Kind.INTEGER, "integer"), entry(Kind.BIGINT, "bigint"),
-            entry(Kind.NUMERIC, "numeric"), entry(Kind.REAL, "real"), entry(Kind.DOUBLE, "double precision"),
-            entry(Kind.BOOLEAN, "boolean"), entry(Kind.UUID, "uuid"), entry(Kind.TEXT, "text"),
-            entry(Kind.TIMESTAMPTZ, "timestamptz"), entry(Kind.TIMESTAMP, "timestamp"), entry(Kind.DATE, "date"));
-
     /** Text ordering depends on the database collation, so only the database may decide it. */
     private static final Set<Kind> UNORDERED_IN_MEMORY = Set.of(Kind.TEXT, Kind.ENUM, Kind.OTHER);
 
-    private static final Pattern CASTABLE = Pattern.compile("^[a-z_][a-z0-9_ ]{0,62}$");
-
+    private final PermissionDialect dialect;
     private final Kind kind;
     private final String castTarget;
+    private final List<String> labels;
+    private final String charset;
+    private final String collation;
+    private final boolean comparable;
 
-    private ColumnType(Kind kind, String castTarget) {
+    private ColumnType(PermissionDialect dialect, Kind kind, String castTarget, List<String> labels, String charset,
+                       String collation, boolean comparable) {
+        this.dialect = dialect;
         this.kind = kind;
         this.castTarget = castTarget;
+        this.labels = labels;
+        this.charset = charset;
+        this.collation = collation;
+        this.comparable = comparable;
+    }
+
+    /** A type the database casts a text parameter to, or a built-in one when {@code castTarget} is null. */
+    static ColumnType cast(PermissionDialect dialect, Kind kind, String castTarget) {
+        return new ColumnType(dialect, kind, castTarget, List.of(), null, null, true);
+    }
+
+    /** A type whose text compares under {@code collation}; an enum lists its labels in declaration order. */
+    static ColumnType collated(PermissionDialect dialect, Kind kind, List<String> labels, String charset,
+                               String collation) {
+        return new ColumnType(dialect, kind, null, List.copyOf(labels), charset, collation, true);
+    }
+
+    /** A type the dialect has no mapping for: a column of it can only be tested for NULL. */
+    static ColumnType unsupported(PermissionDialect dialect) {
+        return new ColumnType(dialect, Kind.OTHER, null, List.of(), null, null, false);
     }
 
     /** The type of {@code column} in {@code tableKey}; an unknown table or column is refused. */
-    public static ColumnType of(SchemaInfo schema, String tableKey, String column) {
-        TableRef.resolve(schema, tableKey);
+    public static ColumnType of(PermissionDialect dialect, SchemaInfo schema, String tableKey, String column) {
+        TableRef.resolve(dialect, schema, tableKey);
         String sqlType = schema.getColumnType(tableKey, column);
         if (sqlType == null) {
             throw new PermissionEvaluationException(PermissionEvaluationException.UNKNOWN_COLUMN,
                     "Unknown column " + column + " on " + tableKey);
         }
-        String userType = schema.getEnumType(tableKey, column);
-        if (userType != null) {
-            Kind kind = schema.getEnumTypes().containsKey(userType) ? Kind.ENUM : Kind.OTHER;
-            return new ColumnType(kind, SqlNames.qualified(userType));
-        }
-        return builtIn(sqlType);
-    }
-
-    private static ColumnType builtIn(String sqlType) {
-        String normalized = sqlType.toLowerCase(Locale.ROOT).replaceAll("\\(.*\\)", "").trim();
-        Kind kind = KINDS.get(normalized);
-        if (kind != null) {
-            return new ColumnType(kind, null);
-        }
-        if (!CASTABLE.matcher(normalized).matches()) {
-            throw new PermissionEvaluationException(PermissionEvaluationException.UNSUPPORTED_COLUMN_TYPE,
-                    "Unsupported column type " + sqlType);
-        }
-        return new ColumnType(Kind.OTHER, normalized);
+        return dialect.sql().columnType(schema, tableKey, column, sqlType);
     }
 
     public Kind kind() {
         return kind;
+    }
+
+    String castTarget() {
+        return castTarget;
+    }
+
+    List<String> labels() {
+        return labels;
+    }
+
+    String charset() {
+        return charset;
+    }
+
+    String collation() {
+        return collation;
     }
 
     /**
@@ -99,23 +96,40 @@ public final class ColumnType {
      * value; anything that is not a valid value of the type is refused with IllegalArgumentException.
      */
     Object canonical(Object value) {
-        return ColumnValues.convert(kind, value);
+        return dialect.sql().canonical(this, value);
     }
 
-    /** The canonical value as a JDBC bind value. */
+    /** The canonical value as a JDBC bind value compared with the column. */
     Object sqlValue(Object canonical) {
-        return canonical instanceof Instant instant ? OffsetDateTime.ofInstant(instant, ZoneOffset.UTC) : canonical;
+        return dialect.sql().compareValue(this, canonical);
     }
 
-    /** Where a parameter goes in SQL; types bound as text are cast to the column's type. */
+    /** The canonical value as a JDBC bind value written into the column. */
+    Object writeValue(Object canonical) {
+        return dialect.sql().writeValue(this, canonical);
+    }
+
+    /** Where a parameter goes in SQL; a column of a type with no mapping cannot be compared. */
     String placeholder(String paramName) {
-        return castTarget == null ? ":" + paramName : "CAST(:" + paramName + " AS " + castTarget + ")";
+        requireComparable();
+        return dialect.sql().placeholder(this, paramName);
     }
 
-    /** A parameter cast to this type whatever it binds as, so a row of them is typed even when a value is null. */
-    String typedPlaceholder(String paramName) {
-        String target = castTarget == null ? BUILT_IN_NAMES.get(kind) : castTarget;
-        return "CAST(:" + paramName + " AS " + target + ")";
+    /** A parameter typed as this column whatever it binds as, so a row of them is typed even when a value is null. */
+    Optional<String> typedPlaceholder(String paramName) {
+        return comparable ? dialect.sql().imagePlaceholder(this, paramName) : Optional.empty();
+    }
+
+    /** {@code reference} as comparisons read it; {@code image} when it names a value of an image row. */
+    String compared(String reference, boolean image) {
+        return dialect.sql().compared(this, reference, image);
+    }
+
+    void requireComparable() {
+        if (!comparable) {
+            throw new PermissionEvaluationException(PermissionEvaluationException.UNSUPPORTED_COLUMN_TYPE,
+                    "A column of this type can only be tested with _is_null");
+        }
     }
 
     boolean textual() {
@@ -123,11 +137,11 @@ public final class ColumnType {
     }
 
     boolean equatableInMemory() {
-        return kind != Kind.OTHER;
+        return comparable && kind != Kind.OTHER && dialect.sql().equatableInMemory(this);
     }
 
     boolean orderedInMemory() {
-        return !UNORDERED_IN_MEMORY.contains(kind);
+        return equatableInMemory() && !UNORDERED_IN_MEMORY.contains(kind);
     }
 
     /** Postgres order of two canonical values of this type. */

@@ -34,26 +34,27 @@ public final class RowProbe {
      * @return {@code SELECT EXISTS (...)} for the row whose key {@code row} carries, or empty when the
      *         table has no primary key or the image lacks a usable value for one of its columns
      */
-    public static Optional<SqlFragment> build(BoolExp filter, String tableKey, Map<String, Object> row,
-                                              SchemaInfo schema, SessionBinding binding, ParamNamer namer) {
+    public static Optional<SqlFragment> build(PermissionDialect dialect, BoolExp filter, String tableKey,
+                                              Map<String, Object> row, SchemaInfo schema, SessionBinding binding,
+                                              ParamNamer namer) {
         if (!schema.hasPrimaryKey(tableKey)) {
             return Optional.empty();
         }
-        TableRef table = TableRef.resolve(schema, tableKey);
+        TableRef table = TableRef.resolve(dialect, schema, tableKey);
         String alias = namer.nextAlias();
         List<String> conditions = new ArrayList<>();
         Map<String, Object> params = new LinkedHashMap<>();
         for (String key : schema.getPrimaryKeys(tableKey)) {
-            Optional<Object> value = keyValue(schema, tableKey, key, row.get(key));
+            ColumnType type = ColumnType.of(dialect, schema, tableKey, key);
+            Optional<Object> value = row.get(key) == null ? Optional.empty() : canonical(type, row.get(key));
             if (value.isEmpty()) {
                 return Optional.empty();
             }
-            ColumnType type = ColumnType.of(schema, tableKey, key);
             String param = namer.nextParam();
             params.put(param, type.sqlValue(value.get()));
-            conditions.add(alias + "." + SqlNames.quote(key) + " = " + type.placeholder(param));
+            conditions.add(type.compared(alias + "." + dialect.quote(key), false) + " = " + type.placeholder(param));
         }
-        SqlFragment matches = FilterCompiler.compile(filter, tableKey, alias, schema, binding, namer);
+        SqlFragment matches = FilterCompiler.compile(dialect, filter, tableKey, alias, schema, binding, namer);
         params.putAll(matches.params());
         return Optional.of(new SqlFragment("SELECT EXISTS (SELECT 1 FROM " + table.sql() + " " + alias + " WHERE "
                 + String.join(" AND ", conditions) + " AND (" + matches.sql() + "))", params));
@@ -70,11 +71,13 @@ public final class RowProbe {
     }
 
     /**
-     * @return {@code SELECT EXISTS (...)} over the image as a typed {@code VALUES} row, or empty when the
-     *         image lacks a column the filter reads or holds a value that is not of the column's type
+     * @return {@code SELECT EXISTS (...)} over the image as one typed row, or empty when the image lacks a
+     *         column the filter reads, holds a value that is not of the column's type, or has a column the
+     *         dialect cannot type as the table does
      */
-    public static Optional<SqlFragment> ofImage(BoolExp filter, String tableKey, Map<String, Object> image,
-                                                SchemaInfo schema, SessionBinding binding, ParamNamer namer) {
+    public static Optional<SqlFragment> ofImage(PermissionDialect dialect, BoolExp filter, String tableKey,
+                                                Map<String, Object> image, SchemaInfo schema, SessionBinding binding,
+                                                ParamNamer namer) {
         Set<String> columns = columnsRead(filter, tableKey, schema);
         String alias = namer.nextAlias();
         List<String> placeholders = new ArrayList<>();
@@ -84,21 +87,21 @@ public final class RowProbe {
             if (!image.containsKey(column)) {
                 return Optional.empty();
             }
-            ColumnType type = ColumnType.of(schema, tableKey, column);
+            ColumnType type = ColumnType.of(dialect, schema, tableKey, column);
             Object raw = image.get(column);
             Optional<Object> value = raw == null ? Optional.empty() : canonical(type, raw);
-            if (raw != null && value.isEmpty()) {
+            String param = namer.nextParam();
+            Optional<String> placeholder = type.typedPlaceholder(param);
+            if ((raw != null && value.isEmpty()) || placeholder.isEmpty()) {
                 return Optional.empty();
             }
-            String param = namer.nextParam();
             params.put(param, value.map(type::sqlValue).orElse(null));
-            placeholders.add(type.typedPlaceholder(param));
-            names.add(SqlNames.quote(column));
+            placeholders.add(placeholder.get());
+            names.add(dialect.quote(column));
         }
-        SqlFragment matches = FilterCompiler.compile(filter, tableKey, alias, schema, binding, namer);
+        SqlFragment matches = FilterCompiler.compileOverImage(dialect, filter, tableKey, alias, schema, binding, namer);
         params.putAll(matches.params());
-        String from = columns.isEmpty() ? "" : " FROM (VALUES (" + String.join(", ", placeholders) + ")) AS "
-                + alias + "(" + String.join(", ", names) + ")";
+        String from = columns.isEmpty() ? "" : dialect.sql().imageRow(alias, placeholders, names);
         return Optional.of(new SqlFragment("SELECT EXISTS (SELECT 1" + from + " WHERE " + matches.sql() + ")", params));
     }
 
@@ -113,13 +116,6 @@ public final class RowProbe {
                     RelationshipJoin.resolve(schema, tableKey, relationship.name()).outerColumns().stream();
             case Exists ignored -> Stream.empty();
         };
-    }
-
-    private static Optional<Object> keyValue(SchemaInfo schema, String tableKey, String key, Object raw) {
-        if (raw == null) {
-            return Optional.empty();
-        }
-        return canonical(ColumnType.of(schema, tableKey, key), raw);
     }
 
     private static Optional<Object> canonical(ColumnType type, Object raw) {

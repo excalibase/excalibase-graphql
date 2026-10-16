@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.NOTES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.parse;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -17,7 +18,7 @@ class ExpressionCheckTest {
     private static final SchemaInfo SCHEMA = FixtureSchema.schema();
 
     private static void check(String json) {
-        ExpressionCheck.check(parse(json), NOTES, SCHEMA);
+        ExpressionCheck.check(POSTGRES, parse(json), NOTES, SCHEMA);
     }
 
     @ParameterizedTest

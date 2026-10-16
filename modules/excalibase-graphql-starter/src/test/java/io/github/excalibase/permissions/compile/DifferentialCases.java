@@ -38,11 +38,13 @@ final class DifferentialCases {
     static List<Case> all() {
         List<Case> cases = new ArrayList<>();
         cases.addAll(integersAndNumbers());
+        cases.addAll(floats());
         cases.addAll(text());
         cases.addAll(typed());
         cases.addAll(sessionVariables());
         cases.addAll(logic());
         cases.addAll(relationships());
+        cases.addAll(ownTable());
         return List.copyOf(cases);
     }
 
@@ -70,6 +72,22 @@ final class DifferentialCases {
                 mem("{\"views\": {\"_lte\": 7}}", "views <= 7"),
                 mem("{\"score\": {\"_gt\": 1}}", "score > 1"),
                 mem("{\"score\": {\"_eq\": 1.5}}", "score = 1.5"));
+    }
+
+    /** Postgres orders -Infinity below every number and Infinity, then NaN, above; real is single precision. */
+    private static List<Case> floats() {
+        return List.of(
+                mem("{\"score\": {\"_lt\": \"NaN\"}}", "score < 'NaN'::float8"),
+                mem("{\"score\": {\"_gte\": \"NaN\"}}", "score >= 'NaN'::float8"),
+                mem("{\"score\": {\"_neq\": \"Infinity\"}}", "score <> 'Infinity'::float8"),
+                mem("{\"score\": {\"_gt\": \"-Infinity\"}}", "score > '-Infinity'::float8"),
+                mem("{\"_not\": {\"score\": {\"_lte\": \"-Infinity\"}}}", "NOT (score <= '-Infinity'::float8)"),
+                mem("{\"_not\": {\"score\": {\"_eq\": \"NaN\"}}}", "NOT (score = 'NaN'::float8)"),
+                mem("{\"score\": {\"_in\": [\"NaN\", 1.5]}}", "score IN ('NaN'::float8, 1.5)"),
+                mem("{\"score\": {\"_nin\": [\"NaN\"]}}", "score NOT IN ('NaN'::float8)"),
+                mem("{\"ratio\": {\"_eq\": 0.1}}", "ratio = 0.1::real"),
+                mem("{\"ratio\": {\"_lt\": 0.1}}", "ratio < 0.1::real"),
+                mem("{\"ratio\": {\"_in\": [0.1, 0.25]}}", "ratio IN (0.1::real, 0.25::real)"));
     }
 
     private static List<Case> text() {
@@ -195,6 +213,28 @@ final class DifferentialCases {
                 on(MEMBERS, Judge.MIXED, "{\"_or\": [{\"role\": {\"_eq\": \"admin\"}}, {\"publicNotes\": {}}]}",
                         "role = 'admin' OR EXISTS (SELECT 1 FROM public.notes n WHERE n.org_id = members.org_id"
                                 + " AND n.owner_id = members.user_id)"));
+    }
+
+    /**
+     * A filter reading the table it guards: inside an UPDATE or DELETE, MySQL refuses that (error 1093). The
+     * engine reads the table unfiltered there, so the native policy reads it through an unguarded view.
+     */
+    private static List<Case> ownTable() {
+        return List.of(
+                db("{\"_exists\": {\"_table\": \"public.notes\", \"_where\": {\"status\": {\"_eq\": \"draft\"},"
+                                + " \"owner_id\": {\"_eq\": \"X-Excalibase-User-Id\"}}}}",
+                        "EXISTS (SELECT 1 FROM public.notes_unguarded n WHERE n.status = 'draft' AND n.owner_id = " + UID + ")"),
+                mixed("{\"_and\": [{\"status\": {\"_eq\": \"open\"}}, {\"_not\": {\"_exists\": {\"_table\": \"public.notes\","
+                                + " \"_where\": {\"status\": {\"_eq\": \"deleted\"}}}}}]}",
+                        "status = 'open' AND NOT EXISTS (SELECT 1 FROM public.notes_unguarded n WHERE n.status = 'deleted')"),
+                on(MEMBERS, Judge.DATABASE, "{\"_exists\": {\"_table\": \"public.members\", \"_where\":"
+                                + " {\"role\": {\"_is_null\": true}, \"user_id\": {\"_eq\": \"X-Excalibase-User-Id\"}}}}",
+                        "EXISTS (SELECT 1 FROM public.members_unguarded m WHERE m.role IS NULL AND m.user_id = " + UID + ")"),
+                on(MEMBERS, Judge.DATABASE, "{\"publicOrgId\": {\"publicMembers\": {\"role\": {\"_eq\": \"admin\"},"
+                                + " \"user_id\": {\"_neq\": \"X-Excalibase-User-Id\"}}}}",
+                        "EXISTS (SELECT 1 FROM public.orgs o WHERE o.id = members.org_id AND EXISTS (SELECT 1"
+                                + " FROM public.members_unguarded m WHERE m.org_id = o.id AND m.role = 'admin' AND m.user_id <> "
+                                + UID + "))"));
     }
 
     private static Case mem(String expression, String nativeSql) {

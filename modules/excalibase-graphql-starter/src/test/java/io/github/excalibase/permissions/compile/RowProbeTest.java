@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.HashMap;
 import java.util.Map;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.NOTES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.ORGS;
 import static io.github.excalibase.permissions.compile.FixtureSchema.U1;
@@ -35,7 +36,7 @@ class RowProbeTest {
                 + " {\"publicOrgId\": {\"name\": {\"_eq\": \"acme\"}}}]}";
         Map<String, Object> image = Map.of("id", 7, "owner_id", U1, "org_id", "1", "title", "t");
 
-        SqlFragment probe = RowProbe.ofImage(parse(filter), NOTES, image, SCHEMA, BINDING, new ParamNamer("probe"))
+        SqlFragment probe = RowProbe.ofImage(POSTGRES, parse(filter), NOTES, image, SCHEMA, BINDING, new ParamNamer("probe"))
                 .orElseThrow();
 
         assertThat(probe.sql()).isEqualTo("SELECT EXISTS (SELECT 1 FROM (VALUES (CAST(:probe_p0 AS uuid),"
@@ -50,7 +51,7 @@ class RowProbeTest {
         Map<String, Object> image = new HashMap<>();
         image.put("owner_id", null);
 
-        SqlFragment probe = RowProbe.ofImage(parse("{\"owner_id\": {\"_eq\": \"X-Excalibase-User-Id\"}}"), NOTES,
+        SqlFragment probe = RowProbe.ofImage(POSTGRES, parse("{\"owner_id\": {\"_eq\": \"X-Excalibase-User-Id\"}}"), NOTES,
                 image, SCHEMA, BINDING, new ParamNamer("probe")).orElseThrow();
 
         assertThat(probe.params()).containsEntry("probe_p0", null);
@@ -58,7 +59,7 @@ class RowProbeTest {
 
     @Test
     void imageProbe_ofAFilterReadingNoColumnOfTheTable_needsNoValuesRow() {
-        SqlFragment probe = RowProbe.ofImage(parse("{\"_exists\": {\"_table\": \"public.orgs\", \"_where\": {}}}"),
+        SqlFragment probe = RowProbe.ofImage(POSTGRES, parse("{\"_exists\": {\"_table\": \"public.orgs\", \"_where\": {}}}"),
                 NOTES, Map.of(), SCHEMA, BINDING, new ParamNamer("probe")).orElseThrow();
 
         assertThat(probe.sql()).isEqualTo(
@@ -69,9 +70,9 @@ class RowProbeTest {
     void imageProbe_isImpossibleWhenAColumnIsMissingOrNotAValueOfItsType() {
         String filter = "{\"publicOrgId\": {\"name\": {\"_eq\": \"acme\"}}}";
 
-        assertThat(RowProbe.ofImage(parse(filter), NOTES, Map.of("id", 7), SCHEMA, BINDING,
+        assertThat(RowProbe.ofImage(POSTGRES, parse(filter), NOTES, Map.of("id", 7), SCHEMA, BINDING,
                 new ParamNamer("probe"))).isEmpty();
-        assertThat(RowProbe.ofImage(parse(filter), NOTES, Map.of("org_id", "not a number"), SCHEMA, BINDING,
+        assertThat(RowProbe.ofImage(POSTGRES, parse(filter), NOTES, Map.of("org_id", "not a number"), SCHEMA, BINDING,
                 new ParamNamer("probe"))).isEmpty();
         assertThat(RowProbe.columnsRead(parse("{}"), ORGS, SCHEMA)).isEmpty();
     }

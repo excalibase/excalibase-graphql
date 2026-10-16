@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.util.Map;
 import java.util.UUID;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.access.AccessFixture.AUDIT;
 import static io.github.excalibase.access.AccessFixture.ORDERS;
 import static io.github.excalibase.access.AccessFixture.U1;
@@ -24,7 +25,7 @@ class RequestGuardTest {
     private static final Map<String, String> SESSION = Map.of("x-excalibase-user-id", U1);
 
     private static RequestGuard guard(String... entries) {
-        return AccessPlan.forRole(AccessFixture.schema(), user(entries)).guard(SESSION);
+        return AccessPlan.forRole(POSTGRES, AccessFixture.schema(), user(entries)).guard(SESSION);
     }
 
     @Test
@@ -91,7 +92,7 @@ class RequestGuardTest {
 
     @Test
     void aMissingSessionVariable_failsTheRequest() {
-        RequestGuard guard = AccessPlan.forRole(AccessFixture.schema(), user(entry(ORDERS,
+        RequestGuard guard = AccessPlan.forRole(POSTGRES, AccessFixture.schema(), user(entry(ORDERS,
                 "\"select\":{\"filter\":" + OWNED + ",\"columns\":\"*\"}"))).guard(Map.of());
 
         assertThatThrownBy(() -> guard.contribute(ORDERS, "o", RlsOp.SELECT))
@@ -112,7 +113,7 @@ class RequestGuardTest {
 
     @Test
     void allAccess_addsNoGuard() {
-        RequestGuard guard = AccessPlan.allAccess(AccessFixture.schema()).guard(Map.of());
+        RequestGuard guard = AccessPlan.allAccess(POSTGRES, AccessFixture.schema()).guard(Map.of());
 
         assertThat(guard.contribute(ORDERS, "o", RlsOp.DELETE)).isNull();
         assertThat(guard.check(ORDERS, "o", RlsOp.INSERT)).isNull();

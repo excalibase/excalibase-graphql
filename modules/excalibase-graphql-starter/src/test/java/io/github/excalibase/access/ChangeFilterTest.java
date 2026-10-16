@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.access.AccessFixture.AUDIT;
 import static io.github.excalibase.access.AccessFixture.ORDERS;
 import static io.github.excalibase.access.AccessFixture.U1;
@@ -51,9 +52,9 @@ class ChangeFilterTest {
     }
 
     private static ChangeFilter filter(String filter, String columns) {
-        AccessPlan plan = AccessPlan.forRole(AccessFixture.schema(), user(entry(ORDERS,
+        AccessPlan plan = AccessPlan.forRole(POSTGRES, AccessFixture.schema(), user(entry(ORDERS,
                 "\"select\":{\"filter\":" + filter + ",\"columns\":" + columns + "}")));
-        return new SelectChangeFilter(ORDERS, plan.rules(ORDERS).orElseThrow().select().orElseThrow(), plan.reflected(),
+        return new SelectChangeFilter(POSTGRES, ORDERS, plan.rules(ORDERS).orElseThrow().select().orElseThrow(), plan.reflected(),
                 new SessionBinding(SESSION), new IncompleteImageWarning(() -> Instant.EPOCH));
     }
 
@@ -169,12 +170,12 @@ class ChangeFilterTest {
 
     @Test
     void aTableTheRoleCannotSelect_hasNoFilter() {
-        assertThat(AccessPlan.forRole(AccessFixture.schema(), user()).changes(AUDIT, SESSION)).isEmpty();
+        assertThat(AccessPlan.forRole(POSTGRES, AccessFixture.schema(), user()).changes(AUDIT, SESSION)).isEmpty();
     }
 
     @Test
     void theRolesPlan_judgesChangesWithTheSelectRule() {
-        ChangeFilter filter = AccessPlan.forRole(AccessFixture.schema(), user(entry(ORDERS,
+        ChangeFilter filter = AccessPlan.forRole(POSTGRES, AccessFixture.schema(), user(entry(ORDERS,
                 "\"select\":{\"filter\":" + OWNED_FILTER + ",\"columns\":[\"id\"]}"))).changes(ORDERS, SESSION).orElseThrow();
 
         assertThat(filter.render("DELETE", order(1, U1), NO_PROBE)).contains(Map.of("id", 1));
@@ -182,7 +183,7 @@ class ChangeFilterTest {
 
     @Test
     void allAccess_passesEveryChangeWhole() {
-        ChangeFilter filter = AccessPlan.allAccess(AccessFixture.schema()).changes(ORDERS, Map.of()).orElseThrow();
+        ChangeFilter filter = AccessPlan.allAccess(POSTGRES, AccessFixture.schema()).changes(ORDERS, Map.of()).orElseThrow();
         Map<String, Object> keyOnly = Map.of("id", 1);
 
         assertThat(filter.render("DELETE", keyOnly, NO_PROBE)).contains(keyOnly);

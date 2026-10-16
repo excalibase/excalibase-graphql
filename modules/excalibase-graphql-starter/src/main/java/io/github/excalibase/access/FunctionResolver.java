@@ -1,6 +1,7 @@
 package io.github.excalibase.access;
 
 import io.github.excalibase.permissions.TrackedFunction;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.ExposedFunctions;
 import io.github.excalibase.schema.NamingUtils;
@@ -45,6 +46,9 @@ final class FunctionResolver {
 
     private static final Set<String> JSON_TYPES = Set.of("json", "jsonb");
 
+    static final String UNTRACKABLE = "functions cannot be tracked on MySQL: a MySQL function returns a scalar, "
+            + "not rows of a table, so no table permission could apply to its result";
+
     private final SchemaInfo reflected;
 
     private FunctionResolver(SchemaInfo reflected) {
@@ -54,8 +58,12 @@ final class FunctionResolver {
     /**
      * @param callable whether the role may call a valid function: its return table and permissions
      */
-    static ExposedFunctions resolve(SchemaInfo reflected, List<TrackedFunction> tracked,
+    static ExposedFunctions resolve(PermissionDialect dialect, SchemaInfo reflected, List<TrackedFunction> tracked,
                                     Predicate<ExposedFunction> callable) {
+        if (!dialect.tracksFunctions()) {
+            tracked.forEach(function -> invalid(function.function(), UNTRACKABLE));
+            return ExposedFunctions.of(List.of());
+        }
         FunctionResolver resolver = new FunctionResolver(reflected);
         Set<String> takenFields = resolver.tableFields();
         List<ExposedFunction> exposed = new ArrayList<>();

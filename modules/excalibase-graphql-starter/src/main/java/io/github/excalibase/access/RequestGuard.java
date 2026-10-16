@@ -4,9 +4,11 @@ import io.github.excalibase.permissions.BoolExp;
 import io.github.excalibase.permissions.PresetValue;
 import io.github.excalibase.permissions.compile.FilterCompiler;
 import io.github.excalibase.permissions.compile.ParamNamer;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 import io.github.excalibase.permissions.compile.PresetValues;
 import io.github.excalibase.permissions.compile.SessionBinding;
 import io.github.excalibase.permissions.compile.SqlFragment;
+import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.security.WriteGuard;
@@ -54,7 +56,8 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
             return DENY;
         }
         Optional<BoolExp> filter = filterFor(rules.get(), op);
-        return filter.isPresent() ? compiled(filter.get(), tableName, outerAlias) : DENY;
+        boolean write = op == RlsOp.UPDATE || op == RlsOp.DELETE;
+        return filter.isPresent() ? compiled(filter.get(), tableName, outerAlias, write) : DENY;
     }
 
     @Override
@@ -69,7 +72,7 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
         }).orElse(Map.of());
         Map<String, Object> bound = new LinkedHashMap<>();
         presets.forEach((column, value) ->
-                bound.put(column, PresetValues.bind(value, tableName, column, plan.reflected(), binding)));
+                bound.put(column, PresetValues.bind(plan.dialect(), value, tableName, column, plan.reflected(), binding)));
         return bound;
     }
 
@@ -86,7 +89,13 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
         if (check.isEmpty()) {
             return DENY;
         }
-        return compiled(check.get(), tableName, alias);
+        return compiled(check.get(), tableName, alias, false);
+    }
+
+    @Override
+    public List<String> rowKey(String tableName) {
+        SchemaInfo reflected = plan.reflected();
+        return reflected.hasPrimaryKey(tableName) ? reflected.getPrimaryKeys(tableName) : List.of();
     }
 
     /** Empty (denied) for every read of a table the role may insert into but not select. */
@@ -113,22 +122,28 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
         };
     }
 
-    /** Null when the expression is {@code {}}: nothing to add to the query. */
-    private synchronized Contribution compiled(BoolExp expression, String tableName, String alias) {
+    /**
+     * Null when the expression is {@code {}}: nothing to add to the query. {@code write}: the WHERE of an
+     * UPDATE or DELETE of {@code tableName}, which on some databases may not read that table directly.
+     */
+    private synchronized Contribution compiled(BoolExp expression, String tableName, String alias, boolean write) {
         if (RulesResolver.isTrue(expression)) {
             return null;
         }
-        SqlFragment fragment = FilterCompiler.compile(expression, tableName, aliasFor(tableName, alias),
-                plan.reflected(), binding, namer);
+        PermissionDialect dialect = plan.dialect();
+        String outer = aliasFor(dialect, tableName, alias);
+        SqlFragment fragment = write
+                ? FilterCompiler.compileForWrite(dialect, expression, tableName, outer, plan.reflected(), binding, namer)
+                : FilterCompiler.compile(dialect, expression, tableName, outer, plan.reflected(), binding, namer);
         return new Contribution(fragment.sql(), fragment.params());
     }
 
     /** An unaliased statement names the table by its bare, quoted name. */
-    private static String aliasFor(String tableName, String alias) {
+    private static String aliasFor(PermissionDialect dialect, String tableName, String alias) {
         if (alias != null) {
             return alias;
         }
         int dot = tableName.lastIndexOf('.');
-        return "\"" + (dot < 0 ? tableName : tableName.substring(dot + 1)) + "\"";
+        return dialect.quote(dot < 0 ? tableName : tableName.substring(dot + 1));
     }
 }

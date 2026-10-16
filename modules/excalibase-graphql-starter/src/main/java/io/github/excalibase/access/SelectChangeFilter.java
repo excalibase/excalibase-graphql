@@ -2,6 +2,7 @@ package io.github.excalibase.access;
 
 import io.github.excalibase.permissions.BoolExp;
 import io.github.excalibase.permissions.compile.ParamNamer;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 import io.github.excalibase.permissions.compile.RowPredicate;
 import io.github.excalibase.permissions.compile.RowProbe;
 import io.github.excalibase.permissions.compile.SessionBinding;
@@ -37,6 +38,7 @@ final class SelectChangeFilter implements ChangeFilter {
     private static final String NEW = "new";
     private static final String PROBE_PREFIX = "probe";
 
+    private final PermissionDialect dialect;
     private final String table;
     private final BoolExp filter;
     private final Set<String> columns;
@@ -46,15 +48,16 @@ final class SelectChangeFilter implements ChangeFilter {
     private final SessionBinding binding;
     private final IncompleteImageWarning warning;
 
-    SelectChangeFilter(String table, TableRules.SelectRule select, SchemaInfo reflected, SessionBinding binding,
-                       IncompleteImageWarning warning) {
+    SelectChangeFilter(PermissionDialect dialect, String table, TableRules.SelectRule select, SchemaInfo reflected,
+                       SessionBinding binding, IncompleteImageWarning warning) {
+        this.dialect = dialect;
         this.table = table;
         this.filter = select.filter();
         this.columns = select.columns();
         this.reflected = reflected;
         this.binding = binding;
         this.warning = warning;
-        this.predicate = RowPredicate.compile(filter, table, reflected, binding);
+        this.predicate = RowPredicate.compile(dialect, filter, table, reflected, binding);
         Set<String> needed = new LinkedHashSet<>(RowProbe.columnsRead(filter, table, reflected));
         needed.addAll(columns);
         this.formerImageColumns = Set.copyOf(needed);
@@ -77,7 +80,7 @@ final class SelectChangeFilter implements ChangeFilter {
 
     /** An image of a row as it now exists: the database may be asked about the row by its key. */
     private Optional<Map<String, Object>> current(Map<String, Object> image, ProbeRunner probes) {
-        return judged(image, () -> RowProbe.build(filter, table, image, reflected, binding,
+        return judged(image, () -> RowProbe.build(dialect, filter, table, image, reflected, binding,
                 new ParamNamer(PROBE_PREFIX)), probes);
     }
 
@@ -88,7 +91,7 @@ final class SelectChangeFilter implements ChangeFilter {
             warning.withheld(table, missing);
             return Optional.empty();
         }
-        return judged(image, () -> RowProbe.ofImage(filter, table, image, reflected, binding,
+        return judged(image, () -> RowProbe.ofImage(dialect, filter, table, image, reflected, binding,
                 new ParamNamer(PROBE_PREFIX)), probes);
     }
 
@@ -97,14 +100,15 @@ final class SelectChangeFilter implements ChangeFilter {
         boolean passes = switch (predicate.test(image)) {
             case MATCH -> true;
             case NO_MATCH -> false;
-            case NEEDS_DATABASE -> probeQuery.get().map(query -> probe(query, probes)).orElse(false);
+            case NEEDS_DATABASE -> probe(probeQuery, probes);
         };
         return passes ? Optional.of(projected(image)) : Optional.empty();
     }
 
-    private boolean probe(SqlFragment query, ProbeRunner probes) {
+    private boolean probe(Supplier<Optional<SqlFragment>> probeQuery, ProbeRunner probes) {
         try {
-            return probes.exists(query.sql(), query.params());
+            Optional<SqlFragment> query = probeQuery.get();
+            return query.isPresent() && probes.exists(query.get().sql(), query.get().params());
         } catch (RuntimeException e) {
             log.warn("realtime_probe_failed table={} reason={}", table, e.getMessage());
             return false;

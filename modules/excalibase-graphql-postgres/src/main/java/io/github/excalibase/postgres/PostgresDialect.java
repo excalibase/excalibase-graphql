@@ -3,6 +3,7 @@ package io.github.excalibase.postgres;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataError;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -19,6 +20,11 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 public class PostgresDialect implements SqlDialect {
 
     private static final String JSONB_CAST = "::jsonb";
+
+    @Override
+    public PermissionDialect permissionDialect() {
+        return PermissionDialect.POSTGRES;
+    }
 
     @Override
     public Optional<DataError> describeError(SQLException failure) {

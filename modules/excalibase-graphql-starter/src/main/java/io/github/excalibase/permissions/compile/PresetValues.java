@@ -16,21 +16,22 @@ public final class PresetValues {
     }
 
     /** @throws io.github.excalibase.permissions.PermissionEvaluationException unknown column or unfit literal */
-    public static void check(PresetValue value, String tableKey, String column, SchemaInfo schema) {
-        ColumnType type = ColumnType.of(schema, tableKey, column);
+    public static void check(PermissionDialect dialect, PresetValue value, String tableKey, String column,
+                             SchemaInfo schema) {
+        ColumnType type = ColumnType.of(dialect, schema, tableKey, column);
         if (value instanceof Literal literal && literal.value() != null) {
             NO_SESSION.value(literal, type);
         }
     }
 
     /** The value to write, as a JDBC bind value; a literal null writes NULL. */
-    public static Object bind(PresetValue value, String tableKey, String column, SchemaInfo schema,
-                              SessionBinding binding) {
-        ColumnType type = ColumnType.of(schema, tableKey, column);
+    public static Object bind(PermissionDialect dialect, PresetValue value, String tableKey, String column,
+                              SchemaInfo schema, SessionBinding binding) {
+        ColumnType type = ColumnType.of(dialect, schema, tableKey, column);
         return switch (value) {
             case Literal literal when literal.value() == null -> null;
-            case Literal literal -> type.sqlValue(binding.value(literal, type));
-            case SessionVariable variable -> type.sqlValue(binding.value(variable, type));
+            case Literal literal -> type.writeValue(binding.value(literal, type));
+            case SessionVariable variable -> type.writeValue(binding.value(variable, type));
         };
     }
 }

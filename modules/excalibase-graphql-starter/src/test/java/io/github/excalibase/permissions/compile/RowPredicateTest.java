@@ -14,6 +14,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.NOTES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.U1;
 import static io.github.excalibase.permissions.compile.FixtureSchema.parse;
@@ -27,7 +28,7 @@ class RowPredicateTest {
     private static final SessionBinding BINDING = new SessionBinding(Map.of("x-excalibase-user-id", U1));
 
     private static Outcome test(String json, Map<String, Object> row) {
-        return RowPredicate.compile(parse(json), NOTES, SCHEMA, BINDING).test(row);
+        return RowPredicate.compile(POSTGRES, parse(json), NOTES, SCHEMA, BINDING).test(row);
     }
 
     private static Map<String, Object> row(Object... namesAndValues) {
@@ -145,7 +146,7 @@ class RowPredicateTest {
 
     @Test
     void missingVariable_failsWhenThePredicateIsBuilt() {
-        assertThatThrownBy(() -> RowPredicate.compile(parse("{\"publicOrgId\": {\"name\": {\"_eq\": \"X-Excalibase-Org\"}}}"),
+        assertThatThrownBy(() -> RowPredicate.compile(POSTGRES, parse("{\"publicOrgId\": {\"name\": {\"_eq\": \"X-Excalibase-Org\"}}}"),
                 NOTES, SCHEMA, BINDING))
                 .isInstanceOf(PermissionEvaluationException.class)
                 .extracting("code").isEqualTo("missing_session_variable");
@@ -153,9 +154,9 @@ class RowPredicateTest {
 
     @Test
     void unknownNames_failWhenThePredicateIsBuilt() {
-        assertThatThrownBy(() -> RowPredicate.compile(parse("{\"nope\": {\"_eq\": 1}}"), NOTES, SCHEMA, BINDING))
+        assertThatThrownBy(() -> RowPredicate.compile(POSTGRES, parse("{\"nope\": {\"_eq\": 1}}"), NOTES, SCHEMA, BINDING))
                 .extracting("code").isEqualTo("unknown_column");
-        assertThatThrownBy(() -> RowPredicate.compile(parse("{\"nope\": {}}"), NOTES, SCHEMA, BINDING))
+        assertThatThrownBy(() -> RowPredicate.compile(POSTGRES, parse("{\"nope\": {}}"), NOTES, SCHEMA, BINDING))
                 .extracting("code").isEqualTo("unknown_relationship");
     }
 
