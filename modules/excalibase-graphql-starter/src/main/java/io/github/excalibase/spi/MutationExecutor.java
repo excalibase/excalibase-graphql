@@ -5,8 +5,9 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 /**
- * Executes compiled mutations. Postgres uses single SQL (CTE + RETURNING),
- * MySQL uses two-phase DML + SELECT in a transaction.
+ * Executes compiled mutations. Postgres uses single SQL (CTE + RETURNING), MySQL writes and then reads the
+ * written rows back by key. Every statement runs on {@code namedJdbc}, which the caller binds to the one
+ * connection whose transaction it owns.
  */
 public interface MutationExecutor {
 

@@ -22,10 +22,9 @@ import java.util.Map;
  * baked into the compiled SQL by the engine, so this layer only runs it.
  *
  * <ul>
- *   <li>{@link #executeInContext} — Postgres path: one connection + transaction
- *       so two-phase mutation / plain branches share atomicity.</li>
- *   <li>{@link #executeQuery} / {@link #executeTwoPhase} —
- *       MySQL / Mongo or single-tenant Postgres with no JWT. No transaction.</li>
+ *   <li>{@link #executeInContext} — one connection + transaction, so a write and its
+ *       read-back (MySQL's two-phase mutations) are atomic and see each other.</li>
+ *   <li>{@link #executeQuery} — a single read for a request without a caller. No transaction.</li>
  * </ul>
  */
 @Service
@@ -43,21 +42,10 @@ public class QueryExecutionService {
         this.objectMapper = objectMapper;
     }
 
-    // ------------------------------------------------------------------------
-    // Legacy paths — used for MySQL / Mongo or single-tenant Postgres, no JWT.
-    // ------------------------------------------------------------------------
-
     public ResponseEntity<Object> executeQuery(SqlCompiler.CompiledQuery compiled,
                                                MapSqlParameterSource params) throws JsonProcessingException {
         String json = namedJdbc.queryForObject(compiled.sql(), params, String.class);
         return wrapResult(json);
-    }
-
-    public ResponseEntity<Object> executeTwoPhase(SqlCompiler.CompiledQuery compiled,
-                                                  MapSqlParameterSource params,
-                                                  MutationExecutor mutationExecutor) throws JsonProcessingException {
-        String json = mutationExecutor.execute(compiled, params, namedJdbc);
-        return wrapTwoPhaseResult(json);
     }
 
     /**
@@ -109,7 +97,7 @@ public class QueryExecutionService {
                                                     SqlCompiler.CompiledQuery compiled,
                                                     MapSqlParameterSource params,
                                                     MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
-        if (compiled.isTwoPhase() && mutationExecutor != null) {
+        if (compiled.isTwoPhase()) {
             return executeTwoPhaseOn(conn, compiled, params, mutationExecutor);
         }
         return executePlainOn(conn, compiled);
@@ -143,7 +131,7 @@ public class QueryExecutionService {
         SingleConnectionDataSource scds = new SingleConnectionDataSource(conn, true);
         NamedParameterJdbcTemplate connBoundJdbc = new NamedParameterJdbcTemplate(scds);
         String json = mutationExecutor.execute(compiled, params, connBoundJdbc);
-        return wrapTwoPhaseResult(json);
+        return wrapResult(json);
     }
 
     /**
@@ -151,13 +139,6 @@ public class QueryExecutionService {
      * written row the role may not read answers {@code "field": null}, not a missing key.
      */
     private ResponseEntity<Object> wrapResult(String json) throws JsonProcessingException {
-        if (json != null) {
-            return ResponseEntity.ok(Map.of("data", objectMapper.readTree(json)));
-        }
-        return ResponseEntity.ok(Map.of("data", Map.of()));
-    }
-
-    private ResponseEntity<Object> wrapTwoPhaseResult(String json) throws JsonProcessingException {
         if (json != null) {
             return ResponseEntity.ok(Map.of("data", objectMapper.readTree(json)));
         }

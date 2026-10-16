@@ -1,6 +1,7 @@
 package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariConfig;
+import io.github.excalibase.service.DatabaseEngine;
 import io.github.excalibase.service.TenantTlsCredentials;
 import io.github.excalibase.service.VaultCredentials;
 import org.junit.jupiter.api.BeforeAll;
@@ -90,6 +91,34 @@ class TenantDataSourceFactoryTest {
     assertFalse(config.getDataSourceProperties().containsKey("sslcert"));
     assertEquals("pw", config.getPassword());
     assertEquals("jdbc:postgresql://db.svc.cluster.local:5432/app", config.getJdbcUrl());
+  }
+
+  @Test
+  @DisplayName("a MySQL record connects through Connector/J over TLS, whatever the Postgres sslmode")
+  void mysqlRecordRequiresTls() {
+    TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.DISABLE, 2, root);
+    VaultCredentials mysql = new VaultCredentials("db.svc.cluster.local", "3306", "app", "excalibase_app", "pw",
+        null, DatabaseEngine.MYSQL);
+
+    HikariConfig config = factory.hikariConfig(mysql, null);
+    Properties props = config.getDataSourceProperties();
+
+    assertEquals("jdbc:mysql://db.svc.cluster.local:3306/app", config.getJdbcUrl());
+    assertEquals("REQUIRED", props.getProperty("sslMode"));
+    assertFalse(props.containsKey("sslmode"));
+    assertFalse(props.containsKey("sslcert"));
+    assertEquals("SET time_zone = '+00:00'", config.getConnectionInitSql());
+  }
+
+  @Test
+  @DisplayName("verify-full asks a MySQL record for no client certificate: MySQL logins use passwords over TLS")
+  void verifyFullMysqlRecordNeedsNoCertificate() {
+    TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
+    VaultCredentials mysql = new VaultCredentials("db.svc.cluster.local", "3306", "app", "excalibase_app", "pw",
+        null, DatabaseEngine.MYSQL);
+
+    assertFalse(factory.needsCertificates(mysql));
+    assertTrue(factory.needsCertificates(vaultRecord(null)));
   }
 
   @Test

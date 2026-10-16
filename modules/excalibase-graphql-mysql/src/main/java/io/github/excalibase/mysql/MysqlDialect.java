@@ -14,11 +14,12 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 
 /**
  * MySQL implementation of {@link SqlDialect}.
- * Uses MySQL-specific JSON functions and syntax.
+ * Uses MySQL-specific JSON functions and syntax. Column types are the ones {@link MysqlColumnTypes} reflects.
  */
 public class MysqlDialect implements SqlDialect {
 
     private static final FilterCapabilities FILTER_CAPABILITIES = new MysqlFilterCapabilities();
+    private static final String UTC = "'+00:00'";
 
     @Override
     public Optional<DataError> describeError(SQLException failure) {
@@ -156,6 +157,36 @@ public class MysqlDialect implements SqlDialect {
         return "";
     }
 
+    /** Booleans as JSON booleans and datetimes in ISO 8601, as the Postgres dialect renders them. */
+    @Override
+    public String selectColumn(String colRef, String dataType) {
+        if (dataType == null) return colRef;
+        return switch (dataType) {
+            case MysqlColumnTypes.BOOLEAN -> "CASE WHEN " + colRef + " IS NULL THEN NULL WHEN " + colRef
+                    + " THEN " + jsonBoolLiteral(true) + " ELSE " + jsonBoolLiteral(false) + " END";
+            case MysqlColumnTypes.DATETIME -> isoDateTime(colRef);
+            case MysqlColumnTypes.TIMESTAMP -> "CONCAT(" + isoDateTime("CONVERT_TZ(" + colRef
+                    + ", @@session.time_zone, " + UTC + ")") + ", " + UTC + ")";
+            default -> colRef + suffixCast(dataType);
+        };
+    }
+
+    /** MySQL reads an offset but not {@code Z}, which is what ISO 8601 clients send for UTC. */
+    @Override
+    public Object bindValue(String columnType, Object value) {
+        boolean dateTime = MysqlColumnTypes.DATETIME.equals(columnType) || MysqlColumnTypes.TIMESTAMP.equals(columnType);
+        if (dateTime && value instanceof String text && (text.endsWith("Z") || text.endsWith("z"))) {
+            return text.substring(0, text.length() - 1) + "+00:00";
+        }
+        return value;
+    }
+
+    /** {@code yyyy-MM-ddTHH:mm:ss}, with the fraction only when there is one, trailing zeros dropped. */
+    private static String isoDateTime(String expr) {
+        return "CONCAT(DATE_FORMAT(" + expr + ", '%Y-%m-%dT%H:%i:%s'), IF(MICROSECOND(" + expr + ") = 0, '', "
+                + "TRIM(TRAILING '0' FROM DATE_FORMAT(" + expr + ", '.%f'))))";
+    }
+
     @Override
     public String onConflict(List<String> conflictCols, List<String> updateSetClauses) {
         String sets = updateSetClauses.stream()
@@ -196,9 +227,10 @@ public class MysqlDialect implements SqlDialect {
         return "CAST('" + value + "' AS JSON)";
     }
 
+    /** An ENUM column answers its label, which is the GraphQL enum value's name. */
     @Override
     public String enumToText(String colRef) {
-        return "upper(" + colRef + ")";
+        return colRef;
     }
 
     @Override

@@ -3,7 +3,6 @@ package io.github.excalibase.schema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 
@@ -26,7 +25,6 @@ class ReservedSchemaDiscoveryTest {
                                             JdbcTemplate jdbcTemplate) {
         return new GraphqlSchemaManager(
                 jdbcTemplate,
-                mock(TransactionTemplate.class),
                 30,
                 databaseType,
                 GraphqlSchemaManager.DEFAULT_MAX_QUERY_DEPTH,

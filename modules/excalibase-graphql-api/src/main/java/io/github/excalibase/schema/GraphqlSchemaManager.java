@@ -6,6 +6,7 @@ import io.github.excalibase.cdc.NatsCDCService;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.config.datasource.TenantContext;
+import io.github.excalibase.config.datasource.TenantDatabase;
 import io.github.excalibase.access.AccessPlan;
 import io.github.excalibase.access.ProbeRunner;
 import io.github.excalibase.permissions.PermissionProvider;
@@ -25,11 +26,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionTemplate;
 
-import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -52,8 +50,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     /** Default query-depth limit applied when {@code app.max-query-depth} is unset. */
     public static final int DEFAULT_MAX_QUERY_DEPTH = 15;
 
+    private static final String MYSQL = "mysql";
+
     private final JdbcTemplate jdbcTemplate;
-    private final TransactionTemplate txTemplate;
     private final int maxRows;
     private final String databaseType;
     private final int maxQueryDepth;
@@ -71,8 +70,12 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
                               MutationExecutor mutationExecutor, AccessPlan plan, String defaultSchema,
                               ProbeRunner probes, long permissionsVersion) {}
 
-    /** One project's database as reflected, shared by the engines of all its roles. */
-    record Reflection(SchemaInfo schema, String defaultSchema, SqlEngine engine,
+    /**
+     * One project's database as reflected, shared by the engines of all its roles.
+     *
+     * @param databaseType the engine the database runs, as {@link SqlEngineFactory} names it
+     */
+    record Reflection(SchemaInfo schema, String defaultSchema, String databaseType, SqlEngine engine,
                       MutationExecutor mutationExecutor, ProbeRunner probes) {}
 
     /** The role is part of the key because the schema is: each role is served its own. */
@@ -88,7 +91,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     public GraphqlSchemaManager(
             JdbcTemplate jdbcTemplate,
-            TransactionTemplate txTemplate,
             @Value("${app.max-rows:30}") int maxRows,
             @Value("${app.database-type:postgres}") String databaseType,
             @Value("${app.max-query-depth:#{T(io.github.excalibase.schema.GraphqlSchemaManager).DEFAULT_MAX_QUERY_DEPTH}}") int maxQueryDepth,
@@ -99,7 +101,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             @Autowired(required = false) PermissionProvider permissionProvider,
             @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
         this.jdbcTemplate = jdbcTemplate;
-        this.txTemplate = txTemplate;
         this.maxRows = maxRows;
         this.databaseType = databaseType;
         this.maxQueryDepth = maxQueryDepth;
@@ -122,7 +123,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      */
     private void requireSupportedPermissions() {
         boolean sourced = permissionProvider != null && permissionProvider.configured();
-        if (jwtEnabled && sourced && "mysql".equalsIgnoreCase(databaseType)) {
+        if (jwtEnabled && sourced && MYSQL.equalsIgnoreCase(databaseType)) {
             throw new IllegalStateException("Permissions are Postgres-only: a MySQL deployment cannot use "
                     + "app.security.rls.policy-url. Unset it, or serve this database with Postgres.");
         }
@@ -135,7 +136,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     @PostConstruct
     public void init() {
         SqlEngine engine = SqlEngineFactory.create(databaseType);
-        List<String> schemaList = discoverSchemas();
+        List<String> schemaList = discoverSchemas(jdbcTemplate, databaseType);
 
         SchemaInfo schemaInfo = new SchemaInfo();
         try {
@@ -144,10 +145,8 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             log.warn("Failed to load database schema — starting with empty schema", e);
         }
         String defaultSchema = resolveDefaultSchema(schemaList, schemaInfo);
-        MutationExecutor mutationExecutor = SqlEngineFactory.createMutationExecutor(
-                databaseType, jdbcTemplate, txTemplate);
-        Reflection reflection = new Reflection(schemaInfo, defaultSchema, engine, mutationExecutor,
-                probesOn(jdbcTemplate));
+        Reflection reflection = new Reflection(schemaInfo, defaultSchema, databaseType, engine,
+                SqlEngineFactory.createMutationExecutor(databaseType), probesOn(jdbcTemplate));
         defaultReflection.set(reflection);
         // Requests without a project get the configured database whole: there is no project to hold
         // permissions for. Every project-scoped request is built per role below.
@@ -263,6 +262,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * schema is served — and no function is tracked.
      */
     private EngineState build(Reflection reflection, String projectId, String role, PermissionSet permissions) {
+        requireEnforceable(reflection, projectId, role);
         AccessPlan plan;
         if (Principal.SERVICE.equals(role)) {
             plan = AccessPlan.allAccess(reflection.schema(), permissions == null ? List.of() : permissions.functions());
@@ -276,6 +276,18 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
                 reflection.schema().getTableNames().size(), plan.view().getTableNames().size(),
                 plan.functions().all().size());
         return state;
+    }
+
+    /**
+     * Permission filters compile to Postgres SQL only (ADR 0041 decision 3), so on a MySQL project every role
+     * but service, which no filter applies to, is refused rather than served unfiltered.
+     */
+    private void requireEnforceable(Reflection reflection, String projectId, String role) {
+        if (permissionsSourced() && !Principal.SERVICE.equals(role)
+                && MYSQL.equalsIgnoreCase(reflection.databaseType())) {
+            log.warn("permissions_not_enforceable project={} role={} engine=mysql", projectId, role);
+            throw new PermissionsUnavailableException("Permissions cannot yet be enforced on a MySQL project");
+        }
     }
 
     private boolean permissionsSourced() {
@@ -356,11 +368,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     @Override
-    public String getDatabaseType() {
-        return databaseType;
-    }
-
-    @Override
     public SchemaInfo resolveSchemaInfo(Principal principal) {
         return requireEngineState(principal).compiler().schemaInfo();
     }
@@ -434,13 +441,13 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * Platform-owned schemas are removed here, at the single discovery layer, so no
      * downstream consumer (type generation, REST, introspection, realtime) can see them.
      */
-    private List<String> discoverSchemas() {
-        return discoverSchemas(jdbcTemplate);
+    List<String> discoverSchemas(JdbcTemplate jdbc) {
+        return discoverSchemas(jdbc, databaseType);
     }
 
-    List<String> discoverSchemas(JdbcTemplate jdbc) {
+    private List<String> discoverSchemas(JdbcTemplate jdbc, String type) {
         try {
-            String sql = "mysql".equalsIgnoreCase(databaseType)
+            String sql = MYSQL.equalsIgnoreCase(type)
                     ? "SELECT schema_name FROM information_schema.schemata " +
                       "WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys') " +
                       "ORDER BY schema_name"
@@ -472,22 +479,22 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         return null;
     }
 
+    /** A project is reflected with the engine its own vault record names; {@code app.database-type} is not consulted. */
     Reflection reflectTenant(String orgSlug, String projectId) {
-        DataSource tenantDs = dataSourceManager.getDataSource(orgSlug, projectId);
-        JdbcTemplate tenantJdbc = new JdbcTemplate(tenantDs);
+        TenantDatabase database = dataSourceManager.getDatabase(orgSlug, projectId);
+        JdbcTemplate tenantJdbc = new JdbcTemplate(database.dataSource());
+        String type = database.engine().type();
 
-        SqlEngine engine = SqlEngineFactory.create(databaseType);
-        List<String> tenantSchemas = discoverSchemas(tenantJdbc);
+        SqlEngine engine = SqlEngineFactory.create(type);
+        List<String> tenantSchemas = discoverSchemas(tenantJdbc, type);
 
         SchemaInfo schemaInfo = new SchemaInfo();
         loadMultiSchema(schemaInfo, tenantSchemas, engine.schemaLoader(), tenantJdbc);
 
-        TransactionTemplate tenantTx = new TransactionTemplate(new DataSourceTransactionManager(tenantDs));
-        MutationExecutor mutationExecutor = SqlEngineFactory.createMutationExecutor(
-                databaseType, tenantJdbc, tenantTx);
-        log.info("reflected_tenant tenant={}/{} tables={}", orgSlug, projectId, schemaInfo.getTableNames().size());
-        return new Reflection(schemaInfo, resolveDefaultSchema(tenantSchemas, schemaInfo), engine, mutationExecutor,
-                probesOn(tenantJdbc));
+        log.info("reflected_tenant tenant={}/{} engine={} tables={}", orgSlug, projectId, type,
+                schemaInfo.getTableNames().size());
+        return new Reflection(schemaInfo, resolveDefaultSchema(tenantSchemas, schemaInfo), type, engine,
+                SqlEngineFactory.createMutationExecutor(type), probesOn(tenantJdbc));
     }
 
     /** Realtime's database probes run on the project's own database. */

@@ -26,14 +26,14 @@ class GraphqlSchemaManagerRoutingTest {
         private final List<String> tenantBuilds = new ArrayList<>();
 
         private RecordingManager(DynamicDataSourceManager dataSourceManager) {
-            super(null, null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, dataSourceManager, null, false);
+            super(null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, dataSourceManager, null, false);
         }
 
         @Override
         Reflection reflectTenant(String orgSlug, String projectId) {
             tenantBuilds.add(projectId);
-            return new Reflection(new SchemaInfo(), "schema_of_" + projectId, SqlEngineFactory.create("postgres"),
-                    null, (sql, params) -> false);
+            return new Reflection(new SchemaInfo(), "schema_of_" + projectId, "postgres",
+                    SqlEngineFactory.create("postgres"), null, (sql, params) -> false);
         }
     }
 

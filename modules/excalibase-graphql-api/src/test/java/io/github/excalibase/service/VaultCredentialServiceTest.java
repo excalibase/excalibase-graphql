@@ -60,6 +60,18 @@ class VaultCredentialServiceTest {
       exchange.close();
     });
 
+    // The record provisioning files for a MySQL project (server-go mysqlCredentialRecord).
+    serveRecord("mysql-app", """
+        {"engine":"mysql","tls":"required","host":"mysql-app-primary.ns.svc.cluster.local","port":"3306",
+         "database":"app","username":"excalibase_app","password":"secret123"}
+        """);
+    serveRecord("mysql-plain", """
+        {"engine":"mysql","host":"h","port":"3306","database":"app","username":"excalibase_app","password":"p"}
+        """);
+    serveRecord("mongo-app", """
+        {"engine":"mongodb","host":"h","port":"27017","database":"app","username":"u","password":"p"}
+        """);
+
     // A project created without a database: provisioning answers 409.
     mockVault.createContext("/api/vault/secrets/projects/apps-only/credentials/excalibase_app", exchange -> {
       byte[] body = "{\"error\":\"project has no database\"}".getBytes(StandardCharsets.UTF_8);
@@ -74,6 +86,16 @@ class VaultCredentialServiceTest {
     });
 
     mockVault.start();
+  }
+
+  private static void serveRecord(String projectId, String json) {
+    mockVault.createContext("/api/vault/secrets/projects/" + projectId + "/credentials/excalibase_app", exchange -> {
+      byte[] body = json.getBytes(StandardCharsets.UTF_8);
+      exchange.getResponseHeaders().set("Content-Type", "application/json");
+      exchange.sendResponseHeaders(200, body.length);
+      exchange.getResponseBody().write(body);
+      exchange.close();
+    });
   }
 
   @AfterAll
@@ -117,6 +139,38 @@ class VaultCredentialServiceTest {
   void fetchCredentials_buildsJdbcUrl() {
     VaultCredentials creds = service.fetchCredentials("duc-corp", "app-a");
     assertEquals("jdbc:postgresql://app-a-postgres-rw.svc.local:5432/app", creds.jdbcUrl());
+  }
+
+  @Test
+  @DisplayName("a record without an engine is a Postgres project, as provisioning files every Postgres record")
+  void fetchCredentials_recordWithoutEngine_isPostgres() {
+    assertEquals(DatabaseEngine.POSTGRES, service.fetchCredentials("duc-corp", "app-a").engine());
+  }
+
+  @Test
+  @DisplayName("a MySQL record is served by Connector/J at its host, port and database")
+  void fetchCredentials_mysqlRecord_isMysql() {
+    VaultCredentials creds = service.fetchCredentials("duc-corp", "mysql-app");
+
+    assertEquals(DatabaseEngine.MYSQL, creds.engine());
+    assertEquals("jdbc:mysql://mysql-app-primary.ns.svc.cluster.local:3306/app", creds.jdbcUrl());
+    assertNull(creds.tls());
+  }
+
+  @Test
+  @DisplayName("a MySQL record that does not require TLS is refused, never connected in plain text")
+  void fetchCredentials_mysqlRecordWithoutTls_isRefused() {
+    VaultCredentialException refused = assertThrows(VaultCredentialException.class,
+        () -> service.fetchCredentials("duc-corp", "mysql-plain"));
+    assertTrue(refused.getMessage().contains("tls"), refused.getMessage());
+  }
+
+  @Test
+  @DisplayName("an engine the engine cannot serve is refused, never served as Postgres")
+  void fetchCredentials_unknownEngine_isRefused() {
+    VaultCredentialException refused = assertThrows(VaultCredentialException.class,
+        () -> service.fetchCredentials("duc-corp", "mongo-app"));
+    assertTrue(refused.getMessage().contains("mongodb"), refused.getMessage());
   }
 
   @Test

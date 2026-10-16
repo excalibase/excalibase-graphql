@@ -20,6 +20,7 @@ public class VaultCredentialService {
   private static final Logger log = LoggerFactory.getLogger(VaultCredentialService.class);
   private static final ObjectMapper mapper = new ObjectMapper();
   private static final Duration TIMEOUT = Duration.ofSeconds(10);
+  private static final String MYSQL_TLS_REQUIRED = "required";
   // One or two segments of [A-Za-z0-9_-], each 1-64 chars, separated by '/'.
   // Bounded length, no '.'/'..' — safe to interpolate into the vault path.
   private static final Pattern SLUG_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,64}(/[a-zA-Z0-9_-]{1,64})?$");
@@ -84,7 +85,8 @@ public class VaultCredentialService {
           json.get("database").asText(),
           json.get("username").asText(),
           json.get("password").asText(),
-          tlsCredentials(json)
+          tlsCredentials(json),
+          engineOf(json)
       );
     } catch (VaultCredentialException | UnknownProjectException | ProjectWithoutDatabaseException e) {
       throw e;
@@ -96,6 +98,24 @@ public class VaultCredentialService {
       throw new VaultCredentialException(
           "Failed to fetch credentials for " + orgSlug + "/" + projectId, e);
     }
+  }
+
+  /**
+   * Provisioning files no engine on a Postgres record and {@code engine: mysql} with {@code tls: required} on a
+   * MySQL one (ADR 0041). Anything else is refused rather than served as some engine it may not be.
+   */
+  private static DatabaseEngine engineOf(JsonNode json) {
+    JsonNode engine = json.get("engine");
+    if (engine == null || engine.isNull()) {
+      return DatabaseEngine.POSTGRES;
+    }
+    if (!DatabaseEngine.MYSQL.type().equals(engine.asText())) {
+      throw new VaultCredentialException("Unsupported database engine in the vault record: " + engine.asText());
+    }
+    if (!MYSQL_TLS_REQUIRED.equals(textOrNull(json, "tls"))) {
+      throw new VaultCredentialException("A MySQL vault record must require tls");
+    }
+    return DatabaseEngine.MYSQL;
   }
 
   /** Null when the record has none of the certificate fields; partial records are judged by the pool. */

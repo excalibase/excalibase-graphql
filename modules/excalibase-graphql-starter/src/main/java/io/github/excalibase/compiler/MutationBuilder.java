@@ -80,10 +80,6 @@ public class MutationBuilder {
 
     // === Mutation compilation — delegates to dialect-specific compiler ===
 
-    public static final String MUTATION_DELETE = "__DELETE__";
-
-    public record MysqlMutationResult(String dmlSql, String selectSql, String lastInsertIdParam) {}
-
     /**
      * Compile a mutation field into a CompiledQuery.
      * Delegates to the MutationCompiler implementation.
@@ -215,8 +211,12 @@ public class MutationBuilder {
 
     // === Shared helpers (public, used by dialect-specific mutation compilers) ===
 
-    /** A multi-row INSERT's result object, quoted column list and VALUES rows. */
-    public record BulkInsertParts(String alias, String objectSql, String columns, String valueRows, int rowCount) {}
+    /**
+     * A multi-row INSERT's result object, quoted column list and VALUES rows; {@code rowValues} holds each
+     * row's parenthesised VALUES and {@code boundRows} each row's values by column, as bound.
+     */
+    public record BulkInsertParts(String alias, String objectSql, String columns, String valueRows, int rowCount,
+                                  List<String> rowValues, List<Map<String, Object>> boundRows) {}
 
     /** A single-table UPDATE's result object and SET clauses. */
     public record UpdateParts(String alias, String objectSql, List<String> setClauses) {}
@@ -246,18 +246,24 @@ public class MutationBuilder {
         List<String> colNames = new ArrayList<>(rows.getFirst().keySet());
         colNames.addAll(presets.keySet());
         List<String> valueRows = new ArrayList<>();
+        List<Map<String, Object>> boundRows = new ArrayList<>();
         for (int i = 0; i < rows.size(); i++) {
             Map<String, Object> row = withPresets(rows.get(i), presets);
             List<String> vals = new ArrayList<>();
+            Map<String, Object> bound = new LinkedHashMap<>();
             for (String col : colNames) {
                 String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
                 vals.add(param(paramName) + castFor(tableName, col, castParams));
-                params.put(paramName, bindValue(tableName, col, row.get(col)));
+                Object value = bindValue(tableName, col, row.get(col));
+                params.put(paramName, value);
+                bound.put(col, value);
             }
             valueRows.add(parens(joinCols(vals)));
+            boundRows.add(bound);
         }
         String columns = joinCols(colNames.stream().map(dialect::quoteIdentifier).toList());
-        return new BulkInsertParts(alias, objectSql, columns, joinCols(valueRows), rows.size());
+        return new BulkInsertParts(alias, objectSql, columns, joinCols(valueRows), rows.size(),
+                List.copyOf(valueRows), List.copyOf(boundRows));
     }
 
     /**
@@ -319,8 +325,8 @@ public class MutationBuilder {
 
     /** {@code value} as a write binds it: a composite as its tuple, a number sent as a string as the number. */
     public Object bindValue(String tableName, String colName, Object value) {
-        return NumericInput.coerce(schemaInfo.getColumnType(tableName, colName),
-                convertCompositeValue(tableName, colName, value));
+        String type = schemaInfo.getColumnType(tableName, colName);
+        return dialect.bindValue(type, NumericInput.coerce(type, convertCompositeValue(tableName, colName, value)));
     }
 
     public Object convertCompositeValue(String tableName, String colName, Object value) {

@@ -19,7 +19,7 @@ public class DynamicDataSourceManager {
   private static final Duration MAX_POOL_AGE = Duration.ofHours(1);
   private final VaultCredentialService vaultService;
   private final Function<VaultCredentials, DataSource> dataSourceFactory;
-  private final TTLCache<String, DataSource> cache;
+  private final TTLCache<String, TenantDatabase> cache;
 
   /** Production constructor — pools built by {@code dataSourceFactory}, rebuilt at most hourly. */
   public DynamicDataSourceManager(VaultCredentialService vaultService, TenantDataSourceFactory dataSourceFactory,
@@ -38,8 +38,8 @@ public class DynamicDataSourceManager {
                            Duration poolAge) {
     this.vaultService = vaultService;
     this.dataSourceFactory = dataSourceFactory;
-    this.cache = new TTLCache<>(poolAge, ds -> {
-      if (ds instanceof HikariDataSource hikari) {
+    this.cache = new TTLCache<>(poolAge, database -> {
+      if (database.dataSource() instanceof HikariDataSource hikari) {
         hikari.close();
         log.info("closed_expired_datasource pool={}", hikari.getPoolName());
       }
@@ -52,16 +52,20 @@ public class DynamicDataSourceManager {
    * {@code projects/{orgSlug}/{projectId}/credentials/...}.
    */
   public DataSource getDataSource(String orgSlug, String projectId) {
+    return getDatabase(orgSlug, projectId).dataSource();
+  }
+
+  public TenantDatabase getDatabase(String orgSlug, String projectId) {
     return cache.computeIfAbsent(projectId, key -> {
       VaultCredentials creds = vaultService.fetchCredentials(orgSlug, projectId);
-      log.info("created_datasource tenant={} url={}", projectId, creds.jdbcUrl());
-      return dataSourceFactory.apply(creds);
+      log.info("created_datasource tenant={} engine={} url={}", projectId, creds.engine().type(), creds.jdbcUrl());
+      return new TenantDatabase(dataSourceFactory.apply(creds), creds.engine());
     });
   }
 
   public void evict(String cacheKey) {
-    DataSource removed = cache.remove(cacheKey);
-    if (removed instanceof HikariDataSource hikari) {
+    TenantDatabase removed = cache.remove(cacheKey);
+    if (removed != null && removed.dataSource() instanceof HikariDataSource hikari) {
       hikari.close();
       log.info("evicted_datasource key={}", cacheKey);
     }

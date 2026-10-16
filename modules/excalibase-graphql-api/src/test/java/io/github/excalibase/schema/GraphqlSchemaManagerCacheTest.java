@@ -66,10 +66,17 @@ class GraphqlSchemaManagerCacheTest {
     private static final class CountingSchemaManager extends GraphqlSchemaManager {
 
         private final List<String> reflected = new ArrayList<>();
+        private final String projectEngine;
 
         private CountingSchemaManager(PermissionProvider permissionProvider, boolean jwtEnabled) {
-            super(null, null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, null, permissionProvider,
+            this(permissionProvider, jwtEnabled, "postgres");
+        }
+
+        private CountingSchemaManager(PermissionProvider permissionProvider, boolean jwtEnabled,
+                                      String projectEngine) {
+            super(null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, null, permissionProvider,
                     jwtEnabled);
+            this.projectEngine = projectEngine;
         }
 
         @Override
@@ -80,7 +87,8 @@ class GraphqlSchemaManagerCacheTest {
             schema.addColumn(ORDERS, "id", "integer");
             schema.addColumn(ORDERS, "secret", "text");
             schema.addPrimaryKey(ORDERS, "id");
-            return new Reflection(schema, "public", SqlEngineFactory.create("postgres"), null, (sql, params) -> false);
+            return new Reflection(schema, "public", projectEngine, SqlEngineFactory.create(projectEngine), null,
+                    (sql, params) -> false);
         }
     }
 
@@ -182,13 +190,25 @@ class GraphqlSchemaManagerCacheTest {
     }
 
     @Test
+    @DisplayName("on a MySQL project only service is served while permissions compile to Postgres alone")
+    void mysqlProject_refusesEveryRoleButService() {
+        CountingSchemaManager mysqlProject = new CountingSchemaManager(permissions, true, "mysql");
+
+        assertThatThrownBy(() -> mysqlProject.resolveEngineState("acme", "proj-1", runningAs("user")))
+                .isInstanceOf(PermissionsUnavailableException.class);
+        assertThatThrownBy(() -> mysqlProject.resolveEngineState("acme", "proj-1", Principal.anonymous()))
+                .isInstanceOf(PermissionsUnavailableException.class);
+        assertThat(mysqlProject.resolveEngineState("acme", "proj-1", service()).plan().allAccess()).isTrue();
+    }
+
+    @Test
     void mysqlWithAPermissionSource_isRefusedAtStartup() {
-        assertThatThrownBy(() -> new GraphqlSchemaManager(null, null, 30, "mysql", 15, 30, "", null, null,
+        assertThatThrownBy(() -> new GraphqlSchemaManager(null, 30, "mysql", 15, 30, "", null, null,
                 permissions, true))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Postgres-only");
-        new GraphqlSchemaManager(null, null, 30, "mysql", 15, 30, "", null, null, new NoPermissionSource(), true);
-        new GraphqlSchemaManager(null, null, 30, "mysql", 15, 30, "", null, null, null, false);
+        new GraphqlSchemaManager(null, 30, "mysql", 15, 30, "", null, null, new NoPermissionSource(), true);
+        new GraphqlSchemaManager(null, 30, "mysql", 15, 30, "", null, null, null, false);
     }
 
     @Test

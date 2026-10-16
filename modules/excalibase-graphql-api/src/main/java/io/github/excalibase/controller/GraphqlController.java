@@ -201,18 +201,10 @@ public class GraphqlController {
             return queryExecutor.executeSequence(compiled);
         }
         MapSqlParameterSource params = new MapSqlParameterSource(compiled.params());
-        boolean isPostgres = "postgres".equalsIgnoreCase(schemaManager.getDatabaseType());
-
-        // Postgres + JWT: run two-phase / plain through one transaction.
-        boolean useContextPath = isPostgres
-                && ((userId != null && !userId.isBlank()) || claims != null);
-        if (useContextPath) {
+        // A write and its read-back share one connection and transaction of the project's own database.
+        boolean hasCaller = (userId != null && !userId.isBlank()) || claims != null;
+        if (compiled.isTwoPhase() || hasCaller) {
             return queryExecutor.executeInContext(compiled, params, state.mutationExecutor());
-        }
-
-        // Legacy paths for non-Postgres or feature-disabled, no-JWT requests.
-        if (compiled.isTwoPhase()) {
-            return queryExecutor.executeTwoPhase(compiled, params, state.mutationExecutor());
         }
         return queryExecutor.executeQuery(compiled, params);
     }
