@@ -1,28 +1,15 @@
 package io.github.excalibase.rest.parser;
 
+import io.github.excalibase.FilterCapabilities;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
 public final class FilterParser {
 
-    private static final Set<String> KNOWN_OPERATORS = Set.of(
-        "eq", "neq", "gt", "gte", "lt", "lte",
-        "like", "ilike", "match", "imatch",
-        "in", "notin",
-        "is", "isdistinct", "isnotnull",
-        "cs", "cd", "ov", "sl", "sr", "nxl", "nxr", "adj",
-        "fts", "plfts", "phfts", "wfts",
-        "haskey",
-        "jsoncontains", "contains", "jsoncontained", "containedin",
-        "jsonpath", "jsonpathexists",
-        "arraycontains", "arrayhasany", "arrayhasall", "arraylength",
-        "startswith", "endswith",
-        // Vector k-NN search -- value is a JSON blob carrying near/distance/limit.
-        // The compiler handles this specially by modifying ORDER BY and LIMIT
-        // instead of adding a WHERE predicate.
-        "vector"
-    );
+    /** Every operator the engine parses; whether the database runs one is the compiler's check. */
+    private static final Set<String> KNOWN_OPERATORS = FilterCapabilities.knownRest();
 
     private FilterParser() {}
 
