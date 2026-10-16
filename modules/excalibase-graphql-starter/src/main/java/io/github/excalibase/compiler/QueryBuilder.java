@@ -660,6 +660,7 @@ public class QueryBuilder {
      */
     private String buildReverseFkValue(Field field, String alias, SchemaInfo.ReverseFkInfo rfk,
                                        Map<String, Object> params) {
+        FieldArguments.requireKnown(field, FieldArguments.NESTED_LIST);
         String childTable = rfk.childTable();
         String subAlias = dialect.randAlias();
         String subObj = buildObject(field.getSelectionSet(), childTable, subAlias, params);
