@@ -1,46 +1,8 @@
 package io.github.excalibase.mysql;
 
+import io.github.excalibase.compiler.KeyedWrite;
 import io.github.excalibase.compiler.TwoPhaseWrite;
-import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
-import java.util.List;
-import java.util.Map;
-
-/**
- * A MySQL write. MySQL has no {@code RETURNING}, so the rows a write touched are identified by primary key
- * and read back by it, on the request's connection and inside its transaction.
- */
-sealed interface MysqlWrite extends TwoPhaseWrite {
-
-    /**
-     * One INSERT per row. {@code sentKeys} holds each row's key values as sent, null where the client sent
-     * none and the database must generate it.
-     */
-    record Insert(String table, List<String> keyColumns, List<String> statements, List<List<Object>> sentKeys,
-                  KeyedRead readBack) implements MysqlWrite {}
-
-    /**
-     * {@code lockSql} selects the matched rows' keys {@code FOR UPDATE}; {@code updateHead} is completed by a
-     * predicate on those keys; {@code keyAssignments} are the key columns the write sets, by key position.
-     */
-    record Update(String lockSql, String updateHead, Map<Integer, Object> keyAssignments,
-                  KeyedRead readBack) implements MysqlWrite {
-
-        /** The UPDATE of exactly the {@code locked} rows, their key values bound into {@code params}. */
-        String updateSql(List<List<Object>> locked, MapSqlParameterSource params) {
-            return updateHead + KeyPredicate.of(readBack.keyRefs(), locked, params, "locked_key");
-        }
-    }
-
-    /** The rows are read before they are deleted. */
-    record Delete(String selectSql, String deleteSql) implements MysqlWrite {}
-
-    /** Reads rows by key: {@code head}, a predicate on {@code keyRefs}, then {@code tail}. */
-    record KeyedRead(String head, String tail, List<String> keyRefs) {
-
-        /** The read of exactly the {@code written} rows, their key values bound into {@code params}. */
-        String sql(List<List<Object>> written, MapSqlParameterSource params) {
-            return head + KeyPredicate.of(keyRefs, written, params, "written_key") + tail;
-        }
-    }
+/** A GraphQL mutation field on MySQL: its rows are written and read back by key, as REST's are. */
+record MysqlWrite(String fieldName, KeyedWrite write) implements TwoPhaseWrite {
 }

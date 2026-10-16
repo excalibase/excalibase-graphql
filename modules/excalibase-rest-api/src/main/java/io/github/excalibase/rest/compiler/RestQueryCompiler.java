@@ -1,5 +1,7 @@
 package io.github.excalibase.rest.compiler;
 
+import io.github.excalibase.compiler.KeyedWrite;
+import io.github.excalibase.compiler.KeyedWrites;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.VectorSearchBuilder;

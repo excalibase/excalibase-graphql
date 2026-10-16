@@ -2,28 +2,23 @@ package io.github.excalibase.mysql;
 
 import graphql.language.Argument;
 import graphql.language.Field;
+import io.github.excalibase.compiler.KeyedWrites;
 import io.github.excalibase.compiler.MutationBuilder;
-import io.github.excalibase.compiler.SqlCompilationException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.spi.MutationCompiler;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static io.github.excalibase.compiler.SqlKeywords.FROM;
 import static io.github.excalibase.compiler.SqlKeywords.INSERT_INTO;
 import static io.github.excalibase.compiler.SqlKeywords.P_UPDATE;
-import static io.github.excalibase.compiler.SqlKeywords.SELECT;
-import static io.github.excalibase.compiler.SqlKeywords.SET;
 import static io.github.excalibase.compiler.SqlKeywords.VALUES;
 import static io.github.excalibase.compiler.SqlKeywords.WHERE;
 import static io.github.excalibase.compiler.SqlKeywords.joinCols;
 import static io.github.excalibase.compiler.SqlKeywords.parens;
-import static io.github.excalibase.compiler.SqlKeywords.UPDATE;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_INPUT;
 import static io.github.excalibase.schema.GraphqlConstants.CREATE_MANY_PREFIX;
 import static io.github.excalibase.schema.GraphqlConstants.CREATE_PREFIX;
@@ -31,8 +26,9 @@ import static io.github.excalibase.schema.GraphqlConstants.DELETE_PREFIX;
 import static io.github.excalibase.schema.GraphqlConstants.UPDATE_PREFIX;
 
 /**
- * MySQL mutation compiler. MySQL has no {@code RETURNING}: inserts and updates read their rows back by
- * primary key, inserts by the keys sent or generated, updates by the keys they locked before writing.
+ * MySQL mutation compiler. MySQL has no {@code RETURNING}: rows are read back by primary key through
+ * {@link KeyedWrites}, which REST uses too: inserts by the keys sent or generated, updates by the keys they
+ * locked before writing, deletes read locked before they go.
  */
 public class MysqlMutationCompiler implements MutationCompiler {
 
@@ -50,7 +46,7 @@ public class MysqlMutationCompiler implements MutationCompiler {
             String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_MANY_PREFIX.length()), fieldName);
             if (tableName != null) {
                 return compileInsert(fieldName, tableName,
-                        shared.bulkInsertParts(field, tableName, params, variables, false), true, shared);
+                        shared.bulkInsertParts(field, tableName, params, variables, false), params, true, shared);
             }
         } else if (fieldName.startsWith(CREATE_PREFIX)) {
             String tableName = shared.resolveMutationTable(fieldName.substring(CREATE_PREFIX.length()), fieldName);
@@ -75,26 +71,20 @@ public class MysqlMutationCompiler implements MutationCompiler {
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
         MutationBuilder.BulkInsertParts row = shared.bulkInsertParts(field, tableName, List.of(inputFields),
                 params, false);
-        return compileInsert(fieldName, tableName, row, false, shared);
+        return compileInsert(fieldName, tableName, row, params, false, shared);
     }
 
     private MysqlWrite compileInsert(String fieldName, String tableName, MutationBuilder.BulkInsertParts rows,
-                                     boolean many, MutationBuilder shared) {
+                                     Map<String, Object> params, boolean many, MutationBuilder shared) {
         if (rows == null) return null;
-        List<String> keys = requireKeys(tableName, shared);
         String table = shared.qualifiedTable(tableName);
-        List<String> statements = new ArrayList<>();
-        List<List<Object>> sentKeys = new ArrayList<>();
+        List<KeyedWrites.Insert> inserts = new ArrayList<>();
         for (int row = 0; row < rows.rowCount(); row++) {
-            statements.add(INSERT_INTO + table + parens(rows.columns()) + VALUES + rows.rowValues().get(row));
-            Map<String, Object> bound = rows.boundRows().get(row);
-            List<Object> sent = new ArrayList<>();
-            keys.forEach(key -> sent.add(bound.get(key)));
-            sentKeys.add(Collections.unmodifiableList(sent));
+            inserts.add(new KeyedWrites.Insert(INSERT_INTO + table + parens(rows.columns()) + VALUES
+                    + rows.rowValues().get(row), params, rows.boundRows().get(row)));
         }
-        MysqlWrite.KeyedRead readBack = readBack(fieldName, rows.objectSql(), many, table, rows.alias(), keys, shared);
-        return new MysqlWrite.Insert(tableName, keys, List.copyOf(statements), Collections.unmodifiableList(sentKeys),
-                readBack);
+        KeyedWrites keyed = keyed(tableName, table, rows.alias(), rows.objectSql(), params, shared);
+        return new MysqlWrite(fieldName, keyed.insert(inserts, many));
     }
 
     private MysqlWrite compileUpdate(Field field, String fieldName, String tableName,
@@ -111,24 +101,14 @@ public class MysqlMutationCompiler implements MutationCompiler {
         shared.filterBuilder().applyWhere(whereSql, field, update.alias(), params, tableName, RlsOp.UPDATE);
         if (whereSql.isEmpty()) return null; // Require where to prevent accidental full-table update
 
-        List<String> keys = requireKeys(tableName, shared);
         String table = shared.qualifiedTable(tableName);
-        MysqlWrite.KeyedRead readBack = readBack(fieldName, update.objectSql(), true, table, update.alias(), keys,
-                shared);
-        String lockSql = SELECT + joinCols(readBack.keyRefs()) + FROM + table + " " + update.alias() + whereSql
-                + " FOR UPDATE";
-        String updateHead = UPDATE + table + " " + update.alias() + SET + joinCols(update.setClauses()) + WHERE;
-
-        Map<String, Object> written = MutationBuilder.withPresets(inputFields,
-                shared.presets(tableName, RlsOp.UPDATE));
-        Map<Integer, Object> keyAssignments = new HashMap<>();
-        for (int column = 0; column < keys.size(); column++) {
-            String key = keys.get(column);
-            if (written.containsKey(key)) {
-                keyAssignments.put(column, shared.bindValue(tableName, key, written.get(key)));
-            }
-        }
-        return new MysqlWrite.Update(lockSql, updateHead, Collections.unmodifiableMap(keyAssignments), readBack);
+        String dml = shared.dialect().cteUpdate(update.alias(), table, joinCols(update.setClauses()),
+                whereSql.toString(), update.objectSql());
+        Map<String, Object> set = new LinkedHashMap<>();
+        MutationBuilder.withPresets(inputFields, shared.presets(tableName, RlsOp.UPDATE))
+                .forEach((column, value) -> set.put(column, shared.bindValue(tableName, column, value)));
+        KeyedWrites keyed = keyed(tableName, table, update.alias(), update.objectSql(), params, shared);
+        return new MysqlWrite(fieldName, keyed.update(dml, condition(whereSql), params, set));
     }
 
     private MysqlWrite compileDelete(Field field, String fieldName, String tableName,
@@ -141,29 +121,24 @@ public class MysqlMutationCompiler implements MutationCompiler {
         if (whereSql.isEmpty()) return null;
 
         String table = shared.qualifiedTable(tableName);
-        String innerSelect = SELECT + shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql))
-                + FROM + table + " " + alias + whereSql;
-        String selectSql = SELECT + shared.dialect().buildObject(List.of(
-                "'" + fieldName + "', " + parens(innerSelect)));
-        String deleteSql = shared.dialect().cteDelete(alias, table, whereSql.toString(), objectSql);
-        return new MysqlWrite.Delete(selectSql, deleteSql);
+        String dml = shared.dialect().cteDelete(alias, table, whereSql.toString(), objectSql);
+        KeyedWrites keyed = keyed(tableName, table, alias, objectSql, params, shared);
+        return new MysqlWrite(fieldName, keyed.delete(dml, condition(whereSql), params));
     }
 
-    /** {@code SELECT JSON_OBJECT('field', (SELECT <rows> FROM table alias WHERE <keys>))}, split around the keys. */
-    private static MysqlWrite.KeyedRead readBack(String fieldName, String objectSql, boolean many, String table,
-                                                 String alias, List<String> keys, MutationBuilder shared) {
-        String rows = many ? shared.dialect().coalesceArray(shared.dialect().aggregateArray(objectSql)) : objectSql;
-        String head = SELECT + "JSON_OBJECT('" + fieldName + "', (" + SELECT + rows + FROM + table + " " + alias + WHERE;
-        List<String> keyRefs = keys.stream().map(key -> alias + "." + shared.dialect().quoteIdentifier(key)).toList();
-        return new MysqlWrite.KeyedRead(head, "))", keyRefs);
+    /** Rows are read back by primary key as the caller reads them; none when the caller may not read the table. */
+    private static KeyedWrites keyed(String tableName, String table, String alias, String objectSql,
+                                     Map<String, Object> params, MutationBuilder shared) {
+        KeyedWrites.ReadBack readBack = shared.returnsRows(tableName)
+                ? new KeyedWrites.ReadBack(objectSql, "", params) : null;
+        List<String> keys = shared.schemaInfo().hasPrimaryKey(tableName)
+                ? shared.schemaInfo().getPrimaryKeys(tableName) : List.of();
+        return new KeyedWrites(shared.dialect(), tableName, table, alias, keys, readBack);
     }
 
-    /** A written row is found again by its primary key; a table without one cannot be read back. */
-    private static List<String> requireKeys(String tableName, MutationBuilder shared) {
-        if (!shared.schemaInfo().hasPrimaryKey(tableName)) {
-            throw new SqlCompilationException("Table " + tableName
-                    + " has no primary key: MySQL writes are read back by key, so it cannot be written here");
-        }
-        return List.copyOf(shared.schemaInfo().getPrimaryKeys(tableName));
+    /** The filter of a {@code WHERE} clause the filter builder wrote, without the keyword. */
+    private static String condition(StringBuilder whereSql) {
+        String where = whereSql.toString();
+        return where.startsWith(WHERE) ? where.substring(WHERE.length()) : where;
     }
 }
