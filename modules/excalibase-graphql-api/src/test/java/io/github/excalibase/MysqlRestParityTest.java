@@ -259,7 +259,7 @@ class MysqlRestParityTest {
     @Test
     @Order(20)
     void refusesWhatMysqlCannotDo() throws Exception {
-        for (String path : new String[] {REST + "customer?email=wfts.alice", REST + "customer?email=ov.{a}",
+        for (String path : new String[] {REST + "customer?email=wfts.alice", REST + "customer?email=sl.x",
                 REST + "rpc/anything"}) {
             MvcResult result = mockMvc.perform(get(path)).andReturn();
             assertEquals(400, result.getResponse().getStatus(), path);
