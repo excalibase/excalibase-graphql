@@ -80,6 +80,9 @@ final class RoleView {
         if (userType != null) {
             view.addColumnEnumType(table, column, userType);
         }
+        if (reflected.isFullTextColumn(table, column)) {
+            view.addFullTextColumn(table, column);
+        }
     }
 
     /** Copied under the reflected names, so a relationship is called the same whatever role asks. */

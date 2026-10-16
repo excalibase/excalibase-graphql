@@ -87,4 +87,12 @@ class MysqlErrorsTest {
         assertThat(dialect.describeError(new SQLException("Lock wait timeout exceeded", "HY000", 1205))).isEmpty();
         assertThat(dialect.describeError(new SQLException("Table 'x' doesn't exist", "42S02", 1146))).isEmpty();
     }
+
+    @Test
+    void aSearchWithoutAFullTextIndex_isABadRequestSayingSo() {
+        DataError error = describe(new SQLException("Can't find FULLTEXT index matching the column list", "HY000", 1191));
+
+        assertThat(error.status()).isEqualTo(400);
+        assertThat(error.message()).contains("FULLTEXT index");
+    }
 }

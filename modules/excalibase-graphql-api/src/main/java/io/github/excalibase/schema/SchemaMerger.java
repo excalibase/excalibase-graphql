@@ -25,6 +25,9 @@ final class SchemaMerger {
         for (String col : source.getColumns(table)) {
             target.addColumn(key, col, source.getColumnType(table, col));
             mergeEnumColumns(target, source, schema, table, col, key);
+            if (source.isFullTextColumn(table, col)) {
+                target.addFullTextColumn(key, col);
+            }
         }
     }
 

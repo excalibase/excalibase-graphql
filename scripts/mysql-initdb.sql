@@ -52,6 +52,20 @@ CREATE TABLE IF NOT EXISTS product_detail (
     CONSTRAINT fk_detail_product FOREIGN KEY (product_id) REFERENCES product(product_id)
 );
 
+-- Full-text search: body has its own FULLTEXT index, summary has none
+CREATE TABLE IF NOT EXISTS article (
+    article_id BIGINT       AUTO_INCREMENT PRIMARY KEY,
+    title      VARCHAR(200) NOT NULL,
+    body       TEXT,
+    summary    TEXT,
+    FULLTEXT KEY ft_article_body (body)
+);
+
+INSERT INTO article (title, body, summary) VALUES
+('Foxes',  'the quick brown fox jumps over the fence', 'about foxes'),
+('Dogs',   'lazy brown dogs sleep all afternoon',      'about dogs'),
+('Silver', 'a quick silver fox runs away',             'about silver');
+
 -- Wallet table for stored procedure testing (transfer funds)
 CREATE TABLE IF NOT EXISTS wallets (
     wallet_id  BIGINT PRIMARY KEY,

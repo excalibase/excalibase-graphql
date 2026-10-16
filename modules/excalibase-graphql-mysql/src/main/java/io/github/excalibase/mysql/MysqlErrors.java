@@ -29,6 +29,8 @@ final class MysqlErrors {
     private static final int DATA_TRUNCATED = 1265;
     private static final int DATA_TOO_LONG = 1406;
     private static final int OUT_OF_RANGE = 1264;
+    private static final int FULL_TEXT_INDEX_MISSING = 1191;
+    private static final String FULL_TEXT_INDEX_REQUIRED = "full_text_index_required";
 
     private static final Pattern KEY = Pattern.compile("for key '(?:[^'.]*\\.)?([^']*)'");
     private static final Pattern FOREIGN_KEY = Pattern.compile("CONSTRAINT `([^`]*)`");
@@ -59,6 +61,8 @@ final class MysqlErrors {
             case TABLE_ACCESS_DENIED, COLUMN_ACCESS_DENIED -> DataError.forbidden("Permission denied", null);
             case TRUNCATED_WRONG_VALUE, INCORRECT_VALUE, DATA_TRUNCATED, DATA_TOO_LONG, OUT_OF_RANGE ->
                     DataError.badRequest(DataError.INVALID_VALUE, message, null, group(COLUMN, message));
+            case FULL_TEXT_INDEX_MISSING -> DataError.badRequest(FULL_TEXT_INDEX_REQUIRED,
+                    "Full-text search needs a FULLTEXT index on the searched column alone");
             default -> DataErrors.fromSqlState(failure).orElse(null);
         });
     }

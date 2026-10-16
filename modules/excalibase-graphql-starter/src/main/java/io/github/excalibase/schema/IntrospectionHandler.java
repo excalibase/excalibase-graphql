@@ -9,6 +9,7 @@ import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
+import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.schema.introspection.CompositeTypeFactory;
 import io.github.excalibase.schema.introspection.CreateInputFactory;
 import io.github.excalibase.schema.introspection.EnumTypeFactory;
@@ -69,8 +70,14 @@ public class IntrospectionHandler {
     /** As above; {@code nestedInserts} is false for a store whose mutation compiler cannot nest inserts. */
     public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
                                 boolean nestedInserts) {
+        this(schemaInfo, access, functions, nestedInserts, FilterCapabilities.ALL);
+    }
+
+    /** As above; filter inputs offer only the operators {@code filterCapabilities} says the database runs. */
+    public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
+                                boolean nestedInserts, FilterCapabilities filterCapabilities) {
         this.schema = buildSchema(schemaInfo, access, functions == null ? ExposedFunctions.NONE : functions,
-                nestedInserts);
+                nestedInserts, filterCapabilities);
         this.graphQL = GraphQL.newGraphQL(this.schema).build();
     }
 
@@ -92,17 +99,18 @@ public class IntrospectionHandler {
     }
 
     private GraphQLSchema buildSchema(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
-                                      boolean nestedInserts) {
+                                      boolean nestedInserts, FilterCapabilities filterCapabilities) {
         // Step 1: build enums, shared filter inputs, per-enum filter inputs.
         Map<String, GraphQLEnumType> enumTypes = new EnumTypeFactory().build(schemaInfo);
-        FilterInputCatalog.FilterInputs filters = FilterInputCatalog.INPUTS;
-        Map<String, GraphQLInputObjectType> enumFilters = FilterInputCatalog.buildEnumFilters(enumTypes);
+        FilterInputCatalog.FilterInputs filters = FilterInputCatalog.inputs(filterCapabilities);
+        Map<String, GraphQLInputObjectType> enumFilters = FilterInputCatalog.buildEnumFilters(enumTypes,
+                filterCapabilities);
 
         // Step 2: per-table where/create/object types. The nested-insert wrappers are built first so
         // CreateInput can embed them; the create-input ↔ wrapper cycle is broken by type references.
         Map<String, GraphQLInputObjectType> arrRelTypes = new RelationshipInsertFactory().build(schemaInfo,
                 nestedInserts);
-        Map<String, GraphQLInputObjectType> whereTypes = buildWhereTypes(schemaInfo, enumTypes, enumFilters, filters);
+        Map<String, GraphQLInputObjectType> whereTypes = buildWhereTypes(schemaInfo, enumFilters, filters);
         MutationFieldsAssembler.Inputs inputs = new MutationFieldsAssembler.Inputs(
                 buildInputs(schemaInfo, access, enumTypes, arrRelTypes, RlsOp.INSERT),
                 buildInputs(schemaInfo, access, enumTypes, arrRelTypes, RlsOp.UPDATE), whereTypes);
@@ -135,13 +143,12 @@ public class IntrospectionHandler {
     }
 
     private Map<String, GraphQLInputObjectType> buildWhereTypes(SchemaInfo schemaInfo,
-                                                                Map<String, GraphQLEnumType> enumTypes,
                                                                 Map<String, GraphQLInputObjectType> enumFilters,
                                                                 FilterInputCatalog.FilterInputs filters) {
         Map<String, GraphQLInputObjectType> whereTypes = new LinkedHashMap<>();
         WhereInputFactory whereFactory = new WhereInputFactory();
         for (String table : schemaInfo.getTableNames()) {
-            whereTypes.put(table, whereFactory.buildFor(table, schemaInfo, enumTypes, enumFilters, filters));
+            whereTypes.put(table, whereFactory.buildFor(table, schemaInfo, enumFilters, filters));
         }
         return whereTypes;
     }

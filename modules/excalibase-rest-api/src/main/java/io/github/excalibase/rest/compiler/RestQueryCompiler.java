@@ -162,6 +162,7 @@ public class RestQueryCompiler {
                                                                Map<String, Object> params) {
         VectorSearchBuilder.VectorClause vectorClause = null;
         for (FilterSpec filter : allFilters) {
+            requireSupported(filter);
             if ("vector".equals(filter.operator()) && vectorClause == null) {
                 vectorClause = compileVectorFilter(filter, ALIAS, params);
             } else {
@@ -702,7 +703,16 @@ public class RestQueryCompiler {
     }
 
 
+    /** Refuses an operator the database cannot run; it is never compiled into SQL the database would reject. */
+    private void requireSupported(FilterSpec filter) {
+        if (!dialect.filterCapabilities().restOperators().contains(filter.operator())) {
+            throw new IllegalArgumentException("Filter operator '" + filter.operator() + "' on column '"
+                    + filter.column() + "' is not supported by this database");
+        }
+    }
+
     private String buildFilterSql(FilterSpec filter, String paramName, Map<String, Object> params, String table) {
+        requireSupported(filter);
         String colRef = dialect.quoteIdentifier(filter.column());
         String neg = filter.negated() ? NOT : "";
         String op = filter.operator();

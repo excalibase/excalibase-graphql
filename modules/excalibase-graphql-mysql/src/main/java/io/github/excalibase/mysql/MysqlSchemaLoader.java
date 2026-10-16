@@ -18,6 +18,20 @@ public class MysqlSchemaLoader implements SchemaLoader {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /**
+     * Columns with a FULLTEXT index of their own: MATCH (column) needs an index on exactly that column list, so a
+     * column that is only part of a wider FULLTEXT index cannot be searched alone.
+     */
+    private static final String FULL_TEXT_COLUMNS = """
+            SELECT 'fulltext' as kind, table_schema, table_name, MIN(column_name) as column_name,
+                   NULL as data_type, NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column
+            FROM information_schema.statistics
+            WHERE index_type = 'FULLTEXT' AND table_schema IN """;
+    private static final String FULL_TEXT_GROUPING = """
+
+            GROUP BY table_schema, table_name, index_name
+            HAVING COUNT(*) = 1""";
+
     private static String buildMysqlBulkQuery(int schemaCount) {
         String inClause = "(" + String.join(",", Collections.nCopies(schemaCount, "?")) + ")";
         return """
@@ -53,6 +67,9 @@ public class MysqlSchemaLoader implements SchemaLoader {
                        NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column
                 FROM information_schema.views
                 WHERE table_schema IN """ + inClause + """
+              ),
+              full_text_columns AS (
+                """ + FULL_TEXT_COLUMNS + inClause + FULL_TEXT_GROUPING + """
               )
             SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
                    'column_name', column_name, 'data_type', data_type,
@@ -71,6 +88,10 @@ public class MysqlSchemaLoader implements SchemaLoader {
                    'column_name', column_name, 'data_type', data_type,
                    'constraint_name', constraint_name, 'from_column', from_column,
                    'to_table', to_table, 'to_column', to_column) FROM views
+            UNION ALL SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
+                   'column_name', column_name, 'data_type', data_type,
+                   'constraint_name', constraint_name, 'from_column', from_column,
+                   'to_table', to_table, 'to_column', to_column) FROM full_text_columns
             """;
     }
 
@@ -79,7 +100,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
         if (schemas.isEmpty()) return;
         String[] schemaArray = schemas.toArray(new String[0]);
         String sql = buildMysqlBulkQuery(schemas.size());
-        int cteCount = 4; // cols, pkeys, fkeys, views
+        int cteCount = 5; // cols, pkeys, fkeys, views, full_text_columns
 
         jdbc.query(sql, ps -> {
             int idx = 1;
@@ -108,6 +129,8 @@ public class MysqlSchemaLoader implements SchemaLoader {
                         node.get(COL_TABLE_NAME).asText(), node.get("from_column").asText(),
                         node.get("to_table").asText(), node.get("to_column").asText());
                 case "view" -> info.addView(node.get(COL_TABLE_NAME).asText());
+                case "fulltext" -> info.addFullTextColumn(node.get(COL_TABLE_NAME).asText(),
+                        node.get(COL_COLUMN_NAME).asText());
                 default -> { /* Ignore unknown introspection row kinds */ }
             }
         } catch (Exception e) {
@@ -139,6 +162,8 @@ public class MysqlSchemaLoader implements SchemaLoader {
             info.addColumn(table, col, type);
             info.setTableSchema(table, schema);
         }, schema);
+        jdbc.query(FULL_TEXT_COLUMNS + "(?)" + FULL_TEXT_GROUPING, (RowCallbackHandler) rs ->
+                info.addFullTextColumn(rs.getString(COL_TABLE_NAME), rs.getString(COL_COLUMN_NAME)), schema);
     }
 
     @Override

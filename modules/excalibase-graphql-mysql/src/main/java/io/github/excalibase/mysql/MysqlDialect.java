@@ -1,5 +1,6 @@
 package io.github.excalibase.mysql;
 
+import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataError;
 
@@ -17,9 +18,57 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
  */
 public class MysqlDialect implements SqlDialect {
 
+    private static final FilterCapabilities FILTER_CAPABILITIES = new MysqlFilterCapabilities();
+
     @Override
     public Optional<DataError> describeError(SQLException failure) {
         return MysqlErrors.describe(failure);
+    }
+
+    @Override
+    public FilterCapabilities filterCapabilities() {
+        return FILTER_CAPABILITIES;
+    }
+
+    /** REGEXP_LIKE with an explicit match type, so case follows the operator rather than the column's collation. */
+    @Override
+    public Optional<String> regexSql(String colRef, String paramRef, boolean caseInsensitive) {
+        return Optional.of("REGEXP_LIKE(" + colRef + ", " + paramRef + ", '" + (caseInsensitive ? "i" : "c") + "')");
+    }
+
+    /** MATCH ... AGAINST in BOOLEAN MODE; the column needs its own FULLTEXT index. MySQL has no web-search syntax. */
+    @Override
+    public Optional<String> fullTextSearchSql(String colRef, String paramRef, FtsVariant variant) {
+        if (variant == FtsVariant.WEB_SEARCH) return Optional.empty();
+        return Optional.of("MATCH(" + colRef + ") AGAINST(" + paramRef + " IN BOOLEAN MODE)");
+    }
+
+    @Override
+    public String fullTextSearchValue(FtsVariant variant, String text) {
+        return MysqlFullText.query(variant, text);
+    }
+
+    @Override
+    public Optional<String> jsonPredicateSql(JsonPredicate variant, String colRef, String paramRef) {
+        return switch (variant) {
+            case CONTAINS -> Optional.of("JSON_CONTAINS(" + colRef + ", CAST(" + paramRef + " AS JSON))");
+            case CONTAINED_BY -> Optional.of("JSON_CONTAINS(CAST(" + paramRef + " AS JSON), " + colRef + ")");
+            case HAS_KEY -> Optional.of("JSON_CONTAINS_PATH(" + colRef + ", 'one', " + keyPath(paramRef) + ")");
+            case EQ, NEQ, HAS_ALL_KEYS, HAS_ANY_KEYS -> Optional.empty();
+        };
+    }
+
+    @Override
+    public Optional<String> jsonKeysPredicateSql(JsonPredicate variant, String colRef, List<String> keyParamRefs) {
+        if (variant != JsonPredicate.HAS_ALL_KEYS && variant != JsonPredicate.HAS_ANY_KEYS) return Optional.empty();
+        String mode = variant == JsonPredicate.HAS_ALL_KEYS ? "all" : "one";
+        String paths = keyParamRefs.stream().map(MysqlDialect::keyPath).collect(Collectors.joining(", "));
+        return Optional.of("JSON_CONTAINS_PATH(" + colRef + ", '" + mode + "', " + paths + ")");
+    }
+
+    /** The JSON path of a top-level key; quoting lets a key hold dots or spaces. */
+    private static String keyPath(String paramRef) {
+        return "CONCAT('$.', JSON_QUOTE(" + paramRef + "))";
     }
 
     @Override

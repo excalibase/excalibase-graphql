@@ -1,0 +1,339 @@
+type ChangeEvent {
+  data: JSON
+  operation: String
+  table: String
+  timestamp: String
+}
+
+type FiltersArticle {
+  article_id: Int
+  big_views: BigInteger
+  created_at: String
+  external_id: String
+  filtersComment(limit: Int, offset: Int, orderBy: FiltersCommentOrderByInput, where: FiltersCommentWhereInput): [FiltersComment]
+  meta: String
+  mood: FiltersMood
+  published: Boolean
+  published_on: String
+  rating: Float
+  raw_meta: String
+  score: Float
+  search_vec: String
+  slug: String
+  tags: String
+  title: String
+  views: Int
+}
+
+type FiltersArticleAggregate {
+  avg: FiltersArticleAggregateColumns
+  count: Int
+  max: FiltersArticleAggregateColumns
+  min: FiltersArticleAggregateColumns
+  sum: FiltersArticleAggregateColumns
+}
+
+type FiltersArticleAggregateColumns {
+  article_id: Float
+  big_views: Float
+  rating: Float
+  score: Float
+  views: Float
+}
+
+type FiltersArticleConnection {
+  edges: [FiltersArticleEdge]
+  pageInfo: PageInfo
+  totalCount: Int
+}
+
+type FiltersArticleEdge {
+  cursor: String
+  node: FiltersArticle
+}
+
+type FiltersComment {
+  article_id: Int
+  body: String
+  comment_id: Int
+  filtersArticle: FiltersArticle
+  filtersArticleId: FiltersArticle
+}
+
+type FiltersCommentAggregate {
+  avg: FiltersCommentAggregateColumns
+  count: Int
+  max: FiltersCommentAggregateColumns
+  min: FiltersCommentAggregateColumns
+  sum: FiltersCommentAggregateColumns
+}
+
+type FiltersCommentAggregateColumns {
+  article_id: Float
+  comment_id: Float
+}
+
+type FiltersCommentConnection {
+  edges: [FiltersCommentEdge]
+  pageInfo: PageInfo
+  totalCount: Int
+}
+
+type FiltersCommentEdge {
+  cursor: String
+  node: FiltersComment
+}
+
+type Mutation {
+  createFiltersArticle(input: FiltersArticleCreateInput): FiltersArticle
+  createFiltersComment(input: FiltersCommentCreateInput): FiltersComment
+  createManyFiltersArticle(inputs: [FiltersArticleCreateInput]): [FiltersArticle]
+  createManyFiltersComment(inputs: [FiltersCommentCreateInput]): [FiltersComment]
+  deleteFiltersArticle(where: FiltersArticleWhereInput): [FiltersArticle]
+  deleteFiltersComment(where: FiltersCommentWhereInput): [FiltersComment]
+  updateFiltersArticle(input: FiltersArticleUpdateInput, where: FiltersArticleWhereInput): [FiltersArticle]
+  updateFiltersComment(input: FiltersCommentUpdateInput, where: FiltersCommentWhereInput): [FiltersComment]
+}
+
+type PageInfo {
+  endCursor: String
+  hasNextPage: Boolean
+  hasPreviousPage: Boolean
+  startCursor: String
+}
+
+type Query {
+  filtersArticle(limit: Int, offset: Int, orderBy: FiltersArticleOrderByInput, where: FiltersArticleWhereInput): [FiltersArticle]
+  filtersArticleAggregate(where: FiltersArticleWhereInput): FiltersArticleAggregate
+  filtersArticleConnection(after: String, before: String, first: Int, last: Int, where: FiltersArticleWhereInput): FiltersArticleConnection
+  filtersComment(limit: Int, offset: Int, orderBy: FiltersCommentOrderByInput, where: FiltersCommentWhereInput): [FiltersComment]
+  filtersCommentAggregate(where: FiltersCommentWhereInput): FiltersCommentAggregate
+  filtersCommentConnection(after: String, before: String, first: Int, last: Int, where: FiltersCommentWhereInput): FiltersCommentConnection
+}
+
+type Subscription {
+  filtersArticleChanges: ChangeEvent
+  filtersCommentChanges: ChangeEvent
+}
+
+"Enum mood from schema filters"
+enum FiltersMood {
+  HAPPY
+  SAD
+}
+
+enum OrderDirection {
+  ASC
+  AscNullsFirst
+  AscNullsLast
+  DESC
+  DescNullsFirst
+  DescNullsLast
+}
+
+"An arbitrary precision signed integer"
+scalar BigInteger
+
+"A JSON scalar"
+scalar JSON
+
+input BooleanFilterInput {
+  eq: Boolean
+  isNotNull: Boolean
+  isNull: Boolean
+  neq: Boolean
+}
+
+input DateTimeFilterInput {
+  eq: String
+  gt: String
+  gte: String
+  in: [String]
+  isNotNull: Boolean
+  isNull: Boolean
+  lt: String
+  lte: String
+  neq: String
+  notIn: [String]
+}
+
+input FiltersArticleCreateInput {
+  article_id: Int
+  big_views: BigInteger
+  created_at: String
+  external_id: String
+  filtersComment: FiltersCommentArrRelInsertInput
+  meta: String
+  mood: FiltersMood
+  published: Boolean
+  published_on: String
+  rating: Float
+  raw_meta: String
+  score: Float
+  search_vec: String
+  slug: String
+  tags: String
+  title: String
+  views: Int
+}
+
+input FiltersArticleObjRelInsertInput {
+  data: FiltersArticleCreateInput!
+}
+
+input FiltersArticleOrderByInput {
+  article_id: OrderDirection
+  big_views: OrderDirection
+  created_at: OrderDirection
+  external_id: OrderDirection
+  meta: OrderDirection
+  mood: OrderDirection
+  published: OrderDirection
+  published_on: OrderDirection
+  rating: OrderDirection
+  raw_meta: OrderDirection
+  score: OrderDirection
+  search_vec: OrderDirection
+  slug: OrderDirection
+  tags: OrderDirection
+  title: OrderDirection
+  views: OrderDirection
+}
+
+input FiltersArticleUpdateInput {
+  article_id: Int
+  big_views: BigInteger
+  created_at: String
+  external_id: String
+  meta: String
+  mood: FiltersMood
+  published: Boolean
+  published_on: String
+  rating: Float
+  raw_meta: String
+  score: Float
+  search_vec: String
+  slug: String
+  tags: String
+  title: String
+  views: Int
+}
+
+input FiltersArticleWhereInput {
+  article_id: IntFilterInput
+  big_views: IntFilterInput
+  created_at: DateTimeFilterInput
+  external_id: StringFilterInput
+  meta: JsonFilterInput
+  mood: FiltersMoodFilterInput
+  published: BooleanFilterInput
+  published_on: DateTimeFilterInput
+  rating: FloatFilterInput
+  raw_meta: JsonFilterInput
+  score: FloatFilterInput
+  search_vec: TsvectorFilterInput
+  slug: StringFilterInput
+  tags: StringFilterInput
+  title: StringFilterInput
+  views: IntFilterInput
+}
+
+input FiltersCommentArrRelInsertInput {
+  data: [FiltersCommentCreateInput!]!
+}
+
+input FiltersCommentCreateInput {
+  article_id: Int
+  body: String
+  comment_id: Int
+  filtersArticle: FiltersArticleObjRelInsertInput
+  filtersArticleId: FiltersArticleObjRelInsertInput
+}
+
+input FiltersCommentOrderByInput {
+  article_id: OrderDirection
+  body: OrderDirection
+  comment_id: OrderDirection
+}
+
+input FiltersCommentUpdateInput {
+  article_id: Int
+  body: String
+  comment_id: Int
+}
+
+input FiltersCommentWhereInput {
+  article_id: IntFilterInput
+  body: StringFilterInput
+  comment_id: IntFilterInput
+}
+
+input FiltersMoodFilterInput {
+  eq: FiltersMood
+  in: [FiltersMood]
+  isNotNull: Boolean
+  isNull: Boolean
+  neq: FiltersMood
+  notIn: [FiltersMood]
+}
+
+input FloatFilterInput {
+  eq: Float
+  gt: Float
+  gte: Float
+  in: [Float]
+  isNotNull: Boolean
+  isNull: Boolean
+  lt: Float
+  lte: Float
+  neq: Float
+  notIn: [Float]
+}
+
+input IntFilterInput {
+  eq: Int
+  gt: Int
+  gte: Int
+  in: [Int]
+  isNotNull: Boolean
+  isNull: Boolean
+  lt: Int
+  lte: Int
+  neq: Int
+  notIn: [Int]
+}
+
+input JsonFilterInput {
+  containedBy: JSON
+  contains: JSON
+  eq: JSON
+  hasAnyKeys: [String]
+  hasKey: String
+  hasKeys: [String]
+  isNotNull: Boolean
+  isNull: Boolean
+  neq: JSON
+}
+
+input StringFilterInput {
+  contains: String
+  endsWith: String
+  eq: String
+  ilike: String
+  in: [String]
+  iregex: String
+  isNotNull: Boolean
+  isNull: Boolean
+  like: String
+  neq: String
+  notIn: [String]
+  regex: String
+  startsWith: String
+}
+
+input TsvectorFilterInput {
+  phraseSearch: String
+  rawSearch: String
+  search: String
+  webSearch: String
+}

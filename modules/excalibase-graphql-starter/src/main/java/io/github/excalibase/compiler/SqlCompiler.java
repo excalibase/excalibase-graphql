@@ -191,11 +191,14 @@ public class SqlCompiler {
             return;
         }
         String sql;
-        if (fieldName.endsWith("Aggregate")) {
+        if (fieldName.endsWith(GraphqlConstants.AGGREGATE_SUFFIX)) {
+            FieldArguments.requireKnown(field, FieldArguments.AGGREGATE);
             sql = queryBuilder.compileAggregate(field, tableName, params);
-        } else if (fieldName.endsWith("Connection")) {
+        } else if (fieldName.endsWith(GraphqlConstants.CONNECTION_SUFFIX)) {
+            FieldArguments.requireKnown(field, FieldArguments.CONNECTION);
             sql = queryBuilder.compileConnection(field, tableName, params);
         } else {
+            FieldArguments.requireKnown(field, FieldArguments.LIST);
             sql = queryBuilder.compileList(field, tableName, params);
         }
         rootResults.add("'" + responseKey + "', (" + sql + ")");
@@ -220,6 +223,9 @@ public class SqlCompiler {
             return null;
         }
 
+        if (mutationBuilder.isMutationField(fieldName)) {
+            mutationBuilder.requireKnownArguments(field);
+        }
         CompiledQuery frag = mutationBuilder.compileMutationFragment(field, fieldName, params, variables);
         if (frag == null) {
             if (mutationBuilder.isMutationField(fieldName)) {

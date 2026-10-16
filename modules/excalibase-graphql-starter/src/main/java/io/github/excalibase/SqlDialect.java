@@ -67,6 +67,14 @@ public interface SqlDialect {
         return DataErrors.fromSqlState(failure);
     }
 
+    /**
+     * The filter operators this database runs, per column kind and for REST. The schema offers only these and the
+     * compilers refuse anything else, so a filter is never silently left out.
+     */
+    default FilterCapabilities filterCapabilities() {
+        return FilterCapabilities.PORTABLE;
+    }
+
     /** Parameter cast suffix for non-standard types. PG: ::uuid, ::jsonb, etc. Empty string if no cast needed. */
     default String paramCast(String columnType) { return ""; }
 
@@ -95,10 +103,15 @@ public interface SqlDialect {
      * tsquery function to wrap the bind with.
      *
      * <p>Returns {@link Optional#empty()} when the dialect does not implement
-     * FTS — callers should skip the operator on schemas it doesn't support.
+     * this variant; the compiler then refuses the operator.
      */
     default Optional<String> fullTextSearchSql(String colRef, String paramRef, FtsVariant variant) {
         return Optional.empty();
+    }
+
+    /** The value bound for a full-text search of {@code text}; a dialect may rewrite it into its own query syntax. */
+    default String fullTextSearchValue(FtsVariant variant, String text) {
+        return text;
     }
 
     /**
@@ -107,7 +120,7 @@ public interface SqlDialect {
      * {@code col ~* :param} (case-insensitive). MySQL uses
      * {@code col REGEXP :param} and {@code col REGEXP BINARY :param}.
      * Returns {@link Optional#empty()} when the dialect doesn't support
-     * regex predicates so the caller can silently skip the operator.
+     * regex predicates; the compiler then refuses the operator.
      *
      * @param caseInsensitive {@code true} for the {@code iregex}/{@code imatch}
      *        variant, {@code false} for the case-sensitive {@code regex}/{@code match} variant
@@ -140,11 +153,18 @@ public interface SqlDialect {
      * the Postgres operator / function to wrap the bind with.
      *
      * <p>Returns {@link Optional#empty()} when the dialect doesn't support
-     * JSONB predicates so callers can silently skip the operator on
-     * backends without json support.
+     * the predicate; the compiler then refuses the operator.
      */
     default Optional<String> jsonPredicateSql(JsonPredicate variant, String colRef, String paramRef) {
         return Optional.empty();
+    }
+
+    /**
+     * {@link JsonPredicate#HAS_ALL_KEYS} or {@link JsonPredicate#HAS_ANY_KEYS} over keys bound one parameter each.
+     * Postgres passes them as one {@code ARRAY[...]} to {@link #jsonPredicateSql}.
+     */
+    default Optional<String> jsonKeysPredicateSql(JsonPredicate variant, String colRef, List<String> keyParamRefs) {
+        return jsonPredicateSql(variant, colRef, "ARRAY[" + String.join(", ", keyParamRefs) + "]");
     }
 
     /**

@@ -4,49 +4,32 @@ import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
+import io.github.excalibase.FilterCapabilities;
+import io.github.excalibase.FilterColumnKind;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static graphql.Scalars.GraphQLBoolean;
 import static graphql.Scalars.GraphQLFloat;
 import static graphql.Scalars.GraphQLInt;
 import static graphql.Scalars.GraphQLString;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_CONTAINED_BY;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_CONTAINS;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_ENDS_WITH;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_EQ;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_GT;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_GTE;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_HAS_ANY_KEYS;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_HAS_KEY;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_HAS_KEYS;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_ILIKE;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_IN;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_IREGEX;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_IS_NOT_NULL;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_IS_NULL;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_LIKE;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_LT;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_LTE;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_NEQ;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_NOT_IN;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_PHRASE_SEARCH;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_RAW_SEARCH;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_REGEX;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_SEARCH;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_STARTS_WITH;
-import static io.github.excalibase.schema.GraphqlConstants.FILTER_WEB_SEARCH;
 
 /**
- * Immutable catalog of the shared, schema-wide filter input types.
- * Per-enum filter types are built in {@link #buildEnumFilters(Map)} because
- * they depend on the enum catalog produced by {@link EnumTypeFactory}.
- *
- * <p>Operators listed here must stay in sync with the dispatching switch in
- * {@code FilterBuilder}; drift causes clients to receive operators the
- * server silently ignores.
+ * The shared, schema-wide filter input types, built from a dialect's {@link FilterCapabilities}: a type lists only
+ * the operators that database runs, in the engine's schema order, so a client is never offered an operator the
+ * compiler would refuse. Per-enum filter types are built in {@link #buildEnumFilters(Map, FilterCapabilities)}
+ * because they depend on the enum catalog produced by {@link EnumTypeFactory}.
  */
 public final class FilterInputCatalog {
 
@@ -61,170 +44,78 @@ public final class FilterInputCatalog {
             GraphQLInputObjectType floatFilter,
             GraphQLInputObjectType booleanFilter,
             GraphQLInputObjectType dateTimeFilter,
-            GraphQLInputObjectType jsonFilter
-    ) {}
-
-    public static final FilterInputs INPUTS = new FilterInputs(
-            buildStringFilter(),
-            buildTsvectorFilter(),
-            buildIntFilter(),
-            buildFloatFilter(),
-            buildBooleanFilter(),
-            buildDateTimeFilter(),
-            buildJsonFilter()
-    );
+            GraphQLInputObjectType jsonFilter,
+            GraphQLInputObjectType fullTextStringFilter
+    ) {
+        /** The filter type for {@code kind}, or null when the database offers no operator on it. */
+        public GraphQLInputObjectType forKind(FilterColumnKind kind) {
+            return switch (kind) {
+                case STRING -> stringFilter;
+                case FULL_TEXT_STRING -> fullTextStringFilter;
+                case INT -> intFilter;
+                case FLOAT -> floatFilter;
+                case BOOLEAN -> booleanFilter;
+                case DATE_TIME -> dateTimeFilter;
+                case JSON -> jsonFilter;
+                case TSVECTOR -> tsvectorFilter;
+                case ENUM -> throw new IllegalArgumentException("Enum filters are built per enum type");
+            };
+        }
+    }
 
     private FilterInputCatalog() {}
 
-    // String filter input -- full operator set supported by FilterBuilder.
-    // Operators listed here must be handled by the dispatching switch in
-    // FilterBuilder; drift causes clients to receive operators the server
-    // silently ignores.
-    private static GraphQLInputObjectType buildStringFilter() {
-        return GraphQLInputObjectType.newInputObject()
-                .name("StringFilterInput")
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LIKE).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_ILIKE).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_CONTAINS).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_STARTS_WITH).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_ENDS_WITH).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_REGEX).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IREGEX).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLString)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(GraphQLString)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
-                .build();
+    public static FilterInputs inputs(FilterCapabilities capabilities) {
+        return new FilterInputs(
+                build("StringFilterInput", FilterColumnKind.STRING, GraphQLString, capabilities),
+                build("TsvectorFilterInput", FilterColumnKind.TSVECTOR, GraphQLString, capabilities),
+                build("IntFilterInput", FilterColumnKind.INT, GraphQLInt, capabilities),
+                build("FloatFilterInput", FilterColumnKind.FLOAT, GraphQLFloat, capabilities),
+                build("BooleanFilterInput", FilterColumnKind.BOOLEAN, GraphQLBoolean, capabilities),
+                build("DateTimeFilterInput", FilterColumnKind.DATE_TIME, GraphQLString, capabilities),
+                build("JsonFilterInput", FilterColumnKind.JSON, ExtendedScalars.Json, capabilities),
+                build("SearchableStringFilterInput", FilterColumnKind.FULL_TEXT_STRING, GraphQLString, capabilities));
     }
 
-    // Tsvector filter input — two operators, both dispatched via
-    // SqlDialect.fullTextSearchSql. Separate from StringFilterInput so
-    // plain text columns don't accidentally expose the FTS surface
-    // (which would emit invalid SQL against a non-tsvector column).
-    //   search:    plainto_tsquery — raw user text, safe on any input
-    //   webSearch: websearch_to_tsquery — Google-style "phrase" / OR / -
-    private static GraphQLInputObjectType buildTsvectorFilter() {
-        return GraphQLInputObjectType.newInputObject()
-                .name("TsvectorFilterInput")
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_SEARCH).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_WEB_SEARCH).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_PHRASE_SEARCH).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_RAW_SEARCH).type(GraphQLString).build())
-                .build();
+    /** {@code name} holding each operator {@code capabilities} offers on {@code kind}; null when it offers none. */
+    private static GraphQLInputObjectType build(String name, FilterColumnKind kind, GraphQLInputType scalar,
+                                                FilterCapabilities capabilities) {
+        List<String> operators = capabilities.operators(kind);
+        if (operators.isEmpty()) return null;
+        GraphQLInputObjectType.Builder builder = GraphQLInputObjectType.newInputObject().name(name);
+        for (String operator : operators) {
+            builder.field(GraphQLInputObjectField.newInputObjectField().name(operator)
+                    .type(operandType(operator, scalar)).build());
+        }
+        return builder.build();
     }
 
-    private static GraphQLInputObjectType buildIntFilter() {
-        return GraphQLInputObjectType.newInputObject()
-                .name("IntFilterInput")
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GT).type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GTE).type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LT).type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LTE).type(GraphQLInt).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLInt)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(GraphQLInt)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
-                .build();
+    /**
+     * The type an operator takes: a list for {@code in}/{@code notIn} and the key-set operators, a Boolean for
+     * the null checks, a key name for {@code hasKey}, otherwise the column's own scalar.
+     */
+    private static GraphQLInputType operandType(String operator, GraphQLInputType scalar) {
+        return switch (operator) {
+            case FILTER_IN, FILTER_NOT_IN -> GraphQLList.list(scalar);
+            case FILTER_IS_NULL, FILTER_IS_NOT_NULL -> GraphQLBoolean;
+            case FILTER_HAS_KEY -> GraphQLString;
+            case FILTER_HAS_KEYS, FILTER_HAS_ANY_KEYS -> GraphQLList.list(GraphQLString);
+            default -> scalar;
+        };
     }
 
-    // Float filter input — numeric, decimal, real, double precision
-    // columns get this so clients can filter with fractional values.
-    // Previously these fell through to IntFilterInput which forced Int
-    // binds and rejected decimals like `{ lt: 9.99 }`.
-    private static GraphQLInputObjectType buildFloatFilter() {
-        return GraphQLInputObjectType.newInputObject()
-                .name("FloatFilterInput")
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLFloat).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLFloat).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GT).type(GraphQLFloat).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GTE).type(GraphQLFloat).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LT).type(GraphQLFloat).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LTE).type(GraphQLFloat).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLFloat)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(GraphQLFloat)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
-                .build();
-    }
-
-    // Boolean filter input — boolean columns get this. Only equality and
-    // null checks make sense (there's no "greater than false").
-    private static GraphQLInputObjectType buildBooleanFilter() {
-        return GraphQLInputObjectType.newInputObject()
-                .name("BooleanFilterInput")
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLBoolean).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLBoolean).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
-                .build();
-    }
-
-    // DateTime filter input — timestamp, timestamptz, date, time, timetz
-    // columns. Values are strings on the wire (ISO 8601 by convention)
-    // and Postgres coerces them via paramCast. Supports the full range +
-    // equality + list suite so users can filter by time windows.
-    private static GraphQLInputObjectType buildDateTimeFilter() {
-        return GraphQLInputObjectType.newInputObject()
-                .name("DateTimeFilterInput")
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GT).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_GTE).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LT).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_LTE).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(GraphQLString)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(GraphQLString)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
-                .build();
-    }
-
-    // JSONB filter input. Each operator maps to a Postgres jsonb op or
-    // function — see PostgresDialect.jsonPredicateSql for the full list.
-    // The input values use graphql-java's ExtendedScalars.Json so
-    // ObjectValue / ArrayValue arguments parse correctly; FilterBuilder
-    // serializes them to compact JSON strings for Postgres to parse.
-    private static GraphQLInputObjectType buildJsonFilter() {
-        return GraphQLInputObjectType.newInputObject()
-                .name("JsonFilterInput")
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(ExtendedScalars.Json).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(ExtendedScalars.Json).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_CONTAINS).type(ExtendedScalars.Json).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_CONTAINED_BY).type(ExtendedScalars.Json).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_HAS_KEY).type(GraphQLString).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_HAS_KEYS).type(GraphQLList.list(GraphQLString)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_HAS_ANY_KEYS).type(GraphQLList.list(GraphQLString)).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
-                .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
-                .build();
-    }
-
-    // Per-enum filter input types. Enum columns (e.g. Postgres
-    // `CREATE TYPE issue_status AS ENUM(...)`) were previously filtered
-    // via StringFilterInput, which meant clients had to pass a plain
-    // String and the server relied on the DB to coerce. That silently
-    // accepts any string (losing compile-time safety) and prevents
-    // autocomplete on enum values in codegen-generated clients.
-    // Building a per-enum filter type gives clients enum-narrowed
-    // eq/neq/in/notIn/isNull/isNotNull operators.
-    public static Map<String, GraphQLInputObjectType> buildEnumFilters(Map<String, GraphQLEnumType> enumTypes) {
+    // Per-enum filter input types: clients get enum-narrowed eq/neq/in/notIn/isNull/isNotNull operators
+    // (eq accepts only enum members) instead of a String the database would coerce.
+    public static Map<String, GraphQLInputObjectType> buildEnumFilters(Map<String, GraphQLEnumType> enumTypes,
+                                                                       FilterCapabilities capabilities) {
         Map<String, GraphQLInputObjectType> enumFilterMap = new LinkedHashMap<>();
         for (Map.Entry<String, GraphQLEnumType> entry : enumTypes.entrySet()) {
             GraphQLEnumType enumType = entry.getValue();
-            GraphQLInputObjectType enumFilter = GraphQLInputObjectType.newInputObject()
-                    .name(enumType.getName() + "FilterInput")
-                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_EQ).type(enumType).build())
-                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NEQ).type(enumType).build())
-                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IN).type(GraphQLList.list(enumType)).build())
-                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_NOT_IN).type(GraphQLList.list(enumType)).build())
-                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NULL).type(GraphQLBoolean).build())
-                    .field(GraphQLInputObjectField.newInputObjectField().name(FILTER_IS_NOT_NULL).type(GraphQLBoolean).build())
-                    .build();
-            enumFilterMap.put(entry.getKey(), enumFilter);
+            GraphQLInputObjectType enumFilter = build(enumType.getName() + "FilterInput", FilterColumnKind.ENUM,
+                    enumType, capabilities);
+            if (enumFilter != null) {
+                enumFilterMap.put(entry.getKey(), enumFilter);
+            }
         }
         return enumFilterMap;
     }

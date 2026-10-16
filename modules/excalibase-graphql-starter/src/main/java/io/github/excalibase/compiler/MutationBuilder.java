@@ -9,6 +9,7 @@ import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.WriteGuard;
 import io.github.excalibase.spi.MutationCompiler;
+import io.github.excalibase.spi.MutationKind;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -95,6 +96,12 @@ public class MutationBuilder {
     public SqlCompiler.CompiledQuery compileMutationFragment(Field field, String fieldName,
                                                              Map<String, Object> params, Map<String, Object> variables) {
         return mutationCompiler.compileMutationFragment(field, fieldName, params, variables, this);
+    }
+
+    /** Refuses an argument the dialect's compiler would not apply on this mutation. */
+    public void requireKnownArguments(Field field) {
+        MutationKind.of(field.getName()).ifPresent(kind ->
+                FieldArguments.requireKnown(field, mutationCompiler.arguments(kind)));
     }
 
     // === Table name resolution ===

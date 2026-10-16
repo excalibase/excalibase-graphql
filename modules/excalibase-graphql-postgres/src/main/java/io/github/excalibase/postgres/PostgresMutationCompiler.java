@@ -8,6 +8,7 @@ import io.github.excalibase.compiler.MutationSequence;
 import io.github.excalibase.security.PermissionCheckFailedException;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.spi.MutationCompiler;
+import io.github.excalibase.spi.MutationKind;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.postgres.WriteChecks.WrittenRows;
 
@@ -27,6 +28,16 @@ public class PostgresMutationCompiler implements MutationCompiler {
     @Override
     public boolean supportsNestedInserts() {
         return true;
+    }
+
+    @Override
+    public Set<String> arguments(MutationKind kind) {
+        return switch (kind) {
+            case CREATE -> Set.of(ARG_INPUT, ARG_ON_CONFLICT);
+            case UPDATE_COLLECTION -> Set.of(ARG_SET, ARG_FILTER, ARG_AT_MOST);
+            case DELETE_FROM_COLLECTION -> Set.of(ARG_FILTER, ARG_AT_MOST);
+            default -> MutationCompiler.super.arguments(kind);
+        };
     }
 
     @Override
@@ -359,8 +370,9 @@ public class PostgresMutationCompiler implements MutationCompiler {
         String innerAlias = shared.dialect().quoteIdentifier(INNER_ALIAS);
         List<String> conditions = new ArrayList<>();
         Argument filterArg = shared.findArg(field, ARG_FILTER);
-        if (filterArg != null && filterArg.getValue() instanceof ObjectValue filterOv) {
-            shared.filterBuilder().buildFilterConditions(filterOv, innerAlias, params, conditions, tableName);
+        ObjectValue filter = filterArg == null ? null : shared.filterBuilder().whereObject(filterArg, op);
+        if (filter != null) {
+            shared.filterBuilder().buildFilterConditions(filter, innerAlias, params, conditions, tableName);
         }
         // The permission filter applies to bulk-by-filter mutations too, on the inner alias.
         shared.filterBuilder().appendRlsConditions(conditions, tableName, innerAlias, params, op);
