@@ -14,10 +14,12 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -40,6 +42,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -115,17 +118,31 @@ class MysqlPermissionsIntegrationTest {
      * Notes: a role reads its own rows that are not hidden, writes only rows that are not locked, and
      * every row it inserts is its own. Tags and stamps: everything.
      */
+    /** Studio and the MySQL loader name a table {@code <database>.<table>}: the database is its schema. */
+    private static String table(String name) {
+        return mysql.getDatabaseName() + "." + name;
+    }
+
+    private static String ownsABoard() {
+        return "{\"_exists\":{\"_table\":\"" + table("boards") + "\",\"_where\":" + OWNED + "}}";
+    }
+
     private static String permissions() {
         String readable = "{\"_and\":[" + OWNED + ",{\"status\":{\"_neq\":\"hidden\"}}]}";
         return PermissionDocs.document(PROJECT,
-                PermissionDocs.entry("test.notes", ROLE, PermissionDocs.select(readable, "\"*\""),
-                        PermissionDocs.insert(NOT_LOCKED, "[\"title\",\"status\",\"pinned\"]",
+                PermissionDocs.entry(table("notes"), ROLE, PermissionDocs.select(readable, "\"*\""),
+                        PermissionDocs.insert(NOT_LOCKED, "[\"id\",\"title\",\"status\",\"pinned\"]",
                                 "{\"owner_id\":\"X-Excalibase-User-Id\"}"),
                         PermissionDocs.update(OWNED, NOT_LOCKED, "[\"id\",\"title\",\"status\"]", "{}"),
                         PermissionDocs.delete(OWNED)),
-                PermissionDocs.entry("test.tags", ROLE, PermissionDocs.everything()),
-                PermissionDocs.entry("test.stamps", ROLE, PermissionDocs.everything()),
-                PermissionDocs.entry("test.feedback", ROLE,
+                PermissionDocs.entry(table("tags"), ROLE, PermissionDocs.everything()),
+                PermissionDocs.entry(table("stamps"), ROLE, PermissionDocs.everything()),
+                PermissionDocs.entry(table("counters"), ROLE, PermissionDocs.everything()),
+                PermissionDocs.entry(table("boards"), ROLE, PermissionDocs.selectAll(),
+                        PermissionDocs.update(ownsABoard(), "{}", "[\"name\"]", "{}"),
+                        PermissionDocs.delete(ownsABoard())),
+                PermissionDocs.entry(table("sequenced"), ROLE, PermissionDocs.everything()),
+                PermissionDocs.entry(table("feedback"), ROLE,
                         PermissionDocs.insert("{\"body\":{\"_neq\":\"spam\"}}", "[\"body\"]", "{}")));
     }
 
@@ -135,8 +152,8 @@ class MysqlPermissionsIntegrationTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private JdbcTemplate database() {
-        return new JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(
-                mysql.getJdbcUrl(), mysql.getUsername(), mysql.getPassword()));
+        return new JdbcTemplate(new DriverManagerDataSource(mysql.getJdbcUrl(), mysql.getUsername(),
+                mysql.getPassword()));
     }
 
     private ResultActions as(String userId, String operation) throws Exception {
@@ -279,6 +296,88 @@ class MysqlPermissionsIntegrationTest {
         as(ALICE, "mutation { createTestFeedback(input: { body: \"spam\" }) { affected_rows } }")
                 .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
         assertThat(database().queryForObject("SELECT count(*) FROM feedback WHERE body = 'spam'", Integer.class)).isZero();
+    }
+
+    @Test
+    void permissionKeys_nameTheDatabaseAsTheSchema() {
+        assertThat(mysql.getDatabaseName()).isEqualTo("test");
+        assertThat(permissions()).contains("\"table\":\"test.notes\"");
+    }
+
+    @Test
+    void aKeyMysqlStoresDifferently_neverSkipsTheCheck() throws Exception {
+        as(ALICE, "mutation { createTestNotes(input: { id: 0, title: \"zero\", status: \"locked\" }) { id } }")
+                .andExpect(jsonPath("$.errors", hasSize(1)));
+        assertThat(count("title = 'zero'")).isZero();
+    }
+
+    @Test
+    void eachFieldsCheck_runsOverItsOwnRows() throws Exception {
+        as(ALICE, "mutation { a: createTestCounters(input: {}) { id }"
+                + " b: createTestNotes(input: { id: 500, title: \"collide\", status: \"locked\" }) { id } }")
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
+        assertThat(count("id = 500")).isZero();
+    }
+
+    @Test
+    void aGeneratedValueThatIsNotTheKey_isRefused() throws Exception {
+        as(ALICE, "mutation { createTestSequenced(input: { label: \"s\" }) { code } }")
+                .andExpect(jsonPath("$.errors[0].message", containsString("AUTO_INCREMENT")));
+        assertThat(database().queryForObject("SELECT count(*) FROM sequenced", Integer.class)).isZero();
+    }
+
+    private ResultActions rest(String userId, MockHttpServletRequestBuilder request, String body) throws Exception {
+        return mockMvc.perform(request.header("Authorization", "Bearer " + jwt(userId))
+                .header("Prefer", "return=representation").contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    @Test
+    void restInsert_presetsTheOwner_andFailsItsCheckLoudly() throws Exception {
+        rest(ALICE, post("/" + PROJECT + "/api/v1/notes"), "{\"title\":\"rest-ok\"}")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.owner_id").value(ALICE));
+        rest(ALICE, post("/" + PROJECT + "/api/v1/notes"), "{\"title\":\"rest-locked\",\"status\":\"locked\"}")
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("permission_check_failed"));
+        assertThat(count("title = 'rest-locked'")).isZero();
+    }
+
+    @Test
+    void restUpdate_failingItsCheck_rollsBack() throws Exception {
+        insertNote(80, ALICE, "rest-check", "open");
+
+        rest(ALICE, patch("/" + PROJECT + "/api/v1/notes?id=eq.80"), "{\"status\":\"locked\"}")
+                .andExpect(status().isForbidden());
+        assertThat(count("id = 80 AND status = 'open'")).isOne();
+    }
+
+    @Test
+    void restUpsert_neverOverwritesARowTheUpdateFilterHides() throws Exception {
+        insertNote(85, BOB, "bobs", "open");
+        insertNote(86, ALICE, "alices", "open");
+
+        rest(ALICE, post("/" + PROJECT + "/api/v1/notes").header("Prefer", "resolution=merge-duplicates"),
+                "{\"id\":85,\"title\":\"hijacked\"}")
+                .andExpect(status().is2xxSuccessful());
+        rest(ALICE, post("/" + PROJECT + "/api/v1/notes").header("Prefer", "resolution=merge-duplicates"),
+                "{\"id\":86,\"title\":\"renamed\"}")
+                .andExpect(status().is2xxSuccessful());
+        assertThat(count("id = 85 AND title = 'bobs' AND owner_id = '" + BOB + "'")).isOne();
+        assertThat(count("id = 86 AND title = 'renamed'")).isOne();
+    }
+
+    @Test
+    void aFilterReadingTheTableItWrites_worksOnBothSurfaces() throws Exception {
+        rest(ALICE, patch("/" + PROJECT + "/api/v1/boards?id=eq.1"), "{\"name\":\"alice-was-here\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(0)));
+        as(ALICE, "mutation { deleteTestBoards(where: { id: { eq: 1 } }) { id } }")
+                .andExpect(jsonPath("$.data.deleteTestBoards", hasSize(0)));
+        as(BOB, "mutation { updateTestBoards(where: { id: { eq: 1 } }, input: { name: \"bobs-board\" }) { name } }")
+                .andExpect(jsonPath("$.data.updateTestBoards[0].name").value("bobs-board"));
+        rest(BOB, patch("/" + PROJECT + "/api/v1/boards?id=eq.1"), "{\"name\":\"rest-renamed\"}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].name").value("rest-renamed"));
     }
 
     private void insertNote(int id, String owner, String title, String noteStatus) {

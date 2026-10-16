@@ -1,6 +1,7 @@
 package io.github.excalibase.compiler;
 
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.security.PermissionCheckFailedException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -19,7 +20,8 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 /**
  * Writes on a database without RETURNING (MySQL), for REST and GraphQL alike. The written rows are read back by primary key: the key
  * sent or generated for an insert, the keys an update matched (locked before it runs, then followed if it
- * changes them), and a delete's rows are read, locked, before they go.
+ * changes them), and a delete's rows are read, locked, before they go. A permission check is evaluated on
+ * the rows found again by those keys, and every written row must be found.
  */
 public final class KeyedWrites {
 
@@ -36,33 +38,53 @@ public final class KeyedWrites {
     /** One insert statement and the values it writes, by column. */
     public record Insert(String sql, Map<String, Object> params, Map<String, Object> values) {}
 
+    /** A condition over the target's alias, with the parameters it binds. */
+    public record Condition(String sql, Map<String, Object> params) {}
+
+    /** The written table; {@code generated} when its key is one AUTO_INCREMENT column the database fills. */
+    public record Target(String table, String quotedTable, String alias, List<String> keys, boolean generated) {}
+
     private final SqlDialect dialect;
     private final String table;
     private final String quotedTable;
     private final String alias;
     private final List<String> keys;
+    private final boolean generatedKey;
     private final ReadBack readBack;
+    private final Condition check;
 
-    /** @param readBack null when the caller may not read the table: rows are written, none is represented */
-    public KeyedWrites(SqlDialect dialect, String table, String quotedTable, String alias, List<String> keys,
-                ReadBack readBack) {
+    /**
+     * @param readBack null when the caller may not read the table: rows are written, none is represented
+     * @param check what every written row must pass, or null
+     */
+    public KeyedWrites(SqlDialect dialect, Target target, ReadBack readBack, Condition check) {
         this.dialect = dialect;
-        this.table = table;
-        this.quotedTable = quotedTable;
-        this.alias = alias;
-        this.keys = keys;
+        this.table = target.table();
+        this.quotedTable = target.quotedTable();
+        this.alias = target.alias();
+        this.keys = target.keys();
+        this.generatedKey = target.generated();
         this.readBack = readBack;
+        this.check = check;
     }
 
     public KeyedWrite insert(List<Insert> inserts, boolean many) {
+        return insert(inserts, many, false);
+    }
+
+    /** @param upsert an upsert's row counts twice when it updates: it is checked by its key alone */
+    private KeyedWrite insert(List<Insert> inserts, boolean many, boolean upsert) {
         return (jdbc, represent) -> {
-            if (represent) requireKeys();
+            boolean keyed = represent || check != null;
+            if (keyed) requireKeys();
             List<List<Object>> written = new ArrayList<>();
+            int count = 0;
             for (Insert insert : inserts) {
                 KeyHolder generated = new GeneratedKeyHolder();
-                jdbc.update(insert.sql(), new MapSqlParameterSource(insert.params()), generated);
-                if (represent) written.add(keyOf(insert.values(), generated));
+                count += jdbc.update(insert.sql(), new MapSqlParameterSource(insert.params()), generated);
+                if (keyed) written.add(keyOf(insert.values(), generated));
             }
+            if (check != null) verify(jdbc, written, upsert ? written.size() : count);
             return represent ? read(jdbc, written, many) : null;
         };
     }
@@ -72,18 +94,24 @@ public final class KeyedWrites {
      * ON DUPLICATE KEY also fires on any other unique key, updating a row the caller never addressed; Postgres
      * conflicts on the primary key only, so a collision on another unique key fails as a duplicate first.
      */
-    public KeyedWrite upsert(Insert insert, boolean doNothing) {
-        KeyedWrite write = insert(List.of(insert), false);
-        if (!doNothing) {
-            return (jdbc, represent) -> {
-                requireNoOtherUniqueCollision(jdbc, insert.values());
-                return write.run(jdbc, represent);
-            };
-        }
+    /**
+     * @param updatable null for DO NOTHING; else which existing rows the update may overwrite, its condition
+     *                  empty when every row: an existing row outside it is kept as it is and returns none
+     */
+    public KeyedWrite upsert(Insert insert, Condition updatable) {
+        KeyedWrite write = insert(List.of(insert), false, true);
+        List<Object> key = keys.stream().map(insert.values()::get).toList();
         return (jdbc, represent) -> {
-            List<Object> key = keys.stream().map(insert.values()::get).toList();
             Map<String, Object> params = new LinkedHashMap<>();
-            if (!jdbc.queryForList(existsSql(key, params), params, Integer.class).isEmpty()) return null;
+            boolean exists = !jdbc.queryForList(existsSql(key, params, null), params, Integer.class).isEmpty();
+            if (exists && updatable == null) return null;
+            if (exists && !updatable.sql().isEmpty()) {
+                Map<String, Object> filtered = new LinkedHashMap<>(updatable.params());
+                if (jdbc.queryForList(existsSql(key, filtered, updatable.sql()), filtered, Integer.class).isEmpty()) {
+                    return null;
+                }
+            }
+            if (updatable != null) requireNoOtherUniqueCollision(jdbc, insert.values());
             return write.run(jdbc, represent);
         };
     }
@@ -91,7 +119,7 @@ public final class KeyedWrites {
     /** {@code where} selects the rows {@code dml} updates; {@code set} is what it writes, by column. */
     public KeyedWrite update(String dml, String where, Map<String, Object> params, Map<String, Object> set) {
         return (jdbc, represent) -> {
-            if (!represent) {
+            if (!represent && check == null) {
                 jdbc.update(dml, params);
                 return null;
             }
@@ -109,7 +137,8 @@ public final class KeyedWrites {
                 }
                 return moved;
             }).toList();
-            return read(jdbc, changed, true);
+            if (check != null) verify(jdbc, changed, changed.size());
+            return represent ? read(jdbc, changed, true) : null;
         };
     }
 
@@ -177,6 +206,22 @@ public final class KeyedWrites {
                 + AND + NOT + parens(keyPredicate(List.of(key), params)) + LIMIT + "1" + FOR_UPDATE;
     }
 
+    /** Every written row is found again by its key, and passes the check; anything else rolls the write back. */
+    private void verify(NamedParameterJdbcTemplate jdbc, List<List<Object>> written, int count) {
+        if (written.size() != count) throw new IllegalArgumentException(unreadable());
+        if (written.isEmpty()) return;
+        Map<String, Object> params = new LinkedHashMap<>(check.params());
+        String sql = SELECT + "COUNT(*), COALESCE(SUM((" + check.sql() + ") IS NOT TRUE), 0)" + FROM + quotedTable
+                + SPACE + alias + WHERE + keyPredicate(written, params);
+        long[] found = jdbc.queryForObject(sql, params, (rs, rowNum) -> new long[] {rs.getLong(1), rs.getLong(2)});
+        if (found[0] != count) throw new IllegalArgumentException(unreadable());
+        if (found[1] > 0) throw new PermissionCheckFailedException();
+    }
+
+    private String unreadable() {
+        return "The rows written to " + table + " cannot be found again by their primary key";
+    }
+
     private void requireKeys() {
         if (keys.isEmpty()) {
             throw new IllegalArgumentException(table + " has no primary key: " + dialect.databaseName()
@@ -188,12 +233,12 @@ public final class KeyedWrites {
         List<Object> key = new ArrayList<>();
         for (String column : keys) {
             Object value = values.get(column);
-            if (value == null && keys.size() == 1 && !generated.getKeyList().isEmpty()) {
+            if (value == null && generatedKey && !generated.getKeyList().isEmpty()) {
                 value = generated.getKeyList().getFirst().values().iterator().next();
             }
             if (value == null) {
                 throw new IllegalArgumentException("Cannot return the row written to " + table + ": its key "
-                        + column + " was neither sent nor generated");
+                        + column + " was neither sent nor generated by AUTO_INCREMENT");
             }
             key.add(value);
         }
@@ -208,8 +253,10 @@ public final class KeyedWrites {
         return rows.isEmpty() ? null : rows.getFirst();
     }
 
-    private String existsSql(List<Object> key, Map<String, Object> params) {
-        return SELECT + "1" + FROM + quotedTable + SPACE + alias + WHERE + keyPredicate(List.of(key), params) + FOR_UPDATE;
+    /** The row keyed {@code key}, locked, when it also meets {@code condition} (when set). */
+    private String existsSql(List<Object> key, Map<String, Object> params, String condition) {
+        return SELECT + "1" + FROM + quotedTable + SPACE + alias + WHERE + keyPredicate(List.of(key), params)
+                + (condition == null ? "" : AND + parens(condition)) + FOR_UPDATE;
     }
 
     private String lockedKeysSql(String where) {

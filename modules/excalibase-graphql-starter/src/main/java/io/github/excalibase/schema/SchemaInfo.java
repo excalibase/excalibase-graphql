@@ -46,6 +46,8 @@ public class SchemaInfo {
     private final Map<String, String> columnEnumType = new HashMap<>();
     // "table.column" of text columns the database can search by full text in place (a MySQL FULLTEXT index on it alone)
     private final Set<String> fullTextColumns = new HashSet<>();
+    // "table.column" of columns the database fills from a counter when an insert leaves them out (MySQL AUTO_INCREMENT)
+    private final Set<String> autoIncrementColumns = new HashSet<>();
     // table → column → the database's own declaration, where the reported type loses detail (MySQL)
     private final Map<String, Map<String, ColumnDeclaration>> columnDeclarations = new HashMap<>();
     // table → list of computed fields
@@ -97,6 +99,7 @@ public class SchemaInfo {
             for (String col : cols) {
                 columnEnumType.remove(table + "." + col);
                 fullTextColumns.remove(table + "." + col);
+                autoIncrementColumns.remove(table + "." + col);
             }
         }
     }
@@ -119,6 +122,7 @@ public class SchemaInfo {
         enumTypes.clear();
         columnEnumType.clear();
         fullTextColumns.clear();
+        autoIncrementColumns.clear();
         computedFields.clear();
         viewNames.clear();
         functions.clear();
@@ -175,6 +179,10 @@ public class SchemaInfo {
 
     public void addColumnEnumType(String table, String column, String enumTypeName) {
         columnEnumType.put(table + "." + column, enumTypeName);
+    }
+
+    public void addAutoIncrementColumn(String table, String column) {
+        autoIncrementColumns.add(table + "." + column);
     }
 
     public void addFullTextColumn(String table, String column) {
@@ -369,6 +377,9 @@ public class SchemaInfo {
     }
     public String getEnumType(String table, String column) { return columnEnumType.get(table + "." + column); }
     public boolean isFullTextColumn(String table, String column) { return fullTextColumns.contains(table + "." + column); }
+    public boolean isAutoIncrementColumn(String table, String column) {
+        return autoIncrementColumns.contains(table + "." + column);
+    }
 
     /** How the database declares {@code column}; null where the loader records nothing beyond its type. */
     public ColumnDeclaration getColumnDeclaration(String table, String column) {

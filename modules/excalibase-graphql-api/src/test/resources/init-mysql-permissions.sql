@@ -21,11 +21,33 @@ CREATE TABLE stamps (
     label VARCHAR(50)
 );
 
+-- Keys every column defaults: an insert of no column at all.
+CREATE TABLE counters (
+    id    INT AUTO_INCREMENT PRIMARY KEY,
+    label VARCHAR(20) NOT NULL DEFAULT 'x'
+);
+
+-- A key MySQL does not generate beside a column it does: the generated value is not the key.
+CREATE TABLE sequenced (
+    code  INT PRIMARY KEY DEFAULT 7,
+    n     INT AUTO_INCREMENT UNIQUE,
+    label VARCHAR(20)
+);
+
+-- Writable by whoever owns some board: the permission reads the table it writes (MySQL error 1093 if direct).
+CREATE TABLE boards (
+    id       INT PRIMARY KEY,
+    owner_id CHAR(36),
+    name     VARCHAR(50)
+);
+
 -- Written by a role that may insert but never read: its rows are keyed by a column the role cannot see.
 CREATE TABLE feedback (
     id   INT AUTO_INCREMENT PRIMARY KEY,
     body VARCHAR(200)
 );
+
+INSERT INTO boards (id, owner_id, name) VALUES (1, '22222222-2222-2222-2222-222222222222', 'bob-board');
 
 INSERT INTO notes (id, owner_id, title, status) VALUES
     (1, '11111111-1111-1111-1111-111111111111', 'alice-1', 'open'),

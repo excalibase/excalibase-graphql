@@ -98,6 +98,12 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
         return reflected.hasPrimaryKey(tableName) ? reflected.getPrimaryKeys(tableName) : List.of();
     }
 
+    @Override
+    public boolean keyGenerated(String tableName) {
+        List<String> key = rowKey(tableName);
+        return key.size() == 1 && plan.reflected().isAutoIncrementColumn(tableName, key.getFirst());
+    }
+
     /** Empty (denied) for every read of a table the role may insert into but not select. */
     private static Optional<BoolExp> filterFor(TableRules rules, RlsOp op) {
         return rules.select().map(TableRules.SelectRule::filter).flatMap(select -> switch (op) {

@@ -42,7 +42,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
               cols AS (
                 SELECT 'column' as kind, table_schema, table_name, column_name, data_type, column_type,
                        NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column,
-                       character_set_name, collation_name
+                       character_set_name, collation_name, extra
                 FROM information_schema.columns
                 WHERE table_schema IN """ + inClause + """
                 ORDER BY table_schema, table_name, ordinal_position
@@ -80,7 +80,8 @@ public class MysqlSchemaLoader implements SchemaLoader {
                    'column_name', column_name, 'data_type', data_type, 'column_type', column_type,
                    'constraint_name', constraint_name, 'from_column', from_column,
                    'to_table', to_table, 'to_column', to_column,
-                   'character_set_name', character_set_name, 'collation_name', collation_name) as row_json
+                   'character_set_name', character_set_name, 'collation_name', collation_name,
+                   'extra', extra) as row_json
             FROM cols
             UNION ALL SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
                    'column_name', column_name, 'data_type', data_type,
@@ -179,7 +180,14 @@ public class MysqlSchemaLoader implements SchemaLoader {
                 columnType == null || columnType.isNull() ? null : columnType.asText());
         info.addColumnDeclaration(table, column, new SchemaInfo.ColumnDeclaration(text(node, COL_COLUMN_TYPE),
                 text(node, "character_set_name"), text(node, "collation_name")));
+        addAutoIncrement(info, table, column, text(node, "extra"));
         info.setTableSchema(table, schema);
+    }
+
+    private static void addAutoIncrement(SchemaInfo info, String table, String column, String extra) {
+        if (extra != null && extra.toLowerCase(Locale.ROOT).contains("auto_increment")) {
+            info.addAutoIncrementColumn(table, column);
+        }
     }
 
     private static String text(JsonNode node, String field) {
@@ -190,7 +198,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
     @Override
     public void loadColumns(JdbcTemplate jdbc, String schema, SchemaInfo info) {
         jdbc.query("""
-            SELECT table_name, column_name, data_type, column_type, character_set_name, collation_name
+            SELECT table_name, column_name, data_type, column_type, character_set_name, collation_name, extra
             FROM information_schema.columns
             WHERE table_schema = ?
             ORDER BY table_name, ordinal_position
@@ -200,6 +208,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
             MysqlColumnTypes.register(info, table, col, rs.getString(COL_DATA_TYPE), rs.getString(COL_COLUMN_TYPE));
             info.addColumnDeclaration(table, col, new SchemaInfo.ColumnDeclaration(rs.getString(COL_COLUMN_TYPE),
                     rs.getString("character_set_name"), rs.getString("collation_name")));
+            addAutoIncrement(info, table, col, rs.getString("extra"));
             info.setTableSchema(table, schema);
         }, schema);
         jdbc.query(FULL_TEXT_COLUMNS + "(?)" + FULL_TEXT_GROUPING, (RowCallbackHandler) rs ->

@@ -31,6 +31,9 @@ final class SchemaMerger {
                 target.addColumnDeclaration(key, col, declaration);
             }
             mergeEnumColumns(target, source, schema, table, col, key);
+            if (source.isAutoIncrementColumn(table, col)) {
+                target.addAutoIncrementColumn(key, col);
+            }
             if (source.isFullTextColumn(table, col)) {
                 target.addFullTextColumn(key, col);
             }

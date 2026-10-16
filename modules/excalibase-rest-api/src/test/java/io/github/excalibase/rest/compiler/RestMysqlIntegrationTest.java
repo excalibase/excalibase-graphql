@@ -95,10 +95,12 @@ class RestMysqlIntegrationTest {
         column(schema, "customer", "meta", "json");
         column(schema, "customer", "created_at", "datetime");
         schema.addPrimaryKey("test.customer", "customer_id");
+        schema.addAutoIncrementColumn("test.customer", "customer_id");
         column(schema, "orders", "order_id", "int");
         column(schema, "orders", "customer_id", "int");
         column(schema, "orders", "total", "decimal");
         schema.addPrimaryKey("test.orders", "order_id");
+        schema.addAutoIncrementColumn("test.orders", "order_id");
         schema.addForeignKey("test.orders", "customer_id", "test.customer", "customer_id");
         column(schema, "order_items", "order_id", "int");
         column(schema, "order_items", "product_id", "int");

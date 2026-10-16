@@ -26,4 +26,9 @@ public interface WriteGuard {
     default List<String> rowKey(String tableName) {
         return List.of();
     }
+
+    /** True when the row key is one column the database fills itself when an insert leaves it out. */
+    default boolean keyGenerated(String tableName) {
+        return false;
+    }
 }
