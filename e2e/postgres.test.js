@@ -54,8 +54,14 @@ describe('Basic queries', () => {
   });
 
   test('filter customers with OR', async () => {
-    const data = await client.request(gql`{ hanaCustomer(or: [{ first_name: { eq: "MARY" } }, { first_name: { eq: "JOHN" } }]) { customer_id first_name } }`);
-    expect(data.hanaCustomer.length).toBeGreaterThanOrEqual(2);
+    const data = await client.request(gql`{ hanaCustomer(where: { or: [{ first_name: { eq: "MARY" } }, { first_name: { eq: "JOHN" } }] }) { customer_id first_name } }`);
+    expect(data.hanaCustomer.map(r => r.first_name).sort()).toEqual(['JOHN', 'MARY', 'MARY']);
+  });
+
+  // A top-level `or` argument was ignored and answered every row; it is now refused.
+  test('or outside where is an error, not every row', async () => {
+    await expect(client.request(gql`{ hanaCustomer(or: [{ first_name: { eq: "MARY" } }]) { customer_id } }`))
+      .rejects.toThrow(/Unknown argument 'or'/);
   });
 
   test('customer pagination limit+offset', async () => {
