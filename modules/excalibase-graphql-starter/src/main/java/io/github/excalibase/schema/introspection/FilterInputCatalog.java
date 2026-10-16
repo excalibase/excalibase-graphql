@@ -63,9 +63,6 @@ public final class FilterInputCatalog {
         }
     }
 
-    /** Every operator the engine knows, as Postgres runs them. */
-    public static final FilterInputs INPUTS = inputs(FilterCapabilities.ALL);
-
     private FilterInputCatalog() {}
 
     public static FilterInputs inputs(FilterCapabilities capabilities) {
@@ -109,10 +106,6 @@ public final class FilterInputCatalog {
 
     // Per-enum filter input types: clients get enum-narrowed eq/neq/in/notIn/isNull/isNotNull operators
     // (eq accepts only enum members) instead of a String the database would coerce.
-    public static Map<String, GraphQLInputObjectType> buildEnumFilters(Map<String, GraphQLEnumType> enumTypes) {
-        return buildEnumFilters(enumTypes, FilterCapabilities.ALL);
-    }
-
     public static Map<String, GraphQLInputObjectType> buildEnumFilters(Map<String, GraphQLEnumType> enumTypes,
                                                                        FilterCapabilities capabilities) {
         Map<String, GraphQLInputObjectType> enumFilterMap = new LinkedHashMap<>();

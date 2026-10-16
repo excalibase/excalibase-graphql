@@ -195,11 +195,12 @@ public class FilterBuilder {
     /** The filter objects of an {@code or}/{@code and}: a list of objects, or one object as a list of one. */
     private List<ObjectValue> filterObjects(ObjectField of) {
         Value<?> value = requireValue(of.getValue());
-        List<Value> elements = switch (value) {
-            case ArrayValue array -> array.getValues();
-            case ObjectValue object -> List.of(object);
+        List<Value<?>> elements = new ArrayList<>();
+        switch (value) {
+            case ArrayValue array -> array.getValues().forEach(elements::add);
+            case ObjectValue object -> elements.add(object);
             default -> throw new IllegalArgumentException("'" + of.getName() + "' takes a list of filter objects");
-        };
+        }
         List<ObjectValue> objects = new ArrayList<>();
         for (Value<?> element : elements) {
             if (!(requireValue(element) instanceof ObjectValue object)) {
@@ -815,8 +816,11 @@ public class FilterBuilder {
                 map.forEach((key, item) -> object.objectField(new ObjectField(String.valueOf(key), literal(item))));
                 yield object.build();
             }
-            case Collection<?> items -> ArrayValue.newArrayValue()
-                    .values(items.stream().<Value>map(FilterBuilder::literal).toList()).build();
+            case Collection<?> items -> {
+                ArrayValue.Builder array = ArrayValue.newArrayValue();
+                items.forEach(item -> array.value(literal(item)));
+                yield array.build();
+            }
             case Boolean bool -> BooleanValue.of(bool);
             case Number number -> numberLiteral(number);
             default -> StringValue.of(value.toString());
