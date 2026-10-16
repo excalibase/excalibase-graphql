@@ -44,6 +44,8 @@ public class SchemaInfo {
     private final Map<String, List<String>> enumTypes = new HashMap<>();
     // "table.column" → enum type name (e.g. "priority_level")
     private final Map<String, String> columnEnumType = new HashMap<>();
+    // "table.column" of text columns the database can search by full text in place (a MySQL FULLTEXT index on it alone)
+    private final Set<String> fullTextColumns = new HashSet<>();
     // table → list of computed fields
     private final Map<String, List<ComputedField>> computedFields = new HashMap<>();
     // set of view names (read-only — no mutations)
@@ -91,6 +93,7 @@ public class SchemaInfo {
         if (cols != null) {
             for (String col : cols) {
                 columnEnumType.remove(table + "." + col);
+                fullTextColumns.remove(table + "." + col);
             }
         }
     }
@@ -111,6 +114,7 @@ public class SchemaInfo {
         objectInsertRelationships = null;
         enumTypes.clear();
         columnEnumType.clear();
+        fullTextColumns.clear();
         computedFields.clear();
         viewNames.clear();
         functions.clear();
@@ -163,6 +167,10 @@ public class SchemaInfo {
 
     public void addColumnEnumType(String table, String column, String enumTypeName) {
         columnEnumType.put(table + "." + column, enumTypeName);
+    }
+
+    public void addFullTextColumn(String table, String column) {
+        fullTextColumns.add(table + "." + column);
     }
 
     public void addForeignKey(String fromTable, String fromCol, String toTable, String toCol) {
@@ -352,6 +360,7 @@ public class SchemaInfo {
         return current;
     }
     public String getEnumType(String table, String column) { return columnEnumType.get(table + "." + column); }
+    public boolean isFullTextColumn(String table, String column) { return fullTextColumns.contains(table + "." + column); }
 
     /**
      * Fixes the relationships a nested insert may go through, which a role holds by its insert

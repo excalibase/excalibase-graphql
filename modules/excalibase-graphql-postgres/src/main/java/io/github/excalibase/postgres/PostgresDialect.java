@@ -1,5 +1,6 @@
 package io.github.excalibase.postgres;
 
+import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataError;
 
@@ -22,6 +23,11 @@ public class PostgresDialect implements SqlDialect {
     @Override
     public Optional<DataError> describeError(SQLException failure) {
         return PostgresErrors.describe(failure);
+    }
+
+    @Override
+    public FilterCapabilities filterCapabilities() {
+        return FilterCapabilities.ALL;
     }
 
     @Override

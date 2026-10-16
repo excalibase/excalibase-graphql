@@ -5,6 +5,7 @@ import graphql.language.Field;
 import graphql.language.OperationDefinition;
 import graphql.language.Selection;
 import graphql.parser.Parser;
+import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.schema.SchemaInfo;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
@@ -46,6 +48,8 @@ class FilterBuilderTest {
                 .thenAnswer(inv -> inv.getArgument(0) + " ILIKE " + inv.getArgument(1));
         lenient().when(dialect.orderByNulls(anyString(), anyString(), anyString()))
                 .thenAnswer(inv -> inv.getArgument(0) + " " + inv.getArgument(1) + " NULLS " + inv.getArgument(2));
+        lenient().when(dialect.filterCapabilities()).thenReturn(FilterCapabilities.ALL);
+        lenient().when(dialect.fullTextSearchValue(any(), anyString())).thenAnswer(inv -> inv.getArgument(1));
         filterBuilder = new FilterBuilder(dialect, 100);
     }
 
@@ -139,18 +143,15 @@ class FilterBuilderTest {
         }
 
         @Test
-        @DisplayName("FTS operator is silently dropped when dialect returns empty Optional")
-        void fts_dialectReturnsEmpty_dropsCondition() {
+        @DisplayName("FTS operator is refused when dialect returns empty Optional")
+        void fts_dialectReturnsEmpty_isRefused() {
             when(dialect.fullTextSearchSql(anyString(), anyString(), any()))
                     .thenReturn(Optional.empty());
             Field field = parseField("{ docs(where: { body: { webSearch: \"foo\" } }) { id } }");
-            Map<String, Object> params = new HashMap<>();
-            List<String> conditions = new ArrayList<>();
 
-            filterBuilder.buildWhereConditions(field, "t", params, conditions);
-
-            assertThat(conditions).isEmpty();
-            assertThat(params).isEmpty();
+            assertThatThrownBy(() -> filterBuilder.buildWhereConditions(field, "t", new HashMap<>(), new ArrayList<>()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("'webSearch'");
         }
     }
 
@@ -188,17 +189,15 @@ class FilterBuilderTest {
         }
 
         @Test
-        @DisplayName("regex is dropped when dialect does not support it")
-        void regex_dialectReturnsEmpty_drops() {
+        @DisplayName("regex is refused when dialect does not support it")
+        void regex_dialectReturnsEmpty_isRefused() {
             when(dialect.regexSql(anyString(), anyString(), anyBoolean()))
                     .thenReturn(Optional.empty());
             Field field = parseField("{ users(where: { name: { regex: \"foo\" } }) { id } }");
-            Map<String, Object> params = new HashMap<>();
-            List<String> conditions = new ArrayList<>();
 
-            filterBuilder.buildWhereConditions(field, "t", params, conditions);
-
-            assertThat(conditions).isEmpty();
+            assertThatThrownBy(() -> filterBuilder.buildWhereConditions(field, "t", new HashMap<>(), new ArrayList<>()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("'regex'");
         }
     }
 
@@ -258,16 +257,13 @@ class FilterBuilderTest {
     @DisplayName("default branch (unknown operator)")
     class DefaultBranch {
         @Test
-        @DisplayName("unknown operator falls through to equality")
-        void unknownOp_fallsBackToEq() {
+        @DisplayName("unknown operator is refused, never turned into equality")
+        void unknownOp_isRefused() {
             Field field = parseField("{ users(where: { status: { someCustom: \"x\" } }) { id } }");
-            Map<String, Object> params = new HashMap<>();
-            List<String> conditions = new ArrayList<>();
 
-            filterBuilder.buildWhereConditions(field, "t", params, conditions);
-
-            assertThat(conditions).singleElement().asString().contains(" = :");
-            assertThat(params.keySet()).anyMatch(k -> k.startsWith("p_status_someCustom"));
+            assertThatThrownBy(() -> filterBuilder.buildWhereConditions(field, "t", new HashMap<>(), new ArrayList<>()))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("'someCustom'");
         }
     }
 
@@ -443,7 +439,7 @@ class FilterBuilderTest {
         @Test
         @DisplayName("hasKeys binds each array element and invokes dialect with HAS_ALL_KEYS")
         void hasKeys_expandsArrayAndCallsDialect() {
-            when(dialect.jsonPredicateSql(eq(SqlDialect.JsonPredicate.HAS_ALL_KEYS), anyString(), anyString()))
+            when(dialect.jsonKeysPredicateSql(eq(SqlDialect.JsonPredicate.HAS_ALL_KEYS), anyString(), anyList()))
                     .thenReturn(Optional.of("has_all_keys"));
             Field field = parseField("{ docs(where: { meta: { hasKeys: [\"a\", \"b\"] } }) { id } }");
             Map<String, Object> params = new HashMap<>();
@@ -458,7 +454,7 @@ class FilterBuilderTest {
         @Test
         @DisplayName("hasAnyKeys uses HAS_ANY_KEYS variant")
         void hasAnyKeys_usesHasAnyKeysVariant() {
-            when(dialect.jsonPredicateSql(eq(SqlDialect.JsonPredicate.HAS_ANY_KEYS), anyString(), anyString()))
+            when(dialect.jsonKeysPredicateSql(eq(SqlDialect.JsonPredicate.HAS_ANY_KEYS), anyString(), anyList()))
                     .thenReturn(Optional.of("has_any"));
             Field field = parseField("{ docs(where: { meta: { hasAnyKeys: [\"a\"] } }) { id } }");
             Map<String, Object> params = new HashMap<>();

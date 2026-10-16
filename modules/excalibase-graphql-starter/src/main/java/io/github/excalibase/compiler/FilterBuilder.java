@@ -1,14 +1,19 @@
 package io.github.excalibase.compiler;
 
 import graphql.language.*;
+import io.github.excalibase.FilterCapabilities;
+import io.github.excalibase.FilterColumnKind;
 import io.github.excalibase.errors.ColumnValueCheck;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
+import io.github.excalibase.schema.introspection.FilterColumns;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.SqlDialect;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.*;
 import static io.github.excalibase.schema.GraphqlConstants.*;
 import static io.github.excalibase.compiler.SqlKeywords.*;
@@ -18,6 +23,11 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
  * field arguments. Works with SqlDialect for database-specific syntax.
  */
 public class FilterBuilder {
+
+    /** Operators the compiler accepts beyond the schema's names: {@code nin} for notIn, {@code is} for isNull. */
+    private static final String FILTER_NIN = "nin";
+    private static final String FILTER_IS = "is";
+    private static final Set<String> KNOWN_OPERATORS = knownOperators();
 
     private final SqlDialect dialect;
     private final int maxRows;
@@ -69,8 +79,9 @@ public class FilterBuilder {
         Argument whereArg = field.getArguments().stream()
                 .filter(a -> ARG_WHERE.equals(a.getName()) || ARG_FILTER.equals(a.getName()))
                 .findFirst().orElse(null);
-        if (whereArg != null && whereArg.getValue() instanceof ObjectValue ov) {
-            buildFilterConditions(ov, alias, params, conditions, tableName);
+        ObjectValue where = whereArg == null ? null : whereObject(whereArg, op);
+        if (where != null) {
+            buildFilterConditions(where, alias, params, conditions, tableName);
         }
         // RLS predicate is appended AFTER (and independently of) any user filter,
         // so a query that omits `where`/`filter` is still restricted. This funnel
@@ -78,6 +89,17 @@ public class FilterBuilder {
         // compilation — closing every read path at once. The alias is passed so
         // relationship/EXISTS predicates can correlate back to the outer table.
         appendRlsConditions(conditions, tableName, alias, params, op);
+    }
+
+    /**
+     * The filter object {@code argument} holds, inline or through a variable. A read whose filter variable is unset
+     * or null has no filter; a write must have one, and a filter that is not an object is refused.
+     */
+    public ObjectValue whereObject(Argument argument, RlsOp op) {
+        Value<?> value = resolveVariable(argument.getValue());
+        if (value instanceof ObjectValue object) return object;
+        if ((value == null || value instanceof NullValue) && op == RlsOp.SELECT) return null;
+        throw new IllegalArgumentException("Argument '" + argument.getName() + "' must be an object of filters");
     }
 
     /**
@@ -135,15 +157,12 @@ public class FilterBuilder {
 
     private boolean applyOrOperator(ObjectField of, String alias, Map<String, Object> params,
                                     List<String> conditions, String tableName) {
-        if (!(of.getValue() instanceof ArrayValue av)) return false;
         List<String> orParts = new ArrayList<>();
-        for (Value<?> elementValue : av.getValues()) {
-            if (elementValue instanceof ObjectValue subOv) {
-                List<String> subConds = new ArrayList<>();
-                buildFilterConditions(subOv, alias, params, subConds, tableName);
-                if (!subConds.isEmpty()) {
-                    orParts.add("(" + String.join(AND, subConds) + ")");
-                }
+        for (ObjectValue subOv : filterObjects(of)) {
+            List<String> subConds = new ArrayList<>();
+            buildFilterConditions(subOv, alias, params, subConds, tableName);
+            if (!subConds.isEmpty()) {
+                orParts.add("(" + String.join(AND, subConds) + ")");
             }
         }
         if (!orParts.isEmpty()) {
@@ -154,18 +173,17 @@ public class FilterBuilder {
 
     private boolean applyAndOperator(ObjectField of, String alias, Map<String, Object> params,
                                      List<String> conditions, String tableName) {
-        if (!(of.getValue() instanceof ArrayValue av)) return false;
-        for (Value<?> elementValue : av.getValues()) {
-            if (elementValue instanceof ObjectValue subOv) {
-                buildFilterConditions(subOv, alias, params, conditions, tableName);
-            }
+        for (ObjectValue subOv : filterObjects(of)) {
+            buildFilterConditions(subOv, alias, params, conditions, tableName);
         }
         return true;
     }
 
     private boolean applyNotOperator(ObjectField of, String alias, Map<String, Object> params,
                                      List<String> conditions, String tableName) {
-        if (!(of.getValue() instanceof ObjectValue notOv)) return false;
+        if (!(requireValue(of.getValue()) instanceof ObjectValue notOv)) {
+            throw new IllegalArgumentException("'not' takes an object of filters");
+        }
         List<String> subConds = new ArrayList<>();
         buildFilterConditions(notOv, alias, params, subConds, tableName);
         if (!subConds.isEmpty()) {
@@ -174,13 +192,33 @@ public class FilterBuilder {
         return true;
     }
 
+    /** The filter objects of an {@code or}/{@code and}: a list of objects, or one object as a list of one. */
+    private List<ObjectValue> filterObjects(ObjectField of) {
+        Value<?> value = requireValue(of.getValue());
+        List<Value> elements = switch (value) {
+            case ArrayValue array -> array.getValues();
+            case ObjectValue object -> List.of(object);
+            default -> throw new IllegalArgumentException("'" + of.getName() + "' takes a list of filter objects");
+        };
+        List<ObjectValue> objects = new ArrayList<>();
+        for (Value<?> element : elements) {
+            if (!(requireValue(element) instanceof ObjectValue object)) {
+                throw new IllegalArgumentException("'" + of.getName() + "' takes a list of filter objects");
+            }
+            objects.add(object);
+        }
+        return objects;
+    }
+
     public void buildFilterConditions(ObjectValue ov, String alias, Map<String, Object> params, List<String> conditions, String tableName) {
         for (ObjectField of : ov.getObjectFields()) {
             if (applyLogicalOperator(of, alias, params, conditions, tableName)) continue;
-            if (of.getValue() instanceof ObjectValue filterObj) {
-                requireColumn(tableName, of.getName());
-                applyColumnFilter(of.getName(), filterObj, alias, params, conditions, tableName);
+            requireColumn(tableName, of.getName());
+            if (!(requireValue(of.getValue()) instanceof ObjectValue filterObj)) {
+                throw new IllegalArgumentException("The filter on column '" + of.getName()
+                        + "' must be an object of operators");
             }
+            applyColumnFilter(of.getName(), filterObj, alias, params, conditions, tableName);
         }
     }
 
@@ -223,15 +261,17 @@ public class FilterBuilder {
     }
 
     /** Dispatches a single operator to its matching handler group. */
-    private void dispatchOperator(ObjectField op, String col, String colRef, String paramCast,
+    private void dispatchOperator(ObjectField field, String col, String colRef, String paramCast,
                                   Map<String, Object> params, List<String> conditions, String tableName) {
-        String opName = op.getName();
+        String opName = field.getName();
+        requireSupported(tableName, col, opName);
+        ObjectField op = new ObjectField(opName, operand(field.getValue()));
         switch (opName) {
             case FILTER_EQ, FILTER_NEQ, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE -> {
                 requireTypedValues(tableName, col, op.getValue());
                 applyComparison(opName, op, new ColumnRef(tableName, col, colRef, paramCast), params, conditions);
             }
-            case FILTER_IN, FILTER_NOT_IN, "nin" -> {
+            case FILTER_IN, FILTER_NOT_IN, FILTER_NIN -> {
                 requireTypedValues(tableName, col, op.getValue());
                 applyInList(opName, op, new ColumnRef(tableName, col, colRef, paramCast), params, conditions);
             }
@@ -243,14 +283,47 @@ public class FilterBuilder {
                     applyRegex(opName, op, col, colRef, params, conditions);
             case FILTER_CONTAINED_BY, FILTER_HAS_KEY, FILTER_HAS_KEYS, FILTER_HAS_ANY_KEYS ->
                     applyJsonPredicate(opName, op, col, colRef, params, conditions);
-            case "is", FILTER_IS_NULL, FILTER_IS_NOT_NULL ->
+            case FILTER_IS, FILTER_IS_NULL, FILTER_IS_NOT_NULL ->
                     applyNullPredicate(opName, op, colRef, conditions);
-            default -> {
-                String paramName = nextParam("p_" + col + "_" + opName, params);
-                conditions.add(colRef + " = :" + paramName + paramCast);
-                params.put(paramName, typedValue(tableName, col, extractValue(op.getValue())));
-            }
+            default -> throw unknownOperator(col, opName);
         }
+    }
+
+    private static Set<String> knownOperators() {
+        Set<String> known = new HashSet<>(List.of(FILTER_NIN, FILTER_IS));
+        for (FilterColumnKind kind : FilterColumnKind.values()) {
+            known.addAll(FilterCapabilities.known(kind));
+        }
+        return Set.copyOf(known);
+    }
+
+    /** Refuses an operator the database cannot run on this column's kind, before any SQL is written. */
+    private void requireSupported(String tableName, String col, String opName) {
+        if (!KNOWN_OPERATORS.contains(opName)) throw unknownOperator(col, opName);
+        if (schemaInfo == null || tableName == null) return;
+        String capability = switch (opName) {
+            case FILTER_NIN -> FILTER_NOT_IN;
+            case FILTER_IS -> FILTER_IS_NULL;
+            default -> opName;
+        };
+        FilterColumnKind kind = FilterColumns.kindOf(schemaInfo, tableName, col);
+        FilterCapabilities capabilities = dialect.filterCapabilities();
+        if (!capabilities.supports(kind, capability)) {
+            throw unsupported(col, opName, capabilities.unsupportedReason(kind, capability));
+        }
+    }
+
+    private static IllegalArgumentException unknownOperator(String col, String opName) {
+        return new IllegalArgumentException("Unknown filter operator '" + opName + "' on column '" + col + "'");
+    }
+
+    private static IllegalArgumentException unsupported(String col, String opName, String reason) {
+        return new IllegalArgumentException("Filter operator '" + opName + "' is not supported on column '" + col
+                + "' by this database" + (reason == null || reason.isEmpty() ? "" : ": " + reason));
+    }
+
+    private static IllegalArgumentException unsupported(String col, String opName) {
+        return unsupported(col, opName, "");
     }
 
     /** A filtered column: its table and name, its qualified reference and the cast its parameters take. */
@@ -321,8 +394,10 @@ public class FilterBuilder {
     private void applyInList(String opName, ObjectField op, ColumnRef target,
                              Map<String, Object> params, List<String> conditions) {
         String col = target.column();
-        if (!(op.getValue() instanceof ArrayValue av)) return;
-        boolean negate = FILTER_NOT_IN.equals(opName) || "nin".equals(opName);
+        if (!(op.getValue() instanceof ArrayValue av)) {
+            throw new IllegalArgumentException("Filter operator '" + opName + "' on column '" + col + "' takes a list");
+        }
+        boolean negate = FILTER_NOT_IN.equals(opName) || FILTER_NIN.equals(opName);
         String suffix = negate ? "_notin" : "_in";
         List<String> inParams = new ArrayList<>();
         for (int i = 0; i < av.getValues().size(); i++) {
@@ -372,11 +447,9 @@ public class FilterBuilder {
         String colPgType = schemaInfo != null ? schemaInfo.getColumnType(tableName, col) : null;
         if (isJsonType(colPgType)) {
             String paramName = nextParam("p_" + col + "_jc", params);
-            var sql = dialect.jsonPredicateSql(SqlDialect.JsonPredicate.CONTAINS, colRef, ":" + paramName);
-            if (sql.isPresent()) {
-                conditions.add(sql.get());
-                params.put(paramName, extractValue(op.getValue()));
-            }
+            conditions.add(dialect.jsonPredicateSql(SqlDialect.JsonPredicate.CONTAINS, colRef, ":" + paramName)
+                    .orElseThrow(() -> unsupported(col, FILTER_CONTAINS)));
+            params.put(paramName, extractValue(op.getValue()));
         } else {
             String paramName = nextParam("p_" + col + "_ct", params);
             conditions.add(colRef + LIKE + PARAM_PREFIX + paramName);
@@ -402,11 +475,10 @@ public class FilterBuilder {
             default -> "_fts";
         };
         String paramName = nextParam("p_" + col + suffix, params);
-        var sql = dialect.fullTextSearchSql(colRef, ":" + paramName, variant);
-        if (sql.isPresent()) {
-            conditions.add(sql.get());
-            params.put(paramName, extractValue(op.getValue()));
-        }
+        conditions.add(dialect.fullTextSearchSql(colRef, ":" + paramName, variant)
+                .orElseThrow(() -> unsupported(col, opName)));
+        Object text = extractValue(op.getValue());
+        params.put(paramName, text instanceof String query ? dialect.fullTextSearchValue(variant, query) : text);
     }
 
     /** Handles FILTER_REGEX (case-sensitive) and FILTER_IREGEX (case-insensitive) POSIX regex. */
@@ -415,61 +487,62 @@ public class FilterBuilder {
         boolean caseInsensitive = FILTER_IREGEX.equals(opName);
         String suffix = caseInsensitive ? "_iregex" : "_regex";
         String paramName = nextParam("p_" + col + suffix, params);
-        var sql = dialect.regexSql(colRef, ":" + paramName, caseInsensitive);
-        if (sql.isPresent()) {
-            conditions.add(sql.get());
-            params.put(paramName, extractValue(op.getValue()));
-        }
+        conditions.add(dialect.regexSql(colRef, ":" + paramName, caseInsensitive)
+                .orElseThrow(() -> unsupported(col, opName)));
+        params.put(paramName, extractValue(op.getValue()));
     }
 
     /** Handles CONTAINED_BY, HAS_KEY, HAS_KEYS, HAS_ANY_KEYS jsonb predicates. */
     private void applyJsonPredicate(String opName, ObjectField op, String col, String colRef,
                                     Map<String, Object> params, List<String> conditions) {
+        ColumnRef target = new ColumnRef(null, col, colRef, "");
         switch (opName) {
             case FILTER_CONTAINED_BY -> applyJsonScalar("p_" + col + "_jcb",
-                    SqlDialect.JsonPredicate.CONTAINED_BY, op, colRef, params, conditions);
+                    SqlDialect.JsonPredicate.CONTAINED_BY, op, target, params, conditions);
             case FILTER_HAS_KEY -> applyJsonScalar("p_" + col + "_hk",
-                    SqlDialect.JsonPredicate.HAS_KEY, op, colRef, params, conditions);
+                    SqlDialect.JsonPredicate.HAS_KEY, op, target, params, conditions);
             case FILTER_HAS_KEYS -> applyJsonKeysArray("p_" + col + "_hks",
-                    SqlDialect.JsonPredicate.HAS_ALL_KEYS, op, colRef, params, conditions);
+                    SqlDialect.JsonPredicate.HAS_ALL_KEYS, op, target, params, conditions);
             case FILTER_HAS_ANY_KEYS -> applyJsonKeysArray("p_" + col + "_hak",
-                    SqlDialect.JsonPredicate.HAS_ANY_KEYS, op, colRef, params, conditions);
-            default -> { /* unreachable */ }
+                    SqlDialect.JsonPredicate.HAS_ANY_KEYS, op, target, params, conditions);
+            default -> throw unknownOperator(col, opName);
         }
     }
 
     private void applyJsonScalar(String paramPrefix, SqlDialect.JsonPredicate predicate, ObjectField op,
-                                 String colRef, Map<String, Object> params, List<String> conditions) {
+                                 ColumnRef target, Map<String, Object> params, List<String> conditions) {
         String paramName = nextParam(paramPrefix, params);
-        var sql = dialect.jsonPredicateSql(predicate, colRef, ":" + paramName);
-        if (sql.isPresent()) {
-            conditions.add(sql.get());
-            params.put(paramName, extractValue(op.getValue()));
-        }
+        conditions.add(dialect.jsonPredicateSql(predicate, target.ref(), ":" + paramName)
+                .orElseThrow(() -> unsupported(target.column(), op.getName())));
+        params.put(paramName, extractValue(op.getValue()));
     }
 
     private void applyJsonKeysArray(String paramPrefix, SqlDialect.JsonPredicate predicate, ObjectField op,
-                                    String colRef, Map<String, Object> params, List<String> conditions) {
-        if (!(op.getValue() instanceof ArrayValue av)) return;
+                                    ColumnRef target, Map<String, Object> params, List<String> conditions) {
+        if (!(op.getValue() instanceof ArrayValue av) || av.getValues().isEmpty()) {
+            throw new IllegalArgumentException("Filter operator '" + op.getName() + "' on column '" + target.column()
+                    + "' takes a non-empty list of keys");
+        }
         List<String> elements = new ArrayList<>();
         for (int i = 0; i < av.getValues().size(); i++) {
             String paramName = nextParam(paramPrefix + i, params);
             elements.add(":" + paramName);
             params.put(paramName, extractValue(av.getValues().get(i)));
         }
-        String arrExpr = "ARRAY[" + joinCols(elements) + "]";
-        var sql = dialect.jsonPredicateSql(predicate, colRef, arrExpr);
-        sql.ifPresent(conditions::add);
+        conditions.add(dialect.jsonKeysPredicateSql(predicate, target.ref(), elements)
+                .orElseThrow(() -> unsupported(target.column(), op.getName())));
     }
 
     /** Handles "is" (enum literal), FILTER_IS_NULL, FILTER_IS_NOT_NULL. */
     private void applyNullPredicate(String opName, ObjectField op, String colRef, List<String> conditions) {
-        if ("is".equals(opName)) {
-            String enumValue = op.getValue() instanceof EnumValue ev ? ev.getName() : extractValue(op.getValue()).toString();
+        if (FILTER_IS.equals(opName)) {
+            String enumValue = op.getValue() instanceof EnumValue ev ? ev.getName() : String.valueOf(extractValue(op.getValue()));
             if ("NULL".equalsIgnoreCase(enumValue)) {
                 conditions.add(colRef + IS_NULL);
             } else if ("NOT_NULL".equalsIgnoreCase(enumValue)) {
                 conditions.add(colRef + IS_NOT_NULL);
+            } else {
+                throw new IllegalArgumentException("'is' takes NULL or NOT_NULL, not " + enumValue);
             }
             return;
         }
@@ -690,7 +763,7 @@ public class FilterBuilder {
         if (value instanceof VariableReference vr && variables.containsKey(vr.getName())) {
             return variables.get(vr.getName());
         }
-        if (value instanceof IntValue iv) return iv.getValue().intValue();
+        if (value instanceof IntValue iv) return integer(iv.getValue());
         if (value instanceof StringValue sv) return sv.getValue();
         if (value instanceof FloatValue fv) return fv.getValue().doubleValue();
         if (value instanceof BooleanValue bv) return bv.isValue();
@@ -699,6 +772,63 @@ public class FilterBuilder {
         if (value instanceof ObjectValue ov) return jsonString(ov);
         if (value instanceof ArrayValue av) return jsonString(av);
         return value.toString();
+    }
+
+    /** An integer literal as the smallest Java type that holds it. */
+    private static Object integer(BigInteger value) {
+        if (value.bitLength() < Integer.SIZE) return value.intValue();
+        return value.bitLength() < Long.SIZE ? value.longValue() : value;
+    }
+
+    /**
+     * {@code value} with a variable replaced by the literal it holds, or null when the variable is unset; a
+     * filter given whole or in part through variables then compiles exactly as if written inline.
+     */
+    private static Value<?> resolveVariable(Value<?> value) {
+        if (!(value instanceof VariableReference variable)) return value;
+        Map<String, Object> variables = boundVariables();
+        return variables.containsKey(variable.getName()) ? literal(variables.get(variable.getName())) : null;
+    }
+
+    /** As {@link #resolveVariable}, but an unset variable is refused: a filter part without a value is not a filter. */
+    private static Value<?> requireValue(Value<?> value) {
+        Value<?> resolved = resolveVariable(value);
+        if (resolved == null) {
+            throw new IllegalArgumentException("Variable '$" + ((VariableReference) value).getName() + "' has no value");
+        }
+        return resolved;
+    }
+
+    /** An operator's operand: a list or object variable becomes its literal; a scalar variable binds as it is. */
+    private static Value<?> operand(Value<?> value) {
+        if (!(value instanceof VariableReference)) return value;
+        Value<?> resolved = requireValue(value);
+        return resolved instanceof ArrayValue || resolved instanceof ObjectValue ? resolved : value;
+    }
+
+    /** A variable's JSON value as the GraphQL literal a client would have written inline. */
+    static Value<?> literal(Object value) {
+        return switch (value) {
+            case null -> NullValue.of();
+            case Map<?, ?> map -> {
+                ObjectValue.Builder object = ObjectValue.newObjectValue();
+                map.forEach((key, item) -> object.objectField(new ObjectField(String.valueOf(key), literal(item))));
+                yield object.build();
+            }
+            case Collection<?> items -> ArrayValue.newArrayValue()
+                    .values(items.stream().<Value>map(FilterBuilder::literal).toList()).build();
+            case Boolean bool -> BooleanValue.of(bool);
+            case Number number -> numberLiteral(number);
+            default -> StringValue.of(value.toString());
+        };
+    }
+
+    private static Value<?> numberLiteral(Number number) {
+        if (number instanceof BigInteger integer) return new IntValue(integer);
+        if (number instanceof Integer || number instanceof Long || number instanceof Short || number instanceof Byte) {
+            return new IntValue(BigInteger.valueOf(number.longValue()));
+        }
+        return new FloatValue(number instanceof BigDecimal decimal ? decimal : new BigDecimal(number.toString()));
     }
 
     /**

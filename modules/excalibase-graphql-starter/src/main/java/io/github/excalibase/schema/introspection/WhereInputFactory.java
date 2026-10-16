@@ -1,8 +1,8 @@
 package io.github.excalibase.schema.introspection;
 
-import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
+import io.github.excalibase.FilterColumnKind;
 import io.github.excalibase.schema.SchemaInfo;
 
 import java.util.Map;
@@ -18,39 +18,28 @@ public final class WhereInputFactory {
 
     public GraphQLInputObjectType buildFor(String tableKey,
                                     SchemaInfo schemaInfo,
-                                    Map<String, GraphQLEnumType> enumTypes,
                                     Map<String, GraphQLInputObjectType> enumFilters,
                                     FilterInputCatalog.FilterInputs filters) {
         String typeName = NamingHelpers.typeName(tableKey);
         GraphQLInputObjectType.Builder whereBuilder = GraphQLInputObjectType.newInputObject()
                 .name(typeName + WHERE_INPUT_SUFFIX);
         for (String col : schemaInfo.getColumns(tableKey)) {
-            GraphQLInputObjectType filter = filterForColumn(tableKey, col, schemaInfo, enumTypes, enumFilters, filters);
-            whereBuilder.field(GraphQLInputObjectField.newInputObjectField()
-                    .name(col).type(filter).build());
+            GraphQLInputObjectType filter = filterForColumn(tableKey, col, schemaInfo, enumFilters, filters);
+            if (filter != null) {
+                whereBuilder.field(GraphQLInputObjectField.newInputObjectField().name(col).type(filter).build());
+            }
         }
         return whereBuilder.build();
     }
 
+    /** The column's filter type, or null when the database offers no operator on its kind. */
     private GraphQLInputObjectType filterForColumn(String table,
                                                    String col,
                                                    SchemaInfo schemaInfo,
-                                                   Map<String, GraphQLEnumType> enumTypes,
                                                    Map<String, GraphQLInputObjectType> enumFilters,
                                                    FilterInputCatalog.FilterInputs filters) {
-        String colType = schemaInfo.getColumnType(table, col);
-        String enumTypeName = schemaInfo.getEnumType(table, col);
-        if (enumTypeName != null && enumFilters.containsKey(enumTypeName) && enumTypes.containsKey(enumTypeName)) {
-            // Enum-backed column — use the per-enum filter so clients
-            // get narrowed operators (eq accepts only enum members).
-            return enumFilters.get(enumTypeName);
-        }
-        if (TypeMapping.isJsonType(colType)) return filters.jsonFilter();
-        if (TypeMapping.isBooleanType(colType)) return filters.booleanFilter();
-        if (TypeMapping.isDateTimeType(colType)) return filters.dateTimeFilter();
-        if (TypeMapping.isFloatType(colType)) return filters.floatFilter();
-        if (TypeMapping.isIntegerType(colType)) return filters.intFilter();
-        if ("tsvector".equalsIgnoreCase(colType)) return filters.tsvectorFilter();
-        return filters.stringFilter();
+        FilterColumnKind kind = FilterColumns.kindOf(schemaInfo, table, col);
+        return kind == FilterColumnKind.ENUM ? enumFilters.get(schemaInfo.getEnumType(table, col))
+                : filters.forKind(kind);
     }
 }
