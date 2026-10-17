@@ -8,10 +8,12 @@ import io.github.excalibase.permissions.BoolExp.Not;
 import io.github.excalibase.permissions.BoolExp.Or;
 import io.github.excalibase.permissions.BoolExp.Relationship;
 import io.github.excalibase.permissions.BoolExp.True;
+import io.github.excalibase.permissions.ComparisonOperator;
 import io.github.excalibase.permissions.Literal;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.schema.SchemaInfo;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -27,32 +29,33 @@ public final class ExpressionCheck {
     }
 
     /** @throws PermissionEvaluationException naming what does not fit */
-    public static void check(BoolExp expression, String tableKey, SchemaInfo schema) {
-        TableRef.resolve(schema, tableKey);
-        walk(expression, tableKey, schema);
+    public static void check(PermissionDialect dialect, BoolExp expression, String tableKey, SchemaInfo schema) {
+        TableRef.resolve(dialect, schema, tableKey);
+        walk(dialect, expression, tableKey, schema);
     }
 
-    private static void walk(BoolExp expression, String tableKey, SchemaInfo schema) {
+    private static void walk(PermissionDialect dialect, BoolExp expression, String tableKey, SchemaInfo schema) {
         switch (expression) {
             case True ignored -> { }
-            case And and -> and.operands().forEach(operand -> walk(operand, tableKey, schema));
-            case Or or -> or.operands().forEach(operand -> walk(operand, tableKey, schema));
-            case Not not -> walk(not.operand(), tableKey, schema);
-            case ColumnCompare compare -> compare(compare, tableKey, schema);
-            case Relationship relationship -> {
-                RelationshipJoin join = RelationshipJoin.resolve(schema, tableKey, relationship.name());
-                check(relationship.where(), join.targetTable(), schema);
-            }
-            case Exists exists -> check(exists.where(), exists.table(), schema);
+            case And(List<BoolExp> operands) -> operands.forEach(operand -> walk(dialect, operand, tableKey, schema));
+            case Or(List<BoolExp> operands) -> operands.forEach(operand -> walk(dialect, operand, tableKey, schema));
+            case Not(BoolExp operand) -> walk(dialect, operand, tableKey, schema);
+            case ColumnCompare compare -> compare(dialect, compare, tableKey, schema);
+            case Relationship(String name, BoolExp where) ->
+                    check(dialect, where, RelationshipJoin.resolve(schema, tableKey, name).targetTable(), schema);
+            case Exists(String table, BoolExp where) -> check(dialect, where, table, schema);
         }
     }
 
-    private static void compare(ColumnCompare compare, String tableKey, SchemaInfo schema) {
-        ColumnType type = ColumnType.of(schema, tableKey, compare.column());
+    private static void compare(PermissionDialect dialect, ColumnCompare compare, String tableKey, SchemaInfo schema) {
+        ColumnType type = ColumnType.of(dialect, schema, tableKey, compare.column());
+        if (compare.operator() != ComparisonOperator.IS_NULL) {
+            type.requireComparable();
+        }
         switch (compare.operator()) {
             case IS_NULL -> FilterCompiler.nullWanted(compare.operand());
             case LIKE, NLIKE -> {
-                FilterCompiler.likeColumn(schema, tableKey, compare.column());
+                FilterCompiler.likeColumn(dialect, schema, tableKey, compare.column());
                 if (compare.operand() instanceof Literal) {
                     LikePattern.compile((String) NO_SESSION.value(compare.operand(), type));
                 }

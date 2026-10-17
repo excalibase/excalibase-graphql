@@ -15,6 +15,7 @@ import io.github.excalibase.permissions.SelectPermission;
 import io.github.excalibase.permissions.TablePermissions;
 import io.github.excalibase.permissions.UpdatePermission;
 import io.github.excalibase.permissions.compile.ExpressionCheck;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 import io.github.excalibase.permissions.compile.PresetValues;
 import io.github.excalibase.schema.SchemaInfo;
 import org.slf4j.Logger;
@@ -36,16 +37,18 @@ final class RulesResolver {
 
     private static final Logger log = LoggerFactory.getLogger(RulesResolver.class);
 
+    private final PermissionDialect dialect;
     private final SchemaInfo reflected;
     private final String role;
 
-    private RulesResolver(SchemaInfo reflected, String role) {
+    private RulesResolver(PermissionDialect dialect, SchemaInfo reflected, String role) {
+        this.dialect = dialect;
         this.reflected = reflected;
         this.role = role;
     }
 
-    static Map<String, TableRules> resolve(SchemaInfo reflected, RolePermissions permissions) {
-        RulesResolver resolver = new RulesResolver(reflected, permissions.role());
+    static Map<String, TableRules> resolve(PermissionDialect dialect, SchemaInfo reflected, RolePermissions permissions) {
+        RulesResolver resolver = new RulesResolver(dialect, reflected, permissions.role());
         Map<String, TableRules> rules = new LinkedHashMap<>();
         permissions.tables().values().forEach(entry ->
                 resolver.table(entry).ifPresent(resolved -> rules.put(resolved.table(), resolved)));
@@ -81,27 +84,27 @@ final class RulesResolver {
     }
 
     private SelectRule select(String table, SelectPermission permission) {
-        ExpressionCheck.check(permission.filter(), table, reflected);
+        ExpressionCheck.check(dialect, permission.filter(), table, reflected);
         return new SelectRule(permission.filter(), columns(table, permission.columns()), permission.limit(),
                 permission.allowAggregations());
     }
 
     private InsertRule insert(String table, InsertPermission permission) {
-        ExpressionCheck.check(permission.check(), table, reflected);
+        ExpressionCheck.check(dialect, permission.check(), table, reflected);
         Map<String, PresetValue> presets = presets(table, permission.set());
         return new InsertRule(permission.check(), settable(table, permission.columns(), presets), presets);
     }
 
     private UpdateRule update(String table, UpdatePermission permission) {
-        ExpressionCheck.check(permission.filter(), table, reflected);
-        ExpressionCheck.check(permission.check(), table, reflected);
+        ExpressionCheck.check(dialect, permission.filter(), table, reflected);
+        ExpressionCheck.check(dialect, permission.check(), table, reflected);
         Map<String, PresetValue> presets = presets(table, permission.set());
         return new UpdateRule(permission.filter(), permission.check(),
                 settable(table, permission.columns(), presets), presets);
     }
 
     private DeleteRule delete(String table, DeletePermission permission) {
-        ExpressionCheck.check(permission.filter(), table, reflected);
+        ExpressionCheck.check(dialect, permission.filter(), table, reflected);
         return new DeleteRule(permission.filter());
     }
 
@@ -126,7 +129,7 @@ final class RulesResolver {
     }
 
     private Map<String, PresetValue> presets(String table, Map<String, PresetValue> set) {
-        set.forEach((column, value) -> PresetValues.check(value, table, column, reflected));
+        set.forEach((column, value) -> PresetValues.check(dialect, value, table, column, reflected));
         return set;
     }
 

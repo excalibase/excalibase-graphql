@@ -2,6 +2,7 @@ package io.github.excalibase;
 
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -267,6 +268,14 @@ public interface SqlDialect {
     /** CTE DELETE returning array: WITH alias AS (DELETE ... RETURNING *) SELECT agg(obj) FROM alias */
     default String cteDelete(String alias, String table, String whereSql, String objectSql) {
         throw new UnsupportedOperationException("cteDelete not implemented for this dialect");
+    }
+
+    /**
+     * The SQL permissions compile to on this database. A dialect without one serves no permission:
+     * the engine refuses to build a role's plan rather than compile it for another database.
+     */
+    default PermissionDialect permissionDialect() {
+        throw new UnsupportedOperationException("Permissions are not supported on this database");
     }
 
     /** Wrap final mutation SQL with field name: SELECT jsonb_build_object('fieldName', (innerSql)) */

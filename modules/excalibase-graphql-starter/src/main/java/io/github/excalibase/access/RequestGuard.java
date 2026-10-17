@@ -4,9 +4,12 @@ import io.github.excalibase.permissions.BoolExp;
 import io.github.excalibase.permissions.PresetValue;
 import io.github.excalibase.permissions.compile.FilterCompiler;
 import io.github.excalibase.permissions.compile.ParamNamer;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 import io.github.excalibase.permissions.compile.PresetValues;
 import io.github.excalibase.permissions.compile.SessionBinding;
 import io.github.excalibase.permissions.compile.SqlFragment;
+import io.github.excalibase.permissions.compile.TablesRead;
+import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.security.WriteGuard;
@@ -16,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * One request's SQL guards: the plan's filters, checks and presets bound to the request's session
@@ -54,7 +58,8 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
             return DENY;
         }
         Optional<BoolExp> filter = filterFor(rules.get(), op);
-        return filter.isPresent() ? compiled(filter.get(), tableName, outerAlias) : DENY;
+        boolean write = op == RlsOp.UPDATE || op == RlsOp.DELETE;
+        return filter.isPresent() ? compiled(filter.get(), tableName, outerAlias, write) : DENY;
     }
 
     @Override
@@ -69,7 +74,7 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
         }).orElse(Map.of());
         Map<String, Object> bound = new LinkedHashMap<>();
         presets.forEach((column, value) ->
-                bound.put(column, PresetValues.bind(value, tableName, column, plan.reflected(), binding)));
+                bound.put(column, PresetValues.bind(plan.dialect(), value, tableName, column, plan.reflected(), binding)));
         return bound;
     }
 
@@ -78,15 +83,39 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
         if (plan.allAccess()) {
             return null;
         }
-        Optional<BoolExp> check = plan.rules(tableName).flatMap(rules -> switch (op) {
+        Optional<BoolExp> check = checkOf(tableName, op);
+        if (check.isEmpty()) {
+            return DENY;
+        }
+        return compiled(check.get(), tableName, alias, false);
+    }
+
+    @Override
+    public Set<String> checkReads(String tableName, RlsOp op) {
+        if (plan.allAccess()) {
+            return Set.of();
+        }
+        return checkOf(tableName, op).map(check -> TablesRead.of(check, tableName, plan.reflected())).orElse(Set.of());
+    }
+
+    private Optional<BoolExp> checkOf(String tableName, RlsOp op) {
+        return plan.rules(tableName).flatMap(rules -> switch (op) {
             case INSERT -> rules.insert().map(TableRules.InsertRule::check);
             case UPDATE -> rules.update().map(TableRules.UpdateRule::check);
             default -> Optional.<BoolExp>empty();
         });
-        if (check.isEmpty()) {
-            return DENY;
-        }
-        return compiled(check.get(), tableName, alias);
+    }
+
+    @Override
+    public List<String> rowKey(String tableName) {
+        SchemaInfo reflected = plan.reflected();
+        return reflected.hasPrimaryKey(tableName) ? reflected.getPrimaryKeys(tableName) : List.of();
+    }
+
+    @Override
+    public boolean keyGenerated(String tableName) {
+        List<String> key = rowKey(tableName);
+        return key.size() == 1 && plan.reflected().isAutoIncrementColumn(tableName, key.getFirst());
     }
 
     /** Empty (denied) for every read of a table the role may insert into but not select. */
@@ -113,22 +142,28 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
         };
     }
 
-    /** Null when the expression is {@code {}}: nothing to add to the query. */
-    private synchronized Contribution compiled(BoolExp expression, String tableName, String alias) {
+    /**
+     * Null when the expression is {@code {}}: nothing to add to the query. {@code write}: the WHERE of an
+     * UPDATE or DELETE of {@code tableName}, which on some databases may not read that table directly.
+     */
+    private synchronized Contribution compiled(BoolExp expression, String tableName, String alias, boolean write) {
         if (RulesResolver.isTrue(expression)) {
             return null;
         }
-        SqlFragment fragment = FilterCompiler.compile(expression, tableName, aliasFor(tableName, alias),
-                plan.reflected(), binding, namer);
+        PermissionDialect dialect = plan.dialect();
+        String outer = aliasFor(dialect, tableName, alias);
+        SqlFragment fragment = write
+                ? FilterCompiler.compileForWrite(dialect, expression, tableName, outer, plan.reflected(), binding, namer)
+                : FilterCompiler.compile(dialect, expression, tableName, outer, plan.reflected(), binding, namer);
         return new Contribution(fragment.sql(), fragment.params());
     }
 
     /** An unaliased statement names the table by its bare, quoted name. */
-    private static String aliasFor(String tableName, String alias) {
+    private static String aliasFor(PermissionDialect dialect, String tableName, String alias) {
         if (alias != null) {
             return alias;
         }
         int dot = tableName.lastIndexOf('.');
-        return "\"" + (dot < 0 ? tableName : tableName.substring(dot + 1)) + "\"";
+        return dialect.quote(dot < 0 ? tableName : tableName.substring(dot + 1));
     }
 }

@@ -1,6 +1,8 @@
 package io.github.excalibase.security;
 
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The write half of a request's permissions, consulted by the mutation compilers through
@@ -17,4 +19,22 @@ public interface WriteGuard {
      * {@link PermissionCheckFailedException} when any row does not pass.
      */
     RlsWhereContributor.Contribution check(String tableName, String alias, RlsOp op);
+
+    /**
+     * The columns identifying a row of {@code tableName} in the database, whether or not the role may read
+     * them: a database whose writes cannot return their rows reads them back by it. Empty when unknown.
+     */
+    default List<String> rowKey(String tableName) {
+        return List.of();
+    }
+
+    /** The tables the permission's check for {@code op} reads beyond the written row, by relationship or _exists. */
+    default Set<String> checkReads(String tableName, RlsOp op) {
+        return Set.of();
+    }
+
+    /** True when the row key is one column the database fills itself when an insert leaves it out. */
+    default boolean keyGenerated(String tableName) {
+        return false;
+    }
 }

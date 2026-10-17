@@ -18,6 +18,7 @@ public final class SqlKeywords {
     public static final String OR = " OR ";
     public static final String SET = " SET ";
     public static final String VALUES = " VALUES ";
+    public static final String DEFAULT = "DEFAULT";
     public static final String INSERT_INTO = "INSERT INTO ";
     public static final String UPDATE = "UPDATE ";
     public static final String DELETE_FROM = "DELETE FROM ";

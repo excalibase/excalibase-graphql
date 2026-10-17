@@ -2,6 +2,7 @@ package io.github.excalibase.access;
 
 import io.github.excalibase.permissions.RolePermissions;
 import io.github.excalibase.permissions.TrackedFunction;
+import io.github.excalibase.permissions.compile.PermissionDialect;
 import io.github.excalibase.permissions.compile.SessionBinding;
 import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.ExposedFunctions;
@@ -27,6 +28,7 @@ import java.util.Set;
  */
 public final class AccessPlan {
 
+    private final PermissionDialect dialect;
     private final SchemaInfo reflected;
     private final SchemaInfo view;
     private final TableAccess access;
@@ -34,8 +36,9 @@ public final class AccessPlan {
     private final boolean allAccess;
     private final ExposedFunctions functions;
 
-    private AccessPlan(SchemaInfo reflected, SchemaInfo view, TableAccess access, Map<String, TableRules> rules,
-                       boolean allAccess, ExposedFunctions functions) {
+    private AccessPlan(PermissionDialect dialect, SchemaInfo reflected, SchemaInfo view, TableAccess access,
+                       Map<String, TableRules> rules, boolean allAccess, ExposedFunctions functions) {
+        this.dialect = dialect;
         this.reflected = reflected;
         this.view = view;
         this.access = access;
@@ -45,29 +48,32 @@ public final class AccessPlan {
     }
 
     /** Every table, and no function: nothing is tracked. */
-    public static AccessPlan allAccess(SchemaInfo reflected) {
-        return allAccess(reflected, List.of());
+    public static AccessPlan allAccess(PermissionDialect dialect, SchemaInfo reflected) {
+        return allAccess(dialect, reflected, List.of());
     }
 
     /** Every table and every valid tracked function; an untracked function is not reachable even so. */
-    public static AccessPlan allAccess(SchemaInfo reflected, List<TrackedFunction> tracked) {
+    public static AccessPlan allAccess(PermissionDialect dialect, SchemaInfo reflected, List<TrackedFunction> tracked) {
+        Objects.requireNonNull(dialect, "dialect");
         Objects.requireNonNull(reflected, "reflected");
-        return new AccessPlan(reflected, reflected, TableAccess.UNRESTRICTED, Map.of(), true,
-                FunctionResolver.resolve(reflected, tracked, function -> true));
+        return new AccessPlan(dialect, reflected, reflected, TableAccess.UNRESTRICTED, Map.of(), true,
+                FunctionResolver.resolve(dialect, reflected, tracked, function -> true));
     }
 
     /**
      * A tracked function is callable when the role may select its return table and holds an explicit
      * function permission, or, for a query function tracked with inference on, by that select alone.
      */
-    public static AccessPlan forRole(SchemaInfo reflected, RolePermissions permissions) {
+    public static AccessPlan forRole(PermissionDialect dialect, SchemaInfo reflected, RolePermissions permissions) {
+        Objects.requireNonNull(dialect, "dialect");
         Objects.requireNonNull(reflected, "reflected");
-        Map<String, TableRules> rules = RulesResolver.resolve(reflected, permissions);
-        ExposedFunctions functions = FunctionResolver.resolve(reflected, permissions.trackedFunctions(),
+        Map<String, TableRules> rules = RulesResolver.resolve(dialect, reflected, permissions);
+        ExposedFunctions functions = FunctionResolver.resolve(dialect, reflected, permissions.trackedFunctions(),
                 function -> selectable(rules, function.returnTable())
                         && (permissions.explicitlyPermittedFunctions().contains(function.function())
                             || inferred(permissions, function)));
-        return new AccessPlan(reflected, RoleView.build(reflected, rules), rightsOf(rules), rules, false, functions);
+        return new AccessPlan(dialect, reflected, RoleView.build(reflected, rules), rightsOf(rules), rules, false,
+                functions);
     }
 
     private static boolean selectable(Map<String, TableRules> rules, String table) {
@@ -113,11 +119,16 @@ public final class AccessPlan {
         }
         SessionBinding binding = new SessionBinding(sessionVariables);
         return rules(table).flatMap(TableRules::select)
-                .map(select -> new SelectChangeFilter(table, select, reflected, binding, IncompleteImageWarning.SHARED));
+                .map(select -> new SelectChangeFilter(dialect, table, select, reflected, binding,
+                        IncompleteImageWarning.SHARED));
     }
 
     SchemaInfo reflected() {
         return reflected;
+    }
+
+    PermissionDialect dialect() {
+        return dialect;
     }
 
     Optional<TableRules> rules(String table) {

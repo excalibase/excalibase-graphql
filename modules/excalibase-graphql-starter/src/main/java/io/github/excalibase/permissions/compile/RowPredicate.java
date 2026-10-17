@@ -20,10 +20,11 @@ import java.util.function.IntPredicate;
 import java.util.regex.Pattern;
 
 /**
- * Decides a permission expression for one row in memory, as Postgres would decide the compiled
+ * Decides a permission expression for one row in memory, as the database would decide the compiled
  * filter: NULL comparisons are unknown and do not pass, {@code NOT unknown} is unknown. What memory
  * cannot decide exactly (relationships, {@code _exists}, collation-dependent order, types only the
- * database understands, a column the row does not carry) is {@link Outcome#NEEDS_DATABASE}.
+ * database understands, text whose equality a collation decides, a column the row does not carry) is
+ * {@link Outcome#NEEDS_DATABASE}.
  *
  * <p>Build one per (subscription, session): names are checked and variables bound when it is built,
  * so a missing variable fails then, not per row. Immutable and thread-safe once built.
@@ -45,10 +46,11 @@ public final class RowPredicate {
         this.root = root;
     }
 
-    public static RowPredicate compile(BoolExp expression, String tableKey, SchemaInfo schema, SessionBinding binding) {
+    public static RowPredicate compile(PermissionDialect dialect, BoolExp expression, String tableKey,
+                                       SchemaInfo schema, SessionBinding binding) {
         Objects.requireNonNull(expression, "expression");
-        TableRef.resolve(schema, tableKey);
-        return new RowPredicate(new Builder(Objects.requireNonNull(schema), Objects.requireNonNull(binding))
+        TableRef.resolve(dialect, schema, tableKey);
+        return new RowPredicate(new Builder(dialect, Objects.requireNonNull(schema), Objects.requireNonNull(binding))
                 .node(expression, tableKey));
     }
 
@@ -61,7 +63,7 @@ public final class RowPredicate {
         };
     }
 
-    private record Builder(SchemaInfo schema, SessionBinding binding) {
+    private record Builder(PermissionDialect dialect, SchemaInfo schema, SessionBinding binding) {
 
         Node node(BoolExp expression, String tableKey) {
             return switch (expression) {
@@ -72,7 +74,7 @@ public final class RowPredicate {
                 case ColumnCompare compare -> compare(compare, tableKey);
                 case Relationship relationship -> relationship(relationship, tableKey);
                 case Exists exists -> {
-                    TableRef.resolve(schema, exists.table());
+                    TableRef.resolve(dialect, schema, exists.table());
                     node(exists.where(), exists.table());
                     yield NEEDS_DATABASE;
                 }
@@ -100,16 +102,19 @@ public final class RowPredicate {
         /** Checked and bound like the SQL path, then left to the database. */
         private Node relationship(Relationship relationship, String tableKey) {
             RelationshipJoin join = RelationshipJoin.resolve(schema, tableKey, relationship.name());
-            TableRef.resolve(schema, join.targetTable());
+            TableRef.resolve(dialect, schema, join.targetTable());
             node(relationship.where(), join.targetTable());
             return NEEDS_DATABASE;
         }
 
         private Node compare(ColumnCompare compare, String tableKey) {
             String column = compare.column();
+            if (compare.operator() != ComparisonOperator.IS_NULL) {
+                ColumnType.of(dialect, schema, tableKey, column).requireComparable();
+            }
             return switch (compare.operator()) {
                 case IS_NULL -> {
-                    ColumnType.of(schema, tableKey, column);
+                    ColumnType.of(dialect, schema, tableKey, column);
                     boolean wanted = FilterCompiler.nullWanted(compare.operand());
                     yield row -> row.containsKey(column) ? Truth.of((row.get(column) == null) == wanted) : Truth.NEEDS_DATABASE;
                 }
@@ -120,7 +125,7 @@ public final class RowPredicate {
         }
 
         private Node scalar(ColumnCompare compare, String tableKey) {
-            ColumnType type = ColumnType.of(schema, tableKey, compare.column());
+            ColumnType type = ColumnType.of(dialect, schema, tableKey, compare.column());
             Object operand = binding.value(compare.operand(), type);
             boolean ordering = compare.operator() != ComparisonOperator.EQ && compare.operator() != ComparisonOperator.NEQ;
             if (!type.equatableInMemory() || (ordering && !type.orderedInMemory())) {
@@ -131,7 +136,7 @@ public final class RowPredicate {
         }
 
         private Node membership(ColumnCompare compare, String tableKey) {
-            ColumnType type = ColumnType.of(schema, tableKey, compare.column());
+            ColumnType type = ColumnType.of(dialect, schema, tableKey, compare.column());
             List<Object> values = binding.values(compare.operand(), type);
             boolean positive = compare.operator() == ComparisonOperator.IN;
             if (values.isEmpty()) {
@@ -151,8 +156,11 @@ public final class RowPredicate {
         }
 
         private Node like(ColumnCompare compare, String tableKey) {
-            ColumnType type = FilterCompiler.likeColumn(schema, tableKey, compare.column());
+            ColumnType type = FilterCompiler.likeColumn(dialect, schema, tableKey, compare.column());
             Pattern pattern = LikePattern.compile((String) binding.value(compare.operand(), type));
+            if (!type.equatableInMemory()) {
+                return NEEDS_DATABASE;
+            }
             Node matches = onValue(compare.column(), type, value -> Truth.of(pattern.matcher((String) value).matches()));
             return compare.operator() == ComparisonOperator.LIKE ? matches : negated(matches);
         }

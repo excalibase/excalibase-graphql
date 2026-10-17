@@ -15,6 +15,7 @@ import io.github.excalibase.security.WriteGuard;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.UnaryOperator;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
@@ -27,7 +28,6 @@ public class RestQueryCompiler {
     private static final String ALIAS = "c";
     private static final String OUT = "out";
     private static final String CHECK_ALIAS = "chk";
-    private static final String INCOMING = "incoming";
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -305,9 +305,10 @@ public class RestQueryCompiler {
     }
 
     /**
-     * {@code INSERT … AS incoming ON DUPLICATE KEY UPDATE}. Without every key column sent no existing row can
-     * conflict on the key, so it is a plain insert. The update half cannot carry a filter, so an update
-     * permission filter is refused.
+     * An INSERT when no row holds the sent key, else an UPDATE of that row alone: {@code ON DUPLICATE KEY UPDATE}
+     * would update whichever row any unique key collides with. Without every key column sent no existing row can
+     * conflict on the key, so it is a plain insert. An existing row the update permission's filter hides is left
+     * as it is, as Postgres's {@code DO UPDATE … WHERE} does.
      */
     private CompiledResult keyedUpsert(String table, String quotedTable, Map<String, Object> input,
                                        Map<String, Object> row, List<String> conflictCols) {
@@ -315,22 +316,27 @@ public class RestQueryCompiler {
         Map<String, Object> bound = new LinkedHashMap<>();
         String insert = insertSql(table, quotedTable, row, params, bound);
         var keyed = keyed(table, quotedTable, List.of(RlsOp.INSERT, RlsOp.UPDATE));
-        List<String> keys = schemaInfo.hasPrimaryKey(table) ? schemaInfo.getPrimaryKeys(table) : List.of();
+        List<String> keys = rowKey(table);
         if (keys.isEmpty() || !keys.stream().allMatch(key -> bound.get(key) != null)) {
             return new CompiledResult(insert, params, keyed.insert(List.of(new KeyedWrites.Insert(insert, params, bound)), false));
         }
-        StringBuilder filter = new StringBuilder();
-        appendRls(filter, table, dialect.quoteIdentifier(INCOMING), RlsOp.UPDATE, new LinkedHashMap<>());
-        if (!filter.isEmpty()) {
-            throw new IllegalArgumentException("Upsert under an update permission filter is not supported on "
-                    + dialect.databaseName());
-        }
-        List<String> sets = upsertSets(table, input, conflictCols, params, INCOMING);
+        Map<String, Object> updateParams = new LinkedHashMap<>();
+        AtomicInteger sent = new AtomicInteger();
+        List<String> sets = upsertSets(table, input, conflictCols, updateParams, column -> {
+            String name = P_UPDATE + "s" + sent.getAndIncrement();
+            updateParams.put(name, bound.get(column));
+            return PARAM_PREFIX + name;
+        });
+        KeyedWrites.Insert written = new KeyedWrites.Insert(insert, params, bound);
         if (sets.isEmpty()) {
-            return new CompiledResult(insert, params, keyed.upsert(new KeyedWrites.Insert(insert, params, bound), true));
+            return new CompiledResult(insert, params, keyed.upsert(written, null, null));
         }
-        String upsert = insert + " AS " + INCOMING + " ON DUPLICATE KEY UPDATE " + String.join(COMMA_SEP, sets);
-        return new CompiledResult(upsert, params, keyed.upsert(new KeyedWrites.Insert(upsert, params, bound), false));
+        Map<String, Object> filterParams = new LinkedHashMap<>();
+        StringBuilder filter = new StringBuilder();
+        appendRls(filter, table, ALIAS, RlsOp.UPDATE, filterParams);
+        return new CompiledResult(insert, params, keyed.upsert(written,
+                new KeyedWrites.Condition(String.join(COMMA_SEP, sets), updateParams),
+                new KeyedWrites.Condition(filter.toString(), filterParams)));
     }
 
     /**
@@ -340,7 +346,8 @@ public class RestQueryCompiler {
      */
     private String doUpdate(String table, Map<String, Object> input, List<String> conflictCols,
                             Map<String, Object> params) {
-        List<String> updateSets = upsertSets(table, input, conflictCols, params, EXCLUDED);
+        List<String> updateSets = upsertSets(table, input, conflictCols, params,
+                column -> EXCLUDED + DOT + dialect.quoteIdentifier(column));
         if (updateSets.isEmpty()) return DO_NOTHING;
         String targetRef = table.contains(".") ? table.substring(table.lastIndexOf('.') + 1) : table;
         StringBuilder usingWhere = new StringBuilder();
@@ -348,9 +355,9 @@ public class RestQueryCompiler {
         return DO_UPDATE + SET + String.join(COMMA_SEP, updateSets) + (usingWhere.isEmpty() ? "" : WHERE + usingWhere);
     }
 
-    /** The upsert's update assignments: a sent column takes the incoming row's value, a preset its own. */
+    /** The upsert's update assignments: a sent column takes {@code sentValue} of it, a preset its own value. */
     private List<String> upsertSets(String table, Map<String, Object> input, List<String> conflictCols,
-                                    Map<String, Object> params, String incomingRef) {
+                                    Map<String, Object> params, UnaryOperator<String> sentValue) {
         Map<String, Object> changed = new LinkedHashMap<>(input);
         conflictCols.forEach(changed::remove);
         Map<String, Object> updated = writable(table, RlsOp.UPDATE, changed);
@@ -359,7 +366,7 @@ public class RestQueryCompiler {
         for (var entry : updated.entrySet()) {
             String qCol = dialect.quoteIdentifier(entry.getKey());
             if (changed.containsKey(entry.getKey())) {
-                updateSets.add(qCol + ASSIGN + incomingRef + DOT + qCol);
+                updateSets.add(qCol + ASSIGN + sentValue.apply(entry.getKey()));
             } else {
                 String pn = P_UPDATE + "p" + (i++);
                 updateSets.add(qCol + ASSIGN + PARAM_PREFIX + pn);
@@ -386,8 +393,8 @@ public class RestQueryCompiler {
         if (setClauses.isEmpty()) throw new IllegalArgumentException("Update sets no column");
         StringBuilder where = buildWhere(filters, P_WHERE_FILTER, params, table);
         // Rows the caller may update, and read: the update filter carries the select filter.
-        appendRls(where, table, null, RlsOp.UPDATE, params);
-        String update = UPDATE + quotedTable + SET + String.join(COMMA_SEP, setClauses) + WHERE + where;
+        appendRls(where, table, writtenAlias(), RlsOp.UPDATE, params);
+        String update = UPDATE + quotedTable + aliasClause() + SET + String.join(COMMA_SEP, setClauses) + WHERE + where;
         if (keyedWrites()) {
             var keyed = keyed(table, quotedTable, List.of(RlsOp.UPDATE));
             return new CompiledResult(update, params, keyed.update(update, where.toString(), params, set));
@@ -403,14 +410,26 @@ public class RestQueryCompiler {
         Map<String, Object> params = new LinkedHashMap<>();
         StringBuilder where = buildWhere(filters, P_DELETE_FILTER, params, table);
         // Rows the caller may delete, and read: the delete filter carries the select filter.
-        appendRls(where, table, null, RlsOp.DELETE, params);
-        String delete = DELETE_FROM + quotedTable + WHERE + where;
+        appendRls(where, table, writtenAlias(), RlsOp.DELETE, params);
+        String delete = DELETE_FROM + quotedTable + aliasClause() + WHERE + where;
         if (keyedWrites()) {
             var keyed = keyed(table, quotedTable, List.of());
             return new CompiledResult(delete, params, keyed.delete(delete, where.toString(), params));
         }
         String cte = WITH + CTE_DEL + AS_OPEN + delete + RETURNING_ALL;
         return new CompiledResult(cte + SPACE + output(table, CTE_DEL, true, List.of(), params), params);
+    }
+
+    /**
+     * How an UPDATE or DELETE names its table: keyed writes also read it, locked, under {@link #ALIAS}, so
+     * their filter is written over that alias; otherwise over the bare table name.
+     */
+    private String writtenAlias() {
+        return keyedWrites() ? ALIAS : null;
+    }
+
+    private String aliasClause() {
+        return keyedWrites() ? SPACE + ALIAS : "";
     }
 
     /** No RETURNING: the write runs as statements whose rows are read back by key. */
@@ -420,15 +439,27 @@ public class RestQueryCompiler {
 
     /**
      * How {@code table}'s written rows are read back: the caller's columns, passing the select filter, or none
-     * when the caller may not select it. A permission check on the written rows cannot run without RETURNING,
-     * so one is refused.
+     * when the caller may not select it; and the permission's {@code checks} every written row must pass.
      */
     private KeyedWrites keyed(String table, String quotedTable, List<RlsOp> checks) {
         WriteGuard guard = RlsContext.writeGuard();
-        if (guard != null && checks.stream().anyMatch(op -> guard.check(table, CHECK_ALIAS, op) != null)) {
-            throw new IllegalArgumentException("Permission checks on written rows are not supported on "
-                    + dialect.databaseName());
+        List<String> passes = new ArrayList<>();
+        Map<String, Object> checkParams = new LinkedHashMap<>();
+        for (RlsOp op : guard == null ? List.<RlsOp>of() : checks) {
+            RlsWhereContributor.Contribution check = guard.check(table, ALIAS, op);
+            if (check != null) {
+                passes.add(parens(check.sql()));
+                checkParams.putAll(check.params());
+            }
         }
+        for (RlsOp op : guard == null ? List.<RlsOp>of() : checks) {
+            if (guard.checkReads(table, op).contains(table)) {
+                throw new IllegalArgumentException("The permission check on " + table + " reads the table it writes, so"
+                        + " it cannot be enforced on " + dialect.databaseName());
+            }
+        }
+        KeyedWrites.Condition check = passes.isEmpty() ? null
+                : new KeyedWrites.Condition(String.join(AND, passes), checkParams);
         KeyedWrites.ReadBack readBack = null;
         if (access.permits(table, RlsOp.SELECT)) {
             Map<String, Object> params = new LinkedHashMap<>();
@@ -437,8 +468,18 @@ public class RestQueryCompiler {
             readBack = new KeyedWrites.ReadBack(dialect.buildObject(jsonEntries(schemaInfo.getColumns(table), ALIAS)),
                     readable.toString(), params);
         }
-        List<String> keys = schemaInfo.hasPrimaryKey(table) ? schemaInfo.getPrimaryKeys(table) : List.of();
-        return new KeyedWrites(dialect, table, quotedTable, ALIAS, keys, readBack);
+        List<String> keys = rowKey(table);
+        WriteGuard writeGuard = RlsContext.writeGuard();
+        boolean generated = writeGuard != null ? writeGuard.keyGenerated(table)
+                : keys.size() == 1 && schemaInfo.isAutoIncrementColumn(table, keys.getFirst());
+        return new KeyedWrites(dialect, new KeyedWrites.Target(table, quotedTable, ALIAS, keys, generated), readBack, check);
+    }
+
+    /** The database's primary key, whether or not the caller may read it. */
+    private List<String> rowKey(String table) {
+        WriteGuard guard = RlsContext.writeGuard();
+        if (guard != null) return guard.rowKey(table);
+        return schemaInfo.hasPrimaryKey(table) ? schemaInfo.getPrimaryKeys(table) : List.of();
     }
 
     /**

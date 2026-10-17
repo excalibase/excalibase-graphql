@@ -12,6 +12,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import java.util.Map;
 import java.util.TreeSet;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.MEMBERS;
 import static io.github.excalibase.permissions.compile.FixtureSchema.U1;
 import static io.github.excalibase.permissions.compile.FixtureSchema.U2;
@@ -31,10 +32,17 @@ final class DifferentialFixture {
             "CREATE TABLE public.notes (id int PRIMARY KEY, owner_id uuid, org_id int REFERENCES public.orgs(id),"
                     + " title text, amount numeric, status text, created_at timestamptz, priority int, pinned boolean,"
                     + " due date, views bigint, mood public.mood, ip inet, local_at timestamp, score double precision,"
+                    + " ratio real,"
                     + " FOREIGN KEY (org_id, owner_id) REFERENCES public.members(org_id, user_id))",
+            // A policy cannot read its own table (infinite recursion); the oracle reads it through views the
+            // owner runs, unfiltered, as the engine's subqueries read it.
+            "CREATE VIEW public.notes_unguarded AS SELECT * FROM public.notes",
+            "CREATE VIEW public.members_unguarded AS SELECT * FROM public.members",
             "CREATE ROLE app_role NOLOGIN",
             "GRANT USAGE ON SCHEMA public TO app_role",
-            "GRANT SELECT ON public.orgs, public.members, public.notes TO app_role"
+            "GRANT SELECT ON public.orgs, public.members, public.notes, public.notes_unguarded,"
+                    + " public.members_unguarded TO app_role",
+            "GRANT INSERT, UPDATE ON public.orgs, public.members, public.notes TO app_role"
     };
 
     private static final String[] DATA_SQL = {
@@ -43,19 +51,21 @@ final class DifferentialFixture {
                     + " (2, '" + U2 + "', 'admin'), (2, '" + U3 + "', NULL)",
             "INSERT INTO public.notes VALUES"
                     + " (1, '" + U1 + "', 1, 'Alpha', 10.50, 'open', '2026-01-01 10:00+00', 1, true, '2026-01-15', 5,"
-                    + " 'happy', '10.0.0.1', '2026-01-01 10:00', 1.5),"
+                    + " 'happy', '10.0.0.1', '2026-01-01 10:00', 1.5, 0.1),"
                     + " (2, '" + U2 + "', 1, 'beta', 0, 'closed', '2026-02-01 00:00+00', 2, false, '2026-07-01',"
-                    + " 1000000000001, 'sad', '10.0.0.2', '2026-02-01 00:00', -2.25),"
-                    + " (3, '" + U2 + "', 2, 'Gamma_x', -5, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL),"
+                    + " 1000000000001, 'sad', '10.0.0.2', '2026-02-01 00:00', -2.25, 0.25),"
+                    + " (3, '" + U2 + "', 2, 'Gamma_x', -5, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,"
+                    + " NULL),"
                     + " (4, NULL, 2, NULL, NULL, 'open', '2026-03-01 12:30+02', 3, true, '2026-06-01', 0, 'ok', NULL,"
-                    + " '2026-03-01 12:30', 0),"
+                    + " '2026-03-01 12:30', 0, 0.1),"
                     + " (5, '" + U3 + "', NULL, 'a%b', 100, 'archived', '2025-12-31 23:59:59+00', 1, false, '2025-12-31',"
-                    + " 42, 'ok', '192.168.0.1', '2025-12-31 23:59:59', 100),"
-                    + " (6, NULL, NULL, 'under_score', NULL, 'open', NULL, 2, NULL, NULL, NULL, NULL, NULL, NULL, NULL),"
+                    + " 42, 'ok', '192.168.0.1', '2025-12-31 23:59:59', 100, 3.5),"
+                    + " (6, NULL, NULL, 'under_score', NULL, 'open', NULL, 2, NULL, NULL, NULL, NULL, NULL, NULL, NULL,"
+                    + " NULL),"
                     + " (7, '" + U2 + "', 2, 'ALPHA', 10.5, 'draft', '2026-01-01 10:00+00', 2, true, '2026-06-01', 7,"
-                    + " 'happy', '10.0.0.1', '2026-01-01 10:00', 1.5),"
+                    + " 'happy', '10.0.0.1', '2026-01-01 10:00', 1.5, -0.1),"
                     + " (8, '" + U1 + "', 1, 'alpha beta', NULL, 'closed', '2026-01-01 09:59:59+00', NULL, false, NULL,"
-                    + " NULL, 'sad', NULL, NULL, NULL)"
+                    + " NULL, 'sad', NULL, NULL, NULL, NULL)"
     };
 
     private static DriverManagerDataSource dataSource;
@@ -106,7 +116,7 @@ final class DifferentialFixture {
     }
 
     static TreeSet<String> engineRows(String table, BoolExp expression, Map<String, String> variables) {
-        SqlFragment filter = FilterCompiler.compile(expression, table, "t", schema(),
+        SqlFragment filter = FilterCompiler.compile(POSTGRES, expression, table, "t", schema(),
                 new SessionBinding(variables), new ParamNamer("perm"));
         String sql = "SELECT " + keySql(table, "t") + " FROM " + table + " t WHERE " + filter.sql();
         return new TreeSet<>(new NamedParameterJdbcTemplate(dataSource())

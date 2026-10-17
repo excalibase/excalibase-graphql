@@ -15,6 +15,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.*;
 
+import static io.github.excalibase.compiler.SqlKeywords.DEFAULT;
 import static io.github.excalibase.compiler.SqlKeywords.P_BULK_INSERT;
 import static io.github.excalibase.compiler.SqlKeywords.assignWithCast;
 import static io.github.excalibase.compiler.SqlKeywords.joinCols;
@@ -243,7 +244,8 @@ public class MutationBuilder {
 
         String alias = dialect.randAlias();
         String objectSql = resultObject(field, tableName, alias, params);
-        List<String> colNames = new ArrayList<>(rows.getFirst().keySet());
+        Set<String> colNames = new LinkedHashSet<>();
+        rows.forEach(row -> colNames.addAll(row.keySet()));
         colNames.addAll(presets.keySet());
         List<String> valueRows = new ArrayList<>();
         List<Map<String, Object>> boundRows = new ArrayList<>();
@@ -252,6 +254,11 @@ public class MutationBuilder {
             List<String> vals = new ArrayList<>();
             Map<String, Object> bound = new LinkedHashMap<>();
             for (String col : colNames) {
+                // A row that leaves a column out gets the column's default, as a single insert would.
+                if (!row.containsKey(col)) {
+                    vals.add(DEFAULT);
+                    continue;
+                }
                 String paramName = namedParam(P_BULK_INSERT, col + "_" + i, params.size());
                 vals.add(param(paramName) + castFor(tableName, col, castParams));
                 Object value = bindValue(tableName, col, row.get(col));

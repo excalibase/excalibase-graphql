@@ -3,6 +3,7 @@ package io.github.excalibase.mysql;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
+import io.github.excalibase.compiler.TwoPhaseWrites;
 import io.github.excalibase.schema.SchemaInfo;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Nested;
@@ -198,7 +199,8 @@ class MysqlFilterIntegrationTest {
             Map<String, Object> variables = Map.of("w", Map.of("id", Map.of("eq", 99)));
             SqlCompiler.CompiledQuery compiled = compiler().compile(
                     "mutation($w: DocWhereInput) { deleteDoc(where: $w) { id } }", variables);
-            assertThat(compiled.write()).isInstanceOf(MysqlWrite.class);
+            assertThat(compiled.write()).isInstanceOf(TwoPhaseWrites.class);
+            assertThat(((TwoPhaseWrites) compiled.write()).entries().getFirst().write()).isInstanceOf(MysqlWrite.class);
             assertThat(compiled.params()).containsValue(99);
         }
     }

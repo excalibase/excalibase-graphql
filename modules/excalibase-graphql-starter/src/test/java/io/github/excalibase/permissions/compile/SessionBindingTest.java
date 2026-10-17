@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.NOTES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.U1;
 import static io.github.excalibase.permissions.compile.FixtureSchema.U2;
@@ -29,7 +30,7 @@ class SessionBindingTest {
     private static final SchemaInfo SCHEMA = FixtureSchema.schema();
 
     private static ColumnType type(String column) {
-        return ColumnType.of(SCHEMA, NOTES, column);
+        return ColumnType.of(POSTGRES, SCHEMA, NOTES, column);
     }
 
     private static SessionVariable variable(String name) {
@@ -168,7 +169,7 @@ class SessionBindingTest {
 
     @Test
     void unknownColumn_failsWithUnknownColumn() {
-        assertThatThrownBy(() -> ColumnType.of(SCHEMA, NOTES, "nope"))
+        assertThatThrownBy(() -> ColumnType.of(POSTGRES, SCHEMA, NOTES, "nope"))
                 .isInstanceOf(PermissionEvaluationException.class)
                 .extracting("code").isEqualTo("unknown_column");
     }

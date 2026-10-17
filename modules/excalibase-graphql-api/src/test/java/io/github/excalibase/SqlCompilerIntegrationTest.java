@@ -233,6 +233,22 @@ class SqlCompilerIntegrationTest {
     }
 
     @Test
+    @Order(33)
+    void bulkCreate_rowsSettingDifferentColumns_keepEveryValue_andDefaultTheRest() throws Exception {
+        mockMvc.perform(post("/test-proj/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("mutation { createManyTestSchemaCustomer(inputs: ["
+                                + "{ first_name: \"Mixed1\", last_name: \"Test\", active: false },"
+                                + " { first_name: \"Mixed2\", last_name: \"Test\", email: \"m2@example.com\" }])"
+                                + " { first_name email active } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.createManyTestSchemaCustomer[0].active").value(false))
+                .andExpect(jsonPath("$.data.createManyTestSchemaCustomer[0].email").value(nullValue()))
+                .andExpect(jsonPath("$.data.createManyTestSchemaCustomer[1].email").value("m2@example.com"))
+                .andExpect(jsonPath("$.data.createManyTestSchemaCustomer[1].active").value(true));
+    }
+
+    @Test
     @Order(34)
     void multiMutation_twoCreatesInSingleRequest() throws Exception {
         // Two mutations in one request — both must execute and both must be returned

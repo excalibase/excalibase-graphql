@@ -327,7 +327,8 @@ client cannot supply that argument.
 
 Procedures are reflected but never exposed; the earlier `call<Procedure>` mutations and the untyped
 `/rpc` call were removed. Computed fields (functions of one table row) are reflected but not exposed
-for GA either. Tracked functions, like permissions, are Postgres-only.
+for GA either. Tracked functions are Postgres-only; on MySQL tracking one is refused and logged
+`function_invalid`.
 
 The engine never changes Postgres `EXECUTE` privileges.
 

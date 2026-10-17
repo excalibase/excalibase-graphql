@@ -60,6 +60,24 @@
         </dependency>
 
         <!--Testing-->
+        <!-- Permission differential: the starter's cases, with native Postgres RLS as the oracle. -->
+        <dependency>
+            <groupId>io.github.excalibase</groupId>
+            <artifactId>excalibase-graphql-starter</artifactId>
+            <version>${excalibase.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers</artifactId>

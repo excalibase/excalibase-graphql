@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.access.AccessFixture.AUDIT;
 import static io.github.excalibase.access.AccessFixture.ORDERS;
 import static io.github.excalibase.access.AccessFixture.ORDER_VIEW;
@@ -29,7 +30,7 @@ class FunctionExposureTest {
     private static final String PLACE = "public.place_order";
 
     private static AccessPlan userPlan(List<String> tables, List<String> functions, List<String> permissions) {
-        return AccessPlan.forRole(REFLECTED, document(tables, functions, permissions).forRole("user"));
+        return AccessPlan.forRole(POSTGRES, REFLECTED, document(tables, functions, permissions).forRole("user"));
     }
 
     private static List<String> callableBy(AccessPlan plan) {
@@ -155,9 +156,9 @@ class FunctionExposureTest {
                 tracked(PLACE, "MUTATION", false, "session"),
                 tracked("public.twice", "QUERY", true, null)), List.of());
 
-        AccessPlan plan = AccessPlan.allAccess(REFLECTED, permissions.functions());
+        AccessPlan plan = AccessPlan.allAccess(POSTGRES, REFLECTED, permissions.functions());
 
         assertThat(callableBy(plan)).containsExactlyInAnyOrder(SEARCH, PLACE);
-        assertThat(callableBy(AccessPlan.allAccess(REFLECTED))).isEmpty();
+        assertThat(callableBy(AccessPlan.allAccess(POSTGRES, REFLECTED))).isEmpty();
     }
 }

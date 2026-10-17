@@ -11,6 +11,7 @@ import io.github.excalibase.schema.IntrospectionHandler;
 import io.github.excalibase.schema.SchemaInfo;
 import org.junit.jupiter.api.Test;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.access.AccessFixture.CUSTOMERS;
 import static io.github.excalibase.access.AccessFixture.ORDERS;
 import static io.github.excalibase.access.AccessFixture.entry;
@@ -30,7 +31,7 @@ class NestedInsertAccessTest {
     private static final String CUSTOMER_OF_ORDER = ORDERS + ".publicCustomerId";
 
     private static AccessPlan plan(String... entries) {
-        return AccessPlan.forRole(REFLECTED, user(entries));
+        return AccessPlan.forRole(POSTGRES, REFLECTED, user(entries));
     }
 
     private static GraphQLSchema schemaOf(AccessPlan plan) {
@@ -75,7 +76,7 @@ class NestedInsertAccessTest {
 
     @Test
     void allAccess_nestsThroughEveryForeignKey() {
-        AccessPlan plan = AccessPlan.allAccess(REFLECTED);
+        AccessPlan plan = AccessPlan.allAccess(POSTGRES, REFLECTED);
 
         assertThat(plan.view().getArrayInsertRelationships()).containsOnlyKeys(ORDERS_OF_CUSTOMER);
         assertThat(plan.view().getObjectInsertRelationships()).containsOnlyKeys(CUSTOMER_OF_ORDER);
@@ -110,7 +111,7 @@ class NestedInsertAccessTest {
 
     @Test
     void aStoreWithoutNestedInserts_offersNone() {
-        AccessPlan plan = AccessPlan.allAccess(REFLECTED);
+        AccessPlan plan = AccessPlan.allAccess(POSTGRES, REFLECTED);
         GraphQLSchema schema = new IntrospectionHandler(plan.view(), plan.access(), plan.functions(), false)
                 .getSchema();
 

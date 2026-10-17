@@ -190,27 +190,26 @@ class GraphqlSchemaManagerCacheTest {
     }
 
     @Test
-    @DisplayName("on a MySQL project only service is served while permissions compile to Postgres alone")
-    void mysqlProject_refusesEveryRoleButService() {
+    @DisplayName("on a MySQL project every role is served under its permissions, compiled to MySQL")
+    void mysqlProject_servesEveryRoleUnderItsPermissions() {
         CountingSchemaManager mysqlProject = new CountingSchemaManager(permissions, true, "mysql");
-        Principal user = runningAs("user");
-        Principal anonymous = Principal.anonymous();
 
-        assertThatThrownBy(() -> mysqlProject.resolveEngineState("acme", "proj-1", user))
-                .isInstanceOf(PermissionsUnavailableException.class);
-        assertThatThrownBy(() -> mysqlProject.resolveEngineState("acme", "proj-1", anonymous))
-                .isInstanceOf(PermissionsUnavailableException.class);
+        assertThat(mysqlProject.resolveEngineState("acme", "proj-1", runningAs("user")).plan().allAccess()).isFalse();
+        assertThat(mysqlProject.resolveEngineState("acme", "proj-1", Principal.anonymous()).plan().allAccess())
+                .isFalse();
         assertThat(mysqlProject.resolveEngineState("acme", "proj-1", service()).plan().allAccess()).isTrue();
     }
 
     @Test
-    void mysqlWithAPermissionSource_isRefusedAtStartup() {
-        assertThatThrownBy(() -> new GraphqlSchemaManager(null, 30, "mysql", 15, 30, "", null, null,
-                permissions, true))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("Postgres-only");
-        new GraphqlSchemaManager(null, 30, "mysql", 15, 30, "", null, null, new NoPermissionSource(), true);
-        new GraphqlSchemaManager(null, 30, "mysql", 15, 30, "", null, null, null, false);
+    void mysqlWithAPermissionSource_startsBecauseItsPermissionsCompileToMysql() {
+        assertThat(new GraphqlSchemaManager(null, 30, "mysql", 15, 30, "", null, null, permissions, true))
+                .isNotNull();
+    }
+
+    @Test
+    void aDatabaseWhosePermissionsCannotCompile_isRefusedAtStartup_neverServedOpen() {
+        assertThatThrownBy(() -> new GraphqlSchemaManager(null, 30, "nosuchdb", 15, 30, "", null, null,
+                permissions, true)).isInstanceOf(IllegalStateException.class).hasMessageContaining("nosuchdb");
     }
 
     @Test

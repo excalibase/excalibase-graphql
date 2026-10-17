@@ -134,14 +134,15 @@ public class SqlCompiler {
         List<String> unresolvedFields = new ArrayList<>();
         for (Selection<?> sel : op.getSelectionSet().getSelections()) {
             if (sel instanceof Field field) {
-                CompiledQuery earlyExit = processMutationSelection(field, params, variables, mutFragments,
-                        unresolvedFields);
-                if (earlyExit != null) return earlyExit;
+                processMutationSelection(field, params, variables, mutFragments, unresolvedFields);
             }
         }
         requireKnown(unresolvedFields);
         if (mutFragments.isEmpty()) {
             return new CompiledQuery("SELECT " + dialect.buildObject(List.of()), params);
+        }
+        if (mutFragments.stream().anyMatch(fragment -> fragment.write() != null)) {
+            return twoPhase(mutFragments, params);
         }
         if (mutFragments.stream().anyMatch(fragment -> fragment.nested() != null)) {
             return CompiledQuery.sequenced(sequence(mutFragments), params);
@@ -204,15 +205,9 @@ public class SqlCompiler {
         rootResults.add("'" + responseKey + "', (" + sql + ")");
     }
 
-    /**
-     * Process a single mutation selection — either appending to {@code mutFragments}
-     * or returning a {@link CompiledQuery} if an early exit is needed (MySQL two-phase
-     * mutation). Returns {@code null} to keep processing.
-     */
-    private CompiledQuery processMutationSelection(Field field, Map<String, Object> params,
-                                                   Map<String, Object> variables,
-                                                   List<MutationFragment> mutFragments,
-                                                   List<String> unresolvedFields) {
+    /** Appends one mutation selection to {@code mutFragments}, or its name to {@code unresolvedFields}. */
+    private void processMutationSelection(Field field, Map<String, Object> params, Map<String, Object> variables,
+                                          List<MutationFragment> mutFragments, List<String> unresolvedFields) {
         String fieldName = field.getName();
         String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
 
@@ -220,7 +215,7 @@ public class SqlCompiler {
         if (function.isPresent()) {
             mutFragments.add(new MutationFragment(responseKey, null, compileFunctionCall(field, function.get(), params),
                     null));
-            return null;
+            return;
         }
 
         if (mutationBuilder.isMutationField(fieldName)) {
@@ -232,12 +227,12 @@ public class SqlCompiler {
                 throw new IllegalArgumentException("Invalid arguments for " + fieldName);
             }
             unresolvedFields.add(fieldName);
-            return null;
+            return;
         }
 
-        // MySQL two-phase mutations cannot be combined — execute immediately (single path)
         if (frag.isTwoPhase()) {
-            return mutationBuilder.compileMutation(field, fieldName, params, variables);
+            mutFragments.add(new MutationFragment(responseKey, frag.write()));
+            return;
         }
 
         // Use alias as response key if present (e.g. "c1: createX(...)")
@@ -249,10 +244,9 @@ public class SqlCompiler {
                             new MutationFragment(responseKey, statement.sql(), null, null);
                 });
             }
-            return null;
+            return;
         }
         mutFragments.add(new MutationFragment(responseKey, frag.sql(), null, null));
-        return null;
     }
 
     /**
@@ -328,11 +322,42 @@ public class SqlCompiler {
     }
 
     /**
-     * A table mutation's CTE statement ({@code rawSql}), a function call's rows ({@code selectSql}), or a
-     * nested insert run as ordered statements ({@code nested}).
+     * A table mutation's CTE statement ({@code rawSql}), a function call's rows ({@code selectSql}), a
+     * nested insert run as ordered statements ({@code nested}), or a write without RETURNING ({@code write}).
      */
     private record MutationFragment(String fieldName, String rawSql, String selectSql,
-                                    MutationSequence.NestedInsert nested) {}
+                                    MutationSequence.NestedInsert nested, TwoPhaseWrite write) {
+        MutationFragment(String fieldName, String rawSql, String selectSql, MutationSequence.NestedInsert nested) {
+            this(fieldName, rawSql, selectSql, nested, null);
+        }
+
+        MutationFragment(String fieldName, TwoPhaseWrite write) {
+            this(fieldName, null, null, null, write);
+        }
+    }
+
+    /**
+     * Every root field is a write without RETURNING; none can join a statement of another kind. Each field's
+     * check runs after its write, so it may not read a table this field or an earlier one writes: Postgres
+     * judges such a check against the database as it was before the statement, which MySQL cannot.
+     */
+    private CompiledQuery twoPhase(List<MutationFragment> fragments, Map<String, Object> params) {
+        List<TwoPhaseWrites.Entry> entries = new ArrayList<>();
+        Set<String> written = new HashSet<>();
+        for (MutationFragment fragment : fragments) {
+            if (!(fragment.write() instanceof TwoPhaseWrites.Write write)) {
+                throw new IllegalArgumentException("Mutation field " + fragment.fieldName()
+                        + " cannot run in the same request as a write on this database");
+            }
+            written.add(write.table());
+            if (!Collections.disjoint(write.checkReads(), written)) {
+                throw new IllegalArgumentException("The permission check of " + fragment.fieldName()
+                        + " reads a table this mutation writes, so it cannot be enforced on " + dialect.databaseName());
+            }
+            entries.add(new TwoPhaseWrites.Entry(fragment.fieldName(), write));
+        }
+        return CompiledQuery.twoPhase(new TwoPhaseWrites(entries), params);
+    }
 
     private int measureDepth(SelectionSet selectionSet, Map<String, FragmentDefinition> fragments) {
         if (selectionSet == null || selectionSet.getSelections().isEmpty()) return 0;

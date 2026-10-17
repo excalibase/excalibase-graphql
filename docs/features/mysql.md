@@ -234,8 +234,29 @@ Forward and reverse FK fields are automatically added to the schema:
 
 ### Stored procedures
 
-Not exposed. Only tracked functions are reachable, and tracking, like permissions, is
-Postgres-only (see [Functions](functions.md)).
+Not exposed. Only tracked functions are reachable, and tracking is Postgres-only: a MySQL
+function returns a scalar, not rows of a table, so no table permission could apply to its result
+(see [Functions](functions.md)).
+
+### Permissions
+
+Permissions apply to MySQL projects as they do to Postgres ones: the same document compiles to MySQL
+SQL, and a differential suite checks every case against native Postgres RLS on identical data.
+
+- `TIMESTAMP` compares in UTC whatever the session time zone; `ENUM` compares by declaration order;
+  `FLOAT` compares at single precision; `NaN`/`Infinity` (which MySQL cannot store) match nothing.
+- Text compares under the column's own collation, so on `utf8mb4_0900_ai_ci` `_eq: "alpha"` keeps
+  "Alpha". Realtime asks the database for such rows instead of deciding in memory, so it delivers
+  exactly the rows a query returns.
+- MySQL cannot return the rows a write touches, so writes lock and key them first, then the permission's
+  check runs on exactly the rows found again by those keys; a written row that cannot be found again
+  (an `AUTO_INCREMENT` 0, a rounded key) rolls the write back. A write needs a primary key; an insert
+  must supply it or let `AUTO_INCREMENT` generate it; an update that changes it is followed to the new
+  key; `onConflict` is refused.
+- That check runs after the write, so an insert or update check that reads, through a relationship or
+  `_exists`, a table the same mutation writes (this field's table or an earlier field's) is refused with
+  `400`: Postgres judges it against the database as it was before the write, which MySQL cannot.
+- Permission keys name a table `<database>.<table>`, the database being its schema.
 
 ## Filtering Operators
 
@@ -276,25 +297,25 @@ MySQL has no `RETURNING`, so `Prefer: return=representation` reads the written r
 
 | Write | How the rows come back |
 |-------|------------------------|
-| Insert | One statement per row; read back by the key sent, or the `AUTO_INCREMENT` key generated |
+| Insert | One statement per row; read back by the key sent, or the `AUTO_INCREMENT` key generated (only when the key is that column) |
 | Update | Keys of the matched rows locked (`FOR UPDATE`) before the update, then read back (a changed key is followed) |
 | Delete | Rows read, locked, before they are deleted |
-| Upsert | `INSERT … AS incoming ON DUPLICATE KEY UPDATE`, read back by the key sent; without every key column it is a plain insert |
+| Upsert | The sent key is locked (`FOR UPDATE`): an `INSERT` when no row holds it, else an `UPDATE` of that row alone, read back by the key sent; without every key column it is a plain insert. An existing row the update permission's filter hides is left as it is |
 
 Filters run natively where MySQL has the operator: `match`/`imatch` (`REGEXP_LIKE`), `cs`/`cd`/`haskey`
 (`JSON_CONTAINS`, `JSON_CONTAINS_PATH`) and `fts`/`plfts`/`phfts` (`MATCH … AGAINST`, the column needs its own
 `FULLTEXT` index).
 
 An upsert that collides on a unique key other than the primary key fails with `409 unique_violation`, as on
-Postgres. Before `ON DUPLICATE KEY UPDATE` runs, the other unique keys are checked in the same transaction
-(`SELECT … FOR UPDATE`), so the statement never updates a row the request did not address.
+Postgres, however that key's columns were filled (sent, `DEFAULT`, generated or by a trigger): the upsert never
+uses `ON DUPLICATE KEY UPDATE`, which would update whichever row collides. Under `READ COMMITTED`, which takes no
+gap lock, a concurrent insert of the same key makes the upsert fail as a duplicate rather than write twice.
 
 Refused with `400` and a message naming MySQL, never ignored:
 
 - array, range, JSON path, web-search and vector operators (`ov`, `sl`, `arraylength`, `jsonpath`, `wfts`, `vector`, …)
-- `return=representation` (or `max-affected`) on a table without a primary key, or an insert whose key is neither sent nor generated
+- `return=representation` (or `max-affected`), or a permission check, on a table without a primary key, or an insert whose key is neither sent nor generated
 - RPC (`/rpc/{function}`): functions are not tracked on MySQL
-- permission checks on written rows and upserts under an update permission filter
 
 A filter on a column the table does not have is a `400` naming the column on every database, also inside
 `or=(…)`: a typo never returns every row.

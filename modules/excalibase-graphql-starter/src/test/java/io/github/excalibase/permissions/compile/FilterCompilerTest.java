@@ -10,6 +10,7 @@ import org.junit.jupiter.params.provider.ValueSource;
 import java.util.Map;
 import java.util.UUID;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.MEMBERS;
 import static io.github.excalibase.permissions.compile.FixtureSchema.NOTES;
 import static io.github.excalibase.permissions.compile.FixtureSchema.ORGS;
@@ -29,7 +30,7 @@ class FilterCompilerTest {
     }
 
     private static SqlFragment compile(BoolExp expression, String table, ParamNamer namer) {
-        return FilterCompiler.compile(expression, table, "n", SCHEMA, BINDING, namer);
+        return FilterCompiler.compile(POSTGRES, expression, table, "n", SCHEMA, BINDING, namer);
     }
 
     @Test
@@ -146,7 +147,7 @@ class FilterCompilerTest {
 
     @Test
     void quotedOuterAlias_isUsedAsGiven() {
-        SqlFragment fragment = FilterCompiler.compile(parse("{\"id\": {\"_eq\": 1}}"), NOTES, "\"a1b2c3d4\"",
+        SqlFragment fragment = FilterCompiler.compile(POSTGRES, parse("{\"id\": {\"_eq\": 1}}"), NOTES, "\"a1b2c3d4\"",
                 SCHEMA, BINDING, new ParamNamer("perm"));
 
         assertThat(fragment.sql()).isEqualTo("\"a1b2c3d4\".\"id\" = :perm_p0");
@@ -155,8 +156,9 @@ class FilterCompilerTest {
     @ParameterizedTest
     @ValueSource(strings = {"n; DROP", "\"a\"\"b\"", "1n", ""})
     void unsafeOuterAlias_isRefused(String alias) {
-        assertThatThrownBy(() -> FilterCompiler.compile(BoolExp.TRUE, NOTES, alias, SCHEMA, BINDING,
-                new ParamNamer("perm"))).isInstanceOf(IllegalArgumentException.class);
+        ParamNamer namer = new ParamNamer("perm");
+        assertThatThrownBy(() -> FilterCompiler.compile(POSTGRES, BoolExp.TRUE, NOTES, alias, SCHEMA, BINDING, namer))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @ParameterizedTest

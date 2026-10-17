@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
+import static io.github.excalibase.permissions.compile.PermissionDialect.POSTGRES;
 import static io.github.excalibase.access.AccessFixture.AUDIT;
 import static io.github.excalibase.access.AccessFixture.CUSTOMERS;
 import static io.github.excalibase.access.AccessFixture.ORDERS;
@@ -22,7 +23,7 @@ class AccessPlanTest {
     private static final SchemaInfo REFLECTED = AccessFixture.schema();
 
     private static AccessPlan plan(String... entries) {
-        return AccessPlan.forRole(REFLECTED, user(entries));
+        return AccessPlan.forRole(POSTGRES, REFLECTED, user(entries));
     }
 
     @Test
@@ -39,7 +40,7 @@ class AccessPlanTest {
         SchemaInfo reflected = AccessFixture.schema();
         reflected.addFullTextColumn(CUSTOMERS, "name");
 
-        AccessPlan plan = AccessPlan.forRole(reflected, user(entry(CUSTOMERS, selectAll())));
+        AccessPlan plan = AccessPlan.forRole(POSTGRES, reflected, user(entry(CUSTOMERS, selectAll())));
 
         assertThat(plan.view().isFullTextColumn(CUSTOMERS, "name")).isTrue();
         assertThat(plan.view().isFullTextColumn(CUSTOMERS, "email")).isFalse();
@@ -260,7 +261,7 @@ class AccessPlanTest {
 
     @Test
     void allAccess_servesEverythingTheDatabaseHas() {
-        AccessPlan plan = AccessPlan.allAccess(REFLECTED);
+        AccessPlan plan = AccessPlan.allAccess(POSTGRES, REFLECTED);
 
         assertThat(plan.allAccess()).isTrue();
         assertThat(plan.view().getTableNames()).isEqualTo(REFLECTED.getTableNames());

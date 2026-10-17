@@ -22,9 +22,9 @@ class PermissionBoundaryTest {
 
     private static final Pattern RAW_PERMISSIONS = Pattern.compile("\\b(PermissionProvider|PermissionSet|RolePermissions)\\b");
 
-    /** From these packages only the two permission failures may be imported. */
-    private static final Pattern PERMISSION_IMPORT = Pattern.compile(
-            "import io\\.github\\.excalibase\\.permissions\\.(?!PermissionEvaluationException;|PermissionsUnavailableException;)");
+    /** From these packages only the two permission failures, and the dialect a database names, may be imported. */
+    private static final Pattern PERMISSION_IMPORT = Pattern.compile("import io\\.github\\.excalibase\\.permissions\\."
+            + "(?!PermissionEvaluationException;|PermissionsUnavailableException;|compile\\.PermissionDialect;)");
 
     private static final List<String> ALLOWED = List.of(
             "/io/github/excalibase/permissions/",
