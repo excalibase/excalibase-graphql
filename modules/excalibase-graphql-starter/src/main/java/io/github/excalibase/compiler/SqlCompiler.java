@@ -344,15 +344,25 @@ public class SqlCompiler {
         }
     }
 
-    /** Every root field is a write without RETURNING; none can join a statement of another kind. */
-    private static CompiledQuery twoPhase(List<MutationFragment> fragments, Map<String, Object> params) {
+    /**
+     * Every root field is a write without RETURNING; none can join a statement of another kind. Each field's
+     * check runs after its write, so it may not read a table this field or an earlier one writes: Postgres
+     * judges such a check against the database as it was before the statement, which MySQL cannot.
+     */
+    private CompiledQuery twoPhase(List<MutationFragment> fragments, Map<String, Object> params) {
         List<TwoPhaseWrites.Entry> entries = new ArrayList<>();
+        Set<String> written = new HashSet<>();
         for (MutationFragment fragment : fragments) {
-            if (fragment.write() == null) {
+            if (!(fragment.write() instanceof TwoPhaseWrites.Write write)) {
                 throw new IllegalArgumentException("Mutation field " + fragment.fieldName()
                         + " cannot run in the same request as a write on this database");
             }
-            entries.add(new TwoPhaseWrites.Entry(fragment.fieldName(), fragment.write()));
+            written.add(write.table());
+            if (!Collections.disjoint(write.checkReads(), written)) {
+                throw new IllegalArgumentException("The permission check of " + fragment.fieldName()
+                        + " reads a table this mutation writes, so it cannot be enforced on " + dialect.databaseName());
+            }
+            entries.add(new TwoPhaseWrites.Entry(fragment.fieldName(), write));
         }
         return CompiledQuery.twoPhase(new TwoPhaseWrites(entries), params);
     }

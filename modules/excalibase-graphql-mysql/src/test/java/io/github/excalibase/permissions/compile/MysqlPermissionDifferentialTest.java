@@ -2,9 +2,11 @@ package io.github.excalibase.permissions.compile;
 
 import io.github.excalibase.access.ChangeFilter;
 import io.github.excalibase.access.ProbeRunner;
+import io.github.excalibase.access.RequestGuard;
 import io.github.excalibase.permissions.BoolExp;
 import io.github.excalibase.permissions.compile.DifferentialCases.Case;
 import io.github.excalibase.permissions.compile.MysqlDifferentialFixture.Collation;
+import io.github.excalibase.security.RlsOp;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -20,6 +22,7 @@ import static io.github.excalibase.permissions.compile.FixtureSchema.parse;
 import static io.github.excalibase.permissions.compile.PermissionDialect.MYSQL;
 import static io.github.excalibase.permissions.compile.PermissionExpressionDifferentialTest.VARIABLES;
 import static io.github.excalibase.permissions.compile.PermissionExpressionDifferentialTest.nativeRows;
+import static io.github.excalibase.permissions.compile.PermissionExpressionDifferentialTest.nativeWritesAccepted;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -61,6 +64,27 @@ class MysqlPermissionDifferentialTest {
         TreeSet<String> oracle = nativeRows(testCase.table(), testCase.nativeSql());
 
         assertThat(mysql.rowsDeleted(testCase.table(), compile(testCase, true))).isEqualTo(oracle);
+    }
+
+    /**
+     * As an INSERT or UPDATE check the engine accepts exactly the rows native Postgres accepts, or, when the check
+     * reads the table it writes, refuses it: MySQL judges a check after the write, Postgres before it.
+     */
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("cases")
+    void writeCheck_acceptsTheRowsNativePostgresAccepts_orIsRefused(Case testCase) throws SQLException {
+        RequestGuard guard = mysql.writeGuard(testCase.table(), parse(testCase.expression()));
+
+        for (RlsOp operation : List.of(RlsOp.INSERT, RlsOp.UPDATE)) {
+            boolean insert = operation == RlsOp.INSERT;
+            if (guard.checkReads(testCase.table(), operation).contains(testCase.table())) {
+                assertThat(TablesRead.of(parse(testCase.expression()), testCase.table(), mysql.schema()))
+                        .contains(testCase.table());
+                continue;
+            }
+            assertThat(mysql.writesAccepted(testCase.table(), guard, insert)).as(operation.name())
+                    .isEqualTo(nativeWritesAccepted(testCase.table(), testCase.nativeSql(), insert));
+        }
     }
 
     /** A row that now exists is judged in memory or by its key; a deleted one by its image alone. */

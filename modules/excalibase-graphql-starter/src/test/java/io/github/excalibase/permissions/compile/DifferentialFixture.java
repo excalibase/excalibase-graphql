@@ -41,7 +41,8 @@ final class DifferentialFixture {
             "CREATE ROLE app_role NOLOGIN",
             "GRANT USAGE ON SCHEMA public TO app_role",
             "GRANT SELECT ON public.orgs, public.members, public.notes, public.notes_unguarded,"
-                    + " public.members_unguarded TO app_role"
+                    + " public.members_unguarded TO app_role",
+            "GRANT INSERT, UPDATE ON public.orgs, public.members, public.notes TO app_role"
     };
 
     private static final String[] DATA_SQL = {

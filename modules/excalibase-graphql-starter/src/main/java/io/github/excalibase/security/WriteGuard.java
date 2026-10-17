@@ -2,6 +2,7 @@ package io.github.excalibase.security;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * The write half of a request's permissions, consulted by the mutation compilers through
@@ -25,6 +26,11 @@ public interface WriteGuard {
      */
     default List<String> rowKey(String tableName) {
         return List.of();
+    }
+
+    /** The tables the permission's check for {@code op} reads beyond the written row, by relationship or _exists. */
+    default Set<String> checkReads(String tableName, RlsOp op) {
+        return Set.of();
     }
 
     /** True when the row key is one column the database fills itself when an insert leaves it out. */

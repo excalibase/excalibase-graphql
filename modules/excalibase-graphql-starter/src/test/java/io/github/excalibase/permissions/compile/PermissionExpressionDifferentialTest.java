@@ -19,6 +19,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
@@ -155,6 +156,77 @@ class PermissionExpressionDifferentialTest {
             } finally {
                 connection.rollback();
             }
+        }
+    }
+
+    /** A column each table's no-op UPDATE sets to itself. */
+    private static final Map<String, String> UNCHANGED = Map.of("public.notes", "id", "public.members", "role",
+            "public.orgs", "name");
+
+    /**
+     * The rows whose own write native row security accepts under {@code predicate} as the check: an INSERT puts
+     * each row back after deleting it, so the check sees the table as it was before the write; an UPDATE sets a
+     * column to itself. Foreign keys are off while a row is away.
+     */
+    static TreeSet<String> nativeWritesAccepted(String table, String predicate, boolean insert) throws SQLException {
+        String alias = table.substring(7);
+        try (Connection connection = dataSource.getConnection()) {
+            connection.setAutoCommit(false);
+            try (Statement statement = connection.createStatement()) {
+                setVariables(connection);
+                statement.execute("SET LOCAL session_replication_role = replica");
+                statement.execute("ALTER TABLE " + table + " ENABLE ROW LEVEL SECURITY");
+                statement.execute(insert
+                        ? "CREATE POLICY oracle ON " + table + " FOR INSERT TO app_role WITH CHECK (" + predicate + ")"
+                        : "CREATE POLICY oracle ON " + table + " FOR UPDATE TO app_role USING (true) WITH CHECK ("
+                                + predicate + ")");
+                statement.execute("CREATE POLICY reads ON " + table + " FOR SELECT TO app_role USING (true)");
+                TreeSet<String> accepted = new TreeSet<>();
+                for (String key : keys(statement, "SELECT " + DifferentialFixture.keySql(table, alias) + " FROM " + table)) {
+                    if (writeAccepted(connection, table, alias, key, insert)) {
+                        accepted.add(key);
+                    }
+                }
+                return accepted;
+            } finally {
+                connection.rollback();
+            }
+        }
+    }
+
+    private static boolean writeAccepted(Connection connection, String table, String alias, String key, boolean insert)
+            throws SQLException {
+        String row = " WHERE " + DifferentialFixture.keySql(table, alias) + " = ?";
+        Savepoint before = connection.setSavepoint();
+        try {
+            if (insert) {
+                execute(connection, "CREATE TEMP TABLE row_copy AS SELECT * FROM " + table + row, key);
+                execute(connection, "GRANT SELECT ON row_copy TO app_role");
+                execute(connection, "DELETE FROM " + table + row, key);
+                execute(connection, "SET LOCAL ROLE app_role");
+                execute(connection, "INSERT INTO " + table + " SELECT * FROM row_copy");
+            } else {
+                String column = UNCHANGED.get(table);
+                execute(connection, "SET LOCAL ROLE app_role");
+                execute(connection, "UPDATE " + table + " SET " + column + " = " + column + row, key);
+            }
+            return true;
+        } catch (SQLException refused) {
+            if (!"42501".equals(refused.getSQLState())) {
+                throw refused;
+            }
+            return false;
+        } finally {
+            connection.rollback(before);
+        }
+    }
+
+    private static void execute(Connection connection, String sql, String... values) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < values.length; i++) {
+                statement.setString(i + 1, values[i]);
+            }
+            statement.execute();
         }
     }
 

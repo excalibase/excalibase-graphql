@@ -2,14 +2,11 @@ package io.github.excalibase.compiler;
 
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.security.PermissionCheckFailedException;
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 
-import java.sql.SQLIntegrityConstraintViolationException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,10 +24,6 @@ public final class KeyedWrites {
 
     private static final String KEY_PARAM = "rk_";
     private static final String FOR_UPDATE = " FOR UPDATE";
-    private static final String UNIQUE_PARAM = "uq_";
-    private static final String PRIMARY = "PRIMARY";
-    private static final String DUPLICATE_STATE = "23000";
-    private static final int DUPLICATE_ENTRY = 1062;
 
     /** How a written row reads: its JSON object over {@code alias}, and the select filter it must pass. */
     public record ReadBack(String objectSql, String readable, Map<String, Object> params, boolean aggregate) {
@@ -84,7 +77,7 @@ public final class KeyedWrites {
     /** @param upsert an upsert's row counts twice when it updates: it is checked by its key alone */
     private KeyedWrite insert(List<Insert> inserts, boolean many, boolean upsert) {
         return (jdbc, represent) -> {
-            boolean keyed = represent || check != null;
+            boolean keyed = represent || check != null || upsert;
             if (keyed) requireKeys();
             List<List<Object>> written = new ArrayList<>();
             int count = 0;
@@ -93,37 +86,46 @@ public final class KeyedWrites {
                 count += jdbc.update(insert.sql(), new MapSqlParameterSource(insert.params()), generated);
                 if (keyed) written.add(keyOf(insert.values(), generated));
             }
-            if (check != null) verify(jdbc, written, upsert ? written.size() : count);
+            if (check != null || upsert) verify(jdbc, written, upsert ? written.size() : count);
             return represent ? read(jdbc, written, many) : null;
         };
     }
 
     /**
-     * An upsert of a row whose key is sent. ON DUPLICATE KEY also fires on any other unique key, updating a row
-     * the caller never addressed; Postgres conflicts on the primary key only, so a collision on another unique
-     * key fails as a duplicate first.
+     * An upsert of a row whose key is sent: an INSERT when no row holds the key, else an UPDATE of that row
+     * alone, so a collision on any other unique key, however its columns were filled, fails as the database's
+     * own duplicate error rather than updating a row the caller never addressed. The key is locked first
+     * ({@code FOR UPDATE}); under READ COMMITTED, which takes no gap lock, a concurrent insert of the same key
+     * makes the INSERT fail as a duplicate, never write twice.
      *
-     * @param updatable null for DO NOTHING; else which existing rows the update may overwrite, its condition
-     *                  empty when every row: an existing row outside it is kept as it is and returns none
+     * @param set       the UPDATE's assignments, null for DO NOTHING
+     * @param updatable which existing rows the update may overwrite, its condition empty when every row: an
+     *                  existing row outside it is kept as it is and returns none
      */
-    public KeyedWrite upsert(Insert insert, Condition updatable) {
+    public KeyedWrite upsert(Insert insert, Condition set, Condition updatable) {
         KeyedWrite write = insert(List.of(insert), false, true);
         List<Object> key = keys.stream().map(insert.values()::get).toList();
         return (jdbc, represent) -> {
-            if (keepsExisting(jdbc, key, updatable)) return null;
-            if (updatable != null) requireNoOtherUniqueCollision(jdbc, insert.values());
-            return write.run(jdbc, represent);
+            Map<String, Object> params = new LinkedHashMap<>();
+            if (jdbc.queryForList(existsSql(key, params, null), params, Integer.class).isEmpty()) {
+                return write.run(jdbc, represent);
+            }
+            if (set == null || !updatable(jdbc, key, updatable)) return null;
+            Map<String, Object> updateParams = new LinkedHashMap<>(set.params());
+            jdbc.update(updateSql(set.sql(), key, updateParams), updateParams);
+            verify(jdbc, List.of(key), 1);
+            return represent ? read(jdbc, List.of(key), false) : null;
         };
     }
 
-    /** True when the row keyed {@code key} exists and the upsert may not overwrite it. */
-    private boolean keepsExisting(NamedParameterJdbcTemplate jdbc, List<Object> key, Condition updatable) {
-        Map<String, Object> params = new LinkedHashMap<>();
-        if (jdbc.queryForList(existsSql(key, params, null), params, Integer.class).isEmpty()) return false;
-        if (updatable == null) return true;
-        if (updatable.sql().isEmpty()) return false;
+    private boolean updatable(NamedParameterJdbcTemplate jdbc, List<Object> key, Condition updatable) {
+        if (updatable.sql().isEmpty()) return true;
         Map<String, Object> filtered = new LinkedHashMap<>(updatable.params());
-        return jdbc.queryForList(existsSql(key, filtered, updatable.sql()), filtered, Integer.class).isEmpty();
+        return !jdbc.queryForList(existsSql(key, filtered, updatable.sql()), filtered, Integer.class).isEmpty();
+    }
+
+    private String updateSql(String assignments, List<Object> key, Map<String, Object> params) {
+        return UPDATE + quotedTable + SPACE + alias + SET + assignments + WHERE + keyPredicate(List.of(key), params);
     }
 
     /** {@code where} selects the rows {@code dml} updates; {@code set} is what it writes, by column. */
@@ -169,58 +171,14 @@ public final class KeyedWrites {
         };
     }
 
-    /** Throws the database's own duplicate-key error when another row holds one of {@code values}' unique keys. */
-    private void requireNoOtherUniqueCollision(NamedParameterJdbcTemplate jdbc, Map<String, Object> values) {
-        List<Object> key = keys.stream().map(values::get).toList();
-        for (Map.Entry<String, List<String>> unique : otherUniqueKeys(jdbc).entrySet()) {
-            if (!unique.getValue().stream().allMatch(column -> values.get(column) != null)) continue;
-            Map<String, Object> params = new LinkedHashMap<>();
-            if (!jdbc.queryForList(collisionSql(unique.getValue(), values, key, params), params, Integer.class).isEmpty()) {
-                String message = "Duplicate entry for key '" + unique.getKey() + "'";
-                throw new DuplicateKeyException(message,
-                        new SQLIntegrityConstraintViolationException(message, DUPLICATE_STATE, DUPLICATE_ENTRY));
-            }
-        }
-    }
-
-    /** Unique indexes other than the primary key, by name, with their columns in index order. */
-    private Map<String, List<String>> otherUniqueKeys(NamedParameterJdbcTemplate jdbc) {
-        Map<String, List<String>> unique = new LinkedHashMap<>();
-        jdbc.getJdbcTemplate().query(showIndexSql(), (RowCallbackHandler) rs -> {
-            String index = rs.getString("Key_name");
-            if (rs.getInt("Non_unique") != 0 || PRIMARY.equals(index)) return;
-            String column = rs.getString("Column_name");
-            if (column == null) {
-                throw new IllegalArgumentException("Upsert into " + table + " cannot check its unique expression index "
-                        + index + " on " + dialect.databaseName());
-            }
-            unique.computeIfAbsent(index, name -> new ArrayList<>()).add(column);
-        });
-        return unique;
-    }
-
-    private String showIndexSql() {
-        return "SHOW INDEX FROM " + quotedTable;
-    }
-
-    /** A row other than {@code key} holding {@code values} on {@code columns}, locked. */
-    private String collisionSql(List<String> columns, Map<String, Object> values, List<Object> key,
-                                Map<String, Object> params) {
-        List<String> equal = new ArrayList<>();
-        for (int i = 0; i < columns.size(); i++) {
-            String name = UNIQUE_PARAM + i;
-            params.put(name, values.get(columns.get(i)));
-            equal.add(column(columns.get(i)) + ASSIGN + PARAM_PREFIX + name);
-        }
-        return SELECT + "1" + FROM + quotedTable + SPACE + alias + WHERE + String.join(AND, equal)
-                + AND + NOT + parens(keyPredicate(List.of(key), params)) + LIMIT + "1" + FOR_UPDATE;
-    }
-
-    /** Every written row is found again by its key, and passes the check; anything else rolls the write back. */
+    /**
+     * Every written row is found again by its key, and passes the check when there is one; anything else rolls
+     * the write back.
+     */
     private void verify(NamedParameterJdbcTemplate jdbc, List<List<Object>> written, int count) {
         if (written.size() != count) throw new IllegalArgumentException(unreadable());
         if (written.isEmpty()) return;
-        Map<String, Object> params = new LinkedHashMap<>(check.params());
+        Map<String, Object> params = check == null ? new LinkedHashMap<>() : new LinkedHashMap<>(check.params());
         long[] found = jdbc.queryForObject(verifySql(written, params), params,
                 (rs, rowNum) -> new long[] {rs.getLong(1), rs.getLong(2)});
         if (found[0] != count) throw new IllegalArgumentException(unreadable());
@@ -229,7 +187,8 @@ public final class KeyedWrites {
 
     /** How many of the written rows exist, and how many of those fail the check. */
     private String verifySql(List<List<Object>> written, Map<String, Object> params) {
-        return SELECT + "COUNT(*), COALESCE(SUM((" + check.sql() + ") IS NOT TRUE), 0)" + FROM + quotedTable
+        String failing = check == null ? "0" : "COALESCE(SUM((" + check.sql() + ") IS NOT TRUE), 0)";
+        return SELECT + "COUNT(*), " + failing + FROM + quotedTable
                 + SPACE + alias + WHERE + keyPredicate(written, params);
     }
 

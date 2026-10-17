@@ -41,11 +41,37 @@ CREATE TABLE boards (
     name     VARCHAR(50)
 );
 
+-- Checked against itself: a row is only allowed when the caller already has a 'gate' row (security review).
+CREATE TABLE drafts (
+    id       INT AUTO_INCREMENT PRIMARY KEY,
+    owner_id CHAR(36),
+    title    VARCHAR(50)
+);
+
+-- Checked against counters, which another root field of the same mutation can write.
+CREATE TABLE ledger (
+    id    INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(50)
+);
+
+-- A unique key the request does not send: slot is filled by its DEFAULT (security review).
+CREATE TABLE profiles (
+    id       INT PRIMARY KEY,
+    owner_id CHAR(36),
+    org_id   INT,
+    slot     VARCHAR(20) NOT NULL DEFAULT 'main',
+    title    VARCHAR(50),
+    UNIQUE KEY profiles_org_slot (org_id, slot)
+);
+
 -- Written by a role that may insert but never read: its rows are keyed by a column the role cannot see.
 CREATE TABLE feedback (
     id   INT AUTO_INCREMENT PRIMARY KEY,
     body VARCHAR(200)
 );
+
+INSERT INTO counters (label) VALUES ('seed');
+INSERT INTO profiles (id, owner_id, org_id, slot, title) VALUES (1, '22222222-2222-2222-2222-222222222222', 1, 'main', 'bob');
 
 INSERT INTO boards (id, owner_id, name) VALUES (1, '22222222-2222-2222-2222-222222222222', 'bob-board');
 

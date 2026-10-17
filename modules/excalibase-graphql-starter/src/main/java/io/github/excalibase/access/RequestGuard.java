@@ -8,6 +8,7 @@ import io.github.excalibase.permissions.compile.PermissionDialect;
 import io.github.excalibase.permissions.compile.PresetValues;
 import io.github.excalibase.permissions.compile.SessionBinding;
 import io.github.excalibase.permissions.compile.SqlFragment;
+import io.github.excalibase.permissions.compile.TablesRead;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
@@ -18,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * One request's SQL guards: the plan's filters, checks and presets bound to the request's session
@@ -81,15 +83,27 @@ public final class RequestGuard implements RlsWhereContributor, WriteGuard {
         if (plan.allAccess()) {
             return null;
         }
-        Optional<BoolExp> check = plan.rules(tableName).flatMap(rules -> switch (op) {
-            case INSERT -> rules.insert().map(TableRules.InsertRule::check);
-            case UPDATE -> rules.update().map(TableRules.UpdateRule::check);
-            default -> Optional.<BoolExp>empty();
-        });
+        Optional<BoolExp> check = checkOf(tableName, op);
         if (check.isEmpty()) {
             return DENY;
         }
         return compiled(check.get(), tableName, alias, false);
+    }
+
+    @Override
+    public Set<String> checkReads(String tableName, RlsOp op) {
+        if (plan.allAccess()) {
+            return Set.of();
+        }
+        return checkOf(tableName, op).map(check -> TablesRead.of(check, tableName, plan.reflected())).orElse(Set.of());
+    }
+
+    private Optional<BoolExp> checkOf(String tableName, RlsOp op) {
+        return plan.rules(tableName).flatMap(rules -> switch (op) {
+            case INSERT -> rules.insert().map(TableRules.InsertRule::check);
+            case UPDATE -> rules.update().map(TableRules.UpdateRule::check);
+            default -> Optional.<BoolExp>empty();
+        });
     }
 
     @Override

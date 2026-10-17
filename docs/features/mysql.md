@@ -253,6 +253,9 @@ SQL, and a differential suite checks every case against native Postgres RLS on i
   (an `AUTO_INCREMENT` 0, a rounded key) rolls the write back. A write needs a primary key; an insert
   must supply it or let `AUTO_INCREMENT` generate it; an update that changes it is followed to the new
   key; `onConflict` is refused.
+- That check runs after the write, so an insert or update check that reads, through a relationship or
+  `_exists`, a table the same mutation writes (this field's table or an earlier field's) is refused with
+  `400`: Postgres judges it against the database as it was before the write, which MySQL cannot.
 - Permission keys name a table `<database>.<table>`, the database being its schema.
 
 ## Filtering Operators
@@ -297,15 +300,16 @@ MySQL has no `RETURNING`, so `Prefer: return=representation` reads the written r
 | Insert | One statement per row; read back by the key sent, or the `AUTO_INCREMENT` key generated (only when the key is that column) |
 | Update | Keys of the matched rows locked (`FOR UPDATE`) before the update, then read back (a changed key is followed) |
 | Delete | Rows read, locked, before they are deleted |
-| Upsert | `INSERT … AS incoming ON DUPLICATE KEY UPDATE`, read back by the key sent; without every key column it is a plain insert. An existing row the update permission's filter hides is left as it is |
+| Upsert | The sent key is locked (`FOR UPDATE`): an `INSERT` when no row holds it, else an `UPDATE` of that row alone, read back by the key sent; without every key column it is a plain insert. An existing row the update permission's filter hides is left as it is |
 
 Filters run natively where MySQL has the operator: `match`/`imatch` (`REGEXP_LIKE`), `cs`/`cd`/`haskey`
 (`JSON_CONTAINS`, `JSON_CONTAINS_PATH`) and `fts`/`plfts`/`phfts` (`MATCH … AGAINST`, the column needs its own
 `FULLTEXT` index).
 
 An upsert that collides on a unique key other than the primary key fails with `409 unique_violation`, as on
-Postgres. Before `ON DUPLICATE KEY UPDATE` runs, the other unique keys are checked in the same transaction
-(`SELECT … FOR UPDATE`), so the statement never updates a row the request did not address.
+Postgres, however that key's columns were filled (sent, `DEFAULT`, generated or by a trigger): the upsert never
+uses `ON DUPLICATE KEY UPDATE`, which would update whichever row collides. Under `READ COMMITTED`, which takes no
+gap lock, a concurrent insert of the same key makes the upsert fail as a duplicate rather than write twice.
 
 Refused with `400` and a message naming MySQL, never ignored:
 

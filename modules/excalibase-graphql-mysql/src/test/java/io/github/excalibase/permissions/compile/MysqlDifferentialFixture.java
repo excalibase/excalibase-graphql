@@ -3,12 +3,20 @@ package io.github.excalibase.permissions.compile;
 import io.github.excalibase.access.AccessPlan;
 import io.github.excalibase.access.ChangeFilter;
 import io.github.excalibase.access.ProbeRunner;
+import io.github.excalibase.access.RequestGuard;
+import io.github.excalibase.compiler.KeyedWrites;
+import io.github.excalibase.mysql.MysqlDialect;
 import io.github.excalibase.mysql.MysqlSchemaLoader;
 import io.github.excalibase.permissions.BoolExp;
 import io.github.excalibase.permissions.ColumnSet;
+import io.github.excalibase.permissions.InsertPermission;
 import io.github.excalibase.permissions.RolePermissions;
 import io.github.excalibase.permissions.SelectPermission;
 import io.github.excalibase.permissions.TablePermissions;
+import io.github.excalibase.permissions.UpdatePermission;
+import io.github.excalibase.security.PermissionCheckFailedException;
+import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.schema.SchemaInfo;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
@@ -62,6 +70,7 @@ final class MysqlDifferentialFixture {
     static final String SESSION_TIME_ZONE = "+05:00";
 
     private static final String ROLE = "reader";
+    private static final String WRITTEN = "w";
 
     private static final DateTimeFormatter WITH_OFFSET = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSxxx");
 
@@ -226,6 +235,71 @@ final class MysqlDifferentialFixture {
     }
 
     /** {@code SELECT} list naming a row the way the Postgres fixture does ({@code 1}, {@code 1:<uuid>}). */
+    /** The guard of a role whose insert and update checks on {@code table} are {@code expression}, and nothing else. */
+    RequestGuard writeGuard(String table, BoolExp expression) {
+        TablePermissions permissions = new TablePermissions(table, ROLE,
+                Optional.of(new SelectPermission(BoolExp.TRUE, ColumnSet.ALL, null, false)),
+                Optional.of(new InsertPermission(expression, ColumnSet.ALL, Map.of())),
+                Optional.of(new UpdatePermission(BoolExp.TRUE, expression, ColumnSet.ALL, Map.of())), Optional.empty());
+        return AccessPlan.forRole(PermissionDialect.MYSQL, schema,
+                        new RolePermissions(ROLE, Map.of(table, permissions), List.of(), Set.of()))
+                .guard(PermissionExpressionDifferentialTest.VARIABLES);
+    }
+
+    /**
+     * The rows whose own write the engine accepts under {@code guard}'s check, as {@link KeyedWrites} runs it:
+     * an INSERT puts each row back after deleting it, an UPDATE sets a column to itself. Rolled back.
+     */
+    TreeSet<String> writesAccepted(String table, RequestGuard guard, boolean insert) {
+        RlsWhereContributor.Contribution check = guard.check(table, WRITTEN, insert ? RlsOp.INSERT : RlsOp.UPDATE);
+        KeyedWrites keyed = new KeyedWrites(new MysqlDialect(), new KeyedWrites.Target(table, quoted(table), WRITTEN,
+                schema.getPrimaryKeys(table), false), null,
+                check == null ? null : new KeyedWrites.Condition(check.sql(), check.params()));
+        TreeSet<String> accepted = new TreeSet<>();
+        for (Map<String, Object> row : allRows(table)) {
+            String key = DifferentialFixture.key(table, row);
+            if (writeAccepted(table, keyed, row, key, insert)) {
+                accepted.add(key);
+            }
+        }
+        return accepted;
+    }
+
+    private boolean writeAccepted(String table, KeyedWrites keyed, Map<String, Object> row, String key, boolean insert) {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        NamedParameterJdbcTemplate named = new NamedParameterJdbcTemplate(jdbc);
+        String where = keySql(table, WRITTEN) + " = :row_key";
+        Map<String, Object> params = Map.of("row_key", key);
+        return Boolean.TRUE.equals(new TransactionTemplate(new DataSourceTransactionManager(dataSource)).execute(status -> {
+            status.setRollbackOnly();
+            jdbc.execute("SET FOREIGN_KEY_CHECKS = 0");
+            try {
+                if (insert) {
+                    named.update("CREATE TEMPORARY TABLE row_copy AS SELECT * FROM " + quoted(table) + " " + WRITTEN
+                            + " WHERE " + where, params);
+                    named.update("DELETE " + WRITTEN + " FROM " + quoted(table) + " " + WRITTEN + " WHERE " + where, params);
+                    keyed.insert(List.of(new KeyedWrites.Insert("INSERT INTO " + quoted(table) + " SELECT * FROM row_copy",
+                            Map.of(), row)), false).run(named, false);
+                } else {
+                    String column = schema.getPrimaryKeys(table).getFirst();
+                    String set = WRITTEN + ".`" + column + "` = " + WRITTEN + ".`" + column + "`";
+                    keyed.update("UPDATE " + quoted(table) + " " + WRITTEN + " SET " + set + " WHERE " + where, where,
+                            params, Map.of()).run(named, false);
+                }
+                return true;
+            } catch (PermissionCheckFailedException refused) {
+                return false;
+            } finally {
+                jdbc.execute("DROP TEMPORARY TABLE IF EXISTS row_copy");
+                jdbc.execute("SET FOREIGN_KEY_CHECKS = 1");
+            }
+        }));
+    }
+
+    private static String quoted(String table) {
+        return "`" + table.replace(".", "`.`") + "`";
+    }
+
     static String keySql(String table, String alias) {
         return MEMBERS.equals(table)
                 ? "CONCAT(" + alias + ".`org_id`, ':', " + alias + ".`user_id`)"

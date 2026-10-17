@@ -120,6 +120,11 @@ class MysqlPermissionsIntegrationTest {
         return mysql.getDatabaseName() + "." + name;
     }
 
+    private static String hasAGate() {
+        return "{\"_exists\":{\"_table\":\"" + table("drafts") + "\",\"_where\":{\"_and\":[" + OWNED
+                + ",{\"title\":{\"_eq\":\"gate\"}}]}}}";
+    }
+
     private static String ownsABoard() {
         return "{\"_exists\":{\"_table\":\"" + table("boards") + "\",\"_where\":" + OWNED + "}}";
     }
@@ -139,6 +144,13 @@ class MysqlPermissionsIntegrationTest {
                 PermissionDocs.entry(table("tags"), ROLE, PermissionDocs.everything()),
                 PermissionDocs.entry(table("stamps"), ROLE, PermissionDocs.everything()),
                 PermissionDocs.entry(table("counters"), ROLE, PermissionDocs.everything()),
+                PermissionDocs.entry(table("drafts"), ROLE, PermissionDocs.selectAll(),
+                        PermissionDocs.insert(hasAGate(), "[\"title\"]", "{\"owner_id\":\"X-Excalibase-User-Id\"}"),
+                        PermissionDocs.update(OWNED, hasAGate(), "[\"title\"]", "{}")),
+                PermissionDocs.entry(table("ledger"), ROLE, PermissionDocs.selectAll(),
+                        PermissionDocs.insert("{\"_exists\":{\"_table\":\"" + table("counters") + "\",\"_where\":{}}}",
+                                "[\"title\"]", "{}")),
+                PermissionDocs.entry(table("profiles"), ROLE, PermissionDocs.everything()),
                 PermissionDocs.entry(table("boards"), ROLE, PermissionDocs.selectAll(),
                         PermissionDocs.update(ownsABoard(), "{}", "[\"name\"]", "{}"),
                         PermissionDocs.delete(ownsABoard())),
@@ -392,6 +404,39 @@ class MysqlPermissionsIntegrationTest {
         rest(BOB, patch("/" + PROJECT + "/api/v1/boards?id=eq.1"), "{\"name\":\"rest-renamed\"}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].name").value("rest-renamed"));
+    }
+
+    @Test
+    void aCheckReadingTheTableItWrites_isRefused_neverJudgedAfterTheWrite() throws Exception {
+        as(ALICE, "mutation { createTestDrafts(input: { title: \"gate\" }) { id } }")
+                .andExpect(jsonPath("$.errors[0].message", containsString("cannot be enforced on MySQL")));
+        rest(ALICE, post("/" + PROJECT + "/api/v1/drafts"), "{\"title\":\"gate\"}")
+                .andExpect(status().isBadRequest());
+        assertThat(database().queryForObject("SELECT count(*) FROM drafts", Integer.class)).isZero();
+
+        database().update("INSERT INTO drafts (id, owner_id, title) VALUES (1, ?, 'draft')", ALICE);
+        as(ALICE, "mutation { updateTestDrafts(where: { id: { eq: 1 } }, input: { title: \"gate\" }) { id } }")
+                .andExpect(jsonPath("$.errors[0].message", containsString("cannot be enforced on MySQL")));
+        assertThat(database().queryForObject("SELECT title FROM drafts WHERE id = 1", String.class)).isEqualTo("draft");
+    }
+
+    @Test
+    void aCheckReadingATableAnEarlierFieldWrites_isRefused() throws Exception {
+        as(ALICE, "mutation { createTestLedger(input: { title: \"alone\" }) { title } }")
+                .andExpect(jsonPath("$.data.createTestLedger.title").value("alone"));
+        as(ALICE, "mutation { a: createTestCounters(input: {}) { id } b: createTestLedger(input: { title: \"after\" }) { id } }")
+                .andExpect(jsonPath("$.errors[0].message", containsString("cannot be enforced on MySQL")));
+        assertThat(database().queryForObject("SELECT count(*) FROM ledger WHERE title = 'after'", Integer.class)).isZero();
+    }
+
+    @Test
+    void restUpsert_collidingOnAUniqueKeyItDidNotSend_isAConflict_neverAnOverwrite() throws Exception {
+        rest(ALICE, post("/" + PROJECT + "/api/v1/profiles").header("Prefer", "resolution=merge-duplicates"),
+                "{\"id\":999,\"org_id\":1,\"title\":\"pwned\"}")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("unique_violation"));
+        assertThat(database().queryForObject("SELECT title FROM profiles WHERE id = 1", String.class)).isEqualTo("bob");
+        assertThat(database().queryForObject("SELECT count(*) FROM profiles WHERE id = 999", Integer.class)).isZero();
     }
 
     private void insertNote(int id, String owner, String title, String noteStatus) {
