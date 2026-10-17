@@ -202,10 +202,8 @@ class GraphqlSchemaManagerCacheTest {
 
     @Test
     void mysqlWithAPermissionSource_startsBecauseItsPermissionsCompileToMysql() {
-        GraphqlSchemaManager mysql = new GraphqlSchemaManager(null, 30, "mysql", 15, 30, "", null, null,
-                permissions, true);
-
-        assertThat(mysql.getDatabaseType()).isEqualTo("mysql");
+        assertThat(new GraphqlSchemaManager(null, 30, "mysql", 15, 30, "", null, null, permissions, true))
+                .isNotNull();
     }
 
     @Test

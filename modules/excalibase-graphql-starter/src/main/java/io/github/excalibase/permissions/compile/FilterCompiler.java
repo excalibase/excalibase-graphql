@@ -39,7 +39,7 @@ public final class FilterCompiler {
      */
     public static SqlFragment compile(PermissionDialect dialect, BoolExp expression, String tableKey, String outerAlias,
                                       SchemaInfo schema, SessionBinding binding, ParamNamer namer) {
-        return compile(dialect, expression, tableKey, outerAlias, schema, binding, namer, Mode.READ);
+        return compile(new Request(dialect, schema, binding, namer), expression, tableKey, outerAlias, Mode.READ);
     }
 
     /**
@@ -49,27 +49,32 @@ public final class FilterCompiler {
     public static SqlFragment compileForWrite(PermissionDialect dialect, BoolExp expression, String tableKey,
                                               String outerAlias, SchemaInfo schema, SessionBinding binding,
                                               ParamNamer namer) {
-        return compile(dialect, expression, tableKey, outerAlias, schema, binding, namer, Mode.WRITE);
+        return compile(new Request(dialect, schema, binding, namer), expression, tableKey, outerAlias, Mode.WRITE);
     }
 
     /** Over an image row named {@code alias} rather than a table: its columns hold values, see {@link RowProbe}. */
     static SqlFragment compileOverImage(PermissionDialect dialect, BoolExp expression, String tableKey, String alias,
                                         SchemaInfo schema, SessionBinding binding, ParamNamer namer) {
-        return compile(dialect, expression, tableKey, alias, schema, binding, namer, Mode.IMAGE);
+        return compile(new Request(dialect, schema, binding, namer), expression, tableKey, alias, Mode.IMAGE);
     }
 
     private enum Mode { READ, WRITE, IMAGE }
 
-    private static SqlFragment compile(PermissionDialect dialect, BoolExp expression, String tableKey,
-                                       String outerAlias, SchemaInfo schema, SessionBinding binding, ParamNamer namer,
+    /** What every compilation of one request shares: its dialect, schema, session and parameter names. */
+    private record Request(PermissionDialect dialect, SchemaInfo schema, SessionBinding binding, ParamNamer namer) {
+    }
+
+    private static SqlFragment compile(Request request, BoolExp expression, String tableKey, String outerAlias,
                                        Mode mode) {
         Objects.requireNonNull(expression, "expression");
-        TableRef table = TableRef.resolve(dialect, schema, tableKey);
+        PermissionDialect dialect = request.dialect();
+        TableRef table = TableRef.resolve(dialect, request.schema(), tableKey);
         if (outerAlias == null || !dialect.sql().safeAlias(outerAlias)) {
             throw new IllegalArgumentException("Unsafe table alias");
         }
-        Walker walker = new Walker(dialect, Objects.requireNonNull(schema), Objects.requireNonNull(binding),
-                Objects.requireNonNull(namer), mode, table.key(), outerAlias);
+        Walker walker = new Walker(dialect, Objects.requireNonNull(request.schema()),
+                Objects.requireNonNull(request.binding()), Objects.requireNonNull(request.namer()), mode, table.key(),
+                outerAlias);
         String sql = walker.expression(expression, table, outerAlias);
         return new SqlFragment(sql, walker.params);
     }

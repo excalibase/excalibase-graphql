@@ -40,11 +40,9 @@ public final class ExpressionCheck {
             case Or or -> or.operands().forEach(operand -> walk(dialect, operand, tableKey, schema));
             case Not not -> walk(dialect, not.operand(), tableKey, schema);
             case ColumnCompare compare -> compare(dialect, compare, tableKey, schema);
-            case Relationship relationship -> {
-                RelationshipJoin join = RelationshipJoin.resolve(schema, tableKey, relationship.name());
-                check(dialect, relationship.where(), join.targetTable(), schema);
-            }
-            case Exists exists -> check(dialect, exists.where(), exists.table(), schema);
+            case Relationship(String name, BoolExp where) ->
+                    check(dialect, where, RelationshipJoin.resolve(schema, tableKey, name).targetTable(), schema);
+            case Exists(String table, BoolExp where) -> check(dialect, where, table, schema);
         }
     }
 

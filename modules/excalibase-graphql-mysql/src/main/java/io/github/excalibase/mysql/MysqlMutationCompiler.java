@@ -89,7 +89,8 @@ public class MysqlMutationCompiler implements MutationCompiler {
                     + rows.rowValues().get(row), params, rows.boundRows().get(row)));
         }
         KeyedWrites keyed = keyed(tableName, table, rows.alias(), rows.objectSql(), RlsOp.INSERT, params, shared);
-        return new MysqlWrite(fieldName, keyed.insert(inserts, many));
+        // A caller who may not read the table gets the affected_rows object, once, as on Postgres.
+        return new MysqlWrite(fieldName, keyed.insert(inserts, many && shared.returnsRows(tableName)));
     }
 
     private MysqlWrite compileUpdate(Field field, String fieldName, String tableName,
@@ -137,7 +138,8 @@ public class MysqlMutationCompiler implements MutationCompiler {
      */
     private static KeyedWrites keyed(String tableName, String table, String alias, String objectSql, RlsOp operation,
                                      Map<String, Object> params, MutationBuilder shared) {
-        KeyedWrites.ReadBack readBack = null;
+        KeyedWrites.ReadBack readBack = operation == RlsOp.INSERT && !shared.returnsRows(tableName)
+                ? KeyedWrites.ReadBack.aggregate(objectSql, params) : null;
         if (shared.returnsRows(tableName)) {
             List<String> readable = new ArrayList<>();
             shared.filterBuilder().appendRlsConditions(readable, tableName, alias, params, RlsOp.SELECT);

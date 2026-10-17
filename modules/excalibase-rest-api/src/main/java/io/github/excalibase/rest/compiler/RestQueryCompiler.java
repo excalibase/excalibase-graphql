@@ -384,8 +384,8 @@ public class RestQueryCompiler {
         if (setClauses.isEmpty()) throw new IllegalArgumentException("Update sets no column");
         StringBuilder where = buildWhere(filters, P_WHERE_FILTER, params, table);
         // Rows the caller may update, and read: the update filter carries the select filter.
-        appendRls(where, table, null, RlsOp.UPDATE, params);
-        String update = UPDATE + quotedTable + SET + String.join(COMMA_SEP, setClauses) + WHERE + where;
+        appendRls(where, table, writtenAlias(), RlsOp.UPDATE, params);
+        String update = UPDATE + quotedTable + aliasClause() + SET + String.join(COMMA_SEP, setClauses) + WHERE + where;
         if (keyedWrites()) {
             var keyed = keyed(table, quotedTable, List.of(RlsOp.UPDATE));
             return new CompiledResult(update, params, keyed.update(update, where.toString(), params, set));
@@ -401,14 +401,26 @@ public class RestQueryCompiler {
         Map<String, Object> params = new LinkedHashMap<>();
         StringBuilder where = buildWhere(filters, P_DELETE_FILTER, params, table);
         // Rows the caller may delete, and read: the delete filter carries the select filter.
-        appendRls(where, table, null, RlsOp.DELETE, params);
-        String delete = DELETE_FROM + quotedTable + WHERE + where;
+        appendRls(where, table, writtenAlias(), RlsOp.DELETE, params);
+        String delete = DELETE_FROM + quotedTable + aliasClause() + WHERE + where;
         if (keyedWrites()) {
             var keyed = keyed(table, quotedTable, List.of());
             return new CompiledResult(delete, params, keyed.delete(delete, where.toString(), params));
         }
         String cte = WITH + CTE_DEL + AS_OPEN + delete + RETURNING_ALL;
         return new CompiledResult(cte + SPACE + output(table, CTE_DEL, true, List.of(), params), params);
+    }
+
+    /**
+     * How an UPDATE or DELETE names its table: keyed writes also read it, locked, under {@link #ALIAS}, so
+     * their filter is written over that alias; otherwise over the bare table name.
+     */
+    private String writtenAlias() {
+        return keyedWrites() ? ALIAS : null;
+    }
+
+    private String aliasClause() {
+        return keyedWrites() ? SPACE + ALIAS : "";
     }
 
     /** No RETURNING: the write runs as statements whose rows are read back by key. */

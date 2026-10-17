@@ -1,5 +1,6 @@
 package io.github.excalibase.permissions.compile;
 
+import io.github.excalibase.permissions.BoolExp;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.permissions.compile.RowPredicate.Outcome;
 import io.github.excalibase.schema.SchemaInfo;
@@ -46,8 +47,10 @@ class MysqlPermissionSqlTest {
 
         assertThat(FilterCompiler.compile(MYSQL, parse(json), NOTES, "`ab12cd34`", SCHEMA, BINDING,
                 new ParamNamer("perm")).sql()).isEqualTo("`ab12cd34`.`id` = :perm_p0");
-        assertThatThrownBy(() -> FilterCompiler.compile(MYSQL, parse(json), NOTES, "\"ab12cd34\"", SCHEMA, BINDING,
-                new ParamNamer("perm"))).isInstanceOf(IllegalArgumentException.class);
+        BoolExp expression = parse(json);
+        ParamNamer namer = new ParamNamer("perm");
+        assertThatThrownBy(() -> FilterCompiler.compile(MYSQL, expression, NOTES, "\"ab12cd34\"", SCHEMA, BINDING,
+                namer)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

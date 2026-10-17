@@ -42,6 +42,7 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -114,10 +115,6 @@ class MysqlPermissionsIntegrationTest {
         registry.add("app.security.rls.policy-ttl-ms", () -> 0);
     }
 
-    /**
-     * Notes: a role reads its own rows that are not hidden, writes only rows that are not locked, and
-     * every row it inserts is its own. Tags and stamps: everything.
-     */
     /** Studio and the MySQL loader name a table {@code <database>.<table>}: the database is its schema. */
     private static String table(String name) {
         return mysql.getDatabaseName() + "." + name;
@@ -127,6 +124,10 @@ class MysqlPermissionsIntegrationTest {
         return "{\"_exists\":{\"_table\":\"" + table("boards") + "\",\"_where\":" + OWNED + "}}";
     }
 
+    /**
+     * Notes: a role reads its own rows that are not hidden, writes only rows that are not locked, and
+     * every row it inserts is its own. Boards: writable by whoever owns some board. Feedback: insert only.
+     */
     private static String permissions() {
         String readable = "{\"_and\":[" + OWNED + ",{\"status\":{\"_neq\":\"hidden\"}}]}";
         return PermissionDocs.document(PROJECT,
@@ -244,12 +245,13 @@ class MysqlPermissionsIntegrationTest {
     }
 
     @Test
-    void update_ofThePrimaryKey_isRefused() throws Exception {
+    void update_ofThePrimaryKey_isFollowedToTheRowItMovedTo() throws Exception {
         insertNote(65, ALICE, "keyed", "open");
 
-        as(ALICE, "mutation { updateTestNotes(where: { id: { eq: 65 } }, input: { id: 66 }) { id } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("primary key")));
-        assertThat(count("id = 65")).isOne();
+        as(ALICE, "mutation { updateTestNotes(where: { id: { eq: 65 } }, input: { id: 66 }) { id title } }")
+                .andExpect(jsonPath("$.data.updateTestNotes[0].id").value(66))
+                .andExpect(jsonPath("$.data.updateTestNotes[0].title").value("keyed"));
+        assertThat(count("id = 65")).isZero();
     }
 
     @Test
@@ -349,6 +351,18 @@ class MysqlPermissionsIntegrationTest {
         rest(ALICE, patch("/" + PROJECT + "/api/v1/notes?id=eq.80"), "{\"status\":\"locked\"}")
                 .andExpect(status().isForbidden());
         assertThat(count("id = 80 AND status = 'open'")).isOne();
+    }
+
+    @Test
+    void restDelete_removesOnlyTheCallersRows() throws Exception {
+        insertNote(90, ALICE, "rest-mine", "open");
+        insertNote(91, BOB, "rest-theirs", "open");
+
+        rest(ALICE, delete("/" + PROJECT + "/api/v1/notes?id=in.(90,91)"), "")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[*].title", contains("rest-mine")));
+        assertThat(count("id = 90")).isZero();
+        assertThat(count("id = 91")).isOne();
     }
 
     @Test

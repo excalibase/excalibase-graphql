@@ -18,7 +18,7 @@ import static java.util.Map.entry;
 /** Postgres: double-quoted identifiers, parameters cast to the column's type, a typed VALUES row for images. */
 final class PostgresSql implements DialectSql {
 
-    private static final Pattern ALIAS = Pattern.compile("^(?:[A-Za-z_][A-Za-z0-9_]{0,62}|\"[A-Za-z0-9_]{1,63}\")$");
+    private static final Pattern ALIAS = Pattern.compile("^(?:[A-Za-z_]\\w{0,62}|\"\\w{1,63}\")$");
 
     private static final Pattern CASTABLE = Pattern.compile("^[a-z_][a-z0-9_ ]{0,62}$");
 

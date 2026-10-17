@@ -251,8 +251,8 @@ SQL, and a differential suite checks every case against native Postgres RLS on i
 - MySQL cannot return the rows a write touches, so writes lock and key them first, then the permission's
   check runs on exactly the rows found again by those keys; a written row that cannot be found again
   (an `AUTO_INCREMENT` 0, a rounded key) rolls the write back. A write needs a primary key; an insert
-  must supply it or let `AUTO_INCREMENT` generate it; a GraphQL update of a primary key column is
-  refused; `onConflict` is refused.
+  must supply it or let `AUTO_INCREMENT` generate it; an update that changes it is followed to the new
+  key; `onConflict` is refused.
 - Permission keys name a table `<database>.<table>`, the database being its schema.
 
 ## Filtering Operators

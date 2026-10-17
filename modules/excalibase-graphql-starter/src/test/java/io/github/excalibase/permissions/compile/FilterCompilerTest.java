@@ -156,8 +156,9 @@ class FilterCompilerTest {
     @ParameterizedTest
     @ValueSource(strings = {"n; DROP", "\"a\"\"b\"", "1n", ""})
     void unsafeOuterAlias_isRefused(String alias) {
-        assertThatThrownBy(() -> FilterCompiler.compile(POSTGRES, BoolExp.TRUE, NOTES, alias, SCHEMA, BINDING,
-                new ParamNamer("perm"))).isInstanceOf(IllegalArgumentException.class);
+        ParamNamer namer = new ParamNamer("perm");
+        assertThatThrownBy(() -> FilterCompiler.compile(POSTGRES, BoolExp.TRUE, NOTES, alias, SCHEMA, BINDING, namer))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @ParameterizedTest

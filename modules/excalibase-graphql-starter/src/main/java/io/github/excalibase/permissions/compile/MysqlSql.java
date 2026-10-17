@@ -23,7 +23,7 @@ import static java.util.Map.entry;
  */
 final class MysqlSql implements DialectSql {
 
-    private static final Pattern ALIAS = Pattern.compile("^(?:[A-Za-z_][A-Za-z0-9_]{0,62}|`[A-Za-z0-9_]{1,63}`)$");
+    private static final Pattern ALIAS = Pattern.compile("^(?:[A-Za-z_]\\w{0,62}|`\\w{1,63}`)$");
 
     /** Character set and collation names are spliced into image rows, so only catalog-shaped ones are. */
     private static final Pattern CATALOG_NAME = Pattern.compile("^[a-z0-9_]{1,64}$");

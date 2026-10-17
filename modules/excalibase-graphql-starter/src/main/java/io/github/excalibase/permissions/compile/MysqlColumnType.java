@@ -37,24 +37,23 @@ record MysqlColumnType(String base, String size, boolean unsigned, List<String> 
         List<String> labels = new ArrayList<>();
         StringBuilder label = new StringBuilder();
         boolean quoted = false;
-        for (int i = 0; i < inside.length(); i++) {
+        int i = 0;
+        while (i < inside.length()) {
             char next = inside.charAt(i);
-            if (!quoted) {
-                if (next == '\'') {
-                    quoted = true;
-                    label.setLength(0);
-                }
-                continue;
-            }
-            if (next == '\'' && i + 1 < inside.length() && inside.charAt(i + 1) == '\'') {
+            boolean doubledQuote = quoted && next == '\'' && i + 1 < inside.length() && inside.charAt(i + 1) == '\'';
+            if (doubledQuote) {
                 label.append('\'');
-                i++;
             } else if (next == '\'') {
-                quoted = false;
-                labels.add(label.toString());
-            } else {
+                quoted = !quoted;
+                if (quoted) {
+                    label.setLength(0);
+                } else {
+                    labels.add(label.toString());
+                }
+            } else if (quoted) {
                 label.append(next);
             }
+            i += doubledQuote ? 2 : 1;
         }
         return List.copyOf(labels);
     }

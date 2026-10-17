@@ -14,11 +14,11 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.MySQLContainer;
 
-import java.sql.Connection;
 import java.sql.Date;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -187,23 +187,22 @@ final class MysqlDifferentialFixture {
     }
 
     /** The keys of the rows a DELETE guarded by {@code filter} removes; rolled back, foreign keys unchecked. */
-    TreeSet<String> rowsDeleted(String table, SqlFragment filter) throws SQLException {
-        try (Connection connection = dataSource.getConnection()) {
-            connection.setAutoCommit(false);
+    TreeSet<String> rowsDeleted(String table, SqlFragment filter) {
+        JdbcTemplate jdbc = new JdbcTemplate(dataSource);
+        return new TransactionTemplate(new DataSourceTransactionManager(dataSource)).execute(status -> {
+            status.setRollbackOnly();
+            jdbc.execute("SET FOREIGN_KEY_CHECKS = 0");
             try {
-                SingleConnectionDataSource single = new SingleConnectionDataSource(connection, true);
-                JdbcTemplate jdbc = new JdbcTemplate(single);
-                jdbc.execute("SET FOREIGN_KEY_CHECKS = 0");
                 String keys = "SELECT " + keySql(table, "t") + " FROM " + table + " t";
                 TreeSet<String> before = new TreeSet<>(jdbc.queryForList(keys, String.class));
-                new NamedParameterJdbcTemplate(single).update("DELETE FROM " + table + " t WHERE " + filter.sql(),
+                new NamedParameterJdbcTemplate(jdbc).update("DELETE FROM " + table + " t WHERE " + filter.sql(),
                         new MapSqlParameterSource(filter.params()));
                 before.removeAll(jdbc.queryForList(keys, String.class));
                 return before;
             } finally {
-                connection.rollback();
+                jdbc.execute("SET FOREIGN_KEY_CHECKS = 1");
             }
-        }
+        });
     }
 
     /** Every row of {@code table} as JDBC reads it, standing in for change images. */

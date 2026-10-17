@@ -33,7 +33,16 @@ public final class KeyedWrites {
     private static final int DUPLICATE_ENTRY = 1062;
 
     /** How a written row reads: its JSON object over {@code alias}, and the select filter it must pass. */
-    public record ReadBack(String objectSql, String readable, Map<String, Object> params) {}
+    public record ReadBack(String objectSql, String readable, Map<String, Object> params, boolean aggregate) {
+        public ReadBack(String objectSql, String readable, Map<String, Object> params) {
+            this(objectSql, readable, params, false);
+        }
+
+        /** One object aggregated over the written rows, e.g. {@code affected_rows} for a caller who cannot read them. */
+        public static ReadBack aggregate(String objectSql, Map<String, Object> params) {
+            return new ReadBack(objectSql, "", params, true);
+        }
+    }
 
     /** One insert statement and the values it writes, by column. */
     public record Insert(String sql, Map<String, Object> params, Map<String, Object> values) {}
@@ -90,11 +99,10 @@ public final class KeyedWrites {
     }
 
     /**
-     * An upsert of a row whose key is sent; {@code doNothing} keeps an existing row as it is and returns none.
-     * ON DUPLICATE KEY also fires on any other unique key, updating a row the caller never addressed; Postgres
-     * conflicts on the primary key only, so a collision on another unique key fails as a duplicate first.
-     */
-    /**
+     * An upsert of a row whose key is sent. ON DUPLICATE KEY also fires on any other unique key, updating a row
+     * the caller never addressed; Postgres conflicts on the primary key only, so a collision on another unique
+     * key fails as a duplicate first.
+     *
      * @param updatable null for DO NOTHING; else which existing rows the update may overwrite, its condition
      *                  empty when every row: an existing row outside it is kept as it is and returns none
      */
@@ -102,18 +110,20 @@ public final class KeyedWrites {
         KeyedWrite write = insert(List.of(insert), false, true);
         List<Object> key = keys.stream().map(insert.values()::get).toList();
         return (jdbc, represent) -> {
-            Map<String, Object> params = new LinkedHashMap<>();
-            boolean exists = !jdbc.queryForList(existsSql(key, params, null), params, Integer.class).isEmpty();
-            if (exists && updatable == null) return null;
-            if (exists && !updatable.sql().isEmpty()) {
-                Map<String, Object> filtered = new LinkedHashMap<>(updatable.params());
-                if (jdbc.queryForList(existsSql(key, filtered, updatable.sql()), filtered, Integer.class).isEmpty()) {
-                    return null;
-                }
-            }
+            if (keepsExisting(jdbc, key, updatable)) return null;
             if (updatable != null) requireNoOtherUniqueCollision(jdbc, insert.values());
             return write.run(jdbc, represent);
         };
+    }
+
+    /** True when the row keyed {@code key} exists and the upsert may not overwrite it. */
+    private boolean keepsExisting(NamedParameterJdbcTemplate jdbc, List<Object> key, Condition updatable) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        if (jdbc.queryForList(existsSql(key, params, null), params, Integer.class).isEmpty()) return false;
+        if (updatable == null) return true;
+        if (updatable.sql().isEmpty()) return false;
+        Map<String, Object> filtered = new LinkedHashMap<>(updatable.params());
+        return jdbc.queryForList(existsSql(key, filtered, updatable.sql()), filtered, Integer.class).isEmpty();
     }
 
     /** {@code where} selects the rows {@code dml} updates; {@code set} is what it writes, by column. */
@@ -211,11 +221,16 @@ public final class KeyedWrites {
         if (written.size() != count) throw new IllegalArgumentException(unreadable());
         if (written.isEmpty()) return;
         Map<String, Object> params = new LinkedHashMap<>(check.params());
-        String sql = SELECT + "COUNT(*), COALESCE(SUM((" + check.sql() + ") IS NOT TRUE), 0)" + FROM + quotedTable
-                + SPACE + alias + WHERE + keyPredicate(written, params);
-        long[] found = jdbc.queryForObject(sql, params, (rs, rowNum) -> new long[] {rs.getLong(1), rs.getLong(2)});
+        long[] found = jdbc.queryForObject(verifySql(written, params), params,
+                (rs, rowNum) -> new long[] {rs.getLong(1), rs.getLong(2)});
         if (found[0] != count) throw new IllegalArgumentException(unreadable());
         if (found[1] > 0) throw new PermissionCheckFailedException();
+    }
+
+    /** How many of the written rows exist, and how many of those fail the check. */
+    private String verifySql(List<List<Object>> written, Map<String, Object> params) {
+        return SELECT + "COUNT(*), COALESCE(SUM((" + check.sql() + ") IS NOT TRUE), 0)" + FROM + quotedTable
+                + SPACE + alias + WHERE + keyPredicate(written, params);
     }
 
     private String unreadable() {
@@ -246,6 +261,7 @@ public final class KeyedWrites {
     }
 
     private String read(NamedParameterJdbcTemplate jdbc, List<List<Object>> written, boolean many) {
+        if (readBack != null && readBack.aggregate()) return aggregate(jdbc, written);
         if (readBack == null || written.isEmpty()) return many ? "[]" : null;
         Map<String, Object> params = new LinkedHashMap<>(readBack.params());
         List<String> rows = jdbc.queryForList(readSql(written, params), params, String.class);
@@ -267,6 +283,16 @@ public final class KeyedWrites {
     private String lockedRowsSql(String where) {
         return SELECT + readBack.objectSql() + FROM + quotedTable + SPACE + alias + WHERE + parens(where) + readable()
                 + FOR_UPDATE;
+    }
+
+    private String aggregate(NamedParameterJdbcTemplate jdbc, List<List<Object>> written) {
+        Map<String, Object> params = new LinkedHashMap<>(readBack.params());
+        return jdbc.queryForObject(aggregateSql(written, params), params, String.class);
+    }
+
+    private String aggregateSql(List<List<Object>> written, Map<String, Object> params) {
+        String rows = written.isEmpty() ? "1 = 0" : keyPredicate(written, params);
+        return SELECT + readBack.objectSql() + FROM + quotedTable + SPACE + alias + WHERE + rows;
     }
 
     private String readSql(List<List<Object>> written, Map<String, Object> params) {

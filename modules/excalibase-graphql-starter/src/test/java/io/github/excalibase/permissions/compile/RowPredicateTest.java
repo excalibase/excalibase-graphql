@@ -1,5 +1,6 @@
 package io.github.excalibase.permissions.compile;
 
+import io.github.excalibase.permissions.BoolExp;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.permissions.compile.RowPredicate.Outcome;
 import io.github.excalibase.schema.SchemaInfo;
@@ -146,8 +147,8 @@ class RowPredicateTest {
 
     @Test
     void missingVariable_failsWhenThePredicateIsBuilt() {
-        assertThatThrownBy(() -> RowPredicate.compile(POSTGRES, parse("{\"publicOrgId\": {\"name\": {\"_eq\": \"X-Excalibase-Org\"}}}"),
-                NOTES, SCHEMA, BINDING))
+        BoolExp expression = parse("{\"publicOrgId\": {\"name\": {\"_eq\": \"X-Excalibase-Org\"}}}");
+        assertThatThrownBy(() -> RowPredicate.compile(POSTGRES, expression, NOTES, SCHEMA, BINDING))
                 .isInstanceOf(PermissionEvaluationException.class)
                 .extracting("code").isEqualTo("missing_session_variable");
     }
