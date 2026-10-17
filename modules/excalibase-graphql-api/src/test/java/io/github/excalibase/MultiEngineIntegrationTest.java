@@ -44,6 +44,7 @@ import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -300,11 +301,12 @@ class MultiEngineIntegrationTest {
 
   @Test
   @Order(20)
-  @DisplayName("permissions do not compile to MySQL yet, so a role other than service is refused, never served open")
-  void mysqlProjectRefusesRolesItCannotEnforce() throws Exception {
+  @DisplayName("a MySQL project serves a role under its permissions: a table it holds none on does not exist for it")
+  void mysqlProjectServesARoleOnlyWhatItsPermissionsGrant() throws Exception {
     graphql(MYSQL_PROJECT, Map.of("role", "user"), "{ shopGadget { id } }")
-        .andExpect(status().isServiceUnavailable())
-        .andExpect(jsonPath("$.errors[0].extensions.code", is("permissions_unavailable")));
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data").doesNotExist())
+        .andExpect(jsonPath("$.errors[0].message", containsString("shopGadget")));
   }
 
   @Test
