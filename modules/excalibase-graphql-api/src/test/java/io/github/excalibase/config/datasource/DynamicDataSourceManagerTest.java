@@ -162,4 +162,25 @@ class DynamicDataSourceManagerTest {
     assertEquals(List.of(CREDS, renewed), built);
     verify(vaultService, times(2)).fetchCredentials("duc-corp", "app-a");
   }
+
+  @Test
+  @DisplayName("a MySQL CA re-filed in vault reaches the next pool, which trusts the new CA")
+  void agedOutMysqlPoolTrustsRefiledCa() {
+    var original = new VaultCredentials("localhost", "3306", "app_db", "excalibase_app", "secret", null,
+        DatabaseEngine.MYSQL, "OLD-CA-PEM");
+    var refiled = new VaultCredentials("localhost", "3306", "app_db", "excalibase_app", "secret", null,
+        DatabaseEngine.MYSQL, "NEW-CA-PEM");
+    List<String> trustedCas = new CopyOnWriteArrayList<>();
+    var ageing = new DynamicDataSourceManager(vaultService, creds -> {
+      trustedCas.add(creds.serverCa());
+      return creds == original ? mockDataSource : mockDataSourceB;
+    }, Duration.ofMillis(50));
+    when(vaultService.fetchCredentials("duc-corp", "app-m")).thenReturn(original, refiled);
+
+    assertSame(mockDataSource, ageing.getDataSource("duc-corp", "app-m"));
+    await().atMost(Duration.ofSeconds(5))
+        .until(() -> ageing.getDataSource("duc-corp", "app-m") == mockDataSourceB);
+
+    assertEquals(List.of("OLD-CA-PEM", "NEW-CA-PEM"), trustedCas);
+  }
 }

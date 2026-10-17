@@ -8,6 +8,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -34,6 +36,11 @@ class TenantDataSourceFactoryTest {
 
   private static VaultCredentials vaultRecord(TenantTlsCredentials tls) {
     return new VaultCredentials("db.svc.cluster.local", "5432", "app", "excalibase_app", "pw", tls);
+  }
+
+  private static VaultCredentials mysqlRecord(String serverCa) {
+    return new VaultCredentials("db.svc.cluster.local", "3306", "app", "excalibase_app", "pw",
+        null, DatabaseEngine.MYSQL, serverCa);
   }
 
   @Test
@@ -71,7 +78,7 @@ class TenantDataSourceFactoryTest {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
 
     try (TenantTlsFiles files = TenantTlsFiles.write(root, tls)) {
-      Properties props = factory.hikariConfig(vaultRecord(tls), files).getDataSourceProperties();
+      Properties props = factory.postgresConfig(vaultRecord(tls), files).getDataSourceProperties();
 
       assertEquals("verify-full", props.getProperty("sslmode"));
       assertEquals(files.clientCertificate().toString(), props.getProperty("sslcert"));
@@ -85,7 +92,7 @@ class TenantDataSourceFactoryTest {
   void disableUsesPasswordOnly() {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.DISABLE, 2, root);
 
-    HikariConfig config = factory.hikariConfig(vaultRecord(null), null);
+    HikariConfig config = factory.postgresConfig(vaultRecord(null), null);
 
     assertEquals("disable", config.getDataSourceProperties().getProperty("sslmode"));
     assertFalse(config.getDataSourceProperties().containsKey("sslcert"));
@@ -93,31 +100,50 @@ class TenantDataSourceFactoryTest {
     assertEquals("jdbc:postgresql://db.svc.cluster.local:5432/app", config.getJdbcUrl());
   }
 
-  @Test
-  @DisplayName("a MySQL record connects through Connector/J over TLS, whatever the Postgres sslmode")
-  void mysqlRecordRequiresTls() {
-    TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.DISABLE, 2, root);
-    VaultCredentials mysql = new VaultCredentials("db.svc.cluster.local", "3306", "app", "excalibase_app", "pw",
-        null, DatabaseEngine.MYSQL);
+  @ParameterizedTest
+  @EnumSource(TenantDbSslMode.class)
+  @DisplayName("a MySQL pool verifies the server against the record's CA alone, whatever the Postgres sslmode")
+  void mysqlVerifiesServerAgainstRecordCa(TenantDbSslMode sslMode) {
+    TenantDataSourceFactory factory = new TenantDataSourceFactory(sslMode, 2, root);
 
-    HikariConfig config = factory.hikariConfig(mysql, null);
-    Properties props = config.getDataSourceProperties();
+    try (TenantTrustStore trustStore = TenantTrustStore.write(root, pki.caCertificate)) {
+      HikariConfig config = factory.mysqlConfig(mysqlRecord(pki.caCertificate), trustStore);
+      Properties props = config.getDataSourceProperties();
 
-    assertEquals("jdbc:mysql://db.svc.cluster.local:3306/app", config.getJdbcUrl());
-    assertEquals("REQUIRED", props.getProperty("sslMode"));
-    assertFalse(props.containsKey("sslmode"));
-    assertFalse(props.containsKey("sslcert"));
-    assertEquals("SET time_zone = '+00:00'", config.getConnectionInitSql());
+      assertEquals("jdbc:mysql://db.svc.cluster.local:3306/app", config.getJdbcUrl());
+      assertEquals("VERIFY_IDENTITY", props.getProperty("sslMode"));
+      assertEquals(trustStore.file().toUri().toString(), props.getProperty("trustCertificateKeyStoreUrl"));
+      assertEquals("PKCS12", props.getProperty("trustCertificateKeyStoreType"));
+      assertEquals(trustStore.password(), props.getProperty("trustCertificateKeyStorePassword"));
+      assertEquals("false", props.getProperty("fallbackToSystemTrustStore"));
+      assertFalse(props.containsKey("sslmode"));
+      assertFalse(props.containsKey("sslcert"));
+      assertEquals("pw", config.getPassword());
+      assertEquals("SET time_zone = '+00:00'", config.getConnectionInitSql());
+    }
+  }
+
+  @ParameterizedTest
+  @EnumSource(TenantDbSslMode.class)
+  @DisplayName("a MySQL record without a usable sslrootcert gets no pool, whatever the Postgres sslmode")
+  void mysqlRecordWithoutRootIsRefused(TenantDbSslMode sslMode) throws IOException {
+    TenantDataSourceFactory factory = new TenantDataSourceFactory(sslMode, 2, root);
+    String garbage = "-----BEGIN CERTIFICATE-----\nbm90IGEgY2VydA==\n-----END CERTIFICATE-----\n";
+
+    for (String unusable : new String[] {null, " ", "not pem", garbage}) {
+      VaultCredentials record = mysqlRecord(unusable);
+      TenantTlsException refused = assertThrows(TenantTlsException.class, () -> factory.apply(record));
+      assertTrue(refused.getMessage().contains("sslrootcert"), refused.getMessage());
+    }
+    assertEmpty(root);
   }
 
   @Test
   @DisplayName("verify-full asks a MySQL record for no client certificate: MySQL logins use passwords over TLS")
   void verifyFullMysqlRecordNeedsNoCertificate() {
     TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.VERIFY_FULL, 2, root);
-    VaultCredentials mysql = new VaultCredentials("db.svc.cluster.local", "3306", "app", "excalibase_app", "pw",
-        null, DatabaseEngine.MYSQL);
 
-    assertFalse(factory.needsCertificates(mysql));
+    assertFalse(factory.needsCertificates(mysqlRecord(pki.caCertificate)));
     assertTrue(factory.needsCertificates(vaultRecord(null)));
   }
 

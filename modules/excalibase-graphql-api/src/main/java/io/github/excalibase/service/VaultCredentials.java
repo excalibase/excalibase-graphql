@@ -2,10 +2,13 @@ package io.github.excalibase.service;
 
 import java.util.regex.Pattern;
 
-/** {@code tls} is null when the record carries no client certificate (tenants without TLS). */
+/**
+ * {@code tls} is a Postgres record's client certificate, null when it carries none. {@code serverCa} is a
+ * MySQL record's {@code sslrootcert}: the PEM CA(s) its server certificate must chain to, null when absent.
+ */
 public record VaultCredentials(String host, String port, String database,
                                String username, String password, TenantTlsCredentials tls,
-                               DatabaseEngine engine) {
+                               DatabaseEngine engine, String serverCa) {
 
   private static final Pattern HOST_PATTERN = Pattern.compile("^[a-zA-Z0-9._-]{1,253}$");
   private static final Pattern DB_PATTERN = Pattern.compile("^[a-zA-Z0-9_-]{1,63}$");
@@ -17,6 +20,11 @@ public record VaultCredentials(String host, String port, String database,
   public VaultCredentials(String host, String port, String database, String username, String password,
                           TenantTlsCredentials tls) {
     this(host, port, database, username, password, tls, DatabaseEngine.POSTGRES);
+  }
+
+  public VaultCredentials(String host, String port, String database, String username, String password,
+                          TenantTlsCredentials tls, DatabaseEngine engine) {
+    this(host, port, database, username, password, tls, engine, null);
   }
 
   public String jdbcUrl() {
@@ -42,6 +50,10 @@ public record VaultCredentials(String host, String port, String database,
   public String toString() {
     // NOSONAR: literal "password" is a redaction label, not a hard-coded secret
     return "VaultCredentials[engine=" + engine + ", host=" + host + ", port=" + port +
-        ", database=" + database + ", username=" + username + ", password=REDACTED, tls=" + (tls == null ? "none" : "REDACTED") + "]"; // NOSONAR
+        ", database=" + database + ", username=" + username + ", password=REDACTED, tls=" + redacted(tls) + ", serverCa=" + redacted(serverCa) + "]"; // NOSONAR
+  }
+
+  private static String redacted(Object material) {
+    return material == null ? "none" : "REDACTED";
   }
 }

@@ -89,6 +89,18 @@ class VaultCredentialsTest {
   }
 
   @Test
+  @DisplayName("toString never prints the MySQL server CA")
+  void toString_redactsServerCa() {
+    var creds = new VaultCredentials("host", "3306", "db", "user", "secret123", null, DatabaseEngine.MYSQL,
+        "CA-PEM");
+
+    String str = creds.toString();
+
+    assertFalse(str.contains("CA-PEM"));
+    assertTrue(str.contains("serverCa=REDACTED"), str);
+  }
+
+  @Test
   @DisplayName("missingFields names each blank certificate field")
   void missingFields_namesBlankFields() {
     assertEquals(List.of(), new TenantTlsCredentials("c", "k", "r").missingFields());

@@ -63,7 +63,11 @@ class VaultCredentialServiceTest {
     // The record provisioning files for a MySQL project (server-go mysqlCredentialRecord).
     serveRecord("mysql-app", """
         {"engine":"mysql","tls":"required","host":"mysql-app-primary.ns.svc.cluster.local","port":"3306",
-         "database":"app","username":"excalibase_app","password":"secret123"}
+         "database":"app","username":"excalibase_app","password":"secret123","sslrootcert":"CA-PEM"}
+        """);
+    serveRecord("mysql-no-ca", """
+        {"engine":"mysql","tls":"required","host":"h","port":"3306","database":"app",
+         "username":"excalibase_app","password":"p"}
         """);
     serveRecord("mysql-plain", """
         {"engine":"mysql","host":"h","port":"3306","database":"app","username":"excalibase_app","password":"p"}
@@ -154,7 +158,27 @@ class VaultCredentialServiceTest {
 
     assertEquals(DatabaseEngine.MYSQL, creds.engine());
     assertEquals("jdbc:mysql://mysql-app-primary.ns.svc.cluster.local:3306/app", creds.jdbcUrl());
+  }
+
+  @Test
+  @DisplayName("a MySQL record's sslrootcert is the server CA alone: no client certificate is modelled")
+  void fetchCredentials_mysqlRecord_readsServerCa() {
+    VaultCredentials creds = service.fetchCredentials("duc-corp", "mysql-app");
+
+    assertEquals("CA-PEM", creds.serverCa());
     assertNull(creds.tls());
+  }
+
+  @Test
+  @DisplayName("a MySQL record without sslrootcert parses with no CA, which the pool then refuses")
+  void fetchCredentials_mysqlRecordWithoutCa_hasNoServerCa() {
+    assertNull(service.fetchCredentials("duc-corp", "mysql-no-ca").serverCa());
+  }
+
+  @Test
+  @DisplayName("a Postgres record keeps its root certificate with its client certificate, not as a server CA")
+  void fetchCredentials_postgresRecord_hasNoSeparateServerCa() {
+    assertNull(service.fetchCredentials("duc-corp", "tls-app").serverCa());
   }
 
   @Test

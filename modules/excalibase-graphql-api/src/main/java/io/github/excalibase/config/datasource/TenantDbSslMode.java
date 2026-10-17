@@ -1,8 +1,9 @@
 package io.github.excalibase.config.datasource;
 
 /**
- * How the engine connects to tenant databases. {@code disable} exists only for the
- * docker all-in-one, whose tenants have no TLS; every other deployment verifies.
+ * How the engine connects to tenant Postgres databases. {@code disable} exists only for the
+ * docker all-in-one, whose tenants have no TLS; every other deployment verifies. MySQL tenants
+ * ignore it: they serve TLS everywhere and their pools always verify the server.
  */
 public enum TenantDbSslMode {
   VERIFY_FULL("verify-full"),
