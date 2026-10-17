@@ -1,6 +1,7 @@
 package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariConfig;
+import io.github.excalibase.service.DatabaseEngine;
 import io.github.excalibase.service.VaultCredentials;
 
 import java.io.IOException;
@@ -12,13 +13,16 @@ import java.util.function.Function;
 import javax.sql.DataSource;
 
 /**
- * Builds a tenant's connection pool from its vault record. Under verify-full the pool
+ * Builds a tenant's connection pool from its vault record. Under verify-full a Postgres pool
  * authenticates with the record's client certificate and checks the server against
- * the record's CA; a record without that material gets no pool at all.
+ * the record's CA; a record without that material gets no pool at all. A MySQL pool logs in
+ * with its password over TLS, as provisioning requires of every MySQL platform login (ADR 0041).
  */
 public final class TenantDataSourceFactory implements Function<VaultCredentials, DataSource>, AutoCloseable {
 
   private static final Runnable NOTHING_TO_RELEASE = () -> { };
+  // Sessions in UTC, so a timestamp written without an offset means the same instant on every pool.
+  private static final String MYSQL_SESSION_INIT = "SET time_zone = '+00:00'";
 
   private final TenantDbSslMode sslMode;
   private final int poolSize;
@@ -36,7 +40,7 @@ public final class TenantDataSourceFactory implements Function<VaultCredentials,
 
   @Override
   public DataSource apply(VaultCredentials creds) {
-    if (sslMode == TenantDbSslMode.DISABLE) {
+    if (!needsCertificates(creds)) {
       return new TenantDataSource(hikariConfig(creds, null), NOTHING_TO_RELEASE);
     }
     TenantTlsFiles files = TenantTlsFiles.write(root, creds.tls());
@@ -48,13 +52,22 @@ public final class TenantDataSourceFactory implements Function<VaultCredentials,
     }
   }
 
-  /** {@code files} is null under {@link TenantDbSslMode#DISABLE}. */
+  boolean needsCertificates(VaultCredentials creds) {
+    return sslMode != TenantDbSslMode.DISABLE && creds.engine() == DatabaseEngine.POSTGRES;
+  }
+
+  /** {@code files} is null when {@link #needsCertificates} is false. */
   HikariConfig hikariConfig(VaultCredentials creds, TenantTlsFiles files) {
     HikariConfig config = new HikariConfig();
     config.setJdbcUrl(creds.jdbcUrl());
     config.setUsername(creds.username());
     config.setPassword(creds.password());
-    config.addDataSourceProperty("sslmode", sslMode.jdbcValue());
+    if (creds.engine() == DatabaseEngine.MYSQL) {
+      config.addDataSourceProperty("sslMode", "REQUIRED");
+      config.setConnectionInitSql(MYSQL_SESSION_INIT);
+    } else {
+      config.addDataSourceProperty("sslmode", sslMode.jdbcValue());
+    }
     if (files != null) {
       config.addDataSourceProperty("sslcert", files.clientCertificate().toString());
       config.addDataSourceProperty("sslkey", files.privateKey().toString());

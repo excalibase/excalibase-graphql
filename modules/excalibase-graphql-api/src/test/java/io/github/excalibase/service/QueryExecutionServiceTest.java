@@ -2,6 +2,7 @@ package io.github.excalibase.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler.CompiledQuery;
+import io.github.excalibase.compiler.TwoPhaseWrite;
 import io.github.excalibase.spi.MutationExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -14,12 +15,19 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.Statement;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -66,26 +74,51 @@ class QueryExecutionServiceTest {
     }
 
     @Test
-    @DisplayName("executeTwoPhase delegates to MutationExecutor and wraps the result")
-    void executeTwoPhase_delegatesToMutationExecutor() throws Exception {
-        CompiledQuery compiled = selectQuery("");
-        MutationExecutor exec = (c, p, j) -> "{\"insertUser\":{\"id\":7}}";
+    @DisplayName("a two-phase write runs every statement on one connection and commits once")
+    void twoPhaseWrite_runsOnOneConnectionInOneTransaction() throws Exception {
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        Statement statement = mock(Statement.class);
+        when(connection.createStatement()).thenReturn(statement);
+        MutationExecutor exec = (c, p, jdbc) -> {
+            jdbc.getJdbcTemplate().execute("INSERT INTO users (name) VALUES ('a')");
+            jdbc.getJdbcTemplate().execute("SELECT 1");
+            return "{\"createUser\":{\"id\":7}}";
+        };
 
-        ResponseEntity<Object> response = service.executeTwoPhase(compiled, new MapSqlParameterSource(), exec);
+        ResponseEntity<Object> response = service.executeInContext(twoPhase(), new MapSqlParameterSource(), exec);
 
-        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> body = (Map<String, Object>) response.getBody();
-        assertThat(body).containsKey("data");
+        verify(dataSource, times(1)).getConnection();
+        verify(connection, times(2)).createStatement();
+        verify(connection).setAutoCommit(false);
+        verify(connection).commit();
+        verify(connection, never()).rollback();
+        assertThat(response.getBody()).isEqualTo(Map.of("data", new ObjectMapper().readTree("{\"createUser\":{\"id\":7}}")));
     }
 
     @Test
-    @DisplayName("executeTwoPhase returns empty data when executor returns null")
-    void executeTwoPhase_nullResult_returnsEmptyDataMap() throws Exception {
-        MutationExecutor exec = (c, p, j) -> null;
+    @DisplayName("a two-phase write that fails rolls back everything it wrote")
+    void twoPhaseWrite_failure_rollsBack() throws Exception {
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        MutationExecutor exec = (c, p, jdbc) -> {
+            throw new IllegalArgumentException("duplicate key");
+        };
 
-        ResponseEntity<Object> response = service.executeTwoPhase(selectQuery(""), new MapSqlParameterSource(), exec);
+        CompiledQuery write = twoPhase();
+        MapSqlParameterSource params = new MapSqlParameterSource();
 
-        assertThat(response.getBody()).isEqualTo(Map.of("data", Map.of()));
+        assertThatThrownBy(() -> service.executeInContext(write, params, exec))
+                .isInstanceOf(IllegalArgumentException.class);
+
+        verify(connection).rollback();
+        verify(connection, never()).commit();
+        verify(connection).setAutoCommit(true);
+    }
+
+    private static CompiledQuery twoPhase() {
+        return CompiledQuery.twoPhase(new TwoPhaseWrite() { }, Map.of());
     }
 }

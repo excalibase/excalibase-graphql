@@ -73,6 +73,16 @@ public interface SqlDialect {
     /** Suffix cast for type compatibility. PG: bigint->::text, json->#>>'{}'  */
     String suffixCast(String dataType);
 
+    /** A column as the response renders it; {@code dataType} is the reflected type, or null when unknown. */
+    default String selectColumn(String colRef, String dataType) {
+        return dataType == null ? colRef : colRef + suffixCast(dataType);
+    }
+
+    /** A request value bound to a column of {@code columnType}, in the form the database accepts. */
+    default Object bindValue(String columnType, Object value) {
+        return value;
+    }
+
     /** ON CONFLICT clause for upsert. PG: ON CONFLICT (cols) DO UPDATE SET ... */
     String onConflict(List<String> conflictCols, List<String> updateSetClauses);
 

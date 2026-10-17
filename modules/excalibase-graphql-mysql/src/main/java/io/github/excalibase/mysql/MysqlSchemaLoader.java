@@ -15,6 +15,8 @@ public class MysqlSchemaLoader implements SchemaLoader {
     private static final String COL_TABLE_NAME = "table_name";
     private static final String COL_COLUMN_NAME = "column_name";
     private static final String COL_TABLE_SCHEMA = "table_schema";
+    private static final String COL_DATA_TYPE = "data_type";
+    private static final String COL_COLUMN_TYPE = "column_type";
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -37,7 +39,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
         return """
             WITH
               cols AS (
-                SELECT 'column' as kind, table_schema, table_name, column_name, data_type,
+                SELECT 'column' as kind, table_schema, table_name, column_name, data_type, column_type,
                        NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column
                 FROM information_schema.columns
                 WHERE table_schema IN """ + inClause + """
@@ -72,7 +74,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
                 """ + FULL_TEXT_COLUMNS + inClause + FULL_TEXT_GROUPING + """
               )
             SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
-                   'column_name', column_name, 'data_type', data_type,
+                   'column_name', column_name, 'data_type', data_type, 'column_type', column_type,
                    'constraint_name', constraint_name, 'from_column', from_column,
                    'to_table', to_table, 'to_column', to_column) as row_json
             FROM cols
@@ -140,26 +142,23 @@ public class MysqlSchemaLoader implements SchemaLoader {
 
     private void handleColumnRow(JsonNode node, String schema, SchemaInfo info) {
         String table = node.get(COL_TABLE_NAME).asText();
-        String type = node.get("data_type").asText();
-        if ("enum".equalsIgnoreCase(type)) type = "varchar";
-        info.addColumn(table, node.get(COL_COLUMN_NAME).asText(), type);
+        JsonNode columnType = node.get(COL_COLUMN_TYPE);
+        MysqlColumnTypes.register(info, table, node.get(COL_COLUMN_NAME).asText(), node.get(COL_DATA_TYPE).asText(),
+                columnType == null || columnType.isNull() ? null : columnType.asText());
         info.setTableSchema(table, schema);
     }
 
     @Override
     public void loadColumns(JdbcTemplate jdbc, String schema, SchemaInfo info) {
         jdbc.query("""
-            SELECT table_name, column_name, data_type
+            SELECT table_name, column_name, data_type, column_type
             FROM information_schema.columns
             WHERE table_schema = ?
             ORDER BY table_name, ordinal_position
             """, rs -> {
             String table = rs.getString(COL_TABLE_NAME);
-            String col = rs.getString(COL_COLUMN_NAME);
-            String type = rs.getString("data_type");
-            // MySQL ENUM is a column constraint, not a separate type system — treat as varchar
-            if ("enum".equalsIgnoreCase(type)) type = "varchar";
-            info.addColumn(table, col, type);
+            MysqlColumnTypes.register(info, table, rs.getString(COL_COLUMN_NAME), rs.getString(COL_DATA_TYPE),
+                    rs.getString(COL_COLUMN_TYPE));
             info.setTableSchema(table, schema);
         }, schema);
         jdbc.query(FULL_TEXT_COLUMNS + "(?)" + FULL_TEXT_GROUPING, (RowCallbackHandler) rs ->
@@ -194,7 +193,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
 
     @Override
     public void loadEnums(JdbcTemplate jdbc, String schema, SchemaInfo info) {
-        // MySQL enums are loaded inline during loadColumns (from column_type)
+        // MySQL ENUMs belong to their column: MysqlColumnTypes registers them with the column.
     }
 
     @Override

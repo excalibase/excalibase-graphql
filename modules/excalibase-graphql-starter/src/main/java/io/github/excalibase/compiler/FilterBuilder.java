@@ -333,7 +333,8 @@ public class FilterBuilder {
     /** {@code value} bound as the column's type holds it, e.g. a bigint sent as the string reads return. */
     private Object typedValue(String tableName, String col, Object value) {
         if (schemaInfo == null || tableName == null) return value;
-        return NumericInput.coerce(schemaInfo.getColumnType(tableName, col), value);
+        String type = schemaInfo.getColumnType(tableName, col);
+        return dialect.bindValue(type, NumericInput.coerce(type, value));
     }
 
     /** Refuses a value the column's type cannot hold, naming the column, before the query runs. */

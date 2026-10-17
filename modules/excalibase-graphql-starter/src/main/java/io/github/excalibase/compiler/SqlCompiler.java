@@ -369,23 +369,24 @@ public class SqlCompiler {
         return false;
     }
 
-    /** @param sequence set instead of {@code sql} when the mutation runs as ordered statements */
-    public record CompiledQuery(String sql, Map<String, Object> params, String dmlSql, String lastInsertIdParam,
+    /**
+     * @param sequence set instead of {@code sql} when the mutation runs as ordered statements
+     * @param write    set instead of {@code sql} when the database writes and then reads the rows back
+     */
+    public record CompiledQuery(String sql, Map<String, Object> params, TwoPhaseWrite write,
                                 MutationSequence sequence) {
         public CompiledQuery(String sql, Map<String, Object> params) {
-            this(sql, params, null, null, null);
-        }
-        public CompiledQuery(String sql, Map<String, Object> params, String dmlSql, String lastInsertIdParam) {
-            this(sql, params, dmlSql, lastInsertIdParam, null);
+            this(sql, params, null, null);
         }
         public static CompiledQuery sequenced(MutationSequence sequence, Map<String, Object> params) {
-            return new CompiledQuery(null, params, null, null, sequence);
+            return new CompiledQuery(null, params, null, sequence);
+        }
+        public static CompiledQuery twoPhase(TwoPhaseWrite write, Map<String, Object> params) {
+            return new CompiledQuery(null, params, write, null);
         }
         /** True when the mutation runs as ordered statements in one transaction (a nested insert). */
         public boolean isSequenced() { return sequence != null; }
-        /** True when this is a MySQL two-phase mutation (DML separate from SELECT) */
-        public boolean isTwoPhase() { return dmlSql != null; }
-        /** True when DELETE needs SELECT-before-DML ordering */
-        public boolean isDeleteBeforeSelect() { return MutationBuilder.MUTATION_DELETE.equals(lastInsertIdParam); }
+        /** True when the write has no RETURNING: its executor writes, then reads the written rows back. */
+        public boolean isTwoPhase() { return write != null; }
     }
 }

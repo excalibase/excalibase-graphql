@@ -100,7 +100,6 @@ public final class SqlKeywords {
     public static final String P_UC_SET = "uc_set_";
     public static final String P_UC_AT_MOST = "uc_atmost_";
     public static final String P_DC_AT_MOST = "dc_atmost_";
-    public static final String P_LAST_ID = "last_id_";
     public static final String P_AFTER = "p_after_";
     public static final String P_BEFORE = "p_before_";
     public static final String P_LIMIT = "limit_";

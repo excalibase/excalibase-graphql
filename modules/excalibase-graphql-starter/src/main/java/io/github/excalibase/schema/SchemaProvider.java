@@ -28,8 +28,6 @@ public interface SchemaProvider {
         return ExposedFunctions.NONE;
     }
 
-    String getDatabaseType();
-
     /**
      * The schema a request without {@code Accept-Profile} addresses: the default
      * schema of the database serving the caller's project, never of another one.

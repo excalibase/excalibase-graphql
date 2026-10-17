@@ -170,11 +170,10 @@ describe('Basic queries', () => {
     data.hanaCustomer.forEach(r => expect(['MARY', 'PATRICIA']).toContain(r.first_name));
   });
 
-  test('active column is Int (0/1), not Boolean (tinyInt1isBit=false)', async () => {
+  test('active column (tinyint(1)) is a Boolean', async () => {
     const data = await client.request(gql`{ hanaCustomer(limit: 3) { customer_id active } }`);
     data.hanaCustomer.forEach(r => {
-      expect(typeof r.active).toBe('number');
-      expect([0, 1]).toContain(r.active);
+      expect(typeof r.active).toBe('boolean');
     });
   });
 });
@@ -262,7 +261,7 @@ describe('Mutations — CRUD', () => {
   test('create customer', async () => {
     const data = await client.request(gql`
       mutation {
-        createHanaCustomer(input: { first_name: "E2E", last_name: "Test", email: "e2e@test.com", active: 1 }) {
+        createHanaCustomer(input: { first_name: "E2E", last_name: "Test", email: "e2e@test.com", active: true }) {
           customer_id first_name last_name email
         }
       }
@@ -493,7 +492,7 @@ describe('Views (read-only)', () => {
   });
 
   test('active_customers excludes inactive rows', async () => {
-    const data = await client.request(gql`{ hanaCustomer(where: { active: { eq: 0 } }) { customer_id active } }`);
+    const data = await client.request(gql`{ hanaCustomer(where: { active: { eq: false } }) { customer_id active } }`);
     expect(data.hanaCustomer.length).toBeGreaterThanOrEqual(2);
   });
 

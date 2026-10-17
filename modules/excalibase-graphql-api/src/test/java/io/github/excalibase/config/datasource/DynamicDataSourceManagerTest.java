@@ -1,5 +1,6 @@
 package io.github.excalibase.config.datasource;
 
+import io.github.excalibase.service.DatabaseEngine;
 import io.github.excalibase.service.VaultCredentialService;
 import io.github.excalibase.service.VaultCredentials;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +52,21 @@ class DynamicDataSourceManagerTest {
 
     assertNotNull(ds);
     verify(vaultService, times(1)).fetchCredentials("duc-corp", "app-a");
+  }
+
+  @Test
+  @DisplayName("a project's database carries the engine its vault record names")
+  void getDatabase_carriesTheRecordEngine() {
+    when(vaultService.fetchCredentials("duc-corp", "app-m")).thenReturn(new VaultCredentials(
+        "localhost", "3306", "app_db", "excalibase_app", "secret", null, DatabaseEngine.MYSQL));
+    when(vaultService.fetchCredentials("duc-corp", "app-a")).thenReturn(CREDS);
+
+    TenantDatabase mysql = manager.getDatabase("duc-corp", "app-m");
+    TenantDatabase postgres = manager.getDatabase("duc-corp", "app-a");
+
+    assertEquals(DatabaseEngine.MYSQL, mysql.engine());
+    assertSame(mockDataSource, mysql.dataSource());
+    assertEquals(DatabaseEngine.POSTGRES, postgres.engine());
   }
 
   @Test

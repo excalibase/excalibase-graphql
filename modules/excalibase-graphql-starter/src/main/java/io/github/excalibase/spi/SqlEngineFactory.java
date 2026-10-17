@@ -17,12 +17,10 @@ public final class SqlEngineFactory {
                 + ". Ensure the dialect module is on the classpath.");
     }
 
-    public static MutationExecutor createMutationExecutor(String databaseType,
-                                                          org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
-                                                          org.springframework.transaction.support.TransactionTemplate txTemplate) {
+    public static MutationExecutor createMutationExecutor(String databaseType) {
         for (SqlEngineProvider provider : ServiceLoader.load(SqlEngineProvider.class)) {
             if (provider.supportedTypes().stream().anyMatch(t -> t.equalsIgnoreCase(databaseType))) {
-                return provider.createMutationExecutor(jdbcTemplate, txTemplate);
+                return provider.createMutationExecutor();
             }
         }
         throw new IllegalArgumentException("Unsupported database type: " + databaseType);

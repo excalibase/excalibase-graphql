@@ -1,4 +1,4 @@
-package io.github.excalibase.rest.compiler;
+package io.github.excalibase.compiler;
 
 import io.github.excalibase.SqlDialect;
 import org.springframework.dao.DuplicateKeyException;
@@ -17,11 +17,11 @@ import java.util.Map;
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
 /**
- * Writes on a database without RETURNING (MySQL). The written rows are read back by primary key: the key
+ * Writes on a database without RETURNING (MySQL), for REST and GraphQL alike. The written rows are read back by primary key: the key
  * sent or generated for an insert, the keys an update matched (locked before it runs, then followed if it
  * changes them), and a delete's rows are read, locked, before they go.
  */
-final class KeyedWrites {
+public final class KeyedWrites {
 
     private static final String KEY_PARAM = "rk_";
     private static final String FOR_UPDATE = " FOR UPDATE";
@@ -31,10 +31,10 @@ final class KeyedWrites {
     private static final int DUPLICATE_ENTRY = 1062;
 
     /** How a written row reads: its JSON object over {@code alias}, and the select filter it must pass. */
-    record ReadBack(String objectSql, String readable, Map<String, Object> params) {}
+    public record ReadBack(String objectSql, String readable, Map<String, Object> params) {}
 
     /** One insert statement and the values it writes, by column. */
-    record Insert(String sql, Map<String, Object> params, Map<String, Object> values) {}
+    public record Insert(String sql, Map<String, Object> params, Map<String, Object> values) {}
 
     private final SqlDialect dialect;
     private final String table;
@@ -44,7 +44,7 @@ final class KeyedWrites {
     private final ReadBack readBack;
 
     /** @param readBack null when the caller may not read the table: rows are written, none is represented */
-    KeyedWrites(SqlDialect dialect, String table, String quotedTable, String alias, List<String> keys,
+    public KeyedWrites(SqlDialect dialect, String table, String quotedTable, String alias, List<String> keys,
                 ReadBack readBack) {
         this.dialect = dialect;
         this.table = table;
@@ -54,7 +54,7 @@ final class KeyedWrites {
         this.readBack = readBack;
     }
 
-    KeyedWrite insert(List<Insert> inserts, boolean many) {
+    public KeyedWrite insert(List<Insert> inserts, boolean many) {
         return (jdbc, represent) -> {
             if (represent) requireKeys();
             List<List<Object>> written = new ArrayList<>();
@@ -72,7 +72,7 @@ final class KeyedWrites {
      * ON DUPLICATE KEY also fires on any other unique key, updating a row the caller never addressed; Postgres
      * conflicts on the primary key only, so a collision on another unique key fails as a duplicate first.
      */
-    KeyedWrite upsert(Insert insert, boolean doNothing) {
+    public KeyedWrite upsert(Insert insert, boolean doNothing) {
         KeyedWrite write = insert(List.of(insert), false);
         if (!doNothing) {
             return (jdbc, represent) -> {
@@ -89,7 +89,7 @@ final class KeyedWrites {
     }
 
     /** {@code where} selects the rows {@code dml} updates; {@code set} is what it writes, by column. */
-    KeyedWrite update(String dml, String where, Map<String, Object> params, Map<String, Object> set) {
+    public KeyedWrite update(String dml, String where, Map<String, Object> params, Map<String, Object> set) {
         return (jdbc, represent) -> {
             if (!represent) {
                 jdbc.update(dml, params);
@@ -114,7 +114,7 @@ final class KeyedWrites {
     }
 
     /** {@code where} selects the rows {@code dml} deletes; they are read, locked, before it runs. */
-    KeyedWrite delete(String dml, String where, Map<String, Object> params) {
+    public KeyedWrite delete(String dml, String where, Map<String, Object> params) {
         return (jdbc, represent) -> {
             String rows = null;
             if (represent) {
@@ -213,8 +213,8 @@ final class KeyedWrites {
     }
 
     private String lockedKeysSql(String where) {
-        return SELECT + joinCols(keys.stream().map(dialect::quoteIdentifier).toList()) + FROM + quotedTable
-                + WHERE + where + FOR_UPDATE;
+        return SELECT + joinCols(keys.stream().map(this::column).toList()) + FROM + quotedTable + SPACE + alias
+                + WHERE + parens(where) + FOR_UPDATE;
     }
 
     private String lockedRowsSql(String where) {

@@ -17,6 +17,21 @@ class VaultCredentialsTest {
   }
 
   @Test
+  @DisplayName("a MySQL record builds a Connector/J URL with nothing but host, port and database")
+  void jdbcUrl_mysql_buildsConnectorJUrl() {
+    var creds = new VaultCredentials("db.svc.local", "3306", "mydb", "user", "pass", null, DatabaseEngine.MYSQL);
+    assertEquals("jdbc:mysql://db.svc.local:3306/mydb", creds.jdbcUrl());
+  }
+
+  @Test
+  @DisplayName("a MySQL record is validated like a Postgres one")
+  void jdbcUrl_mysqlHostWithQueryString_throws() {
+    var creds = new VaultCredentials("evil?allowLoadLocalInfile=true", "3306", "db", "u", "p", null,
+        DatabaseEngine.MYSQL);
+    assertThrows(IllegalArgumentException.class, creds::jdbcUrl);
+  }
+
+  @Test
   @DisplayName("jdbcUrl rejects host with query string injection")
   void jdbcUrl_hostWithQueryString_throws() {
     var creds = new VaultCredentials("evil.host?socketFactory=bad", "5432", "db", "u", "p");

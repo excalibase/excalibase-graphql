@@ -628,7 +628,7 @@ public class QueryBuilder {
 
         // Scalar column
         String colRef = alias + "." + dialect.quoteIdentifier(name);
-        colRef += applySuffixCast(schemaInfo.getColumnType(tableName, name));
+        colRef = dialect.selectColumn(colRef, schemaInfo.getColumnType(tableName, name));
         // Enum columns: uppercase for GraphQL convention
         String enumType = schemaInfo.getEnumType(tableName, name);
         if (enumType != null && schemaInfo.getEnumTypes().containsKey(enumType)) {
@@ -792,10 +792,5 @@ public class QueryBuilder {
 
     private String reverseDir(String dir) {
         return ASC.equalsIgnoreCase(dir) ? DESC : ASC;
-    }
-
-    private String applySuffixCast(String type) {
-        if (type == null) return "";
-        return dialect.suffixCast(type);
     }
 }

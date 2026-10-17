@@ -1,4 +1,4 @@
-package io.github.excalibase.rest.compiler;
+package io.github.excalibase.compiler;
 
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 

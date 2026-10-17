@@ -4,8 +4,6 @@ import io.github.excalibase.*;
 import io.github.excalibase.spi.MutationCompiler;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.spi.SchemaLoader;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.support.TransactionTemplate;
 import java.util.List;
 
 public class MysqlEngineProvider implements SqlEngineProvider {
@@ -30,7 +28,7 @@ public class MysqlEngineProvider implements SqlEngineProvider {
     }
 
     @Override
-    public MutationExecutor createMutationExecutor(JdbcTemplate jdbcTemplate, TransactionTemplate txTemplate) {
-        return new MysqlMutationExecutor(jdbcTemplate, txTemplate);
+    public MutationExecutor createMutationExecutor() {
+        return new MysqlMutationExecutor();
     }
 }

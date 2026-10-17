@@ -20,7 +20,7 @@ public final class StubbedSchemaManager extends GraphqlSchemaManager {
     private final ProbeRunner probes;
 
     private StubbedSchemaManager(SchemaInfo schema, PermissionProvider permissions, ProbeRunner probes) {
-        super(null, null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, null, permissions, true);
+        super(null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, null, permissions, true);
         this.schema = schema;
         this.probes = probes;
     }
@@ -54,7 +54,7 @@ public final class StubbedSchemaManager extends GraphqlSchemaManager {
 
     @Override
     Reflection reflect(String orgSlug, String projectId) {
-        return new Reflection(schema, "public", SqlEngineFactory.create("postgres"), null, probes);
+        return new Reflection(schema, "public", "postgres", SqlEngineFactory.create("postgres"), null, probes);
     }
 
     private static PermissionSet parse(String document) {
