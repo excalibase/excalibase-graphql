@@ -286,15 +286,11 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         return state;
     }
 
-    /**
-     * Permission filters compile to Postgres SQL only (ADR 0041 decision 3), so on a MySQL project every role
-     * but service, which no filter applies to, is refused rather than served unfiltered.
-     */
     /** The SQL this project's permissions compile to; a database the compiler does not speak serves no role. */
     private PermissionDialect permissionDialect(Reflection reflection, String projectId, String role) {
         try {
             return reflection.engine().dialect().permissionDialect();
-        } catch (UnsupportedOperationException e) {
+        } catch (UnsupportedOperationException _) {
             log.warn("permissions_not_enforceable project={} role={} engine={}", projectId, role,
                     reflection.databaseType());
             throw new PermissionsUnavailableException("Permissions cannot be enforced on a "

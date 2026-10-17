@@ -234,7 +234,6 @@ final class MysqlDifferentialFixture {
         return plan.changes(table, PermissionExpressionDifferentialTest.VARIABLES).orElseThrow();
     }
 
-    /** {@code SELECT} list naming a row the way the Postgres fixture does ({@code 1}, {@code 1:<uuid>}). */
     /** The guard of a role whose insert and update checks on {@code table} are {@code expression}, and nothing else. */
     RequestGuard writeGuard(String table, BoolExp expression) {
         TablePermissions permissions = new TablePermissions(table, ROLE,
@@ -287,7 +286,7 @@ final class MysqlDifferentialFixture {
                             params, Map.of()).run(named, false);
                 }
                 return true;
-            } catch (PermissionCheckFailedException refused) {
+            } catch (PermissionCheckFailedException _) {
                 return false;
             } finally {
                 jdbc.execute("DROP TEMPORARY TABLE IF EXISTS row_copy");
@@ -300,6 +299,7 @@ final class MysqlDifferentialFixture {
         return "`" + table.replace(".", "`.`") + "`";
     }
 
+    /** {@code SELECT} list naming a row the way the Postgres fixture does ({@code 1}, {@code 1:<uuid>}). */
     static String keySql(String table, String alias) {
         return MEMBERS.equals(table)
                 ? "CONCAT(" + alias + ".`org_id`, ':', " + alias + ".`user_id`)"

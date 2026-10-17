@@ -11,6 +11,7 @@ import io.github.excalibase.permissions.BoolExp.True;
 import io.github.excalibase.schema.SchemaInfo;
 
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -31,11 +32,12 @@ public final class TablesRead {
 
     private static void walk(BoolExp expression, String tableKey, SchemaInfo schema, Set<String> tables) {
         switch (expression) {
-            case True ignored -> { }
-            case ColumnCompare ignored -> { }
-            case And and -> and.operands().forEach(operand -> walk(operand, tableKey, schema, tables));
-            case Or or -> or.operands().forEach(operand -> walk(operand, tableKey, schema, tables));
-            case Not not -> walk(not.operand(), tableKey, schema, tables);
+            case True _, ColumnCompare _ -> {
+                // The row's own columns: no table read.
+            }
+            case And(List<BoolExp> operands) -> operands.forEach(operand -> walk(operand, tableKey, schema, tables));
+            case Or(List<BoolExp> operands) -> operands.forEach(operand -> walk(operand, tableKey, schema, tables));
+            case Not(BoolExp operand) -> walk(operand, tableKey, schema, tables);
             case Relationship(String name, BoolExp where) -> {
                 String target = RelationshipJoin.resolve(schema, tableKey, name).targetTable();
                 tables.add(target);

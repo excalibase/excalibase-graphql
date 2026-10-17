@@ -18,11 +18,11 @@ public class MysqlMutationExecutor implements MutationExecutor {
     @Override
     public String execute(SqlCompiler.CompiledQuery compiled, MapSqlParameterSource params,
                           NamedParameterJdbcTemplate namedJdbc) {
-        if (!(compiled.write() instanceof TwoPhaseWrites fields)) {
+        if (!(compiled.write() instanceof TwoPhaseWrites(List<TwoPhaseWrites.Entry> entries))) {
             throw new IllegalStateException("Not a MySQL write: " + compiled.write());
         }
         List<String> answers = new ArrayList<>();
-        for (TwoPhaseWrites.Entry field : fields.entries()) {
+        for (TwoPhaseWrites.Entry field : entries) {
             if (!(field.write() instanceof MysqlWrite mutation)) {
                 throw new IllegalStateException("Not a MySQL write: " + field.write());
             }

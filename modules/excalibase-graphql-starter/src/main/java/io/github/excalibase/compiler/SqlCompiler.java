@@ -134,9 +134,7 @@ public class SqlCompiler {
         List<String> unresolvedFields = new ArrayList<>();
         for (Selection<?> sel : op.getSelectionSet().getSelections()) {
             if (sel instanceof Field field) {
-                CompiledQuery earlyExit = processMutationSelection(field, params, variables, mutFragments,
-                        unresolvedFields);
-                if (earlyExit != null) return earlyExit;
+                processMutationSelection(field, params, variables, mutFragments, unresolvedFields);
             }
         }
         requireKnown(unresolvedFields);
@@ -207,14 +205,9 @@ public class SqlCompiler {
         rootResults.add("'" + responseKey + "', (" + sql + ")");
     }
 
-    /**
-     * Process a single mutation selection — either appending to {@code mutFragments}
-     * or returning a {@link CompiledQuery} if an early exit is needed. Returns {@code null} to keep processing.
-     */
-    private CompiledQuery processMutationSelection(Field field, Map<String, Object> params,
-                                                   Map<String, Object> variables,
-                                                   List<MutationFragment> mutFragments,
-                                                   List<String> unresolvedFields) {
+    /** Appends one mutation selection to {@code mutFragments}, or its name to {@code unresolvedFields}. */
+    private void processMutationSelection(Field field, Map<String, Object> params, Map<String, Object> variables,
+                                          List<MutationFragment> mutFragments, List<String> unresolvedFields) {
         String fieldName = field.getName();
         String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
 
@@ -222,7 +215,7 @@ public class SqlCompiler {
         if (function.isPresent()) {
             mutFragments.add(new MutationFragment(responseKey, null, compileFunctionCall(field, function.get(), params),
                     null));
-            return null;
+            return;
         }
 
         if (mutationBuilder.isMutationField(fieldName)) {
@@ -234,12 +227,12 @@ public class SqlCompiler {
                 throw new IllegalArgumentException("Invalid arguments for " + fieldName);
             }
             unresolvedFields.add(fieldName);
-            return null;
+            return;
         }
 
         if (frag.isTwoPhase()) {
             mutFragments.add(new MutationFragment(responseKey, frag.write()));
-            return null;
+            return;
         }
 
         // Use alias as response key if present (e.g. "c1: createX(...)")
@@ -251,10 +244,9 @@ public class SqlCompiler {
                             new MutationFragment(responseKey, statement.sql(), null, null);
                 });
             }
-            return null;
+            return;
         }
         mutFragments.add(new MutationFragment(responseKey, frag.sql(), null, null));
-        return null;
     }
 
     /**

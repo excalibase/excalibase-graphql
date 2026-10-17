@@ -13,6 +13,7 @@ import io.github.excalibase.permissions.Literal;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.schema.SchemaInfo;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -36,9 +37,9 @@ public final class ExpressionCheck {
     private static void walk(PermissionDialect dialect, BoolExp expression, String tableKey, SchemaInfo schema) {
         switch (expression) {
             case True ignored -> { }
-            case And and -> and.operands().forEach(operand -> walk(dialect, operand, tableKey, schema));
-            case Or or -> or.operands().forEach(operand -> walk(dialect, operand, tableKey, schema));
-            case Not not -> walk(dialect, not.operand(), tableKey, schema);
+            case And(List<BoolExp> operands) -> operands.forEach(operand -> walk(dialect, operand, tableKey, schema));
+            case Or(List<BoolExp> operands) -> operands.forEach(operand -> walk(dialect, operand, tableKey, schema));
+            case Not(BoolExp operand) -> walk(dialect, operand, tableKey, schema);
             case ColumnCompare compare -> compare(dialect, compare, tableKey, schema);
             case Relationship(String name, BoolExp where) ->
                     check(dialect, where, RelationshipJoin.resolve(schema, tableKey, name).targetTable(), schema);

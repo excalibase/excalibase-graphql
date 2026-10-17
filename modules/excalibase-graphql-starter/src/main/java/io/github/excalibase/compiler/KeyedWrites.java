@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -77,18 +79,25 @@ public final class KeyedWrites {
     /** @param upsert an upsert's row counts twice when it updates: it is checked by its key alone */
     private KeyedWrite insert(List<Insert> inserts, boolean many, boolean upsert) {
         return (jdbc, represent) -> {
-            boolean keyed = represent || check != null || upsert;
+            boolean verified = check != null || upsert;
+            boolean keyed = represent || verified;
             if (keyed) requireKeys();
             List<List<Object>> written = new ArrayList<>();
             int count = 0;
             for (Insert insert : inserts) {
-                KeyHolder generated = new GeneratedKeyHolder();
-                count += jdbc.update(insert.sql(), new MapSqlParameterSource(insert.params()), generated);
-                if (keyed) written.add(keyOf(insert.values(), generated));
+                count += insertRow(jdbc, insert, keyed ? written : null);
             }
-            if (check != null || upsert) verify(jdbc, written, upsert ? written.size() : count);
+            if (verified) verify(jdbc, written, upsert ? written.size() : count);
             return represent ? read(jdbc, written, many) : null;
         };
+    }
+
+    /** Runs one insert; its key is added to {@code written} when the rows are keyed (non-null). */
+    private int insertRow(NamedParameterJdbcTemplate jdbc, Insert insert, List<List<Object>> written) {
+        KeyHolder generated = new GeneratedKeyHolder();
+        int count = jdbc.update(insert.sql(), new MapSqlParameterSource(insert.params()), generated);
+        if (written != null) written.add(keyOf(insert.values(), generated));
+        return count;
     }
 
     /**
@@ -136,22 +145,27 @@ public final class KeyedWrites {
                 return null;
             }
             requireKeys();
-            List<List<Object>> matched = jdbc.query(lockedKeysSql(where), params, (rs, rowNum) -> {
-                List<Object> key = new ArrayList<>();
-                for (int i = 1; i <= keys.size(); i++) key.add(rs.getObject(i));
-                return key;
-            });
+            List<List<Object>> matched = jdbc.query(lockedKeysSql(where), params, (rs, rowNum) -> keyOf(rs));
             jdbc.update(dml, params);
-            List<List<Object>> changed = matched.stream().map(key -> {
-                List<Object> moved = new ArrayList<>(key);
-                for (int i = 0; i < keys.size(); i++) {
-                    if (set.containsKey(keys.get(i))) moved.set(i, set.get(keys.get(i)));
-                }
-                return moved;
-            }).toList();
+            List<List<Object>> changed = matched.stream().map(key -> moved(key, set)).toList();
             if (check != null) verify(jdbc, changed, changed.size());
             return represent ? read(jdbc, changed, true) : null;
         };
+    }
+
+    private List<Object> keyOf(ResultSet row) throws SQLException {
+        List<Object> key = new ArrayList<>();
+        for (int i = 1; i <= keys.size(); i++) key.add(row.getObject(i));
+        return key;
+    }
+
+    /** {@code key} after an update that sets {@code set}: a key column it sets takes the new value. */
+    private List<Object> moved(List<Object> key, Map<String, Object> set) {
+        List<Object> moved = new ArrayList<>(key);
+        for (int i = 0; i < keys.size(); i++) {
+            if (set.containsKey(keys.get(i))) moved.set(i, set.get(keys.get(i)));
+        }
+        return moved;
     }
 
     /** {@code where} selects the rows {@code dml} deletes; they are read, locked, before it runs. */
