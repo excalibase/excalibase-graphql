@@ -78,16 +78,7 @@ public class VaultCredentialService {
         throw new VaultCredentialException("Database not available for the requested project");
       }
 
-      JsonNode json = mapper.readTree(resp.body());
-      return new VaultCredentials(
-          json.get("host").asText(),
-          json.get("port").asText(),
-          json.get("database").asText(),
-          json.get("username").asText(),
-          json.get("password").asText(),
-          tlsCredentials(json),
-          engineOf(json)
-      );
+      return parseRecord(mapper.readTree(resp.body()));
     } catch (VaultCredentialException | UnknownProjectException | ProjectWithoutDatabaseException e) {
       throw e;
     } catch (InterruptedException e) {
@@ -98,6 +89,22 @@ public class VaultCredentialService {
       throw new VaultCredentialException(
           "Failed to fetch credentials for " + orgSlug + "/" + projectId, e);
     }
+  }
+
+  /** A MySQL record carries only its server CA; a Postgres record may carry a full client certificate. */
+  private static VaultCredentials parseRecord(JsonNode json) {
+    DatabaseEngine engine = engineOf(json);
+    boolean mysql = engine == DatabaseEngine.MYSQL;
+    return new VaultCredentials(
+        json.get("host").asText(),
+        json.get("port").asText(),
+        json.get("database").asText(),
+        json.get("username").asText(),
+        json.get("password").asText(),
+        mysql ? null : tlsCredentials(json),
+        engine,
+        mysql ? textOrNull(json, "sslrootcert") : null
+    );
   }
 
   /**

@@ -110,6 +110,7 @@ app:
     # verify-full: connect with the vault record's client certificate (sslcert/sslkey)
     # and verify the server against its sslrootcert; a record without them is refused.
     # disable: plain password connections, only for the docker all-in-one whose tenants have no TLS.
+    # Postgres only: MySQL tenants always verify the server against the record's sslrootcert.
     sslmode: ${TENANT_DB_SSLMODE:verify-full}
   nats:
     enabled: false  # Enable NATS CDC subscription from excalibase-watcher (default: false)

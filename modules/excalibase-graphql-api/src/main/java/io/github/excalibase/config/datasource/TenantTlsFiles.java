@@ -129,7 +129,7 @@ public final class TenantTlsFiles implements AutoCloseable {
   }
 
   @SuppressWarnings("unchecked")
-  private static Collection<X509Certificate> parseCertificates(String pem, String field) {
+  static Collection<X509Certificate> parseCertificates(String pem, String field) {
     try {
       Collection<X509Certificate> certificates = (Collection<X509Certificate>) CertificateFactory
           .getInstance("X.509")
@@ -186,7 +186,7 @@ public final class TenantTlsFiles implements AutoCloseable {
     }
   }
 
-  private static Path createDirectory(Path root) {
+  static Path createDirectory(Path root) {
     try {
       return Files.createTempDirectory(root, "tenant-", OWNER_ONLY_DIR);
     } catch (IOException e) {
@@ -194,7 +194,7 @@ public final class TenantTlsFiles implements AutoCloseable {
     }
   }
 
-  private static void writeOwnerOnly(Path file, byte[] content) {
+  static void writeOwnerOnly(Path file, byte[] content) {
     try {
       Files.write(Files.createFile(file, OWNER_ONLY_FILE), content);
     } catch (IOException e) {

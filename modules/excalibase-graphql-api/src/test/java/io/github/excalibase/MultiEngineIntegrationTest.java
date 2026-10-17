@@ -1,5 +1,6 @@
 package io.github.excalibase;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -11,6 +12,7 @@ import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
+import io.github.excalibase.config.datasource.TestPki;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.MethodOrderer;
@@ -25,12 +27,18 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.util.FileSystemUtils;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -52,7 +60,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * One process serving a Postgres project and a MySQL project, each picked by its vault record exactly as
  * provisioning files it: no engine on the Postgres record, {@code engine: mysql} and {@code tls: required}
- * on the MySQL one (ADR 0041).
+ * on the MySQL one (ADR 0041), whose server certificate the engine verifies against the record's sslrootcert.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -67,10 +75,17 @@ class MultiEngineIntegrationTest {
   static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
       .withInitScript("init-tenant-a.sql");
 
+  // The MySQL tenant serves a certificate from the project's CA, which its record files as sslrootcert.
+  static final Path pkiDir = createPkiDir();
+  static final TestPki pki = generatePki();
+
   @Container
   static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4")
       .withDatabaseName("shop")
-      .withInitScript("init-multi-engine-mysql.sql");
+      .withInitScript("init-multi-engine-mysql.sql")
+      .withCopyToContainer(Transferable.of(pki.serverCertificate), "/tls/server.crt")
+      .withCopyToContainer(Transferable.of(pki.serverKey), "/tls/server.key")
+      .withCommand("--ssl-cert=/tls/server.crt", "--ssl-key=/tls/server.key");
 
   static ECPrivateKey privateKey;
   static HttpServer provisioning;
@@ -94,6 +109,35 @@ class MultiEngineIntegrationTest {
     }
   }
 
+  private static Path createPkiDir() {
+    try {
+      return Files.createTempDirectory("multi-engine-pki");
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
+  }
+
+  private static TestPki generatePki() {
+    try {
+      return TestPki.generate(pkiDir, "excalibase_app");
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private static String mysqlRecord() {
+    try {
+      return mapper.writeValueAsString(Map.of("engine", "mysql", "tls", "required",
+          "host", mysql.getHost(), "port", String.valueOf(mysql.getFirstMappedPort()), "database", "shop",
+          "username", mysql.getUsername(), "password", mysql.getPassword(), "sslrootcert", pki.caCertificate));
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException(e);
+    }
+  }
+
   private static void serve(String path, String json) {
     provisioning.createContext(path, exchange -> {
       byte[] body = json.getBytes(StandardCharsets.UTF_8);
@@ -110,10 +154,7 @@ class MultiEngineIntegrationTest {
         "{\"host\":\"" + postgres.getHost() + "\",\"port\":\"" + postgres.getFirstMappedPort()
             + "\",\"database\":\"" + postgres.getDatabaseName() + "\",\"username\":\"" + postgres.getUsername()
             + "\",\"password\":\"" + postgres.getPassword() + "\"}");
-    serve("/api/vault/secrets/projects/" + MYSQL_PROJECT + "/credentials/excalibase_app",
-        "{\"engine\":\"mysql\",\"tls\":\"required\",\"host\":\"" + mysql.getHost() + "\",\"port\":\""
-            + mysql.getFirstMappedPort() + "\",\"database\":\"shop\",\"username\":\"" + mysql.getUsername()
-            + "\",\"password\":\"" + mysql.getPassword() + "\"}");
+    serve("/api/vault/secrets/projects/" + MYSQL_PROJECT + "/credentials/excalibase_app", mysqlRecord());
 
     String api = "http://localhost:" + provisioning.getAddress().getPort() + "/api";
     registry.add("spring.datasource.url", () -> "");
@@ -131,8 +172,9 @@ class MultiEngineIntegrationTest {
   }
 
   @AfterAll
-  static void stopProvisioning() {
+  static void stopProvisioning() throws IOException {
     provisioning.stop(0);
+    FileSystemUtils.deleteRecursively(pkiDir);
   }
 
   @Autowired

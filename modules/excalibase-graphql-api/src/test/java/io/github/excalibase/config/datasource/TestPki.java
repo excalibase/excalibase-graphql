@@ -12,13 +12,15 @@ import java.util.concurrent.TimeUnit;
  * Throwaway CA, server and client certificates (EC P-256), shaped like the CNPG
  * cluster CA and the client certificate provisioning issues to a platform role.
  */
-final class TestPki {
+public final class TestPki {
 
-  final String caCertificate;
-  final String serverCertificate;
-  final String serverKey;
-  final String clientCertificate;
-  final String clientKey;
+  private static final String LOOPBACK_NAMES = "DNS:localhost,IP:127.0.0.1";
+
+  public final String caCertificate;
+  public final String serverCertificate;
+  public final String serverKey;
+  public final String clientCertificate;
+  public final String clientKey;
 
   private TestPki(Path dir) throws IOException {
     this.caCertificate = Files.readString(dir.resolve("ca.crt"));
@@ -28,9 +30,15 @@ final class TestPki {
     this.clientKey = Files.readString(dir.resolve("client.key"));
   }
 
-  static TestPki generate(Path dir, String clientRole) throws IOException, InterruptedException {
+  public static TestPki generate(Path dir, String clientRole) throws IOException, InterruptedException {
+    return generate(dir, clientRole, LOOPBACK_NAMES);
+  }
+
+  /** {@code subjectAltName} in openssl syntax, e.g. {@code DNS:localhost}. */
+  public static TestPki generate(Path dir, String clientRole, String subjectAltName)
+      throws IOException, InterruptedException {
     Files.writeString(dir.resolve("server.ext"),
-        "subjectAltName=DNS:localhost,IP:127.0.0.1\n", StandardCharsets.UTF_8);
+        "subjectAltName=" + subjectAltName + "\n", StandardCharsets.UTF_8);
     run(dir, "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1", "-nodes",
         "-keyout", "ca.key", "-out", "ca.crt", "-days", "2", "-subj", "/CN=test-cluster-ca");
     issue(dir, "server", "/CN=localhost", "server.ext");
