@@ -256,6 +256,9 @@ SQL, and a differential suite checks every case against native Postgres RLS on i
 - That check runs after the write, so an insert or update check that reads, through a relationship or
   `_exists`, a table the same mutation writes (this field's table or an earlier field's) is refused with
   `400`: Postgres judges it against the database as it was before the write, which MySQL cannot.
+- The engine cannot see writes made by the project's triggers or foreign-key cascades, but a check does:
+  it can be satisfied by rows its own write produced that way, which Postgres would not see. Keep checks off
+  tables that triggers or cascades write.
 - Permission keys name a table `<database>.<table>`, the database being its schema.
 
 ## Filtering Operators
