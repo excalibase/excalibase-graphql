@@ -1,0 +1,38 @@
+name: README quickstart
+
+# Boots docker-compose.yml from a fresh copy of the repo and runs the README's
+# quickstart commands. Runs daily too: the compose pulls published images, which
+# change without a commit here.
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'README.md'
+      - 'docker-compose.yml'
+      - 'e2e/**'
+      - 'scripts/**'
+      - '.github/workflows/quickstart.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'README.md'
+      - 'docker-compose.yml'
+      - 'e2e/**'
+      - 'scripts/**'
+      - '.github/workflows/quickstart.yml'
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quickstart:
+    name: README quickstart on a fresh clone
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the README quickstart
+        run: ./scripts/quickstart-smoke.sh

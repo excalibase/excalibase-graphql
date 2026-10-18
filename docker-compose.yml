@@ -182,11 +182,32 @@ services:
       - excalibase-network
     restart: unless-stopped
 
+  # A fresh clone has no signing keys (they are never committed): generate the
+  # throwaway pair once, owned by whoever owns the checkout. `make up` makes its own.
+  keygen:
+    image: alpine:3.20
+    container_name: excalibase-keygen
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        [ -s /e2e/wiremock/__files/private-key-response.json ] && exit 0
+        apk add --no-cache bash openssl >/dev/null
+        bash /e2e/generate-keys.sh
+        owner=$$(stat -c %u:%g /e2e)
+        chown "$$owner" /e2e/private.pem /e2e/public.pem /e2e/wiremock/__files /e2e/wiremock/__files/*
+    volumes:
+      - ./e2e:/e2e
+    restart: "no"
+
   mock-vault:
     image: wiremock/wiremock:3.10.0
     container_name: excalibase-mock-vault
     volumes:
       - ./e2e/wiremock:/home/wiremock
+    depends_on:
+      keygen:
+        condition: service_completed_successfully
     ports:
       - "18080:8080"
     healthcheck:
