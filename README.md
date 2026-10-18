@@ -36,18 +36,24 @@ This is the API engine of [Excalibase](https://github.com/excalibase/excalibase)
 ## Quickstart
 
 ```bash
-# 1. Start Postgres + API (pgvector-enabled)
+# 1. Start Postgres (with sample data), the engine, auth and a mock control plane
 docker compose up -d
+until curl -sf http://localhost:10000/actuator/health >/dev/null; do sleep 3; done
 
-# 2. GraphQL
-curl -X POST http://localhost:10000/graphql \
+# 2. GraphQL: routes are per project; the sample project is `e2e-test`, whose
+#    permissions (served by the mock control plane) let anonymous callers read `hana.customer`
+curl -s -X POST http://localhost:10000/e2e-test/graphql \
   -H 'Content-Type: application/json' \
-  -d '{"query":"{ __schema { queryType { name } } }"}'
+  -d '{"query":"{ hanaCustomer(limit: 2) { customer_id first_name last_name } }"}'
+echo
 
-# 3. REST
-curl 'http://localhost:10000/api/v1/rest/customer?limit=5'
-
+# 3. REST: the same table and the same permissions
+curl -s 'http://localhost:10000/e2e-test/api/v1/customer?limit=2' -H 'Accept-Profile: hana'
+echo
 ```
+
+A table with no permission for a role is invisible to it: try `/e2e-test/api/v1/rls_team_orders` (404).
+Permissions per role, table and operation are described in [Permissions](docs/features/permissions.md).
 
 Full install guide (JVM, native image, K8s): **[docs/quickstart →](docs/quickstart/index.md)**
 
