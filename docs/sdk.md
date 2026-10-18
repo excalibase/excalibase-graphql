@@ -106,51 +106,30 @@ await db.rest.post("customer", { body: { name: "Vu", status: "active" } });
 
 ## Functions (typed RPC)
 
-Collections live behind deployed query / mutation functions — schema and
-indexes are declared in your `convex/schema.ts` at deploy time, and every
-read or write is a typed function call from the client. The SDK exposes
-the proxy as `db.functions.<module>.<name>(args)`:
+Deployed functions are called as `db.functions.<module>.<name>(args)`.
+Functions hold logic; the data stays behind the project's REST and GraphQL
+API shown above. A function has no `ctx.db`: when it needs data it calls that
+API with a project key kept as a function secret.
 
 ```ts
-// convex/users.ts (server-side)
-import { query, mutation, v } from "@excalibase/server";
+// deployed with id "users.welcome" (server-side)
+import { z } from "zod";
+import { mutation } from "@excalibase/server";
 
-export const create = mutation({
-  args: v.object({ email: v.string(), status: v.string() }),
-  handler: async (ctx, { email, status }) =>
-    ctx.db.collection("users").insert({ email, status }),
-});
-
-export const listActive = query({
-  args: v.object({ limit: v.number() }),
-  handler: async (ctx, { limit }) =>
-    ctx.db.collection("users").find({ status: "active" }, { limit }),
+export default mutation({
+  args: z.object({ email: z.string() }),
+  handler: async (ctx, { email }) => {
+    await ctx.scheduler.runAfter(0, { moduleName: "mail", exportName: "default" }, { to: email });
+    return { queued: true };
+  },
 });
 ```
 
 Then from the client:
 
 ```ts
-// Awaitable one-shot HTTP RPC.
-await db.functions.users.create({ email: "vu@acme.com", status: "active" });
-const active = await db.functions.users.listActive({ limit: 20 });
+await db.functions.users.welcome({ email: "vu@acme.com" });
 ```
-
-Full-text search and vector k-NN live behind the same RPC surface — wrap
-them in functions that call `ctx.db.collection("...").search(...)` or
-`.vectorSearch(...)` and expose them as `db.functions.articles.search`,
-`db.functions.docs.nearest`, etc. See the [Functions runtime
-docs](https://docs.convex.dev/functions) for the full handler-side API.
-
-Reactive subscriptions ride on the same proxy via `.watch()`:
-
-```ts
-const sub = db.functions.users.listActive({ limit: 20 }).watch();
-const unsub = sub.onUpdate((users) => render(users));
-sub.onError((err) => console.error(err.code, err.message));
-```
-
-One WebSocket per client, multiplexed across every active subscription.
 
 ## Codegen
 
