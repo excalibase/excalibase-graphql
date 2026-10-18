@@ -52,6 +52,7 @@ class OtlpExportEnvironmentPostProcessorTest {
         assertThat(environment.getProperty("management.otlp.tracing.endpoint")).isNull();
         assertThat(environment.getProperty("management.otlp.metrics.export.url")).isNull();
         assertThat(environment.getProperty("management.otlp.logging.endpoint")).isNull();
+        assertThat(environment.getProperty("management.tracing.sampling.probability")).isNull();
     }
 
     @Test
@@ -78,6 +79,64 @@ class OtlpExportEnvironmentPostProcessorTest {
                 "management.otlp.tracing.endpoint", "http://tempo:4318/v1/traces"));
 
         assertThat(environment.getProperty("management.otlp.tracing.endpoint")).isEqualTo("http://tempo:4318/v1/traces");
+    }
+
+    @Test
+    void anExplicitSignalEndpointAloneStillExportsThatSignal() {
+        StandardEnvironment environment = environment(Map.of(
+                "management.otlp.tracing.endpoint", "http://tempo:4318/v1/traces"));
+
+        assertThat(environment.getProperty("management.otlp.tracing.export.enabled")).isNotEqualTo("false");
+        assertThat(environment.getProperty("management.otlp.tracing.endpoint")).isEqualTo("http://tempo:4318/v1/traces");
+        assertThat(environment.getProperty("management.otlp.metrics.export.enabled")).isEqualTo("false");
+    }
+
+    // The native image fixes bean conditions at build time: the AOT build must keep every exporter.
+    @Test
+    void theAotBuildKeepsEveryExporter() {
+        withSystemProperty("spring.aot.processing", () -> {
+            StandardEnvironment environment = environment(Map.of());
+
+            assertThat(environment.getProperty("management.otlp.metrics.export.enabled")).isNotEqualTo("false");
+            assertThat(environment.getProperty("management.otlp.tracing.export.enabled")).isNotEqualTo("false");
+            assertThat(environment.getProperty("management.otlp.tracing.endpoint")).isNotBlank();
+            assertThat(environment.getProperty("management.otlp.metrics.export.url")).isNotBlank();
+            assertThat(environment.getProperty("management.otlp.logging.endpoint")).isNotBlank();
+        });
+    }
+
+    // At native runtime the built exporters are silenced by settings read at startup.
+    @Test
+    void theNativeRuntimeWithoutAnEndpointNeverHandsAnExporterData() {
+        withSystemProperty("spring.aot.enabled", () -> {
+            StandardEnvironment environment = environment(Map.of("OTEL_TRACES_SAMPLER_ARG", "1.0",
+                    "management.tracing.sampling.probability", "${OTEL_TRACES_SAMPLER_ARG:1.0}"));
+
+            assertThat(environment.getProperty("management.otlp.metrics.export.enabled")).isEqualTo("false");
+            assertThat(environment.getProperty("management.tracing.sampling.probability")).isEqualTo("0");
+            assertThat(environment.getProperty("management.otlp.tracing.endpoint")).isNotBlank();
+            assertThat(environment.getProperty("management.otlp.logging.endpoint")).isNotBlank();
+        });
+    }
+
+    @Test
+    void theNativeRuntimeWithAnEndpointSamplesAsConfigured() {
+        withSystemProperty("spring.aot.enabled", () -> {
+            StandardEnvironment environment = environment(Map.of(ENDPOINT, "http://collector:4318",
+                    "management.tracing.sampling.probability", "0.5"));
+
+            assertThat(environment.getProperty("management.tracing.sampling.probability")).isEqualTo("0.5");
+            assertThat(environment.getProperty("management.otlp.metrics.export.enabled")).isNotEqualTo("false");
+        });
+    }
+
+    private static void withSystemProperty(String name, Runnable body) {
+        System.setProperty(name, "true");
+        try {
+            body.run();
+        } finally {
+            System.clearProperty(name);
+        }
     }
 
     @Test
