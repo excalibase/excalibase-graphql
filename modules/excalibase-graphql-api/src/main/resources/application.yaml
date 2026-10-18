@@ -53,17 +53,12 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: false  # Disable histogram to save memory
-  # OTLP export — all three signals go to the OTel Collector on port 4318
-  # Actuator is kept only for health + info; metrics/traces/logs go via OTLP push.
+  # OTLP export of metrics, traces and logs to OTEL_EXPORTER_OTLP_ENDPOINT; with
+  # it unset nothing is exported (OtlpExportEnvironmentPostProcessor).
   otlp:
     metrics:
       export:
-        url: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/metrics
         step: 30s        # push interval
-    tracing:
-      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
-    logging:
-      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/logs
   # Tracing: sample 100% in dev; tune via OTEL_TRACES_SAMPLER_ARG in prod
   tracing:
     sampling:
