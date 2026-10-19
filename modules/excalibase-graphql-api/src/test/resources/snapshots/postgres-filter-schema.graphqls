@@ -11,12 +11,12 @@ type FiltersArticle {
   created_at: String
   external_id: String
   filtersComment(limit: Int, offset: Int, orderBy: FiltersCommentOrderByInput, where: FiltersCommentWhereInput): [FiltersComment]
-  meta: String
+  meta: JSON
   mood: FiltersMood
   published: Boolean
   published_on: String
   rating: Float
-  raw_meta: String
+  raw_meta: JSON
   score: Float
   search_vec: String
   slug: String
@@ -163,12 +163,12 @@ input FiltersArticleCreateInput {
   created_at: String
   external_id: String
   filtersComment: FiltersCommentArrRelInsertInput
-  meta: String
+  meta: JSON
   mood: FiltersMood
   published: Boolean
   published_on: String
   rating: Float
-  raw_meta: String
+  raw_meta: JSON
   score: Float
   search_vec: String
   slug: String
@@ -205,12 +205,12 @@ input FiltersArticleUpdateInput {
   big_views: BigInteger
   created_at: String
   external_id: String
-  meta: String
+  meta: JSON
   mood: FiltersMood
   published: Boolean
   published_on: String
   rating: Float
-  raw_meta: String
+  raw_meta: JSON
   score: Float
   search_vec: String
   slug: String

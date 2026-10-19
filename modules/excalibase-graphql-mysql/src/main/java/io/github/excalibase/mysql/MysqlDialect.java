@@ -3,11 +3,16 @@ package io.github.excalibase.mysql;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.permissions.compile.PermissionDialect;
 
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.sql.SQLException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -21,6 +26,8 @@ public class MysqlDialect implements SqlDialect {
 
     private static final FilterCapabilities FILTER_CAPABILITIES = new MysqlFilterCapabilities();
     private static final String UTC = "'+00:00'";
+    private static final Set<String> BINARY_TYPES = Set.of("binary", "varbinary", "tinyblob", "blob", "mediumblob",
+            "longblob");
 
     @Override
     public PermissionDialect permissionDialect() {
@@ -164,11 +171,17 @@ public class MysqlDialect implements SqlDialect {
         return "";
     }
 
-    /** Booleans as JSON booleans and datetimes in ISO 8601, as the Postgres dialect renders them. */
+    /**
+     * Booleans as JSON booleans and datetimes in ISO 8601, as the Postgres dialect renders them; a TIME as
+     * written (JSON would wrap one past 24 hours) and binary as {@code \x} hex, as Postgres renders bytea.
+     */
     @Override
     public String selectColumn(String colRef, String dataType) {
         if (dataType == null) return colRef;
+        if (BINARY_TYPES.contains(dataType)) return hex(colRef);
         return switch (dataType) {
+            case "time" -> "CAST(" + colRef + " AS CHAR)";
+            case "bit" -> hex("CAST(" + colRef + " AS BINARY)");
             case MysqlColumnTypes.BOOLEAN -> "IF(" + colRef + " IS NULL, NULL, IF(" + colRef + ", "
                     + jsonBoolLiteral(true) + ", " + jsonBoolLiteral(false) + "))";
             case MysqlColumnTypes.WITHOUT_ZONE -> isoDateTime(colRef);
@@ -184,9 +197,30 @@ public class MysqlDialect implements SqlDialect {
         return selectColumn(expr, dataType);
     }
 
-    /** MySQL reads an offset but not {@code Z}, which is what ISO 8601 clients send for UTC. */
+    /** {@code \x} followed by the bytes in lowercase hex; NULL stays NULL. */
+    private static String hex(String expr) {
+        return "CONCAT(CHAR(92 USING utf8mb4), 'x', LOWER(HEX(" + expr + ")))";
+    }
+
+    /**
+     * MySQL reads an offset but not {@code Z}, which is what ISO 8601 clients send for UTC. Binary and BIT take
+     * the {@code \x} hex they answer as bytes; an integer past Long (BIGINT UNSIGNED) is sent as an exact decimal,
+     * which the driver otherwise narrows.
+     */
     @Override
     public Object bindValue(String columnType, Object value) {
+        if (value instanceof BigInteger integer) {
+            return new BigDecimal(integer);
+        }
+        boolean binary = BINARY_TYPES.contains(columnType) || "bit".equals(columnType);
+        if (binary && value instanceof String text && text.startsWith("\\x")) {
+            try {
+                return HexFormat.of().parseHex(text.substring(2));
+            } catch (IllegalArgumentException e) {
+                throw new DataErrorException(DataError.invalidValue(null, "Invalid binary value: \\x must be followed by "
+                        + "pairs of hex digits"));
+            }
+        }
         boolean dateTime = MysqlColumnTypes.WITHOUT_ZONE.equals(columnType) || MysqlColumnTypes.WITH_ZONE.equals(columnType);
         if (dateTime && value instanceof String text && (text.endsWith("Z") || text.endsWith("z"))) {
             return text.substring(0, text.length() - 1) + "+00:00";

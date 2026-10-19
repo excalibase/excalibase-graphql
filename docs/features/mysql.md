@@ -118,7 +118,8 @@ CREATE TABLE task (
 
 ### JSON Types
 
-MySQL JSON columns are surfaced as GraphQL `String` (JSON-serialized):
+MySQL JSON columns (and Postgres `json`/`jsonb`) are the GraphQL `JSON` scalar: they answer JSON values and take
+them as input, inline or through a `JSON` variable:
 
 ```sql
 CREATE TABLE product_detail (
@@ -140,6 +141,15 @@ CREATE TABLE product_detail (
   }
 }
 ```
+
+### Other column types
+
+| MySQL type | Answered as | Written from |
+|---|---|---|
+| `DECIMAL` | a JSON number with every digit | a number or numeric string, kept exact |
+| `BIGINT UNSIGNED` | a JSON number, up to 18446744073709551615 | a number or numeric string |
+| `TIME` | `"838:59:59"`, as stored (past 24 hours, negative) | the same form |
+| `BINARY`, `VARBINARY`, `BLOB`, `BIT` | `\x00ff10` (`\x` and lowercase hex), as Postgres `bytea` | the same form |
 
 ### Views
 

@@ -831,7 +831,7 @@ public class FilterBuilder {
         }
         if (value instanceof IntValue iv) return integer(iv.getValue());
         if (value instanceof StringValue sv) return sv.getValue();
-        if (value instanceof FloatValue fv) return fv.getValue().doubleValue();
+        if (value instanceof FloatValue fv) return fv.getValue();
         if (value instanceof BooleanValue bv) return bv.isValue();
         if (value instanceof EnumValue ev) return ev.getName();
         if (value instanceof NullValue) return null;

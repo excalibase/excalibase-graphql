@@ -3,6 +3,7 @@ package io.github.excalibase.rest.compiler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.ArrayColumns;
+import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.NumericInput;
 import io.github.excalibase.errors.ColumnValueCheck;
 import io.github.excalibase.errors.DataError;
@@ -10,6 +11,7 @@ import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.schema.SchemaInfo;
 import org.springframework.jdbc.core.SqlParameterValue;
 
+import java.math.BigDecimal;
 import java.sql.Types;
 import java.util.List;
 
@@ -19,20 +21,30 @@ final class ParamValues {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final SchemaInfo schemaInfo;
+    private final SqlDialect dialect;
     private final boolean serverCasts;
 
-    /** @param serverCasts whether the server parses a value bound untyped (Postgres); MySQL takes it as text */
-    ParamValues(SchemaInfo schemaInfo, boolean serverCasts) {
+    /** The server casts a value bound untyped when the dialect parses one (Postgres); MySQL takes it as text. */
+    ParamValues(SchemaInfo schemaInfo, SqlDialect dialect) {
         this.schemaInfo = schemaInfo;
-        this.serverCasts = serverCasts;
+        this.dialect = dialect;
+        this.serverCasts = dialect.parsesUntypedParameters();
     }
 
     Object coerceParam(String table, String column, Object value) {
-        return bindable(typedParam(table, column, value));
+        return bound(table, column, typedParam(table, column, value));
     }
 
     Object convertValue(String value, String table, String column) {
-        return bindable(typedValue(value, table, column));
+        return bound(table, column, typedValue(value, table, column));
+    }
+
+    /**
+     * Postgres parses a value bound untyped as its column's type; a database that does not takes the value in
+     * the form its dialect binds it (MySQL: binary from {@code \x} hex, BIGINT UNSIGNED as an exact decimal).
+     */
+    private Object bound(String table, String column, Object value) {
+        return serverCasts ? value : dialect.bindValue(schemaInfo.getColumnType(table, column), bindable(value));
     }
 
     /** True for a Postgres array column, which cs / cd compare as arrays rather than as JSON. */
@@ -79,7 +91,7 @@ final class ParamValues {
             case "interval", "_interval", "interval[]" ->
                 new SqlParameterValue(Types.OTHER, value.toString());
             // Other opaque server types
-            case "uuid", "_uuid", "uuid[]" ->
+            case "uuid", "_uuid", "uuid[]", "bytea" ->
                 new SqlParameterValue(Types.OTHER, value.toString());
             case "_text", "text[]" ->
                 new SqlParameterValue(Types.OTHER, value.toString());
@@ -119,8 +131,10 @@ final class ParamValues {
         try {
             return switch (type.toLowerCase()) {
                 case "integer", "int4", "serial" -> Integer.parseInt(value);
-                case "bigint", "int8", "bigserial" -> Long.parseLong(value);
-                case "numeric", "decimal", "float8", "double precision" -> Double.parseDouble(value);
+                // bigint past Long (MySQL BIGINT UNSIGNED) and decimals keep every digit
+                case "bigint", "int8", "bigserial" -> NumericInput.coerce("bigint", value);
+                case "numeric", "decimal" -> new BigDecimal(value);
+                case "float8", "double precision" -> Double.parseDouble(value);
                 case "real", "float4" -> Float.parseFloat(value);
                 case "boolean", "bool" -> Boolean.parseBoolean(value);
                 case "tinyint" -> tinyint(value);
@@ -138,7 +152,7 @@ final class ParamValues {
                 case "interval", "_interval", "interval[]" ->
                     new SqlParameterValue(Types.OTHER, value);
                 // Other opaque server types
-                case "uuid", "_uuid", "uuid[]" ->
+                case "uuid", "_uuid", "uuid[]", "bytea" ->
                     new SqlParameterValue(Types.OTHER, value);
                 case "jsonb", "json", "_jsonb", "_json", "jsonb[]", "json[]" ->
                     new SqlParameterValue(Types.OTHER, value);

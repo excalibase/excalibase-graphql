@@ -27,6 +27,8 @@ final class TypeMapping {
         if (type.contains("float") || type.contains("double") || type.contains("numeric")
                 || type.contains("decimal") || type.contains("real")) return GraphQLFloat;
         if (type.contains("bool")) return GraphQLBoolean;
+        // A JSON column answers JSON values, so it takes them as input too.
+        if (isJsonType(type)) return ExtendedScalars.Json;
         return GraphQLString;
     }
 
