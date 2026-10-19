@@ -136,16 +136,9 @@ public class QueryBuilder {
         for (String col : distinctOnCols) {
             orderClauses.add(alias + "." + dialect.quoteIdentifier(col) + " " + ASC);
         }
-        Argument orderByArg = field.getArguments().stream()
-                .filter(a -> ARG_ORDER_BY.equals(a.getName()))
-                .findFirst().orElse(null);
-        if (orderByArg != null && orderByArg.getValue() instanceof ObjectValue ov) {
-            for (ObjectField of : ov.getObjectFields()) {
-                filterBuilder.requireColumn(tableName, of.getName());
-                if (!distinctOnCols.contains(of.getName())) {
-                    String dir = of.getValue() instanceof EnumValue ev ? ev.getName() : ASC;
-                    orderClauses.add(alias + "." + dialect.quoteIdentifier(of.getName()) + " " + dir);
-                }
+        for (String[] column : filterBuilder.parseOrderBy(field, tableName)) {
+            if (!distinctOnCols.contains(column[0])) {
+                orderClauses.add(filterBuilder.orderClause(alias + "." + dialect.quoteIdentifier(column[0]), column[1]));
             }
         }
         return orderClauses;
@@ -176,7 +169,7 @@ public class QueryBuilder {
         Argument vectorArg = field.getArguments().stream()
                 .filter(a -> ARG_VECTOR.equals(a.getName()))
                 .findFirst().orElse(null);
-        if (vectorArg == null || !(vectorArg.getValue() instanceof ObjectValue ov)) {
+        if (vectorArg == null || !(filterBuilder.resolvedValue(vectorArg.getValue()) instanceof ObjectValue ov)) {
             return Optional.empty();
         }
         ov.getObjectFields().stream()
@@ -189,10 +182,13 @@ public class QueryBuilder {
     private List<String> parseDistinctOn(Field field) {
         List<String> cols = new ArrayList<>();
         for (Argument arg : field.getArguments()) {
-            if (ARG_DISTINCT_ON.equals(arg.getName()) && arg.getValue() instanceof ArrayValue av) {
+            if (ARG_DISTINCT_ON.equals(arg.getName())
+                    && filterBuilder.resolvedValue(arg.getValue()) instanceof ArrayValue av) {
                 for (Value<?> v : av.getValues()) {
-                    if (v instanceof StringValue sv) {
-                        cols.add(sv.getValue());
+                    switch (v) {
+                        case StringValue sv -> cols.add(sv.getValue());
+                        case EnumValue ev -> cols.add(ev.getName());
+                        default -> throw new IllegalArgumentException("Argument 'distinctOn' takes column names");
                     }
                 }
             }
@@ -451,10 +447,10 @@ public class QueryBuilder {
         for (Argument arg : field.getArguments()) {
             String argName = arg.getName();
             if (ARG_FIRST.equals(argName)) {
-                Integer value = filterBuilder.resolveIntArg(arg.getValue(), vars);
+                Integer value = filterBuilder.nonNegative(arg);
                 if (value != null) first = Math.min(value, cap);
             } else if (ARG_LAST.equals(argName)) {
-                Integer value = filterBuilder.resolveIntArg(arg.getValue(), vars);
+                Integer value = filterBuilder.nonNegative(arg);
                 if (value != null) last = Math.min(value, cap);
             } else if (ARG_AFTER.equals(argName)) {
                 afterCursor = filterBuilder.resolveStringArg(arg.getValue(), vars);
