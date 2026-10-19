@@ -177,6 +177,12 @@ public class MysqlDialect implements SqlDialect {
         };
     }
 
+    /** JSON_OBJECT writes a boolean as 1 and a datetime with a space and no zone; the API's form is used instead. */
+    @Override
+    public String jsonValue(String expr, String dataType) {
+        return selectColumn(expr, dataType);
+    }
+
     /** MySQL reads an offset but not {@code Z}, which is what ISO 8601 clients send for UTC. */
     @Override
     public Object bindValue(String columnType, Object value) {

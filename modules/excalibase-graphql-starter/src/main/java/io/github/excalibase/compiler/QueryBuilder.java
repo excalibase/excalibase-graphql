@@ -221,7 +221,12 @@ public class QueryBuilder {
                         filterBuilder.requireColumn(tableName, col);
                         String subAlias = dialect.randAlias();
                         StringBuilder subSql = new StringBuilder();
-                        subSql.append(SELECT).append(aggName).append("(").append(subAlias).append(".").append(dialect.quoteIdentifier(col)).append(")").append(FROM)
+                        String aggregate = aggName + "(" + subAlias + "." + dialect.quoteIdentifier(col) + ")";
+                        if (AGG_MIN.equals(aggName) || AGG_MAX.equals(aggName)) {
+                            // MIN and MAX keep the column's type, so they read as the column does.
+                            aggregate = dialect.jsonValue(aggregate, schemaInfo.getColumnType(tableName, col));
+                        }
+                        subSql.append(SELECT).append(aggregate).append(FROM)
                                 .append(qualifiedTable(tableName)).append(" ").append(subAlias);
                         filterBuilder.applyWhere(subSql, field, subAlias, params, tableName);
                         colParts.add(jsonKey(colField) + ", (" + subSql + ")");
