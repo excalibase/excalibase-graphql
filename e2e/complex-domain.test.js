@@ -276,7 +276,7 @@ describe('Where-Based Mutations', () => {
       ) { id name salary }
     }`);
     expect(data.updateComplexEmployee).toHaveLength(1);
-    expect(data.updateComplexEmployee[0].salary).toBe(85000.0);
+    expect(data.updateComplexEmployee[0].salary).toBe('85000.00');
   });
 
   test('delete with where filter returns deleted rows', async () => {
