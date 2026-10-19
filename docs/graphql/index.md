@@ -113,6 +113,19 @@ narrowed by the same `where` as the list field (introspection shows both):
 }
 ```
 
+An array relationship has the same aggregate under `<relationship>Aggregate`, over the related
+rows, with its own `where` (Hasura's `<relationship>_aggregate`). It exists where the role is allowed
+aggregations on the related table:
+
+```graphql
+{
+  hanaCustomers {
+    name
+    hanaOrdersAggregate(where: { status: { eq: "paid" } }) { count sum { total_amount } }
+  }
+}
+```
+
 MySQL aggregate fields return flat scalars:
 
 ```graphql

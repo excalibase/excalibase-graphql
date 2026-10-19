@@ -114,7 +114,7 @@ public class IntrospectionHandler {
         MutationFieldsAssembler.Inputs inputs = new MutationFieldsAssembler.Inputs(
                 buildInputs(schemaInfo, access, enumTypes, arrRelTypes, RlsOp.INSERT),
                 buildInputs(schemaInfo, access, enumTypes, arrRelTypes, RlsOp.UPDATE), whereTypes);
-        Map<String, GraphQLObjectType> tableTypes = buildTableTypes(schemaInfo, enumTypes);
+        Map<String, GraphQLObjectType> tableTypes = buildTableTypes(schemaInfo, enumTypes, access);
 
         // Step 3: assemble Query + Mutation root types.
         GraphQLObjectType.Builder queryBuilder = newObject().name(TYPE_QUERY);
@@ -171,11 +171,12 @@ public class IntrospectionHandler {
     }
 
     private Map<String, GraphQLObjectType> buildTableTypes(SchemaInfo schemaInfo,
-                                                           Map<String, GraphQLEnumType> enumTypes) {
+                                                           Map<String, GraphQLEnumType> enumTypes,
+                                                           TableAccess access) {
         Map<String, GraphQLObjectType> tableTypes = new LinkedHashMap<>();
         TableObjectTypeFactory tableFactory = new TableObjectTypeFactory();
         for (String table : schemaInfo.getTableNames()) {
-            tableTypes.put(table, tableFactory.buildFor(table, schemaInfo, enumTypes));
+            tableTypes.put(table, tableFactory.buildFor(table, schemaInfo, enumTypes, access::allowsAggregations));
         }
         return tableTypes;
     }
