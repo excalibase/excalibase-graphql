@@ -68,6 +68,9 @@ public final class InsertRowParser {
         Map<String, Object> columns = new LinkedHashMap<>();
         List<InsertRow.Nested> nested = new ArrayList<>();
         for (ObjectField field : object.getObjectFields()) {
+            if (MutationBuilder.isUnset(field.getValue(), variables)) {
+                continue; // an unset variable leaves the field out, so the column takes its default
+            }
             if (isRelationship(table, field.getName())) {
                 nest(table, field.getName(), resolve(field.getValue()), nested);
             } else {

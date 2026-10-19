@@ -762,7 +762,10 @@ public class FilterBuilder {
      * can be bound directly to Postgres jsonb columns.
      */
     public Object extractValue(Value<?> value, Map<String, Object> variables) {
-        if (value instanceof VariableReference vr && variables.containsKey(vr.getName())) {
+        if (value instanceof VariableReference vr) {
+            if (!variables.containsKey(vr.getName())) {
+                throw new IllegalArgumentException("Variable '$" + vr.getName() + "' has no value");
+            }
             return variables.get(vr.getName());
         }
         if (value instanceof IntValue iv) return integer(iv.getValue());
@@ -777,7 +780,7 @@ public class FilterBuilder {
     }
 
     /** An integer literal as the smallest Java type that holds it. */
-    private static Object integer(BigInteger value) {
+    static Object integer(BigInteger value) {
         if (value.bitLength() < Integer.SIZE) return value.intValue();
         return value.bitLength() < Long.SIZE ? value.longValue() : value;
     }
@@ -790,6 +793,11 @@ public class FilterBuilder {
         if (!(value instanceof VariableReference variable)) return value;
         Map<String, Object> variables = boundVariables();
         return variables.containsKey(variable.getName()) ? literal(variables.get(variable.getName())) : null;
+    }
+
+    /** {@code value} with a variable, at its top, replaced by the literal it holds; null when the variable is unset. */
+    public Value<?> resolvedValue(Value<?> value) {
+        return resolveVariable(value);
     }
 
     /** As {@link #resolveVariable}, but an unset variable is refused: a filter part without a value is not a filter. */
@@ -843,6 +851,7 @@ public class FilterBuilder {
      * / {@code eq} / {@code neq} operators on {@link io.github.excalibase.schema.GraphqlConstants#FILTER_JSON_CONTAINS JsonFilterInput}.
      */
     private String jsonString(Value<?> value) {
+        if (value instanceof VariableReference) return jsonString(requireValue(value));
         if (value instanceof StringValue sv) return quoteJson(sv.getValue());
         if (value instanceof IntValue iv) return iv.getValue().toString();
         if (value instanceof FloatValue fv) return fv.getValue().toString();
