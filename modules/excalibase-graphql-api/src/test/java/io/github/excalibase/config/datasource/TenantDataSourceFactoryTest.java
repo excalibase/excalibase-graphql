@@ -14,6 +14,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Properties;
 import java.util.stream.Stream;
 
@@ -157,6 +158,47 @@ class TenantDataSourceFactoryTest {
     factory.close();
 
     assertFalse(Files.exists(privateRoot));
+  }
+
+  @Test
+  @DisplayName("a Postgres pool bounds connect, login and every read so a server that stops answering fails the request")
+  void postgresPoolBoundsConnectAndReads() {
+    TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.DISABLE, 2, root,
+        TenantDataSourceFactory.DEFAULT_READ_TIMEOUT);
+
+    HikariConfig config = factory.postgresConfig(vaultRecord(null), null);
+    Properties props = config.getDataSourceProperties();
+
+    assertEquals(Duration.ofSeconds(60), TenantDataSourceFactory.DEFAULT_READ_TIMEOUT);
+    assertEquals("60", props.getProperty("socketTimeout"));
+    assertEquals("10", props.getProperty("connectTimeout"));
+    assertEquals("10", props.getProperty("loginTimeout"));
+    assertEquals(10_000, config.getConnectionTimeout());
+    assertEquals(2_000, config.getValidationTimeout());
+  }
+
+  @Test
+  @DisplayName("a MySQL pool bounds connect and every read, in milliseconds as Connector/J expects")
+  void mysqlPoolBoundsConnectAndReads() {
+    TenantDataSourceFactory factory = new TenantDataSourceFactory(TenantDbSslMode.DISABLE, 2, root,
+        Duration.ofSeconds(45));
+
+    try (TenantTrustStore trustStore = TenantTrustStore.write(root, pki.caCertificate)) {
+      HikariConfig config = factory.mysqlConfig(mysqlRecord(pki.caCertificate), trustStore);
+      Properties props = config.getDataSourceProperties();
+
+      assertEquals("45000", props.getProperty("socketTimeout"));
+      assertEquals("10000", props.getProperty("connectTimeout"));
+      assertEquals(2_000, config.getValidationTimeout());
+    }
+  }
+
+  @Test
+  @DisplayName("a read cap under one second is refused rather than rounded to none")
+  void readCapUnderOneSecondIsRefused() {
+    Duration tooShort = Duration.ofMillis(500);
+    assertThrows(IllegalArgumentException.class,
+        () -> new TenantDataSourceFactory(TenantDbSslMode.DISABLE, 2, root, tooShort));
   }
 
   private static void assertEmpty(Path dir) throws IOException {

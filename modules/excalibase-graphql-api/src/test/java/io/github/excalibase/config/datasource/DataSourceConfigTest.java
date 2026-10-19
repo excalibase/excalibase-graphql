@@ -1,6 +1,10 @@
 package io.github.excalibase.config.datasource;
 
+import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.DisplayName;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
+
+import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,5 +55,33 @@ class DataSourceConfigTest {
         assertThatThrownBy(() -> DataSourceConfig.registersDefault(URL, "app_user", "secret", true))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("multi-tenant");
+    }
+
+    @Test
+    @DisplayName("the single-database Postgres pool bounds connect and every read, in seconds")
+    void singleDatabase_postgresPool_boundsReads() {
+        try (HikariDataSource pool = DataSourceConfig.singleDatabasePool(properties(URL), Duration.ofSeconds(60))) {
+            assertThat(pool.getDataSourceProperties().getProperty("socketTimeout")).isEqualTo("60");
+            assertThat(pool.getDataSourceProperties().getProperty("connectTimeout")).isEqualTo("10");
+            assertThat(pool.getConnectionTimeout()).isEqualTo(10_000);
+        }
+    }
+
+    @Test
+    @DisplayName("the single-database MySQL pool bounds every read in milliseconds, as Connector/J counts")
+    void singleDatabase_mysqlPool_boundsReadsInMilliseconds() {
+        try (HikariDataSource pool = DataSourceConfig.singleDatabasePool(
+                properties("jdbc:mysql://db:3306/app"), Duration.ofSeconds(60))) {
+            assertThat(pool.getDataSourceProperties().getProperty("socketTimeout")).isEqualTo("60000");
+            assertThat(pool.getDataSourceProperties().getProperty("connectTimeout")).isEqualTo("10000");
+        }
+    }
+
+    private static DataSourceProperties properties(String url) {
+        DataSourceProperties properties = new DataSourceProperties();
+        properties.setUrl(url);
+        properties.setUsername("app_user");
+        properties.setPassword("secret");
+        return properties;
     }
 }

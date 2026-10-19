@@ -1,6 +1,7 @@
 package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariDataSource;
+import io.github.excalibase.service.DatabaseEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +17,7 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -39,10 +41,7 @@ public class DataSourceConfig {
         boolean hasDefault = registersDefault(properties.getUrl(), properties.getUsername(),
                 properties.getPassword(), multiTenant);
         if (hasDefault) {
-            HikariDataSource hikari = properties.initializeDataSourceBuilder()
-                    .type(HikariDataSource.class)
-                    .build();
-            hikari.setInitializationFailTimeout(-1);
+            HikariDataSource hikari = singleDatabasePool(properties, ConnectionBounds.DEFAULT_READ_TIMEOUT);
             targets.put(DynamicRoutingDataSource.DEFAULT_KEY, hikari);
             log.info("DataSource registered: {}", properties.getUrl());
         } else {
@@ -57,6 +56,16 @@ public class DataSourceConfig {
         routing.setLenientFallback(true);
         routing.afterPropertiesSet();
         return routing;
+    }
+
+    /** The configured database's pool, bounded like a project's so a server that stops answering fails the request. */
+    static HikariDataSource singleDatabasePool(DataSourceProperties properties, Duration readTimeout) {
+        HikariDataSource hikari = properties.initializeDataSourceBuilder()
+                .type(HikariDataSource.class)
+                .build();
+        hikari.setInitializationFailTimeout(-1);
+        ConnectionBounds.apply(hikari, DatabaseEngine.ofJdbcUrl(properties.getUrl()), readTimeout);
+        return hikari;
     }
 
     /**

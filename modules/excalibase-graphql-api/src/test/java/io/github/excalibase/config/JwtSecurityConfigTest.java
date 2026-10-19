@@ -41,8 +41,8 @@ class JwtSecurityConfigTest {
         SecurityProperties configured = new SecurityProperties(true, null,
                 new SecurityProperties.MultiTenant("http://provisioning/api", null, null));
 
-        assertThat(new JwtSecurityConfig().dynamicDataSourceManager(blank, token, 30, 5, "verify-full")).isNull();
-        assertThat(new JwtSecurityConfig().dynamicDataSourceManager(configured, token, 30, 5, "verify-full"))
+        assertThat(new JwtSecurityConfig().dynamicDataSourceManager(blank, token, 30, 5, "verify-full", 60)).isNull();
+        assertThat(new JwtSecurityConfig().dynamicDataSourceManager(configured, token, 30, 5, "verify-full", 60))
                 .isNotNull();
     }
 
@@ -55,7 +55,7 @@ class JwtSecurityConfigTest {
 
         JwtSecurityConfig config = new JwtSecurityConfig();
 
-        assertThatThrownBy(() -> config.dynamicDataSourceManager(blank, token, 30, 5, "require"))
+        assertThatThrownBy(() -> config.dynamicDataSourceManager(blank, token, 30, 5, "require", 60))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("TENANT_DB_SSLMODE");
     }
