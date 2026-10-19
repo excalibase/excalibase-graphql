@@ -150,7 +150,7 @@ describe('Mutations on tenant databases', () => {
       }
     }`);
     expect(data.createTenantProducts.name).toBe('E2E Product');
-    expect(data.createTenantProducts.price).toBe(42.00);
+    expect(data.createTenantProducts.price).toBe('42.00');
   });
 
   test('JWT B creates item on tenant B database', async () => {

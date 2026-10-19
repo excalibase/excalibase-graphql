@@ -146,8 +146,8 @@ CREATE TABLE product_detail (
 
 | MySQL type | Answered as | Written from |
 |---|---|---|
-| `DECIMAL` | a JSON number with every digit | a number or numeric string, kept exact |
-| `BIGINT UNSIGNED` | a JSON number, up to 18446744073709551615 | a number or numeric string |
+| `DECIMAL` | a string with every digit, e.g. `"19.90"` | a number or numeric string, kept exact |
+| `BIGINT`, `BIGINT UNSIGNED` | a string, up to `"18446744073709551615"` | a number or numeric string |
 | `TIME` | `"838:59:59"`, as stored (past 24 hours, negative) | the same form |
 | `BINARY`, `VARBINARY`, `BLOB`, `BIT` | `\x00ff10` (`\x` and lowercase hex), as Postgres `bytea` | the same form |
 

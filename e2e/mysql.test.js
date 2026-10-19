@@ -59,25 +59,25 @@ describe('Basic queries', () => {
   test('filter by gt (total > 50)', async () => {
     const data = await client.request(gql`{ hanaOrders(where: { total: { gt: 50 } }) { order_id total } }`);
     expect(data.hanaOrders.length).toBeGreaterThanOrEqual(1);
-    data.hanaOrders.forEach(r => expect(r.total).toBeGreaterThan(50));
+    data.hanaOrders.forEach(r => expect(Number(r.total)).toBeGreaterThan(50));
   });
 
   test('filter by gte (total >= 99.99)', async () => {
     const data = await client.request(gql`{ hanaOrders(where: { total: { gte: 99.99 } }) { order_id total } }`);
     expect(data.hanaOrders.length).toBeGreaterThanOrEqual(1);
-    data.hanaOrders.forEach(r => expect(r.total).toBeGreaterThanOrEqual(99.99));
+    data.hanaOrders.forEach(r => expect(Number(r.total)).toBeGreaterThanOrEqual(99.99));
   });
 
   test('filter by lt (total < 20)', async () => {
     const data = await client.request(gql`{ hanaOrders(where: { total: { lt: 20 } }) { order_id total } }`);
     expect(data.hanaOrders.length).toBeGreaterThanOrEqual(1);
-    data.hanaOrders.forEach(r => expect(r.total).toBeLessThan(20));
+    data.hanaOrders.forEach(r => expect(Number(r.total)).toBeLessThan(20));
   });
 
   test('filter by lte (total <= 9.99)', async () => {
     const data = await client.request(gql`{ hanaOrders(where: { total: { lte: 9.99 } }) { order_id total } }`);
     expect(data.hanaOrders.length).toBeGreaterThanOrEqual(1);
-    data.hanaOrders.forEach(r => expect(r.total).toBeLessThanOrEqual(9.99));
+    data.hanaOrders.forEach(r => expect(Number(r.total)).toBeLessThanOrEqual(9.99));
   });
 
   test('filter by contains', async () => {
@@ -137,12 +137,12 @@ describe('Basic queries', () => {
 
   test('ordering ASC', async () => {
     const data = await client.request(gql`{ hanaCustomer(orderBy: { customer_id: "ASC" }, limit: 3) { customer_id } }`);
-    expect(data.hanaCustomer[0].customer_id).toBeLessThan(data.hanaCustomer[1].customer_id);
+    expect(Number(data.hanaCustomer[0].customer_id)).toBeLessThan(Number(data.hanaCustomer[1].customer_id));
   });
 
   test('ordering DESC', async () => {
     const data = await client.request(gql`{ hanaCustomer(orderBy: { customer_id: "DESC" }, limit: 3) { customer_id } }`);
-    expect(data.hanaCustomer[0].customer_id).toBeGreaterThan(data.hanaCustomer[1].customer_id);
+    expect(Number(data.hanaCustomer[0].customer_id)).toBeGreaterThan(Number(data.hanaCustomer[1].customer_id));
   });
 
   test('orders basic query', async () => {
@@ -193,17 +193,17 @@ describe('Aggregate queries', () => {
 
   test('orders aggregate sum', async () => {
     const data = await client.request(gql`{ hanaOrdersAggregate { sum { total } } }`);
-    expect(data.hanaOrdersAggregate.sum.total).toBeGreaterThan(0);
+    expect(Number(data.hanaOrdersAggregate.sum.total)).toBeGreaterThan(0);
   });
 
   test('orders aggregate avg', async () => {
     const data = await client.request(gql`{ hanaOrdersAggregate { avg { total } } }`);
-    expect(data.hanaOrdersAggregate.avg.total).toBeGreaterThan(0);
+    expect(Number(data.hanaOrdersAggregate.avg.total)).toBeGreaterThan(0);
   });
 
   test('orders aggregate min <= max', async () => {
     const data = await client.request(gql`{ hanaOrdersAggregate { min { total } max { total } } }`);
-    expect(data.hanaOrdersAggregate.min.total).toBeLessThanOrEqual(data.hanaOrdersAggregate.max.total);
+    expect(Number(data.hanaOrdersAggregate.min.total)).toBeLessThanOrEqual(Number(data.hanaOrdersAggregate.max.total));
   });
 });
 
@@ -502,13 +502,13 @@ describe('Views (read-only)', () => {
     expect(data.hanaOrdersSummary.length).toBeGreaterThanOrEqual(5);
     const withOrders = data.hanaOrdersSummary.filter(r => r.order_count > 0);
     expect(withOrders.length).toBeGreaterThanOrEqual(1);
-    withOrders.forEach(r => expect(r.total_spent).toBeGreaterThan(0));
+    withOrders.forEach(r => expect(Number(r.total_spent)).toBeGreaterThan(0));
   });
 
   test('high_value_orders view — all totals > 50', async () => {
     const data = await client.request(gql`{ hanaHighValueOrders { order_id total status first_name last_name } }`);
     expect(data.hanaHighValueOrders.length).toBeGreaterThanOrEqual(1);
-    data.hanaHighValueOrders.forEach(r => expect(r.total).toBeGreaterThan(50));
+    data.hanaHighValueOrders.forEach(r => expect(Number(r.total)).toBeGreaterThan(50));
   });
 
   test('view pagination', async () => {
@@ -518,7 +518,7 @@ describe('Views (read-only)', () => {
 
   test('view ordering', async () => {
     const data = await client.request(gql`{ hanaActiveCustomers(orderBy: { customer_id: "ASC" }, limit: 3) { customer_id } }`);
-    expect(data.hanaActiveCustomers[0].customer_id).toBeLessThan(data.hanaActiveCustomers[1].customer_id);
+    expect(Number(data.hanaActiveCustomers[0].customer_id)).toBeLessThan(Number(data.hanaActiveCustomers[1].customer_id));
   });
 
   test('view aggregate count', async () => {
@@ -567,11 +567,11 @@ describe('Native MySQL filter operators', () => {
 
   test('contains and containedBy compare JSON documents', async () => {
     const contains = await client.request(gql`{ hanaProductDetail(where: { attributes: { contains: { color: "blue" } } }) { product_id } }`);
-    expect(contains.hanaProductDetail.map(r => r.product_id)).toEqual([1]);
+    expect(contains.hanaProductDetail.map(r => r.product_id)).toEqual(['1']);
     const containedBy = await client.request(gql`{
       hanaProductDetail(where: { metadata: { containedBy: { sku: "WGT-B-002", warehouse: "US-WEST", extra: 1 } } }) { product_id }
     }`);
-    expect(containedBy.hanaProductDetail.map(r => r.product_id)).toEqual([2]);
+    expect(containedBy.hanaProductDetail.map(r => r.product_id)).toEqual(['2']);
   });
 
   test('hasKey, hasKeys and hasAnyKeys check top-level keys', async () => {
@@ -580,9 +580,9 @@ describe('Native MySQL filter operators', () => {
       all: hanaProductDetail(where: { metadata: { hasKeys: ["sku", "warranty_years"] } }, orderBy: { product_id: ASC }) { product_id }
       any: hanaProductDetail(where: { attributes: { hasAnyKeys: ["battery", "max_load"] } }, orderBy: { product_id: ASC }) { product_id }
     }`);
-    expect(data.one.map(r => r.product_id)).toEqual([2]);
-    expect(data.all.map(r => r.product_id)).toEqual([3, 5]);
-    expect(data.any.map(r => r.product_id)).toEqual([3, 5]);
+    expect(data.one.map(r => r.product_id)).toEqual(['2']);
+    expect(data.all.map(r => r.product_id)).toEqual(['3', '5']);
+    expect(data.any.map(r => r.product_id)).toEqual(['3', '5']);
   });
 
   test('search needs every word, phraseSearch keeps them together, rawSearch is boolean mode', async () => {

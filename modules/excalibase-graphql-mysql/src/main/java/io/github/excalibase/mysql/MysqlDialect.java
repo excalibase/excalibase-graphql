@@ -1,5 +1,6 @@
 package io.github.excalibase.mysql;
 
+import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataError;
@@ -166,8 +167,7 @@ public class MysqlDialect implements SqlDialect {
     public String suffixCast(String dataType) {
         if (dataType == null) return "";
         String type = dataType.toLowerCase();
-        // MySQL JSON_OBJECT handles most types natively; bigint needs +0 to force numeric
-        if (type.equals("bigint") || type.equals("int8")) return "+0";
+        // JSON_OBJECT handles most types natively; exact numbers are cast to text in selectColumn
         return "";
     }
 
@@ -179,6 +179,8 @@ public class MysqlDialect implements SqlDialect {
     public String selectColumn(String colRef, String dataType) {
         if (dataType == null) return colRef;
         if (BINARY_TYPES.contains(dataType)) return hex(colRef);
+        // Bigints and decimals as strings of every digit (see ExactNumbers)
+        if (ExactNumbers.isExact(dataType)) return "CAST(" + colRef + " AS CHAR)";
         return switch (dataType) {
             case "time" -> "CAST(" + colRef + " AS CHAR)";
             case "bit" -> hex("CAST(" + colRef + " AS BINARY)");

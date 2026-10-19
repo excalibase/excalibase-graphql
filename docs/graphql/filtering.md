@@ -1231,7 +1231,7 @@ For detailed testing documentation, see [Testing Documentation](../testing.md).
 | **MACADDR** | `String` | `eq`, `neq`, `like`, `startsWith` | ✅ Complete |
 | **BYTEA** | `String` | `eq`, `neq`, `isNull`, `isNotNull` | ✅ Complete |
 | **XML** | `String` | `eq`, `neq`, `contains`, `like` | ✅ Complete |
-| **NUMERIC(p,s)** | `Float` | `eq`, `neq`, `gt`, `gte`, `lt`, `lte` | ✅ Complete |
+| **NUMERIC(p,s)** | `BigDecimal` (string or number) | `eq`, `neq`, `gt`, `gte`, `lt`, `lte` | ✅ Complete |
 | **Composite Keys** | Multiple types | All operations + OR/AND logic | ✅ Complete |
 
 

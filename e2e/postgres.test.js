@@ -264,7 +264,7 @@ describe('Custom types — enums & composite', () => {
       }
     `);
     expect(data.createHanaOrders.status).toBe('PENDING');
-    expect(data.createHanaOrders.total_amount).toBe(99.99);
+    expect(data.createHanaOrders.total_amount).toBe('99.99');
   });
 
   test('update order status enum', async () => {

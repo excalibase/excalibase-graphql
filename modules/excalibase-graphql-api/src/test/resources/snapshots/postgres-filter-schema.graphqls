@@ -16,7 +16,7 @@ type FiltersArticle {
   mood: FiltersMood
   published: Boolean
   published_on: String
-  rating: Float
+  rating: BigDecimal
   raw_meta: JSON
   score: Float
   search_vec: String
@@ -36,8 +36,8 @@ type FiltersArticleAggregate {
 
 type FiltersArticleAggregateColumns {
   article_id: Float
-  big_views: Float
-  rating: Float
+  big_views: BigDecimal
+  rating: BigDecimal
   score: Float
   views: Float
 }
@@ -132,11 +132,40 @@ enum OrderDirection {
   DescNullsLast
 }
 
+"An arbitrary precision signed decimal"
+scalar BigDecimal
+
 "An arbitrary precision signed integer"
 scalar BigInteger
 
 "A JSON scalar"
 scalar JSON
+
+input BigDecimalFilterInput {
+  eq: BigDecimal
+  gt: BigDecimal
+  gte: BigDecimal
+  in: [BigDecimal]
+  isNotNull: Boolean
+  isNull: Boolean
+  lt: BigDecimal
+  lte: BigDecimal
+  neq: BigDecimal
+  notIn: [BigDecimal]
+}
+
+input BigIntegerFilterInput {
+  eq: BigInteger
+  gt: BigInteger
+  gte: BigInteger
+  in: [BigInteger]
+  isNotNull: Boolean
+  isNull: Boolean
+  lt: BigInteger
+  lte: BigInteger
+  neq: BigInteger
+  notIn: [BigInteger]
+}
 
 input BooleanFilterInput {
   eq: Boolean
@@ -168,7 +197,7 @@ input FiltersArticleCreateInput {
   mood: FiltersMood
   published: Boolean
   published_on: String
-  rating: Float
+  rating: BigDecimal
   raw_meta: JSON
   score: Float
   search_vec: String
@@ -210,7 +239,7 @@ input FiltersArticleUpdateInput {
   mood: FiltersMood
   published: Boolean
   published_on: String
-  rating: Float
+  rating: BigDecimal
   raw_meta: JSON
   score: Float
   search_vec: String
@@ -222,14 +251,14 @@ input FiltersArticleUpdateInput {
 
 input FiltersArticleWhereInput {
   article_id: IntFilterInput
-  big_views: IntFilterInput
+  big_views: BigIntegerFilterInput
   created_at: DateTimeFilterInput
   external_id: StringFilterInput
   meta: JsonFilterInput
   mood: FiltersMoodFilterInput
   published: BooleanFilterInput
   published_on: DateTimeFilterInput
-  rating: FloatFilterInput
+  rating: BigDecimalFilterInput
   raw_meta: JsonFilterInput
   score: FloatFilterInput
   search_vec: TsvectorFilterInput

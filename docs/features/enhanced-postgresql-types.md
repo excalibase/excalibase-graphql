@@ -488,7 +488,7 @@ CREATE TABLE financial (
 # GraphQL Schema (Auto-generated)
 type financial {
   id: Int!
-  price: Float           # NUMERIC(10,2)
+  price: BigDecimal      # NUMERIC(10,2), sent as a string
   
   flags: String          # BIT(8)
   variable_bits: String  # VARBIT(16)

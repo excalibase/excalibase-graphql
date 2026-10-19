@@ -330,7 +330,7 @@ class IntrospectionHandlerTest {
             Map<String, Object> type = (Map<String, Object>) field.get("type");
             colType.put((String) field.get("name"), (String) type.get("name"));
         }
-        assertEquals("FloatFilterInput", colType.get("price"), "numeric column should use FloatFilterInput");
+        assertEquals("BigDecimalFilterInput", colType.get("price"), "numeric column takes exact (string) decimals");
         assertEquals("FloatFilterInput", colType.get("weight"), "real column should use FloatFilterInput");
         assertEquals("FloatFilterInput", colType.get("ratio"), "double precision column should use FloatFilterInput");
         assertEquals("IntFilterInput", colType.get("id"), "integer column should still use IntFilterInput");
@@ -340,7 +340,7 @@ class IntrospectionHandlerTest {
     void buildSchema_floatFilterInput_advertisesRangeOperatorsWithFloatType() {
         SchemaInfo info = new SchemaInfo();
         info.addColumn("products", "id", "integer");
-        info.addColumn("products", "price", "numeric");
+        info.addColumn("products", "price", "double precision");
         info.addPrimaryKey("products", "id");
         info.setTableSchema("products", "public");
 

@@ -129,7 +129,7 @@ describe('E-Commerce GraphQL — Catalog', () => {
       }
     }`);
     const item = data.shopifyOrderItems[0];
-    expect(item.line_total).toBe(item.quantity * item.unit_price);
+    expect(Number(item.line_total)).toBe(item.quantity * Number(item.unit_price));
   });
 
   test('JSONB metadata query', async () => {

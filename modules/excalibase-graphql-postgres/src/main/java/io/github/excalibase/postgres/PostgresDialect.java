@@ -1,6 +1,7 @@
 package io.github.excalibase.postgres;
 
 import io.github.excalibase.ArrayColumns;
+import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataError;
@@ -10,6 +11,7 @@ import org.springframework.jdbc.core.SqlParameterValue;
 
 import java.sql.SQLException;
 import java.sql.Types;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -24,6 +26,8 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 public class PostgresDialect implements SqlDialect {
 
     private static final String JSONB_CAST = "::jsonb";
+    /** jsonb_build_object takes at most 100 arguments, so 50 key/value pairs. */
+    private static final int MAX_PAIRS_PER_OBJECT = 50;
 
     @Override
     public PermissionDialect permissionDialect() {
@@ -42,7 +46,15 @@ public class PostgresDialect implements SqlDialect {
 
     @Override
     public String buildObject(List<String> keyValuePairs) {
-        return "jsonb_build_object(" + String.join(", ", keyValuePairs) + ")";
+        if (keyValuePairs.size() <= MAX_PAIRS_PER_OBJECT) {
+            return "jsonb_build_object(" + String.join(", ", keyValuePairs) + ")";
+        }
+        // A function takes at most 100 arguments: wider objects are built in parts and merged.
+        List<String> parts = new ArrayList<>();
+        for (int from = 0; from < keyValuePairs.size(); from += MAX_PAIRS_PER_OBJECT) {
+            parts.add(buildObject(keyValuePairs.subList(from, Math.min(from + MAX_PAIRS_PER_OBJECT, keyValuePairs.size()))));
+        }
+        return "(" + String.join(" || ", parts) + ")";
     }
 
     @Override
@@ -90,9 +102,18 @@ public class PostgresDialect implements SqlDialect {
     public String suffixCast(String dataType) {
         if (dataType == null) return "";
         String type = dataType.toLowerCase();
-        if (type.equals("bigint") || type.equals("int8")) return "::text";
+        // Bigints and decimals are answered as strings of every digit (see ExactNumbers)
+        if (ExactNumbers.isExact(type)) return "::text";
+        if (ExactNumbers.isExactArray(type)) return "::text[]";
         if (type.equals("json")) return " #>> '{}'";
         return "";
+    }
+
+    /** Bigints and decimals as strings of every digit, as GraphQL answers them; everything else as stored. */
+    @Override
+    public String jsonValue(String expr, String dataType) {
+        return ExactNumbers.isExact(dataType) || ExactNumbers.isExactArray(dataType)
+                ? expr + suffixCast(dataType) : expr;
     }
 
     @Override

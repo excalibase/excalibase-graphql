@@ -177,7 +177,7 @@ class SqlCompilerIntegrationTest {
                         .content(graphql("{ testSchemaOrdersAggregate { count sum { total_amount } avg { total_amount } min { total_amount } max { total_amount } } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.count").value(5))
-                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.max.total_amount").isNumber());
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.max.total_amount").isString());
     }
 
     // === Mutations ===
@@ -307,7 +307,7 @@ class SqlCompilerIntegrationTest {
                             """)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.createTestSchemaOrders.order_id").isNumber())
-                .andExpect(jsonPath("$.data.createTestSchemaOrders.total_amount").value(99.99));
+                .andExpect(jsonPath("$.data.createTestSchemaOrders.total_amount").value("99.99"));
     }
 
     // === Enhanced WHERE filters ===
@@ -897,7 +897,7 @@ class SqlCompilerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaOrdersAggregate { sum { total_amount } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.sum.total_amount").isNumber());
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.sum.total_amount").isString());
     }
 
     @Test
@@ -907,8 +907,8 @@ class SqlCompilerIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(graphql("{ testSchemaOrdersAggregate { min { total_amount } max { total_amount } } }")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.min.total_amount").isNumber())
-                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.max.total_amount").isNumber());
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.min.total_amount").isString())
+                .andExpect(jsonPath("$.data.testSchemaOrdersAggregate.max.total_amount").isString());
     }
 
     // === Inline fragment ===
