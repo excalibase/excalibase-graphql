@@ -334,7 +334,18 @@ public class MutationBuilder {
     /** {@code value} as a write binds it: a composite as its tuple, a number sent as a string as the number. */
     public Object bindValue(String tableName, String colName, Object value) {
         String type = schemaInfo.getColumnType(tableName, colName);
-        return dialect.bindValue(type, NumericInput.coerce(type, convertCompositeValue(tableName, colName, value)));
+        return dialect.bindValue(type, NumericInput.coerce(type, jsonText(type, convertCompositeValue(tableName, colName, value))));
+    }
+
+    /** A JSON column given an object or list (a variable holding one) takes its JSON text, as a literal does. */
+    private static Object jsonText(String type, Object value) {
+        boolean json = "json".equalsIgnoreCase(type) || "jsonb".equalsIgnoreCase(type);
+        if (!json || !(value instanceof Map<?, ?> || value instanceof List<?>)) return value;
+        try {
+            return OBJECT_MAPPER.writeValueAsString(value);
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("Input value cannot be written as JSON", e);
+        }
     }
 
     public Object convertCompositeValue(String tableName, String colName, Object value) {
@@ -459,7 +470,7 @@ public class MutationBuilder {
             case VariableReference vr -> variables.get(vr.getName());
             case IntValue iv -> FilterBuilder.integer(iv.getValue());
             case StringValue sv -> sv.getValue();
-            case FloatValue fv -> fv.getValue().doubleValue();
+            case FloatValue fv -> fv.getValue();
             case BooleanValue bv -> bv.isValue();
             case EnumValue ev -> ev.getName();
             case ObjectValue ov -> {

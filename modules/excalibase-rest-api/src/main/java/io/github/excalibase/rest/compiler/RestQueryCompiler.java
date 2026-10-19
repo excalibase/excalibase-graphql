@@ -106,7 +106,7 @@ public class RestQueryCompiler {
         this.defaultSchema = defaultSchema;
         this.defaultMaxRows = maxRows;
         this.access = access == null ? TableAccess.UNRESTRICTED : access;
-        this.values = new ParamValues(schemaInfo, dialect.parsesUntypedParameters());
+        this.values = new ParamValues(schemaInfo, dialect);
         this.filterSql = new RestFilterSql(dialect, values);
     }
 
