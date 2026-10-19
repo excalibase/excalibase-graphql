@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import static io.github.excalibase.schema.GraphqlConstants.*;
 import static io.github.excalibase.compiler.SqlKeywords.*;
@@ -199,21 +200,32 @@ public class QueryBuilder {
     // === Aggregates ===
 
     public String compileAggregate(Field field, String tableName, Map<String, Object> params) {
-        if (!filterBuilder.access().allowsAggregations(tableName)) {
-            throw new IllegalArgumentException("Unknown field(s): " + field.getName());
-        }
-        String alias = dialect.randAlias();
-        List<String> parts = new ArrayList<>();
+        requireAggregations(field.getName(), tableName);
+        return SELECT + aggregateObject(field, tableName, alias -> List.of(), params);
+    }
 
+    /** Aggregates exist only for a role allowed them on the table; for anyone else the field is unknown. */
+    private void requireAggregations(String fieldName, String tableName) {
+        if (!filterBuilder.access().allowsAggregations(tableName)) {
+            throw unknownField(fieldName);
+        }
+    }
+
+    /**
+     * The aggregate object of {@code field} over the rows of {@code tableName} that meet {@code scope} (the
+     * join to a parent row, if any), the field's {@code where} and the role's select filter.
+     */
+    private String aggregateObject(Field field, String tableName, Function<String, List<String>> scope,
+                                   Map<String, Object> params) {
+        List<String> parts = new ArrayList<>();
         for (Selection<?> sel : field.getSelectionSet().getSelections()) {
             if (!(sel instanceof Field aggField)) continue;
             String aggName = aggField.getName();
 
             if (FIELD_COUNT.equals(aggName)) {
-                StringBuilder countSql = new StringBuilder();
-                countSql.append(SELECT).append(COUNT_ALL).append(FROM).append(qualifiedTable(tableName)).append(" ").append(alias);
-                filterBuilder.applyWhere(countSql, field, alias, params, tableName);
-                parts.add(jsonKey(aggField) + ", (" + countSql + ")");
+                String alias = dialect.randAlias();
+                parts.add(jsonKey(aggField) + ", (" + SELECT + COUNT_ALL
+                        + scopedRows(field, tableName, alias, scope, params) + ")");
             } else if (Set.of(AGG_SUM, AGG_AVG, AGG_MIN, AGG_MAX).contains(aggName) && aggField.getSelectionSet() != null) {
                 // Nested per-column aggregate -- sum(total_amount), avg(total_amount), etc.
                 List<String> colParts = new ArrayList<>();
@@ -222,16 +234,13 @@ public class QueryBuilder {
                         String col = colField.getName();
                         filterBuilder.requireColumn(tableName, col);
                         String subAlias = dialect.randAlias();
-                        StringBuilder subSql = new StringBuilder();
                         String aggregate = aggName + "(" + subAlias + "." + dialect.quoteIdentifier(col) + ")";
                         if (AGG_MIN.equals(aggName) || AGG_MAX.equals(aggName)) {
                             // MIN and MAX keep the column's type, so they read as the column does.
                             aggregate = dialect.jsonValue(aggregate, schemaInfo.getColumnType(tableName, col));
                         }
-                        subSql.append(SELECT).append(aggregate).append(FROM)
-                                .append(qualifiedTable(tableName)).append(" ").append(subAlias);
-                        filterBuilder.applyWhere(subSql, field, subAlias, params, tableName);
-                        colParts.add(jsonKey(colField) + ", (" + subSql + ")");
+                        colParts.add(jsonKey(colField) + ", (" + SELECT + aggregate
+                                + scopedRows(field, tableName, subAlias, scope, params) + ")");
                     }
                 }
                 parts.add(jsonKey(aggField) + ", " + dialect.buildObject(colParts));
@@ -239,8 +248,16 @@ public class QueryBuilder {
                 requireTypename(aggName);
             }
         }
+        return dialect.buildObject(parts);
+    }
 
-        return SELECT + dialect.buildObject(parts);
+    /** {@code FROM table alias WHERE …}: the scope, the field's where and the role's select filter. */
+    private String scopedRows(Field field, String tableName, String alias, Function<String, List<String>> scope,
+                              Map<String, Object> params) {
+        List<String> conditions = new ArrayList<>(scope.apply(alias));
+        filterBuilder.buildWhereConditions(field, alias, params, conditions, tableName);
+        return FROM + qualifiedTable(tableName) + " " + alias
+                + (conditions.isEmpty() ? "" : WHERE + String.join(AND, conditions));
     }
 
     // === Connection (CTE-based cursor pagination) ===
@@ -695,6 +712,14 @@ public class QueryBuilder {
             return key + ", " + buildReverseFkValue(field, alias, rfk, params);
         }
 
+        if (name.endsWith(AGGREGATE_SUFFIX)) {
+            SchemaInfo.ReverseFkInfo aggregated = schemaInfo.getReverseFk(tableName,
+                    name.substring(0, name.length() - AGGREGATE_SUFFIX.length()));
+            if (aggregated != null) {
+                return key + ", " + buildReverseFkAggregate(field, alias, aggregated, params);
+            }
+        }
+
         // A computed field is a function nobody tracks: reflected, never served.
         return null;
     }
@@ -763,6 +788,25 @@ public class QueryBuilder {
         filterBuilder.applyNestedLimit(rows, field, params, childTable);
         return "(" + SELECT + dialect.coalesceArray(dialect.aggregateArray(subObj))
                 + FROM + "(" + rows + ") " + subAlias + ")";
+    }
+
+    /**
+     * A nested aggregate ({@code publicTasksAggregate}): the aggregate of the child rows joined to this row,
+     * narrowed by the field's {@code where} and the role's select filter, as Hasura's array-relationship
+     * aggregate. It exists only where the role is allowed aggregations on the child table.
+     */
+    private String buildReverseFkAggregate(Field field, String alias, SchemaInfo.ReverseFkInfo rfk,
+                                           Map<String, Object> params) {
+        FieldArguments.requireKnown(field, FieldArguments.AGGREGATE);
+        requireAggregations(field.getName(), rfk.childTable());
+        return "(" + SELECT + aggregateObject(field, rfk.childTable(), subAlias -> {
+            List<String> join = new ArrayList<>();
+            for (int i = 0; i < rfk.fkColumns().size(); i++) {
+                join.add(subAlias + "." + dialect.quoteIdentifier(rfk.fkColumns().get(i))
+                        + " = " + alias + "." + dialect.quoteIdentifier(rfk.refColumns().get(i)));
+            }
+            return join;
+        }, params) + ")";
     }
 
     /**

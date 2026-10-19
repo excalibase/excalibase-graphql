@@ -11,6 +11,7 @@ type FiltersArticle {
   created_at: String
   external_id: String
   filtersComment(limit: Int, offset: Int, orderBy: FiltersCommentOrderByInput, where: FiltersCommentWhereInput): [FiltersComment]
+  filtersCommentAggregate(where: FiltersCommentWhereInput): FiltersCommentAggregate
   meta: JSON
   mood: FiltersMood
   published: Boolean

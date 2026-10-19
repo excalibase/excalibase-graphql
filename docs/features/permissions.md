@@ -188,7 +188,13 @@ select cannot be used in `where`, `orderBy` or cursors either.
   by the update filter.
 - What a mutation returns (`returning`, REST `return=representation`) is limited to rows that pass
   the select filter and to the select columns. A role with insert but no select permission gets the
-  affected-row count only. `affected_rows` counts every row written.
+  affected-row count only. `affected_rows` counts every row written. A created row is read back after
+  the insert statement, so a select filter that reaches it through rows a trigger adds (an owner's
+  membership) sees them.
+- A row the filter does not reach is not written and not reported: an update or delete of it answers
+  `200` with no rows (GraphQL `[]`, REST `{"data": []}`), never 403, as in Hasura and PostgREST. Answering 403
+  would tell the caller the row exists. A client that must tell "not allowed" from "no such row" reads
+  the row first.
 
 **Insert without select** (a public contact form: `anon` may insert into `messages`, never read it).
 The table is write-only for that role:

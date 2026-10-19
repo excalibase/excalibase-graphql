@@ -510,6 +510,28 @@
           },
           "isDeprecated" : false,
           "deprecationReason" : null
+        }, {
+          "name" : "filtersCommentAggregate",
+          "description" : null,
+          "args" : [ {
+            "name" : "where",
+            "description" : null,
+            "type" : {
+              "kind" : "INPUT_OBJECT",
+              "name" : "FiltersCommentWhereInput",
+              "ofType" : null
+            },
+            "defaultValue" : null,
+            "isDeprecated" : false,
+            "deprecationReason" : null
+          } ],
+          "type" : {
+            "kind" : "OBJECT",
+            "name" : "FiltersCommentAggregate",
+            "ofType" : null
+          },
+          "isDeprecated" : false,
+          "deprecationReason" : null
         } ],
         "inputFields" : null,
         "interfaces" : [ ],

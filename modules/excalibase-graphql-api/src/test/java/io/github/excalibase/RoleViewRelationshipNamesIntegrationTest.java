@@ -194,7 +194,10 @@ class RoleViewRelationshipNamesIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         Set<String> names = new TreeSet<>();
         for (JsonNode field : MAPPER.readTree(body).path("data").path("__type").path("fields")) {
-            names.add(field.path("name").asText());
+            // Relationship aggregates follow the role's allowAggregations, not its naming; compared elsewhere.
+            if (!field.path("name").asText().endsWith("Aggregate")) {
+                names.add(field.path("name").asText());
+            }
         }
         assertThat(names).as(type + " is served").isNotEmpty();
         return names;

@@ -79,11 +79,24 @@ public class PostgresMutationCompiler implements MutationCompiler {
         InsertRowParser parser = new InsertRowParser(shared.schemaInfo(), variables);
         List<InsertRow> rows = many ? parser.rows(tableName, rowsArg.getValue())
                 : List.of(parser.row(tableName, rowsArg.getValue()));
-        if (rows.stream().allMatch(InsertRow::flat)) return Optional.empty();
+        if (rows.stream().allMatch(InsertRow::flat) && !readThroughFilter(tableName, shared)) return Optional.empty();
         String onConflictSql = many ? "" : parseOnConflict(field, shared, params, tableName);
         String responseKey = field.getAlias() != null ? field.getAlias() : fieldName;
         return Optional.of(new MutationSequence(List.of(new PostgresNestedInsert(shared, params)
                 .field(field, responseKey, tableName, rows, many, onConflictSql))));
+    }
+
+    /**
+     * True when the role reads {@code tableName} through a select filter. Its created rows are then answered by
+     * a statement of their own, after the insert's triggers ran: a filter that reaches the row through rows a
+     * trigger adds (an owner's membership) cannot see them from inside the inserting statement.
+     */
+    private static boolean readThroughFilter(String tableName, MutationBuilder shared) {
+        if (!shared.returnsRows(tableName)) return false;
+        List<String> filter = new ArrayList<>();
+        shared.filterBuilder().appendRlsConditions(filter, tableName, shared.dialect().randAlias(), new HashMap<>(),
+                RlsOp.SELECT);
+        return !filter.isEmpty();
     }
 
     private String routeMutation(Field field, String fieldName,
