@@ -438,6 +438,11 @@ public class FilterBuilder {
             throw new IllegalArgumentException("Filter operator '" + opName + "' on column '" + col + "' takes a list");
         }
         boolean negate = FILTER_NOT_IN.equals(opName) || FILTER_NIN.equals(opName);
+        if (av.getValues().isEmpty()) {
+            // Nothing is in an empty list; everything is outside it.
+            if (!negate) conditions.add("1 = 0");
+            return;
+        }
         String suffix = negate ? "_notin" : "_in";
         List<String> inParams = new ArrayList<>();
         for (int i = 0; i < av.getValues().size(); i++) {
@@ -630,59 +635,67 @@ public class FilterBuilder {
     }
 
     public void applyOrderBy(StringBuilder sql, Field field, String alias, String tableName) {
-        Argument orderByArg = field.getArguments().stream()
-                .filter(a -> ARG_ORDER_BY.equals(a.getName()))
-                .findFirst().orElse(null);
-
-        if (orderByArg == null || !(orderByArg.getValue() instanceof ObjectValue ov)) return;
-
         List<String> clauses = new ArrayList<>();
-        for (ObjectField of : ov.getObjectFields()) {
-            requireColumn(tableName, of.getName());
-            String dir;
-            if (of.getValue() instanceof EnumValue ev) {
-                dir = ev.getName();
-            } else if (of.getValue() instanceof StringValue sv) {
-                dir = sv.getValue();
-            } else {
-                dir = ASC;
-            }
-            String colRef = alias + "." + dialect.quoteIdentifier(of.getName());
-            String orderClause = parseOrderDirection(colRef, dir);
-            clauses.add(orderClause);
+        for (String[] column : parseOrderBy(field, tableName)) {
+            clauses.add(orderClause(alias + "." + dialect.quoteIdentifier(column[0]), column[1]));
         }
         if (!clauses.isEmpty()) {
             sql.append(ORDER_BY).append(joinCols(clauses));
         }
     }
 
-    /**
-     * Parses the orderBy argument into a list of [column, direction] pairs.
-     */
     public List<String[]> parseOrderBy(Field field) {
         return parseOrderBy(field, null);
     }
 
+    /**
+     * The {@code orderBy} columns and directions, in the order written; the argument, or any direction in
+     * it, may be a variable, and an unset one orders nothing. A list of such objects (Hasura's form) orders
+     * by each element in turn.
+     */
     public List<String[]> parseOrderBy(Field field, String tableName) {
         List<String[]> result = new ArrayList<>();
         Argument orderByArg = field.getArguments().stream()
                 .filter(a -> ARG_ORDER_BY.equals(a.getName()))
                 .findFirst().orElse(null);
-        if (orderByArg != null && orderByArg.getValue() instanceof ObjectValue ov) {
-            for (ObjectField of : ov.getObjectFields()) {
-                requireColumn(tableName, of.getName());
-                String dir;
-                if (of.getValue() instanceof EnumValue ev) {
-                    dir = ev.getName();
-                } else if (of.getValue() instanceof StringValue sv) {
-                    dir = sv.getValue();
-                } else {
-                    dir = ASC;
-                }
-                result.add(new String[]{of.getName(), dir.toUpperCase()});
+        Value<?> value = orderByArg == null ? null : resolveVariable(orderByArg.getValue());
+        if (value == null || value instanceof NullValue) return result;
+        List<?> objects = value instanceof ArrayValue list ? list.getValues() : List.of(value);
+        for (Object element : objects) {
+            Value<?> resolved = resolveVariable((Value<?>) element);
+            if (resolved == null || resolved instanceof NullValue) continue;
+            if (!(resolved instanceof ObjectValue ov)) {
+                throw new IllegalArgumentException("Argument 'orderBy' must be an object of columns, or a list of them");
             }
+            addOrderColumns(ov, tableName, result);
         }
         return result;
+    }
+
+    private void addOrderColumns(ObjectValue ov, String tableName, List<String[]> result) {
+        for (ObjectField of : ov.getObjectFields()) {
+            requireColumn(tableName, of.getName());
+            Value<?> direction = resolveVariable(of.getValue());
+            if (direction == null || direction instanceof NullValue) continue;
+            String dir = switch (direction) {
+                case EnumValue ev -> ev.getName();
+                case StringValue sv -> sv.getValue();
+                default -> throw new IllegalArgumentException("Invalid ORDER BY direction for '" + of.getName() + "'");
+            };
+            String upper = dir.toUpperCase();
+            if (!ORDER_DIRECTIONS.contains(upper)) {
+                throw new IllegalArgumentException("Invalid ORDER BY direction: " + dir);
+            }
+            result.add(new String[]{of.getName(), upper});
+        }
+    }
+
+    private static final Set<String> ORDER_DIRECTIONS = Set.of("ASC", "DESC", "ASCNULLSLAST", "ASCNULLSFIRST",
+            "DESCNULLSLAST", "DESCNULLSFIRST");
+
+    /** {@code colRef} ordered by {@code dir}: ASC, DESC or one of the NULLs-placing directions. */
+    public String orderClause(String colRef, String dir) {
+        return parseOrderDirection(colRef, dir);
     }
 
     /**
@@ -715,7 +728,7 @@ public class FilterBuilder {
         int limit = rowCap(tableName);
         for (Argument arg : field.getArguments()) {
             if (ARG_LIMIT.equals(arg.getName()) || ARG_FIRST.equals(arg.getName())) {
-                Integer value = resolveIntArg(arg.getValue(), boundVariables());
+                Integer value = nonNegative(arg);
                 if (value != null) limit = Math.min(value, limit);
             }
         }
@@ -725,7 +738,7 @@ public class FilterBuilder {
 
         for (Argument arg : field.getArguments()) {
             if (ARG_OFFSET.equals(arg.getName())) {
-                Integer value = resolveIntArg(arg.getValue(), boundVariables());
+                Integer value = nonNegative(arg);
                 if (value != null) {
                     String offParam = "offset_" + params.size();
                     sql.append(" OFFSET :").append(offParam);
@@ -743,7 +756,8 @@ public class FilterBuilder {
         Integer limit = roleRowLimit(tableName);
         Integer offset = null;
         for (Argument arg : field.getArguments()) {
-            Integer value = resolveIntArg(arg.getValue(), boundVariables());
+            if (!ARG_LIMIT.equals(arg.getName()) && !ARG_OFFSET.equals(arg.getName())) continue;
+            Integer value = nonNegative(arg);
             if (value == null) continue;
             if (ARG_LIMIT.equals(arg.getName())) {
                 limit = limit == null ? value : Math.min(value, limit);
@@ -764,6 +778,15 @@ public class FilterBuilder {
             sql.append(" OFFSET :").append(offsetParam);
             params.put(offsetParam, offset);
         }
+    }
+
+    /** A paging argument's value (limit, offset, first, last), refused when negative; null when not given. */
+    public Integer nonNegative(Argument arg) {
+        Integer value = resolveIntArg(arg.getValue(), boundVariables());
+        if (value != null && value < 0) {
+            throw new IllegalArgumentException("Argument '" + arg.getName() + "' must be 0 or more, not " + value);
+        }
+        return value;
     }
 
     // === Parameter helpers ===
