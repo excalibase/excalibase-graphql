@@ -8,6 +8,7 @@ import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLScalarType;
+import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.FilterColumnKind;
 
@@ -48,8 +49,17 @@ public final class FilterInputCatalog {
             GraphQLInputObjectType dateTimeFilter,
             GraphQLInputObjectType jsonFilter,
             GraphQLInputObjectType fullTextStringFilter,
+            GraphQLInputObjectType bigIntegerFilter,
+            GraphQLInputObjectType bigDecimalFilter,
             Map<String, GraphQLInputObjectType> arrayFilters
     ) {
+        /** The filter type of a column of {@code kind} and {@code columnType}: bigints and decimals take their own scalar. */
+        public GraphQLInputObjectType forColumn(FilterColumnKind kind, String columnType) {
+            if (kind == FilterColumnKind.INT && ExactNumbers.isBigInteger(columnType)) return bigIntegerFilter;
+            if (kind == FilterColumnKind.FLOAT && ExactNumbers.isBigDecimal(columnType)) return bigDecimalFilter;
+            return forKind(kind);
+        }
+
         /** The filter type of an array column whose elements take {@code element}; null when none is offered. */
         public GraphQLInputObjectType forArray(GraphQLInputType element) {
             return arrayFilters.get(((GraphQLNamedType) element).getName());
@@ -84,6 +94,8 @@ public final class FilterInputCatalog {
                 build("DateTimeFilterInput", FilterColumnKind.DATE_TIME, GraphQLString, capabilities),
                 build("JsonFilterInput", FilterColumnKind.JSON, ExtendedScalars.Json, capabilities),
                 build("SearchableStringFilterInput", FilterColumnKind.FULL_TEXT_STRING, GraphQLString, capabilities),
+                build("BigIntegerFilterInput", FilterColumnKind.INT, ExtendedScalars.GraphQLBigInteger, capabilities),
+                build("BigDecimalFilterInput", FilterColumnKind.FLOAT, ExtendedScalars.GraphQLBigDecimal, capabilities),
                 arrayFilters(capabilities));
     }
 
@@ -91,7 +103,7 @@ public final class FilterInputCatalog {
     private static Map<String, GraphQLInputObjectType> arrayFilters(FilterCapabilities capabilities) {
         Map<String, GraphQLInputObjectType> filters = new LinkedHashMap<>();
         for (GraphQLScalarType element : List.of(GraphQLString, GraphQLInt, GraphQLFloat, GraphQLBoolean,
-                ExtendedScalars.GraphQLBigInteger, ExtendedScalars.Json)) {
+                ExtendedScalars.GraphQLBigInteger, ExtendedScalars.GraphQLBigDecimal, ExtendedScalars.Json)) {
             GraphQLInputObjectType filter = build(element.getName() + "ArrayFilterInput", FilterColumnKind.ARRAY,
                     GraphQLList.list(element), capabilities);
             if (filter != null) {

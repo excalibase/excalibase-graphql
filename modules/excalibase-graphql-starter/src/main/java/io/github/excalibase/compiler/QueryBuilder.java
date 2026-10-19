@@ -1,6 +1,7 @@
 package io.github.excalibase.compiler;
 
 import graphql.language.*;
+import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
@@ -235,9 +236,13 @@ public class QueryBuilder {
                         filterBuilder.requireColumn(tableName, col);
                         String subAlias = dialect.randAlias();
                         String aggregate = aggName + "(" + subAlias + "." + dialect.quoteIdentifier(col) + ")";
+                        String columnType = schemaInfo.getColumnType(tableName, col);
                         if (AGG_MIN.equals(aggName) || AGG_MAX.equals(aggName)) {
                             // MIN and MAX keep the column's type, so they read as the column does.
-                            aggregate = dialect.jsonValue(aggregate, schemaInfo.getColumnType(tableName, col));
+                            aggregate = dialect.jsonValue(aggregate, columnType);
+                        } else if (ExactNumbers.isExact(columnType)) {
+                            // A sum or average of exact numbers is a decimal, answered as a string of its digits.
+                            aggregate = dialect.jsonValue(aggregate, "numeric");
                         }
                         colParts.add(jsonKey(colField) + ", (" + SELECT + aggregate
                                 + scopedRows(field, tableName, subAlias, scope, params) + ")");

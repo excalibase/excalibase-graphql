@@ -1,5 +1,6 @@
 package io.github.excalibase.rest.compiler;
 
+import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.compiler.KeyedWrite;
 import io.github.excalibase.compiler.KeyedWrites;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -542,7 +543,7 @@ public class RestQueryCompiler {
         if (access.permits(table, RlsOp.SELECT)) {
             StringBuilder readable = new StringBuilder();
             appendRls(readable, table, cte, RlsOp.SELECT, params);
-            rows = SELECT + starFor(table, cte) + FROM + cte + (readable.isEmpty() ? "" : WHERE + readable);
+            rows = SELECT + representedColumns(table, cte) + FROM + cte + (readable.isEmpty() ? "" : WHERE + readable);
         } else {
             // Insert without select: the rows are written, none is represented.
             rows = SELECT + "NULL" + FROM + cte + WHERE + "FALSE";
@@ -580,6 +581,32 @@ public class RestQueryCompiler {
         }
         return String.join(COMMA_SEP, schemaInfo.getColumns(table).stream()
                 .map(column -> alias + DOT + dialect.quoteIdentifier(column)).toList());
+    }
+
+    /** The written rows' columns in their answered form, for the representation built from them whole. */
+    private String representedColumns(String table, String alias) {
+        if (!hasExactNumbers(table)) {
+            return starFor(table, alias);
+        }
+        return String.join(COMMA_SEP, schemaInfo.getColumns(table).stream()
+                .map(column -> jsonValue(table, alias, column) + " AS " + dialect.quoteIdentifier(column)).toList());
+    }
+
+    /**
+     * Whether the row can be written as JSON whole: not where a column is answered in another form than the
+     * database writes it, as bigints and decimals are (strings of every digit).
+     */
+    private boolean wholeRowJson(String table) {
+        return dialect.supportsRowToJson() && !hasExactNumbers(table);
+    }
+
+    private boolean hasExactNumbers(String table) {
+        return schemaInfo.getColumns(table).stream().map(column -> schemaInfo.getColumnType(table, column))
+                .anyMatch(type -> ExactNumbers.isExact(type) || ExactNumbers.isExactArray(type));
+    }
+
+    private String jsonValue(String table, String alias, String column) {
+        return dialect.jsonValue(alias + DOT + dialect.quoteIdentifier(column), schemaInfo.getColumnType(table, column));
     }
 
     /** {@code LIMIT n} for the caller's own row limit on an embedded table, or nothing. */
@@ -735,7 +762,7 @@ public class RestQueryCompiler {
 
     private String buildJsonAgg(String table, List<String> columns, List<String> embedSql, Set<String> knownCols) {
         // The inner select holds only the caller's columns, so the whole-row form is safe.
-        if (columns.isEmpty() && embedSql.isEmpty() && dialect.supportsRowToJson()) {
+        if (columns.isEmpty() && embedSql.isEmpty() && wholeRowJson(table)) {
             return dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(ALIAS)));
         }
         List<String> entries = jsonEntries(table, columns.isEmpty() ? schemaInfo.getColumns(table) : columns, ALIAS);
@@ -762,8 +789,7 @@ public class RestQueryCompiler {
     private List<String> jsonEntries(String table, Collection<String> cols, String alias) {
         List<String> entries = new ArrayList<>();
         for (String col : cols) {
-            entries.add(sqlString(col) + COMMA_SEP
-                    + dialect.jsonValue(alias + DOT + dialect.quoteIdentifier(col), schemaInfo.getColumnType(table, col)));
+            entries.add(sqlString(col) + COMMA_SEP + jsonValue(table, alias, col));
         }
         return entries;
     }
@@ -844,7 +870,7 @@ public class RestQueryCompiler {
      */
     private String buildRowExpr(EmbedSpec embed, String outerAlias, String table, List<String> childEntries) {
         // The embed's inner select holds only the caller's columns, so the whole-row form is safe.
-        if (childEntries.isEmpty() && dialect.supportsRowToJson()) {
+        if (childEntries.isEmpty() && wholeRowJson(table)) {
             return dialect.rowToJson(outerAlias + DOT_STAR);
         }
         if (childEntries.isEmpty()) {

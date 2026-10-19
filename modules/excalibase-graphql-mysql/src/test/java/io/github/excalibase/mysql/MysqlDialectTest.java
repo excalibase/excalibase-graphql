@@ -33,9 +33,10 @@ class MysqlDialectTest {
     }
 
     @Test
-    @DisplayName("other columns keep their suffix cast, and an unknown type none")
+    @DisplayName("bigints and decimals read as text, other columns as stored")
     void otherColumns() {
-        assertThat(dialect.selectColumn("a.`n`", "bigint")).isEqualTo("a.`n`+0");
+        assertThat(dialect.selectColumn("a.`n`", "bigint")).isEqualTo("CAST(a.`n` AS CHAR)");
+        assertThat(dialect.selectColumn("a.`n`", "decimal")).isEqualTo("CAST(a.`n` AS CHAR)");
         assertThat(dialect.selectColumn("a.`n`", "varchar")).isEqualTo("a.`n`");
         assertThat(dialect.selectColumn("a.`n`", null)).isEqualTo("a.`n`");
     }

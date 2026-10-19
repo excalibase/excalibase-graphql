@@ -4,6 +4,7 @@ import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
 import io.github.excalibase.ArrayColumns;
+import io.github.excalibase.ExactNumbers;
 import graphql.schema.GraphQLOutputType;
 
 import static graphql.Scalars.GraphQLBoolean;
@@ -22,7 +23,9 @@ final class TypeMapping {
     static GraphQLInputType mapInputType(String dbType) {
         if (dbType == null) return GraphQLString;
         String type = dbType.toLowerCase();
-        if (type.equals("bigint") || type.equals("int8")) return ExtendedScalars.GraphQLBigInteger;
+        // Answered as strings holding every digit (see ExactNumbers)
+        if (ExactNumbers.isBigInteger(type)) return ExtendedScalars.GraphQLBigInteger;
+        if (ExactNumbers.isBigDecimal(type)) return ExtendedScalars.GraphQLBigDecimal;
         if (type.contains("int")) return GraphQLInt;
         if (type.contains("float") || type.contains("double") || type.contains("numeric")
                 || type.contains("decimal") || type.contains("real")) return GraphQLFloat;

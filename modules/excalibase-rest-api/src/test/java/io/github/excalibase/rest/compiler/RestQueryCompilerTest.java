@@ -760,9 +760,17 @@ class RestQueryCompilerTest {
     @Test
     @DisplayName("without permissions SELECT * keeps the row_to_json fast path")
     void unrestricted_keepsTheFastPath() {
-      var result = compiler.compileSelect("public.products", List.of(), List.of(), null, 30, 0, false);
+      var result = compiler.compileSelect("public.order_items", List.of(), List.of(), null, 30, 0, false);
       assertTrue(result.sql().contains("row_to_json"), result.sql());
       assertTrue(result.sql().contains("SELECT * FROM"), result.sql());
+    }
+
+    @Test
+    @DisplayName("a decimal column is answered as text, so SELECT * names each column")
+    void exactNumbers_leaveTheFastPath() {
+      String sql = compiler.compileSelect("public.products", List.of(), List.of(), null, 30, 0, false).sql();
+      assertFalse(sql.contains("row_to_json"), sql);
+      assertTrue(sql.contains("'price', c.\"price\"::text"), sql);
     }
   }
 

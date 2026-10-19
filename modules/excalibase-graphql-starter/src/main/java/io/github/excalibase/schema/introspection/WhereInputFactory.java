@@ -42,7 +42,7 @@ public final class WhereInputFactory {
         return switch (kind) {
             case ENUM -> enumFilters.get(schemaInfo.getEnumType(table, col));
             case ARRAY -> filters.forArray(TypeMapping.arrayElementType(schemaInfo.getColumnType(table, col)));
-            default -> filters.forKind(kind);
+            default -> filters.forColumn(kind, schemaInfo.getColumnType(table, col));
         };
     }
 }

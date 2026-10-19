@@ -152,8 +152,10 @@ public final class OpenApiGenerator {
         if (pgType == null) return Map.of(K_TYPE, T_STRING);
         return switch (pgType.toLowerCase()) {
             case T_INTEGER, "int4", "serial", "smallint", "int2" -> Map.of(K_TYPE, T_INTEGER);
-            case "bigint", "int8", "bigserial" -> Map.of(K_TYPE, T_INTEGER, K_FORMAT, "int64");
-            case "numeric", "decimal", "float8", "double precision" -> Map.of(K_TYPE, "number");
+            // Bigints and decimals are answered as strings of every digit
+            case "bigint", "int8", "bigserial" -> Map.of(K_TYPE, T_STRING, K_FORMAT, "int64");
+            case "numeric", "decimal" -> Map.of(K_TYPE, T_STRING, K_FORMAT, "decimal");
+            case "float8", "double precision" -> Map.of(K_TYPE, "number");
             case "real", "float4" -> Map.of(K_TYPE, "number", K_FORMAT, "float");
             case "boolean", "bool" -> Map.of(K_TYPE, "boolean");
             case "jsonb", "json" -> Map.of(K_TYPE, T_OBJECT);

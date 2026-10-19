@@ -33,7 +33,6 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -215,7 +214,8 @@ class RealtimeDeleteIntegrationTest {
 
         JsonNode change = alice.nextChange();
         assertThat(change.get("data").get("id").asInt()).isEqualTo(402);
-        assertThat(change.get("data").get("amount").decimalValue()).isEqualTo(new BigDecimal("100.01"));
+        assertThat(change.get("data").get("amount").isTextual()).as("a decimal arrives as the string a query returns").isTrue();
+        assertThat(change.get("data").get("amount").asText()).isEqualTo("100.01");
     }
 
     @Test
@@ -232,13 +232,14 @@ class RealtimeDeleteIntegrationTest {
     }
 
     @Test
-    void aRestRealtimeChange_readsLikeRest_bigintAsANumberAndNullKept() throws Exception {
+    void aRestRealtimeChange_readsLikeRest_bigintAsAStringAndNullKept() throws Exception {
         Subscriber alice = realtimeSubscriber(ALICE, "orders");
 
         publish("INSERT", "orders", "{\"id\": 1, \"org_id\": \"orgA\", \"title\": null}");
 
         JsonNode doc = alice.nextMessage().get("doc");
-        assertThat(doc.get("id").isNumber()).isTrue();
+        assertThat(doc.get("id").isTextual()).as("bigint arrives as the string REST returns").isTrue();
+        assertThat(doc.get("id").asText()).isEqualTo("1");
         assertThat(doc.has("title")).as("a null column is sent, not dropped").isTrue();
         assertThat(doc.get("title").isNull()).isTrue();
     }

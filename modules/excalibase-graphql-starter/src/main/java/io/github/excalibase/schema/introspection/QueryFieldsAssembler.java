@@ -1,11 +1,13 @@
 package io.github.excalibase.schema.introspection;
 
+import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLTypeReference;
+import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
 
@@ -86,7 +88,8 @@ public final class QueryFieldsAssembler {
                 fields.add(buildConnectionField(fName, tName, type, whereType, pageInfoType, aggregations));
             }
             if (aggregations) {
-                fields.add(buildAggregateField(fName, tName, numericColumns(schemaInfo, table), whereType));
+                fields.add(buildAggregateField(fName, tName, numericColumns(schemaInfo, table), whereType,
+                        schemaInfo, table));
             }
         }
         return fields;
@@ -151,12 +154,16 @@ public final class QueryFieldsAssembler {
      * can read, all narrowed by the same {@code where} as the list field.
      */
     private GraphQLFieldDefinition buildAggregateField(String fName, String tName, List<String> numericColumns,
-                                                       GraphQLInputObjectType whereType) {
+                                                       GraphQLInputObjectType whereType, SchemaInfo schemaInfo,
+                                                       String table) {
         GraphQLObjectType.Builder aggregate = newObject().name(tName + AGGREGATE_SUFFIX)
                 .field(newFieldDefinition().name(FIELD_COUNT).type(GraphQLInt).build());
         if (!numericColumns.isEmpty()) {
             GraphQLObjectType.Builder columns = newObject().name(tName + AGGREGATE_SUFFIX + "Columns");
-            numericColumns.forEach(column -> columns.field(newFieldDefinition().name(column).type(GraphQLFloat).build()));
+            // Over bigints and decimals the aggregate is a string of digits, as the column is
+            numericColumns.forEach(column -> columns.field(newFieldDefinition().name(column)
+                    .type(ExactNumbers.isExact(schemaInfo.getColumnType(table, column))
+                            ? ExtendedScalars.GraphQLBigDecimal : GraphQLFloat).build()));
             GraphQLObjectType columnsType = columns.build();
             for (String function : List.of(AGG_SUM, AGG_AVG, AGG_MIN, AGG_MAX)) {
                 aggregate.field(newFieldDefinition().name(function).type(columnsType).build());

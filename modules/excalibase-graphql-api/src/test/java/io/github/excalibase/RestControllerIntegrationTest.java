@@ -234,7 +234,7 @@ class RestControllerIntegrationTest {
       mockMvc.perform(get(BASE + "/products?order=price.desc"))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.data[0].name", is("Gizmo")))
-          .andExpect(jsonPath("$.data[0].price", is(29.99)));
+          .andExpect(jsonPath("$.data[0].price", is("29.99")));
     }
 
     @Test
@@ -263,7 +263,7 @@ class RestControllerIntegrationTest {
               .content("{\"name\":\"Created Item\",\"price\":55.00,\"category\":\"test\"}"))
           .andExpect(status().isCreated())
           .andExpect(jsonPath("$.data.name", is("Created Item")))
-          .andExpect(jsonPath("$.data.price", is(55.0)))
+          .andExpect(jsonPath("$.data.price", is("55.00")))
           .andExpect(jsonPath("$.data.id").exists());
     }
 
@@ -292,7 +292,7 @@ class RestControllerIntegrationTest {
               .header("Prefer", "return=representation")
               .content("{\"price\":99.99}"))
           .andExpect(status().isOk())
-          .andExpect(jsonPath("$.data[0].price", is(99.99)));
+          .andExpect(jsonPath("$.data[0].price", is("99.99")));
     }
 
     @Test @Order(2)
@@ -304,7 +304,7 @@ class RestControllerIntegrationTest {
               .content("{\"name\":\"Updated Gadget\",\"price\":25.00}"))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.data[0].name", is("Updated Gadget")))
-          .andExpect(jsonPath("$.data[0].price", is(25.0)));
+          .andExpect(jsonPath("$.data[0].price", is("25.00")));
     }
   }
 
@@ -358,7 +358,7 @@ class RestControllerIntegrationTest {
       mockMvc.perform(get(BASE + "/orders?total=gt.50"))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.data", hasSize(1)))
-          .andExpect(jsonPath("$.data[0].total", is(89.97)));
+          .andExpect(jsonPath("$.data[0].total", is("89.97")));
     }
 
     @Test

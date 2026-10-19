@@ -372,10 +372,12 @@ each list is named by its key: `publicMatchesByHomeTeam`, `publicMatchesByAwayTe
 Aliases work at every depth, inside relationships, connections, aggregates and mutation results:
 `{ publicMatches { matchId: id home: publicHomeTeam { teamName: name } } }`.
 
-### bigint
+### bigint and decimal
 
-bigint columns are read as strings (JSON numbers lose precision past 2^53), in queries and in
-subscription changes alike. The same string is accepted back in filters and writes, on GraphQL and REST.
+bigint and numeric/decimal columns are read as strings holding every digit (`"9223372036854775807"`,
+`"19.90"`), in GraphQL and REST, on Postgres and MySQL. A JSON number past 2^53, or with more than
+about 15 significant digits, is rounded by JavaScript's parser. Filters and writes take either a
+string or a number. Sums and averages over these columns are strings too.
 
 ### Composite Foreign Keys (PostgreSQL)
 
@@ -511,9 +513,8 @@ See [Subscriptions →](../features/subscriptions.md) for setup and configuratio
 
 ## Type Mappings
 
-`BIGINT` is a string in GraphQL and a number in REST, on purpose: a 64-bit integer does
-not fit a JavaScript number, and GraphQL's `Int` is 32-bit, so GraphQL follows the common
-`BigInteger`/`Long`-as-string convention while REST keeps PostgREST's JSON numbers.
+`BIGINT` and `NUMERIC`/`DECIMAL` are strings in GraphQL and REST alike: a 64-bit integer or
+an exact decimal does not fit a JavaScript number. Inputs take a string or a number.
 
 ### PostgreSQL
 
@@ -521,7 +522,8 @@ not fit a JavaScript number, and GraphQL's `Int` is 32-bit, so GraphQL follows t
 |---------|-------------|
 | `INTEGER`, `SMALLINT` | `Int` |
 | `BIGINT` | `BigInteger`, sent as a string (`"9007199254740993"`) |
-| `REAL`, `DOUBLE PRECISION`, `NUMERIC` | `Float` |
+| `NUMERIC`, `DECIMAL` | `BigDecimal`, sent as a string (`"19.90"`) |
+| `REAL`, `DOUBLE PRECISION` | `Float` |
 | `TEXT`, `VARCHAR`, `CHAR` | `String` |
 | `BOOLEAN` | `Boolean` |
 | `DATE`, `TIMESTAMP`, `TIMESTAMPTZ` | `String` |

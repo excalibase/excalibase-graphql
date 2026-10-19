@@ -76,50 +76,91 @@ abstract class ColumnTypesContract {
                 .get(ledgerField()).get(0);
     }
 
+    /** Decimals and bigints are answered as strings holding every digit, so no client parser can round them. */
     private static void assertExact(JsonNode amount) {
-        assertThat(amount.isNumber()).as(amount.toString()).isTrue();
-        assertThat(new BigDecimal(amount.toString())).isEqualByComparingTo(EXACT);
+        assertThat(amount.isTextual()).as(amount.toString()).isTrue();
+        assertThat(amount.asText()).isEqualTo(EXACT);
     }
 
     @Test
-    @DisplayName("a decimal reads back with every digit, through REST and GraphQL")
+    @DisplayName("a decimal reads back as a string with every digit, through REST and GraphQL")
     void decimalsReadExactly() throws Exception {
         assertExact(rest("ledger?select=amount&id=eq.1").get(0).get("amount"));
+        assertExact(rest("ledger?id=eq.1").get(0).get("amount"));
         assertExact(graphqlRow(1, "amount").get("amount"));
     }
 
     @Test
-    @DisplayName("a decimal filter on the exact value finds the row")
+    @DisplayName("a decimal filter takes the value as a number or a string")
     void decimalsFilterExactly() throws Exception {
         assertThat(rest("ledger?select=id&amount=eq." + EXACT).findValuesAsText("id")).contains("1");
         assertThat(graphql("{ " + ledgerField() + "(where: { amount: { eq: " + EXACT + " } }) { id } }", Map.of())
+                .get(ledgerField()).findValuesAsText("id")).contains("1");
+        assertThat(graphql("{ " + ledgerField() + "(where: { amount: { eq: \"" + EXACT + "\" } }) { id } }", Map.of())
                 .get(ledgerField()).findValuesAsText("id")).contains("1");
         assertThat(rest("ledger?select=id&amount=eq.12345678901234567890.1234567890")).isEmpty();
     }
 
     @Test
-    @DisplayName("a decimal written through REST and a GraphQL literal is stored exactly")
+    @DisplayName("a decimal is written exactly from a number or a string, through REST and GraphQL")
     void decimalsWriteExactly() throws Exception {
         assertExact(restPost("ledger", "{\"id\": 20, \"amount\": " + EXACT + "}").get("amount"));
-        assertExact(rest("ledger?select=amount&id=eq.20").get(0).get("amount"));
+        assertExact(restPost("ledger", "{\"id\": 22, \"amount\": \"" + EXACT + "\"}").get("amount"));
 
-        graphql("mutation { create" + mutationSuffix() + "(input: { id: 21, amount: " + EXACT + " }) { id } }",
-                Map.of());
+        JsonNode created = graphql("mutation { create" + mutationSuffix() + "(input: { id: 21, amount: " + EXACT
+                + " }) { amount } }", Map.of()).get("create" + mutationSuffix());
+        assertExact(created.isArray() ? created.get(0).get("amount") : created.get("amount"));
+        graphql("mutation ($a: BigDecimal) { create" + mutationSuffix() + "(input: { id: 23, amount: $a }) { id } }",
+                Map.of("a", EXACT));
         assertExact(rest("ledger?select=amount&id=eq.21").get(0).get("amount"));
+        assertExact(rest("ledger?select=amount&id=eq.23").get(0).get("amount"));
     }
 
     @Test
-    @DisplayName("the largest key reads, filters and writes back")
+    @DisplayName("the largest bigint reads as a string, and filters and writes back from a number or a string")
     void largestKeyRoundTrips() throws Exception {
-        assertThat(new BigDecimal(rest("ledger?select=big_id&id=eq.1").get(0).get("big_id").asText()))
-                .isEqualByComparingTo(maxBigId());
+        assertThat(rest("ledger?select=big_id&id=eq.1").get(0).get("big_id").isTextual()).isTrue();
+        assertThat(rest("ledger?select=big_id&id=eq.1").get(0).get("big_id").asText()).isEqualTo(maxBigId());
+        assertThat(graphqlRow(1, "big_id").get("big_id").asText()).isEqualTo(maxBigId());
+        assertThat(graphqlRow(1, "big_id").get("big_id").isTextual()).isTrue();
         assertThat(rest("ledger?select=id&big_id=eq." + maxBigId())).hasSize(1);
+        assertThat(graphql("{ " + ledgerField() + "(where: { big_id: { eq: " + maxBigId() + " } }) { id } }",
+                Map.of()).get(ledgerField())).hasSize(1);
 
         restPost("ledger", "{\"id\": 30, \"big_id\": " + maxBigId() + "}");
         graphql("mutation ($big: BigInteger) { create" + mutationSuffix() + "(input: { id: 31, big_id: $big }) { id } }",
                 Map.of("big", maxBigId()));
+        restPost("ledger", "{\"id\": 32, \"big_id\": \"" + maxBigId() + "\"}");
         assertThat(rest("ledger?select=id&big_id=eq." + maxBigId() + "&order=id.asc").findValuesAsText("id"))
-                .containsExactly("1", "30", "31");
+                .containsExactly("1", "30", "31", "32");
+    }
+
+    @Test
+    @DisplayName("aggregates over decimals and bigints are strings too")
+    void aggregatesAreStrings() throws Exception {
+        JsonNode aggregate = graphql("{ " + ledgerField() + "Aggregate(where: { id: { eq: 1 } }) { sum { amount } "
+                + "max { amount big_id } } }", Map.of()).get(ledgerField() + "Aggregate");
+
+        assertThat(aggregate.get("sum").get("amount").isTextual()).as(aggregate.toString()).isTrue();
+        assertThat(new BigDecimal(aggregate.get("sum").get("amount").asText())).isEqualByComparingTo(EXACT);
+        assertThat(aggregate.get("max").get("amount").asText()).isEqualTo(EXACT);
+        assertThat(aggregate.get("max").get("big_id").asText()).isEqualTo(maxBigId());
+    }
+
+    @Test
+    @DisplayName("the schema names the string scalars: BigDecimal for decimals, BigInteger for bigints")
+    void schemaNamesTheScalars() throws Exception {
+        Map<String, String> fields = new LinkedHashMap<>();
+        graphql("{ __type(name: \"" + mutationSuffix() + "\") { fields { name type { name } } } }", Map.of())
+                .get("__type").get("fields")
+                .forEach(field -> fields.put(field.get("name").asText(), field.get("type").get("name").asText()));
+        assertThat(fields).containsEntry("amount", "BigDecimal").containsEntry("big_id", "BigInteger");
+
+        Map<String, String> filters = new LinkedHashMap<>();
+        graphql("{ __type(name: \"" + mutationSuffix() + "WhereInput\") { inputFields { name type { name } } } }",
+                Map.of()).get("__type").get("inputFields")
+                .forEach(field -> filters.put(field.get("name").asText(), field.get("type").get("name").asText()));
+        assertThat(filters).containsEntry("amount", "BigDecimalFilterInput").containsEntry("big_id", "BigIntegerFilterInput");
     }
 
     @Test

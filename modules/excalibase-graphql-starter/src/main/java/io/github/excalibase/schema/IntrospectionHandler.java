@@ -187,6 +187,7 @@ public class IntrospectionHandler {
                                          Map<String, GraphQLInputObjectType> arrRelTypes) {
         // Register extended scalar types
         schemaBuilder.additionalType(ExtendedScalars.GraphQLBigInteger);
+        schemaBuilder.additionalType(ExtendedScalars.GraphQLBigDecimal);
         // The order inputs lists and nested lists name by reference
         new OrderByInputFactory().build(schemaInfo).values().forEach(schemaBuilder::additionalType);
         // Register enum types as additional types so they're discoverable via __type

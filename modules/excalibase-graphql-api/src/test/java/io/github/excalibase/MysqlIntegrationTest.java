@@ -295,8 +295,8 @@ class MysqlIntegrationTest {
                         .content(graphql("{ testOrdersAggregate { count sum { total_amount } avg { total_amount } min { total_amount } max { total_amount } } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.testOrdersAggregate.count").value(5))
-                .andExpect(jsonPath("$.data.testOrdersAggregate.sum.total_amount").isNumber())
-                .andExpect(jsonPath("$.data.testOrdersAggregate.max.total_amount").isNumber());
+                .andExpect(jsonPath("$.data.testOrdersAggregate.sum.total_amount").isString())
+                .andExpect(jsonPath("$.data.testOrdersAggregate.max.total_amount").isString());
     }
 
     // === Connection with cursor pagination ===

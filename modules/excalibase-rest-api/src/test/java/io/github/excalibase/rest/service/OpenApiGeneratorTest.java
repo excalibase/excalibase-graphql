@@ -174,8 +174,8 @@ class OpenApiGeneratorTest {
         Map<String, Object> props = (Map<String, Object>) ((Map<String, Object>) schemas.get("Types")).get("properties");
 
         assertThat((Map<String, Object>) props.get("a_int")).containsEntry("type", "integer");
-        assertThat((Map<String, Object>) props.get("f_bigint")).containsEntry("type", "integer").containsEntry("format", "int64");
-        assertThat((Map<String, Object>) props.get("i_numeric")).containsEntry("type", "number");
+        assertThat((Map<String, Object>) props.get("f_bigint")).containsEntry("type", "string").containsEntry("format", "int64");
+        assertThat((Map<String, Object>) props.get("i_numeric")).containsEntry("type", "string").containsEntry("format", "decimal");
         assertThat((Map<String, Object>) props.get("m_real")).containsEntry("type", "number").containsEntry("format", "float");
         assertThat((Map<String, Object>) props.get("o_bool")).containsEntry("type", "boolean");
         assertThat((Map<String, Object>) props.get("q_jsonb")).containsEntry("type", "object");

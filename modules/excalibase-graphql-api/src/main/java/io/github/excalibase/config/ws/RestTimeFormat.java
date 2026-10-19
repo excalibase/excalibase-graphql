@@ -10,7 +10,8 @@ import java.util.regex.Pattern;
  * Writes the timestamp columns of a change the way REST reads them. The change stream carries Postgres's
  * text output ({@code 2026-10-07 10:00:00.123+00}); REST and GraphQL read rows through {@code row_to_json}
  * ({@code 2026-10-07T10:00:00.123+00:00}), so a client compares one value against the other unchanged.
- * Only columns typed timestamp are touched, an UPDATE's {@code old}/{@code new} images included.
+ * Only columns typed timestamp are touched, an UPDATE's {@code old}/{@code new} images included; bigint and
+ * decimal columns are strings, as REST reads them.
  */
 final class RestTimeFormat {
 
@@ -25,6 +26,9 @@ final class RestTimeFormat {
     }
 
     private static Object format(Object value, String type) {
+        if (value instanceof Number) {
+            return ExactChangeValues.format(value, type);
+        }
         if (!(value instanceof String text) || type == null
                 || !type.toLowerCase(Locale.ROOT).startsWith("timestamp")) {
             return value;
