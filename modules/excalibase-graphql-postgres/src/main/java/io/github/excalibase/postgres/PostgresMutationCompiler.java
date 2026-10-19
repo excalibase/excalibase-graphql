@@ -3,6 +3,7 @@ package io.github.excalibase.postgres;
 import graphql.language.*;
 import io.github.excalibase.compiler.InsertRow;
 import io.github.excalibase.compiler.InsertRowParser;
+import io.github.excalibase.compiler.FilterBuilder;
 import io.github.excalibase.compiler.MutationBuilder;
 import io.github.excalibase.compiler.MutationSequence;
 import io.github.excalibase.security.PermissionCheckFailedException;
@@ -297,17 +298,19 @@ public class PostgresMutationCompiler implements MutationCompiler {
     private String parseOnConflict(Field field, MutationBuilder shared,
                                    Map<String, Object> params, String tableName) {
         Argument onConflictArg = shared.findArg(field, ARG_ON_CONFLICT);
-        if (onConflictArg == null || !(onConflictArg.getValue() instanceof ObjectValue ocOv)) {
+        FilterBuilder filters = shared.filterBuilder();
+        if (onConflictArg == null || !(filters.resolvedValue(onConflictArg.getValue()) instanceof ObjectValue ocOv)) {
             return "";
         }
         String constraint = null;
         List<String> updateCols = new ArrayList<>();
         for (ObjectField of : ocOv.getObjectFields()) {
             if (ON_CONFLICT_CONSTRAINT.equals(of.getName())) {
-                constraint = shared.filterBuilder().extractValue(of.getValue()).toString();
-            } else if (ON_CONFLICT_UPDATE_COLUMNS.equals(of.getName()) && of.getValue() instanceof ArrayValue av) {
+                constraint = String.valueOf(filters.extractValue(of.getValue()));
+            } else if (ON_CONFLICT_UPDATE_COLUMNS.equals(of.getName())
+                    && filters.resolvedValue(of.getValue()) instanceof ArrayValue av) {
                 for (Value<?> elementValue : av.getValues()) {
-                    updateCols.add(shared.filterBuilder().extractValue(elementValue).toString());
+                    updateCols.add(String.valueOf(filters.extractValue(elementValue)));
                 }
             }
         }

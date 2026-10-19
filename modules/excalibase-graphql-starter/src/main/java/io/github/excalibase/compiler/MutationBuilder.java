@@ -11,6 +11,7 @@ import io.github.excalibase.security.WriteGuard;
 import io.github.excalibase.spi.MutationCompiler;
 import io.github.excalibase.spi.MutationKind;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.util.*;
@@ -378,23 +379,32 @@ public class MutationBuilder {
                 .findFirst().orElse(null);
     }
 
+    /**
+     * An input object's fields as values, from a literal or a variable holding one. A field given a variable
+     * resolves to the variable's value; one given an unset variable is left out, as GraphQL specifies.
+     */
     public Map<String, Object> extractObjectFields(Value<?> value, Map<String, Object> variables) {
+        Map<String, Object> vars = variables == null ? Map.of() : variables;
         if (value instanceof ObjectValue ov) {
             Map<String, Object> result = new LinkedHashMap<>();
             for (ObjectField of : ov.getObjectFields()) {
-                result.put(of.getName(), extractValue(of.getValue()));
+                if (!isUnset(of.getValue(), vars)) {
+                    result.put(of.getName(), extractValue(of.getValue(), vars));
+                }
             }
             return result;
         }
-        if (value instanceof VariableReference vr && variables != null) {
-            Object resolved = variables.get(vr.getName());
-            if (resolved instanceof Map<?, ?> map) {
-                Map<String, Object> result = new LinkedHashMap<>();
-                map.forEach((k, v) -> result.put(k.toString(), v));
-                return result;
-            }
+        if (value instanceof VariableReference vr && vars.get(vr.getName()) instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((k, v) -> result.put(k.toString(), v));
+            return result;
         }
         return Map.of();
+    }
+
+    /** True for a variable the operation was not given a value for. */
+    public static boolean isUnset(Value<?> value, Map<String, Object> variables) {
+        return value instanceof VariableReference vr && (variables == null || !variables.containsKey(vr.getName()));
     }
 
     public List<Map<String, Object>> extractArrayOfObjects(Value<?> value, Map<String, Object> variables) {
@@ -423,57 +433,48 @@ public class MutationBuilder {
     }
 
     public static Object extractValue(Value<?> value) {
-        return extractValue(value, Map.of());
+        return extractValue(value, FilterBuilder.boundVariables());
     }
 
+    /**
+     * A GraphQL value as the Java value a write binds: a variable as the value it holds (null when unset),
+     * an object or list literal as compact JSON with every variable inside it resolved.
+     */
     public static Object extractValue(Value<?> value, Map<String, Object> variables) {
-        if (value instanceof VariableReference vr && variables.containsKey(vr.getName())) {
-            return variables.get(vr.getName());
+        Object plain = plainValue(value, variables == null ? Map.of() : variables);
+        if (value instanceof ObjectValue || value instanceof ArrayValue) {
+            try {
+                return OBJECT_MAPPER.writeValueAsString(plain);
+            } catch (JsonProcessingException e) {
+                throw new IllegalArgumentException("Input value cannot be written as JSON", e);
+            }
         }
-        if (value instanceof IntValue iv) return iv.getValue().intValue();
-        if (value instanceof StringValue sv) return sv.getValue();
-        if (value instanceof FloatValue fv) return fv.getValue().doubleValue();
-        if (value instanceof BooleanValue bv) return bv.isValue();
-        if (value instanceof EnumValue ev) return ev.getName();
-        if (value instanceof NullValue) return null;
-        if (value instanceof ObjectValue ov) return objectValueToJson(ov, variables);
-        if (value instanceof ArrayValue av) return arrayValueToJson(av, variables);
-        return value.toString();
+        return plain;
     }
 
-    private static String objectValueToJson(ObjectValue ov, Map<String, Object> variables) {
-        StringBuilder sb = new StringBuilder("{");
-        List<ObjectField> fields = ov.getObjectFields();
-        for (int i = 0; i < fields.size(); i++) {
-            if (i > 0) sb.append(",");
-            sb.append("\"").append(fields.get(i).getName()).append("\":");
-            sb.append(valueToJsonString(fields.get(i).getValue(), variables));
-        }
-        sb.append("}");
-        return sb.toString();
-    }
-
-    private static String arrayValueToJson(ArrayValue av, Map<String, Object> variables) {
-        StringBuilder sb = new StringBuilder("[");
-        @SuppressWarnings("unchecked")
-        List<Value<?>> values = (List<Value<?>>) (List<?>) av.getValues();
-        for (int i = 0; i < values.size(); i++) {
-            if (i > 0) sb.append(",");
-            sb.append(valueToJsonString(values.get(i), variables));
-        }
-        sb.append("]");
-        return sb.toString();
-    }
-
-    private static String valueToJsonString(Value<?> value, Map<String, Object> variables) {
-        if (value instanceof StringValue sv) return "\"" + sv.getValue().replace("\"", "\\\"") + "\"";
-        if (value instanceof IntValue iv) return iv.getValue().toString();
-        if (value instanceof FloatValue fv) return fv.getValue().toString();
-        if (value instanceof BooleanValue bv) return String.valueOf(bv.isValue());
-        if (value instanceof EnumValue ev) return "\"" + ev.getName() + "\"";
-        if (value instanceof NullValue) return "null";
-        if (value instanceof ObjectValue ov) return objectValueToJson(ov, variables);
-        if (value instanceof ArrayValue av) return arrayValueToJson(av, variables);
-        return "\"" + value + "\"";
+    /** {@code value} as plain Java: maps, lists and scalars; an object field given an unset variable is left out. */
+    private static Object plainValue(Value<?> value, Map<String, Object> variables) {
+        return switch (value) {
+            case null -> null;
+            case VariableReference vr -> variables.get(vr.getName());
+            case IntValue iv -> FilterBuilder.integer(iv.getValue());
+            case StringValue sv -> sv.getValue();
+            case FloatValue fv -> fv.getValue().doubleValue();
+            case BooleanValue bv -> bv.isValue();
+            case EnumValue ev -> ev.getName();
+            case ObjectValue ov -> {
+                Map<String, Object> fields = new LinkedHashMap<>();
+                ov.getObjectFields().stream()
+                        .filter(field -> !isUnset(field.getValue(), variables))
+                        .forEach(field -> fields.put(field.getName(), plainValue(field.getValue(), variables)));
+                yield fields;
+            }
+            case ArrayValue av -> {
+                List<Object> items = new ArrayList<>();
+                av.getValues().forEach(item -> items.add(plainValue(item, variables)));
+                yield items;
+            }
+            default -> null;
+        };
     }
 }
