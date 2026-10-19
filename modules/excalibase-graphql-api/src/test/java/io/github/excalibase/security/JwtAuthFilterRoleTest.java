@@ -10,6 +10,7 @@ import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.SchemaUnavailableException;
 import io.github.excalibase.schema.StubbedSchemaManager;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.BeforeAll;
@@ -22,6 +23,7 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
+import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -91,6 +93,22 @@ class JwtAuthFilterRoleTest {
                 StubbedSchemaManager.document(PROJECT), (sql, params) -> false);
         new JwtAuthFilter(jwtService, plans).doFilter(request, response, chain);
         return response;
+    }
+
+    @Test
+    void unreadableDatabase_refusesTheRequestWith503() throws Exception {
+        Capture capture = new Capture();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AccessPlans restoring = mock(AccessPlans.class);
+        when(restoring.planFor(any())).thenThrow(new SchemaUnavailableException("being restored",
+                new SQLException("Communications link failure")));
+
+        new JwtAuthFilter(jwtService, restoring)
+                .doFilter(request(token(Map.of("role", "user")), null), response, capture.chain);
+
+        assertThat(response.getStatus()).isEqualTo(503);
+        assertThat(response.getContentAsString()).contains("project_unavailable");
+        assertThat(capture.principal.get()).isNull();
     }
 
     @Test

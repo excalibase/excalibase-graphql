@@ -5,6 +5,7 @@ import io.github.excalibase.access.RequestGuard;
 import io.github.excalibase.config.datasource.TenantContext;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.AccessPlans;
+import io.github.excalibase.schema.SchemaUnavailableException;
 import io.github.excalibase.service.VaultCredentialException;
 import io.opentelemetry.api.trace.Span;
 import jakarta.servlet.FilterChain;
@@ -115,7 +116,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         } catch (UnknownProjectException e) {
             writeError(response, HttpServletResponse.SC_NOT_FOUND, "Project not found", "project_not_found");
             return false;
-        } catch (VaultCredentialException e) {
+        } catch (VaultCredentialException | SchemaUnavailableException e) {
             writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Project unavailable",
                     "project_unavailable");
             return false;
