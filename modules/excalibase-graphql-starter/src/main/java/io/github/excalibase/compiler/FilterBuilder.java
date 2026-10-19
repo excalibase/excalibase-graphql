@@ -247,6 +247,17 @@ public class FilterBuilder {
         }
     }
 
+    /**
+     * {@code value} bound for comparison with column {@code col}: the parameter reference with the cast its
+     * type takes, the value typed as the column holds it (e.g. a keyset cursor's sort key).
+     */
+    public String bindColumnValue(String tableName, String col, Object value, String prefix,
+                                  Map<String, Object> params) {
+        String paramName = nextParam(prefix, params);
+        params.put(paramName, typedValue(tableName, col, value));
+        return ":" + paramName + resolveParamCast(col, tableName);
+    }
+
     /** Resolves the parameter cast suffix (enum cast takes precedence over generic type cast). */
     private String resolveParamCast(String col, String tableName) {
         if (schemaInfo == null || tableName == null) return "";

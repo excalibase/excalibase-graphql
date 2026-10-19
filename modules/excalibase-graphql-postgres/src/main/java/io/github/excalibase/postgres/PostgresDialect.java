@@ -67,7 +67,13 @@ public class PostgresDialect implements SqlDialect {
 
     @Override
     public String encodeCursor(String expr) {
-        return "encode(convert_to(" + expr + "::text, 'utf-8'), 'base64')";
+        // encode() wraps base64 every 76 characters; a cursor is one token.
+        return "translate(encode(convert_to(" + expr + "::text, 'utf-8'), 'base64'), E'\\n', '')";
+    }
+
+    @Override
+    public String jsonArray(List<String> exprs) {
+        return "jsonb_build_array(" + String.join(", ", exprs) + ")";
     }
 
     @Override

@@ -135,7 +135,8 @@ public class MysqlDialect implements SqlDialect {
 
     @Override
     public String encodeCursor(String expr) {
-        return "TO_BASE64(CAST(" + expr + " AS CHAR))";
+        // TO_BASE64 wraps every 76 characters; a cursor is one token.
+        return "REPLACE(TO_BASE64(CAST(" + expr + " AS CHAR)), CHAR(10 USING utf8mb4), '')";
     }
 
     @Override

@@ -7,6 +7,12 @@ import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.SqlDialect;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.regex.Pattern;
 import static io.github.excalibase.schema.GraphqlConstants.*;
@@ -250,10 +256,7 @@ public class QueryBuilder {
         ConnectionSelections sel = parseConnectionSelections(field);
         requireConnectionAllowed(tableName, pk, sel);
         PaginationArgs pagination = parsePaginationArgs(field, tableName);
-
-        // Determine order columns (default: PK ASC)
-        List<String[]> orderCols = filterBuilder.parseOrderBy(field, tableName);
-        if (orderCols.isEmpty()) orderCols.add(new String[]{pk, ASC});
+        List<SortKey> sortKeys = sortKeys(field, tableName, pk);
 
         boolean isForward = (pagination.last == null);
         int forwardLimit = (pagination.first != null) ? pagination.first : filterBuilder.rowCap(tableName);
@@ -264,8 +267,11 @@ public class QueryBuilder {
         sql.append(WITH);
 
         String recordsCte = dialect.cteName(block, "_records");
-        ConnectionCtx ctx = new ConnectionCtx(block, pk, recordsCte, orderCols, isForward, limit, pagination);
-        appendRecordsCte(sql, field, tableName, ctx, params);
+        String pageCte = dialect.cteName(block, "_page");
+        ConnectionCtx ctx = new ConnectionCtx(block, tableName, recordsCte, pageCte, sortKeys, isForward, limit,
+                pagination);
+        appendRecordsCte(sql, field, ctx, params);
+        appendPageCte(sql, ctx, params);
 
         boolean needsHasNext = sel.wantsPageInfo
                 && (sel.pageInfoFields.isEmpty() || sel.pageInfoFields.containsValue(FIELD_HAS_NEXT_PAGE));
@@ -274,8 +280,7 @@ public class QueryBuilder {
         appendOptionalCtes(sql, field, tableName, ctx, sel, needsHasNext, needsHasPrev, params);
 
         // === Final SELECT from CTEs ===
-        String pageBlock = dialect.randAlias();
-        String edgesSub = buildEdgesSubquery(tableName, pk, pageBlock, recordsCte, sel, limit, params);
+        String edgesSub = buildEdgesSubquery(ctx, sel, params);
 
         List<String> rootParts = new ArrayList<>();
         if (sel.keys.containsKey(FIELD_EDGES)) {
@@ -292,6 +297,53 @@ public class QueryBuilder {
 
         sql.append(" ").append(SELECT).append(dialect.buildObject(rootParts));
         return sql.toString();
+    }
+
+    /**
+     * One key a connection is ordered by: its column, direction and where its NULLs sort. The primary key
+     * always ends the list, so every row has one position and a cursor names it exactly.
+     */
+    private record SortKey(String column, boolean descending, boolean nullsLast) {
+        SortKey reversed() {
+            return new SortKey(column, !descending, !nullsLast);
+        }
+    }
+
+    /** The requested order, NULLs last ascending and first descending unless asked otherwise, then the key. */
+    private List<SortKey> sortKeys(Field field, String tableName, String pk) {
+        List<SortKey> keys = new ArrayList<>();
+        for (String[] orderColumn : filterBuilder.parseOrderBy(field, tableName)) {
+            String dir = orderColumn[1];
+            boolean descending = dir.startsWith(DESC);
+            boolean nullsLast = switch (dir) {
+                case "ASC", "ASCNULLSLAST", "DESCNULLSLAST" -> true;
+                case "DESC", "ASCNULLSFIRST", "DESCNULLSFIRST" -> false;
+                default -> throw new IllegalArgumentException("Invalid ORDER BY direction: " + dir);
+            };
+            keys.add(new SortKey(orderColumn[0], descending, nullsLast));
+        }
+        if (keys.stream().noneMatch(key -> key.column().equals(pk))) {
+            keys.add(new SortKey(pk, false, true));
+        }
+        return List.copyOf(keys);
+    }
+
+    /** ORDER BY terms of {@code keys} on {@code alias}; NULL placement is spelled out so every database agrees. */
+    private String orderTerms(String alias, List<SortKey> keys, boolean reversed) {
+        List<String> terms = new ArrayList<>();
+        for (SortKey key : keys) {
+            SortKey effective = reversed ? key.reversed() : key;
+            String col = alias + "." + dialect.quoteIdentifier(key.column());
+            terms.add("(" + col + IS_NULL + ") " + (effective.nullsLast() ? ASC : DESC));
+            terms.add(col + " " + (effective.descending() ? DESC : ASC));
+        }
+        return joinCols(terms);
+    }
+
+    /** A row's cursor: its sort-key values and primary key as a JSON array, base64-encoded. */
+    private String cursorExpr(String alias, List<SortKey> keys) {
+        return dialect.encodeCursor(dialect.jsonArray(keys.stream()
+                .map(key -> alias + "." + dialect.quoteIdentifier(key.column())).toList()));
     }
 
     private void appendOptionalCtes(StringBuilder sql, Field field, String tableName, ConnectionCtx ctx,
@@ -332,8 +384,8 @@ public class QueryBuilder {
     private record PaginationArgs(Integer first, Integer last, String afterCursor, String beforeCursor) {}
 
     /** Shared connection-scoped state passed to the per-CTE helpers. */
-    private record ConnectionCtx(String block, String pk, String recordsCte,
-                                 List<String[]> orderCols, boolean isForward, int limit,
+    private record ConnectionCtx(String block, String tableName, String recordsCte, String pageCte,
+                                 List<SortKey> sortKeys, boolean isForward, int limit,
                                  PaginationArgs pagination) {}
 
     private ConnectionSelections parseConnectionSelections(Field field) {
@@ -413,29 +465,28 @@ public class QueryBuilder {
         return new PaginationArgs(first, last, afterCursor, beforeCursor);
     }
 
-    /** CTE 1: __records — filtered, ordered, limited rows (fetches limit+1 for has-next detection). */
-    private void appendRecordsCte(StringBuilder sql, Field field, String tableName,
-                                  ConnectionCtx ctx, Map<String, Object> params) {
+    /**
+     * CTE 1: __records — the filtered rows past the cursors, in fetch order (reversed for {@code last}), limit+1
+     * of them so the extra row tells whether another page follows.
+     */
+    private void appendRecordsCte(StringBuilder sql, Field field, ConnectionCtx ctx, Map<String, Object> params) {
         sql.append(ctx.recordsCte).append(AS_OPEN);
         sql.append(SELECT).append(ctx.block).append(".*");
-        sql.append(FROM).append(qualifiedTable(tableName)).append(" ").append(ctx.block);
+        sql.append(FROM).append(qualifiedTable(ctx.tableName)).append(" ").append(ctx.block);
 
         List<String> conditions = new ArrayList<>();
-        filterBuilder.buildWhereConditions(field, ctx.block, params, conditions, tableName);
-        appendCursorCondition(conditions, ctx.pagination.afterCursor, ctx.block, ctx.pk, P_AFTER, " > ", params);
-        appendCursorCondition(conditions, ctx.pagination.beforeCursor, ctx.block, ctx.pk, P_BEFORE, " < ", params);
+        filterBuilder.buildWhereConditions(field, ctx.block, params, conditions, ctx.tableName);
+        if (ctx.pagination.afterCursor != null) {
+            conditions.add(keysetCondition(ctx, ctx.pagination.afterCursor, true, params));
+        }
+        if (ctx.pagination.beforeCursor != null) {
+            conditions.add(keysetCondition(ctx, ctx.pagination.beforeCursor, false, params));
+        }
 
         if (!conditions.isEmpty()) {
             sql.append(WHERE).append(String.join(AND, conditions));
         }
-
-        sql.append(ORDER_BY);
-        List<String> orderClauses = new ArrayList<>();
-        for (String[] oc : ctx.orderCols) {
-            String dir = ctx.isForward ? oc[1] : reverseDir(oc[1]);
-            orderClauses.add(ctx.block + "." + dialect.quoteIdentifier(oc[0]) + " " + dir);
-        }
-        sql.append(joinCols(orderClauses));
+        sql.append(ORDER_BY).append(orderTerms(ctx.block, ctx.sortKeys, !ctx.isForward));
 
         String limitParam = namedParam(P_LIMIT, params.size());
         sql.append(LIMIT).append(PARAM_PREFIX).append(limitParam);
@@ -443,12 +494,49 @@ public class QueryBuilder {
         sql.append(")");
     }
 
-    private void appendCursorCondition(List<String> conditions, String cursor, String block, String pk,
-                                       String paramKey, String sqlOp, Map<String, Object> params) {
-        if (cursor == null) return;
-        String paramName = namedParam(paramKey, params.size());
-        conditions.add(block + "." + dialect.quoteIdentifier(pk) + sqlOp + ":" + paramName);
-        params.put(paramName, decodeCursor(cursor));
+    /** CTE 2: __page — the rows this page returns: the first {@code limit} of __records in fetch order. */
+    private void appendPageCte(StringBuilder sql, ConnectionCtx ctx, Map<String, Object> params) {
+        String alias = dialect.randAlias();
+        String limitParam = namedParam(P_PAGE_LIMIT, params.size());
+        params.put(limitParam, ctx.limit);
+        sql.append(", ").append(ctx.pageCte).append(AS_OPEN).append(SELECT).append("*").append(FROM)
+                .append(ctx.recordsCte).append(" ").append(alias)
+                .append(ORDER_BY).append(orderTerms(alias, ctx.sortKeys, !ctx.isForward))
+                .append(LIMIT).append(PARAM_PREFIX).append(limitParam).append(")");
+    }
+
+    /**
+     * Rows strictly after ({@code after}) or before the cursor's position in the connection's order: the
+     * row-value comparison {@code (k1, …, kn) > (v1, …, vn)} written out key by key, NULL-aware.
+     */
+    private String keysetCondition(ConnectionCtx ctx, String cursor, boolean after, Map<String, Object> params) {
+        List<Object> values = decodeCursor(cursor, ctx.sortKeys.size());
+        List<String> alternatives = new ArrayList<>();
+        List<String> equalPrefix = new ArrayList<>();
+        for (int i = 0; i < ctx.sortKeys.size(); i++) {
+            SortKey key = ctx.sortKeys.get(i);
+            String col = ctx.block + "." + dialect.quoteIdentifier(key.column());
+            Object value = values.get(i);
+            String beyond = beyond(col, after ? key : key.reversed(), value, ctx.tableName, params);
+            if (beyond != null) {
+                List<String> terms = new ArrayList<>(equalPrefix);
+                terms.add(beyond);
+                alternatives.add("(" + String.join(AND, terms) + ")");
+            }
+            equalPrefix.add(value == null ? col + IS_NULL
+                    : col + " = " + filterBuilder.bindColumnValue(ctx.tableName, key.column(), value, P_AFTER, params));
+        }
+        return alternatives.isEmpty() ? "1 = 0" : "(" + String.join(" OR ", alternatives) + ")";
+    }
+
+    /** Rows whose {@code col} sorts strictly past {@code value} in {@code key}'s order; null when none can. */
+    private String beyond(String col, SortKey key, Object value, String tableName, Map<String, Object> params) {
+        if (value == null) {
+            return key.nullsLast() ? null : col + IS_NOT_NULL;
+        }
+        String bound = filterBuilder.bindColumnValue(tableName, key.column(), value, P_AFTER, params);
+        String past = col + (key.descending() ? " < " : " > ") + bound;
+        return key.nullsLast() ? "(" + past + " OR " + col + IS_NULL + ")" : past;
     }
 
     private void appendHasNextCte(StringBuilder sql, String block, String recordsCte, int limit,
@@ -484,27 +572,26 @@ public class QueryBuilder {
         sql.append(")");
     }
 
-    private String buildEdgesSubquery(String tableName, String pk, String pageBlock, String recordsCte,
-                                      ConnectionSelections sel, int limit, Map<String, Object> params) {
+    /** The page's edges in the connection's order (a {@code last} page is fetched reversed, so it is turned back). */
+    private String buildEdgesSubquery(ConnectionCtx ctx, ConnectionSelections sel, Map<String, Object> params) {
+        String pageBlock = dialect.randAlias();
         List<String> edgeParts = new ArrayList<>();
         if (sel.wantsCursor) {
-            edgeParts.add(jsonKey(sel.keys.get(FIELD_CURSOR)) + ", "
-                    + dialect.encodeCursor(pageBlock + "." + dialect.quoteIdentifier(pk)));
+            edgeParts.add(jsonKey(sel.keys.get(FIELD_CURSOR)) + ", " + cursorExpr(pageBlock, ctx.sortKeys));
         }
         if (sel.keys.containsKey(FIELD_NODE)) {
             edgeParts.add(jsonKey(sel.keys.get(FIELD_NODE)) + ", "
-                    + buildObject(sel.edgesNodeSS, tableName, pageBlock, params));
+                    + buildObject(sel.edgesNodeSS, ctx.tableName, pageBlock, params));
         }
         String edgeObj = dialect.buildObject(edgeParts);
 
-        StringBuilder edgesSub = new StringBuilder();
-        edgesSub.append(SELECT).append(dialect.aggregateArray(edgeObj));
-        edgesSub.append(FROM).append("(").append(SELECT).append("*").append(FROM).append(recordsCte);
-        String pageLimitParam = namedParam(P_PAGE_LIMIT, params.size());
-        edgesSub.append(LIMIT).append(PARAM_PREFIX).append(pageLimitParam);
-        params.put(pageLimitParam, limit);
-        edgesSub.append(") ").append(pageBlock);
-        return edgesSub.toString();
+        // The LIMIT keeps the derived table's ORDER BY: MySQL drops an ORDER BY a derived table has without one.
+        String ordered = dialect.randAlias();
+        String limitParam = namedParam(P_PAGE_LIMIT, params.size());
+        params.put(limitParam, ctx.limit);
+        return SELECT + dialect.aggregateArray(edgeObj) + FROM + "(" + SELECT + "*" + FROM + ctx.pageCte + " " + ordered
+                + ORDER_BY + orderTerms(ordered, ctx.sortKeys, false) + LIMIT + PARAM_PREFIX + limitParam + ") "
+                + pageBlock;
     }
 
     /**
@@ -538,14 +625,11 @@ public class QueryBuilder {
             String cte = ctx.isForward ? "_has_prev" : CTE_HAS_NEXT;
             return dialect.jsonBool("(" + SELECT + "val" + FROM + dialect.cteName(ctx.block, cte) + ")");
         }
-        if (FIELD_START_CURSOR.equals(name)) {
-            String pkTextExpr = "(" + SELECT + "CAST(" + dialect.quoteIdentifier(ctx.pk) + " AS CHAR)" + FROM + ctx.recordsCte + LIMIT + "1)";
-            return "(" + SELECT + dialect.encodeCursor(pkTextExpr) + ")";
-        }
-        if (FIELD_END_CURSOR.equals(name)) {
-            String pkTextExpr = "(" + SELECT + "CAST(" + dialect.quoteIdentifier(ctx.pk) + " AS CHAR)" + FROM + ctx.recordsCte +
-                    ORDER_BY + dialect.quoteIdentifier(ctx.pk) + " " + DESC + LIMIT + "1)";
-            return "(" + SELECT + dialect.encodeCursor(pkTextExpr) + ")";
+        if (FIELD_START_CURSOR.equals(name) || FIELD_END_CURSOR.equals(name)) {
+            // The first or last edge returned, in the connection's order; null on an empty page.
+            String alias = dialect.randAlias();
+            return "(" + SELECT + cursorExpr(alias, ctx.sortKeys) + FROM + ctx.pageCte + " " + alias
+                    + ORDER_BY + orderTerms(alias, ctx.sortKeys, FIELD_END_CURSOR.equals(name)) + LIMIT + "1)";
         }
         return null;
     }
@@ -777,25 +861,47 @@ public class QueryBuilder {
 
     // === Internal helpers ===
 
-    Object decodeCursor(String cursor) {
-        String decoded = new String(Base64.getDecoder().decode(cursor));
-        // Try to parse as number for proper comparison with PK columns
+    private static final ObjectMapper CURSOR_MAPPER = new ObjectMapper()
+            .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
+
+    /**
+     * A cursor's sort-key values: a JSON array, one per key. A cursor of the earlier form (the primary key
+     * alone) still names a row of a connection ordered by its key only.
+     */
+    List<Object> decodeCursor(String cursor, int keyCount) {
+        String decoded;
         try {
-            return Integer.parseInt(decoded);
-        } catch (NumberFormatException _) {
-            try {
-                return Long.parseLong(decoded);
-            } catch (NumberFormatException _) {
-                return decoded;
-            }
+            decoded = new String(Base64.getDecoder().decode(cursor.trim()), StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException _) {
+            throw invalidCursor(cursor);
         }
+        if (!decoded.startsWith("[")) {
+            if (keyCount != 1) throw invalidCursor(cursor);
+            return List.of(legacyKey(decoded));
+        }
+        try {
+            List<Object> values = CURSOR_MAPPER.readValue(decoded, new TypeReference<List<Object>>() {});
+            if (values.size() != keyCount) throw invalidCursor(cursor);
+            return values;
+        } catch (JsonProcessingException _) {
+            throw invalidCursor(cursor);
+        }
+    }
+
+    private static Object legacyKey(String decoded) {
+        try {
+            return Long.parseLong(decoded);
+        } catch (NumberFormatException _) {
+            return decoded;
+        }
+    }
+
+    private static IllegalArgumentException invalidCursor(String cursor) {
+        return new IllegalArgumentException("Invalid cursor '" + cursor + "': it is not a cursor of this connection"
+                + " and order");
     }
 
     private String getPk(String tableName) {
         return schemaInfo.getPrimaryKey(tableName);
-    }
-
-    private String reverseDir(String dir) {
-        return ASC.equalsIgnoreCase(dir) ? DESC : ASC;
     }
 }

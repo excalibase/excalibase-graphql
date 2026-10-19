@@ -65,6 +65,11 @@ public interface SqlDialect {
     /** Encode a value as a cursor. PG: encode(convert_to(expr::text, 'utf-8'), 'base64') */
     String encodeCursor(String expr);
 
+    /** A JSON array of the given SQL expressions. */
+    default String jsonArray(List<String> exprs) {
+        return "JSON_ARRAY(" + String.join(", ", exprs) + ")";
+    }
+
     /** Case-insensitive LIKE. PG: col ILIKE :param, MySQL: LOWER(col) LIKE LOWER(:param) */
     String ilike(String colRef, String paramRef);
 
