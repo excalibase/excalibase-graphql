@@ -151,7 +151,9 @@ returning `{ edges { node, cursor }, pageInfo, totalCount }` — see the
 ## Limits
 
 - `limit` is clamped to `app.max-rows` in the server config (default 30).
-  Passing `limit=100` when the cap is 30 silently caps at 30.
+  Passing `limit=100` when the cap is 30 silently caps at 30. `limit=0` answers no rows
+  (with `Prefer: count=exact`, still the total, its range `*/total`).
+- `limit` and `offset` must be non-negative integers; anything else is refused with `400`.
 - `offset` is uncapped but beware: `OFFSET 1000000` reads and discards a
   million rows before returning the next page. Prefer cursor-style
   pagination for deep offsets.

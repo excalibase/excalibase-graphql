@@ -86,8 +86,11 @@ GET /api/v1/issues?status=in.(todo,done)&priority=eq.high
 | Op | SQL | Example |
 |---|---|---|
 | `is.null` | `col IS NULL` | `?parent_issue_id=is.null` |
-| `is.notnull` | `col IS NOT NULL` | `?parent_issue_id=is.notnull` |
+| `is.not_null` / `is.notnull` | `col IS NOT NULL` | `?parent_issue_id=is.not_null` |
 | `not.is.null` | `col IS NOT NULL` | `?parent_issue_id=not.is.null` |
+| `is.true` / `is.false` / `is.unknown` | `col IS TRUE` … | `?archived=is.false` |
+
+Any other `is` value is refused with `400`.
 
 ```bash
 GET /api/v1/issues?parent_issue_id=is.null       # top-level issues
@@ -100,8 +103,8 @@ GET /api/v1/issues?parent_issue_id=is.notnull    # child issues only
 |---|---|---|
 | `like` | `col LIKE :v` (use `*` for `%`) | `?title=like.*Setup*` |
 | `ilike` | `col ILIKE :v` | `?title=ilike.*setup*` |
-| `startswith` | `col LIKE 'prefix%'` | `?title=startswith.Setup` |
-| `endswith` | `col LIKE '%suffix'` | `?title=endswith.auth` |
+| `startswith` | `col LIKE 'prefix%'`, the prefix matched literally | `?title=startswith.Setup` |
+| `endswith` | `col LIKE '%suffix'`, the suffix matched literally | `?title=endswith.auth` |
 | `match` | `col ~ :v` (POSIX regex, case-sensitive) | `?title=match.%5ESetup` |
 | `imatch` | `col ~* :v` (POSIX regex, case-insensitive) | `?title=imatch.%5Esetup` |
 
@@ -115,6 +118,10 @@ GET /api/v1/issues?title=ilike.setup*
 # POSIX regex (^Setup anchor)
 GET /api/v1/issues?title=match.%5ESetup      # url-encoded ^
 ```
+
+`like` and `ilike` take a pattern, as in PostgREST: `*` and `%` match any run of characters and `_` one
+character. `startswith` and `endswith` (and GraphQL's `contains`, `startsWith`, `endsWith`) match `%` and `_` as
+themselves.
 
 !!! warning "`^`, `{`, `}`, `[`, `]` must be url-encoded"
     Tomcat rejects unencoded reserved characters in query strings with a
@@ -251,7 +258,16 @@ GET /api/v1/issues?project_id=eq.1&or=(status.eq.todo,status.eq.in_progress)
 # WHERE project_id = 1 AND (status = 'todo' OR status = 'in_progress')
 ```
 
-Nesting parentheses deeper is allowed.
+Groups nest with `and(…)`, `or(…)`, `not.and(…)` and `not.or(…)`, and the top level also takes `and=`,
+`not.or=` and `not.and=`:
+
+```bash
+GET /api/v1/issues?or=(priority.eq.critical,and(status.eq.todo,assignee_id.is.null))
+# WHERE (priority = 'critical' OR (status = 'todo' AND assignee_id IS NULL))
+GET /api/v1/issues?not.and=(status.eq.done,archived.is.true)
+```
+
+A value an enum column does not have (`?status=eq.toys`) is refused with `400 invalid_value` on every database.
 
 ## Ordering
 

@@ -25,6 +25,7 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 public final class KeyedWrites {
 
     private static final String KEY_PARAM = "rk_";
+    private static final String CONFLICT_PARAM = "cf_";
     private static final String FOR_UPDATE = " FOR UPDATE";
 
     /** How a written row reads: its JSON object over {@code alias}, and the select filter it must pass. */
@@ -119,12 +120,43 @@ public final class KeyedWrites {
             if (jdbc.queryForList(existsSql(key, params, null), params, Integer.class).isEmpty()) {
                 return write.run(jdbc, represent);
             }
-            if (set == null || !updatable(jdbc, key, updatable)) return null;
-            Map<String, Object> updateParams = new LinkedHashMap<>(set.params());
-            jdbc.update(updateSql(set.sql(), key, updateParams), updateParams);
-            verify(jdbc, List.of(key), 1);
-            return represent ? read(jdbc, List.of(key), false) : null;
+            return updateExisting(jdbc, key, set, updatable, represent);
         };
+    }
+
+    /**
+     * As {@link #upsert}, the existing row found by {@code conflict}, a unique key other than the primary key
+     * whose every column is sent: PostgREST's {@code on_conflict}. More than one row holding those values
+     * means the columns are not a unique key, and the write is refused.
+     */
+    public KeyedWrite upsertOn(List<String> conflict, Insert insert, Condition set, Condition updatable) {
+        KeyedWrite write = insert(List.of(insert), false, true);
+        return (jdbc, represent) -> {
+            requireKeys();
+            Map<String, Object> params = new LinkedHashMap<>();
+            List<String> matches = new ArrayList<>();
+            for (int i = 0; i < conflict.size(); i++) {
+                params.put(CONFLICT_PARAM + i, insert.values().get(conflict.get(i)));
+                matches.add(column(conflict.get(i)) + ASSIGN + PARAM_PREFIX + CONFLICT_PARAM + i);
+            }
+            List<List<Object>> found = jdbc.query(lockedKeysSql(String.join(AND, matches)), params,
+                    (rs, rowNum) -> keyOf(rs));
+            if (found.isEmpty()) return write.run(jdbc, represent);
+            if (found.size() > 1) {
+                throw new IllegalArgumentException("on_conflict " + String.join(",", conflict) + " is not a unique key of "
+                        + table);
+            }
+            return updateExisting(jdbc, found.getFirst(), set, updatable, represent);
+        };
+    }
+
+    private String updateExisting(NamedParameterJdbcTemplate jdbc, List<Object> key, Condition set,
+                                  Condition updatable, boolean represent) {
+        if (set == null || !updatable(jdbc, key, updatable)) return null;
+        Map<String, Object> updateParams = new LinkedHashMap<>(set.params());
+        jdbc.update(updateSql(set.sql(), key, updateParams), updateParams);
+        verify(jdbc, List.of(key), 1);
+        return represent ? read(jdbc, List.of(key), false) : null;
     }
 
     private boolean updatable(NamedParameterJdbcTemplate jdbc, List<Object> key, Condition updatable) {

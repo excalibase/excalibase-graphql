@@ -47,7 +47,29 @@ public class RestQueryCompiler {
     }
     public record FilterSpec(String column, String operator, String value, boolean negated) {}
     public record OrderBySpec(String column, String direction, String nulls) {}
-    public record OrCondition(List<FilterSpec> conditions) {}
+    /** Filters and nested groups joined by AND when {@code and}, else by OR; negated as a whole when {@code negated}. */
+    public record LogicGroup(boolean and, boolean negated, List<FilterSpec> filters, List<LogicGroup> groups) {
+        /** Every filter in the group, nested groups included. */
+        public List<FilterSpec> allFilters() {
+            List<FilterSpec> all = new ArrayList<>(filters);
+            groups.forEach(group -> all.addAll(group.allFilters()));
+            return all;
+        }
+    }
+
+    /**
+     * One top-level logic parameter ({@code or}, {@code and}, {@code not.or}, {@code not.and}); {@code conditions}
+     * are all of its filters, nested ones included.
+     */
+    public record OrCondition(List<FilterSpec> conditions, LogicGroup group) {
+        public OrCondition(List<FilterSpec> conditions) {
+            this(conditions, new LogicGroup(false, false, conditions, List.of()));
+        }
+
+        public OrCondition(LogicGroup group) {
+            this(group.allFilters(), group);
+        }
+    }
     public record EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children) {
         public EmbedSpec(String relationName, List<String> columns) {
             this(relationName, columns, null, List.of());
@@ -305,9 +327,9 @@ public class RestQueryCompiler {
     }
 
     /**
-     * An INSERT when no row holds the sent key, else an UPDATE of that row alone: {@code ON DUPLICATE KEY UPDATE}
-     * would update whichever row any unique key collides with. Without every key column sent no existing row can
-     * conflict on the key, so it is a plain insert. An existing row the update permission's filter hides is left
+     * An INSERT when no row holds the sent key (the primary key, or on_conflict's columns), else an UPDATE of
+     * that row alone: {@code ON DUPLICATE KEY UPDATE} would update whichever row any unique key collides with.
+     * Without every key column sent no existing row can conflict on the key, so it is a plain insert. An existing row the update permission's filter hides is left
      * as it is, as Postgres's {@code DO UPDATE … WHERE} does.
      */
     private CompiledResult keyedUpsert(String table, String quotedTable, Map<String, Object> input,
@@ -317,7 +339,9 @@ public class RestQueryCompiler {
         String insert = insertSql(table, quotedTable, row, params, bound);
         var keyed = keyed(table, quotedTable, List.of(RlsOp.INSERT, RlsOp.UPDATE));
         List<String> keys = rowKey(table);
-        if (keys.isEmpty() || !keys.stream().allMatch(key -> bound.get(key) != null)) {
+        boolean onPrimaryKey = new HashSet<>(conflictCols).equals(new HashSet<>(keys));
+        List<String> conflict = onPrimaryKey ? keys : conflictCols;
+        if (conflict.isEmpty() || !conflict.stream().allMatch(key -> bound.get(key) != null)) {
             return new CompiledResult(insert, params, keyed.insert(List.of(new KeyedWrites.Insert(insert, params, bound)), false));
         }
         Map<String, Object> updateParams = new LinkedHashMap<>();
@@ -328,15 +352,17 @@ public class RestQueryCompiler {
             return PARAM_PREFIX + name;
         });
         KeyedWrites.Insert written = new KeyedWrites.Insert(insert, params, bound);
-        if (sets.isEmpty()) {
-            return new CompiledResult(insert, params, keyed.upsert(written, null, null));
+        KeyedWrites.Condition set = null;
+        KeyedWrites.Condition updatable = null;
+        if (!sets.isEmpty()) {
+            Map<String, Object> filterParams = new LinkedHashMap<>();
+            StringBuilder filter = new StringBuilder();
+            appendRls(filter, table, ALIAS, RlsOp.UPDATE, filterParams);
+            set = new KeyedWrites.Condition(String.join(COMMA_SEP, sets), updateParams);
+            updatable = new KeyedWrites.Condition(filter.toString(), filterParams);
         }
-        Map<String, Object> filterParams = new LinkedHashMap<>();
-        StringBuilder filter = new StringBuilder();
-        appendRls(filter, table, ALIAS, RlsOp.UPDATE, filterParams);
-        return new CompiledResult(insert, params, keyed.upsert(written,
-                new KeyedWrites.Condition(String.join(COMMA_SEP, sets), updateParams),
-                new KeyedWrites.Condition(filter.toString(), filterParams)));
+        return new CompiledResult(insert, params, onPrimaryKey ? keyed.upsert(written, set, updatable)
+                : keyed.upsertOn(conflict, written, set, updatable));
     }
 
     /**
@@ -639,16 +665,27 @@ public class RestQueryCompiler {
     private void appendOrConditions(StringBuilder where, List<OrCondition> ors, Map<String, Object> params, String table) {
         if (ors == null) return;
         for (int oi = 0; oi < ors.size(); oi++) {
-            List<String> parts = new ArrayList<>();
-            for (int ci = 0; ci < ors.get(oi).conditions().size(); ci++) {
-                var filter = ors.get(oi).conditions().get(ci);
-                parts.add(filterSql.sql(filter, P_OR + oi + UNDERSCORE + ci, params, table));
-            }
-            if (!parts.isEmpty()) {
+            String group = logicSql(ors.get(oi).group(), P_OR + oi, params, table);
+            if (!group.isEmpty()) {
                 if (!where.isEmpty()) where.append(AND);
-                where.append(parens(String.join(OR, parts)));
+                where.append(group);
             }
         }
+    }
+
+    /** One logic group as a parenthesised predicate, or empty when it holds nothing. */
+    private String logicSql(LogicGroup group, String prefix, Map<String, Object> params, String table) {
+        List<String> parts = new ArrayList<>();
+        for (int ci = 0; ci < group.filters().size(); ci++) {
+            parts.add(filterSql.sql(group.filters().get(ci), prefix + UNDERSCORE + ci, params, table));
+        }
+        for (int gi = 0; gi < group.groups().size(); gi++) {
+            String nested = logicSql(group.groups().get(gi), prefix + "g" + gi, params, table);
+            if (!nested.isEmpty()) parts.add(nested);
+        }
+        if (parts.isEmpty()) return "";
+        String joined = parens(String.join(group.and() ? AND : OR, parts));
+        return group.negated() ? NOT + joined : joined;
     }
 
     private StringBuilder buildInnerSelect(String table, String quotedTable, StringBuilder where, StringBuilder orderSql,

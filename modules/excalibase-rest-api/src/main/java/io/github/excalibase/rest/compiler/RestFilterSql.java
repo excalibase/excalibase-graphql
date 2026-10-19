@@ -1,10 +1,12 @@
 package io.github.excalibase.rest.compiler;
 
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.compiler.LikePatterns;
 import io.github.excalibase.rest.compiler.RestQueryCompiler.FilterSpec;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
@@ -91,8 +93,10 @@ final class RestFilterSql {
                 params.put(paramName, filter.value().replace('*', '%'));
                 yield neg + dialect.ilike(colRef, PARAM_PREFIX + paramName);
             }
-            case "startswith" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value() + "%");
-            case "endswith" -> stringFilter(params, paramName, neg, colRef, LIKE, "%" + filter.value());
+            case "startswith" -> stringFilter(params, paramName, neg, colRef, LIKE,
+                    LikePatterns.literal(filter.value()) + "%") + LikePatterns.ESCAPE;
+            case "endswith" -> stringFilter(params, paramName, neg, colRef, LIKE,
+                    "%" + LikePatterns.literal(filter.value())) + LikePatterns.ESCAPE;
             case "match", IMATCH -> {
                 params.put(paramName, filter.value());
                 yield neg + dialect.regexSql(colRef, PARAM_PREFIX + paramName, IMATCH.equals(op))
@@ -194,11 +198,16 @@ final class RestFilterSql {
                 .orElseThrow(() -> unsupported(filter));
     }
 
+    /** PostgREST's {@code is} values, and {@code notnull} as documented here; anything else is refused. */
     private String isFilter(String neg, String col, String value) {
-        return switch (value.toLowerCase()) {
+        return switch (value.toLowerCase(Locale.ROOT)) {
+            case "null" -> neg + col + IS_NULL;
+            case "not_null", "notnull" -> neg + col + IS_NOT_NULL;
             case "true" -> neg + col + IS_TRUE;
             case "false" -> neg + col + IS_FALSE;
-            default -> neg + col + IS_NULL; // "null" and anything else → IS NULL check
+            case "unknown" -> neg + col + " IS UNKNOWN";
+            default -> throw new IllegalArgumentException("Invalid is value '" + value
+                    + "': use null, not_null, true, false or unknown");
         };
     }
 

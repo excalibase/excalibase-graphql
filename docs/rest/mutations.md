@@ -46,7 +46,14 @@ curl -X POST https://api.example.com/api/v1/issue_labels \
   -d '{"issue_id": 1, "label_id": 5}'
 ```
 
-Without the header, a conflict returns `409 Conflict`.
+Without the header, a conflict returns `409 Conflict`. The upsert merges on the primary key; name another unique
+key with `on_conflict` (comma-separated columns):
+
+```bash
+curl -X POST "https://api.example.com/api/v1/products?on_conflict=sku" \
+  -H "Prefer: resolution=merge-duplicates" \
+  -d '{"sku": "E-5", "name": "Cola Zero"}'
+```
 
 **Dry run** — `Prefer: tx=rollback` executes the statement and returns the
 result but rolls back the transaction. Useful for testing write paths:

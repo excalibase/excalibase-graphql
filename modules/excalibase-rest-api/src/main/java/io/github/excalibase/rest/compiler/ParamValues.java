@@ -5,10 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.ArrayColumns;
 import io.github.excalibase.compiler.NumericInput;
 import io.github.excalibase.errors.ColumnValueCheck;
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.schema.SchemaInfo;
 import org.springframework.jdbc.core.SqlParameterValue;
 
 import java.sql.Types;
+import java.util.List;
 
 /** The bind value of a request value, by its column's type. */
 final class ParamValues {
@@ -104,7 +107,9 @@ final class ParamValues {
      * delegates PostgreSQL-specific types to server-side casting via {@code Types.OTHER}.
      */
     private Object typedValue(String value, String table, String column) {
-        if (schemaInfo.getEnumType(table, column) != null) {
+        String enumType = schemaInfo.getEnumType(table, column);
+        if (enumType != null) {
+            requireEnumLabel(table, column, enumType, value);
             return new SqlParameterValue(Types.OTHER, value);
         }
         String type = schemaInfo.getColumnType(table, column);
@@ -143,6 +148,18 @@ final class ParamValues {
             };
         } catch (NumberFormatException _) {
             return value;
+        }
+    }
+
+    /**
+     * A value its enum column does not have is refused before the query runs: Postgres would reject it, and
+     * MySQL would compare it and match nothing.
+     */
+    private void requireEnumLabel(String table, String column, String enumType, String value) {
+        List<String> labels = schemaInfo.getEnumTypes().get(enumType);
+        if (labels != null && !labels.isEmpty() && !labels.contains(value)) {
+            throw new DataErrorException(DataError.invalidValue(column, "Invalid value for column '" + column
+                    + "' of " + table + ": \"" + value + "\" is not one of " + labels));
         }
     }
 
