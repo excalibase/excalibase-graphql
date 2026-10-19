@@ -52,7 +52,7 @@
     <properties>
         <java.version>25</java.version>
         <springboot.version>3.5.12</springboot.version>
-        <tomcat.version>10.1.55</tomcat.version>
+        <tomcat.version>10.1.60</tomcat.version>
         <kotlin.version>2.1.0</kotlin.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
         <jackson.version>2.21.2</jackson.version>
@@ -73,6 +73,8 @@
 
         <!--nats-->
         <jnats.version>2.22.0</jnats.version>
+        <!-- jnats brings 2.73.8; pinned past CVE-2026-8763 (EXC-642) -->
+        <bouncycastle.version>2.73.13</bouncycastle.version>
 
         <!--testing-->
         <testcontainers.version>1.21.4</testcontainers.version>
@@ -95,6 +97,11 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.bouncycastle</groupId>
+                <artifactId>bcprov-lts8on</artifactId>
+                <version>${bouncycastle.version}</version>
+            </dependency>
             <!-- Pinned to patch Snyk HIGH CVEs in jackson-core -->
             <dependency>
                 <groupId>com.fasterxml.jackson.core</groupId>
