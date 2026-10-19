@@ -1,0 +1,60 @@
+name: Trivy image gate
+description: >
+  Pinned Trivy (checksum-verified) on an image: fails on a CRITICAL
+  vulnerability that has a fix, unless .trivyignore.yaml lists it with a
+  statement; HIGH is reported in the job summary only (EXC-642).
+inputs:
+  image:
+    description: Image reference to scan (local daemon first, then the registry)
+    required: true
+  fail:
+    description: "'true' fails the step on a fixable CRITICAL; 'false' only reports"
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Install Trivy 0.75.0
+      shell: bash
+      run: |
+        if ! command -v trivy >/dev/null || ! trivy --version | grep -q 'Version: 0.75.0'; then
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/trivy.tgz" \
+            https://github.com/aquasecurity/trivy/releases/download/v0.75.0/trivy_0.75.0_Linux-64bit.tar.gz
+          echo "c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f  $RUNNER_TEMP/trivy.tgz" | sha256sum -c -
+          sudo tar -xzf "$RUNNER_TEMP/trivy.tgz" -C /usr/local/bin trivy
+        fi
+        echo "day=$(date -u +%Y-%m-%d)" >> "$GITHUB_ENV"
+
+    # The vulnerability databases change daily; one download per day per repo.
+    - name: Cache the Trivy databases
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/trivy
+        key: trivy-db-${{ env.day }}
+        restore-keys: trivy-db-
+
+    - name: Fixable CRITICAL fails
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+        FAIL: ${{ inputs.fail }}
+      run: |
+        ignore=()
+        [ -f .trivyignore.yaml ] && ignore=(--ignorefile .trivyignore.yaml)
+        code=0
+        [ "$FAIL" = true ] && code=1
+        trivy image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code "$code" \
+          "${ignore[@]}" "$IMAGE"
+
+    - name: HIGH, reported
+      if: always()
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.image }}
+      run: |
+        {
+          echo "### Trivy HIGH and CRITICAL: \`$IMAGE\`"
+          echo '```'
+          trivy image --skip-db-update --skip-java-db-update --scanners vuln --severity HIGH,CRITICAL \
+            --format table "$IMAGE" 2>/dev/null | tail -n +2 || echo "scan failed"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"

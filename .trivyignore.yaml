@@ -1,0 +1,10 @@
+# Accepted Trivy findings (EXC-642). The image gate fails on a fixable
+# CRITICAL not listed here. Each entry: the CVE, why it does not reach us, and
+# an expiry so it is looked at again.
+vulnerabilities:
+  - id: CVE-2026-47884
+    statement: XsltView only; the engine renders no MVC views. Fixed in Spring 7 only (Boot 4 migration, owner decision)
+    expired_at: 2027-01-31
+  - id: CVE-2026-47890
+    statement: SSE with view fragments only; the engine renders no view fragments. Fixed in Spring 7 only (Boot 4 migration, owner decision)
+    expired_at: 2027-01-31

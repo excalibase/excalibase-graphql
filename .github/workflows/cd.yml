@@ -67,6 +67,23 @@ jobs:
           type=ref,event=branch
           type=sha,prefix={{branch}}-
           
+    # Built into the local daemon and scanned before anything is pushed
+    # (EXC-642); the push below is served from this build's cache.
+    - name: Build the candidate image
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      with:
+        context: .
+        load: true
+        push: false
+        tags: graphql-candidate:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Trivy
+      uses: ./.github/actions/trivy
+      with:
+        image: graphql-candidate:${{ github.sha }}
+
     - name: Build and push Docker image
       uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
@@ -120,6 +137,24 @@ jobs:
         tags: |
           type=raw,value=native-main,enable={{is_default_branch}}
           type=raw,value=native-${{ github.sha }}
+
+    # Built into the local daemon and scanned before anything is pushed
+    # (EXC-642); the push below is served from this build's cache.
+    - name: Build the candidate image
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      with:
+        context: .
+        file: Dockerfile.native
+        load: true
+        push: false
+        tags: graphql-native-candidate:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Trivy
+      uses: ./.github/actions/trivy
+      with:
+        image: graphql-native-candidate:${{ github.sha }}
 
     - name: Build and push native Docker image
       uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
