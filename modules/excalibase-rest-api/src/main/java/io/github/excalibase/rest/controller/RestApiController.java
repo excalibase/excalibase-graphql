@@ -1,9 +1,11 @@
 package io.github.excalibase.rest.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.json.JsonFieldOrder;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
@@ -120,7 +122,7 @@ public class RestApiController {
     private ResponseEntity<Object> handleSingular(RequestContext ctx, ParsedParams parsed) {
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, 2, 0, false));
         return executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
-            List<?> data = parseJsonList(rows.get("body"));
+            List<?> data = rowsOf(rows.get("body"), responseKeys(ctx, parsed));
             if (data.size() != 1) return ResponseEntity.status(HttpStatus.NOT_ACCEPTABLE).body(errorBody("not_acceptable", "Expected 1 row, got " + data.size()));
             return ResponseEntity.ok().contentType(SINGULAR_TYPE).body(data.get(0));
         });
@@ -139,7 +141,7 @@ public class RestApiController {
         String orderCol = parsed.orderSpecs.isEmpty() ? null : parsed.orderSpecs.get(0).column();
         var query = new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, fetchLimit + 1, 0, false, after, orderCol);
         return executeInTx(ctx.compiler().compileSelect(query), ctx.scope(parsed.allFilters()), rows -> {
-            List<?> data = parseJsonList(rows.get("body"));
+            List<?> data = rowsOf(rows.get("body"), responseKeys(ctx, parsed));
             boolean hasNext = data.size() > fetchLimit;
             return ResponseEntity.ok(Map.of("data", hasNext ? data.subList(0, fetchLimit) : data, "pageInfo", Map.of("hasNextPage", hasNext)));
         });
@@ -159,7 +161,7 @@ public class RestApiController {
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, count));
         var resp = executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
             var response = new LinkedHashMap<String, Object>();
-            response.put("data", limit == 0 ? List.of() : parseJsonList(rows.get("body")));
+            response.put("data", limit == 0 ? List.of() : rowsOf(rows.get("body"), responseKeys(ctx, parsed)));
             if (count && rows.containsKey("total_count")) {
                 long total = ((Number) rows.get("total_count")).longValue();
                 response.put("pagination", Map.of("total", total, "limit", limit == 0 ? 0 : clamped, "offset", offset));
@@ -280,7 +282,7 @@ public class RestApiController {
                 paging("offset", readParams.get("offset"), 0), false);
         var compiled = compiler.compileFunctionSelect(query, call, params, !callable.returnsSet());
         return executeInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
-            List<?> data = parseJsonList(rows.get("body"));
+            List<?> data = rowsOf(rows.get("body"), parsed.columns);
             if (callable.returnsSet()) return ResponseEntity.ok(Map.of("data", data));
             // A JSON tree keeps "data": null; the API's non-null inclusion would drop it from a map.
             ObjectNode single = mapper.createObjectNode();
@@ -379,8 +381,15 @@ public class RestApiController {
         ResponseEntity<Object> handle(Map<String, Object> rows);
     }
 
-    /** What a failure is judged against: the dialect that reads its error, the filters that may name its column. */
-    private record ErrorScope(SqlDialect dialect, List<RestQueryCompiler.FilterSpec> filters) {}
+    /**
+     * What a failure is judged against: the dialect that reads its error, the filters that may name its column;
+     * and the order a written row's fields are represented in.
+     */
+    private record ErrorScope(SqlDialect dialect, List<RestQueryCompiler.FilterSpec> filters, List<String> keys) {
+        ErrorScope(SqlDialect dialect, List<RestQueryCompiler.FilterSpec> filters) {
+            this(dialect, filters, List.of());
+        }
+    }
 
     private ResponseEntity<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
                                                QueryResultHandler handler) {
@@ -404,7 +413,7 @@ public class RestApiController {
                 ResponseEntity<Object> overflow = checkMaxAffected(json, maxAffected, status);
                 if (overflow != null) return overflow;
                 if (rollback) status.setRollbackOnly();
-                return buildDmlResponse(json, prefer, successStatus, table, rollback);
+                return buildDmlResponse(json, prefer, successStatus, table, rollback, scope.keys());
             } catch (Exception e) {
                 Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
                 if (failed.isPresent()) {
@@ -438,7 +447,7 @@ public class RestApiController {
     }
 
     private ResponseEntity<Object> buildDmlResponse(String json, String prefer, HttpStatus successStatus,
-                                                    String table, boolean rollback) {
+                                                    String table, boolean rollback, List<String> keys) {
         List<String> applied = new ArrayList<>();
         if (rollback) applied.add(PREFER_TX_ROLLBACK);
         boolean returnRepresentation = preferContains(prefer, PREFER_REPRESENTATION);
@@ -450,7 +459,7 @@ public class RestApiController {
                 builder.header("Location", "/api/v1/" + table);
             }
             // A written row the role may not read is not represented: an empty array, never the row.
-            resp = builder.body(Map.of("data", json == null ? List.of() : parseJson(json)));
+            resp = builder.body(Map.of("data", json == null ? List.of() : parseJson(json, keys)));
         } else {
             resp = ResponseEntity.status(successStatus).body(null);
         }
@@ -458,19 +467,22 @@ public class RestApiController {
     }
 
     private ResponseEntity<Object> buildCsvResponse(Map<String, Object> rows, List<String> cols) {
-        List<?> data = parseJsonList(rows.get("body"));
+        List<JsonNode> data = parseJsonList(rows.get("body"));
         if (data.isEmpty()) return ResponseEntity.ok().contentType(CSV_TYPE).body((Object) "");
         StringBuilder csv = new StringBuilder();
         csv.append(String.join(",", cols)).append("\n");
-        for (Object row : data) {
-            if (row instanceof Map<?, ?> raw) {
-                @SuppressWarnings("unchecked") var rowMap = (Map<String, Object>) raw;
-                csv.append(cols.stream()
-                        .map(col -> csvEscape(String.valueOf(rowMap.getOrDefault(col, ""))))
-                        .collect(Collectors.joining(","))).append("\n");
-            }
+        for (JsonNode row : data) {
+            csv.append(cols.stream()
+                    .map(col -> csvEscape(csvValue(row.get(col))))
+                    .collect(Collectors.joining(","))).append("\n");
         }
         return ResponseEntity.ok().contentType(CSV_TYPE).body((Object) csv.toString());
+    }
+
+    /** A NULL is an empty field; text is its own characters, anything else its JSON. */
+    private static String csvValue(JsonNode value) {
+        if (value == null || value.isNull()) return "";
+        return value.isValueNode() ? value.asText() : value.toString();
     }
 
     private static String csvEscape(String value) {
@@ -482,7 +494,7 @@ public class RestApiController {
     private record RequestContext(String tableKey, RestQueryCompiler compiler, SchemaInfo schemaInfo,
                                   TableAccess access, SqlDialect dialect) {
         ErrorScope scope(List<RestQueryCompiler.FilterSpec> filters) {
-            return new ErrorScope(dialect, filters);
+            return new ErrorScope(dialect, filters, new ArrayList<>(schemaInfo.getColumns(tableKey)));
         }
     }
 
@@ -617,14 +629,43 @@ public class RestApiController {
                 group.groups().stream().map(RestApiController::toCompilerGroup).toList());
     }
 
-    private Object parseJson(String json) {
-        try { return mapper.readValue(json, Object.class); } catch (Exception _) { return json; }
+    /**
+     * Rows are kept as JSON trees so a NULL column is answered as {@code null}, never dropped by the API's
+     * non-null inclusion, and each row's fields are put in {@code keys}' order.
+     */
+    private Object parseJson(String json, List<String> keys) {
+        try {
+            JsonNode tree = mapper.readTree(json);
+            if (!tree.isArray()) return JsonFieldOrder.ordered(tree, keys);
+            List<JsonNode> rows = new ArrayList<>();
+            tree.forEach(row -> rows.add(JsonFieldOrder.ordered(row, keys)));
+            return rows;
+        } catch (Exception _) {
+            return json;
+        }
     }
 
-    @SuppressWarnings("unchecked")
-    private List<?> parseJsonList(Object body) {
+    private List<JsonNode> rowsOf(Object body, List<String> keys) {
+        return parseJsonList(body).stream().map(row -> JsonFieldOrder.ordered(row, keys)).toList();
+    }
+
+    private List<JsonNode> parseJsonList(Object body) {
         if (body == null) return List.of();
-        try { return mapper.readValue(body.toString(), List.class); } catch (Exception _) { return List.of(); }
+        try {
+            List<JsonNode> rows = new ArrayList<>();
+            mapper.readTree(body.toString()).forEach(rows::add);
+            return rows;
+        } catch (Exception _) {
+            return List.of();
+        }
+    }
+
+    /** The order a read's fields are answered in: the selected columns, or the table's, then the embeds. */
+    private static List<String> responseKeys(RequestContext ctx, ParsedParams parsed) {
+        List<String> keys = new ArrayList<>(parsed.columns.isEmpty()
+                ? ctx.schemaInfo().getColumns(ctx.tableKey()) : parsed.columns);
+        parsed.embeds.forEach(embed -> keys.add(embed.relationName()));
+        return keys;
     }
 
     private static RestQueryCompiler.EmbedSpec toCompilerEmbed(SelectParser.EmbedSpec e) {

@@ -491,7 +491,7 @@ public class RestQueryCompiler {
             Map<String, Object> params = new LinkedHashMap<>();
             StringBuilder readable = new StringBuilder();
             appendRls(readable, table, ALIAS, RlsOp.SELECT, params);
-            readBack = new KeyedWrites.ReadBack(dialect.buildObject(jsonEntries(schemaInfo.getColumns(table), ALIAS)),
+            readBack = new KeyedWrites.ReadBack(dialect.buildObject(jsonEntries(table, schemaInfo.getColumns(table), ALIAS)),
                     readable.toString(), params);
         }
         List<String> keys = rowKey(table);
@@ -738,7 +738,7 @@ public class RestQueryCompiler {
         if (columns.isEmpty() && embedSql.isEmpty() && dialect.supportsRowToJson()) {
             return dialect.coalesceArray(dialect.aggregateArray(dialect.rowToJson(ALIAS)));
         }
-        List<String> entries = jsonEntries(columns.isEmpty() ? schemaInfo.getColumns(table) : columns, ALIAS);
+        List<String> entries = jsonEntries(table, columns.isEmpty() ? schemaInfo.getColumns(table) : columns, ALIAS);
         entries.addAll(embedSql);
         return dialect.coalesceArray(dialect.aggregateArray(dialect.buildObject(entries)));
     }
@@ -758,11 +758,12 @@ public class RestQueryCompiler {
         where.append(dialect.quoteIdentifier(col)).append(GT).append(PARAM_PREFIX).append(P_AFTER);
     }
 
-    /** JSON object key/value entries for {@code cols} read from {@code alias}. */
-    private List<String> jsonEntries(Collection<String> cols, String alias) {
+    /** JSON object key/value entries for {@code cols} of {@code table} read from {@code alias}. */
+    private List<String> jsonEntries(String table, Collection<String> cols, String alias) {
         List<String> entries = new ArrayList<>();
         for (String col : cols) {
-            entries.add(sqlString(col) + COMMA_SEP + alias + DOT + dialect.quoteIdentifier(col));
+            entries.add(sqlString(col) + COMMA_SEP
+                    + dialect.jsonValue(alias + DOT + dialect.quoteIdentifier(col), schemaInfo.getColumnType(table, col)));
         }
         return entries;
     }
@@ -847,12 +848,12 @@ public class RestQueryCompiler {
             return dialect.rowToJson(outerAlias + DOT_STAR);
         }
         if (childEntries.isEmpty()) {
-            return dialect.buildObject(jsonEntries(embedColumns(embed, table), outerAlias));
+            return dialect.buildObject(jsonEntries(table, embedColumns(embed, table), outerAlias));
         }
         List<String> cols = embed.columns().isEmpty() || embed.columns().contains(STAR)
             ? new ArrayList<>(schemaInfo.getColumns(table))
             : embed.columns();
-        List<String> entries = jsonEntries(cols, outerAlias);
+        List<String> entries = jsonEntries(table, cols, outerAlias);
         entries.addAll(childEntries);
         return dialect.buildObject(entries);
     }

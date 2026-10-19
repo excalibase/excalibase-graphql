@@ -109,10 +109,11 @@ public class GraphqlController {
                         return introspection;
                     }
                     SqlCompiler.CompiledQuery compiled = state.compiler().compile(dataPart.get(), variables);
-                    return merge(introspection, dispatchCompiled(compiled, state, finalUserId, finalClaims));
+                    return merge(introspection, SelectionOrder.apply(
+                            dispatchCompiled(compiled, state, finalUserId, finalClaims), dataPart.get()));
                 }
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
-                return dispatchCompiled(compiled, state, finalUserId, finalClaims);
+                return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims), finalQuery);
             } catch (Exception e) {
                 return errorResponse(e, state == null ? null : state.compiler().dialect());
             }

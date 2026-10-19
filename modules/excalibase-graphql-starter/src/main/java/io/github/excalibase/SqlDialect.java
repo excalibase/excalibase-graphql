@@ -79,6 +79,14 @@ public interface SqlDialect {
         return dataType == null ? colRef : colRef + suffixCast(dataType);
     }
 
+    /**
+     * A value of {@code dataType} where the database's own JSON rendering differs from the API's: REST's
+     * columns and GraphQL's MIN/MAX aggregates. Postgres renders booleans and timestamps as the API does.
+     */
+    default String jsonValue(String expr, String dataType) {
+        return expr;
+    }
+
     /** A request value bound to a column of {@code columnType}, in the form the database accepts. */
     default Object bindValue(String columnType, Object value) {
         return value;
