@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -141,10 +142,11 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     @PostConstruct
     public void init() {
         SqlEngine engine = SqlEngineFactory.create(databaseType);
-        List<String> schemaList = discoverSchemas(jdbcTemplate, databaseType);
+        List<String> schemaList = List.of();
 
         SchemaInfo schemaInfo = new SchemaInfo();
         try {
+            schemaList = discoverSchemas(jdbcTemplate, databaseType);
             loadMultiSchema(schemaInfo, schemaList, engine.schemaLoader());
         } catch (Exception e) {
             log.warn("Failed to load database schema — starting with empty schema", e);
@@ -454,20 +456,15 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     private List<String> discoverSchemas(JdbcTemplate jdbc, String type) {
-        try {
-            String sql = MYSQL.equalsIgnoreCase(type)
-                    ? "SELECT schema_name FROM information_schema.schemata " +
-                      "WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys') " +
-                      "ORDER BY schema_name"
-                    : "SELECT schema_name FROM information_schema.schemata " +
-                      "WHERE schema_name NOT LIKE 'pg_%' " +
-                      "AND schema_name != 'information_schema' " +
-                      "ORDER BY schema_name";
-            return reservedSchemas.filter(jdbc.queryForList(sql, String.class));
-        } catch (Exception e) {
-            log.warn("Failed to discover schemas — falling back to 'public'", e);
-            return List.of("public");
-        }
+        String sql = MYSQL.equalsIgnoreCase(type)
+                ? "SELECT schema_name FROM information_schema.schemata " +
+                  "WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys') " +
+                  "ORDER BY schema_name"
+                : "SELECT schema_name FROM information_schema.schemata " +
+                  "WHERE schema_name NOT LIKE 'pg_%' " +
+                  "AND schema_name != 'information_schema' " +
+                  "ORDER BY schema_name";
+        return reservedSchemas.filter(jdbc.queryForList(sql, String.class));
     }
 
     private void loadMultiSchema(SchemaInfo schemaInfo, List<String> schemaList, SchemaLoader loader) {
@@ -487,17 +484,26 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         return null;
     }
 
-    /** A project is reflected with the engine its own vault record names; {@code app.database-type} is not consulted. */
+    /**
+     * A project is reflected with the engine its own vault record names; {@code app.database-type} is not
+     * consulted. A database that cannot be read fails the request and nothing is cached: an empty schema
+     * cached while a restore replaces the database would be served long after it is back (EXC-644).
+     */
     Reflection reflectTenant(String orgSlug, String projectId) {
         TenantDatabase database = dataSourceManager.getDatabase(orgSlug, projectId);
         JdbcTemplate tenantJdbc = new JdbcTemplate(database.dataSource());
         String type = database.engine().type();
 
         SqlEngine engine = SqlEngineFactory.create(type);
-        List<String> tenantSchemas = discoverSchemas(tenantJdbc, type);
-
+        List<String> tenantSchemas;
         SchemaInfo schemaInfo = new SchemaInfo();
-        loadMultiSchema(schemaInfo, tenantSchemas, engine.schemaLoader(), tenantJdbc);
+        try {
+            tenantSchemas = discoverSchemas(tenantJdbc, type);
+            loadMultiSchema(schemaInfo, tenantSchemas, engine.schemaLoader(), tenantJdbc);
+        } catch (DataAccessException e) {
+            log.warn("reflect_tenant_failed tenant={}/{} engine={}: {}", orgSlug, projectId, type, e.getMessage());
+            throw new SchemaUnavailableException("The database of " + projectId + " could not be read", e);
+        }
 
         log.info("reflected_tenant tenant={}/{} engine={} tables={}", orgSlug, projectId, type,
                 schemaInfo.getTableNames().size());
