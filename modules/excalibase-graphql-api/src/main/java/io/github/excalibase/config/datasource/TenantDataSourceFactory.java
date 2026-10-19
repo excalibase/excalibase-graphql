@@ -9,6 +9,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
+import java.time.Duration;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import javax.sql.DataSource;
@@ -26,18 +27,30 @@ public final class TenantDataSourceFactory implements Function<VaultCredentials,
   // Sessions in UTC, so a timestamp written without an offset means the same instant on every pool.
   private static final String MYSQL_SESSION_INIT = "SET time_zone = '+00:00'";
 
+  public static final Duration DEFAULT_READ_TIMEOUT = ConnectionBounds.DEFAULT_READ_TIMEOUT;
+
   private final TenantDbSslMode sslMode;
   private final int poolSize;
   private final Path root;
+  private final Duration readTimeout;
 
   public TenantDataSourceFactory(TenantDbSslMode sslMode, int poolSize) {
-    this(sslMode, poolSize, createPrivateRoot());
+    this(sslMode, poolSize, DEFAULT_READ_TIMEOUT);
+  }
+
+  public TenantDataSourceFactory(TenantDbSslMode sslMode, int poolSize, Duration readTimeout) {
+    this(sslMode, poolSize, createPrivateRoot(), readTimeout);
   }
 
   TenantDataSourceFactory(TenantDbSslMode sslMode, int poolSize, Path root) {
+    this(sslMode, poolSize, root, DEFAULT_READ_TIMEOUT);
+  }
+
+  TenantDataSourceFactory(TenantDbSslMode sslMode, int poolSize, Path root, Duration readTimeout) {
     this.sslMode = sslMode;
     this.poolSize = poolSize;
     this.root = root;
+    this.readTimeout = ConnectionBounds.requireUsable(readTimeout);
   }
 
   @Override
@@ -87,7 +100,7 @@ public final class TenantDataSourceFactory implements Function<VaultCredentials,
     config.setPassword(creds.password());
     config.setMaximumPoolSize(poolSize);
     config.setMinimumIdle(1);
-    config.setConnectionTimeout(10_000);
+    ConnectionBounds.apply(config, creds.engine(), readTimeout);
     config.setIdleTimeout(300_000);
     config.setMaxLifetime(900_000);
     config.setPoolName("tenant-" + creds.host() + "-" + creds.database());

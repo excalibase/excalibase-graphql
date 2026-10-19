@@ -18,6 +18,11 @@ public enum DatabaseEngine {
     return type;
   }
 
+  /** The engine a JDBC URL's driver speaks; anything not MySQL is Postgres, the default dialect. */
+  public static DatabaseEngine ofJdbcUrl(String url) {
+    return url != null && url.startsWith(MYSQL.jdbcPrefix) ? MYSQL : POSTGRES;
+  }
+
   String jdbcPrefix() {
     return jdbcPrefix;
   }

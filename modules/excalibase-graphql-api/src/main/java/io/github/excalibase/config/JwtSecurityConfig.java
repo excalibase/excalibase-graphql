@@ -23,6 +23,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.time.Duration;
 import java.util.List;
 
 @Configuration
@@ -119,13 +120,14 @@ public class JwtSecurityConfig {
             TokenFileSource provisioningTokenSource,
             @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes,
             @Value("${app.hikari.tenant-pool-size:5}") int poolSize,
-            @Value("${app.tenant-db.sslmode:verify-full}") String tenantSslMode) {
+            @Value("${app.tenant-db.sslmode:verify-full}") String tenantSslMode,
+            @Value("${app.tenant-db.read-timeout-seconds:60}") int readTimeoutSeconds) {
         TenantDbSslMode sslMode = TenantDbSslMode.parse(tenantSslMode);
         if (!security.isMultiTenantEnabled()) {
             return null;
         }
         VaultCredentialService vault = new VaultCredentialService(
                 security.multiTenant().provisioningUrl(), provisioningTokenSource);
-        return new DynamicDataSourceManager(vault, new TenantDataSourceFactory(sslMode, poolSize), ttlMinutes);
+        return new DynamicDataSourceManager(vault, new TenantDataSourceFactory(sslMode, poolSize, Duration.ofSeconds(readTimeoutSeconds)), ttlMinutes);
     }
 }
