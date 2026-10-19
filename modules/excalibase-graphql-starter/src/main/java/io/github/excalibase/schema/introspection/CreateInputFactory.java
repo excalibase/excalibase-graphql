@@ -56,7 +56,7 @@ public final class CreateInputFactory {
             String enumTypeName = schemaInfo.getEnumType(table, col);
             GraphQLInputType inputType = enumTypeName != null && enumTypes.containsKey(enumTypeName)
                     ? enumTypes.get(enumTypeName)
-                    : TypeMapping.mapInputType(schemaInfo.getColumnType(table, col));
+                    : TypeMapping.mapColumnInputType(schemaInfo.getColumnType(table, col));
             createBuilder.field(GraphQLInputObjectField.newInputObjectField()
                     .name(col).type(inputType).build());
         }

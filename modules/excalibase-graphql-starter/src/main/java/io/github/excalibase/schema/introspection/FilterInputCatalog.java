@@ -6,6 +6,8 @@ import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLInputType;
 import graphql.schema.GraphQLList;
+import graphql.schema.GraphQLNamedType;
+import graphql.schema.GraphQLScalarType;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.FilterColumnKind;
 
@@ -45,8 +47,14 @@ public final class FilterInputCatalog {
             GraphQLInputObjectType booleanFilter,
             GraphQLInputObjectType dateTimeFilter,
             GraphQLInputObjectType jsonFilter,
-            GraphQLInputObjectType fullTextStringFilter
+            GraphQLInputObjectType fullTextStringFilter,
+            Map<String, GraphQLInputObjectType> arrayFilters
     ) {
+        /** The filter type of an array column whose elements take {@code element}; null when none is offered. */
+        public GraphQLInputObjectType forArray(GraphQLInputType element) {
+            return arrayFilters.get(((GraphQLNamedType) element).getName());
+        }
+
         /** The filter type for {@code kind}, or null when the database offers no operator on it. */
         public GraphQLInputObjectType forKind(FilterColumnKind kind) {
             return switch (kind) {
@@ -59,6 +67,7 @@ public final class FilterInputCatalog {
                 case JSON -> jsonFilter;
                 case TSVECTOR -> tsvectorFilter;
                 case ENUM -> throw new IllegalArgumentException("Enum filters are built per enum type");
+                case ARRAY -> throw new IllegalArgumentException("Array filters are built per element type");
             };
         }
     }
@@ -74,7 +83,22 @@ public final class FilterInputCatalog {
                 build("BooleanFilterInput", FilterColumnKind.BOOLEAN, GraphQLBoolean, capabilities),
                 build("DateTimeFilterInput", FilterColumnKind.DATE_TIME, GraphQLString, capabilities),
                 build("JsonFilterInput", FilterColumnKind.JSON, ExtendedScalars.Json, capabilities),
-                build("SearchableStringFilterInput", FilterColumnKind.FULL_TEXT_STRING, GraphQLString, capabilities));
+                build("SearchableStringFilterInput", FilterColumnKind.FULL_TEXT_STRING, GraphQLString, capabilities),
+                arrayFilters(capabilities));
+    }
+
+    /** One array filter per element scalar, e.g. StringArrayFilterInput; only those a column uses reach the schema. */
+    private static Map<String, GraphQLInputObjectType> arrayFilters(FilterCapabilities capabilities) {
+        Map<String, GraphQLInputObjectType> filters = new LinkedHashMap<>();
+        for (GraphQLScalarType element : List.of(GraphQLString, GraphQLInt, GraphQLFloat, GraphQLBoolean,
+                ExtendedScalars.GraphQLBigInteger, ExtendedScalars.Json)) {
+            GraphQLInputObjectType filter = build(element.getName() + "ArrayFilterInput", FilterColumnKind.ARRAY,
+                    GraphQLList.list(element), capabilities);
+            if (filter != null) {
+                filters.put(element.getName(), filter);
+            }
+        }
+        return Map.copyOf(filters);
     }
 
     /** {@code name} holding each operator {@code capabilities} offers on {@code kind}; null when it offers none. */

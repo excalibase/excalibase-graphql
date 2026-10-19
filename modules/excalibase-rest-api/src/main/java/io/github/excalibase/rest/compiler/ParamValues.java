@@ -2,6 +2,7 @@ package io.github.excalibase.rest.compiler;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.ArrayColumns;
 import io.github.excalibase.compiler.NumericInput;
 import io.github.excalibase.errors.ColumnValueCheck;
 import io.github.excalibase.schema.SchemaInfo;
@@ -31,6 +32,11 @@ final class ParamValues {
         return bindable(typedValue(value, table, column));
     }
 
+    /** True for a Postgres array column, which cs / cd compare as arrays rather than as JSON. */
+    boolean isArray(String table, String column) {
+        return ArrayColumns.isArray(schemaInfo.getColumnType(table, column));
+    }
+
     private Object bindable(Object value) {
         return !serverCasts && value instanceof SqlParameterValue typed ? typed.getValue() : value;
     }
@@ -51,6 +57,10 @@ final class ParamValues {
         }
         String type = schemaInfo.getColumnType(table, column);
         if (type == null) return value;
+        if (ArrayColumns.isArray(type)) {
+            // A JSON array becomes the array literal the server parses as the column's own array type.
+            return new SqlParameterValue(Types.OTHER, String.valueOf(ArrayColumns.literal(value)));
+        }
         return switch (type.toLowerCase()) {
             // Temporal types — with/without timezone, short aliases, array forms (_timestamp = pg ARRAY udt_name)
             case "timestamp", "timestamptz",
@@ -99,6 +109,7 @@ final class ParamValues {
         }
         String type = schemaInfo.getColumnType(table, column);
         if (type == null) return value;
+        if (ArrayColumns.isArray(type)) return new SqlParameterValue(Types.OTHER, value);
         ColumnValueCheck.require(table, column, type, value);
         try {
             return switch (type.toLowerCase()) {

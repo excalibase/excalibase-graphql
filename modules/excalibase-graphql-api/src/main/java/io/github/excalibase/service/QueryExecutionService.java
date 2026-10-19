@@ -113,7 +113,7 @@ public class QueryExecutionService {
         String json;
         try (PreparedStatement pstmt = conn.prepareStatement(resolvedSql.sql())) {
             for (int i = 0; i < resolvedSql.values().size(); i++) {
-                pstmt.setObject(i + 1, resolvedSql.values().get(i));
+                SqlUtils.bind(pstmt, i + 1, resolvedSql.values().get(i));
             }
             try (var rs = pstmt.executeQuery()) {
                 json = rs.next() ? rs.getString(1) : null;

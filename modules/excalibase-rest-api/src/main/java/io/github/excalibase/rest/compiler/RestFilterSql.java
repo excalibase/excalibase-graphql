@@ -124,10 +124,14 @@ final class RestFilterSql {
     private String jsonOrArraySql(String op, FilterSpec filter, String paramName,
                                     Map<String, Object> params, String colRef, String neg, String table) {
         String paramRef = PARAM_PREFIX + paramName;
+        boolean array = values.isArray(table, filter.column());
         String expr = switch (op) {
+            case "cs" -> array ? colRef + CONTAINS + paramRef : json(SqlDialect.JsonPredicate.CONTAINS, filter, colRef, paramRef);
+            case "cd" -> array ? colRef + CONTAINED_BY + paramRef
+                    : json(SqlDialect.JsonPredicate.CONTAINED_BY, filter, colRef, paramRef);
             case "haskey" -> json(SqlDialect.JsonPredicate.HAS_KEY, filter, colRef, paramRef);
-            case "jsoncontains", "contains", "cs" -> json(SqlDialect.JsonPredicate.CONTAINS, filter, colRef, paramRef);
-            case "jsoncontained", "containedin", "cd" ->
+            case "jsoncontains", "contains" -> json(SqlDialect.JsonPredicate.CONTAINS, filter, colRef, paramRef);
+            case "jsoncontained", "containedin" ->
                     json(SqlDialect.JsonPredicate.CONTAINED_BY, filter, colRef, paramRef);
             case "jsonpath", "jsonpathexists" -> FN_JSONB_PATH_EXISTS + parens(colRef + COMMA_SEP + PARAM_PREFIX + paramName + CAST_JSONPATH);
             case "arraycontains", "arrayhasall" -> colRef + CONTAINS + PARAM_PREFIX + paramName;

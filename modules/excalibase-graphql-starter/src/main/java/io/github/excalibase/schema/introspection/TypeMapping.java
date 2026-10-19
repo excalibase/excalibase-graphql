@@ -2,6 +2,8 @@ package io.github.excalibase.schema.introspection;
 
 import graphql.scalars.ExtendedScalars;
 import graphql.schema.GraphQLInputType;
+import graphql.schema.GraphQLList;
+import io.github.excalibase.ArrayColumns;
 import graphql.schema.GraphQLOutputType;
 
 import static graphql.Scalars.GraphQLBoolean;
@@ -28,10 +30,20 @@ final class TypeMapping {
         return GraphQLString;
     }
 
+    /** A column's input type: a list of its element scalar for an array column, else its scalar. */
+    static GraphQLInputType mapColumnInputType(String dbType) {
+        return ArrayColumns.isArray(dbType) ? GraphQLList.list(arrayElementType(dbType)) : mapInputType(dbType);
+    }
+
     static GraphQLOutputType mapColumnType(String dbType) {
-        // Scalar types (GraphQLString, GraphQLInt, etc.) implement both
-        // GraphQLInputType and GraphQLOutputType — delegate to avoid duplication.
-        return (GraphQLOutputType) mapInputType(dbType);
+        // Scalars and lists of them implement both GraphQLInputType and GraphQLOutputType.
+        return (GraphQLOutputType) mapColumnInputType(dbType);
+    }
+
+    /** The scalar an array column's elements take; json elements come back as JSON values. */
+    static GraphQLInputType arrayElementType(String arrayType) {
+        String element = ArrayColumns.elementType(arrayType);
+        return isJsonType(element) ? ExtendedScalars.Json : mapInputType(element);
     }
 
     static boolean isIntegerType(String dbType) {

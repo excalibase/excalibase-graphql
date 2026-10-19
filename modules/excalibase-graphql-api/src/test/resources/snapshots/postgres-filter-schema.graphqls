@@ -20,7 +20,7 @@ type FiltersArticle {
   score: Float
   search_vec: String
   slug: String
-  tags: String
+  tags: [String]
   title: String
   views: Int
 }
@@ -172,7 +172,7 @@ input FiltersArticleCreateInput {
   score: Float
   search_vec: String
   slug: String
-  tags: String
+  tags: [String]
   title: String
   views: Int
 }
@@ -214,7 +214,7 @@ input FiltersArticleUpdateInput {
   score: Float
   search_vec: String
   slug: String
-  tags: String
+  tags: [String]
   title: String
   views: Int
 }
@@ -233,7 +233,7 @@ input FiltersArticleWhereInput {
   score: FloatFilterInput
   search_vec: TsvectorFilterInput
   slug: StringFilterInput
-  tags: StringFilterInput
+  tags: StringArrayFilterInput
   title: StringFilterInput
   views: IntFilterInput
 }
@@ -313,6 +313,19 @@ input JsonFilterInput {
   isNotNull: Boolean
   isNull: Boolean
   neq: JSON
+}
+
+input StringArrayFilterInput {
+  arrayContains: [String]
+  arrayHasAll: [String]
+  arrayHasAny: [String]
+  containedBy: [String]
+  contains: [String]
+  eq: [String]
+  isNotNull: Boolean
+  isNull: Boolean
+  neq: [String]
+  overlaps: [String]
 }
 
 input StringFilterInput {

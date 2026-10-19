@@ -1,5 +1,6 @@
 package io.github.excalibase.schema.introspection;
 
+import io.github.excalibase.ArrayColumns;
 import io.github.excalibase.FilterColumnKind;
 import io.github.excalibase.schema.SchemaInfo;
 
@@ -16,6 +17,7 @@ public final class FilterColumns {
         String enumType = schemaInfo.getEnumType(table, column);
         if (enumType != null && schemaInfo.getEnumTypes().containsKey(enumType)) return FilterColumnKind.ENUM;
         String type = schemaInfo.getColumnType(table, column);
+        if (ArrayColumns.isArray(type)) return FilterColumnKind.ARRAY;
         if (TypeMapping.isJsonType(type)) return FilterColumnKind.JSON;
         if (TypeMapping.isBooleanType(type)) return FilterColumnKind.BOOLEAN;
         if (TypeMapping.isDateTimeType(type)) return FilterColumnKind.DATE_TIME;

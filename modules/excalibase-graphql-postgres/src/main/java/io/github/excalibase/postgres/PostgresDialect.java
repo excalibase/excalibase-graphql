@@ -1,11 +1,15 @@
 package io.github.excalibase.postgres;
 
+import io.github.excalibase.ArrayColumns;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.permissions.compile.PermissionDialect;
 
+import org.springframework.jdbc.core.SqlParameterValue;
+
 import java.sql.SQLException;
+import java.sql.Types;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -162,6 +166,16 @@ public class PostgresDialect implements SqlDialect {
         String ctePart = mutationSql.substring(0, selectIdx + 1);
         String selectPart = mutationSql.substring(selectIdx + 2);
         return ctePart + " " + SELECT + "jsonb_build_object('" + fieldName + "', " + parens(selectPart) + ")";
+    }
+
+    /**
+     * An array column's value is bound as an untyped array literal, so the server parses it as the column's
+     * own array type (text[], int[], an enum array) wherever it is compared or assigned.
+     */
+    @Override
+    public Object bindValue(String columnType, Object value) {
+        if (value == null || !ArrayColumns.isArray(columnType)) return value;
+        return new SqlParameterValue(Types.OTHER, String.valueOf(ArrayColumns.literal(value)));
     }
 
     @Override
