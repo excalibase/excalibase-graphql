@@ -39,7 +39,10 @@ public final class WhereInputFactory {
                                                    Map<String, GraphQLInputObjectType> enumFilters,
                                                    FilterInputCatalog.FilterInputs filters) {
         FilterColumnKind kind = FilterColumns.kindOf(schemaInfo, table, col);
-        return kind == FilterColumnKind.ENUM ? enumFilters.get(schemaInfo.getEnumType(table, col))
-                : filters.forKind(kind);
+        return switch (kind) {
+            case ENUM -> enumFilters.get(schemaInfo.getEnumType(table, col));
+            case ARRAY -> filters.forArray(TypeMapping.arrayElementType(schemaInfo.getColumnType(table, col)));
+            default -> filters.forKind(kind);
+        };
     }
 }

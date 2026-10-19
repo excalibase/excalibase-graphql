@@ -11,5 +11,7 @@ public enum FilterColumnKind {
     DATE_TIME,
     JSON,
     TSVECTOR,
+    /** A Postgres array column, filtered by containment and overlap. */
+    ARRAY,
     ENUM
 }

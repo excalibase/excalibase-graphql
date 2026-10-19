@@ -267,6 +267,10 @@ public class FilterBuilder {
         String opName = field.getName();
         requireSupported(tableName, col, opName);
         ObjectField op = new ObjectField(opName, operand(field.getValue()));
+        if (ARRAY_OPERATORS.containsKey(opName) && isArrayColumn(tableName, col)) {
+            applyArrayPredicate(op, new ColumnRef(tableName, col, colRef, paramCast), params, conditions);
+            return;
+        }
         switch (opName) {
             case FILTER_EQ, FILTER_NEQ, FILTER_GT, FILTER_GTE, FILTER_LT, FILTER_LTE -> {
                 requireTypedValues(tableName, col, op.getValue());
@@ -288,6 +292,29 @@ public class FilterBuilder {
                     applyNullPredicate(opName, op, colRef, conditions);
             default -> throw unknownOperator(col, opName);
         }
+    }
+
+    /** The Postgres operator of each array filter; the SDK's names map onto the same three. */
+    private static final Map<String, String> ARRAY_OPERATORS = Map.of(
+            FILTER_CONTAINS, " @> ", FILTER_ARRAY_CONTAINS, " @> ", FILTER_ARRAY_HAS_ALL, " @> ",
+            FILTER_CONTAINED_BY, " <@ ",
+            FILTER_OVERLAPS, " && ", FILTER_ARRAY_HAS_ANY, " && ");
+
+    private boolean isArrayColumn(String tableName, String col) {
+        return schemaInfo != null && tableName != null
+                && FilterColumns.kindOf(schemaInfo, tableName, col) == FilterColumnKind.ARRAY;
+    }
+
+    /** Containment and overlap on an array column, the operand bound as the column's own array type. */
+    private void applyArrayPredicate(ObjectField op, ColumnRef target, Map<String, Object> params,
+                                     List<String> conditions) {
+        if (op.getValue() == null || op.getValue() instanceof NullValue) {
+            throw new IllegalArgumentException("Filter operator '" + op.getName() + "' on column '"
+                    + target.column() + "' takes a list");
+        }
+        String paramName = nextParam("p_" + target.column() + "_" + op.getName(), params);
+        conditions.add(target.ref() + ARRAY_OPERATORS.get(op.getName()) + ":" + paramName + target.paramCast());
+        params.put(paramName, typedValue(target.table(), target.column(), extractValue(op.getValue())));
     }
 
     private static Set<String> knownOperators() {

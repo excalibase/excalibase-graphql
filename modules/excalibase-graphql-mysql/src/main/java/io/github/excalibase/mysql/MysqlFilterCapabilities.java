@@ -41,6 +41,7 @@ final class MysqlFilterCapabilities implements FilterCapabilities {
         operators.put(FilterColumnKind.JSON, FilterCapabilities.known(FilterColumnKind.JSON).stream()
                 .filter(name -> !FILTER_EQ.equals(name) && !FILTER_NEQ.equals(name)).toList());
         operators.put(FilterColumnKind.TSVECTOR, List.of());
+        operators.put(FilterColumnKind.ARRAY, List.of());
         return operators;
     }
 

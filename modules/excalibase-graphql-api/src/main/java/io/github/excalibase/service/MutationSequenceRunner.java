@@ -122,7 +122,7 @@ final class MutationSequenceRunner {
         SqlUtils.ResolvedSql resolved = SqlUtils.resolveNamedParams(sql, params);
         try (PreparedStatement statement = connection.prepareStatement(resolved.sql())) {
             for (int i = 0; i < resolved.values().size(); i++) {
-                statement.setObject(i + 1, resolved.values().get(i));
+                SqlUtils.bind(statement, i + 1, resolved.values().get(i));
             }
             try (ResultSet result = statement.executeQuery()) {
                 return reader.read(result);

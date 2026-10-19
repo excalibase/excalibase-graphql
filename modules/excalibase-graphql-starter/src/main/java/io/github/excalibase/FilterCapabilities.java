@@ -6,6 +6,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static io.github.excalibase.schema.GraphqlConstants.FILTER_ARRAY_CONTAINS;
+import static io.github.excalibase.schema.GraphqlConstants.FILTER_ARRAY_HAS_ALL;
+import static io.github.excalibase.schema.GraphqlConstants.FILTER_ARRAY_HAS_ANY;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_CONTAINED_BY;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_CONTAINS;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_ENDS_WITH;
@@ -25,6 +28,7 @@ import static io.github.excalibase.schema.GraphqlConstants.FILTER_LT;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_LTE;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_NEQ;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_NOT_IN;
+import static io.github.excalibase.schema.GraphqlConstants.FILTER_OVERLAPS;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_PHRASE_SEARCH;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_RAW_SEARCH;
 import static io.github.excalibase.schema.GraphqlConstants.FILTER_REGEX;
@@ -136,6 +140,9 @@ public interface FilterCapabilities {
             tables.put(FilterColumnKind.JSON, List.of(FILTER_EQ, FILTER_NEQ, FILTER_CONTAINS, FILTER_CONTAINED_BY,
                     FILTER_HAS_KEY, FILTER_HAS_KEYS, FILTER_HAS_ANY_KEYS, FILTER_IS_NULL, FILTER_IS_NOT_NULL));
             tables.put(FilterColumnKind.TSVECTOR, FULL_TEXT);
+            tables.put(FilterColumnKind.ARRAY, List.of(FILTER_EQ, FILTER_NEQ, FILTER_CONTAINS, FILTER_CONTAINED_BY,
+                    FILTER_OVERLAPS, FILTER_ARRAY_CONTAINS, FILTER_ARRAY_HAS_ALL, FILTER_ARRAY_HAS_ANY, FILTER_IS_NULL,
+                    FILTER_IS_NOT_NULL));
             tables.put(FilterColumnKind.ENUM, List.of(FILTER_EQ, FILTER_NEQ, FILTER_IN, FILTER_NOT_IN, FILTER_IS_NULL,
                     FILTER_IS_NOT_NULL));
             return Map.copyOf(tables);
@@ -149,6 +156,7 @@ public interface FilterCapabilities {
             tables.put(FilterColumnKind.FULL_TEXT_STRING, text);
             tables.put(FilterColumnKind.JSON, NULL_CHECKS);
             tables.put(FilterColumnKind.TSVECTOR, List.of());
+            tables.put(FilterColumnKind.ARRAY, NULL_CHECKS);
             return tables;
         }
     }

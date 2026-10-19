@@ -105,6 +105,12 @@ public final class GraphqlConstants {
     public static final String FILTER_CONTAINED_BY = "containedBy";
     /** JSONB key exists: {@code jsonb_exists(col, :key)}. */
     public static final String FILTER_HAS_KEY = "hasKey";
+    /** Array columns: the column shares at least one element with the operand (Postgres {@code &&}). */
+    public static final String FILTER_OVERLAPS = "overlaps";
+    /** SDK names for the array operators: arrayContains and arrayHasAll are contains, arrayHasAny is overlaps. */
+    public static final String FILTER_ARRAY_CONTAINS = "arrayContains";
+    public static final String FILTER_ARRAY_HAS_ALL = "arrayHasAll";
+    public static final String FILTER_ARRAY_HAS_ANY = "arrayHasAny";
     /** JSONB has all of the given keys: {@code jsonb_exists_all(col, :keys)}. */
     public static final String FILTER_HAS_KEYS = "hasKeys";
     /** JSONB has any of the given keys: {@code jsonb_exists_any(col, :keys)}. */
