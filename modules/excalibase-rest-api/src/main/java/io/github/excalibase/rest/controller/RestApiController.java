@@ -50,7 +50,10 @@ public class RestApiController {
 
     private static final String IDENT_REGEX = "^[A-Za-z_]\\w{0,62}$";
 
-    private static final Set<String> RESERVED_PARAMS = Set.of("select", "order", "limit", "offset", "or", "first", "after");
+    /** The logic parameters: each is one group of filters, AND- or OR-joined, possibly negated. */
+    private static final List<String> LOGIC_PARAMS = List.of("or", "and", "not.or", "not.and");
+    private static final Set<String> RESERVED_PARAMS = Set.of("select", "order", "limit", "offset", "or", "and",
+            "not.or", "not.and", "on_conflict", "first", "after");
     private static final MediaType SINGULAR_TYPE = MediaType.parseMediaType("application/vnd.pgrst.object+json");
     private static final MediaType CSV_TYPE = MediaType.parseMediaType("text/csv");
     private static final String KEY_ERROR = "error";
@@ -87,8 +90,7 @@ public class RestApiController {
     public ResponseEntity<Object> list(
             @PathVariable String table, @RequestParam(required = false) String select,
             @RequestParam(required = false) String order,
-            @RequestParam(required = false, defaultValue = "30") int limit,
-            @RequestParam(required = false, defaultValue = "0") int offset,
+            @RequestParam(required = false) String limit, @RequestParam(required = false) String offset,
             @RequestParam(required = false) Integer first, @RequestParam(required = false) String after,
             @RequestHeader(value = "Prefer", required = false) String prefer,
             @RequestHeader(value = "Accept-Profile", required = false) String acceptProfile,
@@ -100,17 +102,19 @@ public class RestApiController {
 
         var parsed = parseSelectParams(select, order, allParams);
         String accept = request.getHeader("Accept");
+        int rowLimit = paging("limit", limit, maxRows);
+        int rowOffset = paging("offset", offset, 0);
 
         if (accept != null && accept.contains("vnd.pgrst.object+json")) {
             return handleSingular(ctx, parsed);
         }
         if (accept != null && accept.contains("text/csv")) {
-            return handleCsv(ctx, parsed, limit, offset);
+            return handleCsv(ctx, parsed, rowLimit, rowOffset);
         }
         if (first != null) {
             return handleCursor(ctx, parsed, first, after);
         }
-        return handlePaginated(ctx, parsed, limit, offset, prefer);
+        return handlePaginated(ctx, parsed, rowLimit, rowOffset, prefer);
     }
 
     private ResponseEntity<Object> handleSingular(RequestContext ctx, ParsedParams parsed) {
@@ -126,7 +130,8 @@ public class RestApiController {
         int clamped = Math.clamp(limit, 1, maxRows);
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, false));
         List<String> csvCols = parsed.columns.isEmpty() ? new ArrayList<>(ctx.schemaInfo().getColumns(ctx.tableKey())) : parsed.columns;
-        return executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> buildCsvResponse(rows, csvCols));
+        return executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> limit == 0
+                ? ResponseEntity.ok().contentType(CSV_TYPE).body((Object) "") : buildCsvResponse(rows, csvCols));
     }
 
     private ResponseEntity<Object> handleCursor(RequestContext ctx, ParsedParams parsed, int first, String after) {
@@ -140,20 +145,26 @@ public class RestApiController {
         });
     }
 
+    /**
+     * A page of rows. {@code limit=0} answers no rows, as PostgREST does; with {@code count=exact} the total
+     * is still counted, its range {@code *}.
+     */
     private ResponseEntity<Object> handlePaginated(RequestContext ctx, ParsedParams parsed, int limit, int offset, String prefer) {
-        int clamped = Math.clamp(limit, 1, maxRows);
         boolean count = preferContains(prefer, "count=exact");
         if (count && !ctx.access().allowsAggregations(ctx.tableKey())) {
             return permissionDenied("Counting rows of " + ctx.tableKey() + " is not permitted");
         }
+        // limit=0 still runs the query, so its filters are checked; its rows are not answered.
+        int clamped = Math.clamp(limit, 1, maxRows);
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, count));
         var resp = executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
             var response = new LinkedHashMap<String, Object>();
-            response.put("data", parseJsonList(rows.get("body")));
+            response.put("data", limit == 0 ? List.of() : parseJsonList(rows.get("body")));
             if (count && rows.containsKey("total_count")) {
                 long total = ((Number) rows.get("total_count")).longValue();
-                response.put("pagination", Map.of("total", total, "limit", clamped, "offset", offset));
-                return ResponseEntity.ok().header("Content-Range", offset + "-" + (offset + clamped - 1) + "/" + total).body((Object) response);
+                response.put("pagination", Map.of("total", total, "limit", limit == 0 ? 0 : clamped, "offset", offset));
+                String range = limit == 0 ? "*" : offset + "-" + (offset + clamped - 1);
+                return ResponseEntity.ok().header("Content-Range", range + "/" + total).body((Object) response);
             }
             return ResponseEntity.ok().body((Object) response);
         });
@@ -166,6 +177,7 @@ public class RestApiController {
             @PathVariable String table, @RequestBody Object body,
             @RequestHeader(value = "Prefer", required = false) String prefer,
             @RequestHeader(value = "Content-Profile", required = false) String cp,
+            @RequestParam(value = "on_conflict", required = false) String onConflict,
             HttpServletRequest request) {
 
         var resolved = resolveContext(table, cp, request);
@@ -173,13 +185,14 @@ public class RestApiController {
         var ctx = resolved.context();
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
         boolean mergeDuplicates = preferContains(prefer, "resolution=merge-duplicates");
+        List<String> conflictColumns = conflictColumns(ctx, onConflict);
 
         RestQueryCompiler.CompiledResult compiled = switch (body) {
             case List<?> list -> ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list);
             case Map<?, ?> map -> {
                 var row = (Map<String, Object>) map;
                 yield mergeDuplicates
-                    ? ctx.compiler().compileUpsert(ctx.tableKey(), row, ctx.schemaInfo().getPrimaryKeys(ctx.tableKey()))
+                    ? ctx.compiler().compileUpsert(ctx.tableKey(), row, conflictColumns)
                     : ctx.compiler().compileInsert(ctx.tableKey(), row);
             }
             default -> null;
@@ -187,6 +200,17 @@ public class RestApiController {
         if (compiled == null) return ResponseEntity.badRequest().body(errorBody(BAD_REQUEST, "Body must be JSON object or array"));
 
         return executeDml(compiled, ctx.scope(List.of()), rollback, null, prefer, HttpStatus.CREATED, table);
+    }
+
+    /** The columns an upsert merges on: {@code on_conflict}'s, each a column of the table, else the primary key. */
+    private static List<String> conflictColumns(RequestContext ctx, String onConflict) {
+        if (onConflict == null || onConflict.isBlank()) return ctx.schemaInfo().getPrimaryKeys(ctx.tableKey());
+        List<String> columns = Arrays.stream(onConflict.split(",")).map(String::trim).toList();
+        Set<String> known = ctx.schemaInfo().getColumns(ctx.tableKey());
+        columns.stream().filter(column -> !known.contains(column)).findFirst().ifPresent(column -> {
+            throw new IllegalArgumentException("Unknown on_conflict column '" + column + "' on " + ctx.tableKey());
+        });
+        return columns;
     }
 
     /** A query function with its arguments as query parameters; the other parameters read its rows. */
@@ -252,7 +276,8 @@ public class RestApiController {
                 schemaProvider.resolveAccess(principal));
         var query = new RestQueryCompiler.SelectQuery(callable.returnTable(), parsed.columns, parsed.filters,
                 parsed.orConditions, parsed.embeds, parsed.orderSpecs,
-                Math.clamp(intParam(readParams, "limit", maxRows), 1, maxRows), intParam(readParams, "offset", 0), false);
+                Math.clamp(paging("limit", readParams.get("limit"), maxRows), 1, maxRows),
+                paging("offset", readParams.get("offset"), 0), false);
         var compiled = compiler.compileFunctionSelect(query, call, params, !callable.returnsSet());
         return executeInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
             List<?> data = parseJsonList(rows.get("body"));
@@ -264,14 +289,16 @@ public class RestApiController {
         });
     }
 
-    private static int intParam(Map<String, String> params, String name, int fallback) {
-        String value = params.get(name);
-        if (value == null) return fallback;
+    /** A {@code limit} or {@code offset}: a non-negative integer, else the request is refused. */
+    private static int paging(String name, String value, int fallback) {
+        if (value == null || value.isBlank()) return fallback;
         try {
-            return Integer.parseInt(value);
+            int parsed = Integer.parseInt(value.trim());
+            if (parsed >= 0) return parsed;
         } catch (NumberFormatException _) {
-            throw new IllegalArgumentException("Invalid " + name + ": " + value);
+            // refused below with the parameter named, never the parser's message
         }
+        throw new IllegalArgumentException("Invalid " + name + ": must be a non-negative integer");
     }
 
     @PatchMapping("/{table}")
@@ -570,11 +597,24 @@ public class RestApiController {
         return filters;
     }
 
+    /** Each of {@code or}, {@code and}, {@code not.or} and {@code not.and} present, as one logic group. */
     private List<RestQueryCompiler.OrCondition> parseOrConditions(Map<String, String> allParams) {
-        String or = allParams.get("or");
-        if (or == null || or.isBlank()) return List.of();
-        return List.of(new RestQueryCompiler.OrCondition(
-            FilterParser.parseOr(or).stream().map(p -> new RestQueryCompiler.FilterSpec(p.column(), p.operator(), p.value(), p.negated())).toList()));
+        List<RestQueryCompiler.OrCondition> groups = new ArrayList<>();
+        for (String name : LOGIC_PARAMS) {
+            String value = allParams.get(name);
+            if (value == null || value.isBlank()) continue;
+            String grouped = value.trim().startsWith("(") ? value : "(" + value + ")";
+            boolean negated = name.startsWith("not.");
+            boolean and = name.endsWith("and");
+            groups.add(new RestQueryCompiler.OrCondition(toCompilerGroup(FilterParser.parseLogic(grouped, and, negated))));
+        }
+        return groups;
+    }
+
+    private static RestQueryCompiler.LogicGroup toCompilerGroup(FilterParser.LogicGroup group) {
+        return new RestQueryCompiler.LogicGroup(group.and(), group.negated(),
+                group.filters().stream().map(p -> new RestQueryCompiler.FilterSpec(p.column(), p.operator(), p.value(), p.negated())).toList(),
+                group.groups().stream().map(RestApiController::toCompilerGroup).toList());
     }
 
     private Object parseJson(String json) {

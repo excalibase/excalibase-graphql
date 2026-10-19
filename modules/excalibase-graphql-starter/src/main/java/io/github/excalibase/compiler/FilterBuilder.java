@@ -437,7 +437,7 @@ public class FilterBuilder {
         conditions.add(target.ref() + (negate ? " NOT IN (" : IN + "(") + joinCols(inParams) + ")");
     }
 
-    /** Handles LIKE, ILIKE, startsWith, endsWith, contains (text variant). */
+    /** Handles LIKE, ILIKE (patterns as sent), startsWith, endsWith, contains (text variant, matched literally). */
     private void applyStringPattern(String opName, ObjectField op, String col, String colRef,
                                     Map<String, Object> params, List<String> conditions, String tableName) {
         Object raw = extractValue(op.getValue());
@@ -454,13 +454,13 @@ public class FilterBuilder {
             }
             case FILTER_STARTS_WITH -> {
                 String paramName = nextParam("p_" + col + "_sw", params);
-                conditions.add(colRef + LIKE + PARAM_PREFIX + paramName);
-                params.put(paramName, raw + "%");
+                conditions.add(colRef + LIKE + PARAM_PREFIX + paramName + LikePatterns.ESCAPE);
+                params.put(paramName, LikePatterns.literal(raw) + "%");
             }
             case FILTER_ENDS_WITH -> {
                 String paramName = nextParam("p_" + col + "_ew", params);
-                conditions.add(colRef + LIKE + PARAM_PREFIX + paramName);
-                params.put(paramName, "%" + raw);
+                conditions.add(colRef + LIKE + PARAM_PREFIX + paramName + LikePatterns.ESCAPE);
+                params.put(paramName, "%" + LikePatterns.literal(raw));
             }
             case FILTER_CONTAINS -> applyContains(op, col, colRef, raw, params, conditions, tableName);
             default -> { /* unreachable */ }
@@ -481,8 +481,8 @@ public class FilterBuilder {
             params.put(paramName, extractValue(op.getValue()));
         } else {
             String paramName = nextParam("p_" + col + "_ct", params);
-            conditions.add(colRef + LIKE + PARAM_PREFIX + paramName);
-            params.put(paramName, "%" + raw + "%");
+            conditions.add(colRef + LIKE + PARAM_PREFIX + paramName + LikePatterns.ESCAPE);
+            params.put(paramName, "%" + LikePatterns.literal(raw) + "%");
         }
     }
 

@@ -39,6 +39,51 @@ public final class FilterParser {
         return new FilterCondition(column, "eq", expression, false);
     }
 
+    /**
+     * A logic group: its filters and nested groups joined by AND when {@code and}, else by OR, the whole
+     * negated when {@code negated}.
+     */
+    public record LogicGroup(boolean and, boolean negated, List<FilterCondition> filters, List<LogicGroup> groups) {}
+
+    private static final int MAX_LOGIC_DEPTH = 10;
+
+    /**
+     * PostgREST's {@code or=(…)} / {@code and=(…)} value, whose members are filters ({@code col.op.value}) or
+     * nested groups ({@code and(…)}, {@code or(…)}, {@code not.and(…)}, {@code not.or(…)}).
+     */
+    public static LogicGroup parseLogic(String expression, boolean and, boolean negated) {
+        return parseLogic(expression, and, negated, 0);
+    }
+
+    private static LogicGroup parseLogic(String expression, boolean and, boolean negated, int depth) {
+        if (depth > MAX_LOGIC_DEPTH) {
+            throw new IllegalArgumentException("Logic groups nest deeper than " + MAX_LOGIC_DEPTH);
+        }
+        String inner = expression.trim();
+        if (!inner.startsWith("(") || !inner.endsWith(")")) {
+            throw new IllegalArgumentException("A logic group must be enclosed in parentheses: " + expression);
+        }
+        inner = inner.substring(1, inner.length() - 1);
+        List<FilterCondition> filters = new ArrayList<>();
+        List<LogicGroup> groups = new ArrayList<>();
+        for (String member : splitRespectingParens(inner)) {
+            String part = member.trim();
+            boolean notGroup = part.startsWith("not.");
+            String bare = notGroup ? part.substring(4) : part;
+            if (bare.startsWith("and(") || bare.startsWith("or(")) {
+                boolean nestedAnd = bare.startsWith("and(");
+                groups.add(parseLogic(bare.substring(nestedAnd ? 3 : 2), nestedAnd, notGroup, depth + 1));
+                continue;
+            }
+            int firstDot = part.indexOf('.');
+            if (firstDot <= 0) {
+                throw new IllegalArgumentException("Invalid filter in logic group: " + part);
+            }
+            filters.add(parse(part.substring(0, firstDot), part.substring(firstDot + 1)));
+        }
+        return new LogicGroup(and, negated, filters, groups);
+    }
+
     public static List<FilterCondition> parseOr(String expression) {
         List<FilterCondition> conditions = new ArrayList<>();
         String inner = expression;
