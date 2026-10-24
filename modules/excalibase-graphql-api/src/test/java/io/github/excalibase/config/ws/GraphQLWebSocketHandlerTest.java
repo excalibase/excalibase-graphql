@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.StubbedSchemaManager;
@@ -86,7 +87,8 @@ class GraphQLWebSocketHandlerTest {
         AccessPlans plans = StubbedSchemaManager.withDocument(schema(),
                 StubbedSchemaManager.document("p1", tableEntries), (sql, params) -> probes.add(sql));
         return new GraphQLWebSocketHandler(subscriptionService, mapper,
-                provider((JwtService) null), new WebSocketHeartbeat(0), provider(plans));
+                provider((JwtService) null), new WebSocketHeartbeat(0), provider(plans),
+                provider((RequestMetrics) null));
     }
 
     private WebSocketSession session(List<String> sink, String projectId, JwtClaims claims) throws Exception {

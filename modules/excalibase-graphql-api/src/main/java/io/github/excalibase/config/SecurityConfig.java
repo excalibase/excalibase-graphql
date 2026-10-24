@@ -1,9 +1,11 @@
 package io.github.excalibase.config;
 
 import io.github.excalibase.cors.BrowserEnforcedCorsProcessor;
+import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.KnownProjectFilter;
 import io.github.excalibase.security.KnownProjects;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -20,6 +22,7 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http,
                                            CorsConfigurationSource corsConfigurationSource,
                                            KnownProjects knownProjects,
+                                           ObjectProvider<RequestMetrics> requestMetrics,
                                            @Autowired(required = false) JwtAuthFilter jwtAuthFilter) throws Exception {
         // CSRF disabled — stateless JWT API, no session cookies, Bearer-token auth only.
         // CORS runs here, ahead of auth, so a preflight never needs a token and the
@@ -36,7 +39,8 @@ public class SecurityConfig {
 
         // An unknown project is refused first: it needs no CORS answer and no token
         // check, and neither lookup should reach provisioning on its behalf.
-        http.addFilterBefore(new KnownProjectFilter(knownProjects), CorsFilter.class);
+        http.addFilterBefore(new KnownProjectFilter(knownProjects, requestMetrics.getIfAvailable() != null),
+                CorsFilter.class);
         if (jwtAuthFilter != null) {
             http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         }

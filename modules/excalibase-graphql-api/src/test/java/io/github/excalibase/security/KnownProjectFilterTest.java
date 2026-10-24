@@ -52,6 +52,30 @@ class KnownProjectFilterTest {
     }
 
     @Test
+    @DisplayName("with request metrics on, only a project that passed the check is marked known")
+    void knownProjectAttribute() throws Exception {
+        MockHttpServletRequest known = new MockHttpServletRequest("POST", "/" + PROJECT + "/graphql");
+        new KnownProjectFilter(KnownProjects.pinned(PROJECT), true).doFilter(known, new MockHttpServletResponse(),
+                mock(FilterChain.class));
+        MockHttpServletRequest unknown = new MockHttpServletRequest("POST", "/nonexistent/graphql");
+        new KnownProjectFilter(KnownProjects.pinned(PROJECT), true).doFilter(unknown, new MockHttpServletResponse(),
+                mock(FilterChain.class));
+
+        assertThat(known.getAttribute(KnownProjectFilter.KNOWN_PROJECT_ATTR)).isEqualTo(PROJECT);
+        assertThat(unknown.getAttribute(KnownProjectFilter.KNOWN_PROJECT_ATTR)).isNull();
+    }
+
+    @Test
+    @DisplayName("with request metrics off, nothing is added to the request")
+    void noAttributeWhenMetricsOff() throws Exception {
+        MockHttpServletRequest known = new MockHttpServletRequest("POST", "/" + PROJECT + "/graphql");
+        new KnownProjectFilter(KnownProjects.pinned(PROJECT)).doFilter(known, new MockHttpServletResponse(),
+                mock(FilterChain.class));
+
+        assertThat(known.getAttribute(KnownProjectFilter.KNOWN_PROJECT_ATTR)).isNull();
+    }
+
+    @Test
     @DisplayName("routes without a project (health, actuator) are not project-checked")
     void projectlessRoute_reachesChain() throws Exception {
         FilterChain chain = mock(FilterChain.class);

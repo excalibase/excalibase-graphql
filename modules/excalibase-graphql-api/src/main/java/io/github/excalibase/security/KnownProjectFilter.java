@@ -20,10 +20,20 @@ public class KnownProjectFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(KnownProjectFilter.class);
 
+    /** The project id, set once it passed the check: request metrics record only these. */
+    public static final String KNOWN_PROJECT_ATTR = "excalibase.knownProject";
+
     private final KnownProjects knownProjects;
+    private final boolean markKnownProjects;
 
     public KnownProjectFilter(KnownProjects knownProjects) {
+        this(knownProjects, false);
+    }
+
+    /** {@code markKnownProjects} only when request metrics are on, so the hot path is unchanged when off. */
+    public KnownProjectFilter(KnownProjects knownProjects, boolean markKnownProjects) {
         this.knownProjects = knownProjects;
+        this.markKnownProjects = markKnownProjects;
     }
 
     @Override
@@ -47,6 +57,9 @@ public class KnownProjectFilter extends OncePerRequestFilter {
             writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Project unavailable",
                     "project_unavailable");
             return;
+        }
+        if (markKnownProjects) {
+            request.setAttribute(KNOWN_PROJECT_ATTR, projectId);
         }
         chain.doFilter(request, response);
     }
