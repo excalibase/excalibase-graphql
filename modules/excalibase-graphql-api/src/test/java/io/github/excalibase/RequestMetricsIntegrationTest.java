@@ -92,7 +92,6 @@ class RequestMetricsIntegrationTest {
             session.close();
         }
 
-        System.out.println("---- internal /metrics scrape ----\n" + scrapeWhileOpen);
         assertThat(scrapeWhileOpen).contains(
                 "excalibase_requests_seconds_count{family=\"graphql\",outcome=\"ok\",project=\"test-proj\"} 1",
                 "excalibase_requests_seconds_count{family=\"graphql\",outcome=\"client_error\",project=\"test-proj\"} 1",
@@ -105,8 +104,8 @@ class RequestMetricsIntegrationTest {
                 "excalibase_realtime_messages_total{project=\"test-proj\"} 1.0",
                 "excalibase_request_metrics_info{instance=\"",
                 "excalibase_request_metrics_start_time_seconds{instance=\"",
-                "excalibase_request_metrics_dropped_total 0.0");
-        assertThat(scrapeWhileOpen).doesNotContain("unknown-proj");
+                "excalibase_request_metrics_dropped_total 0.0")
+                .doesNotContain("unknown-proj");
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
                 assertThat(scrape()).contains("excalibase_realtime_connections{project=\"test-proj\"} 0"));
     }

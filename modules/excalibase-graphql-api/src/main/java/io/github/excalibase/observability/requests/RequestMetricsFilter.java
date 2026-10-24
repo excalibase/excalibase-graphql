@@ -48,7 +48,7 @@ public class RequestMetricsFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             failed = false;
         } finally {
-            record(request, response, family.get(), Duration.ofNanos(System.nanoTime() - started), failed);
+            recordRequest(request, response, family.get(), Duration.ofNanos(System.nanoTime() - started), failed);
         }
     }
 
@@ -64,8 +64,8 @@ public class RequestMetricsFilter extends OncePerRequestFilter {
         response.getOutputStream().write(body);
     }
 
-    private void record(HttpServletRequest request, HttpServletResponse response, RequestFamily family,
-                        Duration duration, boolean failed) {
+    private void recordRequest(HttpServletRequest request, HttpServletResponse response, RequestFamily family,
+                               Duration duration, boolean failed) {
         // Set only after the project passed the known-project check, so random paths create no series.
         if (!(request.getAttribute(KnownProjectFilter.KNOWN_PROJECT_ATTR) instanceof String projectId)) {
             return;

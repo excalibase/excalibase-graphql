@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -38,7 +37,7 @@ class RequestMetricsTest {
 
         List<String> buckets = metrics.scrape().lines()
                 .filter(line -> line.startsWith("excalibase_requests_seconds_bucket"))
-                .map(line -> line.replaceAll(".*le=\"([^\"]+)\".*", "$1"))
+                .map(line -> line.substring(line.indexOf("le=\"") + 4, line.lastIndexOf('"')))
                 .toList();
         assertThat(buckets).containsExactly("0.005", "0.01", "0.025", "0.05", "0.1", "0.25", "0.5",
                 "1.0", "2.5", "5.0", "10.0", "+Inf");
@@ -150,7 +149,7 @@ class RequestMetricsTest {
     void families() {
         assertThat(RequestFamily.of("/proj-a/graphql")).contains(RequestFamily.GRAPHQL);
         assertThat(RequestFamily.of("/proj-a/api/v1/orders")).contains(RequestFamily.REST);
-        assertThat(RequestFamily.of("/actuator/health")).isEqualTo(Optional.empty());
+        assertThat(RequestFamily.of("/actuator/health")).isEmpty();
         assertThat(RequestFamily.of("/graphql")).isEmpty();
         assertThat(RequestFamily.REST.tag()).isEqualTo("rest");
     }
