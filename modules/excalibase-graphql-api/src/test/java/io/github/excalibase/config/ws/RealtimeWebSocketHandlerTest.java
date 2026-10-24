@@ -3,6 +3,7 @@ package io.github.excalibase.config.ws;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.StubbedSchemaManager;
@@ -41,7 +42,8 @@ class RealtimeWebSocketHandlerTest {
         subscriptionService = new SubscriptionService();
         mapper = new ObjectMapper();
         handler = new RealtimeWebSocketHandler(subscriptionService, mapper, provider((JwtService) null),
-                new WebSocketHeartbeat(0), provider((AccessPlans) null));
+                new WebSocketHeartbeat(0), provider((AccessPlans) null),
+                provider((RequestMetrics) null));
     }
 
     private WebSocketSession session(List<String> sink) throws Exception {
@@ -192,7 +194,7 @@ class RealtimeWebSocketHandlerTest {
                 "{\"table\":\"public.things\",\"role\":\"" + ROLE + "\",\"select\":" + thingsSelect + "}");
         AccessPlans plans = StubbedSchemaManager.withDocument(schema, document, (sql, params) -> false);
         return new RealtimeWebSocketHandler(subscriptionService, mapper, provider((JwtService) null),
-                new WebSocketHeartbeat(0), provider(plans));
+                new WebSocketHeartbeat(0), provider(plans), provider((RequestMetrics) null));
     }
 
     private static final String OWNED_NOTES = "{\"filter\":{\"owner_id\":{\"_eq\":\"X-Excalibase-User-Id\"}},"
