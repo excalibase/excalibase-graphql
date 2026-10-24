@@ -112,6 +112,12 @@ app:
     # Longest wait for one answer from a project database: a server a restore or failover
     # replaced fails the request instead of hanging it. Also the longest a single query may run.
     read-timeout-seconds: ${TENANT_DB_READ_TIMEOUT_SECONDS:60}
+  request-metrics:
+    # Per-project request, realtime-connection and realtime-message series for the Studio charts,
+    # served in Prometheus text format at GET /metrics on an internal port only (never the public one).
+    enabled: ${APP_REQUEST_METRICS_ENABLED:false}
+    port: ${APP_REQUEST_METRICS_PORT:9464}
+    max-projects: ${APP_REQUEST_METRICS_MAX_PROJECTS:1000}  # distinct projects per process; beyond it events count as dropped
   nats:
     enabled: false  # Enable NATS CDC subscription from excalibase-watcher (default: false)
     url: nats://localhost:4222  # NATS server URL

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectReader;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.security.JwtService;
@@ -80,12 +81,14 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     // sessionId -> (subscriptionId -> Disposable)
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
     private final WebSocketHeartbeat heartbeat;
+    private final RealtimeMetering metering;
 
     public GraphQLWebSocketHandler(SubscriptionService subscriptionService,
                                    ObjectMapper objectMapper,
                                    ObjectProvider<JwtService> jwtServiceProvider,
                                    WebSocketHeartbeat heartbeat,
-                                   ObjectProvider<AccessPlans> accessPlansProvider) {
+                                   ObjectProvider<AccessPlans> accessPlansProvider,
+                                   ObjectProvider<RequestMetrics> requestMetricsProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.changeReader = RealtimeGate.changeReader(objectMapper);
@@ -93,6 +96,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         this.jwtService = jwtServiceProvider.getIfAvailable();
         this.heartbeat = heartbeat;
         this.accessPlans = accessPlansProvider.getIfAvailable();
+        this.metering = new RealtimeMetering(requestMetricsProvider.getIfAvailable());
     }
 
     @Override
@@ -100,6 +104,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         log.debug("WebSocket connection established: {}", session.getId());
         sessionSubscriptions.put(session.getId(), new ConcurrentHashMap<>());
         heartbeat.register(session);
+        metering.opened(session);
     }
 
     @Override
@@ -121,6 +126,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         log.debug("WebSocket closed for session {}: {}", session.getId(), status);
         heartbeat.unregister(session);
+        metering.closed(session);
         Map<String, Disposable> subs = sessionSubscriptions.remove(session.getId());
         if (subs != null) {
             subs.values().forEach(disposable -> {
@@ -252,7 +258,9 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                 PAYLOAD, Map.of("data", Map.of(fieldName, changeData))
         );
         try {
-            sendMessage(session, changeWriter.writeValueAsString(nextMsg));
+            if (sendMessage(session, changeWriter.writeValueAsString(nextMsg))) {
+                metering.delivered(session);
+            }
         } catch (JsonProcessingException e) {
             log.error("Failed to serialize CDC event for subscription {}: ", id, e);
         }
@@ -336,7 +344,8 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         }
     }
 
-    private void sendMessage(WebSocketSession session, String message) {
+    /** True when the message went out. */
+    private boolean sendMessage(WebSocketSession session, String message) {
         try {
             // Serialise on the session monitor: subscription results fan out from
             // multiple Reactor threads onto one session, and the heartbeat pings on
@@ -344,12 +353,14 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
             synchronized (session) {
                 if (session.isOpen()) {
                     session.sendMessage(new TextMessage(message));
-                } else {
-                    log.warn("Attempted to send message to closed session {}", session.getId());
+                    return true;
                 }
+                log.warn("Attempted to send message to closed session {}", session.getId());
+                return false;
             }
         } catch (IOException e) {
             log.error("Failed to send WebSocket message to session {}: ", session.getId(), e);
+            return false;
         }
     }
 }

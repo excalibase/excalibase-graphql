@@ -8,6 +8,7 @@ import io.github.excalibase.compiler.SqlCompilationException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
+import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
@@ -22,6 +23,7 @@ import io.github.excalibase.service.QueryExecutionService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -55,13 +57,16 @@ public class GraphqlController {
     private final GraphqlSchemaManager schemaManager;
     private final QueryExecutionService queryExecutor;
     private final GraphQLObservabilityInstrumentation observability;
+    private final boolean requestMetricsOn;
 
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
-                             GraphQLObservabilityInstrumentation observability) {
+                             GraphQLObservabilityInstrumentation observability,
+                             ObjectProvider<RequestMetrics> requestMetrics) {
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;
+        this.requestMetricsOn = requestMetrics.getIfAvailable() != null;
     }
 
     /**
@@ -98,7 +103,7 @@ public class GraphqlController {
         final JwtClaims finalClaims = jwtClaims;
         final String finalQuery = query;
 
-        return observability.observe(query, null, () -> {
+        ResponseEntity<Object> answer = observability.observe(query, null, () -> {
             GraphqlSchemaManager.EngineState state = null;
             try {
                 state = schemaManager.resolveEngineState(principal);
@@ -118,6 +123,10 @@ public class GraphqlController {
                 return errorResponse(e, state == null ? null : state.compiler().dialect());
             }
         });
+        if (requestMetricsOn && answer.getBody() instanceof Map<?, ?> body && body.containsKey(ERRORS_KEY)) {
+            httpRequest.setAttribute(RequestMetrics.GRAPHQL_ERRORS_ATTR, Boolean.TRUE);
+        }
+        return answer;
     }
 
     /**

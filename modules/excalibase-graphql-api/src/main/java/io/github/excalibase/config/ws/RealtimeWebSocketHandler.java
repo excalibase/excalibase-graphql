@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.security.JwtService;
@@ -66,12 +67,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     // sessionId -> (subscriptionId -> Disposable)
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
     private final WebSocketHeartbeat heartbeat;
+    private final RealtimeMetering metering;
 
     public RealtimeWebSocketHandler(SubscriptionService subscriptionService,
                                     ObjectMapper objectMapper,
                                     ObjectProvider<JwtService> jwtServiceProvider,
                                     WebSocketHeartbeat heartbeat,
-                                    ObjectProvider<AccessPlans> accessPlansProvider) {
+                                    ObjectProvider<AccessPlans> accessPlansProvider,
+                                    ObjectProvider<RequestMetrics> requestMetricsProvider) {
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.changeReader = RealtimeGate.changeReader(objectMapper);
@@ -79,12 +82,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         this.jwtService = jwtServiceProvider.getIfAvailable();
         this.heartbeat = heartbeat;
         this.accessPlans = accessPlansProvider.getIfAvailable();
+        this.metering = new RealtimeMetering(requestMetricsProvider.getIfAvailable());
     }
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         sessionSubscriptions.put(session.getId(), new ConcurrentHashMap<>());
         heartbeat.register(session);
+        metering.opened(session);
         log.debug("Realtime WS connected: {}", session.getId());
     }
 
@@ -106,6 +111,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         heartbeat.unregister(session);
+        metering.closed(session);
         Map<String, Disposable> subs = sessionSubscriptions.remove(session.getId());
         if (subs != null) {
             subs.values().forEach(d -> {
@@ -246,7 +252,9 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             payload.put("id", subId);
             payload.put("op", op);
             payload.put("doc", payloadDoc);
-            sendMessage(session, changeWriter.writeValueAsString(payload));
+            if (sendMessage(session, changeWriter.writeValueAsString(payload))) {
+                metering.delivered(session);
+            }
         } catch (JsonProcessingException e) {
             log.warn("Failed to serialize realtime event for sub {}", subId, e);
         }
@@ -274,7 +282,8 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void sendMessage(WebSocketSession session, String payload) {
+    /** True when the message went out. */
+    private boolean sendMessage(WebSocketSession session, String payload) {
         try {
             // Serialise on the session monitor: CDC events fan out from multiple
             // Reactor threads onto one session, and the heartbeat pings on another
@@ -282,10 +291,13 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             synchronized (session) {
                 if (session.isOpen()) {
                     session.sendMessage(new TextMessage(payload));
+                    return true;
                 }
+                return false;
             }
         } catch (Exception e) {
             log.debug("Send failed on session {}: {}", session.getId(), e.getMessage());
+            return false;
         }
     }
 }
