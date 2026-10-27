@@ -29,6 +29,7 @@ import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 
@@ -237,6 +238,39 @@ class EngineRlsIntegrationTest {
                         .content(body("{ rlsDemoNotes { id } }")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+    }
+
+    @Test
+    void aGuestWhoseRoleHoldsNoPermission_reachesNothing() throws Exception {
+        for (String query : new String[]{"{ rlsDemoDocs { id } }", "{ rlsDemoNotes { id } }"}) {
+            mockMvc.perform(post("/" + PROJECT_WITH_POLICY + "/graphql")
+                            .header("Authorization", "Bearer " + guestJwt(PROJECT_WITH_POLICY))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body(query)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data").doesNotExist())
+                    .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+        }
+    }
+
+    /** A guest's token as excalibase-auth signs it: sub is the id, no address. */
+    private String guestJwt(String projectId) throws Exception {
+        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                .subject("77")
+                .claim("userId", 77L)
+                .claim("projectId", projectId)
+                .audience("excalibase:" + projectId)
+                .claim("role", "guest")
+                .claim("allowed_roles", List.of("guest"))
+                .claim("scope", "authenticated")
+                .claim("is_guest", true)
+                .issuer("excalibase")
+                .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
+                .expirationTime(Date.from(Instant.parse("2099-01-01T00:00:00Z")))
+                .build();
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+        signed.sign(new ECDSASigner(privateKey));
+        return signed.serialize();
     }
 
     @Test

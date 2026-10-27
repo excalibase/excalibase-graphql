@@ -67,6 +67,27 @@ class JwtServiceTest {
     }
 
     @Test
+    void email_comesOnlyFromTheEmailClaim() throws Exception {
+        JWTClaimsSet withEmail = new JWTClaimsSet.Builder()
+                .subject("42")
+                .claim("email", "alice@test.com")
+                .claim("userId", 42L)
+                .claim("projectId", "my-project")
+                .claim("role", "user")
+                .issuer("excalibase")
+                .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
+                .build();
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), withEmail);
+        signed.sign(new ECDSASigner(privateKey));
+
+        assertEquals("alice@test.com", jwtService.verify(signed.serialize()).email());
+
+        String subjectOnly = signJwt(privateKey, 42, "my-project", "user", "alice@test.com",
+                Instant.now().plusSeconds(3600));
+        assertNull(jwtService.verify(subjectOnly).email(), "sub is never read as the address");
+    }
+
+    @Test
     void validToken_returnsClaims() throws Exception {
         String token = signJwt(privateKey, 42, "my-project", "user", "alice@test.com",
                 Instant.now().plusSeconds(3600));
@@ -78,7 +99,6 @@ class JwtServiceTest {
         assertEquals("duc-corp", claims.orgSlug());
         assertEquals("app-a", claims.projectName());
         assertEquals("user", claims.role());
-        assertEquals("alice@test.com", claims.email());
         // Password tokens never set scope/keyId — those are api-key only.
         assertNull(claims.scope());
         assertEquals(0L, claims.keyId());
@@ -105,7 +125,7 @@ class JwtServiceTest {
 
         JwtClaims claims = jwtService.verify(signed.serialize());
 
-        assertEquals("apikey:7", claims.email(), "sub should propagate to email field");
+        assertNull(claims.email(), "an api-key token has no address");
         assertEquals("service", claims.scope());
         assertEquals(7L, claims.keyId());
         assertEquals("service", claims.role());

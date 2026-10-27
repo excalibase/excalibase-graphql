@@ -84,7 +84,8 @@ Permissions refer to the caller through session variables, written as strings th
 | `X-Excalibase-Role` | the role the request runs as |
 | `X-Excalibase-User-Id` | the token's `userId` claim (absent for API-key tokens) |
 | `X-Excalibase-Project-Id` | the project in the URL |
-| `X-Excalibase-Email` | the token's `email` claim, else `sub` for password tokens |
+| `X-Excalibase-Email` | the token's `email` claim only; absent for a token without one (a guest, an API key). `sub` is never read as an address |
+| `X-Excalibase-Is-Guest` | the token's `is_guest` claim, `true` for a guest account and `false` for any other account; absent when the token has none |
 | `X-Excalibase-<Claim>` | every other top-level claim of the token (scalar or array) |
 
 Names are compared lower-cased. An array claim becomes a Postgres array literal with every element
