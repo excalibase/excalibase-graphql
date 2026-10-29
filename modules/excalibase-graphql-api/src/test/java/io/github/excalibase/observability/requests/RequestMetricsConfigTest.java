@@ -10,6 +10,7 @@ import org.springframework.boot.web.embedded.tomcat.TomcatServletWebServerFactor
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RequestMetricsConfigTest {
 
@@ -47,5 +48,13 @@ class RequestMetricsConfigTest {
         Connector connector = connectors(new RequestMetrics(10), " 127.0.0.1 ").get(0);
         assertThat(connector.getPort()).isEqualTo(METRICS_PORT);
         assertThat(String.valueOf(connector.getProperty("address"))).contains("127.0.0.1");
+    }
+
+    @Test
+    @DisplayName("an address that does not resolve stops the start instead of binding every interface")
+    void unresolvableAddressRefusesToStart() {
+        assertThatThrownBy(() -> connectors(new RequestMetrics(10), "no-such-host.invalid"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no-such-host.invalid");
     }
 }

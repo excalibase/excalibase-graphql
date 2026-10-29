@@ -62,7 +62,7 @@ public class RequestMetricsConfig {
     private static Connector internalConnector(int port, String address) {
         Connector connector = new Connector(TomcatServletWebServerFactory.DEFAULT_PROTOCOL);
         connector.setPort(port);
-        String bindAddress = address == null ? "" : address.strip();
+        String bindAddress = address.strip();
         if (!bindAddress.isEmpty() && !connector.setProperty("address", bindAddress)) {
             throw new IllegalStateException("app.request-metrics.address could not be applied: " + bindAddress);
         }
