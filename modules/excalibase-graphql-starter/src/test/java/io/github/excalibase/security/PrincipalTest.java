@@ -18,13 +18,14 @@ class PrincipalTest {
 
     private static JwtClaims passwordToken(Map<String, Object> rawClaims) {
         return new JwtClaims(String.valueOf(rawClaims.getOrDefault("userId", rawClaims.get("sub"))), PROJECT,
-                "org", "app", "Org", (String) rawClaims.get("role"), (String) rawClaims.get("sub"),
+                "org", "app", "Org", (String) rawClaims.get("role"), (String) rawClaims.get("email"),
                 (String) rawClaims.get("scope"), 0L, rawClaims, Set.of((String) rawClaims.get("role")));
     }
 
     private static Map<String, Object> userClaims() {
         Map<String, Object> raw = new LinkedHashMap<>();
-        raw.put("sub", "alice@test.com");
+        raw.put("sub", "42");
+        raw.put("email", "alice@test.com");
         raw.put("userId", 42L);
         raw.put("role", "user");
         raw.put("projectId", PROJECT);
@@ -64,7 +65,7 @@ class PrincipalTest {
                 .containsEntry("x-excalibase-email", "alice@test.com")
                 .containsEntry("x-excalibase-plan", "gold")
                 .containsEntry("x-excalibase-region", "eu")
-                .containsEntry("x-excalibase-sub", "alice@test.com")
+                .containsEntry("x-excalibase-sub", "42")
                 .containsEntry("x-excalibase-orgslug", "org");
     }
 
@@ -97,12 +98,40 @@ class PrincipalTest {
     }
 
     @Test
-    void email_prefersTheEmailClaimOverSub() {
+    void email_comesOnlyFromTheEmailClaim_neverFromSub() {
         Map<String, Object> raw = userClaims();
-        raw.put("email", "real@test.com");
+        raw.remove("email");
+        raw.put("sub", "alice@test.com");
         Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
 
-        assertThat(principal.sessionVariables(PROJECT)).containsEntry("x-excalibase-email", "real@test.com");
+        assertThat(principal.sessionVariables(PROJECT))
+                .doesNotContainKey("x-excalibase-email")
+                .containsEntry("x-excalibase-sub", "alice@test.com");
+    }
+
+    @Test
+    void guestToken_carriesIsGuestAndNoEmail() {
+        Map<String, Object> raw = userClaims();
+        raw.remove("email");
+        raw.put("role", "guest");
+        raw.put("is_guest", true);
+        Principal principal = new Principal("guest", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT))
+                .containsEntry("x-excalibase-is-guest", "true")
+                .containsEntry("x-excalibase-role", "guest")
+                .containsEntry("x-excalibase-user-id", "42")
+                .doesNotContainKey("x-excalibase-email")
+                .doesNotContainKey("x-excalibase-is_guest");
+    }
+
+    @Test
+    void fullAccount_carriesIsGuestFalse() {
+        Map<String, Object> raw = userClaims();
+        raw.put("is_guest", false);
+        Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT)).containsEntry("x-excalibase-is-guest", "false");
     }
 
     @Test

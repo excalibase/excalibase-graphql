@@ -49,7 +49,8 @@ class JwtServiceHmacTest {
     void hmac_validToken_verifies() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("user@example.com")
+                .subject("42")
+                .claim("email", "user@example.com")
                 .claim("userId", 42L)
                 .claim("projectId", "p1")
                 .claim("role", "admin")

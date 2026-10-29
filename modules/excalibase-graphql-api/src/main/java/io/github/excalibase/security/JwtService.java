@@ -31,7 +31,7 @@ import java.util.Set;
  *           Use for standalone deployments without excalibase-auth.
  *
  * Claims extracted (both modes):
- *   userId, projectId, orgSlug, projectName, orgName, role, email/sub
+ *   userId, projectId, orgSlug, projectName, orgName, role, email
  */
 public class JwtService {
 
@@ -279,8 +279,8 @@ public class JwtService {
         // so verification still succeeds.
         String orgNameClaim = (String) claims.getClaim("orgName");
         String orgName = orgNameClaim != null ? orgNameClaim : "";
-        String email = claims.getSubject() != null ? claims.getSubject()
-                : (String) claims.getClaim("email");
+        // sub is the account id; the address is only ever the email claim.
+        String email = claims.getClaim("email") instanceof String address ? address : null;
         // Optional claims emitted by excalibase-auth's api-key grant.
         // Absent on password/refresh tokens — defaulted to null / 0.
         String scope = claims.getClaim("scope") instanceof String scopeValue ? scopeValue : null;

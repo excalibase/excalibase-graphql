@@ -29,6 +29,9 @@ public record Principal(String role, boolean bypass, JwtClaims claims, Map<Strin
 
     private static final String EMAIL_CLAIM = "email";
 
+    /** A guest account's flag, surfaced as {@code x-excalibase-is-guest}. */
+    private static final String IS_GUEST_CLAIM = "is_guest";
+
     private static final Pattern ROLE_NAME = Pattern.compile("^[a-z][a-z0-9_]{0,62}$");
 
     /** Registered JWT claims describe the token, not the caller, so they never become variables. */
@@ -36,9 +39,7 @@ public record Principal(String role, boolean bypass, JwtClaims claims, Map<Strin
             "iss", "aud", "exp", "iat", "nbf", "jti", "token_use");
 
     /** Claims surfaced under their own variable names (or not at all, for role and projectId). */
-    private static final Set<String> EXPLICIT_CLAIMS = Set.of("role", "userid", EMAIL_CLAIM, "projectid");
-
-    private static final Set<String> API_KEY_SCOPES = Set.of(SERVICE, "public", "api-key");
+    private static final Set<String> EXPLICIT_CLAIMS = Set.of("role", "userid", EMAIL_CLAIM, "projectid", IS_GUEST_CLAIM);
 
     public Principal {
         if (!isValidRoleName(role)) {
@@ -93,21 +94,14 @@ public record Principal(String role, boolean bypass, JwtClaims claims, Map<Strin
         if (raw.get("userId") != null) {
             variables.put(SESSION_VARIABLE_PREFIX + "user-id", render(raw.get("userId")));
         }
-        String email = emailOf(claims);
-        if (email != null) {
+        // The address is only ever the email claim: sub is the account id, never an address.
+        if (raw.get(EMAIL_CLAIM) instanceof String email) {
             variables.put(SESSION_VARIABLE_PREFIX + EMAIL_CLAIM, email);
         }
-        return variables;
-    }
-
-    private static String emailOf(JwtClaims claims) {
-        Map<String, Object> raw = claims.extraClaims();
-        if (raw.get(EMAIL_CLAIM) instanceof String email) {
-            return email;
+        if (raw.get(IS_GUEST_CLAIM) instanceof Boolean guest) {
+            variables.put(SESSION_VARIABLE_PREFIX + "is-guest", guest.toString());
         }
-        boolean apiKeyToken = raw.containsKey("keyId")
-                || (claims.scope() != null && API_KEY_SCOPES.contains(claims.scope()));
-        return !apiKeyToken && raw.get("sub") instanceof String subject ? subject : null;
+        return variables;
     }
 
     /** Scalars as text; arrays as a Postgres array literal with every element quoted. */
