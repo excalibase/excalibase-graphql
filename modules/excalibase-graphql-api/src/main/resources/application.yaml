@@ -117,6 +117,8 @@ app:
     # served in Prometheus text format at GET /metrics on an internal port only (never the public one).
     enabled: ${APP_REQUEST_METRICS_ENABLED:false}
     port: ${APP_REQUEST_METRICS_PORT:9464}
+    # The one address the internal port binds; empty is every interface (a single host names its platform-only network).
+    address: ${APP_REQUEST_METRICS_ADDRESS:}
     max-projects: ${APP_REQUEST_METRICS_MAX_PROJECTS:1000}  # distinct projects per process; beyond it events count as dropped
   nats:
     enabled: false  # Enable NATS CDC subscription from excalibase-watcher (default: false)
