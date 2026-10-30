@@ -134,3 +134,14 @@ CREATE TABLE rls_demo.mfa_levels (
     level TEXT PRIMARY KEY
 );
 INSERT INTO rls_demo.mfa_levels (level) VALUES ('aal2');
+
+-- The same rule without a lookup table: each row names the level it needs.
+CREATE TABLE rls_demo.secrets (
+    id           BIGINT PRIMARY KEY,
+    owner_id     UUID NOT NULL,
+    required_aal TEXT NOT NULL DEFAULT 'aal2'
+);
+INSERT INTO rls_demo.secrets (id, owner_id) VALUES
+    (1, '11111111-1111-1111-1111-111111111111'),
+    (2, '11111111-1111-1111-1111-111111111111'),
+    (3, '22222222-2222-2222-2222-222222222222');
