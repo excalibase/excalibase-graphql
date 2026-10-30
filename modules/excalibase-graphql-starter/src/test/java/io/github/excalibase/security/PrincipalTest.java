@@ -1,6 +1,9 @@
 package io.github.excalibase.security;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -132,6 +135,69 @@ class PrincipalTest {
         Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
 
         assertThat(principal.sessionVariables(PROJECT)).containsEntry("x-excalibase-is-guest", "false");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"aal1", "aal2"})
+    void aal_surfacesOnlyAKnownLevel(String level) {
+        Map<String, Object> raw = userClaims();
+        raw.put("aal", level);
+        Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT)).containsEntry("x-excalibase-aal", level);
+    }
+
+    @ParameterizedTest
+    @MethodSource("unknownAssuranceLevels")
+    void aal_dropsAnyOtherValue(Object level) {
+        Map<String, Object> raw = userClaims();
+        raw.put("aal", level);
+        Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT).keySet()).noneMatch(name -> name.contains("aal"));
+    }
+
+    static List<Object> unknownAssuranceLevels() {
+        return List.of("AAL2", "aal3", "", " aal2", 2, 2L, true, List.of("aal2"), Map.of("level", "aal2"));
+    }
+
+    @Test
+    void aal_underAnotherCase_isNeverSurfaced() {
+        Map<String, Object> raw = userClaims();
+        raw.put("AAL", "aal2");
+        Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT).keySet()).noneMatch(name -> name.contains("aal"));
+    }
+
+    @Test
+    void aal_readsOnlyTheLowerCaseClaim() {
+        Map<String, Object> raw = userClaims();
+        raw.put("aal", "aal1");
+        raw.put("AAL", "aal2");
+        Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT)).containsEntry("x-excalibase-aal", "aal1");
+    }
+
+    @Test
+    void impersonation_takesAalFromTheHeadersNotTheServiceToken() {
+        Map<String, Object> raw = new HashMap<>(Map.of(
+                "sub", "apikey:9", "role", "service", "scope", "service", "keyId", 9L, "aal", "aal2"));
+        Principal withHeader = new Principal("user", false, passwordToken(raw), Map.of("X-Excalibase-Aal", "aal1"));
+        Principal withoutHeader = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(withHeader.sessionVariables(PROJECT)).containsEntry("x-excalibase-aal", "aal1");
+        assertThat(withoutHeader.sessionVariables(PROJECT)).doesNotContainKey("x-excalibase-aal");
+    }
+
+    @Test
+    void amr_isAnArrayLiteral() {
+        Map<String, Object> raw = userClaims();
+        raw.put("amr", List.of("password", "totp"));
+        Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT)).containsEntry("x-excalibase-amr", "{\"password\",\"totp\"}");
     }
 
     @Test

@@ -32,6 +32,11 @@ public record Principal(String role, boolean bypass, JwtClaims claims, Map<Strin
     /** A guest account's flag, surfaced as {@code x-excalibase-is-guest}. */
     private static final String IS_GUEST_CLAIM = "is_guest";
 
+    /** Authenticator assurance level, surfaced as {@code x-excalibase-aal} only when it is a known level. */
+    private static final String AAL_CLAIM = "aal";
+
+    private static final Set<String> ASSURANCE_LEVELS = Set.of("aal1", "aal2");
+
     private static final Pattern ROLE_NAME = Pattern.compile("^[a-z][a-z0-9_]{0,62}$");
 
     /** Registered JWT claims describe the token, not the caller, so they never become variables. */
@@ -39,7 +44,8 @@ public record Principal(String role, boolean bypass, JwtClaims claims, Map<Strin
             "iss", "aud", "exp", "iat", "nbf", "jti", "token_use");
 
     /** Claims surfaced under their own variable names (or not at all, for role and projectId). */
-    private static final Set<String> EXPLICIT_CLAIMS = Set.of("role", "userid", EMAIL_CLAIM, "projectid", IS_GUEST_CLAIM);
+    private static final Set<String> EXPLICIT_CLAIMS = Set.of(
+            "role", "userid", EMAIL_CLAIM, "projectid", IS_GUEST_CLAIM, AAL_CLAIM);
 
     public Principal {
         if (!isValidRoleName(role)) {
@@ -100,6 +106,9 @@ public record Principal(String role, boolean bypass, JwtClaims claims, Map<Strin
         }
         if (raw.get(IS_GUEST_CLAIM) instanceof Boolean guest) {
             variables.put(SESSION_VARIABLE_PREFIX + "is-guest", guest.toString());
+        }
+        if (raw.get(AAL_CLAIM) instanceof String level && ASSURANCE_LEVELS.contains(level)) {
+            variables.put(SESSION_VARIABLE_PREFIX + AAL_CLAIM, level);
         }
         return variables;
     }
