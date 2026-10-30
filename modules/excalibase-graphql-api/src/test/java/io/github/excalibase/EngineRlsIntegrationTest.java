@@ -16,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -35,6 +36,7 @@ import java.util.Map;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -65,6 +67,10 @@ class EngineRlsIntegrationTest {
     private static final String PROJECT_NESTED = "proj-nested";
     private static final String PROJECT_NUMERIC = "proj-numeric";
     private static final String PROJECT_TEMPORAL = "proj-temporal";
+    private static final String PROJECT_MFA = "proj-mfa";
+    /** Owned rows, readable only after a second factor (aal2). */
+    private static final String OWNED_AT_AAL2 = "{\"_and\":[" + PermissionDocs.OWNED
+            + ",{\"_exists\":{\"_table\":\"rls_demo.mfa_levels\",\"_where\":{\"level\":{\"_eq\":\"X-Excalibase-Aal\"}}}}]}";
     private static final String ROLE = "app_authenticated";
     private static final String ALL = "\"*\"";
     /** Ledger rows created at most a day ago; time variables are not part of the grammar, so a literal. */
@@ -98,7 +104,7 @@ class EngineRlsIntegrationTest {
                 exchange.getResponseBody().close();
             });
             for (String project : List.of(PROJECT_WITH_POLICY, PROJECT_NO_POLICY, PROJECT_CLS, PROJECT_CLS_NULL,
-                    PROJECT_NESTED, PROJECT_NUMERIC, PROJECT_TEMPORAL)) {
+                    PROJECT_NESTED, PROJECT_NUMERIC, PROJECT_TEMPORAL, PROJECT_MFA)) {
                 mockVault.createContext("/api/vault/secrets/projects/" + project + "/credentials/excalibase_app",
                         exchange -> {
                             byte[] body = tenantCredentials().getBytes(StandardCharsets.UTF_8);
@@ -158,6 +164,8 @@ class EngineRlsIntegrationTest {
         String docsWithoutTitle = PermissionDocs.entry("rls_demo.docs", ROLE,
                 PermissionDocs.select("{}", "[\"id\",\"owner_id\"]"));
         return Map.of(
+                PROJECT_MFA, PermissionDocs.document(PROJECT_MFA, PermissionDocs.entry("rls_demo.docs", ROLE,
+                        PermissionDocs.select(OWNED_AT_AAL2, ALL))),
                 PROJECT_WITH_POLICY, PermissionDocs.document(PROJECT_WITH_POLICY,
                         owned("rls_demo.docs"), open("rls_demo.notes")),
                 PROJECT_NO_POLICY, PermissionDocs.document(PROJECT_NO_POLICY, open("rls_demo.docs")),
@@ -269,6 +277,69 @@ class EngineRlsIntegrationTest {
                 .expirationTime(Date.from(Instant.parse("2099-01-01T00:00:00Z")))
                 .build();
         SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+        signed.sign(new ECDSASigner(privateKey));
+        return signed.serialize();
+    }
+
+    @Test
+    void aPermissionRequiringAal2_admitsOnlyAnAal2Token() throws Exception {
+        mfaQuery(jwtAtLevel("aal2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
+        mfaQuery(jwtAtLevel("aal1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(0)));
+    }
+
+    @Test
+    void aPermissionRequiringAal2_refusesATokenWithoutAKnownLevel() throws Exception {
+        for (Object level : new Object[]{null, "AAL2", "aal3", 2}) {
+            mfaQuery(jwtAtLevel(level))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data").doesNotExist())
+                    .andExpect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"));
+        }
+    }
+
+    @Test
+    void rest_aPermissionRequiringAal2_admitsOnlyAnAal2Token() throws Exception {
+        mockMvc.perform(get("/" + PROJECT_MFA + "/api/v1/docs").header("Accept-Profile", "rls_demo")
+                        .header("Authorization", "Bearer " + jwtAtLevel("aal2")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(2)));
+        mockMvc.perform(get("/" + PROJECT_MFA + "/api/v1/docs").header("Accept-Profile", "rls_demo")
+                        .header("Authorization", "Bearer " + jwtAtLevel("aal1")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(0)));
+        mockMvc.perform(get("/" + PROJECT_MFA + "/api/v1/docs").header("Accept-Profile", "rls_demo")
+                        .header("Authorization", "Bearer " + jwtAtLevel("AAL2")))
+                .andExpect(status().is4xxClientError())
+                .andExpect(jsonPath("$.code").value("missing_session_variable"));
+    }
+
+    private ResultActions mfaQuery(String token) throws Exception {
+        return mockMvc.perform(post("/" + PROJECT_MFA + "/graphql")
+                .header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body("{ rlsDemoDocs { id } }")));
+    }
+
+    /** Alice's token with the given aal claim; null leaves the claim out (MFA off, API key). */
+    private String jwtAtLevel(Object level) throws Exception {
+        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
+                .subject(ALICE)
+                .claim("userId", ALICE)
+                .claim("projectId", PROJECT_MFA)
+                .audience("excalibase:" + PROJECT_MFA)
+                .claim("role", ROLE)
+                .claim("amr", List.of("password", "totp"))
+                .issuer("excalibase")
+                .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
+                .expirationTime(Date.from(Instant.parse("2099-01-01T00:00:00Z")));
+        if (level != null) {
+            claims.claim("aal", level);
+        }
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims.build());
         signed.sign(new ECDSASigner(privateKey));
         return signed.serialize();
     }

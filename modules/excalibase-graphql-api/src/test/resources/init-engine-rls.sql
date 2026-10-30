@@ -127,3 +127,10 @@ BEGIN
     UPDATE rls_demo.notes SET title = p_title WHERE id = p_id;
 END;
 $$;
+
+-- The assurance levels a permission accepts: a row requires MFA when its filter
+-- needs X-Excalibase-Aal to match a level listed here.
+CREATE TABLE rls_demo.mfa_levels (
+    level TEXT PRIMARY KEY
+);
+INSERT INTO rls_demo.mfa_levels (level) VALUES ('aal2');
