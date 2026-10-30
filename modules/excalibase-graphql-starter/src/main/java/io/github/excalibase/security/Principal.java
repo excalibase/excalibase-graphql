@@ -44,7 +44,8 @@ public record Principal(String role, boolean bypass, JwtClaims claims, Map<Strin
             "iss", "aud", "exp", "iat", "nbf", "jti", "token_use");
 
     /** Claims surfaced under their own variable names (or not at all, for role and projectId). */
-    private static final Set<String> EXPLICIT_CLAIMS = Set.of("role", "userid", EMAIL_CLAIM, "projectid", IS_GUEST_CLAIM, AAL_CLAIM);
+    private static final Set<String> EXPLICIT_CLAIMS = Set.of(
+            "role", "userid", EMAIL_CLAIM, "projectid", IS_GUEST_CLAIM, AAL_CLAIM);
 
     public Principal {
         if (!isValidRoleName(role)) {

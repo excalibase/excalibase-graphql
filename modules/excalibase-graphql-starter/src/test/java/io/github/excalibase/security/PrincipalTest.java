@@ -154,9 +154,7 @@ class PrincipalTest {
         raw.put("aal", level);
         Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
 
-        assertThat(principal.sessionVariables(PROJECT))
-                .doesNotContainKey("x-excalibase-aal")
-                .doesNotContainValue(String.valueOf(level));
+        assertThat(principal.sessionVariables(PROJECT).keySet()).noneMatch(name -> name.contains("aal"));
     }
 
     static List<Object> unknownAssuranceLevels() {
@@ -169,7 +167,28 @@ class PrincipalTest {
         raw.put("AAL", "aal2");
         Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
 
-        assertThat(principal.sessionVariables(PROJECT)).doesNotContainKey("x-excalibase-aal");
+        assertThat(principal.sessionVariables(PROJECT).keySet()).noneMatch(name -> name.contains("aal"));
+    }
+
+    @Test
+    void aal_readsOnlyTheLowerCaseClaim() {
+        Map<String, Object> raw = userClaims();
+        raw.put("aal", "aal1");
+        raw.put("AAL", "aal2");
+        Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT)).containsEntry("x-excalibase-aal", "aal1");
+    }
+
+    @Test
+    void impersonation_takesAalFromTheHeadersNotTheServiceToken() {
+        Map<String, Object> raw = new HashMap<>(Map.of(
+                "sub", "apikey:9", "role", "service", "scope", "service", "keyId", 9L, "aal", "aal2"));
+        Principal withHeader = new Principal("user", false, passwordToken(raw), Map.of("X-Excalibase-Aal", "aal1"));
+        Principal withoutHeader = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(withHeader.sessionVariables(PROJECT)).containsEntry("x-excalibase-aal", "aal1");
+        assertThat(withoutHeader.sessionVariables(PROJECT)).doesNotContainKey("x-excalibase-aal");
     }
 
     @Test

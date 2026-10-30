@@ -9,6 +9,10 @@ import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,8 +35,10 @@ import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
@@ -71,6 +77,9 @@ class EngineRlsIntegrationTest {
     /** Owned rows, readable only after a second factor (aal2). */
     private static final String OWNED_AT_AAL2 = "{\"_and\":[" + PermissionDocs.OWNED
             + ",{\"_exists\":{\"_table\":\"rls_demo.mfa_levels\",\"_where\":{\"level\":{\"_eq\":\"X-Excalibase-Aal\"}}}}]}";
+    /** The same rule through a column that names the level each row needs. */
+    private static final String OWNED_AT_ROW_LEVEL = "{\"_and\":[" + PermissionDocs.OWNED
+            + ",{\"required_aal\":{\"_eq\":\"X-Excalibase-Aal\"}}]}";
     private static final String ROLE = "app_authenticated";
     private static final String ALL = "\"*\"";
     /** Ledger rows created at most a day ago; time variables are not part of the grammar, so a literal. */
@@ -164,8 +173,9 @@ class EngineRlsIntegrationTest {
         String docsWithoutTitle = PermissionDocs.entry("rls_demo.docs", ROLE,
                 PermissionDocs.select("{}", "[\"id\",\"owner_id\"]"));
         return Map.of(
-                PROJECT_MFA, PermissionDocs.document(PROJECT_MFA, PermissionDocs.entry("rls_demo.docs", ROLE,
-                        PermissionDocs.select(OWNED_AT_AAL2, ALL))),
+                PROJECT_MFA, PermissionDocs.document(PROJECT_MFA,
+                        PermissionDocs.entry("rls_demo.docs", ROLE, PermissionDocs.select(OWNED_AT_AAL2, ALL)),
+                        PermissionDocs.entry("rls_demo.secrets", ROLE, PermissionDocs.select(OWNED_AT_ROW_LEVEL, ALL))),
                 PROJECT_WITH_POLICY, PermissionDocs.document(PROJECT_WITH_POLICY,
                         owned("rls_demo.docs"), open("rls_demo.notes")),
                 PROJECT_NO_POLICY, PermissionDocs.document(PROJECT_NO_POLICY, open("rls_demo.docs")),
@@ -192,17 +202,21 @@ class EngineRlsIntegrationTest {
     }
 
     private String jwt(String userId, String projectId) throws Exception {
-        JWTClaimsSet claims = new JWTClaimsSet.Builder()
+        return jwt(userId, projectId, Map.of());
+    }
+
+    private String jwt(String userId, String projectId, Map<String, Object> extraClaims) throws Exception {
+        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
                 .subject("user@test.com")
                 .claim("userId", userId)
                 .claim("projectId", projectId)
                 .audience("excalibase:" + projectId)
                 .claim("role", "app_authenticated")
                 .issuer("excalibase")
-                .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z")))
-                .expirationTime(java.util.Date.from(java.time.Instant.parse("2099-01-01T00:00:00Z")))
-                .build();
-        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+                .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
+                .expirationTime(Date.from(Instant.parse("2099-01-01T00:00:00Z")));
+        extraClaims.forEach(claims::claim);
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims.build());
         signed.sign(new ECDSASigner(privateKey));
         return signed.serialize();
     }
@@ -281,67 +295,65 @@ class EngineRlsIntegrationTest {
         return signed.serialize();
     }
 
-    @Test
-    void aPermissionRequiringAal2_admitsOnlyAnAal2Token() throws Exception {
-        mfaQuery(jwtAtLevel("aal2"))
+    @ParameterizedTest
+    @ValueSource(strings = {"rlsDemoDocs", "rlsDemoSecrets"})
+    void aPermissionRequiringAal2_admitsOnlyAnAal2Token(String field) throws Exception {
+        mfaQuery(field, aliceAtLevel("aal2"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
-        mfaQuery(jwtAtLevel("aal1"))
+                .andExpect(jsonPath("$.data." + field, hasSize(2)));
+        mfaQuery(field, aliceAtLevel("aal1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(0)));
+                .andExpect(jsonPath("$.data." + field, hasSize(0)));
     }
 
-    @Test
-    void aPermissionRequiringAal2_refusesATokenWithoutAKnownLevel() throws Exception {
-        for (Object level : new Object[]{null, "AAL2", "aal3", 2}) {
-            mfaQuery(jwtAtLevel(level))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data").doesNotExist())
-                    .andExpect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"));
-        }
+    @ParameterizedTest
+    @MethodSource("unknownAssuranceLevels")
+    void aPermissionRequiringAal2_refusesATokenWithoutAKnownLevel(Object level) throws Exception {
+        mfaQuery("rlsDemoDocs", aliceAtLevel(level))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data").doesNotExist())
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"));
+    }
+
+    static Stream<Arguments> unknownAssuranceLevels() {
+        return Stream.of(Arguments.of((Object) null), Arguments.of("AAL2"), Arguments.of("aal3"), Arguments.of(2));
     }
 
     @Test
     void rest_aPermissionRequiringAal2_admitsOnlyAnAal2Token() throws Exception {
-        mockMvc.perform(get("/" + PROJECT_MFA + "/api/v1/docs").header("Accept-Profile", "rls_demo")
-                        .header("Authorization", "Bearer " + jwtAtLevel("aal2")))
+        restDocs(aliceAtLevel("aal2"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(2)));
-        mockMvc.perform(get("/" + PROJECT_MFA + "/api/v1/docs").header("Accept-Profile", "rls_demo")
-                        .header("Authorization", "Bearer " + jwtAtLevel("aal1")))
+        restDocs(aliceAtLevel("aal1"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data", hasSize(0)));
-        mockMvc.perform(get("/" + PROJECT_MFA + "/api/v1/docs").header("Accept-Profile", "rls_demo")
-                        .header("Authorization", "Bearer " + jwtAtLevel("AAL2")))
-                .andExpect(status().is4xxClientError())
-                .andExpect(jsonPath("$.code").value("missing_session_variable"));
+        for (String token : List.of(aliceAtLevel("AAL2"), aliceAtLevel(null))) {
+            restDocs(token)
+                    .andExpect(status().is4xxClientError())
+                    .andExpect(jsonPath("$.code").value("missing_session_variable"));
+        }
     }
 
-    private ResultActions mfaQuery(String token) throws Exception {
+    private ResultActions restDocs(String token) throws Exception {
+        return mockMvc.perform(get("/" + PROJECT_MFA + "/api/v1/docs").header("Accept-Profile", "rls_demo")
+                .header("Authorization", "Bearer " + token));
+    }
+
+    private ResultActions mfaQuery(String field, String token) throws Exception {
         return mockMvc.perform(post("/" + PROJECT_MFA + "/graphql")
                 .header("Authorization", "Bearer " + token)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(body("{ rlsDemoDocs { id } }")));
+                .content(body("{ " + field + " { id } }")));
     }
 
     /** Alice's token with the given aal claim; null leaves the claim out (MFA off, API key). */
-    private String jwtAtLevel(Object level) throws Exception {
-        JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
-                .subject(ALICE)
-                .claim("userId", ALICE)
-                .claim("projectId", PROJECT_MFA)
-                .audience("excalibase:" + PROJECT_MFA)
-                .claim("role", ROLE)
-                .claim("amr", List.of("password", "totp"))
-                .issuer("excalibase")
-                .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
-                .expirationTime(Date.from(Instant.parse("2099-01-01T00:00:00Z")));
+    private String aliceAtLevel(Object level) throws Exception {
+        Map<String, Object> claims = new HashMap<>();
+        claims.put("amr", List.of("password", "totp"));
         if (level != null) {
-            claims.claim("aal", level);
+            claims.put("aal", level);
         }
-        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims.build());
-        signed.sign(new ECDSASigner(privateKey));
-        return signed.serialize();
+        return jwt(ALICE, PROJECT_MFA, claims);
     }
 
     @Test
