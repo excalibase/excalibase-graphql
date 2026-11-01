@@ -86,6 +86,7 @@ Permissions refer to the caller through session variables, written as strings th
 | `X-Excalibase-Project-Id` | the project in the URL |
 | `X-Excalibase-Email` | the token's `email` claim only; absent for a token without one (a guest, an API key). `sub` is never read as an address |
 | `X-Excalibase-Is-Guest` | the token's `is_guest` claim, `true` for a guest account and `false` for any other account; absent when the token has none |
+| `X-Excalibase-Aal` | the token's `aal` claim when it is exactly `aal1` (one factor) or `aal2` (a second factor was verified); absent for any other value and for a token without one (an API key, a project with MFA off). This check applies to the token claim; a `service` token acting as another role supplies it as a header, trusted like `X-Excalibase-User-Id` |
 | `X-Excalibase-<Claim>` | every other top-level claim of the token (scalar or array) |
 
 Names are compared lower-cased. An array claim becomes a Postgres array literal with every element
@@ -161,6 +162,29 @@ value    := JSON literal | session variable | [values] for _in/_nin | true/false
   the expression is the table owner's rule, as in Hasura.
 - Values bind to the column's type. SQL NULL semantics hold: `_eq` against NULL is false,
   `_neq` against NULL is false, only `_is_null` matches NULL.
+
+A permission that requires a second factor compares `X-Excalibase-Aal` with a column. The simplest
+form is a column on the table itself that names the level each row needs (for example
+`required_aal TEXT NOT NULL DEFAULT 'aal2'`):
+
+```json
+{ "_and": [
+    { "owner_id": { "_eq": "X-Excalibase-User-Id" } },
+    { "required_aal": { "_eq": "X-Excalibase-Aal" } }
+] }
+```
+
+Without a column on the table, compare with a table that lists the accepted levels (here
+`public.mfa_levels`, holding the single row `aal2`):
+
+```json
+{ "_and": [
+    { "owner_id": { "_eq": "X-Excalibase-User-Id" } },
+    { "_exists": { "_table": "public.mfa_levels", "_where": { "level": { "_eq": "X-Excalibase-Aal" } } } }
+] }
+```
+
+An `aal1` token reads no rows; a token without a known level fails with `missing_session_variable`.
 
 ## 5. How each surface applies them
 
