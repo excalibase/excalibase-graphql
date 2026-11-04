@@ -44,6 +44,19 @@ public sealed interface BoolExp {
         }
     }
 
+    /**
+     * A session variable compared with a fixed value (EXC-680), e.g. {@code {"X-Excalibase-Aal": {"_eq": "aal2"}}}:
+     * decided once per request, before any row. The operand is a {@link Literal}: a string, a list of strings
+     * ({@code _in}/{@code _nin}), or true/false ({@code _is_null}).
+     */
+    record SessionCompare(SessionVariable variable, ComparisonOperator operator, Literal operand) implements BoolExp {
+        public SessionCompare {
+            Objects.requireNonNull(variable, "variable");
+            Objects.requireNonNull(operator, "operator");
+            Objects.requireNonNull(operand, "operand");
+        }
+    }
+
     /** A row exists in the table the relationship {@code name} leads to, matching {@code where}. */
     record Relationship(String name, BoolExp where) implements BoolExp {
         public Relationship {

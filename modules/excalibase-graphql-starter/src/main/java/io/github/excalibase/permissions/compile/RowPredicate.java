@@ -7,6 +7,7 @@ import io.github.excalibase.permissions.BoolExp.Exists;
 import io.github.excalibase.permissions.BoolExp.Not;
 import io.github.excalibase.permissions.BoolExp.Or;
 import io.github.excalibase.permissions.BoolExp.Relationship;
+import io.github.excalibase.permissions.BoolExp.SessionCompare;
 import io.github.excalibase.permissions.BoolExp.True;
 import io.github.excalibase.permissions.ComparisonOperator;
 import io.github.excalibase.schema.SchemaInfo;
@@ -72,6 +73,10 @@ public final class RowPredicate {
                 case Or or -> fold(nodes(or.operands(), tableKey), Truth.FALSE, Truth::or);
                 case Not not -> negated(node(not.operand(), tableKey));
                 case ColumnCompare compare -> compare(compare, tableKey);
+                case SessionCompare compare -> {
+                    Truth decided = Truth.of(binding.holds(compare));
+                    yield row -> decided;
+                }
                 case Relationship relationship -> relationship(relationship, tableKey);
                 case Exists exists -> {
                     TableRef.resolve(dialect, schema, exists.table());

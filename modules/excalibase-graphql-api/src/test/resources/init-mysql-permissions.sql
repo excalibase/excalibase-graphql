@@ -70,6 +70,13 @@ CREATE TABLE feedback (
     body VARCHAR(200)
 );
 
+-- EXC-680: readable only after the second sign-in step, a session variable against a fixed value.
+CREATE TABLE vault (
+    id   INT PRIMARY KEY,
+    body VARCHAR(200)
+);
+INSERT INTO vault (id, body) VALUES (1, 'kept'), (2, 'also kept');
+
 INSERT INTO counters (label) VALUES ('seed');
 INSERT INTO profiles (id, owner_id, org_id, slot, title) VALUES (1, '22222222-2222-2222-2222-222222222222', 1, 'main', 'bob');
 

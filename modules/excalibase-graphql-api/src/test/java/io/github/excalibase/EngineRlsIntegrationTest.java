@@ -74,6 +74,10 @@ class EngineRlsIntegrationTest {
     private static final String PROJECT_NUMERIC = "proj-numeric";
     private static final String PROJECT_TEMPORAL = "proj-temporal";
     private static final String PROJECT_MFA = "proj-mfa";
+    private static final String PROJECT_MFA_FIXED = "proj-mfa-fixed";
+    /** EXC-680: the same rule as a session variable against a fixed value, no table or column needed. */
+    private static final String OWNED_AT_FIXED_AAL2 = "{\"_and\":[" + PermissionDocs.OWNED
+            + ",{\"X-Excalibase-Aal\":{\"_eq\":\"aal2\"}}]}";
     /** Owned rows, readable only after a second factor (aal2). */
     private static final String OWNED_AT_AAL2 = "{\"_and\":[" + PermissionDocs.OWNED
             + ",{\"_exists\":{\"_table\":\"rls_demo.mfa_levels\",\"_where\":{\"level\":{\"_eq\":\"X-Excalibase-Aal\"}}}}]}";
@@ -113,7 +117,7 @@ class EngineRlsIntegrationTest {
                 exchange.getResponseBody().close();
             });
             for (String project : List.of(PROJECT_WITH_POLICY, PROJECT_NO_POLICY, PROJECT_CLS, PROJECT_CLS_NULL,
-                    PROJECT_NESTED, PROJECT_NUMERIC, PROJECT_TEMPORAL, PROJECT_MFA)) {
+                    PROJECT_NESTED, PROJECT_NUMERIC, PROJECT_TEMPORAL, PROJECT_MFA, PROJECT_MFA_FIXED)) {
                 mockVault.createContext("/api/vault/secrets/projects/" + project + "/credentials/excalibase_app",
                         exchange -> {
                             byte[] body = tenantCredentials().getBytes(StandardCharsets.UTF_8);
@@ -172,21 +176,23 @@ class EngineRlsIntegrationTest {
     private static Map<String, String> permissions() {
         String docsWithoutTitle = PermissionDocs.entry("rls_demo.docs", ROLE,
                 PermissionDocs.select("{}", "[\"id\",\"owner_id\"]"));
-        return Map.of(
-                PROJECT_MFA, PermissionDocs.document(PROJECT_MFA,
+        return Map.ofEntries(
+                Map.entry(PROJECT_MFA_FIXED, PermissionDocs.document(PROJECT_MFA_FIXED,
+                        PermissionDocs.entry("rls_demo.docs", ROLE, PermissionDocs.select(OWNED_AT_FIXED_AAL2, ALL)))),
+                Map.entry(PROJECT_MFA, PermissionDocs.document(PROJECT_MFA,
                         PermissionDocs.entry("rls_demo.docs", ROLE, PermissionDocs.select(OWNED_AT_AAL2, ALL)),
-                        PermissionDocs.entry("rls_demo.secrets", ROLE, PermissionDocs.select(OWNED_AT_ROW_LEVEL, ALL))),
-                PROJECT_WITH_POLICY, PermissionDocs.document(PROJECT_WITH_POLICY,
-                        owned("rls_demo.docs"), open("rls_demo.notes")),
-                PROJECT_NO_POLICY, PermissionDocs.document(PROJECT_NO_POLICY, open("rls_demo.docs")),
-                PROJECT_CLS, PermissionDocs.document(PROJECT_CLS, docsWithoutTitle, open("rls_demo.notes")),
-                PROJECT_CLS_NULL, PermissionDocs.document(PROJECT_CLS_NULL, docsWithoutTitle),
-                PROJECT_NESTED, PermissionDocs.document(PROJECT_NESTED, owned("rls_demo.book"),
-                        open("rls_demo.shelf")),
-                PROJECT_NUMERIC, PermissionDocs.document(PROJECT_NUMERIC, PermissionDocs.entry("rls_demo.ledger", ROLE,
-                        PermissionDocs.select("{\"amount\":{\"_gte\":100.00}}", ALL))),
-                PROJECT_TEMPORAL, PermissionDocs.document(PROJECT_TEMPORAL, PermissionDocs.entry("rls_demo.ledger", ROLE,
-                        PermissionDocs.select("{\"created_at\":{\"_gte\":\"" + DAY_AGO + "\"}}", ALL))));
+                        PermissionDocs.entry("rls_demo.secrets", ROLE, PermissionDocs.select(OWNED_AT_ROW_LEVEL, ALL)))),
+                Map.entry(PROJECT_WITH_POLICY, PermissionDocs.document(PROJECT_WITH_POLICY,
+                        owned("rls_demo.docs"), open("rls_demo.notes"))),
+                Map.entry(PROJECT_NO_POLICY, PermissionDocs.document(PROJECT_NO_POLICY, open("rls_demo.docs"))),
+                Map.entry(PROJECT_CLS, PermissionDocs.document(PROJECT_CLS, docsWithoutTitle, open("rls_demo.notes"))),
+                Map.entry(PROJECT_CLS_NULL, PermissionDocs.document(PROJECT_CLS_NULL, docsWithoutTitle)),
+                Map.entry(PROJECT_NESTED, PermissionDocs.document(PROJECT_NESTED, owned("rls_demo.book"),
+                        open("rls_demo.shelf"))),
+                Map.entry(PROJECT_NUMERIC, PermissionDocs.document(PROJECT_NUMERIC, PermissionDocs.entry("rls_demo.ledger", ROLE,
+                        PermissionDocs.select("{\"amount\":{\"_gte\":100.00}}", ALL)))),
+                Map.entry(PROJECT_TEMPORAL, PermissionDocs.document(PROJECT_TEMPORAL, PermissionDocs.entry("rls_demo.ledger", ROLE,
+                        PermissionDocs.select("{\"created_at\":{\"_gte\":\"" + DAY_AGO + "\"}}", ALL)))));
     }
 
     @Test
@@ -334,6 +340,39 @@ class EngineRlsIntegrationTest {
         }
     }
 
+    // EXC-680: the session variable against a fixed value, through GraphQL and REST on real Postgres.
+    @Test
+    void aFixedAal2Check_admitsOnlyAnAal2Token() throws Exception {
+        mockMvc.perform(post("/" + PROJECT_MFA_FIXED + "/graphql")
+                        .header("Authorization", "Bearer " + aliceAt(PROJECT_MFA_FIXED, "aal2"))
+                        .contentType(MediaType.APPLICATION_JSON).content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
+        mockMvc.perform(post("/" + PROJECT_MFA_FIXED + "/graphql")
+                        .header("Authorization", "Bearer " + aliceAt(PROJECT_MFA_FIXED, "aal1"))
+                        .contentType(MediaType.APPLICATION_JSON).content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(0)));
+        mockMvc.perform(post("/" + PROJECT_MFA_FIXED + "/graphql")
+                        .header("Authorization", "Bearer " + aliceAt(PROJECT_MFA_FIXED, null))
+                        .contentType(MediaType.APPLICATION_JSON).content(body("{ rlsDemoDocs { id } }")))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"));
+    }
+
+    @Test
+    void rest_aFixedAal2Check_admitsOnlyAnAal2Token() throws Exception {
+        for (Object[] expected : new Object[][] {{"aal2", 2}, {"aal1", 0}}) {
+            mockMvc.perform(get("/" + PROJECT_MFA_FIXED + "/api/v1/docs").header("Accept-Profile", "rls_demo")
+                            .header("Authorization", "Bearer " + aliceAt(PROJECT_MFA_FIXED, expected[0])))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data", hasSize((Integer) expected[1])));
+        }
+        mockMvc.perform(get("/" + PROJECT_MFA_FIXED + "/api/v1/docs").header("Accept-Profile", "rls_demo")
+                        .header("Authorization", "Bearer " + aliceAt(PROJECT_MFA_FIXED, null)))
+                .andExpect(status().is4xxClientError())
+                .andExpect(jsonPath("$.code").value("missing_session_variable"));
+    }
+
     private ResultActions restDocs(String token) throws Exception {
         return mockMvc.perform(get("/" + PROJECT_MFA + "/api/v1/docs").header("Accept-Profile", "rls_demo")
                 .header("Authorization", "Bearer " + token));
@@ -348,12 +387,16 @@ class EngineRlsIntegrationTest {
 
     /** Alice's token with the given aal claim; null leaves the claim out (MFA off, API key). */
     private String aliceAtLevel(Object level) throws Exception {
+        return aliceAt(PROJECT_MFA, level);
+    }
+
+    private String aliceAt(String project, Object level) throws Exception {
         Map<String, Object> claims = new HashMap<>();
         claims.put("amr", List.of("password", "totp"));
         if (level != null) {
             claims.put("aal", level);
         }
-        return jwt(ALICE, PROJECT_MFA, claims);
+        return jwt(ALICE, project, claims);
     }
 
     @Test

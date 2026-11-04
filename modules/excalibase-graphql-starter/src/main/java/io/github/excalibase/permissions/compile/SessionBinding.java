@@ -1,5 +1,7 @@
 package io.github.excalibase.permissions.compile;
 
+import io.github.excalibase.permissions.BoolExp.SessionCompare;
+import io.github.excalibase.permissions.ComparisonOperator;
 import io.github.excalibase.permissions.Literal;
 import io.github.excalibase.permissions.Operand;
 import io.github.excalibase.permissions.PermissionEvaluationException;
@@ -63,6 +65,27 @@ public final class SessionBinding {
         List<Object> values = new ArrayList<>(elements.size());
         elements.forEach(element -> values.add(element == null ? null : variableValue(variable, element, type)));
         return Collections.unmodifiableList(values);
+    }
+
+    /**
+     * Whether the request's session satisfies a fixed-value check (EXC-680). Values compare exactly, as
+     * text; {@code _is_null} asks whether the request carries the variable at all, and is the one check a
+     * missing variable does not fail.
+     */
+    public boolean holds(SessionCompare compare) {
+        Object operand = compare.operand().value();
+        if (compare.operator() == ComparisonOperator.IS_NULL) {
+            return variables.containsKey(compare.variable().name()) != Boolean.TRUE.equals(operand);
+        }
+        String value = raw(compare.variable());
+        return switch (compare.operator()) {
+            case EQ -> value.equals(operand);
+            case NEQ -> !value.equals(operand);
+            case IN -> ((List<?>) operand).contains(value);
+            case NIN -> !((List<?>) operand).contains(value);
+            default -> throw new PermissionEvaluationException(PermissionEvaluationException.UNSUPPORTED_OPERATOR,
+                    "A session variable takes _eq, _neq, _in, _nin or _is_null");
+        };
     }
 
     private String raw(SessionVariable variable) {

@@ -43,6 +43,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -156,7 +157,10 @@ class MysqlPermissionsIntegrationTest {
                         PermissionDocs.delete(ownsABoard())),
                 PermissionDocs.entry(table("sequenced"), ROLE, PermissionDocs.everything()),
                 PermissionDocs.entry(table("feedback"), ROLE,
-                        PermissionDocs.insert("{\"body\":{\"_neq\":\"spam\"}}", "[\"body\"]", "{}")));
+                        PermissionDocs.insert("{\"body\":{\"_neq\":\"spam\"}}", "[\"body\"]", "{}")),
+                PermissionDocs.entry(table("vault"), ROLE,
+                        PermissionDocs.select("{\"X-Excalibase-Aal\":{\"_eq\":\"aal2\"}}", "\"*\""),
+                        PermissionDocs.delete("{\"X-Excalibase-Aal\":{\"_in\":[\"aal2\"]}}")));
     }
 
     @Autowired
@@ -449,8 +453,13 @@ class MysqlPermissionsIntegrationTest {
     }
 
     private static String jwt(String userId) throws Exception {
+        return jwt(userId, null);
+    }
+
+    /** With an aal claim; null leaves it out. */
+    private static String jwt(String userId, String aal) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("u@test.com").claim("userId", userId).claim("projectId", PROJECT)
+                .subject("u@test.com").claim("userId", userId).claim("projectId", PROJECT).claim("aal", aal)
                 .audience("excalibase:" + PROJECT).claim("role", ROLE).issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
                 .expirationTime(Date.from(Instant.parse("2099-01-01T00:00:00Z")))
@@ -458,6 +467,31 @@ class MysqlPermissionsIntegrationTest {
         SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
         signed.sign(new ECDSASigner(PRIVATE_KEY));
         return signed.serialize();
+    }
+
+    // EXC-680 on MySQL: a session variable against a fixed value, through GraphQL and REST.
+    @Test
+    void aFixedAal2Check_decidesTheRequestOnBothSurfaces() throws Exception {
+        for (Object[] expected : new Object[][] {{"aal2", 2}, {"aal1", 0}}) {
+            mockMvc.perform(post("/" + PROJECT + "/graphql")
+                            .header("Authorization", "Bearer " + jwt(ALICE, (String) expected[0]))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(mapper.writeValueAsString(Map.of("query", "{ testVault { id } }"))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.testVault", hasSize((Integer) expected[1])));
+            mockMvc.perform(get("/" + PROJECT + "/api/v1/vault")
+                            .header("Authorization", "Bearer " + jwt(ALICE, (String) expected[0])))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data", hasSize((Integer) expected[1])));
+        }
+        mockMvc.perform(post("/" + PROJECT + "/graphql")
+                        .header("Authorization", "Bearer " + jwt(ALICE))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(Map.of("query", "{ testVault { id } }"))))
+                .andExpect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"));
+        rest(ALICE, delete("/" + PROJECT + "/api/v1/vault?id=eq.1"), "")
+                .andExpect(status().is4xxClientError());
+        assertThat(database().queryForObject("SELECT count(*) FROM vault", Integer.class)).isEqualTo(2);
     }
 
     private static String jwks(ECPublicKey key) {

@@ -7,6 +7,7 @@ import io.github.excalibase.permissions.BoolExp.Exists;
 import io.github.excalibase.permissions.BoolExp.Not;
 import io.github.excalibase.permissions.BoolExp.Or;
 import io.github.excalibase.permissions.BoolExp.Relationship;
+import io.github.excalibase.permissions.BoolExp.SessionCompare;
 import io.github.excalibase.permissions.BoolExp.True;
 import io.github.excalibase.schema.SchemaInfo;
 
@@ -112,6 +113,7 @@ public final class RowProbe {
             case Or or -> or.operands().stream().flatMap(operand -> read(operand, tableKey, schema));
             case Not not -> read(not.operand(), tableKey, schema);
             case ColumnCompare compare -> Stream.of(compare.column());
+            case SessionCompare ignored -> Stream.empty();
             case Relationship relationship ->
                     RelationshipJoin.resolve(schema, tableKey, relationship.name()).outerColumns().stream();
             case Exists ignored -> Stream.empty();

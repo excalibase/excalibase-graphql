@@ -42,6 +42,7 @@ final class DifferentialCases {
         cases.addAll(text());
         cases.addAll(typed());
         cases.addAll(sessionVariables());
+        cases.addAll(sessionValues());
         cases.addAll(logic());
         cases.addAll(relationships());
         cases.addAll(ownTable());
@@ -152,6 +153,25 @@ final class DifferentialCases {
                 mem("{\"status\": {\"_neq\": \"X-Excalibase-Team\"}}", "status <> " + var("team", "text")),
                 mem("{\"title\": {\"_like\": \"X-Excalibase-Title-Pattern\"}}", "title LIKE " + var("title_pattern", "text")),
                 mem("{\"due\": {\"_eq\": \"X-Excalibase-Due\"}}", "due = " + var("due", "date")));
+    }
+
+    /** EXC-680: a session variable against a fixed value, decided for the request, alone or beside rows. */
+    private static List<Case> sessionValues() {
+        String team = var("team", "text");
+        String mine = "{\"owner_id\": {\"_eq\": \"X-Excalibase-User-Id\"}}";
+        return List.of(
+                mem("{\"X-Excalibase-Team\": {\"_eq\": \"open\"}}", team + " = 'open'"),
+                mem("{\"X-Excalibase-Team\": {\"_eq\": \"closed\"}}", team + " = 'closed'"),
+                mem("{\"X-Excalibase-Team\": {\"_neq\": \"open\"}}", team + " <> 'open'"),
+                mem("{\"X-Excalibase-Team\": {\"_in\": [\"x\", \"open\"]}}", team + " IN ('x', 'open')"),
+                mem("{\"X-Excalibase-Team\": {\"_nin\": [\"x\", \"open\"]}}", team + " NOT IN ('x', 'open')"),
+                mem("{\"X-Excalibase-Absent\": {\"_is_null\": true}}", var("absent", "text") + " IS NULL"),
+                mem("{\"X-Excalibase-Team\": {\"_is_null\": true}}", team + " IS NULL"),
+                mem("{\"X-Excalibase-Team\": {\"_eq\": \"open\"}, \"status\": {\"_eq\": \"open\"}}",
+                        team + " = 'open' AND status = 'open'"),
+                mem("{\"_or\": [{\"X-Excalibase-Team\": {\"_eq\": \"closed\"}}, " + mine + "]}",
+                        team + " = 'closed' OR owner_id = " + UID),
+                mem("{\"_not\": {\"X-Excalibase-Team\": {\"_eq\": \"open\"}}}", "NOT (" + team + " = 'open')"));
     }
 
     private static List<Case> logic() {
