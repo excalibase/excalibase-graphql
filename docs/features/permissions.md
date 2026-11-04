@@ -168,8 +168,11 @@ fixed    := string | [strings] for _in/_nin | true/false for _is_null
 
 A session variable compared with a fixed value (EXC-680) is decided once for the request: it
 compiles to `TRUE` or `FALSE`, so it costs nothing per row and reads the same on Postgres and
-MySQL. Values compare exactly, as text. `_is_null: true` holds when the request does not carry the
-variable; every other operator fails the request with `missing_session_variable` when it is absent.
+MySQL. Values compare exactly, as text. A missing session variable fails the whole request with
+`missing_session_variable`, even when it sits beside an `_is_null` check inside `_or` or `_and`,
+because every branch is compiled first. Only `_is_null` on its own does not fail. So a rule like
+"public rows OR aal2" needs MFA turned on for the project, so every token carries aal1 or aal2.
+This is the same as Hasura.
 A permission that requires a second factor:
 
 ```json
