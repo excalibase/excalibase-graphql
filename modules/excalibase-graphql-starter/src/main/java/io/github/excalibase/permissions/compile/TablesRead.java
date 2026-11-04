@@ -7,6 +7,7 @@ import io.github.excalibase.permissions.BoolExp.Exists;
 import io.github.excalibase.permissions.BoolExp.Not;
 import io.github.excalibase.permissions.BoolExp.Or;
 import io.github.excalibase.permissions.BoolExp.Relationship;
+import io.github.excalibase.permissions.BoolExp.SessionCompare;
 import io.github.excalibase.permissions.BoolExp.True;
 import io.github.excalibase.schema.SchemaInfo;
 
@@ -32,8 +33,8 @@ public final class TablesRead {
 
     private static void walk(BoolExp expression, String tableKey, SchemaInfo schema, Set<String> tables) {
         switch (expression) {
-            case True _, ColumnCompare _ -> {
-                // The row's own columns: no table read.
+            case True _, ColumnCompare _, SessionCompare _ -> {
+                // The row's own columns, or the request's session: no table read.
             }
             case And(List<BoolExp> operands) -> operands.forEach(operand -> walk(operand, tableKey, schema, tables));
             case Or(List<BoolExp> operands) -> operands.forEach(operand -> walk(operand, tableKey, schema, tables));

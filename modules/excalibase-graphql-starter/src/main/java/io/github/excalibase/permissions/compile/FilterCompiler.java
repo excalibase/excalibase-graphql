@@ -7,6 +7,7 @@ import io.github.excalibase.permissions.BoolExp.Exists;
 import io.github.excalibase.permissions.BoolExp.Not;
 import io.github.excalibase.permissions.BoolExp.Or;
 import io.github.excalibase.permissions.BoolExp.Relationship;
+import io.github.excalibase.permissions.BoolExp.SessionCompare;
 import io.github.excalibase.permissions.BoolExp.True;
 import io.github.excalibase.permissions.ComparisonOperator;
 import io.github.excalibase.permissions.Literal;
@@ -138,6 +139,7 @@ public final class FilterCompiler {
                 case Or or -> joined(or.operands(), " OR ", "FALSE", table, alias);
                 case Not not -> "(NOT " + expression(not.operand(), table, alias) + ")";
                 case ColumnCompare compare -> compare(compare, table, alias);
+                case SessionCompare compare -> binding.holds(compare) ? "TRUE" : "FALSE";
                 case Relationship relationship -> relationship(relationship, table, alias);
                 case Exists exists -> exists(exists);
             };

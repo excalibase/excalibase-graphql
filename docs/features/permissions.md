@@ -151,9 +151,12 @@ exp      := {}                                  -- true
           | { "_and": [exp, ...] } | { "_or": [exp, ...] } | { "_not": exp }
           | { "<column>": { "<op>": value } }
           | { "<relationship>": exp }           -- a row exists in the related table matching exp
+          | { "<session variable>": { "<sop>": fixed } }  -- decided for the request, before any row
           | { "_exists": { "_table": "<schema.table>", "_where": exp } }
 op       := _eq _neq _gt _gte _lt _lte _in _nin _like _nlike _is_null
 value    := JSON literal | session variable | [values] for _in/_nin | true/false for _is_null
+sop      := _eq _neq _in _nin _is_null
+fixed    := string | [strings] for _in/_nin | true/false for _is_null
 ```
 
 - Several keys in one object are ANDed.
@@ -163,28 +166,24 @@ value    := JSON literal | session variable | [values] for _in/_nin | true/false
 - Values bind to the column's type. SQL NULL semantics hold: `_eq` against NULL is false,
   `_neq` against NULL is false, only `_is_null` matches NULL.
 
-A permission that requires a second factor compares `X-Excalibase-Aal` with a column. The simplest
-form is a column on the table itself that names the level each row needs (for example
-`required_aal TEXT NOT NULL DEFAULT 'aal2'`):
+A session variable compared with a fixed value (EXC-680) is decided once for the request: it
+compiles to `TRUE` or `FALSE`, so it costs nothing per row and reads the same on Postgres and
+MySQL. Values compare exactly, as text. A missing session variable fails the whole request with
+`missing_session_variable`, even when it sits beside an `_is_null` check inside `_or` or `_and`,
+because every branch is compiled first. Only `_is_null` on its own does not fail. So a rule like
+"public rows OR aal2" needs MFA turned on for the project, so every token carries aal1 or aal2.
+This is the same as Hasura.
+A permission that requires a second factor:
 
 ```json
 { "_and": [
     { "owner_id": { "_eq": "X-Excalibase-User-Id" } },
-    { "required_aal": { "_eq": "X-Excalibase-Aal" } }
-] }
-```
-
-Without a column on the table, compare with a table that lists the accepted levels (here
-`public.mfa_levels`, holding the single row `aal2`):
-
-```json
-{ "_and": [
-    { "owner_id": { "_eq": "X-Excalibase-User-Id" } },
-    { "_exists": { "_table": "public.mfa_levels", "_where": { "level": { "_eq": "X-Excalibase-Aal" } } } }
+    { "X-Excalibase-Aal": { "_eq": "aal2" } }
 ] }
 ```
 
 An `aal1` token reads no rows; a token without a known level fails with `missing_session_variable`.
+A row may still name the level it needs with a column (`{ "required_aal": { "_eq": "X-Excalibase-Aal" } }`).
 
 ## 5. How each surface applies them
 

@@ -7,6 +7,7 @@ import io.github.excalibase.permissions.BoolExp.Exists;
 import io.github.excalibase.permissions.BoolExp.Not;
 import io.github.excalibase.permissions.BoolExp.Or;
 import io.github.excalibase.permissions.BoolExp.Relationship;
+import io.github.excalibase.permissions.BoolExp.SessionCompare;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,6 +31,10 @@ public final class BoolExpParser {
     public static final int MAX_NODES = 200;
 
     private static final Set<String> EXISTS_KEYS = Set.of("_table", "_where");
+
+    /** What a session variable may be compared by: equality and membership, and whether it is there. */
+    private static final Set<ComparisonOperator> SESSION_OPERATORS = Set.of(ComparisonOperator.EQ,
+            ComparisonOperator.NEQ, ComparisonOperator.IN, ComparisonOperator.NIN, ComparisonOperator.IS_NULL);
 
     private final String path;
     private int nodes;
@@ -75,6 +80,9 @@ public final class BoolExpParser {
     private BoolExp named(String name, JsonNode value, int depth) {
         if (ComparisonOperator.fromJsonName(name).isPresent()) {
             throw fail(path, "operator \"" + name + "\" must be keyed by a column");
+        }
+        if (SessionVariable.looksLikeVariable(name)) {
+            return sessionComparisons(name, value);
         }
         if (!JsonValues.FIELD.matcher(name).matches()) {
             throw fail(path, "\"" + name + "\" is not a valid column or relationship name");
@@ -125,6 +133,60 @@ public final class BoolExpParser {
             compares.add(counted(new ColumnCompare(column, operator, operand(column, operator, entry.getValue()))));
         }
         return compares.size() == 1 ? compares.getFirst() : counted(new And(compares));
+    }
+
+    private BoolExp sessionComparisons(String name, JsonNode operators) {
+        if (!SessionVariable.isValidName(name)) {
+            throw fail(path, "\"" + name + "\" is not a valid session variable");
+        }
+        if (!operators.isObject() || !isComparison(operators)) {
+            throw fail(path, "\"" + name + "\" must map to comparisons");
+        }
+        SessionVariable variable = new SessionVariable(name);
+        List<BoolExp> compares = new ArrayList<>();
+        for (Map.Entry<String, JsonNode> entry : operators.properties()) {
+            ComparisonOperator operator = ComparisonOperator.fromJsonName(entry.getKey()).orElseThrow();
+            String where = "\"" + name + "\"." + operator.jsonName();
+            if (!SESSION_OPERATORS.contains(operator)) {
+                throw fail(path, where + ": a session variable takes _eq, _neq, _in, _nin or _is_null");
+            }
+            compares.add(counted(new SessionCompare(variable, operator, sessionOperand(where, operator, entry.getValue()))));
+        }
+        return compares.size() == 1 ? compares.getFirst() : counted(new And(compares));
+    }
+
+    /** A fixed value only: session variables hold text, so their comparisons take strings. */
+    private Literal sessionOperand(String where, ComparisonOperator operator, JsonNode value) {
+        switch (operator) {
+            case IS_NULL -> {
+                if (!value.isBoolean()) {
+                    throw fail(path, where + " takes true or false");
+                }
+                return new Literal(value.booleanValue());
+            }
+            case IN, NIN -> {
+                if (!value.isArray()) {
+                    throw fail(path, where + " takes an array of strings");
+                }
+                for (JsonNode element : value) {
+                    requireFixedText(where, element);
+                }
+                return new Literal(JsonValues.plain(value));
+            }
+            default -> {
+                requireFixedText(where, value);
+                return new Literal(value.textValue());
+            }
+        }
+    }
+
+    private void requireFixedText(String where, JsonNode value) {
+        if (!value.isTextual()) {
+            throw fail(path, where + " takes a string");
+        }
+        if (SessionVariable.looksLikeVariable(value.textValue())) {
+            throw fail(path, where + " compares with a fixed value, not another session variable");
+        }
     }
 
     private Operand operand(String column, ComparisonOperator operator, JsonNode value) {

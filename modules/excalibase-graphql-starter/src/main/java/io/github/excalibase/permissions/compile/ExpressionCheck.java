@@ -7,6 +7,7 @@ import io.github.excalibase.permissions.BoolExp.Exists;
 import io.github.excalibase.permissions.BoolExp.Not;
 import io.github.excalibase.permissions.BoolExp.Or;
 import io.github.excalibase.permissions.BoolExp.Relationship;
+import io.github.excalibase.permissions.BoolExp.SessionCompare;
 import io.github.excalibase.permissions.BoolExp.True;
 import io.github.excalibase.permissions.ComparisonOperator;
 import io.github.excalibase.permissions.Literal;
@@ -41,6 +42,9 @@ public final class ExpressionCheck {
             case Or(List<BoolExp> operands) -> operands.forEach(operand -> walk(dialect, operand, tableKey, schema));
             case Not(BoolExp operand) -> walk(dialect, operand, tableKey, schema);
             case ColumnCompare compare -> compare(dialect, compare, tableKey, schema);
+            case SessionCompare ignored -> {
+                // Only the request holds its session; the parser has checked the value.
+            }
             case Relationship(String name, BoolExp where) ->
                     check(dialect, where, RelationshipJoin.resolve(schema, tableKey, name).targetTable(), schema);
             case Exists(String table, BoolExp where) -> check(dialect, where, table, schema);
