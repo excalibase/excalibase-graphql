@@ -16,8 +16,9 @@ import java.util.function.Function;
  */
 public final class ParsedQueries {
 
-    /** A document retains this many bytes of heap per character of query text, at most. */
-    static final long RETAINED_BYTES_PER_CHAR = 64;
+    /** Heap retained per query character, worst case: measured at 82 bytes with uncompressed pointers (ZGC). */
+    static final long RETAINED_BYTES_PER_CHAR = 128;
+    public static final double MAX_HEAP_SHARE = 0.5;
     static final int SINGLE_QUERY_SHARE_DIVISOR = 16;
 
     private final Function<String, Document> parser;
@@ -37,10 +38,11 @@ public final class ParsedQueries {
                 .build();
     }
 
-    /** A cache holding {@code heapShare} of {@code maxMemoryBytes}, which must be in (0, 1). */
+    /** A cache holding {@code heapShare} of {@code maxMemoryBytes}; the share is above 0 and at most {@link #MAX_HEAP_SHARE}. */
     public static ParsedQueries forHeapShare(double heapShare, long maxMemoryBytes) {
-        if (!(heapShare > 0 && heapShare < 1)) {
-            throw new IllegalArgumentException("Parse cache heap share must be between 0 and 1: " + heapShare);
+        if (!(heapShare > 0 && heapShare <= MAX_HEAP_SHARE)) {
+            throw new IllegalArgumentException(
+                    "Parse cache heap share must be above 0 and at most " + MAX_HEAP_SHARE + ": " + heapShare);
         }
         long weight = (long) (maxMemoryBytes * heapShare) / RETAINED_BYTES_PER_CHAR;
         return new ParsedQueries(Math.max(weight, 1), Parser::parse);

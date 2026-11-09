@@ -65,7 +65,7 @@ class ParsedQueriesTest {
     @Test
     void heapShareOutsideZeroToOneIsRefused() {
         assertThatThrownBy(() -> ParsedQueries.forHeapShare(0, 1L << 30)).isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> ParsedQueries.forHeapShare(1, 1L << 30)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ParsedQueries.forHeapShare(0.6, 1L << 30)).isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

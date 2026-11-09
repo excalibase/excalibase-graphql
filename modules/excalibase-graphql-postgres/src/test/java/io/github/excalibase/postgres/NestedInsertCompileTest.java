@@ -1,5 +1,6 @@
 package io.github.excalibase.postgres;
 
+import graphql.parser.Parser;
 import io.github.excalibase.compiler.MutationSequence;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.schema.SchemaInfo;
@@ -72,9 +73,9 @@ class NestedInsertCompileTest {
 
     @Test
     void theRowThenItsChildren_eachAStatementOfItsOwn() {
-        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile("mutation { createPublicOrders(input: {"
+        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile(Parser.parse("mutation { createPublicOrders(input: {"
                 + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\", qty: 1 }, { sku: \"b\", qty: 2 }] } })"
-                + " { affected_rows } }"));
+                + " { affected_rows } }")));
 
         assertThat(step.responseKey()).isEqualTo("createPublicOrders");
         assertThat(step.roots()).hasSize(1);
@@ -92,9 +93,9 @@ class NestedInsertCompileTest {
 
     @Test
     void aChildWithItsOwnNestedRows_isInsertedOneRowAtATime() {
-        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile("mutation { createPublicOrders(input: {"
+        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile(Parser.parse("mutation { createPublicOrders(input: {"
                 + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\", publicItemNotes: { data: [{ body: \"x\" }] } },"
-                + " { sku: \"b\" }] } }) { affected_rows } }"));
+                + " { sku: \"b\" }] } }) { affected_rows } }")));
 
         List<MutationSequence.InsertNode> items = step.roots().getFirst().after();
         assertThat(items).hasSize(2);
@@ -105,8 +106,8 @@ class NestedInsertCompileTest {
 
     @Test
     void anObjectRelationship_isInsertedFirst_andFillsTheForeignKey() {
-        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile("mutation { createPublicOrders(input: {"
-                + " note: \"n\", publicCustomerId: { data: { name: \"c\" } } }) { affected_rows } }"));
+        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile(Parser.parse("mutation { createPublicOrders(input: {"
+                + " note: \"n\", publicCustomerId: { data: { name: \"c\" } } }) { affected_rows } }")));
 
         MutationSequence.InsertNode order = step.roots().getFirst();
         assertThat(order.before()).hasSize(1);
@@ -119,8 +120,8 @@ class NestedInsertCompileTest {
 
     @Test
     void createMany_withNestedRows_insertsEachRowWithItsChildren() {
-        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile("mutation { createManyPublicOrders(inputs: ["
-                + "{ note: \"one\", publicOrderItems: { data: [{ sku: \"a\" }] } }, { note: \"two\" }]) { affected_rows } }"));
+        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile(Parser.parse("mutation { createManyPublicOrders(inputs: ["
+                + "{ note: \"one\", publicOrderItems: { data: [{ sku: \"a\" }] } }, { note: \"two\" }]) { affected_rows } }")));
 
         assertThat(step.roots()).hasSize(2);
         assertThat(step.roots().getFirst().after()).hasSize(1);
@@ -131,8 +132,7 @@ class NestedInsertCompileTest {
     void theInputMayComeFromVariables() {
         Map<String, Object> input = Map.of("note", "v", "publicOrderItems",
                 Map.of("data", List.of(Map.of("sku", "a"))));
-        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile(
-                "mutation($input: PublicOrdersCreateInput!) { createPublicOrders(input: $input) { affected_rows } }",
+        MutationSequence.NestedInsert step = onlyStep(compiler(false).compile(Parser.parse("mutation($input: PublicOrdersCreateInput!) { createPublicOrders(input: $input) { affected_rows } }"),
                 Map.of("input", input)));
 
         assertThat(step.roots().getFirst().after()).hasSize(1);
@@ -141,8 +141,8 @@ class NestedInsertCompileTest {
 
     @Test
     void aReadableParent_answersItsRow_filteredAfterEveryInsert() {
-        MutationSequence.NestedInsert step = onlyStep(compiler(true).compile("mutation { createPublicOrders(input: {"
-                + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\" }] } }) { id note } }"));
+        MutationSequence.NestedInsert step = onlyStep(compiler(true).compile(Parser.parse("mutation { createPublicOrders(input: {"
+                + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\" }] } }) { id note } }")));
 
         assertThat(step.outputSql()).contains("jsonb_populate_recordset(NULL::\"public\".\"orders\", CAST(:"
                 + step.rowsParam() + " AS jsonb))").contains("'note'");
@@ -151,8 +151,8 @@ class NestedInsertCompileTest {
     @Test
     void anUnreadableChild_isNoFieldOfTheReadableParent() {
         SqlCompiler compiler = compiler(true);
-        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
-                + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\" }] } }) { id publicOrderItems { sku } } }"))
+        assertThatThrownBy(() -> compiler.compile(Parser.parse("mutation { createPublicOrders(input: {"
+                + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\" }] } }) { id publicOrderItems { sku } } }")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown field(s): publicOrderItems");
     }
@@ -160,8 +160,8 @@ class NestedInsertCompileTest {
     @Test
     void theForeignKeyFilledByTheParent_cannotBeSent() {
         SqlCompiler compiler = compiler(false);
-        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
-                + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\", order_id: 9 }] } }) { affected_rows } }"))
+        assertThatThrownBy(() -> compiler.compile(Parser.parse("mutation { createPublicOrders(input: {"
+                + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\", order_id: 9 }] } }) { affected_rows } }")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("cannot insert \"order_id\" columns as their values are already being determined by parent insert");
     }
@@ -169,8 +169,8 @@ class NestedInsertCompileTest {
     @Test
     void anObjectRelationshipBesideItsForeignKey_isRefused() {
         SqlCompiler compiler = compiler(false);
-        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
-                + " customer_id: 3, publicCustomerId: { data: { name: \"c\" } } }) { affected_rows } }"))
+        assertThatThrownBy(() -> compiler.compile(Parser.parse("mutation { createPublicOrders(input: {"
+                + " customer_id: 3, publicCustomerId: { data: { name: \"c\" } } }) { affected_rows } }")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("cannot insert object relationship \"publicCustomerId\" as \"customer_id\" column values are already determined");
     }
@@ -178,8 +178,8 @@ class NestedInsertCompileTest {
     @Test
     void aChildColumnOutsideItsInsertPermission_isRefused() {
         SqlCompiler compiler = compiler(false);
-        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
-                + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\", id: 1 }] } }) { affected_rows } }"))
+        assertThatThrownBy(() -> compiler.compile(Parser.parse("mutation { createPublicOrders(input: {"
+                + " note: \"n\", publicOrderItems: { data: [{ sku: \"a\", id: 1 }] } }) { affected_rows } }")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown column 'id' in insert of public.order_items");
     }
@@ -187,8 +187,8 @@ class NestedInsertCompileTest {
     @Test
     void aRelationshipTheRoleCannotInsertThrough_isNoField() {
         SqlCompiler compiler = compiler(false);
-        assertThatThrownBy(() -> compiler.compile("mutation { createPublicCustomers(input: {"
-                + " name: \"c\", publicOrders: { data: [{ note: \"n\" }] } }) { affected_rows } }"))
+        assertThatThrownBy(() -> compiler.compile(Parser.parse("mutation { createPublicCustomers(input: {"
+                + " name: \"c\", publicOrders: { data: [{ note: \"n\" }] } }) { affected_rows } }")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("publicOrders");
     }
@@ -196,8 +196,8 @@ class NestedInsertCompileTest {
     @Test
     void aRelationshipWithoutData_isRefused() {
         SqlCompiler compiler = compiler(false);
-        assertThatThrownBy(() -> compiler.compile("mutation { createPublicOrders(input: {"
-                + " note: \"n\", publicOrderItems: { } }) { affected_rows } }"))
+        assertThatThrownBy(() -> compiler.compile(Parser.parse("mutation { createPublicOrders(input: {"
+                + " note: \"n\", publicOrderItems: { } }) { affected_rows } }")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("data");
     }
@@ -205,8 +205,8 @@ class NestedInsertCompileTest {
     @Test
     void anEmptyOrNullRelationship_isNoNestedInsert() {
         for (String relation : List.of("{ data: [] }", "null")) {
-            SqlCompiler.CompiledQuery compiled = compiler(false).compile("mutation { createPublicOrders(input: {"
-                    + " note: \"n\", publicOrderItems: " + relation + " }) { affected_rows } }");
+            SqlCompiler.CompiledQuery compiled = compiler(false).compile(Parser.parse("mutation { createPublicOrders(input: {"
+                    + " note: \"n\", publicOrderItems: " + relation + " }) { affected_rows } }"));
 
             assertThat(compiled.sequence()).isNull();
             assertThat(compiled.sql()).contains("INSERT INTO \"public\".\"orders\"").doesNotContain("order_items");
@@ -215,9 +215,9 @@ class NestedInsertCompileTest {
 
     @Test
     void createMany_withOnlyEmptyRelationships_staysOneStatement() {
-        SqlCompiler.CompiledQuery compiled = compiler(false).compile("mutation { createManyPublicOrders(inputs: ["
+        SqlCompiler.CompiledQuery compiled = compiler(false).compile(Parser.parse("mutation { createManyPublicOrders(inputs: ["
                 + "{ note: \"one\", publicOrderItems: { data: [] } }, { note: \"two\", publicOrderItems: null }])"
-                + " { affected_rows } }");
+                + " { affected_rows } }"));
 
         assertThat(compiled.sequence()).isNull();
         assertThat(compiled.sql()).contains("INSERT INTO \"public\".\"orders\"").doesNotContain("order_items");
@@ -225,9 +225,9 @@ class NestedInsertCompileTest {
 
     @Test
     void aNestedInsertBesideOtherFields_runsEveryFieldInOrder() {
-        SqlCompiler.CompiledQuery compiled = compiler(false).compile("mutation {"
+        SqlCompiler.CompiledQuery compiled = compiler(false).compile(Parser.parse("mutation {"
                 + " first: createPublicCustomers(input: { name: \"c\" }) { affected_rows }"
-                + " second: createPublicOrders(input: { note: \"n\", publicOrderItems: { data: [{ sku: \"a\" }] } }) { affected_rows } }");
+                + " second: createPublicOrders(input: { note: \"n\", publicOrderItems: { data: [{ sku: \"a\" }] } }) { affected_rows } }"));
 
         List<MutationSequence.Step> steps = compiled.sequence().steps();
         assertThat(steps).extracting(MutationSequence.Step::responseKey).containsExactly("first", "second");

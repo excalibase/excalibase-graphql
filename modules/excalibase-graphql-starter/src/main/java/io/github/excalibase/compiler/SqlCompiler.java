@@ -1,7 +1,6 @@
 package io.github.excalibase.compiler;
 
 import graphql.language.*;
-import graphql.parser.Parser;
 import io.github.excalibase.*;
 import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.ExposedFunctions;
@@ -71,12 +70,8 @@ public class SqlCompiler {
 
     public ExposedFunctions functions() { return functions; }
 
-    public CompiledQuery compile(String queryString) {
-        return compile(queryString, Map.of());
-    }
-
-    public CompiledQuery compile(String queryString, Map<String, Object> variables) {
-        return compile(Parser.parse(queryString), variables);
+    public CompiledQuery compile(Document document) {
+        return compile(document, Map.of());
     }
 
     public CompiledQuery compile(Document document, Map<String, Object> variables) {
@@ -384,10 +379,6 @@ public class SqlCompiler {
     /**
      * Check if a query is an introspection query by parsing the first field.
      */
-    public boolean isIntrospection(String queryString) {
-        return isIntrospection(Parser.parse(queryString));
-    }
-
     public boolean isIntrospection(Document doc) {
         var ops = doc.getDefinitionsOfType(OperationDefinition.class);
         if (ops.isEmpty()) return false;
