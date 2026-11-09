@@ -40,12 +40,16 @@ public final class ParsedQueries {
 
     /** A cache holding {@code heapShare} of {@code maxMemoryBytes}; the share is above 0 and at most {@link #MAX_HEAP_SHARE}. */
     public static ParsedQueries forHeapShare(double heapShare, long maxMemoryBytes) {
+        requireValidHeapShare(heapShare);
+        long weight = (long) (maxMemoryBytes * heapShare) / RETAINED_BYTES_PER_CHAR;
+        return new ParsedQueries(Math.max(weight, 1), Parser::parse);
+    }
+
+    public static void requireValidHeapShare(double heapShare) {
         if (!(heapShare > 0 && heapShare <= MAX_HEAP_SHARE)) {
             throw new IllegalArgumentException(
                     "Parse cache heap share must be above 0 and at most " + MAX_HEAP_SHARE + ": " + heapShare);
         }
-        long weight = (long) (maxMemoryBytes * heapShare) / RETAINED_BYTES_PER_CHAR;
-        return new ParsedQueries(Math.max(weight, 1), Parser::parse);
     }
 
     /** The parsed {@code query}; throws the parser's exception for invalid GraphQL. */

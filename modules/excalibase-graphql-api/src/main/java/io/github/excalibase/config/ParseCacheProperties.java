@@ -9,6 +9,6 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 public record ParseCacheProperties(@DefaultValue("0.02") double heapShare) {
 
     public ParseCacheProperties {
-        ParsedQueries.forHeapShare(heapShare, 1);
+        ParsedQueries.requireValidHeapShare(heapShare);
     }
 }

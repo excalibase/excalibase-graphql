@@ -114,13 +114,18 @@ public class ExcalibaseRuntimeHints implements RuntimeHintsRegistrar {
     /** Caffeine picks its cache and node classes by name from the configured features, so each must be reachable. */
     private void registerCaffeineGeneratedClasses(RuntimeHints hints, ClassLoader classLoader, MemberCategory[] categories) {
         try {
+            int registered = 0;
             Resource[] classFiles = new PathMatchingResourcePatternResolver(classLoader)
                     .getResources("classpath*:" + CAFFEINE_PACKAGE.replace('.', '/') + "/*.class");
             for (Resource classFile : classFiles) {
                 String simpleName = Objects.requireNonNull(classFile.getFilename()).replace(".class", "");
                 if (GENERATED_CAFFEINE_NAME.matcher(simpleName).matches()) {
                     registerClass(hints, CAFFEINE_PACKAGE + "." + simpleName, categories);
+                    registered++;
                 }
+            }
+            if (registered == 0) {
+                throw new IllegalStateException("No generated Caffeine classes found for native-image hints");
             }
         } catch (IOException e) {
             throw new UncheckedIOException("Cannot list Caffeine classes for native-image hints", e);
