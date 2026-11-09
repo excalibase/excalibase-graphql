@@ -12,7 +12,6 @@ import graphql.language.InlineFragment;
 import graphql.language.OperationDefinition;
 import graphql.language.Selection;
 import graphql.language.SelectionSet;
-import graphql.parser.Parser;
 import io.github.excalibase.json.JsonFieldOrder;
 import org.springframework.http.ResponseEntity;
 
@@ -33,12 +32,11 @@ final class SelectionOrder {
     private SelectionOrder() {
     }
 
-    /** {@code answer} with its data in {@code query}'s selection order; anything else as it is. */
-    static ResponseEntity<Object> apply(ResponseEntity<Object> answer, String query) {
+    /** {@code answer} with its data in {@code document}'s selection order; anything else as it is. */
+    static ResponseEntity<Object> apply(ResponseEntity<Object> answer, Document document) {
         if (!(answer.getBody() instanceof Map<?, ?> body) || !(body.get(DATA_KEY) instanceof JsonNode data)) {
             return answer;
         }
-        Document document = Parser.parse(query);
         List<OperationDefinition> operations = document.getDefinitionsOfType(OperationDefinition.class);
         if (operations.isEmpty()) {
             return answer;

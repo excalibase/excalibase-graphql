@@ -16,7 +16,7 @@ import graphql.language.Document;
 import graphql.language.Field;
 import graphql.language.OperationDefinition;
 import graphql.language.Selection;
-import graphql.parser.Parser;
+import io.github.excalibase.compiler.ParsedQueries;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -305,7 +305,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
      */
     String[] extractTableAndFieldFromSubscription(String query) {
         try {
-            Document doc = Parser.parse(query);
+            Document doc = ParsedQueries.shared().parse(query);
             List<OperationDefinition> ops = doc.getDefinitionsOfType(OperationDefinition.class);
             if (ops.isEmpty()) {
                 return new String[0];

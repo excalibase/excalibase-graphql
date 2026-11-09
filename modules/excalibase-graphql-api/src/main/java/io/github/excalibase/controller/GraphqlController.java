@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import graphql.GraphQLException;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.SqlCompilationException;
+import graphql.language.Document;
+import io.github.excalibase.compiler.ParsedQueries;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
@@ -107,9 +109,10 @@ public class GraphqlController {
             GraphqlSchemaManager.EngineState state = null;
             try {
                 state = schemaManager.resolveEngineState(principal);
-                if (state.compiler().isIntrospection(finalQuery)) {
+                Document document = ParsedQueries.shared().parse(finalQuery);
+                if (state.compiler().isIntrospection(document)) {
                     ResponseEntity<Object> introspection = handleIntrospection(state, finalQuery, variables);
-                    Optional<String> dataPart = MixedQuery.dataPart(finalQuery);
+                    Optional<Document> dataPart = MixedQuery.dataPart(document);
                     if (dataPart.isEmpty()) {
                         return introspection;
                     }
@@ -117,8 +120,8 @@ public class GraphqlController {
                     return merge(introspection, SelectionOrder.apply(
                             dispatchCompiled(compiled, state, finalUserId, finalClaims), dataPart.get()));
                 }
-                SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
-                return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims), finalQuery);
+                SqlCompiler.CompiledQuery compiled = state.compiler().compile(document, variables);
+                return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims), document);
             } catch (Exception e) {
                 return errorResponse(e, state == null ? null : state.compiler().dialect());
             }
