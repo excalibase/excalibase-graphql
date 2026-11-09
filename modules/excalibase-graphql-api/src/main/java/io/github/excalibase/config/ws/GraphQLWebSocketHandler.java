@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
+import io.github.excalibase.compiler.ParsedQueries;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
@@ -16,7 +17,6 @@ import graphql.language.Document;
 import graphql.language.Field;
 import graphql.language.OperationDefinition;
 import graphql.language.Selection;
-import io.github.excalibase.compiler.ParsedQueries;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -82,13 +82,16 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
     private final WebSocketHeartbeat heartbeat;
     private final RealtimeMetering metering;
+    private final ParsedQueries parsedQueries;
 
     public GraphQLWebSocketHandler(SubscriptionService subscriptionService,
                                    ObjectMapper objectMapper,
                                    ObjectProvider<JwtService> jwtServiceProvider,
                                    WebSocketHeartbeat heartbeat,
                                    ObjectProvider<AccessPlans> accessPlansProvider,
-                                   ObjectProvider<RequestMetrics> requestMetricsProvider) {
+                                   ObjectProvider<RequestMetrics> requestMetricsProvider,
+                                   ParsedQueries parsedQueries) {
+        this.parsedQueries = parsedQueries;
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.changeReader = RealtimeGate.changeReader(objectMapper);
@@ -305,7 +308,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
      */
     String[] extractTableAndFieldFromSubscription(String query) {
         try {
-            Document doc = ParsedQueries.shared().parse(query);
+            Document doc = parsedQueries.parse(query);
             List<OperationDefinition> ops = doc.getDefinitionsOfType(OperationDefinition.class);
             if (ops.isEmpty()) {
                 return new String[0];

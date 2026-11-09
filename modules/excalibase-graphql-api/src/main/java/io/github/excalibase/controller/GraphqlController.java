@@ -3,10 +3,10 @@ package io.github.excalibase.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import graphql.GraphQLException;
-import io.github.excalibase.SqlDialect;
-import io.github.excalibase.compiler.SqlCompilationException;
 import graphql.language.Document;
+import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.ParsedQueries;
+import io.github.excalibase.compiler.SqlCompilationException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
@@ -60,15 +60,18 @@ public class GraphqlController {
     private final QueryExecutionService queryExecutor;
     private final GraphQLObservabilityInstrumentation observability;
     private final boolean requestMetricsOn;
+    private final ParsedQueries parsedQueries;
 
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
                              GraphQLObservabilityInstrumentation observability,
-                             ObjectProvider<RequestMetrics> requestMetrics) {
+                             ObjectProvider<RequestMetrics> requestMetrics,
+                             ParsedQueries parsedQueries) {
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;
         this.requestMetricsOn = requestMetrics.getIfAvailable() != null;
+        this.parsedQueries = parsedQueries;
     }
 
     /**
@@ -109,7 +112,7 @@ public class GraphqlController {
             GraphqlSchemaManager.EngineState state = null;
             try {
                 state = schemaManager.resolveEngineState(principal);
-                Document document = ParsedQueries.shared().parse(finalQuery);
+                Document document = parsedQueries.parse(finalQuery);
                 if (state.compiler().isIntrospection(document)) {
                     ResponseEntity<Object> introspection = handleIntrospection(state, finalQuery, variables);
                     Optional<Document> dataPart = MixedQuery.dataPart(document);

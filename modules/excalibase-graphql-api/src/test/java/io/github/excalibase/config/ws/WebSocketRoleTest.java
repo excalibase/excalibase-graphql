@@ -1,5 +1,7 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.compiler.ParsedQueries;
+import graphql.parser.Parser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -189,7 +191,7 @@ class WebSocketRoleTest {
         private TextWebSocketHandler graphqlHandler() {
             GraphQLWebSocketHandler handler = new GraphQLWebSocketHandler(new SubscriptionService(), mapper,
                     provider(jwtService), new WebSocketHeartbeat(0), provider((AccessPlans) null),
-                    provider((RequestMetrics) null));
+                    provider((RequestMetrics) null), new ParsedQueries(1_000_000, Parser::parse));
             ReflectionTestUtils.setField(handler, "jwtEnabled", true);
             return handler;
         }

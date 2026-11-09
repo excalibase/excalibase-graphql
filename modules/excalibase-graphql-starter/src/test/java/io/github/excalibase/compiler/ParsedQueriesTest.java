@@ -11,11 +11,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ParsedQueriesTest {
 
+    private static final int BUDGET = 1600;
+
     private final AtomicInteger parses = new AtomicInteger();
-    private final ParsedQueries queries = new ParsedQueries(2, text -> {
+    private final ParsedQueries queries = new ParsedQueries(BUDGET, text -> {
         parses.incrementAndGet();
         return Parser.parse(text);
     });
+
+    private static String query(int length) {
+        return "{ " + "a".repeat(length - 4) + " }";
+    }
 
     @Test
     void repeatedQueryIsParsedOnce() {
@@ -27,17 +33,24 @@ class ParsedQueriesTest {
     }
 
     @Test
-    void cacheIsBoundedAndEvictsLeastRecentlyUsed() {
-        queries.parse("{ a }");
-        queries.parse("{ b }");
-        queries.parse("{ a }");
-        queries.parse("{ c }");
+    void queryAboveAShareOfTheBudgetIsAnsweredButNotKept() {
+        String oversize = query(BUDGET / ParsedQueries.SINGLE_QUERY_SHARE_DIVISOR + 1);
 
-        assertThat(queries.size()).isEqualTo(2);
-        queries.parse("{ a }");
-        assertThat(parses).hasValue(3);
-        queries.parse("{ b }");
-        assertThat(parses).hasValue(4);
+        assertThat(queries.parse(oversize)).isNotNull();
+        queries.parse(oversize);
+
+        assertThat(parses).hasValue(2);
+        assertThat(queries.entries()).isZero();
+    }
+
+    @Test
+    void totalWeightStaysUnderTheBudget() {
+        for (int i = 0; i < 200; i++) {
+            queries.parse("{ a" + i + " " + "b".repeat(80) + " }");
+        }
+
+        assertThat(queries.weight()).isLessThanOrEqualTo(BUDGET);
+        assertThat(queries.entries()).isPositive();
     }
 
     @Test
@@ -45,7 +58,24 @@ class ParsedQueriesTest {
         assertThatThrownBy(() -> queries.parse("{ a")).isInstanceOf(InvalidSyntaxException.class);
         assertThatThrownBy(() -> queries.parse("{ a")).isInstanceOf(InvalidSyntaxException.class);
 
-        assertThat(queries.size()).isZero();
+        assertThat(queries.entries()).isZero();
         assertThat(parses).hasValue(2);
+    }
+
+    @Test
+    void heapShareOutsideZeroToOneIsRefused() {
+        assertThatThrownBy(() -> ParsedQueries.forHeapShare(0, 1L << 30)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ParsedQueries.forHeapShare(1, 1L << 30)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void budgetIsDerivedFromTheHeap() {
+        long heap = 1L << 30;
+        var derived = ParsedQueries.forHeapShare(0.02, heap);
+
+        String big = query((int) (heap * 0.02 / ParsedQueries.RETAINED_BYTES_PER_CHAR / ParsedQueries.SINGLE_QUERY_SHARE_DIVISOR) + 100);
+        derived.parse(big);
+
+        assertThat(derived.entries()).isZero();
     }
 }
