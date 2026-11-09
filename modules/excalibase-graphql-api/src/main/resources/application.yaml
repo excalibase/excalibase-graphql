@@ -72,6 +72,12 @@ app:
   max-rows: 30
   max-query-depth: 15  # Reject queries nested beyond this depth (0 = unlimited)
   reserved-schemas: ${APP_RESERVED_SCHEMAS:}  # Extra schemas never reflected into the API; adds to the built-in list (auth, excalibase), cannot remove from it
+  overload:  # shed with 503 instead of dying; every limit scales with the container
+    enabled: ${APP_OVERLOAD_ENABLED:true}
+    heap-threshold-percent: ${APP_OVERLOAD_HEAP_THRESHOLD_PERCENT:85}   # share of max heap still live after GC
+    max-in-flight-per-cpu: ${APP_OVERLOAD_MAX_IN_FLIGHT_PER_CPU:16}     # concurrent requests = this x CPUs
+    queue-wait-ms: ${APP_OVERLOAD_QUEUE_WAIT_MS:500}                    # how long an excess request waits before 503
+    retry-after-seconds: ${APP_OVERLOAD_RETRY_AFTER_SECONDS:1}
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
   cors:
