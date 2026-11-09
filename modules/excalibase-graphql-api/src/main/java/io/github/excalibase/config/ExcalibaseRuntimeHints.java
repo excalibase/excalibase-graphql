@@ -3,12 +3,22 @@ package io.github.excalibase.config;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * GraalVM Native Image runtime hints for the SQL compiler engine.
  * Registers reflection-heavy classes so the native binary can access them at runtime.
  */
 public class ExcalibaseRuntimeHints implements RuntimeHintsRegistrar {
+
+    private static final String CAFFEINE_PACKAGE = "com.github.benmanes.caffeine.cache";
+    private static final Pattern GENERATED_CAFFEINE_NAME = Pattern.compile("[A-Z]{2,}");
 
     @Override
     public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
@@ -93,10 +103,28 @@ public class ExcalibaseRuntimeHints implements RuntimeHintsRegistrar {
         registerClass(hints, "io.nats.client.impl.SocketDataPort", all);
         registerClass(hints, "io.nats.client.support.JsonValue", all);
 
+        registerCaffeineGeneratedClasses(hints, classLoader, all);
+
         // Resources
         hints.resources().registerPattern("META-INF/services/*");
         hints.resources().registerPattern("application.yaml");
         hints.resources().registerPattern("application-*.yaml");
+    }
+
+    /** Caffeine picks its cache and node classes by name from the configured features, so each must be reachable. */
+    private void registerCaffeineGeneratedClasses(RuntimeHints hints, ClassLoader classLoader, MemberCategory[] categories) {
+        try {
+            Resource[] classFiles = new PathMatchingResourcePatternResolver(classLoader)
+                    .getResources("classpath*:" + CAFFEINE_PACKAGE.replace('.', '/') + "/*.class");
+            for (Resource classFile : classFiles) {
+                String simpleName = Objects.requireNonNull(classFile.getFilename()).replace(".class", "");
+                if (GENERATED_CAFFEINE_NAME.matcher(simpleName).matches()) {
+                    registerClass(hints, CAFFEINE_PACKAGE + "." + simpleName, categories);
+                }
+            }
+        } catch (IOException e) {
+            throw new UncheckedIOException("Cannot list Caffeine classes for native-image hints", e);
+        }
     }
 
     private void registerClass(RuntimeHints hints, String className, MemberCategory[] categories) {
