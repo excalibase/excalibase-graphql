@@ -1,5 +1,6 @@
 package io.github.excalibase;
 
+import graphql.parser.Parser;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.mysql.MysqlDialect;
@@ -80,7 +81,7 @@ class SqlEngineFactoryTest {
         SqlEngine engine = SqlEngineFactory.create("postgres");
         SchemaInfo schema = new SchemaInfo();
         SqlCompiler compiler = new SqlCompiler(schema, "test", 30, engine.dialect(), engine.mutationCompiler());
-        assertDoesNotThrow(() -> compiler.isIntrospection("{ __schema { queryType { name } } }"));
+        assertDoesNotThrow(() -> compiler.isIntrospection(Parser.parse("{ __schema { queryType { name } } }")));
     }
 
     @Test
@@ -89,7 +90,7 @@ class SqlEngineFactoryTest {
         SchemaInfo schema = new SchemaInfo();
         SqlCompiler compiler = new SqlCompiler(schema, "test", 30, engine.dialect(), engine.mutationCompiler(), 3);
         assertThrows(IllegalArgumentException.class, () ->
-                compiler.compile("{ a { b { c { d } } } }"));
+                compiler.compile(Parser.parse("{ a { b { c { d } } } }")));
     }
 
     @Test
@@ -99,7 +100,7 @@ class SqlEngineFactoryTest {
         schema.addColumn("customer", "customer_id", "integer");
         schema.addPrimaryKey("customer", "customer_id");
         SqlCompiler compiler = new SqlCompiler(schema, "test", 30, engine.dialect(), engine.mutationCompiler(), 5);
-        assertDoesNotThrow(() -> compiler.compile("{ customer { customer_id } }"));
+        assertDoesNotThrow(() -> compiler.compile(Parser.parse("{ customer { customer_id } }")));
     }
 
     // === Default query-depth limit (app.max-query-depth unset -> DEFAULT_MAX_QUERY_DEPTH) ===
@@ -116,7 +117,7 @@ class SqlEngineFactoryTest {
                 engine.dialect(), engine.mutationCompiler(), GraphqlSchemaManager.DEFAULT_MAX_QUERY_DEPTH);
         String tooDeep = nestedQuery(GraphqlSchemaManager.DEFAULT_MAX_QUERY_DEPTH + 1);
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> compiler.compile(tooDeep));
+                () -> compiler.compile(Parser.parse(tooDeep)));
         assertTrue(ex.getMessage().contains("exceeds maximum allowed depth"));
     }
 
@@ -129,7 +130,7 @@ class SqlEngineFactoryTest {
         // The depth gate must pass at the limit; the unknown-field failure against an
         // empty schema proves the query got past the depth check rather than being rejected for depth.
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> compiler.compile(atLimit));
+                () -> compiler.compile(Parser.parse(atLimit)));
         assertFalse(ex.getMessage().contains("exceeds maximum allowed depth"));
     }
 

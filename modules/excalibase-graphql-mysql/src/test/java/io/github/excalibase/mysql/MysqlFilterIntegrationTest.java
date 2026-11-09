@@ -1,5 +1,6 @@
 package io.github.excalibase.mysql;
 
+import graphql.parser.Parser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
@@ -73,8 +74,7 @@ class MysqlFilterIntegrationTest {
     }
 
     private static List<Integer> ids(String where, Map<String, Object> variables) {
-        SqlCompiler.CompiledQuery compiled = compiler().compile(
-                "query($w: DocWhereInput) { doc(where: " + where + ", orderBy: { id: ASC }) { id } }", variables);
+        SqlCompiler.CompiledQuery compiled = compiler().compile(Parser.parse("query($w: DocWhereInput) { doc(where: " + where + ", orderBy: { id: ASC }) { id } }"), variables);
         String answer = named.queryForObject(compiled.sql(), compiled.params(), String.class);
         List<Integer> found = new ArrayList<>();
         try {
@@ -188,8 +188,8 @@ class MysqlFilterIntegrationTest {
     class Mutations {
         @Test
         void onConflictIsRefusedRatherThanIgnored() {
-            assertThatThrownBy(() -> compiler().compile("mutation { createDoc(input: { title: \"x\" }, "
-                    + "onConflict: { constraint: \"PRIMARY\", update_columns: [\"title\"] }) { id } }"))
+            assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { createDoc(input: { title: \"x\" }, "
+                    + "onConflict: { constraint: \"PRIMARY\", update_columns: [\"title\"] }) { id } }")))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("'onConflict'");
         }
@@ -197,8 +197,7 @@ class MysqlFilterIntegrationTest {
         @Test
         void aDeleteThroughAWhereVariableNamesItsRows() {
             Map<String, Object> variables = Map.of("w", Map.of("id", Map.of("eq", 99)));
-            SqlCompiler.CompiledQuery compiled = compiler().compile(
-                    "mutation($w: DocWhereInput) { deleteDoc(where: $w) { id } }", variables);
+            SqlCompiler.CompiledQuery compiled = compiler().compile(Parser.parse("mutation($w: DocWhereInput) { deleteDoc(where: $w) { id } }"), variables);
             assertThat(compiled.write()).isInstanceOf(TwoPhaseWrites.class);
             assertThat(((TwoPhaseWrites) compiled.write()).entries().getFirst().write()).isInstanceOf(MysqlWrite.class);
             assertThat(compiled.params()).containsValue(99);

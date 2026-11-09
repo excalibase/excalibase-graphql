@@ -1,5 +1,6 @@
 package io.github.excalibase.postgres;
 
+import graphql.parser.Parser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zaxxer.hikari.HikariDataSource;
 import io.github.excalibase.SqlDialect;
@@ -23,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Runtime integration test — proves that a real GraphQL query containing a
  * {@code vector: {...}} argument actually flows through
- * {@link SqlCompiler#compile(String, Map)} -> QueryBuilder.compileList ->
+ * {@link SqlCompiler#compile(graphql.language.Document, Map)} -> QueryBuilder.compileList ->
  * VectorSearchBuilder -> PostgresDialect -> NamedParameterJdbcTemplate and
  * returns the correct nearest-neighbor ordering.
  *
@@ -125,7 +126,7 @@ class GraphQLVectorRuntimeTest {
     @Test
     @DisplayName("GraphQL vector runs through SqlCompiler and returns k-NN ordering")
     void graphqlVectorL2FromOrigin() {
-        var query = compiler.compile(vectorQuery("L2", "[0.0, 0.0, 0.0]", 4), Map.of());
+        var query = compiler.compile(Parser.parse(vectorQuery("L2", "[0.0, 0.0, 0.0]", 4)), Map.of());
         List<String> titles = titlesOf(query);
         assertEquals(List.of("origin", "near", "mid", "far"), titles,
                 "L2 from (0,0,0) must rank: origin, near, mid, far");
@@ -134,7 +135,7 @@ class GraphQLVectorRuntimeTest {
     @Test
     @DisplayName("GraphQL vector respects the limit field, overriding default maxRows")
     void graphqlVectorLimit() {
-        var query = compiler.compile(vectorQuery("L2", "[0.0, 0.0, 0.0]", 2), Map.of());
+        var query = compiler.compile(Parser.parse(vectorQuery("L2", "[0.0, 0.0, 0.0]", 2)), Map.of());
         List<String> titles = titlesOf(query);
         assertEquals(2, titles.size(), "limit=2 must clamp the result set");
         assertEquals("origin", titles.get(0));
@@ -146,7 +147,7 @@ class GraphQLVectorRuntimeTest {
     void graphqlVectorCosine() {
         // (1,1,1) direction — near and mid and far all point the same way,
         // so cosine distance is near-zero for all three. origin is undefined.
-        var query = compiler.compile(vectorQuery("COSINE", "[1.0, 1.0, 1.0]", 3), Map.of());
+        var query = compiler.compile(Parser.parse(vectorQuery("COSINE", "[1.0, 1.0, 1.0]", 3)), Map.of());
         List<String> titles = titlesOf(query);
         assertEquals(3, titles.size());
         // All three unit-direction rows should be in the top 3
@@ -161,7 +162,7 @@ class GraphQLVectorRuntimeTest {
         // query (1,1,1) → origin dot = 0, near dot = 3, mid dot = 9, far dot = 30
         // Inner product distance (<#>) is NEGATIVE dot product, so largest dot
         // product ranks first.
-        var query = compiler.compile(vectorQuery("IP", "[1.0, 1.0, 1.0]", 4), Map.of());
+        var query = compiler.compile(Parser.parse(vectorQuery("IP", "[1.0, 1.0, 1.0]", 4)), Map.of());
         List<String> titles = titlesOf(query);
         assertEquals("far", titles.get(0), "'far' has the largest dot product");
         assertEquals("mid", titles.get(1));
@@ -179,7 +180,7 @@ class GraphQLVectorRuntimeTest {
                 orderBy: { id: DESC }
               ) { id title } }
             """;
-        List<String> titles = titlesOf(compiler.compile(query, Map.of()));
+        List<String> titles = titlesOf(compiler.compile(Parser.parse(query), Map.of()));
         // k-NN order: origin, near, mid, far — not reverse-id order (far, mid, near, origin)
         assertEquals(List.of("origin", "near", "mid", "far"), titles);
     }

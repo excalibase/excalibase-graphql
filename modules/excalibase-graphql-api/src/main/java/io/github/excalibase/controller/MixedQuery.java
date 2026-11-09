@@ -1,12 +1,10 @@
 package io.github.excalibase.controller;
 
-import graphql.language.AstPrinter;
 import graphql.language.Document;
 import graphql.language.Field;
 import graphql.language.OperationDefinition;
 import graphql.language.Selection;
 import graphql.language.SelectionSet;
-import graphql.parser.Parser;
 
 import java.util.List;
 import java.util.Optional;
@@ -21,9 +19,8 @@ final class MixedQuery {
     private MixedQuery() {
     }
 
-    /** The query's data part, or empty when the root selects introspection only. */
-    static Optional<String> dataPart(String query) {
-        Document document = Parser.parse(query);
+    /** The document's data part, or empty when the root selects introspection only. */
+    static Optional<Document> dataPart(Document document) {
         List<OperationDefinition> operations = document.getDefinitionsOfType(OperationDefinition.class);
         if (operations.isEmpty()) {
             return Optional.empty();
@@ -41,6 +38,6 @@ final class MixedQuery {
         Document dataDocument = document.transform(builder -> builder.definitions(document.getDefinitions().stream()
                 .map(definition -> definition == operation ? dataOperation : definition)
                 .toList()));
-        return Optional.of(AstPrinter.printAst(dataDocument));
+        return Optional.of(dataDocument);
     }
 }

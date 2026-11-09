@@ -1,5 +1,6 @@
 package io.github.excalibase;
 
+import graphql.parser.Parser;
 import io.github.excalibase.compiler.MutationBuilder;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.spi.MutationCompiler;
@@ -31,7 +32,7 @@ class MultiSchemaCompilerTest {
         info.setTableSchema("users", "public");
 
         SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
-        SqlCompiler.CompiledQuery result = compiler.compile("{ users { id name } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ users { id name } }"));
 
         assertNotNull(result);
         assertTrue(result.sql().contains("public.\"users\""));
@@ -50,7 +51,7 @@ class MultiSchemaCompilerTest {
         SchemaInfo info = buildMultiSchemaInfo();
         SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
 
-        SqlCompiler.CompiledQuery result = compiler.compile(query);
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse(query));
 
         assertNotNull(result);
         assertTrue(result.sql().contains(expectedTable),
@@ -77,8 +78,7 @@ class MultiSchemaCompilerTest {
         SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
 
         // Query sales.orders with FK traversal to public.users (field name = column: user_id → salesUserId)
-        SqlCompiler.CompiledQuery result = compiler.compile(
-                "{ salesOrders { id total salesUserId { id name } } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ salesOrders { id total salesUserId { id name } } }"));
         assertNotNull(result);
         String sql = result.sql();
         assertTrue(sql.contains("sales.\"orders\""), "Should query sales.orders — got: " + sql);

@@ -1,5 +1,6 @@
 package io.github.excalibase.compiler;
 
+import graphql.parser.Parser;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.ExposedFunctions;
@@ -57,8 +58,7 @@ class FunctionCompileTest {
     void aQueryFunction_isCalledByName_withTheSessionAsJson() {
         RlsContext.setSessionVariables(Map.of("x-excalibase-user-id", "u-1", "x-excalibase-role", "user"));
 
-        SqlCompiler.CompiledQuery compiled = compiler().compile(
-                "{ publicSearchNotes(p_query: \"a%\", where: { id: { gt: 1 } }, limit: 5) { id body } }");
+        SqlCompiler.CompiledQuery compiled = compiler().compile(Parser.parse("{ publicSearchNotes(p_query: \"a%\", where: { id: { gt: 1 } }, limit: 5) { id body } }"));
 
         assertThat(compiled.sql()).contains("public.\"search_notes\"(\"p_query\" => CAST(:fn_arg_0 AS text), "
                 + "\"session\" => CAST(:fn_arg_1 AS jsonb))");
@@ -76,62 +76,61 @@ class FunctionCompileTest {
             }
         });
 
-        String sql = compiler().compile("{ publicSearchNotes(p_query: \"a\") { id } }").sql();
+        String sql = compiler().compile(Parser.parse("{ publicSearchNotes(p_query: \"a\") { id } }")).sql();
 
         assertThat(sql).contains("RLS_public.notes");
     }
 
     @Test
     void aSingleRowFunction_skipsTheAllNullRow() {
-        String sql = compiler().compile("{ publicLatestNote { id } }").sql();
+        String sql = compiler().compile(Parser.parse("{ publicLatestNote { id } }")).sql();
 
         assertThat(sql).contains("public.\"latest_note\"()").contains("IS NULL)").contains("LIMIT 1");
     }
 
     @Test
     void aMutationFunction_isAMutationField_only() {
-        String sql = compiler().compile("mutation { added: publicAddNote(p_body: \"hi\") { id } }").sql();
+        String sql = compiler().compile(Parser.parse("mutation { added: publicAddNote(p_body: \"hi\") { id } }")).sql();
 
         assertThat(sql).startsWith("SELECT jsonb_build_object('added', (").contains("public.\"add_note\"(");
-        assertThatThrownBy(() -> compiler().compile("{ publicAddNote(p_body: \"hi\") { id } }"))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ publicAddNote(p_body: \"hi\") { id } }")))
                 .hasMessageContaining("Unknown field");
     }
 
     @Test
     void unknownOrMissingArguments_areRefused() {
-        assertThatThrownBy(() -> compiler().compile("{ publicSearchNotes(p_query: \"a\", session: \"{}\") { id } }"))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ publicSearchNotes(p_query: \"a\", session: \"{}\") { id } }")))
                 .hasMessageContaining("Unknown argument session");
-        assertThatThrownBy(() -> compiler().compile("{ publicSearchNotes { id } }"))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ publicSearchNotes { id } }")))
                 .hasMessageContaining("Missing argument p_query");
     }
 
     @Test
     void aComputedField_isReflectedButNotServed() {
-        assertThatThrownBy(() -> compiler().compile("{ publicNotes { id label } }"))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ publicNotes { id label } }")))
                 .hasMessageContaining("Unknown field(s): label");
-        assertThatThrownBy(() -> compiler().compile("{ publicNotes { id notes_label } }"))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ publicNotes { id notes_label } }")))
                 .hasMessageContaining("Unknown field(s): notes_label");
     }
 
     @Test
     void anUnknownRootMutationField_isAnError_neverAnEmptyResult() {
-        assertThatThrownBy(() -> compiler().compile("mutation { nope(x: 1) { id } }"))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { nope(x: 1) { id } }")))
                 .hasMessage("Unknown field(s): nope");
-        assertThatThrownBy(() -> compiler().compile(
-                "mutation { publicAddNote(p_body: \"hi\") { id } nope { id } }"))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { publicAddNote(p_body: \"hi\") { id } nope { id } }")))
                 .hasMessage("Unknown field(s): nope");
     }
 
     @Test
     void aKnownMutationThatCannotCompile_isAnError_namingIt() {
-        assertThatThrownBy(() -> compiler().compile("mutation { deletePublicNotes { id } }"))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { deletePublicNotes { id } }")))
                 .hasMessage("Invalid arguments for deletePublicNotes");
     }
 
     @Test
     void anUnknownRootQueryField_isAnError_evenBesideAKnownOne() {
-        assertThatThrownBy(() -> compiler().compile("{ nope { id } }")).hasMessage("Unknown field(s): nope");
-        assertThatThrownBy(() -> compiler().compile("{ publicLatestNote { id } nope { id } }"))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ nope { id } }"))).hasMessage("Unknown field(s): nope");
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ publicLatestNote { id } nope { id } }")))
                 .hasMessage("Unknown field(s): nope");
     }
 

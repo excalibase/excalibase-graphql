@@ -3,7 +3,9 @@ package io.github.excalibase.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import graphql.GraphQLException;
+import graphql.language.Document;
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.compiler.ParsedQueries;
 import io.github.excalibase.compiler.SqlCompilationException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.errors.DataError;
@@ -58,15 +60,18 @@ public class GraphqlController {
     private final QueryExecutionService queryExecutor;
     private final GraphQLObservabilityInstrumentation observability;
     private final boolean requestMetricsOn;
+    private final ParsedQueries parsedQueries;
 
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
                              GraphQLObservabilityInstrumentation observability,
-                             ObjectProvider<RequestMetrics> requestMetrics) {
+                             ObjectProvider<RequestMetrics> requestMetrics,
+                             ParsedQueries parsedQueries) {
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;
         this.requestMetricsOn = requestMetrics.getIfAvailable() != null;
+        this.parsedQueries = parsedQueries;
     }
 
     /**
@@ -107,9 +112,10 @@ public class GraphqlController {
             GraphqlSchemaManager.EngineState state = null;
             try {
                 state = schemaManager.resolveEngineState(principal);
-                if (state.compiler().isIntrospection(finalQuery)) {
+                Document document = parsedQueries.parse(finalQuery);
+                if (state.compiler().isIntrospection(document)) {
                     ResponseEntity<Object> introspection = handleIntrospection(state, finalQuery, variables);
-                    Optional<String> dataPart = MixedQuery.dataPart(finalQuery);
+                    Optional<Document> dataPart = MixedQuery.dataPart(document);
                     if (dataPart.isEmpty()) {
                         return introspection;
                     }
@@ -117,8 +123,8 @@ public class GraphqlController {
                     return merge(introspection, SelectionOrder.apply(
                             dispatchCompiled(compiled, state, finalUserId, finalClaims), dataPart.get()));
                 }
-                SqlCompiler.CompiledQuery compiled = state.compiler().compile(finalQuery, variables);
-                return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims), finalQuery);
+                SqlCompiler.CompiledQuery compiled = state.compiler().compile(document, variables);
+                return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims), document);
             } catch (Exception e) {
                 return errorResponse(e, state == null ? null : state.compiler().dialect());
             }
