@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -66,6 +67,9 @@ class RequestMetricsIntegrationTest {
     @LocalServerPort
     private int port;
 
+    @LocalManagementPort
+    private int managementPort;
+
     @Autowired
     private SubscriptionService subscriptionService;
 
@@ -122,10 +126,14 @@ class RequestMetricsIntegrationTest {
             assertThat(refused.statusCode()).as(path).isEqualTo(404);
             assertThat(refused.body()).as(path).isEmpty();
         }
-        for (String path : List.of("/metrics", "/actuator/prometheus", "/actuator/metrics/excalibase.requests")) {
-            assertThat(get(port, path).body()).as(path).doesNotContain("excalibase_requests")
-                    .doesNotContain("\"name\":\"excalibase.requests\"");
+        assertThat(get(port, "/metrics").body()).doesNotContain("excalibase_requests");
+        for (String path : List.of("/actuator/health", "/actuator/metrics", "/actuator/prometheus")) {
+            assertThat(get(port, path).statusCode()).as("main port " + path).isEqualTo(404);
         }
+        HttpResponse<String> actuatorMetrics = get(managementPort, "/actuator/metrics");
+        assertThat(actuatorMetrics.statusCode()).isEqualTo(200);
+        assertThat(actuatorMetrics.body()).contains("jvm.memory.used").doesNotContain("excalibase.requests");
+        assertThat(get(managementPort, "/actuator/metrics/excalibase.requests").statusCode()).isEqualTo(404);
     }
 
     private String scrape() throws IOException, InterruptedException {
