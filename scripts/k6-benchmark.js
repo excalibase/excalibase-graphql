@@ -9,6 +9,7 @@ const queriesExecuted = new Counter('queries_executed');
 
 // Configuration
 const BASE_URL = __ENV.BASE_URL || 'http://localhost:10002';
+const MANAGEMENT_URL = __ENV.MANAGEMENT_URL || 'http://localhost:10003';  // actuator is on its own port
 // Routes are project-scoped: /{projectId}/graphql (benchmark app runs jwt-disabled).
 const GRAPHQL_ENDPOINT = `${BASE_URL}/${__ENV.BENCH_PROJECT || 'benchmark'}/graphql`;
 
@@ -298,7 +299,7 @@ export function setup() {
   console.log(`⚙️  Scenarios: warmup → ramp_up → sustained → spike`);
 
   // Health check - try Spring Boot actuator endpoint
-  const healthCheck = http.get(`${BASE_URL}/actuator/health`);
+  const healthCheck = http.get(`${MANAGEMENT_URL}/actuator/health`);
 
   if (healthCheck.status !== 200) {
     console.error('❌ Health check failed!');

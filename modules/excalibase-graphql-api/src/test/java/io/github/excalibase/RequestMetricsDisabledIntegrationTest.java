@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -54,6 +55,9 @@ class RequestMetricsDisabledIntegrationTest {
     @LocalServerPort
     private int port;
 
+    @LocalManagementPort
+    private int managementPort;
+
     @Autowired
     private WebApplicationContext context;
 
@@ -77,7 +81,10 @@ class RequestMetricsDisabledIntegrationTest {
         }).isInstanceOf(ConnectException.class);
         assertThat(globalRegistry.find("excalibase.requests").meters()).isEmpty();
         assertThat(get(port, "/metrics").body()).doesNotContain("excalibase_");
-        assertThat(get(port, "/actuator/prometheus").body()).doesNotContain("excalibase_requests");
+        assertThat(get(port, "/actuator/metrics").statusCode()).isEqualTo(404);
+        HttpResponse<String> actuatorMetrics = get(managementPort, "/actuator/metrics");
+        assertThat(actuatorMetrics.statusCode()).isEqualTo(200);
+        assertThat(actuatorMetrics.body()).contains("jvm.memory.used").doesNotContain("excalibase.requests");
     }
 
     private static HttpResponse<String> get(int targetPort, String path) throws Exception {

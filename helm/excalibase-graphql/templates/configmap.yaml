@@ -6,8 +6,10 @@ metadata:
   labels:
     {{- include "excalibase-graphql.labels" . | nindent 4 }}
 data:
-  # JVM
+  # JVM (empty = the image's own flags)
+  {{- if .Values.jvm.opts }}
   JAVA_TOOL_OPTIONS: {{ .Values.jvm.opts | quote }}
+  {{- end }}
 
   # Database
   SPRING_DATASOURCE_URL: {{ .Values.database.url | quote }}
@@ -27,9 +29,17 @@ data:
   # Tomcat
   SERVER_TOMCAT_THREADS_MAX: {{ .Values.tomcat.threadsMax | quote }}
   SERVER_TOMCAT_THREADS_MIN_SPARE: {{ .Values.tomcat.threadsMinSpare | quote }}
-  SERVER_TOMCAT_MAX_CONNECTIONS: {{ .Values.tomcat.maxConnections | quote }}
-  SERVER_TOMCAT_ACCEPT_COUNT: {{ .Values.tomcat.acceptCount | quote }}
   SERVER_TOMCAT_CONNECTION_TIMEOUT: {{ .Values.tomcat.connectionTimeout | quote }}
+
+  # Connection bound (per-CPU limits; excess clients wait in the accept queue)
+  APP_OVERLOAD_ENABLED: {{ .Values.overload.enabled | quote }}
+  APP_OVERLOAD_MAX_CONNECTIONS_PER_CPU: {{ .Values.overload.maxConnectionsPerCpu | int | quote }}
+  APP_OVERLOAD_ACCEPT_COUNT_PER_CPU: {{ .Values.overload.acceptCountPerCpu | int | quote }}
+  APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS: {{ .Values.overload.maxKeepAliveRequests | int | quote }}
+  APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS: {{ .Values.overload.keepAliveTimeoutMs | int | quote }}
+
+  # Actuator port (health probes), outside the connection bound
+  MANAGEMENT_SERVER_PORT: {{ .Values.management.port | quote }}
 
   # Virtual threads
   SPRING_THREADS_VIRTUAL_ENABLED: {{ .Values.virtualThreads.enabled | quote }}

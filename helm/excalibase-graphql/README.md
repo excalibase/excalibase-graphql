@@ -162,15 +162,28 @@ Pool size formula: `(target_db_CPU x 2 + 1) / replicas`. With multi-tenant routi
 |-----------|-------------|---------|
 | `tomcat.threadsMax` | Max Tomcat threads (carrier threads with Virtual Threads) | `200` |
 | `tomcat.threadsMinSpare` | Min spare threads | `10` |
-| `tomcat.maxConnections` | Max connections | `8192` |
-| `tomcat.acceptCount` | Accept queue size | `100` |
 | `tomcat.connectionTimeout` | Connection timeout (ms) | `20000` |
+
+### Connection bound
+
+Tomcat's connection limit and accept queue are derived from the CPUs the container has, so one setting fits any pod size.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `overload.enabled` | Bound open connections by CPU count; `false` keeps Tomcat's own defaults | `true` |
+| `overload.maxConnectionsPerCpu` | Open connections (HTTP and websocket) per CPU | `256` |
+| `overload.acceptCountPerCpu` | Accept queue length per CPU | `256` |
+| `overload.maxKeepAliveRequests` | Requests per keep-alive connection before the server closes it | `20` |
+| `overload.keepAliveTimeoutMs` | Idle keep-alive time before the connection gives its slot back | `5000` |
+| `management.port` | Actuator port used by the probes; outside the bound, not published by the Service | `8081` |
+
+The effective values are logged once at startup.
 
 ### JVM
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `jvm.opts` | JVM options (Generational ZGC recommended for Java 25) | `-XX:+UseZGC -XX:InitialRAMPercentage=50.0 -XX:MaxRAMPercentage=75.0` |
+| `jvm.opts` | Extra JVM flags via `JAVA_TOOL_OPTIONS`. Empty uses the image defaults (G1, 25-60% of container memory). Do not add a collector flag: the image already selects G1 and two collectors stop the JVM from starting | `""` |
 | `virtualThreads.enabled` | Enable Java 25 Virtual Threads | `true` |
 
 ### Resources & Scaling

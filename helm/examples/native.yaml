@@ -17,14 +17,14 @@ resources:
 livenessProbe:
   httpGet:
     path: /actuator/health
-    port: http
+    port: management
   initialDelaySeconds: 5   # native starts in ~50ms
   periodSeconds: 10
 
 readinessProbe:
   httpGet:
     path: /actuator/health
-    port: http
+    port: management
   initialDelaySeconds: 3
   periodSeconds: 5
 

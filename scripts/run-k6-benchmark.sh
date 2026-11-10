@@ -56,7 +56,7 @@ check_server() {
     log_info "Checking if GraphQL server is running at $BASE_URL..."
 
     # Try Spring Boot actuator health endpoint
-    if curl -s --connect-timeout 5 "${BASE_URL}/actuator/health" > /dev/null 2>&1; then
+    if curl -s --connect-timeout 5 "${MANAGEMENT_URL:-http://localhost:10003}/actuator/health" > /dev/null 2>&1; then
         log_success "Server is running"
         return 0
     fi
@@ -187,8 +187,8 @@ monitor_resources() {
         local timestamp=$(date +%s)
 
         # Try to get JVM metrics from Spring Boot actuator
-        local jvm_mem=$(curl -s "http://localhost:10002/actuator/metrics/jvm.memory.used" 2>/dev/null | jq -r '.measurements[0].value // 0' | awk '{printf "%.0f", $1/1024/1024}')
-        local threads=$(curl -s "http://localhost:10002/actuator/metrics/jvm.threads.live" 2>/dev/null | jq -r '.measurements[0].value // 0')
+        local jvm_mem=$(curl -s "http://localhost:10003/actuator/metrics/jvm.memory.used" 2>/dev/null | jq -r '.measurements[0].value // 0' | awk '{printf "%.0f", $1/1024/1024}')
+        local threads=$(curl -s "http://localhost:10003/actuator/metrics/jvm.threads.live" 2>/dev/null | jq -r '.measurements[0].value // 0')
 
         # Get CPU usage (rough estimate)
         local cpu="N/A"

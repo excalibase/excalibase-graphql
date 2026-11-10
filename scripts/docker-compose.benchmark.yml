@@ -6,6 +6,7 @@ services:
     build: ..
     ports:
       - "10002:10000"  # Unique external port 10002 for benchmark
+      - "127.0.0.1:10003:8081"  # actuator (management port), loopback only
     environment:
       # Database connection
       - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/excalibase_benchmark
@@ -30,7 +31,6 @@ services:
       # Experiment: Try 200, 300, 500, 1000 for max threads
       - SERVER_TOMCAT_THREADS_MAX=500
       - SERVER_TOMCAT_THREADS_MIN_SPARE=50
-      - SERVER_TOMCAT_MAX_CONNECTIONS=10000
 
       # Virtual Threads (enabled by default, set to false to test without)
       - SPRING_THREADS_VIRTUAL_ENABLED=true
