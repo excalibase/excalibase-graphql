@@ -1,5 +1,7 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.compiler.ParsedQueries;
+import graphql.parser.Parser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
@@ -88,7 +90,7 @@ class GraphQLWebSocketHandlerTest {
                 StubbedSchemaManager.document("p1", tableEntries), (sql, params) -> probes.add(sql));
         return new GraphQLWebSocketHandler(subscriptionService, mapper,
                 provider((JwtService) null), new WebSocketHeartbeat(0), provider(plans),
-                provider((RequestMetrics) null));
+                provider((RequestMetrics) null), new ParsedQueries(1_000_000, Parser::parse));
     }
 
     private WebSocketSession session(List<String> sink, String projectId, JwtClaims claims) throws Exception {

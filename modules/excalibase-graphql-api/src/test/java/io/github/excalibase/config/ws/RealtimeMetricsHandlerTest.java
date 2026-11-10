@@ -1,5 +1,7 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.compiler.ParsedQueries;
+import graphql.parser.Parser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
@@ -41,7 +43,7 @@ class RealtimeMetricsHandlerTest {
     void graphqlHandler() throws Exception {
         GraphQLWebSocketHandler handler = new GraphQLWebSocketHandler(subscriptionService, mapper,
                 provider((JwtService) null), new WebSocketHeartbeat(0), provider((AccessPlans) null),
-                provider(metrics));
+                provider(metrics), new ParsedQueries(1_000_000, Parser::parse));
         List<String> sent = new CopyOnWriteArrayList<>();
         WebSocketSession session = session(sent, PROJECT);
 

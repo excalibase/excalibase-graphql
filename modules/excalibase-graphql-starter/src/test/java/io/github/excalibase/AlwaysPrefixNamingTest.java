@@ -1,5 +1,6 @@
 package io.github.excalibase;
 
+import graphql.parser.Parser;
 import io.github.excalibase.compiler.MutationBuilder;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.spi.MutationCompiler;
@@ -35,7 +36,7 @@ class AlwaysPrefixNamingTest {
         SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
 
         // "publicUsers" must resolve — because compound key means always-prefix
-        SqlCompiler.CompiledQuery result = compiler.compile("{ publicUsers { id name } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ publicUsers { id name } }"));
         assertNotNull(result, "publicUsers should resolve for compound key public.users");
         assertTrue(result.sql().contains("public.\"users\""));
     }
@@ -50,8 +51,7 @@ class AlwaysPrefixNamingTest {
 
         SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
 
-        SqlCompiler.CompiledQuery result = compiler.compile(
-                "{ publicUsersConnection(first: 5) { edges { node { id } } } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ publicUsersConnection(first: 5) { edges { node { id } } } }"));
         assertNotNull(result);
         assertTrue(result.sql().contains("public.\"users\""));
     }
@@ -65,7 +65,7 @@ class AlwaysPrefixNamingTest {
 
         SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
 
-        SqlCompiler.CompiledQuery result = compiler.compile("{ publicUsersAggregate { count } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ publicUsersAggregate { count } }"));
         assertNotNull(result);
         assertTrue(result.sql().contains("public.\"users\""));
     }
@@ -81,7 +81,7 @@ class AlwaysPrefixNamingTest {
         SqlCompiler compiler = new SqlCompiler(info, "public", 30, testDialect, new NoOpMutationCompiler());
 
         assertThrows(IllegalArgumentException.class,
-                () -> compiler.compile("{ users { id } }"),
+                () -> compiler.compile(Parser.parse("{ users { id } }")),
                 "Bare 'users' should not resolve when compound keys are used");
     }
 

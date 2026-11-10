@@ -1,5 +1,6 @@
 package io.github.excalibase;
 
+import graphql.parser.Parser;
 import io.github.excalibase.compiler.MutationBuilder;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.spi.MutationCompiler;
@@ -38,7 +39,7 @@ class PerTableSchemaResolutionTest {
         SqlCompiler compiler = new SqlCompiler(schemaInfo, "dvdrental", 30,
                 testDialect, new NoOpMutationCompiler());
 
-        SqlCompiler.CompiledQuery result = compiler.compile("{ users { id name } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ users { id name } }"));
 
         assertNotNull(result);
         assertTrue(result.sql().contains("dvdrental.\"users\""),
@@ -57,7 +58,7 @@ class PerTableSchemaResolutionTest {
         SqlCompiler compiler = new SqlCompiler(schemaInfo, "dvdrental", 30,
                 testDialect, new NoOpMutationCompiler());
 
-        SqlCompiler.CompiledQuery result = compiler.compile("{ users { id name } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ users { id name } }"));
 
         assertNotNull(result);
         assertTrue(result.sql().contains("sales.\"users\""),
@@ -83,8 +84,8 @@ class PerTableSchemaResolutionTest {
         SqlCompiler compiler = new SqlCompiler(schemaInfo, "default_schema", 30,
                 testDialect, new NoOpMutationCompiler());
 
-        SqlCompiler.CompiledQuery usersResult = compiler.compile("{ users { id name } }");
-        SqlCompiler.CompiledQuery ordersResult = compiler.compile("{ orders { id total } }");
+        SqlCompiler.CompiledQuery usersResult = compiler.compile(Parser.parse("{ users { id name } }"));
+        SqlCompiler.CompiledQuery ordersResult = compiler.compile(Parser.parse("{ orders { id total } }"));
 
         assertTrue(usersResult.sql().contains("public.\"users\""),
                 "users should use 'public' schema — got: " + usersResult.sql());
@@ -114,7 +115,7 @@ class PerTableSchemaResolutionTest {
                 testDialect, new NoOpMutationCompiler());
 
         // Query orders with FK traversal to users (field name = column name: user_id → userId)
-        SqlCompiler.CompiledQuery result = compiler.compile("{ orders { id total userId { id name } } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ orders { id total userId { id name } } }"));
 
         assertNotNull(result);
         String sql = result.sql();
@@ -136,8 +137,7 @@ class PerTableSchemaResolutionTest {
         SqlCompiler compiler = new SqlCompiler(schemaInfo, "default_schema", 30,
                 testDialect, new NoOpMutationCompiler());
 
-        SqlCompiler.CompiledQuery result = compiler.compile(
-                "{ productsConnection(first: 5) { edges { node { id name } } } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ productsConnection(first: 5) { edges { node { id name } } } }"));
 
         assertNotNull(result);
         assertTrue(result.sql().contains("inventory.\"products\""),
@@ -156,8 +156,7 @@ class PerTableSchemaResolutionTest {
         SqlCompiler compiler = new SqlCompiler(schemaInfo, "default_schema", 30,
                 testDialect, new NoOpMutationCompiler());
 
-        SqlCompiler.CompiledQuery result = compiler.compile(
-                "{ productsAggregate { count } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ productsAggregate { count } }"));
 
         assertNotNull(result);
         assertTrue(result.sql().contains("inventory.\"products\""),

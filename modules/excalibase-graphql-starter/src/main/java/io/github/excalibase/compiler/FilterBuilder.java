@@ -802,7 +802,7 @@ public class FilterBuilder {
 
     /**
      * ScopedValue holding the current operation's GraphQL variables map.
-     * Bound by {@link SqlCompiler#compile(String, Map)} for the duration of
+     * Bound by {@link SqlCompiler#compile(graphql.language.Document, Map)} for the duration of
      * compilation so that nested {@link #extractValue}, {@link #resolveIntArg},
      * and {@link #resolveStringArg} calls can resolve {@code $var} references
      * without threading the map through every method signature.

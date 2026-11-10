@@ -1,7 +1,6 @@
 package io.github.excalibase.compiler;
 
 import graphql.language.*;
-import graphql.parser.Parser;
 import io.github.excalibase.*;
 import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.ExposedFunctions;
@@ -71,23 +70,22 @@ public class SqlCompiler {
 
     public ExposedFunctions functions() { return functions; }
 
-    public CompiledQuery compile(String queryString) {
-        return compile(queryString, Map.of());
+    public CompiledQuery compile(Document document) {
+        return compile(document, Map.of());
     }
 
-    public CompiledQuery compile(String queryString, Map<String, Object> variables) {
+    public CompiledQuery compile(Document document, Map<String, Object> variables) {
         Map<String, Object> vars = variables == null ? Map.of() : variables;
         try {
             return ScopedValue.where(FilterBuilder.CURRENT_VARIABLES, vars)
-                    .call(() -> doCompile(queryString, vars));
+                    .call(() -> doCompile(document, vars));
         } catch (Exception e) {
             if (e instanceof RuntimeException re) throw re;
             throw new SqlCompilationException("GraphQL query compilation failed", e);
         }
     }
 
-    private CompiledQuery doCompile(String queryString, Map<String, Object> variables) {
-        Document doc = Parser.parse(queryString);
+    private CompiledQuery doCompile(Document doc, Map<String, Object> variables) {
         var ops = doc.getDefinitionsOfType(OperationDefinition.class);
         if (ops.isEmpty()) {
             throw new IllegalArgumentException("Query must contain an operation");
@@ -381,8 +379,7 @@ public class SqlCompiler {
     /**
      * Check if a query is an introspection query by parsing the first field.
      */
-    public boolean isIntrospection(String queryString) {
-        Document doc = Parser.parse(queryString);
+    public boolean isIntrospection(Document doc) {
         var ops = doc.getDefinitionsOfType(OperationDefinition.class);
         if (ops.isEmpty()) return false;
         OperationDefinition op = ops.getFirst();

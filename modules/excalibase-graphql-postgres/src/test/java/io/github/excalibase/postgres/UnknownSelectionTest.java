@@ -1,5 +1,6 @@
 package io.github.excalibase.postgres;
 
+import graphql.parser.Parser;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.schema.SchemaInfo;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -38,7 +39,7 @@ class UnknownSelectionTest {
             "mutation { createPublicUsers(input: { id: 1 }) { id secret } }"
     })
     void anUnknownSelection_failsTheRequest(String query) {
-        assertThatThrownBy(() -> compiler().compile(query))
+        assertThatThrownBy(() -> compiler().compile(Parser.parse(query)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Unknown field(s): secret");
     }
@@ -49,7 +50,7 @@ class UnknownSelectionTest {
             "{ publicUsersConnection { __typename edges { __typename cursor node { id } } pageInfo { hasNextPage } } }"
     })
     void typenameAndKnownFields_compile(String query) {
-        assertThatCode(() -> compiler().compile(query)).doesNotThrowAnyException();
-        assertThat(compiler().compile(query).sql()).doesNotContain("__typename");
+        assertThatCode(() -> compiler().compile(Parser.parse(query))).doesNotThrowAnyException();
+        assertThat(compiler().compile(Parser.parse(query)).sql()).doesNotContain("__typename");
     }
 }

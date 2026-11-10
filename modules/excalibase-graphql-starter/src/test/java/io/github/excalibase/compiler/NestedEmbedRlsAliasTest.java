@@ -1,5 +1,6 @@
 package io.github.excalibase.compiler;
 
+import graphql.parser.Parser;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.spi.MutationCompiler;
@@ -63,8 +64,7 @@ class NestedEmbedRlsAliasTest {
         installAliasTaggingContributor();
         SqlCompiler compiler = new SqlCompiler(schemaWithFk(), "public", 30, new TestDialect(), new NoOpMutationCompiler());
 
-        SqlCompiler.CompiledQuery result = compiler.compile(
-                "{ salesOrders { id total salesUserId { id name } } }");
+        SqlCompiler.CompiledQuery result = compiler.compile(Parser.parse("{ salesOrders { id total salesUserId { id name } } }"));
         String sql = result.sql();
 
         // Top-level RLS for sales.orders is present, and the embed's RLS for

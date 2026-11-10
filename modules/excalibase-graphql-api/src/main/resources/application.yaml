@@ -71,6 +71,9 @@ app:
   database-type: postgres
   max-rows: 30
   max-query-depth: 15  # Reject queries nested beyond this depth (0 = unlimited)
+  graphql:
+    parse-cache:
+      heap-share: 0.02  # share of the max heap for parsed queries; above 0, at most 0.5
   reserved-schemas: ${APP_RESERVED_SCHEMAS:}  # Extra schemas never reflected into the API; adds to the built-in list (auth, excalibase), cannot remove from it
   overload:  # bound open connections to the CPUs the container has; excess clients wait in the kernel accept queue
     enabled: ${APP_OVERLOAD_ENABLED:true}
