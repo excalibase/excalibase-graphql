@@ -112,6 +112,12 @@ class RequestMetricsIntegrationTest {
                 .doesNotContain("unknown-proj");
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
                 assertThat(scrape()).contains("excalibase_realtime_connections{project=\"test-proj\"} 0"));
+
+        // checked after project traffic, so a leak into the actuator registry would be visible
+        HttpResponse<String> actuatorMetrics = get(managementPort, "/actuator/metrics");
+        assertThat(actuatorMetrics.statusCode()).isEqualTo(200);
+        assertThat(actuatorMetrics.body()).contains("jvm.memory.used").doesNotContain("excalibase.requests");
+        assertThat(get(managementPort, "/actuator/metrics/excalibase.requests").statusCode()).isEqualTo(404);
     }
 
     @Test
@@ -130,10 +136,6 @@ class RequestMetricsIntegrationTest {
         for (String path : List.of("/actuator/health", "/actuator/metrics", "/actuator/prometheus")) {
             assertThat(get(port, path).statusCode()).as("main port " + path).isEqualTo(404);
         }
-        HttpResponse<String> actuatorMetrics = get(managementPort, "/actuator/metrics");
-        assertThat(actuatorMetrics.statusCode()).isEqualTo(200);
-        assertThat(actuatorMetrics.body()).contains("jvm.memory.used").doesNotContain("excalibase.requests");
-        assertThat(get(managementPort, "/actuator/metrics/excalibase.requests").statusCode()).isEqualTo(404);
     }
 
     private String scrape() throws IOException, InterruptedException {
