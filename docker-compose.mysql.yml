@@ -101,8 +101,6 @@ services:
 
       SERVER_TOMCAT_THREADS_MAX: 200
       SERVER_TOMCAT_THREADS_MIN_SPARE: 10
-      SERVER_TOMCAT_MAX_CONNECTIONS: 10000
-      SERVER_TOMCAT_ACCEPT_COUNT: 100
 
       SPRING_THREADS_VIRTUAL_ENABLED: true
 
@@ -120,6 +118,7 @@ services:
       APP_NATS_SUBJECT_PREFIX: cdc
     ports:
       - "10001:10001"
+      - "127.0.0.1:8082:8081"  # actuator on its own port, loopback only
     depends_on:
       mysql:
         condition: service_healthy

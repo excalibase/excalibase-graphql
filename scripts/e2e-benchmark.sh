@@ -93,7 +93,7 @@ get_container_memory() {
 get_jvm_memory() {
     # Get JVM memory info from Spring Boot actuator if available
     local response
-    response=$(curl -s --connect-timeout 5 "http://localhost:10002/actuator/metrics/jvm.memory.used" 2>/dev/null || echo "{}")
+    response=$(curl -s --connect-timeout 5 "http://localhost:10003/actuator/metrics/jvm.memory.used" 2>/dev/null || echo "{}")
     
     if echo "$response" | jq -e '.measurements[0].value' > /dev/null 2>&1; then
         local used_bytes=$(echo "$response" | jq '.measurements[0].value')
@@ -108,7 +108,7 @@ get_jvm_memory() {
 get_heap_memory() {
     # Get heap memory specifically
     local response
-    response=$(curl -s --connect-timeout 5 "http://localhost:10002/actuator/metrics/jvm.memory.used?tag=area:heap" 2>/dev/null || echo "{}")
+    response=$(curl -s --connect-timeout 5 "http://localhost:10003/actuator/metrics/jvm.memory.used?tag=area:heap" 2>/dev/null || echo "{}")
     
     if echo "$response" | jq -e '.measurements[0].value' > /dev/null 2>&1; then
         local heap_bytes=$(echo "$response" | jq '.measurements[0].value')
@@ -215,7 +215,7 @@ wait_for_api() {
     
     for i in $(seq 1 $MAX_RETRIES); do
         # Use Spring Boot Actuator health check (much more reliable)
-        local health_url="http://localhost:10002/actuator/health"
+        local health_url="http://localhost:10003/actuator/health"
         local response=$(curl -s --connect-timeout 5 "$health_url" 2>/dev/null)
         
         # Debug: Show response for troubleshooting
@@ -1044,7 +1044,7 @@ get_additional_jvm_metrics() {
     
     # Try to get non-heap memory
     local nonheap_response
-    nonheap_response=$(curl -s --connect-timeout 5 "http://localhost:10002/actuator/metrics/jvm.memory.used?tag=area:nonheap" 2>/dev/null || echo "{}")
+    nonheap_response=$(curl -s --connect-timeout 5 "http://localhost:10003/actuator/metrics/jvm.memory.used?tag=area:nonheap" 2>/dev/null || echo "{}")
     
     if echo "$nonheap_response" | jq -e '.measurements[0].value' > /dev/null 2>&1; then
         local nonheap_bytes=$(echo "$nonheap_response" | jq '.measurements[0].value')
@@ -1055,7 +1055,7 @@ get_additional_jvm_metrics() {
     
     # Try to get GC information
     local gc_response
-    gc_response=$(curl -s --connect-timeout 5 "http://localhost:10002/actuator/metrics/jvm.gc.pause" 2>/dev/null || echo "{}")
+    gc_response=$(curl -s --connect-timeout 5 "http://localhost:10003/actuator/metrics/jvm.gc.pause" 2>/dev/null || echo "{}")
     
     if echo "$gc_response" | jq -e '.measurements' > /dev/null 2>&1; then
         echo "  🗑️  Garbage Collection: Active (efficient memory management)"
@@ -1063,7 +1063,7 @@ get_additional_jvm_metrics() {
     
     # Memory pools
     local metaspace_response
-    metaspace_response=$(curl -s --connect-timeout 5 "http://localhost:10002/actuator/metrics/jvm.memory.used?tag=id:Metaspace" 2>/dev/null || echo "{}")
+    metaspace_response=$(curl -s --connect-timeout 5 "http://localhost:10003/actuator/metrics/jvm.memory.used?tag=id:Metaspace" 2>/dev/null || echo "{}")
     
     if echo "$metaspace_response" | jq -e '.measurements[0].value' > /dev/null 2>&1; then
         local metaspace_bytes=$(echo "$metaspace_response" | jq '.measurements[0].value')
@@ -1074,7 +1074,7 @@ get_additional_jvm_metrics() {
     
     # Thread information
     local threads_response
-    threads_response=$(curl -s --connect-timeout 5 "http://localhost:10002/actuator/metrics/jvm.threads.live" 2>/dev/null || echo "{}")
+    threads_response=$(curl -s --connect-timeout 5 "http://localhost:10003/actuator/metrics/jvm.threads.live" 2>/dev/null || echo "{}")
     
     if echo "$threads_response" | jq -e '.measurements[0].value' > /dev/null 2>&1; then
         local thread_count=$(echo "$threads_response" | jq '.measurements[0].value')

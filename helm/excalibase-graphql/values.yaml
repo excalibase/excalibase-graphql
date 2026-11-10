@@ -194,13 +194,28 @@ hikari:
 tomcat:
   threadsMax: 200
   threadsMinSpare: 10
-  maxConnections: 8192
-  acceptCount: 100
   connectionTimeout: 20000
 
-# JVM — Generational ZGC (default in Java 25)
+# Actuator (health probes, metrics) on its own port, outside the connection bound.
+# Reached by the kubelet only: the Service does not publish it.
+management:
+  port: 8081
+
+# Connection bound, derived from the CPUs the container has (Tomcat maxConnections and accept
+# queue = per-CPU value x CPUs). Excess clients wait in the kernel accept queue instead of
+# being parsed and parked. These replace the old tomcat.maxConnections / tomcat.acceptCount.
+overload:
+  enabled: true
+  maxConnectionsPerCpu: 256
+  acceptCountPerCpu: 256
+  maxKeepAliveRequests: 20
+  keepAliveTimeoutMs: 5000
+
+# JVM flags added through JAVA_TOOL_OPTIONS. Empty (default) = the image's own flags apply
+# (G1, 25-60% of the container memory). Do not set a collector here unless you also override
+# the image's JAVA_OPTS: two collectors make the JVM refuse to start.
 jvm:
-  opts: "-XX:+UseZGC -XX:InitialRAMPercentage=50.0 -XX:MaxRAMPercentage=75.0"
+  opts: ""
 
 # Enable Java 25 virtual threads
 virtualThreads:
@@ -284,10 +299,12 @@ autoscaling:
 # ---------------------------------------------------------------------------
 # Liveness / readiness probes
 # ---------------------------------------------------------------------------
+# Probes use the management port, which is not bound by the overload limits, so a full
+# connection bound (e.g. many websockets) never fails liveness. Do not expose it via the Service.
 livenessProbe:
   httpGet:
     path: /actuator/health
-    port: http
+    port: management
   initialDelaySeconds: 30
   periodSeconds: 15
   failureThreshold: 3
@@ -295,7 +312,7 @@ livenessProbe:
 readinessProbe:
   httpGet:
     path: /actuator/health
-    port: http
+    port: management
   initialDelaySeconds: 20
   periodSeconds: 10
   failureThreshold: 3

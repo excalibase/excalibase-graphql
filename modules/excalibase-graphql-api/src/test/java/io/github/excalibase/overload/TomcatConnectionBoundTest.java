@@ -5,6 +5,8 @@ import org.apache.coyote.http11.AbstractHttp11Protocol;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import org.springframework.test.util.ReflectionTestUtils;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -12,6 +14,11 @@ class TomcatConnectionBoundTest {
 
     private static AbstractHttp11Protocol<?> protocolOf(Connector connector) {
         return (AbstractHttp11Protocol<?>) connector.getProtocolHandler();
+    }
+
+    private static Object storedKeepAliveRequests(Connector connector) {
+        Object endpoint = ReflectionTestUtils.invokeGetterMethod(protocolOf(connector), "endpoint");
+        return ReflectionTestUtils.getField(endpoint, "maxKeepAliveRequests");
     }
 
     @Test
@@ -23,6 +30,8 @@ class TomcatConnectionBoundTest {
         assertThat(protocolOf(connector).getMaxConnections()).isEqualTo(256);
         assertThat(protocolOf(connector).getAcceptCount()).isEqualTo(1024);
         assertThat(protocolOf(connector).getKeepAliveTimeout()).isEqualTo(5000);
+        // the getter reports 1 until the endpoint is bound, so read the stored setting
+        assertThat(storedKeepAliveRequests(connector)).isEqualTo(10);
     }
 
     @Test
@@ -38,5 +47,17 @@ class TomcatConnectionBoundTest {
     void invalid() {
         assertThatThrownBy(() -> new TomcatConnectionBound(0, 64, 256, 10, 5000)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new TomcatConnectionBound(1, 0, 256, 10, 5000)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TomcatConnectionBound(1, 64, 0, 10, 5000)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TomcatConnectionBound(1, 64, 256, 0, 5000)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> new TomcatConnectionBound(1, 64, 256, 10, 0)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("a limit that overflows int fails at startup with a message naming the setting")
+    void overflow() {
+        assertThatThrownBy(() -> new TomcatConnectionBound(64, Integer.MAX_VALUE, 256, 10, 5000))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("max-connections-per-cpu");
+        assertThatThrownBy(() -> new TomcatConnectionBound(64, 256, Integer.MAX_VALUE, 10, 5000))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("accept-count-per-cpu");
     }
 }

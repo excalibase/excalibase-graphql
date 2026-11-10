@@ -38,7 +38,7 @@ This is the API engine of [Excalibase](https://github.com/excalibase/excalibase)
 ```bash
 # 1. Start Postgres (with sample data), the engine, auth and a mock control plane
 docker compose up -d
-until curl -sf http://localhost:10000/actuator/health >/dev/null; do sleep 3; done
+until curl -sf http://localhost:8081/actuator/health >/dev/null; do sleep 3; done
 
 # 2. GraphQL: routes are per project; the sample project is `e2e-test`, whose
 #    permissions (served by the mock control plane) let anonymous callers read `hana.customer`

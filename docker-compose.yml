@@ -56,8 +56,6 @@ services:
       # Tomcat (Virtual Threads handle concurrency — this is carrier threads only)
       SERVER_TOMCAT_THREADS_MAX: 200
       SERVER_TOMCAT_THREADS_MIN_SPARE: 10
-      SERVER_TOMCAT_MAX_CONNECTIONS: 10000
-      SERVER_TOMCAT_ACCEPT_COUNT: 100
       SERVER_TOMCAT_CONNECTION_TIMEOUT: 20000
 
       # Virtual Threads (enabled by default in application.yaml)
@@ -104,6 +102,7 @@ services:
       MANAGEMENT_OTLP_LOGGING_ENDPOINT: http://otel-collector:4318/v1/logs
     ports:
       - "10000:10000"
+      - "127.0.0.1:8081:8081"  # actuator on its own port, loopback only
     depends_on:
       postgres:
         condition: service_healthy

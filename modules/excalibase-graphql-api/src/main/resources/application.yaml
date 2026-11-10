@@ -40,6 +40,8 @@ spring:
 
 # Actuator + Observability
 management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:8081}  # actuator (health probes) on its own port, outside the connection bound; never expose it publicly
   endpoints:
     web:
       exposure:

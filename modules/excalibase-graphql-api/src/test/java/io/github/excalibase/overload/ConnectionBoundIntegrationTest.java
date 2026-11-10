@@ -5,6 +5,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -45,6 +46,7 @@ class ConnectionBoundIntegrationTest {
         registry.add("spring.datasource.password", () -> "fake");
         registry.add("app.project-id", () -> PROJECT);
         registry.add("app.security.jwt-enabled", () -> "false");
+        registry.add("management.health.db.enabled", () -> "false");
         registry.add("app.security.insecure-dev-mode", () -> "true");
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.overload.max-connections-per-cpu", () -> "2");
@@ -71,6 +73,9 @@ class ConnectionBoundIntegrationTest {
     @LocalServerPort
     private int port;
 
+    @LocalManagementPort
+    private int managementPort;
+
     private final HttpClient client = HttpClient.newHttpClient();
 
     @Test
@@ -92,7 +97,7 @@ class ConnectionBoundIntegrationTest {
     @Test
     @DisplayName("a keep-alive connection is closed by the server after the configured number of requests")
     void keepAlive_rotates() throws Exception {
-        String request = "GET /actuator/info HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        String request = "GET /" + PROJECT + "/slow HTTP/1.1\r\nHost: localhost\r\n\r\n";
         try (Socket socket = new Socket("localhost", port)) {
             socket.setSoTimeout(5000);
             socket.getOutputStream().write((request + request + request).getBytes());
@@ -159,12 +164,50 @@ class ConnectionBoundIntegrationTest {
     @DisplayName("the connection bound and the open connections are readable as metrics")
     void boundIsObservable() throws Exception {
         HttpResponse<String> max = client.send(HttpRequest.newBuilder(
-                URI.create("http://localhost:" + port + "/actuator/metrics/tomcat.connections.config.max")).GET().build(),
+                URI.create("http://localhost:" + managementPort + "/actuator/metrics/tomcat.connections.config.max")).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertThat(max.statusCode()).isEqualTo(200);
         assertThat(max.body()).contains("\"value\":" + CPUS * 2);
         assertThat(client.send(HttpRequest.newBuilder(
-                URI.create("http://localhost:" + port + "/actuator/metrics/tomcat.connections.current")).GET().build(),
+                URI.create("http://localhost:" + managementPort + "/actuator/metrics/tomcat.connections.current")).GET().build(),
                 HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    @DisplayName("health on the management port answers within a second while the main port is full")
+    void healthAnswersWhileBoundIsFull() throws Exception {
+        List<Socket> held = new ArrayList<>();
+        try {
+            for (int i = 0; i < CPUS * 2 + 4; i++) {
+                held.add(new Socket("localhost", port));
+            }
+            HttpResponse<String> health = client.send(HttpRequest.newBuilder(
+                    URI.create("http://localhost:" + managementPort + "/actuator/health"))
+                    .timeout(Duration.ofSeconds(1)).GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(health.statusCode()).isEqualTo(200);
+        } finally {
+            for (Socket socket : held) {
+                socket.close();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("the management port carries no connection bound of its own")
+    void managementPortIsNotBounded() throws Exception {
+        List<Socket> held = new ArrayList<>();
+        try {
+            for (int i = 0; i < CPUS * 2 + 4; i++) {
+                held.add(new Socket("localhost", managementPort));
+            }
+            HttpResponse<String> health = client.send(HttpRequest.newBuilder(
+                    URI.create("http://localhost:" + managementPort + "/actuator/health"))
+                    .timeout(Duration.ofSeconds(1)).GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertThat(health.statusCode()).isEqualTo(200);
+        } finally {
+            for (Socket socket : held) {
+                socket.close();
+            }
+        }
     }
 }

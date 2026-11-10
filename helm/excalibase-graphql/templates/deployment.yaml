@@ -48,6 +48,9 @@ spec:
             - name: http
               containerPort: {{ .Values.app.port }}
               protocol: TCP
+            - name: management
+              containerPort: {{ .Values.management.port }}
+              protocol: TCP
           envFrom:
             - configMapRef:
                 name: {{ include "excalibase-graphql.fullname" . }}

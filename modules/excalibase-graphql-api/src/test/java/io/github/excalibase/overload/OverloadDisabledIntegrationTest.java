@@ -5,9 +5,15 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,5 +39,18 @@ class OverloadDisabledIntegrationTest {
     @DisplayName("with app.overload.enabled=false nothing is registered")
     void nothingRegistered() {
         assertThat(context.containsBean("tomcatConnectionBound")).isFalse();
+    }
+
+    @LocalManagementPort
+    private int managementPort;
+
+    @Test
+    @DisplayName("with app.overload.enabled=false Tomcat keeps its own default connection limit")
+    void tomcatDefaultsKept() throws Exception {
+        HttpResponse<String> max = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(
+                "http://localhost:" + managementPort + "/actuator/metrics/tomcat.connections.config.max")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(max.statusCode()).isEqualTo(200);
+        assertThat(max.body()).contains("\"value\":8192");
     }
 }

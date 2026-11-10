@@ -19,10 +19,37 @@ public class TomcatConnectionBound {
         if (cpus < 1 || connectionsPerCpu < 1 || backlogPerCpu < 1) {
             throw new IllegalArgumentException("cpus and per-cpu limits must be at least 1");
         }
-        this.maxConnections = cpus * connectionsPerCpu;
-        this.acceptCount = cpus * backlogPerCpu;
+        if (maxKeepAliveRequests < 1 || keepAliveTimeoutMillis < 1) {
+            throw new IllegalArgumentException(
+                    "app.overload.max-keep-alive-requests and keep-alive-timeout-ms must be at least 1");
+        }
+        this.maxConnections = multiply(cpus, connectionsPerCpu, "app.overload.max-connections-per-cpu");
+        this.acceptCount = multiply(cpus, backlogPerCpu, "app.overload.accept-count-per-cpu");
         this.maxKeepAliveRequests = maxKeepAliveRequests;
         this.keepAliveTimeoutMillis = keepAliveTimeoutMillis;
+    }
+
+    private static int multiply(int cpus, int perCpu, String setting) {
+        try {
+            return Math.multiplyExact(cpus, perCpu);
+        } catch (ArithmeticException overflow) {
+            throw new IllegalArgumentException(
+                    setting + "=" + perCpu + " times " + cpus + " CPUs does not fit in an int", overflow);
+        }
+    }
+
+    public int maxConnections() {
+        return maxConnections;
+    }
+
+    public int acceptCount() {
+        return acceptCount;
+    }
+
+    @Override
+    public String toString() {
+        return "maxConnections=" + maxConnections + ", acceptCount=" + acceptCount
+                + ", maxKeepAliveRequests=" + maxKeepAliveRequests + ", keepAliveTimeoutMs=" + keepAliveTimeoutMillis;
     }
 
     public void apply(Connector connector) {
