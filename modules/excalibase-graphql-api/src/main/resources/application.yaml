@@ -4,9 +4,9 @@ server:
     threads:
       max: 200  # Limit max threads (virtual threads handle concurrency)
       min-spare: 10
-    max-connections: 10000
-    accept-count: 100
     connection-timeout: 20000
+    mbeanregistry:
+      enabled: true  # tomcat.connections.* metrics show how close the connection bound is
     max-http-form-post-size: 10MB
     max-swallow-size: 10MB
     # PostgREST filters carry these unencoded (cs.{a,b}, in.("a,b")); without them Tomcat answers its own HTML 400.
@@ -72,12 +72,12 @@ app:
   max-rows: 30
   max-query-depth: 15  # Reject queries nested beyond this depth (0 = unlimited)
   reserved-schemas: ${APP_RESERVED_SCHEMAS:}  # Extra schemas never reflected into the API; adds to the built-in list (auth, excalibase), cannot remove from it
-  overload:  # shed with 503 instead of dying; every limit scales with the container
+  overload:  # bound open connections to the CPUs the container has; excess clients wait in the kernel accept queue
     enabled: ${APP_OVERLOAD_ENABLED:true}
-    heap-threshold-percent: ${APP_OVERLOAD_HEAP_THRESHOLD_PERCENT:85}   # share of max heap still live after GC
-    max-in-flight-per-cpu: ${APP_OVERLOAD_MAX_IN_FLIGHT_PER_CPU:16}     # concurrent requests = this x CPUs
-    queue-wait-ms: ${APP_OVERLOAD_QUEUE_WAIT_MS:500}                    # how long an excess request waits before 503
-    retry-after-seconds: ${APP_OVERLOAD_RETRY_AFTER_SECONDS:1}
+    max-connections-per-cpu: ${APP_OVERLOAD_MAX_CONNECTIONS_PER_CPU:256}   # Tomcat maxConnections = this x CPUs
+    accept-count-per-cpu: ${APP_OVERLOAD_ACCEPT_COUNT_PER_CPU:256}        # accept backlog = this x CPUs
+    max-keep-alive-requests: ${APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS:20}   # connection rotation lets queued clients in
+    keep-alive-timeout-ms: ${APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS:5000}      # idle keep-alive connections give their slot back
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
   cors:
