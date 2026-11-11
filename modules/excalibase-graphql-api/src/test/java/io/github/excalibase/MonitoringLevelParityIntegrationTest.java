@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.lang.management.ManagementFactory;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -13,8 +14,11 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
+import javax.management.MBeanServer;
+import javax.management.ObjectName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -79,6 +83,7 @@ class MonitoringLevelParityIntegrationTest {
     /** What the engine at this level recorded for {@link #CALLS}: companion meters, then each timer series with its count. */
     private List<String> observe(String level, boolean jwt) throws Exception {
         List<String> seen = new ArrayList<>();
+        Set<ObjectName> tomcatBefore = tomcatMBeans();
         try (ConfigurableApplicationContext context = new SpringApplicationBuilder(ExcalibaseGraphqlApplication.class)
                 .run(arguments(properties(level, jwt)))) {
             String port = context.getEnvironment().getProperty("local.server.port");
@@ -95,8 +100,27 @@ class MonitoringLevelParityIntegrationTest {
             }
             Thread.sleep(300);
             seen.addAll(series(context.getBean(MeterRegistry.class)));
+        } finally {
+            unregisterTomcatMBeansAddedSince(tomcatBefore);
         }
         return seen;
+    }
+
+    private static Set<ObjectName> tomcatMBeans() throws Exception {
+        return ManagementFactory.getPlatformMBeanServer().queryNames(new ObjectName("Tomcat:*"), null);
+    }
+
+    /**
+     * A closed application leaves its Tomcat MBeans in the JVM-wide MBean server, and the tomcat.* gauges of
+     * every later application in this JVM sum over them; remove the ones this test added.
+     */
+    private static void unregisterTomcatMBeansAddedSince(Set<ObjectName> before) throws Exception {
+        MBeanServer server = ManagementFactory.getPlatformMBeanServer();
+        for (ObjectName name : tomcatMBeans()) {
+            if (!before.contains(name) && server.isRegistered(name)) {
+                server.unregisterMBean(name);
+            }
+        }
     }
 
     private static List<String> series(MeterRegistry registry) {
