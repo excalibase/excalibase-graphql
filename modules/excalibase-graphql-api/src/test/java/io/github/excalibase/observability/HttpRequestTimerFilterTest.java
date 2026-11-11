@@ -8,11 +8,13 @@ import io.github.excalibase.security.SecurityConstants;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.servlet.FilterChain;
+import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
 import java.io.IOException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.security.web.firewall.RequestRejectedException;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.DispatcherServlet;
 import org.springframework.web.servlet.HandlerMapping;
@@ -116,7 +118,7 @@ class HttpRequestTimerFilterTest {
     }
 
     @Test
-    void anExceptionHandledByMvcKeepsItsStatusAndIsStillNamed() throws Exception {
+    void anExceptionHandledByMvcIsNotNamedBecauseTheObservationDoesNotNameIt() throws Exception {
         FilterChain handled = (req, res) -> {
             req.setAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE, PATTERN);
             req.setAttribute(DispatcherServlet.EXCEPTION_ATTRIBUTE, new IllegalArgumentException("bad filter"));
@@ -127,7 +129,46 @@ class HttpRequestTimerFilterTest {
 
         assertThat(timer().getId().getTag("status")).isEqualTo("400");
         assertThat(timer().getId().getTag("outcome")).isEqualTo("CLIENT_ERROR");
-        assertThat(timer().getId().getTag("exception")).isEqualTo("IllegalArgumentException");
+        assertThat(timer().getId().getTag("exception")).isEqualTo("none");
+        assertThat(timer().getId().getTag("error")).isEqualTo("none");
+    }
+
+    @Test
+    void anExceptionTheContainerRecordedForTheErrorDispatchIsNamed() throws Exception {
+        FilterChain failed = (req, res) -> {
+            req.setAttribute(RequestDispatcher.ERROR_EXCEPTION, new IllegalStateException("rejected"));
+            ((MockHttpServletResponse) res).setStatus(400);
+        };
+
+        filter.doFilter(request("/x"), new MockHttpServletResponse(), failed);
+
+        assertThat(timer().getId().getTag("exception")).isEqualTo("IllegalStateException");
+        assertThat(timer().getId().getTag("error")).isEqualTo("IllegalStateException");
+    }
+
+    @Test
+    void aMethodOutsideTheStandardSetIsOneSeriesNotOnePerSpelling() throws Exception {
+        for (String method : new String[] {"FOOBAR1", "FOOBAR2", "FOOBAR3"}) {
+            MockHttpServletRequest odd = new MockHttpServletRequest(method, "/x");
+            odd.setRequestURI("/x");
+            filter.doFilter(odd, new MockHttpServletResponse(), respondWith(405, null));
+        }
+
+        assertThat(registry.find("http.server.requests").timers()).hasSize(1);
+        assertThat(timer().getId().getTag("method")).isEqualTo("UNKNOWN");
+        assertThat(timer().count()).isEqualTo(3);
+    }
+
+    @Test
+    void everyStandardMethodKeepsItsOwnName() throws Exception {
+        for (String method : new String[] {"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"}) {
+            MockHttpServletRequest standard = new MockHttpServletRequest(method, "/x");
+            standard.setRequestURI("/x");
+            filter.doFilter(standard, new MockHttpServletResponse(), respondWith(200, "/x"));
+        }
+
+        assertThat(registry.find("http.server.requests").timers()).extracting(t -> t.getId().getTag("method"))
+                .containsExactlyInAnyOrder("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE");
     }
 
     @Test
@@ -171,5 +212,55 @@ class HttpRequestTimerFilterTest {
         off.doFilter(request("/x"), response, respondWith(204, "/x"));
 
         assertThat(response.getStatus()).isEqualTo(204);
+    }
+
+    @Test
+    void aRequestRejectedBeforeRoutingGetsTheRouteItsPathWouldHaveMatched() throws Exception {
+        HttpRequestTimerFilter withRoutes = new HttpRequestTimerFilter(registry, true, request -> PATTERN);
+
+        withRoutes.doFilter(request("/unknown-proj/api/v1/products"), new MockHttpServletResponse(),
+                respondWith(404, null));
+
+        assertThat(timer().getId().getTag("uri")).isEqualTo(PATTERN);
+    }
+
+    @Test
+    void aMatchedRequestNeverAsksTheRouteResolver() throws Exception {
+        HttpRequestTimerFilter withRoutes = new HttpRequestTimerFilter(registry, true, request -> {
+            throw new AssertionError("resolver consulted for a matched request");
+        });
+
+        withRoutes.doFilter(request("/x"), new MockHttpServletResponse(), respondWith(200, "/x"));
+
+        assertThat(timer().getId().getTag("uri")).isEqualTo("/x");
+    }
+
+    @Test
+    void anInFlightRequestIsCountedByTheActiveTimerAndReleasedAfterwards() throws Exception {
+        int[] during = new int[1];
+        FilterChain observing = (req, res) -> during[0] =
+                registry.get("http.server.requests.active").longTaskTimer().activeTasks();
+
+        filter.doFilter(request("/x"), new MockHttpServletResponse(), observing);
+
+        assertThat(during[0]).isEqualTo(1);
+        assertThat(registry.get("http.server.requests.active").longTaskTimer().activeTasks()).isZero();
+        assertThat(registry.get("http.server.requests.active").longTaskTimer().getId().getTags())
+                .extracting(tag -> tag.getKey())
+                .containsExactlyInAnyOrder("exception", "method", "org.name", "org.slug", "outcome",
+                        "project.name", "status", "tenant.id", "uri");
+    }
+
+    @Test
+    void aRequestTheFirewallRejectedIsNamedByTheRejection() throws Exception {
+        MockHttpServletRequest rejected = request("/x");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        new RejectedRequestRecorder().handle(rejected, response, new RequestRejectedException("method not allowed"));
+
+        filter.doFilter(rejected, response, (req, res) -> { });
+
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat(timer().getId().getTag("exception")).isEqualTo("RequestRejectedException");
+        assertThat(timer().getId().getTag("error")).isEqualTo("RequestRejectedException");
     }
 }

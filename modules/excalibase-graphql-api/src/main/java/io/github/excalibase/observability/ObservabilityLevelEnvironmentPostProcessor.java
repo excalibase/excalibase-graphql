@@ -25,7 +25,7 @@ public class ObservabilityLevelEnvironmentPostProcessor implements EnvironmentPo
         switch (levelOf(environment)) {
             case FULL -> { }
             case LITE -> disable(disabled, "http", "spring.security");
-            case OFF -> disable(disabled, "http", "spring.security", "jdbc", "tomcat");
+            case OFF -> disable(disabled, "http", "spring.security");
         }
         if (!disabled.isEmpty()) {
             environment.getPropertySources().addLast(new MapPropertySource(SOURCE, disabled));

@@ -103,12 +103,13 @@ class ObservabilityLevelTest {
     }
 
     @Test
-    void offTurnsOffEveryRequestObservation() {
+    void offTurnsOffTheSameObservationsAsLiteWithoutTheTimer() {
         StandardEnvironment environment = environment(Map.of(LEVEL, "off"));
 
-        for (String name : new String[] {"http", "spring.security", "jdbc", "tomcat"}) {
-            assertThat(environment.getProperty("management.observations.enable." + name)).isEqualTo("false");
-        }
+        assertThat(environment.getProperty("management.observations.enable.http")).isEqualTo("false");
+        assertThat(environment.getProperty("management.observations.enable.spring.security")).isEqualTo("false");
+        assertThat(environment.getProperty("management.observations.enable.jdbc")).isNull();
+        assertThat(environment.getProperty("management.observations.enable.tomcat")).isNull();
     }
 
     @Test
@@ -143,13 +144,21 @@ class ObservabilityLevelTest {
     }
 
     @Test
-    void offDropsEveryObservationAndRegistersNoTimerFilter() {
+    void liteWithTheHttpObservationExplicitlyOnDoesNotRegisterTheTimerFilterSoNothingIsCountedTwice() {
+        runner(Map.of(LEVEL, "lite", "management.observations.enable.http", "true")).run(context -> {
+            ObservationRegistry registry = context.getBean(ObservationRegistry.class);
+            assertThat(observed(registry, "http.server.requests")).isTrue();
+            assertThat(context.getBean(FilterRegistrationBean.class).isEnabled()).isFalse();
+        });
+    }
+
+    @Test
+    void offDropsTheHttpAndSecurityObservationsAndRegistersNoTimerFilter() {
         runner(Map.of(LEVEL, "off")).run(context -> {
             ObservationRegistry registry = context.getBean(ObservationRegistry.class);
-            for (String name : new String[] {"http.server.requests", "spring.security.http.secured.requests",
-                    "jdbc.query", "tomcat.connections"}) {
-                assertThat(observed(registry, name)).as(name).isFalse();
-            }
+            assertThat(observed(registry, "http.server.requests")).isFalse();
+            assertThat(observed(registry, "spring.security.http.secured.requests")).isFalse();
+            assertThat(observed(registry, "jdbc.query")).isTrue();
             assertThat(context.getBean(FilterRegistrationBean.class).isEnabled()).isFalse();
         });
     }

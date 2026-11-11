@@ -6,7 +6,7 @@ import java.util.Locale;
  * How much per-request monitoring the engine does ({@code excalibase.observability.level}).
  * {@link #FULL} keeps every observation, span and metric; {@link #LITE} swaps the HTTP server and
  * Spring Security observations for a plain request timer with the same tags, which costs far less CPU;
- * {@link #OFF} drops every request observation.
+ * {@link #OFF} drops them without the timer.
  */
 public enum ObservabilityLevel {
     FULL, LITE, OFF;
