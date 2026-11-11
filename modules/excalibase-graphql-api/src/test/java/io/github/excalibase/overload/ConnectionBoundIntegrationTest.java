@@ -1,12 +1,17 @@
 package io.github.excalibase.overload;
 
 import io.github.excalibase.ExcalibaseGraphqlApplication;
+import org.apache.catalina.connector.Connector;
+import org.apache.coyote.AbstractProtocol;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.boot.web.context.WebServerApplicationContext;
+import org.springframework.boot.web.embedded.tomcat.TomcatWebServer;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -69,6 +74,9 @@ class ConnectionBoundIntegrationTest {
             return "ok";
         }
     }
+
+    @Autowired
+    private WebServerApplicationContext webServerContext;
 
     @LocalServerPort
     private int port;
@@ -160,14 +168,30 @@ class ConnectionBoundIntegrationTest {
         }
     }
 
+    private String ownConnectorName() {
+        Connector connector = ((TomcatWebServer) webServerContext.getWebServer()).getTomcat().getConnector();
+        String name = ((AbstractProtocol<?>) connector.getProtocolHandler()).getName().replace("\"", "");
+        // the handler's name ends in the bound port; the metric's name tag does not
+        return name.endsWith("-" + connector.getLocalPort())
+                ? name.substring(0, name.length() - ("-" + connector.getLocalPort()).length()) : name;
+    }
+
+    private String metric(String name, String query) throws Exception {
+        HttpResponse<String> response = client.send(HttpRequest.newBuilder(URI.create(
+                "http://localhost:" + managementPort + "/actuator/metrics/" + name + query)).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(response.statusCode()).isEqualTo(200);
+        return response.body();
+    }
+
     @Test
     @DisplayName("the connection bound and the open connections are readable as metrics")
     void boundIsObservable() throws Exception {
-        HttpResponse<String> max = client.send(HttpRequest.newBuilder(
-                URI.create("http://localhost:" + managementPort + "/actuator/metrics/tomcat.connections.config.max")).GET().build(),
-                HttpResponse.BodyHandlers.ofString());
-        assertThat(max.statusCode()).isEqualTo(200);
-        assertThat(max.body()).contains("\"value\":" + CPUS * 2);
+        // The gauge sums every Tomcat registered in the JVM, so read the one for this app's own connector.
+        String own = ownConnectorName();
+        String all = metric("tomcat.connections.config.max", "");
+        assertThat(all).as("connector names offered by the metric").contains("\"" + own + "\"");
+        assertThat(metric("tomcat.connections.config.max", "?tag=name:" + own)).contains("\"value\":" + CPUS * 2);
         assertThat(client.send(HttpRequest.newBuilder(
                 URI.create("http://localhost:" + managementPort + "/actuator/metrics/tomcat.connections.current")).GET().build(),
                 HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
