@@ -22,6 +22,11 @@ public final class RawWebSocket implements AutoCloseable {
             return new String(payload, StandardCharsets.UTF_8);
         }
 
+        /** The reason text a close frame carries after its status code. */
+        public String closeReason() {
+            return payload.length < 2 ? "" : new String(payload, 2, payload.length - 2, StandardCharsets.UTF_8);
+        }
+
         /** The status code a close frame carries, or -1 for an empty one. */
         public int closeCode() {
             return payload.length < 2 ? -1 : ((payload[0] & 0xFF) << 8) | (payload[1] & 0xFF);

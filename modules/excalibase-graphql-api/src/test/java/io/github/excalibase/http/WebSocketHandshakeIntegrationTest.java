@@ -36,6 +36,7 @@ class WebSocketHandshakeIntegrationTest extends EngineIntegrationTest {
             RawWebSocket.Frame answer = socket.readFrame();
             assertThat(answer.opcode()).isEqualTo(RawWebSocket.CLOSE);
             assertThat(answer.closeCode()).isEqualTo(1000);
+            assertThat(answer.closeReason()).isEmpty();
         }
     }
 

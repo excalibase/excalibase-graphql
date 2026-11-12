@@ -15,7 +15,7 @@ final class EmptyCloseFrameHandler extends ChannelInboundHandlerAdapter {
     public void channelRead(ChannelHandlerContext context, Object message) {
         if (message instanceof CloseWebSocketFrame close && close.statusCode() == NO_STATUS) {
             ReferenceCountUtil.release(message);
-            context.fireChannelRead(new CloseWebSocketFrame(WebSocketCloseStatus.NORMAL_CLOSURE));
+            context.fireChannelRead(new CloseWebSocketFrame(WebSocketCloseStatus.NORMAL_CLOSURE.code(), ""));
             return;
         }
         context.fireChannelRead(message);
