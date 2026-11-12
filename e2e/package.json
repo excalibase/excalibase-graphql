@@ -12,6 +12,7 @@
     "test:ecommerce": "jest ecommerce.test.js --forceExit",
     "test:kanban": "jest kanban.test.js --forceExit",
     "test:clinic": "jest clinic.test.js --forceExit",
+    "test:contracts": "jest contracts --forceExit",
     "test:study-cases": "jest ecommerce.test.js kanban.test.js clinic.test.js --forceExit",
     "test": "jest --forceExit"
   },
