@@ -25,11 +25,3 @@ logging:
         excalibase: DEBUG
   pattern:
     console: "%d{ISO8601} %highlight(%-5level) [%blue(%t)] [%blue(%X{remoteAddr})] %yellow(%C{1}): %msg%n%throwable"
-# GraphQL configuration for testing
-spring.graphql:
-  graphiql:
-    enabled: true
-    path: /graphiql
-  path: /graphql
-  websocket:
-    path: /graphql

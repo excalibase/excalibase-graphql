@@ -2,8 +2,9 @@
 # searching a jar nested inside a jar on every start, which is slow on a small CPU allowance.
 FROM eclipse-temurin:25-jre-alpine AS extract
 WORKDIR /build
-COPY modules/excalibase-graphql-api/target/*.jar app.jar
-RUN java -Djarmode=tools -jar app.jar extract --destination /app
+COPY modules/excalibase-graphql-api/target/*.jar ./
+# target/ can also hold the -javadoc and -sources jars; extract the application jar only.
+RUN rm -f *-javadoc.jar *-sources.jar && mv *.jar app.jar && java -Djarmode=tools -jar app.jar extract --destination /app
 
 FROM eclipse-temurin:25-jre-alpine
 

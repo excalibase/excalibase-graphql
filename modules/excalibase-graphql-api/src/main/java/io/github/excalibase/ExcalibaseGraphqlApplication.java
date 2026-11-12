@@ -5,7 +5,6 @@ import net.ttddyy.observation.boot.autoconfigure.DataSourceObservationAutoConfig
 import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.autoconfigure.data.jdbc.JdbcRepositoriesAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
 import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
 
@@ -14,7 +13,7 @@ import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServic
 @SpringBootApplication(scanBasePackages = {"io.github.excalibase.cdc", "io.github.excalibase.config",
         "io.github.excalibase.controller", "io.github.excalibase.observability", "io.github.excalibase.overload",
         "io.github.excalibase.rest", "io.github.excalibase.schema", "io.github.excalibase.service"},
-        exclude = {DataSourceAutoConfiguration.class, JdbcRepositoriesAutoConfiguration.class,
+        exclude = {DataSourceAutoConfiguration.class,
                 DataSourceObservationAutoConfiguration.class, UserDetailsServiceAutoConfiguration.class})
 @ImportRuntimeHints(ExcalibaseRuntimeHints.class)
 public class ExcalibaseGraphqlApplication {

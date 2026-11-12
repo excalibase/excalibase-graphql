@@ -566,7 +566,7 @@ public class RestApiController {
      */
     private static void requireIdentifier(String name) {
         if (!name.matches(IDENT_REGEX)) {
-            throw new InvalidFunctionNameException(name);
+            throw new InvalidFunctionNameException();
         }
     }
 

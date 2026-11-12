@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -43,7 +46,7 @@ class GracefulStartupTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private org.springframework.context.ApplicationContext context;
+    private ApplicationContext context;
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -55,9 +58,9 @@ class GracefulStartupTest {
     // at startup) must not exist, so there is no second way in.
     @Test
     void noDefaultUserIsCreated() {
-        assertThat(context.getBeanNamesForType(org.springframework.security.core.userdetails.UserDetailsService.class))
+        assertThat(context.getBeanNamesForType(UserDetailsService.class))
                 .isEmpty();
-        assertThat(context.getBeanNamesForType(org.springframework.security.authentication.AuthenticationManager.class))
+        assertThat(context.getBeanNamesForType(AuthenticationManager.class))
                 .isEmpty();
     }
 
