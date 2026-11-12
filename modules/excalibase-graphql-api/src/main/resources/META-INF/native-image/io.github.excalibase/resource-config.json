@@ -27,6 +27,18 @@
       },
       {
         "pattern": "META-INF/native-image/.*"
+      },
+      {
+        "pattern": "org/springframework/jdbc/support/sql-error-codes\\.xml"
+      },
+      {
+        "pattern": "sql-error-codes\\.xml"
+      },
+      {
+        "pattern": "org/postgresql/.*\\.properties"
+      },
+      {
+        "pattern": "com/zaxxer/hikari/.*"
       }
     ]
   }
