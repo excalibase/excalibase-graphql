@@ -56,7 +56,7 @@ app:
     schema-ttl-minutes: 30
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:*}
-    provisioning-url: ${APP_CORS_PROVISIONING_URL:${app.security.rls.policy-url:}}
+    provisioning-url: ${APP_CORS_PROVISIONING_URL:}   # empty: the RLS policy URL
     ttl-ms: 30000
   security:
     jwt-enabled: ${JWT_ENABLED:true}

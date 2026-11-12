@@ -67,17 +67,22 @@ public class AppConfig {
     /** The single service-token source for every outbound call to the control plane. */
     @Singleton
     TokenFileSource provisioningTokenSource(
-            @Value("${app.security.rls.policy-pat-file:${app.security.multi-tenant.provisioning-pat-file:}}") String tokenFilePath,
-            @Value("${app.security.rls.policy-pat:${app.security.multi-tenant.provisioning-pat:}}") String literalToken) {
-        return new TokenFileSource(tokenFilePath, literalToken);
+            @Value("${app.security.rls.policy-pat-file:}") String policyTokenFile,
+            @Value("${app.security.multi-tenant.provisioning-pat-file:}") String tenantTokenFile,
+            @Value("${app.security.rls.policy-pat:}") String policyToken,
+            @Value("${app.security.multi-tenant.provisioning-pat:}") String tenantToken) {
+        return new TokenFileSource(firstNonBlank(policyTokenFile, tenantTokenFile),
+                firstNonBlank(policyToken, tenantToken));
     }
 
     @Singleton
     ProjectCorsConfigurationSource corsConfigurationSource(
             @Value("${app.cors.allowed-origins:*}") String platformOrigins,
-            @Value("${app.cors.provisioning-url:${app.security.rls.policy-url:}}") String provisioningUrl,
+            @Value("${app.cors.provisioning-url:}") String corsProvisioningUrl,
+            @Value("${app.security.rls.policy-url:}") String policyUrl,
             TokenFileSource provisioningTokenSource,
             @Value("${app.cors.ttl-ms:30000}") long ttlMillis) {
+        String provisioningUrl = firstNonBlank(corsProvisioningUrl, policyUrl);
         ProjectCorsProvider provider = null;
         if (provisioningUrl != null && !provisioningUrl.isBlank()) {
             provider = new ProvisioningProjectCorsProvider(provisioningUrl, provisioningTokenSource, ttlMillis);
@@ -102,6 +107,11 @@ public class AppConfig {
         return new SecurityProperties(jwtEnabled,
                 new SecurityProperties.Auth(jwksUrl, hmacSecret, jwksTtlMinutes, blankToNull(issuer), requireAud, audPrefix),
                 new SecurityProperties.MultiTenant(provisioningUrl, provisioningPat, provisioningPatFile));
+    }
+
+    /** A property that falls back to another: written as two lookups, since nested defaults do not resolve empty. */
+    private static String firstNonBlank(String first, String second) {
+        return first != null && !first.isBlank() ? first : (second == null ? "" : second);
     }
 
     private static String blankToNull(String value) {

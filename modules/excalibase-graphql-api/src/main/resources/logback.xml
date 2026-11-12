@@ -1,7 +1,13 @@
 <configuration>
   <!-- ECS JSON by default (parseable by any log collector); LOG_FORMAT=plain for local development -->
   <appender name="ecs" class="ch.qos.logback.core.ConsoleAppender">
-    <encoder class="ch.qos.logback.classic.encoder.JsonEncoder"/>
+    <encoder class="ch.qos.logback.classic.encoder.JsonEncoder">
+      <withSequenceNumber>false</withSequenceNumber>
+      <withNanoseconds>false</withNanoseconds>
+      <withContext>false</withContext>
+      <withFormattedMessage>true</withFormattedMessage>
+      <withArguments>false</withArguments>
+    </encoder>
   </appender>
   <appender name="plain" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>

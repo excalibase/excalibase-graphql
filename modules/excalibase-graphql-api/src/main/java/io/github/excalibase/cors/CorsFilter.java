@@ -1,5 +1,6 @@
 package io.github.excalibase.cors;
 
+import io.micronaut.context.annotation.Replaces;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.order.Ordered;
 import io.micronaut.http.HttpMethod;
@@ -28,6 +29,7 @@ import java.util.Locale;
  * never needs a token, and the per-project origin check covers WebSocket upgrades too.
  */
 @ServerFilter(Filter.MATCH_ALL_PATTERN)
+@Replaces(io.micronaut.http.server.cors.CorsFilter.class)
 public class CorsFilter implements Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(CorsFilter.class);
