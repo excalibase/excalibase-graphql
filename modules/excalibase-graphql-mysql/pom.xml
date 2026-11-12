@@ -24,7 +24,7 @@
             <artifactId>HikariCP</artifactId>
             <scope>test</scope>
         </dependency>
-        <!--Spring Boot-->
+        <!-- Spring JDBC/TX as plain libraries -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-jdbc</artifactId>
