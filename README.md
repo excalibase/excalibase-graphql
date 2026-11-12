@@ -4,7 +4,7 @@
 [![E2E Tests](https://github.com/excalibase/excalibase-graphql/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/excalibase/excalibase-graphql/actions/workflows/e2e.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Java](https://img.shields.io/badge/Java-25-orange.svg)](https://openjdk.java.net/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Micronaut](https://img.shields.io/badge/Micronaut-4.10-brightgreen.svg)](https://micronaut.io)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15+-blue.svg)](https://www.postgresql.org/)
 [![MySQL](https://img.shields.io/badge/MySQL-8.4+-orange.svg)](https://www.mysql.com/)
 [![Docs](https://img.shields.io/badge/docs-excalibase.github.io-brightgreen.svg)](https://excalibase.github.io/excalibase-graphql/)

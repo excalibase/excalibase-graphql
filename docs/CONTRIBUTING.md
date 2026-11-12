@@ -55,7 +55,7 @@ Thank you for your interest in contributing! This project is currently in early 
 
 3. **Run the application:**
    ```bash
-   mvn spring-boot:run -Dspring.profiles.active=development
+   mvn package -DskipTests && java -jar modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar
    ```
 
 ## Code Style and Standards
@@ -283,7 +283,7 @@ modules/
 ├── excalibase-graphql-starter/    # Core: SqlCompiler, QueryBuilder, MutationBuilder, FilterBuilder, interfaces
 ├── excalibase-graphql-postgres/   # PostgresDialect, PostgresSchemaLoader, PostgresMutationCompiler
 ├── excalibase-graphql-mysql/      # MysqlDialect, MysqlSchemaLoader, MysqlMutationCompiler
-└── excalibase-graphql-api/        # GraphqlController, WebSocket, Spring Boot app, config
+└── excalibase-graphql-api/        # GraphqlController, WebSocket, Micronaut app, config
 ```
 
 ### Adding Database Support

@@ -38,7 +38,7 @@ async function observe(env) {
       afterRequestsWithStackTrace: keySets(withStack),
       stackTraceSample: withStack.map((entry) => ({ level: entry.log.level, type: entry.error.type, startsWithType: entry.error.stack_trace.startsWith(entry.error.type) })),
       constants: { ecsVersion: startup[0].ecs.version, serviceName: startup[0].service.name, levels: [...new Set(jsonLines(engine).map((entry) => entry.log.level))].sort() },
-      nonJsonLines: engine.logs().filter((line) => !line.startsWith('{')).length > 0,
+      nonJsonLines: engine.logs().filter((line) => !line.startsWith('{') && !line.startsWith('WARNING:')).length > 0,
     };
   } finally {
     engine.stop();

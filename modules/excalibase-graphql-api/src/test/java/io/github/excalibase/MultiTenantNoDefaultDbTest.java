@@ -1,18 +1,12 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -25,27 +19,23 @@ import java.util.Date;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
 
 /**
  * Integration test: pure multi-tenant mode — NO default spring.datasource.url.
  * App starts with empty schema. Tenant DB comes entirely from vault credentials.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class MultiTenantNoDefaultDbTest {
+class MultiTenantNoDefaultDbTest extends EngineIntegrationTest {
 
   // Tenant database — the ONLY database, no default
-  @Container
-  static PostgreSQLContainer<?> tenantDb = new PostgreSQLContainer<>("postgres:16-alpine")
+  static final PostgreSQLContainer<?> tenantDb = new PostgreSQLContainer<>("postgres:16-alpine")
       .withInitScript("init-tenant-a.sql");
 
   static ECPrivateKey privateKey;
@@ -105,26 +95,25 @@ class MultiTenantNoDefaultDbTest {
     if (mockVault != null) mockVault.stop(0);
   }
 
-  @DynamicPropertySource
-  static void configureProperties(DynamicPropertyRegistry registry) {
+  @Override
+  public Map<String, String> getProperties() {
+    tenantDb.start();
     registerCredentialEndpoint();
 
     // NO spring.datasource.url — pure multi-tenant mode
-    registry.add("spring.datasource.url", () -> "");
-
-    registry.add("app.database-type", () -> "postgres");
-    registry.add("app.max-rows", () -> 30);
-    registry.add("app.security.jwt-enabled", () -> "true");
-    registry.add("app.security.auth.jwks-url", () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
-    registry.add("app.security.multi-tenant.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
-    registry.add("app.tenant-db.sslmode", () -> "disable");
-    registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat");
-    registry.add("app.security.rls.policy-url", () -> "http://localhost:" + mockVaultPort + "/api");
-    registry.add("app.security.rls.policy-pat", () -> "test-pat");
+    Map<String, String> properties = EngineProperties.isolated();
+    properties.put("spring.datasource.url", "");
+    properties.put("app.database-type", "postgres");
+    properties.put("app.max-rows", String.valueOf(30));
+    properties.put("app.security.jwt-enabled", "true");
+    properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockVaultPort + "/.well-known/jwks.json"));
+    properties.put("app.security.multi-tenant.provisioning-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
+    properties.put("app.tenant-db.sslmode", "disable");
+    properties.put("app.security.multi-tenant.provisioning-pat", "test-pat");
+    properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
+    properties.put("app.security.rls.policy-pat", "test-pat");
+    return properties;
   }
-
-  @Autowired
-  private MockMvc mockMvc;
 
   private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -162,13 +151,10 @@ class MultiTenantNoDefaultDbTest {
   @DisplayName("App starts with no default DB — first tenant request introspects and caches schema")
   void firstTenantRequest_buildsSchemaFromVault() throws Exception {
     String jwt = signJwt("acme-corp", "app-a");
-    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ tenantProducts { id name price } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.tenantProducts", hasSize(3)))
-        .andExpect(jsonPath("$.data.tenantProducts[0].name", is("Widget A")));
+    http.post("/" + projectIdOf("app-a") + "/graphql", graphql("{ tenantProducts { id name price } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.tenantProducts", hasSize(3)))
+        .expect(jsonPath("$.data.tenantProducts[0].name", is("Widget A")));
   }
 
   @Test
@@ -176,12 +162,9 @@ class MultiTenantNoDefaultDbTest {
   @DisplayName("Introspection works on tenant schema (no default DB)")
   void tenantIntrospection_returnsSchema() throws Exception {
     String jwt = signJwt("acme-corp", "app-a");
-    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ __schema { queryType { fields { name } } } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.__schema.queryType.fields[*].name", hasItem("tenantProducts")));
+    http.post("/" + projectIdOf("app-a") + "/graphql", graphql("{ __schema { queryType { fields { name } } } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.__schema.queryType.fields[*].name", hasItem("tenantProducts")));
   }
 
   @Test
@@ -189,12 +172,9 @@ class MultiTenantNoDefaultDbTest {
   @DisplayName("Second request uses cached schema — no vault call")
   void secondRequest_usesCachedSchema() throws Exception {
     String jwt = signJwt("acme-corp", "app-a");
-    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ tenantProducts { id name price } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.tenantProducts", hasSize(3)));
+    http.post("/" + projectIdOf("app-a") + "/graphql", graphql("{ tenantProducts { id name price } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.tenantProducts", hasSize(3)));
   }
 
   @Test
@@ -202,12 +182,9 @@ class MultiTenantNoDefaultDbTest {
   @DisplayName("Mutation works on tenant DB (no default DB)")
   void tenantMutation_createProduct() throws Exception {
     String jwt = signJwt("acme-corp", "app-a");
-    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("mutation { createTenantProducts(input: { name: \"New Item\", price: 42.00 }) { id name price } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.createTenantProducts.name", is("New Item")));
+    http.post("/" + projectIdOf("app-a") + "/graphql", graphql("mutation { createTenantProducts(input: { name: \"New Item\", price: 42.00 }) { id name price } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.createTenantProducts.name", is("New Item")));
   }
 
   private static String buildJwks(ECPublicKey key) {

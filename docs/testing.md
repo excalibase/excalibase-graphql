@@ -345,7 +345,7 @@ mvn test jacoco:report
 ### Continuous Integration
 ```bash
 # Run tests in CI environment
-mvn clean test -Dspring.profiles.active=test
+mvn clean test
 ```
 
 ## 📈 Performance Benchmarks
@@ -617,7 +617,7 @@ The project includes comprehensive CI/CD integration with GitHub Actions:
 ```yaml
 # GitHub Actions configuration
 - name: Run Tests
-  run: mvn test -Dspring.profiles.active=test
+  run: mvn test
   
 - name: Generate Coverage Report
   run: mvn jacoco:report

@@ -1,5 +1,8 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -14,18 +17,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -35,6 +27,7 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
@@ -43,27 +36,21 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
 
 /**
  * Over HTTP against real Postgres: every request runs as one role — anon without a token,
  * the token's role, or an allowed role picked with {@code X-Excalibase-Role} — and the
  * permissions that apply are exactly that role's. {@code service} sees everything.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-class RoleResolutionIntegrationTest {
+class RoleResolutionIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "proj-roles";
     private static final String ROLE_HEADER = "X-Excalibase-Role";
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-exposure.sql");
 
     static ECPrivateKey privateKey;
@@ -100,24 +87,23 @@ class RoleResolutionIntegrationTest {
         mockJwks.stop(0);
     }
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("app.security.jwt-enabled", () -> "true");
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.auth.jwks-url",
-                () -> "http://localhost:" + mockJwks.getAddress().getPort() + "/.well-known/jwks.json");
-        registry.add("app.security.rls.policy-url",
-                () -> "http://localhost:" + mockJwks.getAddress().getPort() + "/api");
-        registry.add("app.security.rls.policy-pat", () -> "test-pat");
-        registry.add("app.security.rls.policy-ttl-ms", () -> 0);
+    @Override
+    public Map<String, String> getProperties() {
+        postgres.start();
+        Map<String, String> properties = EngineProperties.isolated();
+        properties.put("spring.datasource.url", postgres.getJdbcUrl());
+        properties.put("spring.datasource.username", postgres.getUsername());
+        properties.put("spring.datasource.password", postgres.getPassword());
+        properties.put("app.database-type", "postgres");
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.project-id", String.valueOf(PROJECT));
+        properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockJwks.getAddress().getPort() + "/.well-known/jwks.json"));
+        properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + mockJwks.getAddress().getPort() + "/api"));
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        properties.put("app.security.rls.policy-ttl-ms", String.valueOf(0));
+        return properties;
     }
 
-    @Autowired
-    private MockMvc mockMvc;
 
     private static void permit(String... entries) {
         PERMISSIONS.set(PermissionDocs.document(PROJECT, VERSION.incrementAndGet(), entries));
@@ -150,40 +136,39 @@ class RoleResolutionIntegrationTest {
             Map.of("role", "user", "allowed_roles", List.of("user", "editor"));
     private static final Map<String, Object> SERVICE = Map.of("role", "service", "scope", "service");
 
-    private ResultActions graphql(Map<String, Object> roleClaims, String requestedRole, String query)
+    private HttpAnswer graphql(Map<String, Object> roleClaims, String requestedRole, String query)
             throws Exception {
-        MockHttpServletRequestBuilder request = post("/" + PROJECT + "/graphql")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(MAPPER.writeValueAsString(Map.of("query", query)));
+        List<String> headers = new ArrayList<>(List.of("Content-Type", "application/json"));
         if (roleClaims != null) {
-            request.header("Authorization", "Bearer " + token(roleClaims));
+            headers.addAll(List.of("Authorization", "Bearer " + token(roleClaims)));
         }
         if (requestedRole != null) {
-            request.header(ROLE_HEADER, requestedRole);
+            headers.addAll(List.of(ROLE_HEADER, requestedRole));
         }
-        return mockMvc.perform(request);
+        return http.post("/" + PROJECT + "/graphql", MAPPER.writeValueAsString(Map.of("query", query)),
+                headers.toArray(String[]::new));
     }
 
     private void assertReadable(Map<String, Object> roleClaims, String requestedRole, String field)
             throws Exception {
         graphql(roleClaims, requestedRole, "{ " + field + " { id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data." + field, hasSize(1)));
+                .expect(status().isOk())
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data." + field, hasSize(1)));
     }
 
     private void assertAbsent(Map<String, Object> roleClaims, String requestedRole, String field)
             throws Exception {
         graphql(roleClaims, requestedRole, "{ " + field + " { id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+                .expect(status().isOk())
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown field")));
     }
 
     @Test
     void noToken_runsAsAnon() throws Exception {
         graphql(null, null, "{ publicOrders { id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.publicOrders", hasSize(2)));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.publicOrders", hasSize(2)));
         assertAbsent(null, null, "publicSecrets");
         assertAbsent(null, null, "publicCustomer");
     }
@@ -198,22 +183,22 @@ class RoleResolutionIntegrationTest {
     @Test
     void roleHeaderOutsideAllowedRoles_isForbidden() throws Exception {
         graphql(USER, "editor", "{ publicCustomer { id } }")
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("role_not_allowed"));
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.errors[0].extensions.code").value("role_not_allowed"));
     }
 
     @Test
     void noTokenWithUserRoleHeader_isForbidden() throws Exception {
         graphql(null, "user", "{ publicSecrets { id } }")
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("role_not_allowed"));
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.errors[0].extensions.code").value("role_not_allowed"));
     }
 
     @Test
     void tokenWithoutRole_isUnauthorized() throws Exception {
         graphql(Map.of(), null, "{ publicOrders { id } }")
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("invalid_role_claim"));
+                .expect(status().isUnauthorized())
+                .expect(jsonPath("$.errors[0].extensions.code").value("invalid_role_claim"));
     }
 
     @Test
@@ -228,7 +213,7 @@ class RoleResolutionIntegrationTest {
         assertReadable(SERVICE, null, "publicSecrets");
         assertReadable(SERVICE, null, "publicCustomer");
         graphql(SERVICE, null, "{ publicOrders { id } }")
-                .andExpect(jsonPath("$.data.publicOrders", hasSize(2)));
+                .expect(jsonPath("$.data.publicOrders", hasSize(2)));
     }
 
     @Test
@@ -241,8 +226,8 @@ class RoleResolutionIntegrationTest {
     @Test
     void serviceRoleWithoutServiceScope_isUnauthorized() throws Exception {
         graphql(Map.of("role", "service"), null, "{ publicSecrets { id } }")
-                .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("invalid_role_claim"));
+                .expect(status().isUnauthorized())
+                .expect(jsonPath("$.errors[0].extensions.code").value("invalid_role_claim"));
     }
 
     /**
@@ -265,27 +250,21 @@ class RoleResolutionIntegrationTest {
         SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), anonKey);
         signed.sign(new ECDSASigner(privateKey));
 
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + signed.serialize())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(MAPPER.writeValueAsString(Map.of("query", "{ publicOrders { id } }"))))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"))
-                .andExpect(jsonPath("$.data").doesNotExist());
+        http.post("/" + PROJECT + "/graphql", MAPPER.writeValueAsString(Map.of("query", "{ publicOrders { id } }")), "Authorization", "Bearer " + signed.serialize(), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"))
+                .expect(jsonPath("$.data").doesNotExist());
     }
 
     @Test
     void rest_followsTheSameRole() throws Exception {
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/secrets").header("Accept-Profile", "public"))
-                .andExpect(status().isNotFound());
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/secrets").header("Accept-Profile", "public")
-                        .header("Authorization", "Bearer " + token(USER)))
-                .andExpect(status().isOk());
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/customer").header("Accept-Profile", "public")
-                        .header("Authorization", "Bearer " + token(SERVICE)))
-                .andExpect(status().isOk());
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/customer").header("Accept-Profile", "public")
-                        .header("Authorization", "Bearer " + token(USER)).header(ROLE_HEADER, "editor"))
-                .andExpect(status().isForbidden());
+        http.get("/" + PROJECT + "/api/v1/secrets", "Accept-Profile", "public")
+                .expect(status().isNotFound());
+        http.get("/" + PROJECT + "/api/v1/secrets", "Accept-Profile", "public", "Authorization", "Bearer " + token(USER))
+                .expect(status().isOk());
+        http.get("/" + PROJECT + "/api/v1/customer", "Accept-Profile", "public", "Authorization", "Bearer " + token(SERVICE))
+                .expect(status().isOk());
+        http.get("/" + PROJECT + "/api/v1/customer", "Accept-Profile", "public", "Authorization", "Bearer " + token(USER), ROLE_HEADER, "editor")
+                .expect(status().isForbidden());
     }
 }
