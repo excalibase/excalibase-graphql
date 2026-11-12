@@ -51,10 +51,9 @@ public class OverloadConfig {
 
         BoundRegistration(ConnectionGate gate, ConnectionBound bound,
                 @Value("${server.tomcat.connection-timeout:20000}") long firstRequestMillis,
-                @Value("${endpoints.all.port:-1}") int managementPort,
-                @Value("${micronaut.server.netty.listeners.metrics.port:-1}") int metricsPort) {
+                @Value("${endpoints.all.port:-1}") int managementPort) {
             this.customizer = new ConnectionBoundCustomizer(gate, bound, firstRequestMillis,
-                    Set.of(managementPort, metricsPort));
+                    Set.of(managementPort));
         }
 
         @Override
