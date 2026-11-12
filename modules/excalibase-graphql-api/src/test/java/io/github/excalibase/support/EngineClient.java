@@ -38,6 +38,11 @@ public final class EngineClient {
         return raw.get(path);
     }
 
+    /** A request whose target and headers are sent exactly as written; {@code headers} alternate name, value. */
+    public HttpAnswer raw(String method, String target, String... headers) {
+        return raw.send(method, target, headers);
+    }
+
     public HttpAnswer delete(String path, String... headers) {
         return send("DELETE", path, null, headers);
     }

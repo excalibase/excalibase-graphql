@@ -260,9 +260,7 @@ public class RestApiController {
      */
     private HttpResponse<Object> rpc(String function, String profile, Map<String, String> allParams,
                                        Map<String, Object> body, HttpRequest<?> request) {
-        if (!function.matches(IDENT_REGEX)) {
-            return Reply.badRequest().body(errorBody(BAD_REQUEST, "Invalid function name"));
-        }
+        requireIdentifier(function);
         var principal = getPrincipal(request);
         String schema = resolveSchema(profile, principal);
         if (schema == null) return notFound();
@@ -306,6 +304,13 @@ public class RestApiController {
             single.set("data", data.isEmpty() ? NullNode.getInstance() : mapper.valueToTree(data.getFirst()));
             return Reply.ok(single);
         });
+    }
+
+    /** An rpc name is spliced into SQL: anything but an identifier is refused, as an unhandled failure. */
+    private static void requireIdentifier(String name) {
+        if (!name.matches(IDENT_REGEX)) {
+            throw new InvalidFunctionNameException();
+        }
     }
 
     /** A {@code limit} or {@code offset}: a non-negative integer, else the request is refused. */
