@@ -13,9 +13,14 @@ class RequestTargetEncodingTest {
     }
 
     @Test
-    void escapesALonePercentSignButKeepsValidEscapes() {
-        assertThat(RequestTargetEncoding.encode("/a?n=100%")).isEqualTo("/a?n=100%25");
-        assertThat(RequestTargetEncoding.encode("/a?n=Br%&m=%41")).isEqualTo("/a?n=Br%25&m=%41");
+    void dropsAQueryParameterWithAMalformedEscapeAsTheServletContainerDid() {
+        assertThat(RequestTargetEncoding.encode("/a?n=100%")).isEqualTo("/a");
+        assertThat(RequestTargetEncoding.encode("/a?n=Br%&m=%41&k=%zz&j=1")).isEqualTo("/a?m=%41&j=1");
+    }
+
+    @Test
+    void escapesALonePercentSignInThePath() {
+        assertThat(RequestTargetEncoding.encode("/a%/b")).isEqualTo("/a%25/b");
     }
 
     @Test

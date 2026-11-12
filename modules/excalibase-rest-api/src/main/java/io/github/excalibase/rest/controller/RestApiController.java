@@ -24,6 +24,7 @@ import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.SecurityConstants;
+import io.github.excalibase.http.Accepts;
 import io.github.excalibase.http.Reply;
 import io.micronaut.context.annotation.Value;
 import io.micronaut.core.annotation.Nullable;
@@ -43,6 +44,7 @@ import io.micronaut.http.annotation.Post;
 import io.micronaut.http.annotation.Produces;
 import io.micronaut.http.annotation.Put;
 import io.micronaut.http.annotation.QueryValue;
+import io.micronaut.http.exceptions.HttpStatusException;
 import io.micronaut.scheduling.TaskExecutors;
 import io.micronaut.scheduling.annotation.ExecuteOn;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -95,6 +97,9 @@ public class RestApiController {
 
     @Get(produces = "application/openapi+json")
     public HttpResponse<Object> openapi(HttpRequest<?> request) {
+        if (!Accepts.includes(request, "application", "openapi+json")) {
+            throw new HttpStatusException(HttpStatus.NOT_ACCEPTABLE, "Only application/openapi+json is produced");
+        }
         var principal = getPrincipal(request);
         var schemaInfo = schemaProvider.resolveSchemaInfo(principal);
         return Reply.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.resolveAccess(principal),
@@ -137,7 +142,10 @@ public class RestApiController {
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, 2, 0, false));
         return executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
             List<?> data = rowsOf(rows.get("body"), responseKeys(ctx, parsed));
-            if (data.size() != 1) return Reply.status(HttpStatus.NOT_ACCEPTABLE).body(errorBody("not_acceptable", "Expected 1 row, got " + data.size()));
+            if (data.size() != 1) {
+                return Reply.status(HttpStatus.NOT_ACCEPTABLE).contentType(SINGULAR_TYPE)
+                        .body(errorBody("not_acceptable", "Expected 1 row, got " + data.size()));
+            }
             return Reply.ok().contentType(SINGULAR_TYPE).body(data.get(0));
         });
     }
@@ -260,9 +268,7 @@ public class RestApiController {
      */
     private HttpResponse<Object> rpc(String function, String profile, Map<String, String> allParams,
                                        Map<String, Object> body, HttpRequest<?> request) {
-        if (!function.matches(IDENT_REGEX)) {
-            return Reply.badRequest().body(errorBody(BAD_REQUEST, "Invalid function name"));
-        }
+        requireIdentifier(function);
         var principal = getPrincipal(request);
         String schema = resolveSchema(profile, principal);
         if (schema == null) return notFound();
@@ -306,6 +312,13 @@ public class RestApiController {
             single.set("data", data.isEmpty() ? NullNode.getInstance() : mapper.valueToTree(data.getFirst()));
             return Reply.ok(single);
         });
+    }
+
+    /** An rpc name is spliced into SQL: anything but an identifier is refused, as an unhandled failure. */
+    private static void requireIdentifier(String name) {
+        if (!name.matches(IDENT_REGEX)) {
+            throw new InvalidFunctionNameException();
+        }
     }
 
     /** A {@code limit} or {@code offset}: a non-negative integer, else the request is refused. */

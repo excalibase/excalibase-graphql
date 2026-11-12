@@ -41,6 +41,21 @@ public final class EngineProperties {
         return properties;
     }
 
+    /** An engine with no database behind it: enough for everything answered before a query runs. */
+    public static Map<String, String> unreachableDatabase(String projectId) {
+        Map<String, String> properties = new HashMap<>();
+        properties.put("spring.datasource.url", "jdbc:postgresql://localhost:59999/nonexistent");
+        properties.put("spring.datasource.username", "fake");
+        properties.put("spring.datasource.password", "fake");
+        properties.put("app.project-id", projectId);
+        properties.put("app.database-type", "postgres");
+        properties.put("app.security.jwt-enabled", "false");
+        properties.put("app.security.insecure-dev-mode", "true");
+        properties.put("micronaut.server.port", "-1");
+        properties.put("endpoints.all.port", "-1");
+        return properties;
+    }
+
     public static Map<String, String> postgres(JdbcDatabaseContainer<?> database, String projectId) {
         return singleDatabase(database, "postgres", projectId);
     }

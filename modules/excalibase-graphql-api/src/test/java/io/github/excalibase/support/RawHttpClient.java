@@ -34,6 +34,22 @@ final class RawHttpClient {
         }
     }
 
+    /** Any method, target and headers ({@code headers} alternate name, value), written exactly as given. */
+    HttpAnswer send(String method, String target, String... headers) {
+        StringBuilder request = new StringBuilder(method + " " + target + " HTTP/1.1\r\nHost: " + base.getHost()
+                + "\r\nConnection: close\r\n");
+        for (int i = 0; i + 1 < headers.length; i += 2) {
+            request.append(headers[i]).append(": ").append(headers[i + 1]).append("\r\n");
+        }
+        try (Socket socket = new Socket(base.getHost(), base.getPort())) {
+            socket.getOutputStream().write(request.append("\r\n").toString().getBytes(StandardCharsets.UTF_8));
+            socket.getOutputStream().flush();
+            return parse(socket.getInputStream().readAllBytes());
+        } catch (IOException failure) {
+            throw new IllegalStateException(method + " " + target + " failed", failure);
+        }
+    }
+
     private static HttpAnswer parse(byte[] response) throws IOException {
         String text = new String(response, StandardCharsets.ISO_8859_1);
         int split = text.indexOf("\r\n\r\n");
