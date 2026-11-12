@@ -16,8 +16,6 @@ import io.micronaut.http.HttpStatus;
 import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.annotation.RequestFilter;
 import io.micronaut.http.annotation.ServerFilter;
-import io.micronaut.scheduling.TaskExecutors;
-import io.micronaut.scheduling.annotation.ExecuteOn;
 import io.opentelemetry.api.trace.Span;
 
 import java.util.Collections;
@@ -53,7 +51,6 @@ public class JwtAuthFilter implements Ordered {
     }
 
     @RequestFilter
-    @ExecuteOn(TaskExecutors.BLOCKING)
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request, MutablePropagatedContext propagated) {
         String pathProjectId = ProjectPath.fromUri(request.getPath());

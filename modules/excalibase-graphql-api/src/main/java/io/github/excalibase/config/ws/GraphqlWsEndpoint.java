@@ -1,6 +1,8 @@
 package io.github.excalibase.config.ws;
 
+import io.micronaut.core.async.publisher.Publishers;
 import io.micronaut.http.HttpRequest;
+import org.reactivestreams.Publisher;
 import io.micronaut.scheduling.TaskExecutors;
 import io.micronaut.scheduling.annotation.ExecuteOn;
 import io.micronaut.websocket.CloseReason;
@@ -23,9 +25,14 @@ public class GraphqlWsEndpoint {
         this.handler = handler;
     }
 
+    /**
+     * Returns a publisher so Micronaut runs this on the event loop, in order with the frames that follow;
+     * a void handler is offloaded and the first message can overtake it.
+     */
     @OnOpen
-    public void onOpen(WebSocketSession session, HttpRequest<?> request) {
+    public Publisher<Void> onOpen(WebSocketSession session, HttpRequest<?> request) {
         handler.afterConnectionEstablished(MicronautWsSession.open(session, attributes(request)));
+        return Publishers.empty();
     }
 
     @OnMessage

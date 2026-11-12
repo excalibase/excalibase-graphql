@@ -9,8 +9,6 @@ import io.micronaut.http.HttpStatus;
 import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.annotation.RequestFilter;
 import io.micronaut.http.annotation.ServerFilter;
-import io.micronaut.scheduling.TaskExecutors;
-import io.micronaut.scheduling.annotation.ExecuteOn;
 import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,7 +48,6 @@ public class KnownProjectFilter implements Ordered {
     }
 
     @RequestFilter
-    @ExecuteOn(TaskExecutors.BLOCKING)
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request) {
         String projectId = ProjectPath.fromUri(request.getPath());

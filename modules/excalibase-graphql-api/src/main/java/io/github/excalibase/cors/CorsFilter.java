@@ -12,8 +12,6 @@ import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.annotation.RequestFilter;
 import io.micronaut.http.annotation.ResponseFilter;
 import io.micronaut.http.annotation.ServerFilter;
-import io.micronaut.scheduling.TaskExecutors;
-import io.micronaut.scheduling.annotation.ExecuteOn;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +47,6 @@ public class CorsFilter implements Ordered {
     }
 
     @RequestFilter
-    @ExecuteOn(TaskExecutors.BLOCKING)
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request) {
         String origin = request.getHeaders().get("Origin");
