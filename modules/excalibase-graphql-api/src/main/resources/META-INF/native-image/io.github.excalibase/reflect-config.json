@@ -12,127 +12,175 @@
     "allPublicMethods": true
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.conf.ConnectionUrl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.conf.ConnectionUrl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.conf.url.SingleConnectionUrl"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.conf.ConnectionUrl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.conf.ConnectionUrl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.conf.url.FailoverConnectionUrl"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.conf.ConnectionUrl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.conf.ConnectionUrl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.conf.url.FailoverDnsSrvConnectionUrl"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.conf.ConnectionUrl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.conf.ConnectionUrl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.conf.url.LoadBalanceConnectionUrl"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.conf.ConnectionUrl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.conf.ConnectionUrl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.conf.url.LoadBalanceDnsSrvConnectionUrl"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.conf.ConnectionUrl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.conf.ConnectionUrl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.conf.url.ReplicationConnectionUrl"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.conf.ConnectionUrl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.conf.ConnectionUrl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.conf.url.ReplicationDnsSrvConnectionUrl"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.conf.ConnectionUrl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.conf.ConnectionUrl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.conf.url.XDevApiConnectionUrl"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.conf.ConnectionUrl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.conf.ConnectionUrl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.conf.url.XDevApiDnsSrvConnectionUrl"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.log.LogFactory" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.log.LogFactory"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.log.Jdk14Logger"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.log.LogFactory" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.log.LogFactory"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.log.NullLogger"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.log.LogFactory" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.log.LogFactory"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.log.Slf4JLogger"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.log.LogFactory" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.log.LogFactory"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.log.StandardLogger"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.exceptions.ExceptionFactory" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.exceptions.ExceptionFactory"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.exceptions.CJCommunicationsException"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.exceptions.ExceptionFactory" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.exceptions.ExceptionFactory"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.exceptions.WrongArgumentException"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.exceptions.ExceptionFactory" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.exceptions.ExceptionFactory"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.exceptions.UnableToConnectException"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.exceptions.ExceptionFactory" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.exceptions.ExceptionFactory"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.exceptions.InvalidConnectionAttributeException"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.jdbc.ConnectionImpl" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.jdbc.ConnectionImpl"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.PerConnectionLRUFactory"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.protocol.ExportControlled" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.protocol.ExportControlled"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.exceptions.RSAException"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.protocol.AbstractSocketConnection" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.protocol.AbstractSocketConnection"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.protocol.NamedPipeSocketFactory"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.protocol.AbstractSocketConnection" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.protocol.AbstractSocketConnection"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.protocol.SocksProxySocketFactory"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.protocol.AbstractSocketConnection" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.protocol.AbstractSocketConnection"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.protocol.StandardSocketFactory"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.jdbc.ha.LoadBalancedConnectionProxy" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.jdbc.ha.LoadBalancedConnectionProxy"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.jdbc.ha.NdbLoadBalanceExceptionChecker"
   },
   {
-    "condition": { "typeReachable": "com.mysql.cj.jdbc.ha.LoadBalancedConnectionProxy" },
+    "condition": {
+      "typeReachable": "com.mysql.cj.jdbc.ha.LoadBalancedConnectionProxy"
+    },
     "allPublicConstructors": true,
     "name": "com.mysql.cj.jdbc.ha.StandardLoadBalanceExceptionChecker"
   },
   {
-    "name": "io.github.excalibase.CDCEvent",
+    "name": "io.github.excalibase.cdc.CDCEvent",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true,
     "allDeclaredMethods": true,
@@ -192,20 +240,20 @@
     "allPublicConstructors": true
   },
   {
-    "name": "io.github.excalibase.NatsCDCService",
+    "name": "io.github.excalibase.cdc.NatsCDCService",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true,
     "allPublicMethods": true,
     "allDeclaredFields": true
   },
   {
-    "name": "io.github.excalibase.SubscriptionService",
+    "name": "io.github.excalibase.cdc.SubscriptionService",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true,
     "allPublicMethods": true
   },
   {
-    "name": "io.github.excalibase.config.GraphQLWebSocketHandler",
+    "name": "io.github.excalibase.config.ws.GraphQLWebSocketHandler",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true,
     "allPublicMethods": true
