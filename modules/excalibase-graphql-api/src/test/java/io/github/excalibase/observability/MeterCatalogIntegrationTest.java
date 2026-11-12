@@ -102,6 +102,12 @@ class MeterCatalogIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("there is no thread ceiling to configure: -1, as with virtual threads before")
+    void noThreadCeiling() {
+        assertThat(text).contains("tomcat_threads_config_max_threads{name=\"http-netty\"} -1.0");
+    }
+
+    @Test
     @DisplayName("no executor meters: the earlier build had none")
     void noExecutorMeters() {
         Set<String> executors = shape.keySet().stream().filter(name -> name.startsWith("executor_")).collect(Collectors.toSet());

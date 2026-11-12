@@ -22,9 +22,16 @@ public final class StartupSettings {
     }
 
     public static Map<String, Object> from(Map<String, String> env) {
+        requireKnownLogFormat(env.get("LOG_FORMAT"));
         Map<String, Object> settings = new HashMap<>(metricsExport(env));
         settings.putAll(loggerLevels(env));
         return settings;
+    }
+
+    private static void requireKnownLogFormat(String format) {
+        if (format != null && !format.isBlank() && !format.strip().equalsIgnoreCase("ecs")) {
+            throw new IllegalArgumentException("Unknown format '" + format.strip() + "' in LOG_FORMAT: ecs is the one log format");
+        }
     }
 
     private static Map<String, Object> metricsExport(Map<String, String> env) {

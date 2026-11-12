@@ -75,4 +75,12 @@ class StartupSettingsTest {
         assertThatThrownBy(() -> StartupSettings.from(Map.of("LOGGING_LEVEL_ROOT", "loud")))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("LOGGING_LEVEL_ROOT");
     }
+
+    @Test
+    @DisplayName("LOG_FORMAT=plain is refused at start, as the earlier build refused it; ecs is the one format")
+    void logFormat() {
+        assertThatThrownBy(() -> StartupSettings.from(Map.of("LOG_FORMAT", "plain")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Unknown format 'plain'");
+        assertThat(StartupSettings.from(Map.of("LOG_FORMAT", "ecs"))).isNotNull();
+    }
 }
