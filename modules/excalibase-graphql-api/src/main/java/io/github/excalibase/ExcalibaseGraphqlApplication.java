@@ -32,7 +32,12 @@ public class ExcalibaseGraphqlApplication {
                     Math.multiplyExact(Runtime.getRuntime().availableProcessors(), perCpu));
         }
         // Exports go only to a configured collector; without one no signal is exported or retried.
-        if (env.getOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "").isBlank()) {
+        String collector = env.getOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip();
+        if (!collector.isEmpty()) {
+            String base = collector.endsWith("/") ? collector.substring(0, collector.length() - 1) : collector;
+            properties.put("micronaut.metrics.export.otlp.enabled", "true");
+            properties.put("micronaut.metrics.export.otlp.url", base + "/v1/metrics");
+        } else {
             properties.put("otel.traces.exporter", "none");
             properties.put("otel.metrics.exporter", "none");
             properties.put("otel.logs.exporter", "none");

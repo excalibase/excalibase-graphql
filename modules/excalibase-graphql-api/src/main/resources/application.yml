@@ -15,6 +15,9 @@ micronaut:
       prometheus:
         enabled: true
         descriptions: false
+      otlp:
+        enabled: false   # on only with OTEL_EXPORTER_OTLP_ENDPOINT (ExcalibaseGraphqlApplication)
+        step: PT30S
 
 endpoints:
   all:
