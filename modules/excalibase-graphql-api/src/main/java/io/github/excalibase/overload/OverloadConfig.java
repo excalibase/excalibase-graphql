@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.binder.MeterBinder;
 import io.netty.channel.ChannelOption;
 import jakarta.inject.Singleton;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.slf4j.Logger;
@@ -54,7 +55,7 @@ public class OverloadConfig {
                 @Value("${endpoints.all.port:-1}") int managementPort,
                 @Value("${micronaut.server.netty.listeners.metrics.port:-1}") int metricsPort) {
             this.customizer = new ConnectionBoundCustomizer(gate, bound, firstRequestMillis,
-                    Set.of(managementPort, metricsPort));
+                    Set.copyOf(List.of(managementPort, metricsPort)));
         }
 
         @Override

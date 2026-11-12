@@ -1,5 +1,8 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -19,20 +22,9 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.util.FileSystemUtils;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.images.builder.Transferable;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -45,42 +37,38 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.Map;
+import java.util.stream.Stream;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
 
 /**
  * One process serving a Postgres project and a MySQL project, each picked by its vault record exactly as
  * provisioning files it: no engine on the Postgres record, {@code engine: mysql} and {@code tls: required}
  * on the MySQL one (ADR 0041), whose server certificate the engine verifies against the record's sslrootcert.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class MultiEngineIntegrationTest {
+class MultiEngineIntegrationTest extends EngineIntegrationTest {
 
   private static final String POSTGRES_PROJECT = "proj_pgshop12345";
   private static final String MYSQL_PROJECT = "proj_myshop12345";
 
-  @Container
-  static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+  static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
       .withInitScript("init-tenant-a.sql");
 
   // The MySQL tenant serves a certificate from the project's CA, which its record files as sslrootcert.
   static final Path pkiDir = createPkiDir();
   static final TestPki pki = generatePki();
 
-  @Container
-  static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4")
+  static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4")
       .withDatabaseName("shop")
       .withInitScript("init-multi-engine-mysql.sql")
       .withCopyToContainer(Transferable.of(pki.serverCertificate), "/tls/server.crt")
@@ -148,8 +136,10 @@ class MultiEngineIntegrationTest {
     });
   }
 
-  @DynamicPropertySource
-  static void configureProperties(DynamicPropertyRegistry registry) {
+  @Override
+  public Map<String, String> getProperties() {
+    postgres.start();
+    mysql.start();
     serve("/api/vault/secrets/projects/" + POSTGRES_PROJECT + "/credentials/excalibase_app",
         "{\"host\":\"" + postgres.getHost() + "\",\"port\":\"" + postgres.getFirstMappedPort()
             + "\",\"database\":\"" + postgres.getDatabaseName() + "\",\"username\":\"" + postgres.getUsername()
@@ -157,39 +147,42 @@ class MultiEngineIntegrationTest {
     serve("/api/vault/secrets/projects/" + MYSQL_PROJECT + "/credentials/excalibase_app", mysqlRecord());
 
     String api = "http://localhost:" + provisioning.getAddress().getPort() + "/api";
-    registry.add("spring.datasource.url", () -> "");
-    registry.add("management.health.db.enabled", () -> "false");
-    registry.add("app.cors.provisioning-url", () -> api);
-    registry.add("app.database-type", () -> "postgres");
-    registry.add("app.security.jwt-enabled", () -> "true");
-    registry.add("app.security.auth.jwks-url",
-        () -> "http://localhost:" + provisioning.getAddress().getPort() + "/.well-known/jwks.json");
-    registry.add("app.security.multi-tenant.provisioning-url", () -> api);
-    registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat");
-    registry.add("app.tenant-db.sslmode", () -> "disable");
-    registry.add("app.security.rls.policy-url", () -> api);
-    registry.add("app.security.rls.policy-pat", () -> "test-pat");
+    Map<String, String> properties = EngineProperties.isolated();
+    properties.put("spring.datasource.url", "");
+    properties.put("management.health.db.enabled", "false");
+    properties.put("app.cors.provisioning-url", String.valueOf(api));
+    properties.put("app.database-type", "postgres");
+    properties.put("app.security.jwt-enabled", "true");
+    properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + provisioning.getAddress().getPort() + "/.well-known/jwks.json"));
+    properties.put("app.security.multi-tenant.provisioning-url", String.valueOf(api));
+    properties.put("app.security.multi-tenant.provisioning-pat", "test-pat");
+    properties.put("app.tenant-db.sslmode", "disable");
+    properties.put("app.security.rls.policy-url", String.valueOf(api));
+    properties.put("app.security.rls.policy-pat", "test-pat");
+    return properties;
+  }
+
+  private static void deleteTree(Path root) throws IOException {
+    try (Stream<Path> paths = Files.walk(root)) {
+      for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+        Files.delete(path);
+      }
+    }
   }
 
   @AfterAll
   static void stopProvisioning() throws IOException {
     provisioning.stop(0);
-    FileSystemUtils.deleteRecursively(pkiDir);
+    deleteTree(pkiDir);
   }
-
-  @Autowired
-  private MockMvc mockMvc;
 
   private static final ObjectMapper mapper = new ObjectMapper();
 
-  private ResultActions graphql(String projectId, Map<String, Object> claims, String query) throws Exception {
-    return mockMvc.perform(post("/" + projectId + "/graphql")
-        .header("Authorization", "Bearer " + token(projectId, claims))
-        .contentType(MediaType.APPLICATION_JSON)
-        .content(mapper.writeValueAsString(Map.of("query", query))));
+  private HttpAnswer graphql(String projectId, Map<String, Object> claims, String query) throws Exception {
+    return http.post("/" + projectId + "/graphql", mapper.writeValueAsString(Map.of("query", query)), "Authorization", "Bearer " + token(projectId, claims), "Content-Type", "application/json");
   }
 
-  private ResultActions service(String query) throws Exception {
+  private HttpAnswer service(String query) throws Exception {
     return graphql(MYSQL_PROJECT, Map.of("role", "service", "scope", "service"), query);
   }
 
@@ -217,13 +210,13 @@ class MultiEngineIntegrationTest {
   @DisplayName("the Postgres project, whose record names no engine, is served from Postgres")
   void postgresProjectAnswers() throws Exception {
     graphql(POSTGRES_PROJECT, Map.of("role", "user"), "{ tenantProducts(orderBy: { id: ASC }) { id name } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.tenantProducts", hasSize(3)))
-        .andExpect(jsonPath("$.data.tenantProducts[0].name", is("Widget A")));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.tenantProducts", hasSize(3)))
+        .expect(jsonPath("$.data.tenantProducts[0].name", is("Widget A")));
     graphql(POSTGRES_PROJECT, Map.of("role", "user"),
         "mutation { createTenantProducts(input: { name: \"Pg new\", price: 1.5 }) { id name } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.createTenantProducts.name", is("Pg new")));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.createTenantProducts.name", is("Pg new")));
   }
 
   @Test
@@ -231,14 +224,14 @@ class MultiEngineIntegrationTest {
   @DisplayName("the MySQL project is served from MySQL: booleans, enums and datetimes as GraphQL clients expect")
   void mysqlProjectAnswersWithMappedTypes() throws Exception {
     service("{ shopGadget(orderBy: { id: ASC }) { id name in_stock size made_at seen_at } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.shopGadget", hasSize(2)))
-        .andExpect(jsonPath("$.data.shopGadget[0].in_stock", is(true)))
-        .andExpect(jsonPath("$.data.shopGadget[1].in_stock", is(false)))
-        .andExpect(jsonPath("$.data.shopGadget[0].size", is("large")))
-        .andExpect(jsonPath("$.data.shopGadget[0].made_at", is("2026-01-02T03:04:05")))
-        .andExpect(jsonPath("$.data.shopGadget[0].seen_at", is("2026-01-02T03:04:05.25+00:00")))
-        .andExpect(jsonPath("$.data.shopGadget[1].made_at").value((Object) null));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.shopGadget", hasSize(2)))
+        .expect(jsonPath("$.data.shopGadget[0].in_stock", is(true)))
+        .expect(jsonPath("$.data.shopGadget[1].in_stock", is(false)))
+        .expect(jsonPath("$.data.shopGadget[0].size", is("large")))
+        .expect(jsonPath("$.data.shopGadget[0].made_at", is("2026-01-02T03:04:05")))
+        .expect(jsonPath("$.data.shopGadget[0].seen_at", is("2026-01-02T03:04:05.25+00:00")))
+        .expect(jsonPath("$.data.shopGadget[1].made_at").value((Object) null));
   }
 
   @Test
@@ -246,12 +239,12 @@ class MultiEngineIntegrationTest {
   @DisplayName("tinyint(1) is a Boolean and an ENUM column a GraphQL enum of its labels")
   void mysqlSchemaTypes() throws Exception {
     service("{ __type(name: \"ShopGadget\") { fields { name type { name kind ofType { name kind } } } } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.__type.fields[?(@.name == 'in_stock')].type.name", contains("Boolean")))
-        .andExpect(jsonPath("$.data.__type.fields[?(@.name == 'size')].type.kind", contains("ENUM")));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.__type.fields[?(@.name == 'in_stock')].type.name", contains("Boolean")))
+        .expect(jsonPath("$.data.__type.fields[?(@.name == 'size')].type.kind", contains("ENUM")));
     service("{ __type(name: \"ShopGadgetSizeEnum\") { kind enumValues { name } } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.__type.enumValues[*].name", contains("small", "large")));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.__type.enumValues[*].name", contains("small", "large")));
   }
 
   @Test
@@ -259,9 +252,9 @@ class MultiEngineIntegrationTest {
   @DisplayName("filters bind booleans and enum labels to MySQL columns")
   void mysqlFiltersOnMappedTypes() throws Exception {
     service("{ shopGadget(where: { in_stock: { eq: false } }) { name } }")
-        .andExpect(jsonPath("$.data.shopGadget[*].name", contains("Cog")));
+        .expect(jsonPath("$.data.shopGadget[*].name", contains("Cog")));
     service("{ shopGadget(where: { size: { eq: large } }) { name } }")
-        .andExpect(jsonPath("$.data.shopGadget[*].name", contains("Sprocket")));
+        .expect(jsonPath("$.data.shopGadget[*].name", contains("Sprocket")));
   }
 
   @Test
@@ -271,13 +264,13 @@ class MultiEngineIntegrationTest {
     service("mutation { createShopGadget(input: { name: \"Gear\", in_stock: false, size: large, "
         + "made_at: \"2026-03-04T05:06:07\", seen_at: \"2026-03-04T05:06:07.5Z\" }) "
         + "{ id name in_stock size made_at seen_at } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.createShopGadget.id", is(3)))
-        .andExpect(jsonPath("$.data.createShopGadget.name", is("Gear")))
-        .andExpect(jsonPath("$.data.createShopGadget.in_stock", is(false)))
-        .andExpect(jsonPath("$.data.createShopGadget.size", is("large")))
-        .andExpect(jsonPath("$.data.createShopGadget.made_at", is("2026-03-04T05:06:07")))
-        .andExpect(jsonPath("$.data.createShopGadget.seen_at", is("2026-03-04T05:06:07.5+00:00")));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.createShopGadget.id", is(3)))
+        .expect(jsonPath("$.data.createShopGadget.name", is("Gear")))
+        .expect(jsonPath("$.data.createShopGadget.in_stock", is(false)))
+        .expect(jsonPath("$.data.createShopGadget.size", is("large")))
+        .expect(jsonPath("$.data.createShopGadget.made_at", is("2026-03-04T05:06:07")))
+        .expect(jsonPath("$.data.createShopGadget.seen_at", is("2026-03-04T05:06:07.5+00:00")));
   }
 
   @Test
@@ -286,8 +279,8 @@ class MultiEngineIntegrationTest {
   void bulkInsertReadsBackSentKeys() throws Exception {
     service("mutation { createManyShopSku(inputs: [{ code: \"B-1\", label: \"b\" }, { code: \"C-1\", label: \"c\" }]) "
         + "{ code label } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.createManyShopSku[*].code", containsInAnyOrder("B-1", "C-1")));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.createManyShopSku[*].code", containsInAnyOrder("B-1", "C-1")));
   }
 
   @Test
@@ -296,9 +289,9 @@ class MultiEngineIntegrationTest {
   void insertReadsBackCompositeKey() throws Exception {
     service("mutation { createShopStock(input: { warehouse: \"east\", code: \"A-1\", qty: 3 }) "
         + "{ warehouse code qty } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.createShopStock.warehouse", is("east")))
-        .andExpect(jsonPath("$.data.createShopStock.qty", is(3)));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.createShopStock.warehouse", is("east")))
+        .expect(jsonPath("$.data.createShopStock.qty", is(3)));
   }
 
   @Test
@@ -307,9 +300,9 @@ class MultiEngineIntegrationTest {
   void failedBulkInsertRollsBackEveryRow() throws Exception {
     service("mutation { createManyShopSku(inputs: [{ code: \"D-1\", label: \"d\" }, { code: \"A-1\", label: \"dup\" }]) "
         + "{ code } }")
-        .andExpect(jsonPath("$.errors").exists());
+        .expect(jsonPath("$.errors").exists());
     service("{ shopSku(where: { code: { eq: \"D-1\" } }) { code } }")
-        .andExpect(jsonPath("$.data.shopSku", hasSize(0)));
+        .expect(jsonPath("$.data.shopSku", hasSize(0)));
   }
 
   @Test
@@ -317,9 +310,9 @@ class MultiEngineIntegrationTest {
   @DisplayName("an update reads back the rows it locked and wrote, by key")
   void updateReadsBackLockedRows() throws Exception {
     service("mutation { updateShopStock(where: { code: { eq: \"A-1\" } }, input: { qty: 9 }) { warehouse qty } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.updateShopStock[*].warehouse", containsInAnyOrder("north", "south", "east")))
-        .andExpect(jsonPath("$.data.updateShopStock[*].qty", contains(9, 9, 9)));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.updateShopStock[*].warehouse", containsInAnyOrder("north", "south", "east")))
+        .expect(jsonPath("$.data.updateShopStock[*].qty", contains(9, 9, 9)));
   }
 
   @Test
@@ -327,9 +320,9 @@ class MultiEngineIntegrationTest {
   @DisplayName("an update that changes the key reads the row back under its new key")
   void updateOfTheKeyReadsBackTheNewKey() throws Exception {
     service("mutation { updateShopSku(where: { code: { eq: \"B-1\" } }, input: { code: \"B-2\" }) { code label } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.updateShopSku[*].code", contains("B-2")))
-        .andExpect(jsonPath("$.data.updateShopSku[*].label", contains("b")));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.updateShopSku[*].code", contains("B-2")))
+        .expect(jsonPath("$.data.updateShopSku[*].label", contains("b")));
   }
 
   @Test
@@ -337,8 +330,8 @@ class MultiEngineIntegrationTest {
   @DisplayName("an update that matches nothing answers an empty list")
   void updateOfNothingAnswersEmpty() throws Exception {
     service("mutation { updateShopSku(where: { code: { eq: \"none\" } }, input: { label: \"x\" }) { code } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.updateShopSku", hasSize(0)));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.updateShopSku", hasSize(0)));
   }
 
   @Test
@@ -346,9 +339,9 @@ class MultiEngineIntegrationTest {
   @DisplayName("a MySQL project serves a role under its permissions: a table it holds none on does not exist for it")
   void mysqlProjectServesARoleOnlyWhatItsPermissionsGrant() throws Exception {
     graphql(MYSQL_PROJECT, Map.of("role", "user"), "{ shopGadget { id } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data").doesNotExist())
-        .andExpect(jsonPath("$.errors[0].message", containsString("shopGadget")));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data").doesNotExist())
+        .expect(jsonPath("$.errors[0].message", containsString("shopGadget")));
   }
 
   @Test
@@ -356,7 +349,7 @@ class MultiEngineIntegrationTest {
   @DisplayName("the Postgres project still answers after the MySQL project was served")
   void postgresProjectStillAnswers() throws Exception {
     graphql(POSTGRES_PROJECT, Map.of("role", "user"), "{ tenantProducts { id } }")
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.tenantProducts", hasSize(4)));
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.tenantProducts", hasSize(4)));
   }
 }
