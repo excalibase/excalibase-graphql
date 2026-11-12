@@ -40,6 +40,7 @@ import io.micronaut.http.annotation.Header;
 import io.micronaut.http.annotation.Patch;
 import io.micronaut.http.annotation.PathVariable;
 import io.micronaut.http.annotation.Post;
+import io.micronaut.http.annotation.Produces;
 import io.micronaut.http.annotation.Put;
 import io.micronaut.http.annotation.QueryValue;
 import io.micronaut.scheduling.TaskExecutors;
@@ -58,6 +59,7 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 // so RLS always has a project to enforce against — even for anonymous callers.
 // JwtAuthFilter reads the projectId from the path; controller methods don't bind it.
 @Controller("/{projectId}/api/v1")
+@Produces({MediaType.APPLICATION_JSON, "text/csv", "application/vnd.pgrst.object+json", MediaType.ALL})
 @ExecuteOn(TaskExecutors.BLOCKING)
 public class RestApiController {
 
@@ -96,7 +98,7 @@ public class RestApiController {
         var principal = getPrincipal(request);
         var schemaInfo = schemaProvider.resolveSchemaInfo(principal);
         return Reply.ok(OpenApiGenerator.generate(schemaInfo, schemaProvider.resolveAccess(principal),
-                schemaProvider.resolveDefaultSchema(principal)));
+                schemaProvider.resolveDefaultSchema(principal))).contentType(MediaType.of("application/openapi+json"));
     }
 
     @Get("/{table}")

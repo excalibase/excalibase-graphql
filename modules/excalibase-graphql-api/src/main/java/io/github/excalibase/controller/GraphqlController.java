@@ -32,7 +32,9 @@ import io.micronaut.http.HttpRequest;
 import io.micronaut.http.annotation.Body;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.PathVariable;
+import io.micronaut.http.MediaType;
 import io.micronaut.http.annotation.Post;
+import io.micronaut.http.annotation.Produces;
 import io.micronaut.scheduling.TaskExecutors;
 import io.micronaut.scheduling.annotation.ExecuteOn;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -50,6 +52,7 @@ import java.util.Optional;
  * and query execution to {@link QueryExecutionService}.
  */
 @Controller
+@Produces({MediaType.APPLICATION_JSON, MediaType.ALL})
 @ExecuteOn(TaskExecutors.BLOCKING)
 public class GraphqlController {
 
