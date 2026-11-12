@@ -17,9 +17,11 @@ public final class EngineClient {
 
     private final HttpClient client = HttpClient.newHttpClient();
     private final URI base;
+    private final RawHttpClient raw;
 
     public EngineClient(URI base) {
         this.base = base;
+        this.raw = new RawHttpClient(base);
     }
 
     public URI base() {
@@ -28,6 +30,11 @@ public final class EngineClient {
 
     public HttpAnswer get(String path, String... headers) {
         return send("GET", path, null, headers);
+    }
+
+    /** A GET whose target is sent exactly as written, braces, quotes and a lone percent sign included. */
+    public HttpAnswer getUnencoded(String path) {
+        return raw.get(path);
     }
 
     public HttpAnswer delete(String path, String... headers) {

@@ -5,9 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
+import io.github.excalibase.support.EngineIntegrationTest;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -17,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
  * Walking a connection page by page returns every row exactly once, in the requested order, forwards
@@ -25,7 +22,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * and NULL sort values. Cursors are keyset positions (sort key and primary key), and {@code endCursor} is
  * the last edge returned. The same contract runs on Postgres and MySQL.
  */
-abstract class ConnectionPagingContract {
+abstract class ConnectionPagingContract extends EngineIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -34,9 +31,6 @@ abstract class ConnectionPagingContract {
 
     private static final List<Row> ROWS = List.of(new Row(1, 10, "x"), new Row(2, 5, null), new Row(3, 10, "y"),
             new Row(4, 7.5, "x"), new Row(5, 5, null), new Row(6, 10, null), new Row(7, 7.5, "y"));
-
-    @Autowired
-    private MockMvc mockMvc;
 
     /** The connection field of the fixture's products table. */
     abstract String connection();
@@ -88,19 +82,15 @@ abstract class ConnectionPagingContract {
 
     @Test
     void aCursorThatIsNotOne_isRefusedWithAMessage() throws Exception {
-        String body = mockMvc.perform(post("/test-proj/graphql").contentType(MediaType.APPLICATION_JSON)
-                        .content(MAPPER.writeValueAsString(Map.of("query",
-                                "{ " + connection() + "(first: 2, after: \"%%%\") { edges { cursor } } }"))))
-                .andReturn().getResponse().getContentAsString();
+        String body = http.graphql("/test-proj/graphql",
+                "{ " + connection() + "(first: 2, after: \"%%%\") { edges { cursor } } }").body();
         assertThat(MAPPER.readTree(body).path("errors").get(0).path("message").asText()).contains("cursor");
     }
 
     private JsonNode page(String orderBy, String args) throws Exception {
         String query = "{ " + connection() + "(" + args + (orderBy.isEmpty() ? "" : ", orderBy: " + orderBy) + ") {"
                 + " edges { cursor node { id } } pageInfo { hasNextPage hasPreviousPage startCursor endCursor } } }";
-        String body = mockMvc.perform(post("/test-proj/graphql").contentType(MediaType.APPLICATION_JSON)
-                        .content(MAPPER.writeValueAsString(Map.of("query", query))))
-                .andReturn().getResponse().getContentAsString();
+        String body = http.graphql("/test-proj/graphql", query).body();
         JsonNode response = MAPPER.readTree(body);
         assertThat(response.path("errors").isMissingNode()).as(body).isTrue();
         return response.path("data").path(connection());

@@ -4,43 +4,36 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.HttpAnswer;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
  * PostgREST's filter and paging semantics, held by the REST API on every database it serves, and the
  * GraphQL text filters that mean the same. Fixture: {@code goods(id, sku unique, name, cost nullable, kind enum)}
  * with five rows, two of them without a cost and two whose names hold {@code %} and {@code _}.
  */
-abstract class RestFilterSemanticsContract {
+abstract class RestFilterSemanticsContract extends EngineIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String REST = "/test-proj/api/v1/";
 
-    @Autowired
-    private MockMvc mockMvc;
-
     /** The GraphQL query field of the goods table. */
     abstract String goodsField();
 
-    private MvcResult call(String path) throws Exception {
-        return mockMvc.perform(get(REST + path)).andReturn();
+    private HttpAnswer call(String path) {
+        return http.getUnencoded(REST + path);
     }
 
     private List<String> skus(String query) throws Exception {
-        MvcResult result = call("goods?select=sku&order=sku.asc&" + query);
-        assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString()).isEqualTo(200);
-        return skusOf(MAPPER.readTree(result.getResponse().getContentAsString()).get("data"));
+        HttpAnswer answer = call("goods?select=sku&order=sku.asc&" + query);
+        assertThat(answer.status()).as(answer.body()).isEqualTo(200);
+        return skusOf(MAPPER.readTree(answer.body()).get("data"));
     }
 
     private static List<String> skusOf(JsonNode rows) {
@@ -50,9 +43,9 @@ abstract class RestFilterSemanticsContract {
     }
 
     private void assertBadRequest(String path, String... notLeaked) throws Exception {
-        MvcResult result = call(path);
-        String body = result.getResponse().getContentAsString();
-        assertThat(result.getResponse().getStatus()).as(body).isEqualTo(400);
+        HttpAnswer answer = call(path);
+        String body = answer.body();
+        assertThat(answer.status()).as(body).isEqualTo(400);
         for (String leaked : notLeaked) {
             assertThat(body).doesNotContain(leaked);
         }
@@ -60,9 +53,7 @@ abstract class RestFilterSemanticsContract {
 
     private List<String> graphqlSkus(String where) throws Exception {
         String query = "{ " + goodsField() + "(orderBy: { sku: ASC }, where: { " + where + " }) { sku } }";
-        MvcResult result = mockMvc.perform(post("/test-proj/graphql").contentType(MediaType.APPLICATION_JSON)
-                .content(MAPPER.writeValueAsString(Map.of("query", query)))).andReturn();
-        JsonNode body = MAPPER.readTree(result.getResponse().getContentAsString());
+        JsonNode body = MAPPER.readTree(http.graphql("/test-proj/graphql", query).body());
         assertThat(body.get("errors")).as(body.toString()).isNull();
         return skusOf(body.get("data").get(goodsField()));
     }
@@ -143,14 +134,13 @@ abstract class RestFilterSemanticsContract {
     @Test
     @DisplayName("on_conflict merges on the named unique column instead of the primary key")
     void onConflict_mergesOnTheNamedColumn() throws Exception {
-        MvcResult result = mockMvc.perform(post(REST + "goods?on_conflict=sku")
-                .header("Prefer", "resolution=merge-duplicates,return=representation")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"sku\":\"E-5\",\"name\":\"Cola Zero\",\"cost\":2.5,\"kind\":\"drink\"}")).andReturn();
+        HttpAnswer result = http.post(REST + "goods?on_conflict=sku",
+                "{\"sku\":\"E-5\",\"name\":\"Cola Zero\",\"cost\":2.5,\"kind\":\"drink\"}",
+                "Prefer", "resolution=merge-duplicates,return=representation", "Content-Type", "application/json");
 
-        assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString()).isLessThan(300);
-        MvcResult read = call("goods?select=sku,name&sku=eq.E-5");
-        JsonNode rows = MAPPER.readTree(read.getResponse().getContentAsString()).get("data");
+        assertThat(result.status()).as(result.body()).isLessThan(300);
+        HttpAnswer read = call("goods?select=sku,name&sku=eq.E-5");
+        JsonNode rows = MAPPER.readTree(read.body()).get("data");
         assertThat(rows).hasSize(1);
         assertThat(rows.get(0).get("name").asText()).isEqualTo("Cola Zero");
         assertThat(skus("")).hasSize(5);
