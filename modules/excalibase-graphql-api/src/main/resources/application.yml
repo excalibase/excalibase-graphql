@@ -1,6 +1,9 @@
 micronaut:
   application:
     name: Excalibase graphql
+  codec:
+    json:
+      additional-types: application/vnd.spring-boot.actuator.v3+json   # the media type actuator answers carry
   server:
     port: ${SERVER_PORT:10000}
     max-request-size: 10MB
@@ -21,13 +24,23 @@ micronaut:
 
 endpoints:
   all:
+    enabled: false   # Micronaut's own endpoints (beans, routes, env, ...) are never served; observability.actuator serves the exposed ones
     path: /actuator
     port: ${MANAGEMENT_SERVER_PORT:8081}   # actuator (health probes) on its own port; never expose it publicly
-    sensitive: false
+
+# Same property names as the engine's earlier build read
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: false
   health:
-    details-visible: NEVER
-  prometheus:
-    sensitive: false
+    db:
+      enabled: true
 
 jackson:
   serialization-inclusion: non_null
