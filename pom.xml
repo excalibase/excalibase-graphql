@@ -331,9 +331,9 @@
                 <version>0.8.13</version>
                 <configuration>
                     <excludes>
-                        <!-- Spring Boot main class -->
+                        <!-- application main class -->
                         <exclude>**/ExcalibaseGraphqlApplication*</exclude>
-                        <!-- Spring / framework configuration (includes ExcalibaseRuntimeHints) -->
+                        <!-- framework configuration (includes ExcalibaseRuntimeHints) -->
                         <exclude>**/config/**</exclude>
                         <!-- Data models / POJOs -->
                         <exclude>**/model/**</exclude>

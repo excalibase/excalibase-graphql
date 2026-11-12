@@ -1,88 +1,70 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
 import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static io.github.excalibase.support.Expect.status;
 
 /**
  * REST and GraphQL on the same MySQL fixtures answer the same rows: every REST read is checked against the
  * GraphQL query that means the same, and every REST write against what GraphQL reads afterwards.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class MysqlRestParityTest {
+class MysqlRestParityTest extends EngineIntegrationTest {
 
-    @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withInitScript("init-mysql.sql");
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withInitScript("init-mysql.sql");
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", mysql::getJdbcUrl);
-        registry.add("spring.datasource.username", mysql::getUsername);
-        registry.add("spring.datasource.password", mysql::getPassword);
-        registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
-        registry.add("app.project-id", () -> "test-proj");
-        registry.add("app.security.jwt-enabled", () -> "false");
-        registry.add("app.security.insecure-dev-mode", () -> "true");
-        registry.add("app.max-rows", () -> 30);
-        registry.add("app.database-type", () -> "mysql");
+    @Override
+    public Map<String, String> getProperties() {
+        mysql.start();
+        Map<String, String> properties = EngineProperties.isolated();
+        properties.put("spring.datasource.url", mysql.getJdbcUrl());
+        properties.put("spring.datasource.username", mysql.getUsername());
+        properties.put("spring.datasource.password", mysql.getPassword());
+        properties.put("spring.datasource.driver-class-name", "com.mysql.cj.jdbc.Driver");
+        properties.put("app.project-id", "test-proj");
+        properties.put("app.security.jwt-enabled", "false");
+        properties.put("app.security.insecure-dev-mode", "true");
+        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.database-type", "mysql");
+        return properties;
     }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String REST = "/test-proj/api/v1/";
     private static final String CUSTOMER_FIELDS = "customer_id first_name last_name email";
 
-    @Autowired
-    private MockMvc mockMvc;
-
     private JsonNode rest(String path) throws Exception {
-        MvcResult result = mockMvc.perform(get(REST + path)).andReturn();
-        assertEquals(200, result.getResponse().getStatus(), result.getResponse().getContentAsString());
-        return MAPPER.readTree(result.getResponse().getContentAsString()).get("data");
+        HttpAnswer result = http.get(REST + path);
+        assertEquals(200, result.status(), result.body());
+        return MAPPER.readTree(result.body()).get("data");
     }
 
     private JsonNode graphql(String query, String field) throws Exception {
-        MvcResult result = mockMvc.perform(post("/test-proj/graphql").contentType(MediaType.APPLICATION_JSON)
-                .content(MAPPER.writeValueAsString(Map.of("query", query)))).andReturn();
-        JsonNode body = MAPPER.readTree(result.getResponse().getContentAsString());
+        HttpAnswer result = http.post("/test-proj/graphql", MAPPER.writeValueAsString(Map.of("query", query)), "Content-Type", "application/json");
+        JsonNode body = MAPPER.readTree(result.body());
         assertNull(body.get("errors"), body.toString());
         return body.get("data").get(field);
     }
 
     private JsonNode write(String method, String path, Object body, String prefer) throws Exception {
-        var request = switch (method) {
-            case "POST" -> post(REST + path);
-            case "PATCH" -> patch(REST + path);
-            default -> delete(REST + path);
-        };
-        request.header("Prefer", prefer).contentType(MediaType.APPLICATION_JSON);
-        if (body != null) request.content(MAPPER.writeValueAsString(body));
-        MvcResult result = mockMvc.perform(request).andReturn();
-        assertTrue(result.getResponse().getStatus() < 300, result.getResponse().getContentAsString());
-        return MAPPER.readTree(result.getResponse().getContentAsString()).get("data");
+        String payload = body == null ? null : MAPPER.writeValueAsString(body);
+        HttpAnswer result = http.send(method, REST + path, payload, "Prefer", prefer, "Content-Type", "application/json");
+        assertTrue(result.status() < 300, result.body());
+        return MAPPER.readTree(result.body()).get("data");
     }
 
     /** The same JSON, numbers compared by value (100.5 and 100.50 are one amount). */
@@ -157,13 +139,12 @@ class MysqlRestParityTest {
     @Test
     @Order(4)
     void countsMatchTheAggregate() throws Exception {
-        MvcResult result = mockMvc.perform(get(REST + "customer?select=customer_id&active=eq.true&limit=1")
-                .header("Prefer", "count=exact")).andReturn();
-        JsonNode body = MAPPER.readTree(result.getResponse().getContentAsString());
+        HttpAnswer result = http.get(REST + "customer?select=customer_id&active=eq.true&limit=1", "Prefer", "count=exact");
+        JsonNode body = MAPPER.readTree(result.body());
         JsonNode aggregate = graphql("{ testCustomerAggregate(where: { active: { eq: true } }) { count } }",
                 "testCustomerAggregate");
         assertEquals(aggregate.get("count").asLong(), body.get("pagination").get("total").asLong());
-        assertTrue(result.getResponse().getHeader("Content-Range").endsWith("/" + aggregate.get("count").asLong()));
+        assertTrue(result.header("Content-Range").endsWith("/" + aggregate.get("count").asLong()));
     }
 
     @Test
@@ -223,13 +204,10 @@ class MysqlRestParityTest {
     @Test
     @Order(14)
     void upsertCollidingOnAnotherUniqueKeyIsAConflictLikePostgres() throws Exception {
-        MvcResult result = mockMvc.perform(post(REST + "member").contentType(MediaType.APPLICATION_JSON)
-                .header("Prefer", "return=representation, resolution=merge-duplicates")
-                .content(MAPPER.writeValueAsString(Map.of("id", 2, "email", "a@example.com", "name", "Stolen"))))
-                .andReturn();
-        assertEquals(409, result.getResponse().getStatus(), result.getResponse().getContentAsString());
+        HttpAnswer result = http.post(REST + "member", MAPPER.writeValueAsString(Map.of("id", 2, "email", "a@example.com", "name", "Stolen")), "Content-Type", "application/json", "Prefer", "return=representation, resolution=merge-duplicates");
+        assertEquals(409, result.status(), result.body());
         assertEquals("unique_violation",
-                MAPPER.readTree(result.getResponse().getContentAsString()).get("code").asText());
+                MAPPER.readTree(result.body()).get("code").asText());
         assertParity("member?select=id,email,name&order=id.asc",
                 "{ testMember(orderBy: { id: ASC }) { id email name } }", "testMember");
         assertEquals("Ann", rest("member?select=name&id=eq.1").get(0).get("name").asText());
@@ -250,9 +228,9 @@ class MysqlRestParityTest {
     void refusesAnUnknownFilterColumnInsteadOfReturningEveryRow() throws Exception {
         for (String path : new String[] {REST + "customer?frist_name=eq.Alice",
                 REST + "customer?or=(customer_id.eq.1,frist_name.eq.Alice)"}) {
-            MvcResult result = mockMvc.perform(get(path)).andReturn();
-            assertEquals(400, result.getResponse().getStatus(), path);
-            assertTrue(result.getResponse().getContentAsString().contains("frist_name"), result.getResponse().getContentAsString());
+            HttpAnswer result = http.get(path);
+            assertEquals(400, result.status(), path);
+            assertTrue(result.body().contains("frist_name"), result.body());
         }
     }
 
@@ -261,9 +239,9 @@ class MysqlRestParityTest {
     void refusesWhatMysqlCannotDo() throws Exception {
         for (String path : new String[] {REST + "customer?email=wfts.alice", REST + "customer?email=sl.x",
                 REST + "rpc/anything"}) {
-            MvcResult result = mockMvc.perform(get(path)).andReturn();
-            assertEquals(400, result.getResponse().getStatus(), path);
-            assertTrue(result.getResponse().getContentAsString().contains("MySQL"), result.getResponse().getContentAsString());
+            HttpAnswer result = http.get(path);
+            assertEquals(400, result.status(), path);
+            assertTrue(result.body().contains("MySQL"), result.body());
         }
     }
 }

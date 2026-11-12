@@ -68,7 +68,7 @@ describe('traces exported over OTLP to the collector', () => {
     await request(stack.app, `/${stack.project}/api/v1/customer?first_name=cs.{A}`, { headers: { ...service(), ...PROFILE, traceparent: header } });
     const container = process.env.CONTRACT_ENGINE_CONTAINER || 'excalibase-contracts-engine-1';
     const line = await waitUntil(() => execFileSync('docker', ['logs', container], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
-      .split('\n').filter((entry) => entry.startsWith('{')).map((entry) => JSON.parse(entry)).find((entry) => entry.traceId === traceId), { label: 'log line with the trace id' });
+      .split('\n').filter((entry) => entry.startsWith('{')).map((entry) => JSON.parse(entry)).find((entry) => entry.traceId === traceId && entry.message === 'rest_request_failed'), { label: 'rest_request_failed line with the trace id' });
     expect(line.spanId).toMatch(/^[0-9a-f]{16}$/);
     expect(line.tenant).toBe(stack.project);
   });

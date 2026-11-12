@@ -1,18 +1,12 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -33,34 +27,28 @@ import ch.qos.logback.core.read.ListAppender;
 import org.slf4j.LoggerFactory;
 
 import static org.hamcrest.Matchers.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
 
 /**
  * Integration test: Multi-tenant datasource routing via JWT claims + vault credentials.
  * Two separate Postgres containers simulate two tenants (tenant-a, tenant-b).
  * Mock vault serves credentials for each tenant.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class MultiTenantIntegrationTest {
+class MultiTenantIntegrationTest extends EngineIntegrationTest {
 
   // Tenant A's database (separate container)
-  @Container
-  static PostgreSQLContainer<?> tenantADb = new PostgreSQLContainer<>("postgres:16-alpine")
+  static final PostgreSQLContainer<?> tenantADb = new PostgreSQLContainer<>("postgres:16-alpine")
       .withInitScript("init-tenant-a.sql");
 
   // Tenant B's database (different schema — items instead of products)
-  @Container
-  static PostgreSQLContainer<?> tenantBDb = new PostgreSQLContainer<>("postgres:16-alpine")
+  static final PostgreSQLContainer<?> tenantBDb = new PostgreSQLContainer<>("postgres:16-alpine")
       .withInitScript("init-tenant-b.sql");
 
   static ECPrivateKey privateKey;
@@ -166,29 +154,29 @@ class MultiTenantIntegrationTest {
     if (mockVault != null) mockVault.stop(0);
   }
 
-  @DynamicPropertySource
-  static void configureProperties(DynamicPropertyRegistry registry) {
+  @Override
+  public Map<String, String> getProperties() {
+    tenantADb.start();
+    tenantBDb.start();
     // Register credential endpoints now that containers have ports
     registerCredentialEndpoints();
 
     // Multi-tenant mode has no default database: every project is served from its own.
-    registry.add("spring.datasource.url", () -> "");
-    registry.add("management.health.db.enabled", () -> "false");
-    registry.add("app.cors.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
-
-    registry.add("app.database-type", () -> "postgres");
-    registry.add("app.max-rows", () -> 30);
-    registry.add("app.security.jwt-enabled", () -> "true");
-    registry.add("app.security.auth.jwks-url", () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
-    registry.add("app.security.multi-tenant.provisioning-url", () -> "http://localhost:" + mockVaultPort + "/api");
-    registry.add("app.tenant-db.sslmode", () -> "disable");
-    registry.add("app.security.multi-tenant.provisioning-pat", () -> "test-pat-token");
-    registry.add("app.security.rls.policy-url", () -> "http://localhost:" + mockVaultPort + "/api");
-    registry.add("app.security.rls.policy-pat", () -> "test-pat-token");
+    Map<String, String> properties = EngineProperties.isolated();
+    properties.put("spring.datasource.url", "");
+    properties.put("management.health.db.enabled", "false");
+    properties.put("app.cors.provisioning-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
+    properties.put("app.database-type", "postgres");
+    properties.put("app.max-rows", String.valueOf(30));
+    properties.put("app.security.jwt-enabled", "true");
+    properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockVaultPort + "/.well-known/jwks.json"));
+    properties.put("app.security.multi-tenant.provisioning-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
+    properties.put("app.tenant-db.sslmode", "disable");
+    properties.put("app.security.multi-tenant.provisioning-pat", "test-pat-token");
+    properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
+    properties.put("app.security.rls.policy-pat", "test-pat-token");
+    return properties;
   }
-
-  @Autowired
-  private MockMvc mockMvc;
 
   private static final ObjectMapper mapper = new ObjectMapper();
 
@@ -227,24 +215,20 @@ class MultiTenantIntegrationTest {
   @Order(1)
   @DisplayName("A path project the vault does not know → 404, never the default datasource")
   void unknownProject_isNotServedFromTheDefaultDatasource() throws Exception {
-    mockMvc.perform(post("/test-proj/graphql")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ tenantProducts { id name price } }")))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.errors[0].extensions.code", is("project_not_found")));
-    mockMvc.perform(get("/test-proj/api/v1/products").header("Accept-Profile", "tenant"))
-        .andExpect(status().isNotFound());
+    http.post("/test-proj/graphql", graphql("{ tenantProducts { id name price } }"), "Content-Type", "application/json")
+        .expect(status().isNotFound())
+        .expect(jsonPath("$.errors[0].extensions.code", is("project_not_found")));
+    http.get("/test-proj/api/v1/products", "Accept-Profile", "tenant")
+        .expect(status().isNotFound());
   }
 
   @Test
   @Order(2)
   @DisplayName("An anonymous caller on a real project is served that project's own database")
   void anonymousCaller_routesToTheProjectDatabase() throws Exception {
-    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ tenantProducts { id name price } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.tenantProducts", hasSize(3)));
+    http.post("/" + projectIdOf("app-a") + "/graphql", graphql("{ tenantProducts { id name price } }"), "Content-Type", "application/json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.tenantProducts", hasSize(3)));
   }
 
   @Test
@@ -259,11 +243,8 @@ class MultiTenantIntegrationTest {
       // a housekeeper thread of some other pool warning in the same window must not fail this test
       LoggerFactory.getLogger("com.zaxxer.hikari.pool.PoolBase").warn("unrelated pool housekeeping warning");
       for (int i = 0; i < 10; i++) {
-        mockMvc.perform(post("/" + GHOST_PROJECT + "/graphql")
-                .header("Origin", "https://app.example.com")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(graphql("{ tenantProducts { id } }")))
-            .andExpect(status().isNotFound());
+        http.post("/" + GHOST_PROJECT + "/graphql", graphql("{ tenantProducts { id } }"), "Origin", "https://app.example.com", "Content-Type", "application/json")
+            .expect(status().isNotFound());
       }
     } finally {
       root.detachAppender(appender);
@@ -284,13 +265,10 @@ class MultiTenantIntegrationTest {
   @DisplayName("JWT with tenant A → routes to tenant A database (products table)")
   void jwtTenantA_routesToTenantADatabase() throws Exception {
     String jwt = signJwt("acme-corp", "app-a", 1);
-    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ tenantProducts { id name price } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.tenantProducts", hasSize(3)))
-        .andExpect(jsonPath("$.data.tenantProducts[0].name", is("Widget A")));
+    http.post("/" + projectIdOf("app-a") + "/graphql", graphql("{ tenantProducts { id name price } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.tenantProducts", hasSize(3)))
+        .expect(jsonPath("$.data.tenantProducts[0].name", is("Widget A")));
   }
 
   @Test
@@ -298,13 +276,10 @@ class MultiTenantIntegrationTest {
   @DisplayName("JWT with tenant B → routes to tenant B database (items table, not products)")
   void jwtTenantB_routesToTenantBDatabase() throws Exception {
     String jwt = signJwt("beta-inc", "app-b", 1);
-    mockMvc.perform(post("/" + projectIdOf("app-b") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ tenantItems { id title quantity } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.tenantItems", hasSize(2)))
-        .andExpect(jsonPath("$.data.tenantItems[0].title", is("Item X")));
+    http.post("/" + projectIdOf("app-b") + "/graphql", graphql("{ tenantItems { id title quantity } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.tenantItems", hasSize(2)))
+        .expect(jsonPath("$.data.tenantItems[0].title", is("Item X")));
   }
 
   @Test
@@ -312,12 +287,9 @@ class MultiTenantIntegrationTest {
   @DisplayName("Tenant B does NOT have products table (different schema)")
   void jwtTenantB_noProductsTable() throws Exception {
     String jwt = signJwt("beta-inc", "app-b", 1);
-    mockMvc.perform(post("/" + projectIdOf("app-b") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ tenantProducts { id name } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.errors").exists());
+    http.post("/" + projectIdOf("app-b") + "/graphql", graphql("{ tenantProducts { id name } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.errors").exists());
   }
 
   // ─── Datasource Caching ──────────────────────────────────────────────────────
@@ -329,19 +301,13 @@ class MultiTenantIntegrationTest {
     String jwt = signJwt("acme-corp", "app-a", 1);
 
     // First request — triggers vault fetch
-    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ tenantProducts { id } }")))
-        .andExpect(status().isOk());
+    http.post("/" + projectIdOf("app-a") + "/graphql", graphql("{ tenantProducts { id } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isOk());
 
     // Second request — should use cached datasource
-    mockMvc.perform(post("/" + projectIdOf("app-a") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ tenantProducts { id } }")))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data.tenantProducts", hasSize(3)));
+    http.post("/" + projectIdOf("app-a") + "/graphql", graphql("{ tenantProducts { id } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.data.tenantProducts", hasSize(3)));
   }
 
   // ─── Invalid Tenant ──────────────────────────────────────────────────────────
@@ -350,12 +316,12 @@ class MultiTenantIntegrationTest {
   @Order(6)
   @DisplayName("REST defaults to the path project's own schema: the OpenAPI spec and a profile-less read")
   void rest_defaultsToTheProjectsOwnSchema() throws Exception {
-    mockMvc.perform(get("/" + projectIdOf("app-a") + "/api/v1").accept("application/openapi+json"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.paths['/products']").exists());
-    mockMvc.perform(get("/" + projectIdOf("app-a") + "/api/v1/products"))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.data", hasSize(3)));
+    http.get("/" + projectIdOf("app-a") + "/api/v1", "Accept", "application/openapi+json")
+        .expect(status().isOk())
+        .expect(jsonPath("$.paths['/products']").exists());
+    http.get("/" + projectIdOf("app-a") + "/api/v1/products")
+        .expect(status().isOk())
+        .expect(jsonPath("$.data", hasSize(3)));
   }
 
   @Test
@@ -363,12 +329,9 @@ class MultiTenantIntegrationTest {
   @DisplayName("JWT with unknown tenant → vault returns 404 → 404 project_not_found")
   void jwtUnknownTenant_vaultReturns404_notFound() throws Exception {
     String jwt = signJwt("no-such-org", "no-such-app", 1);
-    mockMvc.perform(post("/" + projectIdOf("no-such-app") + "/graphql")
-            .header("Authorization", "Bearer " + jwt)
-            .contentType(MediaType.APPLICATION_JSON)
-            .content(graphql("{ anything { id } }")))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.errors[0].extensions.code", is("project_not_found")));
+    http.post("/" + projectIdOf("no-such-app") + "/graphql", graphql("{ anything { id } }"), "Authorization", "Bearer " + jwt, "Content-Type", "application/json")
+        .expect(status().isNotFound())
+        .expect(jsonPath("$.errors[0].extensions.code", is("project_not_found")));
   }
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────

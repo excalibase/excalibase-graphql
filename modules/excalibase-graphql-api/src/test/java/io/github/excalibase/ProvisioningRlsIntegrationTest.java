@@ -1,0 +1,369 @@
+package io.github.excalibase;
+
+import jakarta.inject.Inject;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.nimbusds.jose.JWSAlgorithm;
+import com.nimbusds.jose.JWSHeader;
+import com.nimbusds.jose.crypto.ECDSASigner;
+import com.nimbusds.jwt.JWTClaimsSet;
+import com.nimbusds.jwt.SignedJWT;
+import com.sun.net.httpserver.HttpServer;
+import io.github.excalibase.schema.AccessPlans;
+import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.Principal;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.PostgreSQLContainer;
+
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.interfaces.ECPrivateKey;
+import java.security.interfaces.ECPublicKey;
+import java.security.spec.ECGenParameterSpec;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.not;
+import static io.github.excalibase.support.Expect.content;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
+
+/**
+ * End-to-end proof that the project's permission document, served over HTTP from a stub control
+ * plane, drives what each role reads and writes. No Postgres-native RLS: every filter observed was
+ * composed by the engine from the document.
+ */
+class ProvisioningRlsIntegrationTest extends EngineIntegrationTest {
+
+    private static final String ALICE = "11111111-1111-1111-1111-111111111111";
+    private static final String BOB = "22222222-2222-2222-2222-222222222222";
+    private static final String PROJECT = "proj-rls";
+    private static final String ROLE = "app_authenticated";
+
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+            .withInitScript("init-engine-rls.sql");
+
+    static ECPrivateKey privateKey;
+    static ECPublicKey publicKey;
+    static HttpServer stub;
+    static int stubPort;
+
+    /** Owner-scoped docs, membership-scoped orders, claim-scoped regions; anon holds nothing. */
+    private static final String PERMISSIONS = PermissionDocs.document(PROJECT,
+            PermissionDocs.entry("rls_demo.docs", ROLE,
+                    PermissionDocs.select(PermissionDocs.OWNED, "\"*\""),
+                    PermissionDocs.insert(PermissionDocs.OWNED, "\"*\"", "{}"),
+                    PermissionDocs.update(PermissionDocs.OWNED, PermissionDocs.OWNED, "\"*\"", "{}"),
+                    PermissionDocs.delete(PermissionDocs.OWNED)),
+            PermissionDocs.entry("rls_demo.orders", ROLE, PermissionDocs.select(
+                    "{\"rlsDemoOrgId\":{\"rlsDemoMembers\":{\"member_user\":{\"_eq\":\"X-Excalibase-User-Id\"}}}}",
+                    "\"*\"")),
+            PermissionDocs.entry("rls_demo.regional", ROLE,
+                    PermissionDocs.select("{\"region\":{\"_eq\":\"X-Excalibase-Region\"}}", "\"*\"")));
+
+    static {
+        try {
+            KeyPairGenerator gen = KeyPairGenerator.getInstance("EC");
+            gen.initialize(new ECGenParameterSpec("secp256r1"));
+            KeyPair kp = gen.generateKeyPair();
+            privateKey = (ECPrivateKey) kp.getPrivate();
+            publicKey = (ECPublicKey) kp.getPublic();
+
+            stub = HttpServer.create(new InetSocketAddress(0), 0);
+            stubPort = stub.getAddress().getPort();
+            serve("/.well-known/jwks.json", buildJwks(publicKey));
+            PermissionDocs.serve(stub, PROJECT, () -> PERMISSIONS);
+            stub.start();
+        } catch (Exception e) {
+            throw new RuntimeException("stub setup failed", e);
+        }
+    }
+
+    @Test
+    void rest_insertWithCheck_rollsTheRowBack() throws Exception {
+        http.post("/" + PROJECT + "/api/v1/docs", "{\"id\": 93, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Content-Type", "application/json")
+                .expect(status().isForbidden());
+        http.get("/" + PROJECT + "/api/v1/docs?id=eq.93", "Authorization", "Bearer " + jwt(BOB), "Accept-Profile", "rls_demo")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data", hasSize(0)));
+    }
+
+    @Test
+    void rest_methodWithoutPermission_isForbidden() throws Exception {
+        http.delete("/" + PROJECT + "/api/v1/orders?id=eq.1", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_denied"));
+    }
+
+    // ---- realtime: judged by the same select filter, probing the database for relationships ----
+
+    @Inject
+    private AccessPlans accessPlans;
+
+    private AccessPlans.RealtimeAccess realtimeFor(String userId, String table) {
+        JwtClaims claims = new JwtClaims(userId, PROJECT, null, null, "", ROLE, null, "authenticated", 0L,
+                Map.of("userId", userId), null);
+        return accessPlans.realtime(null, PROJECT, new Principal(ROLE, false, claims, Map.of()), table).orElseThrow();
+    }
+
+    @Test
+    void realtime_ownerFilter_deliversOnlyTheOwnersRowsWithTheirColumns() {
+        AccessPlans.RealtimeAccess docs = realtimeFor(ALICE, "rls_demo.docs");
+
+        assertThat(docs.filter().render("INSERT", Map.of("id", 1, "owner_id", ALICE, "title", "t"), docs.probes()))
+                .contains(Map.of("id", 1, "owner_id", ALICE, "title", "t"));
+        assertThat(docs.filter().render("INSERT", Map.of("id", 3, "owner_id", BOB, "title", "t"), docs.probes()))
+                .isEmpty();
+    }
+
+    @Test
+    void realtime_relationshipFilter_probesTheDatabase() {
+        AccessPlans.RealtimeAccess orders = realtimeFor(ALICE, "rls_demo.orders");
+
+        assertThat(orders.filter().render("INSERT", Map.of("id", 1, "org_id", "orgA", "title", "a"),
+                orders.probes())).isPresent();
+        assertThat(orders.filter().render("INSERT", Map.of("id", 3, "org_id", "orgB", "title", "b"),
+                orders.probes())).isEmpty();
+        assertThat(orders.filter().render("DELETE", Map.of("id", 90, "org_id", "orgA", "title", "gone"),
+                orders.probes())).contains(Map.of("id", 90, "org_id", "orgA", "title", "gone"));
+        assertThat(orders.filter().render("DELETE", Map.of("id", 91, "org_id", "orgB", "title", "gone"),
+                orders.probes())).isEmpty();
+    }
+
+    @Test
+    void realtime_aTableTheRoleCannotSelect_offersNoSubscription() {
+        JwtClaims claims = new JwtClaims(ALICE, PROJECT, null, null, "", ROLE, null, "authenticated", 0L,
+                Map.of("userId", ALICE), null);
+        assertThat(accessPlans.realtime(null, PROJECT, new Principal(ROLE, false, claims, Map.of()),
+                "rls_demo.members")).isEmpty();
+    }
+
+    private static void serve(String path, String body) {
+        stub.createContext(path, exchange -> {
+            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, bytes.length);
+            exchange.getResponseBody().write(bytes);
+            exchange.close();
+        });
+    }
+
+    @AfterAll
+    static void teardown() {
+        if (stub != null) stub.stop(0);
+    }
+
+    @Override
+    public Map<String, String> getProperties() {
+        postgres.start();
+        Map<String, String> properties = EngineProperties.isolated();
+        properties.put("spring.datasource.url", postgres.getJdbcUrl());
+        properties.put("spring.datasource.username", postgres.getUsername());
+        properties.put("spring.datasource.password", postgres.getPassword());
+        properties.put("app.database-type", "postgres");
+        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.project-id", String.valueOf(PROJECT));
+        properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + stubPort + "/.well-known/jwks.json"));
+        properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + stubPort + "/api"));
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        return properties;
+    }
+
+
+    private static final ObjectMapper mapper = new ObjectMapper();
+
+    @Test
+    void aliceSeesOnlyOwnDocs() throws Exception {
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id owner_id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
+    }
+
+    @Test
+    void bobSeesOnlyOwnDocs() throws Exception {
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id owner_id } }"), "Authorization", "Bearer " + jwt(BOB), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoDocs", hasSize(1)));
+    }
+
+    @Test
+    void userFilterCannotEscapeProvisioningPolicy() throws Exception {
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs(where: { id: { eq: 3 } }) { id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoDocs", hasSize(0)));
+    }
+
+    @Test
+    void projectScopedUrl_authenticated_filtersByUser() throws Exception {
+        // /{projectId}/graphql — project from the path, user from the token
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id owner_id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
+    }
+
+    @Test
+    void projectScopedUrl_anonymous_failsClosed() throws Exception {
+        // No token runs as anon, which holds no permission on docs: the table is not in its schema.
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id } }"), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data").doesNotExist())
+                .expect(jsonPath("$.errors[0].message", containsString("rlsDemoDocs")));
+    }
+
+    @Test
+    void projectScopedUrl_tokenProjectMismatch_rejected() throws Exception {
+        // The path names this deployment's project; the token was minted for another.
+        // The audience check catches this first, so the refusal is a 401 aud_mismatch.
+        String otherProjectToken = jwtWithClaims(ALICE,
+                Map.of("projectId", "some-other-project", "aud", "excalibase:some-other-project"));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id } }"), "Authorization", "Bearer " + otherProjectToken, "Content-Type", "application/json")
+                .expect(status().isUnauthorized())
+                .expect(content().string(containsString("aud_mismatch")));
+    }
+
+    @Test
+    void unknownProjectPath_isNotFound_withOrWithoutAToken() throws Exception {
+        http.post("/some-other-project/graphql", body("{ rlsDemoDocs { id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isNotFound());
+        http.post("/some-other-project/graphql", body("{ rlsDemoDocs { id } }"), "Content-Type", "application/json")
+                .expect(status().isNotFound());
+        http.get("/some-other-project/api/v1/docs", "Accept-Profile", "rls_demo")
+                .expect(status().isNotFound());
+    }
+
+    @Test
+    void relationshipPolicyFiltersOrdersByMembership() throws Exception {
+        // Alice ∈ orgA → sees the two orgA orders; the relationship's correlated EXISTS
+        // must resolve against the compiler's aliased outer table.
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoOrders { id org_id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoOrders", hasSize(2)));
+
+        // Bob ∈ orgB → sees the one orgB order.
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoOrders { id org_id } }"), "Authorization", "Bearer " + jwt(BOB), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoOrders", hasSize(1)));
+    }
+
+    @Test
+    void customClaimPolicyFiltersByRegion() throws Exception {
+        // region=west claim → two west rows
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoRegional { id region } }"), "Authorization", "Bearer " + jwtWithClaims(ALICE, Map.of("region", "west")), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoRegional", hasSize(2)));
+
+        // region=east claim → one east row, same query/user shape
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoRegional { id region } }"), "Authorization", "Bearer " + jwtWithClaims(BOB, Map.of("region", "east")), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoRegional", hasSize(1)));
+    }
+
+    @Test
+    void rest_anonymous_failsClosed() throws Exception {
+        // REST applies the same permissions as GraphQL: a table anon cannot select does not exist.
+        http.get("/" + PROJECT + "/api/v1/docs", "Accept-Profile", "rls_demo")
+                .expect(status().isNotFound());
+    }
+
+    @Test
+    void rest_authenticated_filtersByOwner() throws Exception {
+        http.get("/" + PROJECT + "/api/v1/docs", "Authorization", "Bearer " + jwt(ALICE), "Accept-Profile", "rls_demo")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data", hasSize(2)));
+    }
+
+    @Test
+    void rest_relationshipPolicy_filtersByMembership() throws Exception {
+        // anonymous holds no permission on orders → not found
+        http.get("/" + PROJECT + "/api/v1/orders", "Accept-Profile", "rls_demo")
+                .expect(status().isNotFound());
+        // alice ∈ orgA → her two orgA orders
+        http.get("/" + PROJECT + "/api/v1/orders", "Authorization", "Bearer " + jwt(ALICE), "Accept-Profile", "rls_demo")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data", hasSize(2)));
+    }
+
+    @Test
+    void rpc_anUntrackedFunction_isNotFound() throws Exception {
+        // Only tracked functions are reachable; this project tracks none.
+        http.post("/" + PROJECT + "/api/v1/rpc/any_fn", "{}", "Content-Profile", "rls_demo", "Content-Type", "application/json")
+                .expect(status().isNotFound());
+    }
+
+    @Test
+    void rest_insertWithCheck_rejectsForeignOwner() throws Exception {
+        // WITH-CHECK: alice cannot insert a row owned by bob.
+        http.post("/" + PROJECT + "/api/v1/docs", "{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Content-Type", "application/json")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_check_failed"))
+                .expect(jsonPath("$.message", not(containsString("ERROR:"))))
+                .expect(jsonPath("$.message", not(containsString("SQLSTATE"))))
+                .expect(jsonPath("$.message", not(containsString("violates"))));
+    }
+
+    @Test
+    void rest_upsertWithCheck_rejectsForeignOwnerAsUpsert() throws Exception {
+        http.post("/" + PROJECT + "/api/v1/docs", "{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Prefer", "resolution=merge-duplicates", "Content-Type", "application/json")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_check_failed"));
+    }
+
+    @Test
+    void rest_insertWithCheck_allowsOwnRow() throws Exception {
+        // tx=rollback: verify WITH-CHECK passes (own row allowed) without
+        // persisting into the shared container (would skew the read-count tests).
+        http.post("/" + PROJECT + "/api/v1/docs", "{\"id\": 92, \"owner_id\": \"" + ALICE + "\", \"title\": \"x\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Prefer", "tx=rollback", "Content-Type", "application/json")
+                .expect(status().isCreated());
+    }
+
+    @Test
+    void rest_updateWithCheck_rejectsReassignToAnotherOwner() throws Exception {
+        // WITH-CHECK: alice cannot reassign her doc to bob.
+        http.send("PATCH", "/" + PROJECT + "/api/v1/docs?id=eq.1", "{\"owner_id\": \"" + BOB + "\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Content-Type", "application/json")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_check_failed"))
+                .expect(jsonPath("$.message", not(containsString("ERROR:"))))
+                .expect(jsonPath("$.message", not(containsString("violates"))));
+    }
+
+    private String body(String query) throws Exception {
+        return mapper.writeValueAsString(Map.of("query", query));
+    }
+
+    private String jwt(String userId) throws Exception {
+        return jwtWithClaims(userId, Map.of());
+    }
+
+    private String jwtWithClaims(String userId, Map<String, Object> extra) throws Exception {
+        JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
+                .subject("user@test.com")
+                .claim("userId", userId)
+                .claim("projectId", PROJECT)
+                .audience("excalibase:" + PROJECT)
+                .claim("role", "app_authenticated")
+                .issuer("excalibase")
+                .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z")))
+                .expirationTime(java.util.Date.from(java.time.Instant.parse("2099-01-01T00:00:00Z")));
+        extra.forEach(builder::claim);
+        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), builder.build());
+        signed.sign(new ECDSASigner(privateKey));
+        return signed.serialize();
+    }
+
+    private static String buildJwks(ECPublicKey key) {
+        com.nimbusds.jose.jwk.ECKey ecKey = new com.nimbusds.jose.jwk.ECKey.Builder(
+                com.nimbusds.jose.jwk.Curve.P_256, key)
+                .keyUse(com.nimbusds.jose.jwk.KeyUse.SIGNATURE)
+                .keyID("test-key")
+                .build();
+        return new com.nimbusds.jose.jwk.JWKSet(ecKey).toString();
+    }
+}

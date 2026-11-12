@@ -33,7 +33,7 @@ afterAll(removeAll);
 
 describe('prometheus metrics: names and label keys', () => {
   beforeAll(async () => {
-    await sendKnownMix(stack.app);
+    await sendKnownMix(stack.app, undefined, { change: true });
     await sendKnownMix(`http://127.0.0.1:14200`);
   }, 60000);
 

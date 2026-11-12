@@ -10,6 +10,14 @@ public final class EngineProperties {
     private EngineProperties() {
     }
 
+    /** Settings every engine under test needs: no management port and a free server port, so engines never collide. */
+    public static Map<String, String> isolated() {
+        Map<String, String> properties = new HashMap<>();
+        properties.put("endpoints.all.port", "-1");
+        properties.put("micronaut.server.port", "-1");
+        return properties;
+    }
+
     public static Map<String, String> singleDatabase(JdbcDatabaseContainer<?> database, String databaseType,
                                                      String projectId) {
         Map<String, String> properties = datasource(database);

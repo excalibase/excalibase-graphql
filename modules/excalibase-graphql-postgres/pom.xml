@@ -24,7 +24,7 @@
             <artifactId>HikariCP</artifactId>
             <scope>test</scope>
         </dependency>
-        <!--Springboot-->
+        <!-- Spring JDBC/TX as plain libraries -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-jdbc</artifactId>
@@ -68,9 +68,6 @@
             <artifactId>postgresql</artifactId>
             <scope>provided</scope>
         </dependency>
-        
-        <!-- Spring Boot Configuration Processor for CDC properties -->
-        
         
         <!-- Annotations for lifecycle methods -->
         <dependency>

@@ -1,20 +1,15 @@
 package io.github.excalibase.security;
 
-import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
-/** Pins how {@link JwtAuthFilter#extractProjectId} reads the project from the URL path. */
-class JwtAuthFilterTest {
+/** Pins how {@link ProjectPath#fromUri} reads the project from the URL path. */
+class ProjectPathUriTest {
 
     private static String projectIdFor(String uri) {
-        HttpServletRequest req = mock(HttpServletRequest.class);
-        when(req.getRequestURI()).thenReturn(uri);
-        return JwtAuthFilter.extractProjectId(req);
+        return ProjectPath.fromUri(uri);
     }
 
     @Test @DisplayName("project-scoped GraphQL path → projectId")
