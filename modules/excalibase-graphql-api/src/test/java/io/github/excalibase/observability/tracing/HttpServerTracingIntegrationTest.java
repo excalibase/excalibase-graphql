@@ -14,6 +14,7 @@ import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import io.opentelemetry.sdk.trace.SpanProcessor;
 import jakarta.inject.Singleton;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -84,7 +85,7 @@ class HttpServerTracingIntegrationTest extends EngineIntegrationTest {
         http.get("probe/ids", "traceparent", TRACEPARENT);
 
         Map<String, String> attributes = serverSpan("http get /probe/ids").getAttributes().asMap().entrySet().stream()
-                .collect(java.util.stream.Collectors.toMap(entry -> entry.getKey().getKey(), entry -> String.valueOf(entry.getValue())));
+                .collect(Collectors.toMap(entry -> entry.getKey().getKey(), entry -> String.valueOf(entry.getValue())));
 
         assertThat(attributes).containsEntry("method", "GET").containsEntry("status", "200")
                 .containsEntry("uri", "/probe/ids").containsEntry("outcome", "SUCCESS").containsEntry("exception", "none")
