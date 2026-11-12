@@ -1,11 +1,7 @@
 package io.github.excalibase.observability;
 
-import io.github.excalibase.config.datasource.TenantContext;
-import io.github.excalibase.security.JwtClaims;
-import io.github.excalibase.security.SecurityConstants;
 import io.micrometer.common.KeyValue;
 import io.micrometer.common.KeyValues;
-import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.server.observation.DefaultServerRequestObservationConvention;
 import org.springframework.http.server.observation.ServerRequestObservationContext;
 
@@ -19,7 +15,7 @@ import org.springframework.http.server.observation.ServerRequestObservationConte
  * engineers can find tenants by what users call them.
  *
  * <p>The observation lifecycle completes <em>after</em> {@code JwtAuthFilter}'s
- * {@code finally} block has cleared {@link TenantContext}, so a pure
+ * {@code finally} block has cleared {@code TenantContext}, so a pure
  * ThreadLocal read returns {@code null} here. We fall back to the
  * {@code HttpServletRequest} attribute (set by {@code JwtAuthFilter} before
  * {@code chain.doFilter}) which remains readable through the entire request
@@ -34,40 +30,14 @@ public class TenantObservationConvention extends DefaultServerRequestObservation
     private static final String ORG_SLUG_KEY = "org.slug";
     private static final String PROJECT_NAME_KEY = "project.name";
     private static final String ORG_NAME_KEY = "org.name";
-    private static final String NONE = "none";
 
     @Override
     public KeyValues getLowCardinalityKeyValues(ServerRequestObservationContext context) {
-        String tenantId = TenantContext.getTenantId();
-        String orgSlug = TenantContext.getOrgSlug();
-        String projectName = null;
-        String orgName = null;
-        JwtClaims claims = claimsFrom(context);
-        if (claims != null) {
-            if (tenantId == null) {
-                tenantId = claims.projectId();
-                orgSlug = claims.orgSlug();
-            }
-            projectName = claims.projectName();
-            orgName = claims.orgName();
-        }
+        TenantTags tags = TenantTags.of(context.getCarrier());
         return super.getLowCardinalityKeyValues(context)
-                .and(KeyValue.of(TENANT_ID_KEY, orNone(tenantId)))
-                .and(KeyValue.of(ORG_SLUG_KEY, orNone(orgSlug)))
-                .and(KeyValue.of(PROJECT_NAME_KEY, orNone(projectName)))
-                .and(KeyValue.of(ORG_NAME_KEY, orNone(orgName)));
-    }
-
-    private static JwtClaims claimsFrom(ServerRequestObservationContext context) {
-        HttpServletRequest req = context.getCarrier();
-        if (req == null) {
-            return null;
-        }
-        Object attr = req.getAttribute(SecurityConstants.JWT_CLAIMS_ATTR);
-        return attr instanceof JwtClaims claims ? claims : null;
-    }
-
-    private static String orNone(String value) {
-        return value != null && !value.isEmpty() ? value : NONE;
+                .and(KeyValue.of(TENANT_ID_KEY, tags.tenantId()))
+                .and(KeyValue.of(ORG_SLUG_KEY, tags.orgSlug()))
+                .and(KeyValue.of(PROJECT_NAME_KEY, tags.projectName()))
+                .and(KeyValue.of(ORG_NAME_KEY, tags.orgName()));
     }
 }

@@ -256,6 +256,8 @@ class MultiTenantIntegrationTest {
     appender.start();
     root.addAppender(appender);
     try {
+      // a housekeeper thread of some other pool warning in the same window must not fail this test
+      LoggerFactory.getLogger("com.zaxxer.hikari.pool.PoolBase").warn("unrelated pool housekeeping warning");
       for (int i = 0; i < 10; i++) {
         mockMvc.perform(post("/" + GHOST_PROJECT + "/graphql")
                 .header("Origin", "https://app.example.com")
@@ -270,6 +272,7 @@ class MultiTenantIntegrationTest {
     Assertions.assertEquals(1, ghostProvisioningCalls.get());
     Assertions.assertEquals(List.of(), appender.list.stream()
         .filter(event -> event.getLevel().isGreaterOrEqual(Level.WARN))
+        .filter(event -> event.getLoggerName().startsWith("io.github.excalibase"))
         .map(ILoggingEvent::getFormattedMessage)
         .toList());
   }
