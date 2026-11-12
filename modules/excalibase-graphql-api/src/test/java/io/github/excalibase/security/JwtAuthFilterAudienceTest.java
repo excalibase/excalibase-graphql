@@ -9,12 +9,14 @@ import io.github.excalibase.config.datasource.TenantContext;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.StubbedSchemaManager;
-import jakarta.servlet.FilterChain;
+import io.micronaut.core.propagation.MutablePropagatedContext;
+import io.micronaut.core.propagation.PropagatedContext;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.MutableHttpRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -25,9 +27,6 @@ import java.time.Instant;
 import java.util.Date;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 
 /**
  * EXC-11 at the HTTP edge: an audience that does not cover the project in the
@@ -76,29 +75,22 @@ class JwtAuthFilterAudienceTest {
         return signed.serialize();
     }
 
-    private MockHttpServletResponse callFilter(JwtService jwtService, String bearer, FilterChain chain)
-            throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/" + PROJECT + "/graphql");
-        request.setRequestURI("/" + PROJECT + "/graphql");
-        request.addHeader("Authorization", "Bearer " + bearer);
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        new JwtAuthFilter(jwtService, enforcer()).doFilter(request, response, chain);
-        return response;
+    /** The refusal the filter answers, or null when the request goes on to the handler. */
+    private HttpResponse<?> callFilter(JwtService jwtService, String bearer) {
+        MutableHttpRequest<?> request = HttpRequest.POST("/" + PROJECT + "/graphql", "");
+        request.header("Authorization", "Bearer " + bearer);
+        return new JwtAuthFilter(jwtService, enforcer())
+                .filter(request, MutablePropagatedContext.of(PropagatedContext.empty()));
     }
 
     @Test
     @DisplayName("a token for another project gets 401 with extensions.code=aud_mismatch")
     void wrongProjectAudience_401WithCode() throws Exception {
         JwtService service = new JwtService(publicKey).requireAudience(true, AUD_PREFIX);
-        FilterChain chain = mock(FilterChain.class);
+        HttpResponse<?> response = callFilter(service, token(AUD_PREFIX + OTHER_PROJECT, null));
 
-        MockHttpServletResponse response =
-                callFilter(service, token(AUD_PREFIX + OTHER_PROJECT, null), chain);
-
-        assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(response.getContentAsString()).contains("\"code\":\"aud_mismatch\"");
-        verify(chain, never()).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertThat((response == null ? 200 : response.code())).isEqualTo(401);
+        assertThat(String.valueOf(response.body())).contains("\"code\":\"aud_mismatch\"");
     }
 
     @Test
@@ -106,10 +98,10 @@ class JwtAuthFilterAudienceTest {
     void missingAudience_401WithCode() throws Exception {
         JwtService service = new JwtService(publicKey).requireAudience(true, AUD_PREFIX);
 
-        MockHttpServletResponse response = callFilter(service, token(null, null), mock(FilterChain.class));
+        HttpResponse<?> response = callFilter(service, token(null, null));
 
-        assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(response.getContentAsString()).contains("\"code\":\"aud_mismatch\"");
+        assertThat((response == null ? 200 : response.code())).isEqualTo(401);
+        assertThat(String.valueOf(response.body())).contains("\"code\":\"aud_mismatch\"");
     }
 
     @Test
@@ -117,49 +109,41 @@ class JwtAuthFilterAudienceTest {
     void refreshToken_401WithCode() throws Exception {
         JwtService service = new JwtService(publicKey).requireAudience(true, AUD_PREFIX);
 
-        MockHttpServletResponse response =
-                callFilter(service, token(AUD_PREFIX + PROJECT, "refresh"), mock(FilterChain.class));
+        HttpResponse<?> response = callFilter(service, token(AUD_PREFIX + PROJECT, "refresh"));
 
-        assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(response.getContentAsString()).contains("\"code\":\"refresh_token_not_accepted\"");
+        assertThat((response == null ? 200 : response.code())).isEqualTo(401);
+        assertThat(String.valueOf(response.body())).contains("\"code\":\"refresh_token_not_accepted\"");
     }
 
     @Test
     @DisplayName("the matching audience passes through to the chain")
     void matchingAudience_reachesChain() throws Exception {
         JwtService service = new JwtService(publicKey).requireAudience(true, AUD_PREFIX);
-        FilterChain chain = mock(FilterChain.class);
+        HttpResponse<?> response = callFilter(service, token(AUD_PREFIX + PROJECT, null));
 
-        MockHttpServletResponse response = callFilter(service, token(AUD_PREFIX + PROJECT, null), chain);
-
-        assertThat(response.getStatus()).isEqualTo(200);
-        verify(chain).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertThat((response == null ? 200 : response.code())).isEqualTo(200);
     }
 
     @Test
     @DisplayName("with the requirement off an audience-less token still reaches the chain")
     void missingAudience_acceptedWhenFlagOff() throws Exception {
         JwtService service = new JwtService(publicKey).requireAudience(false, AUD_PREFIX);
-        FilterChain chain = mock(FilterChain.class);
+        HttpResponse<?> response = callFilter(service, token(null, null));
 
-        MockHttpServletResponse response = callFilter(service, token(null, null), chain);
-
-        assertThat(response.getStatus()).isEqualTo(200);
-        verify(chain).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertThat((response == null ? 200 : response.code())).isEqualTo(200);
     }
 
     @Test
     @DisplayName("a route with no project in its path gets no project from the token either")
     void projectlessPath_doesNotTakeTheTokensProject() throws Exception {
         JwtService service = new JwtService(publicKey).requireAudience(false, AUD_PREFIX);
-        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/actuator/health");
-        request.setRequestURI("/actuator/health");
-        request.addHeader("Authorization", "Bearer " + token(AUD_PREFIX + PROJECT, null));
-        String[] tenantSeen = {"unset"};
-        FilterChain chain = (req, res) -> tenantSeen[0] = TenantContext.getTenantId();
+        MutableHttpRequest<?> request = HttpRequest.GET("/actuator/health");
+        request.header("Authorization", "Bearer " + token(AUD_PREFIX + PROJECT, null));
+        MutablePropagatedContext context = MutablePropagatedContext.of(PropagatedContext.empty());
 
-        new JwtAuthFilter(service, enforcer()).doFilter(request, new MockHttpServletResponse(), chain);
+        HttpResponse<?> refusal = new JwtAuthFilter(service, enforcer()).filter(request, context);
 
-        assertThat(tenantSeen[0]).isNull();
+        assertThat(refusal).isNull();
+        assertThat(context.getContext().find(RequestContextElement.class)).isEmpty();
     }
 }
