@@ -191,7 +191,8 @@ class ConnectionBoundIntegrationTest {
         String own = ownConnectorName();
         String all = metric("tomcat.connections.config.max", "");
         assertThat(all).as("connector names offered by the metric").contains("\"" + own + "\"");
-        assertThat(metric("tomcat.connections.config.max", "?tag=name:" + own)).contains("\"value\":" + CPUS * 2);
+        assertThat(MetricValue.of(metric("tomcat.connections.config.max", "?tag=name:" + own)))
+                .isEqualTo((double) (CPUS * 2));
         assertThat(client.send(HttpRequest.newBuilder(
                 URI.create("http://localhost:" + managementPort + "/actuator/metrics/tomcat.connections.current")).GET().build(),
                 HttpResponse.BodyHandlers.ofString()).statusCode()).isEqualTo(200);
