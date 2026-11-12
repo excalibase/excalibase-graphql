@@ -3,10 +3,10 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.14</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <groupId>io.micronaut.platform</groupId>
+        <artifactId>micronaut-parent</artifactId>
+        <version>4.10.24</version>
+        <relativePath/>
     </parent>
 
     <groupId>io.github.excalibase</groupId>
@@ -51,9 +51,9 @@
 
     <properties>
         <java.version>25</java.version>
-        <springboot.version>3.5.12</springboot.version>
-        <tomcat.version>10.1.60</tomcat.version>
-        <kotlin.version>2.1.0</kotlin.version>
+        <release.version>25</release.version>
+        <micronaut.runtime>netty</micronaut.runtime>
+        <springboot.version>3.5.14</springboot.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
         <jackson.version>2.21.2</jackson.version>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
@@ -108,37 +108,21 @@
                 <artifactId>jackson-core</artifactId>
                 <version>${jackson.version}</version>
             </dependency>
-            <!--Springboot-->
+            <!-- Micronaut's versions win over the Boot BOM below (netty, jackson, micrometer, logback...) -->
             <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-data-jdbc</artifactId>
-                <version>${springboot.version}</version>
+                <groupId>io.micronaut.platform</groupId>
+                <artifactId>micronaut-platform</artifactId>
+                <version>4.10.24</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
+            <!-- Spring Boot BOM only for versions of spring-jdbc/spring-tx and test libraries; no Boot runtime -->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-actuator</artifactId>
+                <artifactId>spring-boot-dependencies</artifactId>
                 <version>${springboot.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-web</artifactId>
-                <version>${springboot.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-graphql</artifactId>
-                <version>${springboot.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-test</artifactId>
-                <version>${springboot.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-logging</artifactId>
-                <version>${springboot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
 
             <!--Own modules-->

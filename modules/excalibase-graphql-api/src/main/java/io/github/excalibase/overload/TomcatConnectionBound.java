@@ -1,7 +1,5 @@
 package io.github.excalibase.overload;
 
-import org.apache.catalina.connector.Connector;
-import org.apache.coyote.http11.AbstractHttp11Protocol;
 
 /**
  * Bounds open connections to the CPUs available: excess clients wait in the kernel accept
@@ -50,14 +48,5 @@ public class TomcatConnectionBound {
     public String toString() {
         return "maxConnections=" + maxConnections + ", acceptCount=" + acceptCount
                 + ", maxKeepAliveRequests=" + maxKeepAliveRequests + ", keepAliveTimeoutMs=" + keepAliveTimeoutMillis;
-    }
-
-    public void apply(Connector connector) {
-        if (connector.getProtocolHandler() instanceof AbstractHttp11Protocol<?> protocol) {
-            protocol.setMaxConnections(maxConnections);
-            protocol.setAcceptCount(acceptCount);
-            protocol.setMaxKeepAliveRequests(maxKeepAliveRequests);
-            protocol.setKeepAliveTimeout(keepAliveTimeoutMillis);
-        }
     }
 }

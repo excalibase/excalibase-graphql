@@ -1,33 +1,41 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.service.VaultCredentialException;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
+import io.micronaut.core.annotation.Nullable;
+import io.micronaut.core.order.Ordered;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.HttpStatus;
+import io.micronaut.http.annotation.Filter;
+import io.micronaut.http.annotation.RequestFilter;
+import io.micronaut.http.annotation.ServerFilter;
+import io.micronaut.scheduling.TaskExecutors;
+import io.micronaut.scheduling.annotation.ExecuteOn;
+import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.filter.OncePerRequestFilter;
-
-import java.io.IOException;
+import io.github.excalibase.observability.requests.RequestMetrics;
 
 /**
  * Refuses a request whose path names a project this deployment does not serve.
  * Runs on every project-scoped route — GraphQL, REST and both WebSocket
  * upgrades — whether or not authentication is on.
  */
-public class KnownProjectFilter extends OncePerRequestFilter {
+@ServerFilter(Filter.MATCH_ALL_PATTERN)
+public class KnownProjectFilter implements Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(KnownProjectFilter.class);
 
     /** The project id, set once it passed the check: request metrics record only these. */
     public static final String KNOWN_PROJECT_ATTR = "excalibase.knownProject";
+    public static final int ORDER = -100;
 
     private final KnownProjects knownProjects;
     private final boolean markKnownProjects;
 
-    public KnownProjectFilter(KnownProjects knownProjects) {
-        this(knownProjects, false);
+    @Inject
+    public KnownProjectFilter(KnownProjects knownProjects, @Nullable RequestMetrics requestMetrics) {
+        this(knownProjects, requestMetrics != null);
     }
 
     /** {@code markKnownProjects} only when request metrics are on, so the hot path is unchanged when off. */
@@ -37,38 +45,31 @@ public class KnownProjectFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
-                                    FilterChain chain) throws ServletException, IOException {
-        String projectId = ProjectPath.fromUri(request.getRequestURI());
+    public int getOrder() {
+        return ORDER;
+    }
+
+    @RequestFilter
+    @ExecuteOn(TaskExecutors.BLOCKING)
+    @Nullable
+    public HttpResponse<?> filter(HttpRequest<?> request) {
+        String projectId = ProjectPath.fromUri(request.getPath());
         if (projectId == null) {
-            chain.doFilter(request, response);
-            return;
+            return null;
         }
         try {
             knownProjects.require(projectId);
         } catch (UnknownProjectException e) {
-            writeError(response, HttpServletResponse.SC_NOT_FOUND, "Project not found", "project_not_found");
-            return;
+            return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
         } catch (ProjectWithoutDatabaseException e) {
-            writeError(response, HttpServletResponse.SC_CONFLICT, "Project has no database", "project_has_no_database");
-            return;
+            return FilterErrors.write(HttpStatus.CONFLICT, "Project has no database", "project_has_no_database");
         } catch (VaultCredentialException e) {
             log.error("project_lookup_failed project={}", projectId, e);
-            writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Project unavailable",
-                    "project_unavailable");
-            return;
+            return FilterErrors.write(HttpStatus.SERVICE_UNAVAILABLE, "Project unavailable", "project_unavailable");
         }
         if (markKnownProjects) {
-            request.setAttribute(KNOWN_PROJECT_ATTR, projectId);
+            request.getAttributes().put(KNOWN_PROJECT_ATTR, projectId);
         }
-        chain.doFilter(request, response);
-    }
-
-    private static void writeError(HttpServletResponse response, int status, String message, String code)
-            throws IOException {
-        response.setStatus(status);
-        response.setContentType("application/json");
-        response.getWriter().write("{\"errors\":[{\"message\":\"" + message
-                + "\",\"extensions\":{\"code\":\"" + code + "\"}}]}");
+        return null;
     }
 }

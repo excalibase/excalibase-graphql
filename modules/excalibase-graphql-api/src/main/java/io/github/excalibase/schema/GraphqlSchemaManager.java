@@ -23,12 +23,12 @@ import io.github.excalibase.spi.SqlEngineFactory;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import io.micronaut.context.annotation.Context;
+import io.micronaut.context.annotation.Value;
+import io.micronaut.core.annotation.Nullable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -44,7 +44,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * access plan (docs/features/permissions.md §7). This is the one place a plan is built: the compiler,
  * introspection, the request guards and realtime all take theirs from the {@link EngineState} made here.
  */
-@Component
+@Context
 public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, ProjectCacheEvictor {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlSchemaManager.class);
@@ -95,12 +95,12 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             JdbcTemplate jdbcTemplate,
             @Value("${app.max-rows:30}") int maxRows,
             @Value("${app.database-type:postgres}") String databaseType,
-            @Value("${app.max-query-depth:#{T(io.github.excalibase.schema.GraphqlSchemaManager).DEFAULT_MAX_QUERY_DEPTH}}") int maxQueryDepth,
+            @Value("${app.max-query-depth:15}") int maxQueryDepth,
             @Value("${app.cache.schema-ttl-minutes:30}") int schemaTtlMinutes,
             @Value("${app.reserved-schemas:}") String reservedSchemasConfig,
-            @Autowired(required = false) NatsCDCService natsCDCService,
-            @Autowired(required = false) DynamicDataSourceManager dataSourceManager,
-            @Autowired(required = false) PermissionProvider permissionProvider,
+            @Nullable NatsCDCService natsCDCService,
+            @Nullable DynamicDataSourceManager dataSourceManager,
+            @Nullable PermissionProvider permissionProvider,
             @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
         this.jdbcTemplate = jdbcTemplate;
         this.maxRows = maxRows;

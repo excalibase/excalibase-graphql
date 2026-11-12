@@ -3,7 +3,7 @@ package io.github.excalibase.observability;
 import io.github.excalibase.config.datasource.TenantContext;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.SecurityConstants;
-import jakarta.servlet.http.HttpServletRequest;
+import io.micronaut.http.HttpRequest;
 
 /**
  * The tenant, org and project labels of a request, shared by the observation convention and the
@@ -13,11 +13,11 @@ import jakarta.servlet.http.HttpServletRequest;
  * a request, so the claims {@code JwtAuthFilter} left on the request are the fallback. Anything
  * missing is {@code "none"}.
  */
-record TenantTags(String tenantId, String orgSlug, String projectName, String orgName) {
+public record TenantTags(String tenantId, String orgSlug, String projectName, String orgName) {
 
     private static final String NONE = "none";
 
-    static TenantTags of(HttpServletRequest request) {
+    public static TenantTags of(HttpRequest<?> request) {
         String tenantId = TenantContext.getTenantId();
         String orgSlug = TenantContext.getOrgSlug();
         String projectName = null;
@@ -34,8 +34,8 @@ record TenantTags(String tenantId, String orgSlug, String projectName, String or
         return new TenantTags(orNone(tenantId), orNone(orgSlug), orNone(projectName), orNone(orgName));
     }
 
-    private static JwtClaims claimsFrom(HttpServletRequest request) {
-        Object attr = request.getAttribute(SecurityConstants.JWT_CLAIMS_ATTR);
+    private static JwtClaims claimsFrom(HttpRequest<?> request) {
+        Object attr = request.getAttribute(SecurityConstants.JWT_CLAIMS_ATTR).orElse(null);
         return attr instanceof JwtClaims claims ? claims : null;
     }
 

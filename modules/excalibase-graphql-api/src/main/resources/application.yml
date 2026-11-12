@@ -1,0 +1,95 @@
+micronaut:
+  application:
+    name: Excalibase graphql
+  server:
+    port: ${SERVER_PORT:10000}
+    max-request-size: 10MB
+    multipart:
+      max-file-size: 10MB
+  metrics:
+    enabled: true
+    binders:
+      web:
+        enabled: false   # http.server.requests is recorded by HttpRequestTimerFilter, with the same tags as before
+    export:
+      prometheus:
+        enabled: true
+        descriptions: false
+
+endpoints:
+  all:
+    path: /actuator
+    port: ${MANAGEMENT_SERVER_PORT:8081}   # actuator (health probes) on its own port; never expose it publicly
+    sensitive: false
+  health:
+    details-visible: NEVER
+  prometheus:
+    sensitive: false
+
+jackson:
+  serialization-inclusion: non_null
+
+# Same property names as the engine has always read
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${POSTGRES_URL:}
+    username: ${POSTGRES_USER:}
+    password: ${POSTGRES_PASSWORD:}
+
+app:
+  project-id: ${APP_PROJECT_ID:}
+  database-type: postgres
+  max-rows: 30
+  max-query-depth: 15
+  graphql:
+    parse-cache:
+      heap-share: 0.02
+  reserved-schemas: ${APP_RESERVED_SCHEMAS:}
+  overload:
+    enabled: ${APP_OVERLOAD_ENABLED:true}
+    max-connections-per-cpu: ${APP_OVERLOAD_MAX_CONNECTIONS_PER_CPU:256}
+    accept-count-per-cpu: ${APP_OVERLOAD_ACCEPT_COUNT_PER_CPU:256}
+    max-keep-alive-requests: ${APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS:20}
+    keep-alive-timeout-ms: ${APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS:5000}
+  cache:
+    schema-ttl-minutes: 30
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:*}
+    provisioning-url: ${APP_CORS_PROVISIONING_URL:${app.security.rls.policy-url:}}
+    ttl-ms: 30000
+  security:
+    jwt-enabled: ${JWT_ENABLED:true}
+    insecure-dev-mode: ${APP_SECURITY_INSECURE_DEV_MODE:false}
+    auth:
+      jwks-url: ${APP_SECURITY_AUTH_JWKS_URL:}
+      hmac-secret: ${APP_SECURITY_AUTH_HMAC_SECRET:}
+      require-aud: ${JWT_REQUIRE_AUD:true}
+      aud-prefix: ${AUTH_AUD_PREFIX:excalibase:}
+    multi-tenant:
+      provisioning-url: ${PROVISIONING_URL:}
+      provisioning-pat: ${PROVISIONING_PAT:}
+      provisioning-pat-file: ${APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT_FILE:}
+      unknown-project-cache:
+        max-entries: 10000
+        ttl-seconds: 30
+    permissions:
+      max-stale-ms: ${APP_SECURITY_PERMISSIONS_MAX_STALE_MS:300000}
+      retry-interval-ms: ${APP_SECURITY_PERMISSIONS_RETRY_INTERVAL_MS:2000}
+  tenant-db:
+    sslmode: ${TENANT_DB_SSLMODE:verify-full}
+    read-timeout-seconds: ${TENANT_DB_READ_TIMEOUT_SECONDS:60}
+  request-metrics:
+    enabled: ${APP_REQUEST_METRICS_ENABLED:false}
+    port: ${APP_REQUEST_METRICS_PORT:9464}
+    address: ${APP_REQUEST_METRICS_ADDRESS:}
+    max-projects: ${APP_REQUEST_METRICS_MAX_PROJECTS:1000}
+  nats:
+    enabled: false
+    url: nats://localhost:4222
+    stream-name: CDC
+    subject-prefix: cdc
+    tenant-in-subject: false
+    username: ${APP_NATS_USERNAME:}
+    password: ${APP_NATS_PASSWORD:}
+    inbox-prefix: ${APP_NATS_INBOX_PREFIX:}

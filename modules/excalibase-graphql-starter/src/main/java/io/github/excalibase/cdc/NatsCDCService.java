@@ -9,8 +9,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
+import io.micronaut.context.annotation.Value;
+import io.micronaut.context.annotation.Context;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -26,7 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Subscribes to CDC events from excalibase-watcher via JetStream and routes them
  * through {@link SubscriptionService} to WebSocket subscribers.
  */
-@Service
+@Context
 public class NatsCDCService {
 
     private static final Logger log = LoggerFactory.getLogger(NatsCDCService.class);

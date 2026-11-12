@@ -10,7 +10,6 @@ import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaUnavailableException;
 import io.github.excalibase.security.Principal;
-import org.springframework.web.socket.WebSocketSession;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -71,7 +70,7 @@ final class RealtimeGate {
                 JsonInclude.Value.construct(JsonInclude.Include.ALWAYS, JsonInclude.Include.ALWAYS));
     }
 
-    static Opening open(AccessPlans plans, WebSocketSession session, String subscriptionKey) {
+    static Opening open(AccessPlans plans, WsSession session, String subscriptionKey) {
         String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
         if (plans == null || projectId == null) {
             return new Opening(new Delivery(null), null, false);

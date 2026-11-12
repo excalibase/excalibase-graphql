@@ -1,6 +1,5 @@
 package io.github.excalibase.config;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Security configuration for excalibase-graphql.
@@ -26,7 +25,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *     provisioning-pat-file: /var/run/excalibase/graphql-token   # rotated in place
  *     provisioning-pat: ${PROVISIONING_PAT}                      # standalone/dev fallback
  */
-@ConfigurationProperties(prefix = "app.security")
 public record SecurityProperties(
         boolean jwtEnabled,
         Auth auth,

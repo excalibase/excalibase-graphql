@@ -2,7 +2,7 @@ package io.github.excalibase.cdc;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.stereotype.Service;
+import jakarta.inject.Singleton;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
 
@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * subscriber: a null-tenant publish is never delivered to a tenant-scoped
  * subscriber, and vice-versa.
  */
-@Service
+@Singleton
 public class SubscriptionService {
 
     private static final Logger log = LoggerFactory.getLogger(SubscriptionService.class);

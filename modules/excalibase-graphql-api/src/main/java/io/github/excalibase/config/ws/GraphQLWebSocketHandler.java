@@ -19,14 +19,11 @@ import graphql.language.OperationDefinition;
 import graphql.language.Selection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.SubProtocolCapable;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
+import io.micronaut.context.annotation.Value;
+import io.micronaut.core.annotation.Nullable;
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
+import jakarta.inject.Singleton;
 import reactor.core.Disposable;
 
 import java.io.IOException;
@@ -44,8 +41,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * events as "next" messages.
  * </p>
  */
-@Component
-public class GraphQLWebSocketHandler extends TextWebSocketHandler implements SubProtocolCapable {
+@Singleton
+public class GraphQLWebSocketHandler extends TextWsHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GraphQLWebSocketHandler.class);
     private static final String PAYLOAD = "payload";
@@ -86,24 +83,24 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
 
     public GraphQLWebSocketHandler(SubscriptionService subscriptionService,
                                    ObjectMapper objectMapper,
-                                   ObjectProvider<JwtService> jwtServiceProvider,
+                                   @Nullable JwtService jwtService,
                                    WebSocketHeartbeat heartbeat,
-                                   ObjectProvider<AccessPlans> accessPlansProvider,
-                                   ObjectProvider<RequestMetrics> requestMetricsProvider,
+                                   @Nullable AccessPlans accessPlans,
+                                   @Nullable RequestMetrics requestMetrics,
                                    ParsedQueries parsedQueries) {
         this.parsedQueries = parsedQueries;
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.changeReader = RealtimeGate.changeReader(objectMapper);
         this.changeWriter = RealtimeGate.changeWriter(objectMapper);
-        this.jwtService = jwtServiceProvider.getIfAvailable();
+        this.jwtService = jwtService;
         this.heartbeat = heartbeat;
-        this.accessPlans = accessPlansProvider.getIfAvailable();
-        this.metering = new RealtimeMetering(requestMetricsProvider.getIfAvailable());
+        this.accessPlans = accessPlans;
+        this.metering = new RealtimeMetering(requestMetrics);
     }
 
     @Override
-    public void afterConnectionEstablished(WebSocketSession session) {
+    public void afterConnectionEstablished(WsSession session) {
         log.debug("WebSocket connection established: {}", session.getId());
         sessionSubscriptions.put(session.getId(), new ConcurrentHashMap<>());
         heartbeat.register(session);
@@ -111,7 +108,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     }
 
     @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+    protected void handleTextMessage(WsSession session, TextMessage message) throws Exception {
         Map<String, Object> msg = objectMapper.readValue(
                 message.getPayload(), new TypeReference<>() {});
         String type = (String) msg.get("type");
@@ -126,7 +123,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     }
 
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+    public void afterConnectionClosed(WsSession session, CloseStatus status) {
         log.debug("WebSocket closed for session {}: {}", session.getId(), status);
         heartbeat.unregister(session);
         metering.closed(session);
@@ -155,7 +152,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
      * With JWT disabled there is no authentication and no principal.
      */
     @SuppressWarnings("unchecked")
-    private void handleConnectionInit(WebSocketSession session, Map<String, Object> msg) {
+    private void handleConnectionInit(WsSession session, Map<String, Object> msg) {
         if (jwtEnabled) {
             Map<String, Object> payload = msg.get(PAYLOAD) instanceof Map<?, ?> map
                     ? (Map<String, Object>) map : Map.of();
@@ -171,11 +168,11 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         sendMessage(session, "{\"type\":\"connection_ack\"}");
     }
 
-    static Principal principalOf(WebSocketSession session) {
+    static Principal principalOf(WsSession session) {
         return (Principal) session.getAttributes().get(SESSION_PRINCIPAL_KEY);
     }
 
-    private void closeWithAuthError(WebSocketSession session, String reason) {
+    private void closeWithAuthError(WsSession session, String reason) {
         try {
             sendMessage(session, objectMapper.writeValueAsString(Map.of(
                     "type", "connection_error",
@@ -192,7 +189,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     }
 
     @SuppressWarnings("unchecked")
-    private void handleSubscribe(WebSocketSession session, Map<String, Object> msg) {
+    private void handleSubscribe(WsSession session, Map<String, Object> msg) {
         String id = (String) msg.get("id");
         Map<String, Object> payloadMap = (Map<String, Object>) msg.get(PAYLOAD);
         String query = (String) payloadMap.get("query");
@@ -243,7 +240,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     }
 
     /** Sends one change, only as far as the subscriber's role may read it. */
-    private void forward(WebSocketSession session, String id, String fieldName, RealtimeGate.Delivery delivery,
+    private void forward(WsSession session, String id, String fieldName, RealtimeGate.Delivery delivery,
                          CDCEvent event) {
         Optional<Object> data = delivery.renderForGraphql(event, parseEventData(event.data()));
         if (data.isEmpty()) {
@@ -279,7 +276,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     }
 
     /** The permissions could not be read: the session is closed like any other request is refused. */
-    private void closeUnavailable(WebSocketSession session) {
+    private void closeUnavailable(WsSession session) {
         try {
             session.close(CloseStatus.SERVICE_OVERLOAD.withReason(PermissionsUnavailableException.CODE));
         } catch (IOException e) {
@@ -287,7 +284,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         }
     }
 
-    private void handleComplete(WebSocketSession session, Map<String, Object> msg) {
+    private void handleComplete(WsSession session, Map<String, Object> msg) {
         String id = (String) msg.get("id");
         Map<String, Disposable> sessionSubs = sessionSubscriptions.get(session.getId());
         if (sessionSubs != null) {
@@ -334,7 +331,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         return new String[0];
     }
 
-    private void sendError(WebSocketSession session, String id, String message) {
+    private void sendError(WsSession session, String id, String message) {
         try {
             String json = objectMapper.writeValueAsString(Map.of(
                     "type", "error",
@@ -348,11 +345,11 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
     }
 
     /** True when the message went out. */
-    private boolean sendMessage(WebSocketSession session, String message) {
+    private boolean sendMessage(WsSession session, String message) {
         try {
             // Serialise on the session monitor: subscription results fan out from
             // multiple Reactor threads onto one session, and the heartbeat pings on
-            // another — a raw WebSocketSession is not safe for concurrent sends.
+            // another — a raw WsSession is not safe for concurrent sends.
             synchronized (session) {
                 if (session.isOpen()) {
                     session.sendMessage(new TextMessage(message));
