@@ -29,7 +29,7 @@ class PermissionBoundaryTest {
     private static final List<String> ALLOWED = List.of(
             "/io/github/excalibase/permissions/",
             "/io/github/excalibase/access/",
-            "/io/github/excalibase/config/JwtSecurityConfig.java",
+            "/io/github/excalibase/config/AppConfig.java",
             "/io/github/excalibase/schema/GraphqlSchemaManager.java");
 
     private static final List<String> SURFACES = List.of(
