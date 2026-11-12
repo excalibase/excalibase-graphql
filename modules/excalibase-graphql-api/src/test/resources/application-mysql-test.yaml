@@ -16,13 +16,6 @@ app:
   nats:
     enabled: false
 
-spring.graphql:
-  graphiql:
-    enabled: false
-  path: /graphql
-  websocket:
-    path: /graphql
-
 logging:
   level:
     root: warn

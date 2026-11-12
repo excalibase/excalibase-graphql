@@ -111,7 +111,7 @@
             <!--Springboot-->
             <dependency>
                 <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-data-jdbc</artifactId>
+                <artifactId>spring-boot-starter-jdbc</artifactId>
                 <version>${springboot.version}</version>
             </dependency>
             <dependency>
@@ -122,11 +122,6 @@
             <dependency>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-starter-web</artifactId>
-                <version>${springboot.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-starter-graphql</artifactId>
                 <version>${springboot.version}</version>
             </dependency>
             <dependency>

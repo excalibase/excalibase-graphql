@@ -25,7 +25,6 @@ import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.constraints.Pattern;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -34,7 +33,6 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -47,7 +45,6 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 // so RLS always has a project to enforce against — even for anonymous callers.
 // JwtAuthFilter reads the projectId from the path; controller methods don't bind it.
 @RequestMapping("/{projectId}/api/v1")
-@Validated
 public class RestApiController {
 
     private static final String IDENT_REGEX = "^[A-Za-z_]\\w{0,62}$";
@@ -218,7 +215,7 @@ public class RestApiController {
     /** A query function with its arguments as query parameters; the other parameters read its rows. */
     @GetMapping("/rpc/{function}")
     public ResponseEntity<Object> rpcGet(
-            @PathVariable @Pattern(regexp = IDENT_REGEX) String function,
+            @PathVariable String function,
             @RequestParam Map<String, String> allParams,
             @RequestHeader(value = "Accept-Profile", required = false) String profile,
             HttpServletRequest request) {
@@ -228,7 +225,7 @@ public class RestApiController {
     /** Any tracked function, with its arguments as a JSON object; query parameters read its rows. */
     @PostMapping("/rpc/{function}")
     public ResponseEntity<Object> rpcPost(
-            @PathVariable @Pattern(regexp = IDENT_REGEX) String function,
+            @PathVariable String function,
             @RequestBody(required = false) Map<String, Object> body,
             @RequestParam Map<String, String> allParams,
             @RequestHeader(value = "Content-Profile", required = false) String profile,
@@ -246,6 +243,7 @@ public class RestApiController {
      */
     private ResponseEntity<Object> rpc(String function, String profile, Map<String, String> allParams,
                                        Map<String, Object> body, HttpServletRequest request) {
+        requireIdentifier(function);
         var principal = getPrincipal(request);
         String schema = resolveSchema(profile, principal);
         if (schema == null) return notFound();
@@ -560,6 +558,16 @@ public class RestApiController {
             case "DELETE" -> access.permits(tableKey, RlsOp.DELETE);
             default -> access.permits(tableKey, RlsOp.SELECT);
         };
+    }
+
+    /**
+     * Refuses a name that is not an identifier before any lookup. It fails like the Bean Validation check it
+     * replaced, as an unhandled error, so the answer to such a request is unchanged (RpcFunctionNameTest).
+     */
+    private static void requireIdentifier(String name) {
+        if (!name.matches(IDENT_REGEX)) {
+            throw new InvalidFunctionNameException();
+        }
     }
 
     private String resolveSchema(String header, Principal principal) {

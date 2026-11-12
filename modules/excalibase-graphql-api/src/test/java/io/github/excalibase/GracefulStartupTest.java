@@ -5,7 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -42,10 +45,23 @@ class GracefulStartupTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private ApplicationContext context;
+
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private String graphql(String query) throws Exception {
         return mapper.writeValueAsString(Map.of("query", query));
+    }
+
+    // Authentication is the JWT filter alone: Spring Security's built-in user (user + a password printed
+    // at startup) must not exist, so there is no second way in.
+    @Test
+    void noDefaultUserIsCreated() {
+        assertThat(context.getBeanNamesForType(UserDetailsService.class))
+                .isEmpty();
+        assertThat(context.getBeanNamesForType(AuthenticationManager.class))
+                .isEmpty();
     }
 
     @Test
