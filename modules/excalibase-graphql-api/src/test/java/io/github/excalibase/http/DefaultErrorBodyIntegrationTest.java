@@ -81,6 +81,14 @@ class DefaultErrorBodyIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("an rpc name of 64 characters is one too long to be an identifier")
+    void rpcNameTooLong() {
+        String path = "/" + PROJECT + "/api/v1/rpc/" + "x".repeat(64);
+
+        assertDefaultBody(http.postJson(path, "{}"), 500, "Internal Server Error", path);
+    }
+
+    @Test
     @DisplayName("a 12 MiB JSON body is read, not refused for its size")
     void largeJsonBody() {
         String padded = "{\"query\":\"\",\"pad\":\"" + "x".repeat(12 * 1024 * 1024) + "\"}";

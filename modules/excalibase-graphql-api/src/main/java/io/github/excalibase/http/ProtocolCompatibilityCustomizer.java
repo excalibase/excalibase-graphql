@@ -9,12 +9,14 @@ import jakarta.inject.Singleton;
 
 /**
  * Puts the handlers that make the wire behaviour match the servlet container's on every connection of every
- * port, right behind the HTTP codec, where they also stay behind the WebSocket codecs after an upgrade.
+ * port: one ahead of the HTTP decoder, the others right behind the HTTP codec, where they also stay behind the
+ * WebSocket codecs after an upgrade.
  */
 @Singleton
 public class ProtocolCompatibilityCustomizer implements BeanCreatedEventListener<NettyServerCustomizer.Registry> {
 
     private static final String UNDECODABLE = "excalibase-undecodable-request";
+    private static final String PIPELINED_UPGRADE = "excalibase-pipelined-upgrade";
     private static final String EMPTY_CLOSE = "excalibase-empty-close-frame";
 
     @Override
@@ -36,6 +38,7 @@ public class ProtocolCompatibilityCustomizer implements BeanCreatedEventListener
             if (channel == null || channel.pipeline().get(ChannelPipelineCustomizer.HANDLER_HTTP_SERVER_CODEC) == null) {
                 return;
             }
+            channel.pipeline().addFirst(PIPELINED_UPGRADE, new PipelinedUpgradeHandler());
             channel.pipeline().addAfter(ChannelPipelineCustomizer.HANDLER_HTTP_SERVER_CODEC, EMPTY_CLOSE,
                     new EmptyCloseFrameHandler());
             channel.pipeline().addAfter(ChannelPipelineCustomizer.HANDLER_HTTP_SERVER_CODEC, UNDECODABLE,
