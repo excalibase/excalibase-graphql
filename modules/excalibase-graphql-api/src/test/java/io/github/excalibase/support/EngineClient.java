@@ -2,6 +2,7 @@ package io.github.excalibase.support;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.config.RequestTargetEncoding;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -17,9 +18,11 @@ public final class EngineClient {
 
     private final HttpClient client = HttpClient.newHttpClient();
     private final URI base;
+    private final RawHttpClient raw;
 
     public EngineClient(URI base) {
         this.base = base;
+        this.raw = new RawHttpClient(base);
     }
 
     public URI base() {
@@ -28,6 +31,11 @@ public final class EngineClient {
 
     public HttpAnswer get(String path, String... headers) {
         return send("GET", path, null, headers);
+    }
+
+    /** A GET whose target is sent exactly as written, braces, quotes and a lone percent sign included. */
+    public HttpAnswer getUnencoded(String path) {
+        return raw.get(path);
     }
 
     public HttpAnswer delete(String path, String... headers) {
@@ -56,7 +64,7 @@ public final class EngineClient {
 
     /** {@code headers} alternate name, value. */
     public HttpAnswer send(String method, String path, String body, String... headers) {
-        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + path.replaceFirst("^/", "")))
+        HttpRequest.Builder request = HttpRequest.newBuilder(URI.create(base + RequestTargetEncoding.encode(path.replaceFirst("^/", ""))))
                 .method(method, body == null ? BodyPublishers.noBody() : BodyPublishers.ofString(body));
         for (int i = 0; i + 1 < headers.length; i += 2) {
             request.header(headers[i], headers[i + 1]);
