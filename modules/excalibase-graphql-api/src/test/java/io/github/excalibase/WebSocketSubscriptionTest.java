@@ -4,53 +4,42 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
-import org.junit.jupiter.api.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketHttpHeaders;
-import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.client.standard.StandardWebSocketClient;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.WsClient;
+import jakarta.inject.Inject;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.URI;
+import java.time.Duration;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.concurrent.*;
+import java.util.concurrent.ExecutionException;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
-class WebSocketSubscriptionTest {
+class WebSocketSubscriptionTest extends EngineIntegrationTest {
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    private static final Duration WAIT = Duration.ofSeconds(5);
+
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init.sql");
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.project-id", () -> "test-proj");
-        registry.add("app.security.jwt-enabled", () -> "false");
-        registry.add("app.security.insecure-dev-mode", () -> "true");
-
-        registry.add("app.max-rows", () -> 30);
-        registry.add("app.nats.enabled", () -> false);
+    @Override
+    public Map<String, String> getProperties() {
+        Map<String, String> properties = new HashMap<>(EngineProperties.postgres(postgres, "test-proj"));
+        properties.put("app.nats.enabled", "false");
+        return properties;
     }
 
-    @LocalServerPort
-    private int port;
-
-    @Autowired
+    @Inject
     private SubscriptionService subscriptionService;
 
     private static final ObjectMapper mapper = new ObjectMapper();
@@ -64,23 +53,9 @@ class WebSocketSubscriptionTest {
         fail("Subscription for '" + tableName + "' not registered within 5 seconds");
     }
 
-    private WebSocketSession connectWebSocket(BlockingQueue<String> messages) throws Exception {
-        StandardWebSocketClient client = new StandardWebSocketClient();
-        WebSocketHttpHeaders headers = new WebSocketHttpHeaders();
-        headers.setSecWebSocketProtocol(java.util.List.of("graphql-transport-ws"));
-
-        CompletableFuture<WebSocketSession> futureSession = client.execute(
-                new TextWebSocketHandler() {
-                    @Override
-                    protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-                        messages.add(message.getPayload());
-                    }
-                },
-                headers,
-                URI.create("ws://localhost:" + port + "/test-proj/graphql")
-        );
-
-        return futureSession.get(5, TimeUnit.SECONDS);
+    private WsClient connectWebSocket() throws Exception {
+        return WsClient.open(URI.create("ws://localhost:" + server.getPort() + "/test-proj/graphql"), null,
+                List.of("graphql-transport-ws"));
     }
 
     private Map<String, Object> parseMessage(String json) throws Exception {
@@ -91,13 +66,12 @@ class WebSocketSubscriptionTest {
     @Order(1)
     @DisplayName("connection_init returns connection_ack")
     void connectionInit_sendsInit_returnsAck() throws Exception {
-        BlockingQueue<String> messages = new LinkedBlockingQueue<>();
-        WebSocketSession session = connectWebSocket(messages);
+        WsClient session = connectWebSocket();
 
         try {
-            session.sendMessage(new TextMessage("{\"type\":\"connection_init\"}"));
+            session.send("{\"type\":\"connection_init\"}");
 
-            String response = messages.poll(5, TimeUnit.SECONDS);
+            String response = session.poll(WAIT);
             assertNotNull(response, "Should receive connection_ack");
             Map<String, Object> msg = parseMessage(response);
             assertEquals("connection_ack", msg.get("type"));
@@ -110,17 +84,16 @@ class WebSocketSubscriptionTest {
     @Order(2)
     @DisplayName("ping returns pong")
     void ping_sendsPing_returnsPong() throws Exception {
-        BlockingQueue<String> messages = new LinkedBlockingQueue<>();
-        WebSocketSession session = connectWebSocket(messages);
+        WsClient session = connectWebSocket();
 
         try {
             // Init first
-            session.sendMessage(new TextMessage("{\"type\":\"connection_init\"}"));
-            messages.poll(5, TimeUnit.SECONDS); // consume ack
+            session.send("{\"type\":\"connection_init\"}");
+            session.poll(WAIT); // consume ack
 
-            session.sendMessage(new TextMessage("{\"type\":\"ping\"}"));
+            session.send("{\"type\":\"ping\"}");
 
-            String response = messages.poll(5, TimeUnit.SECONDS);
+            String response = session.poll(WAIT);
             assertNotNull(response, "Should receive pong");
             Map<String, Object> msg = parseMessage(response);
             assertEquals("pong", msg.get("type"));
@@ -133,13 +106,12 @@ class WebSocketSubscriptionTest {
     @Order(3)
     @DisplayName("subscribe receives CDC events via SubscriptionService")
     void subscribe_publishEvent_receivesNextMessage() throws Exception {
-        BlockingQueue<String> messages = new LinkedBlockingQueue<>();
-        WebSocketSession session = connectWebSocket(messages);
+        WsClient session = connectWebSocket();
 
         try {
             // Init
-            session.sendMessage(new TextMessage("{\"type\":\"connection_init\"}"));
-            messages.poll(5, TimeUnit.SECONDS); // ack
+            session.send("{\"type\":\"connection_init\"}");
+            session.poll(WAIT); // ack
 
             // Subscribe to testSchemaCustomerChanges
             String subscribeMsg = mapper.writeValueAsString(Map.of(
@@ -149,7 +121,7 @@ class WebSocketSubscriptionTest {
                             "query", "subscription { testSchemaCustomerChanges { operation table data } }"
                     )
             ));
-            session.sendMessage(new TextMessage(subscribeMsg));
+            session.send(subscribeMsg);
 
             // Wait for subscription to be registered
             awaitSubscription("test_schema_customer");
@@ -165,7 +137,7 @@ class WebSocketSubscriptionTest {
             subscriptionService.publish(null, event);
 
             // Expect "next" message
-            String response = messages.poll(5, TimeUnit.SECONDS);
+            String response = session.poll(WAIT);
             assertNotNull(response, "Should receive next message with CDC event");
             Map<String, Object> msg = parseMessage(response);
             assertEquals("next", msg.get("type"));
@@ -192,13 +164,12 @@ class WebSocketSubscriptionTest {
     @DisplayName("complete cancels subscription")
     @SuppressWarnings("java:S2925") // Thread.sleep waits for WebSocket async cancel to propagate
     void complete_cancelsSubscription_noMoreEvents() throws Exception {
-        BlockingQueue<String> messages = new LinkedBlockingQueue<>();
-        WebSocketSession session = connectWebSocket(messages);
+        WsClient session = connectWebSocket();
 
         try {
             // Init
-            session.sendMessage(new TextMessage("{\"type\":\"connection_init\"}"));
-            messages.poll(5, TimeUnit.SECONDS); // ack
+            session.send("{\"type\":\"connection_init\"}");
+            session.poll(WAIT); // ack
 
             // Subscribe
             String subscribeMsg = mapper.writeValueAsString(Map.of(
@@ -208,14 +179,14 @@ class WebSocketSubscriptionTest {
                             "query", "subscription { testSchemaCustomerChanges { operation table data } }"
                     )
             ));
-            session.sendMessage(new TextMessage(subscribeMsg));
+            session.send(subscribeMsg);
             awaitSubscription("test_schema_customer");
 
             // Complete (unsubscribe)
-            session.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
+            session.send(mapper.writeValueAsString(Map.of(
                     "type", "complete",
                     "id", "sub-2"
-            ))));
+            )));
             Thread.sleep(200);
 
             // Publish event — should NOT be received
@@ -226,7 +197,7 @@ class WebSocketSubscriptionTest {
             subscriptionService.publish(null, event);
 
             // Should not receive any message
-            String response = messages.poll(1, TimeUnit.SECONDS);
+            String response = session.poll(Duration.ofSeconds(1));
             assertNull(response, "Should not receive events after unsubscribe");
         } finally {
             session.close();
@@ -237,27 +208,26 @@ class WebSocketSubscriptionTest {
     @Order(5)
     @DisplayName("multiple subscriptions on different tables")
     void multipleSubscriptions_differentTables_routeCorrectly() throws Exception {
-        BlockingQueue<String> messages = new LinkedBlockingQueue<>();
-        WebSocketSession session = connectWebSocket(messages);
+        WsClient session = connectWebSocket();
 
         try {
             // Init
-            session.sendMessage(new TextMessage("{\"type\":\"connection_init\"}"));
-            messages.poll(5, TimeUnit.SECONDS); // ack
+            session.send("{\"type\":\"connection_init\"}");
+            session.poll(WAIT); // ack
 
             // Subscribe to customer changes
-            session.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
+            session.send(mapper.writeValueAsString(Map.of(
                     "type", "subscribe",
                     "id", "sub-customer",
                     "payload", Map.of("query", "subscription { testSchemaCustomerChanges { operation table } }")
-            ))));
+            )));
 
             // Subscribe to orders changes
-            session.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
+            session.send(mapper.writeValueAsString(Map.of(
                     "type", "subscribe",
                     "id", "sub-orders",
                     "payload", Map.of("query", "subscription { testSchemaOrdersChanges { operation table } }")
-            ))));
+            )));
 
             awaitSubscription("test_schema_customer");
             awaitSubscription("test_schema_orders");
@@ -268,7 +238,7 @@ class WebSocketSubscriptionTest {
                     "{\"order_id\":1}", System.currentTimeMillis()
             ));
 
-            String response = messages.poll(5, TimeUnit.SECONDS);
+            String response = session.poll(WAIT);
             assertNotNull(response);
             Map<String, Object> msg = parseMessage(response);
             assertEquals("next", msg.get("type"));
@@ -282,20 +252,19 @@ class WebSocketSubscriptionTest {
     @Order(6)
     @DisplayName("snake_case table name extracted from camelCase subscription field")
     void snakeCaseTable_camelCaseField_extractsCorrectly() throws Exception {
-        BlockingQueue<String> messages = new LinkedBlockingQueue<>();
-        WebSocketSession session = connectWebSocket(messages);
+        WsClient session = connectWebSocket();
 
         try {
             // Init
-            session.sendMessage(new TextMessage("{\"type\":\"connection_init\"}"));
-            messages.poll(5, TimeUnit.SECONDS); // ack
+            session.send("{\"type\":\"connection_init\"}");
+            session.poll(WAIT); // ack
 
             // Subscribe to testSchemaOrderItemsChanges -> table "order_items"
-            session.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
+            session.send(mapper.writeValueAsString(Map.of(
                     "type", "subscribe",
                     "id", "sub-oi",
                     "payload", Map.of("query", "subscription { testSchemaOrderItemsChanges { operation table data } }")
-            ))));
+            )));
 
             awaitSubscription("test_schema_order_items");
 
@@ -305,7 +274,7 @@ class WebSocketSubscriptionTest {
                     "{\"order_id\":1,\"product_id\":1}", System.currentTimeMillis()
             ));
 
-            String response = messages.poll(5, TimeUnit.SECONDS);
+            String response = session.poll(WAIT);
             assertNotNull(response, "Should receive event for snake_case table");
             Map<String, Object> msg = parseMessage(response);
             assertEquals("next", msg.get("type"));
@@ -328,12 +297,9 @@ class WebSocketSubscriptionTest {
     @Order(7)
     @DisplayName("a WebSocket upgrade naming an unknown project is refused")
     void unknownProject_handshakeRefused() {
-        StandardWebSocketClient client = new StandardWebSocketClient();
-        CompletableFuture<WebSocketSession> futureSession = client.execute(new TextWebSocketHandler(),
-                new WebSocketHttpHeaders(), URI.create("ws://localhost:" + port + "/nonexistent/graphql"));
-
         ExecutionException refused = assertThrows(ExecutionException.class,
-                () -> futureSession.get(5, TimeUnit.SECONDS));
-        assertTrue(String.valueOf(refused.getCause()).contains("404"), String.valueOf(refused.getCause()));
+                () -> WsClient.open(URI.create("ws://localhost:" + server.getPort() + "/nonexistent/graphql"),
+                        null, List.of()));
+        assertEquals(404, WsClient.refusedStatus(refused), String.valueOf(refused.getCause()));
     }
 }
