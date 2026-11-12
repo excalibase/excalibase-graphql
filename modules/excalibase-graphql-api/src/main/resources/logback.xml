@@ -1,0 +1,15 @@
+<configuration>
+  <!-- ECS JSON by default (parseable by any log collector); LOG_FORMAT=plain for local development -->
+  <appender name="ecs" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="ch.qos.logback.classic.encoder.JsonEncoder"/>
+  </appender>
+  <appender name="plain" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{ISO8601} %-5level [%t] [%X{remoteAddr}] %logger{1}: %msg%n%throwable</pattern>
+    </encoder>
+  </appender>
+  <logger name="io.github.excalibase" level="${log.level.app:-info}"/>
+  <root level="${log.level.root:-info}">
+    <appender-ref ref="${LOG_FORMAT:-ecs}"/>
+  </root>
+</configuration>
