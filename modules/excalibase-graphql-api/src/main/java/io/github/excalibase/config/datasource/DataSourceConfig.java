@@ -17,8 +17,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * A routing DataSource over the configured database and every project's own pool. The app starts even
@@ -46,25 +44,14 @@ public class DataSourceConfig {
                           @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
                           @Nullable DynamicDataSourceManager dataSourceManager) {
         boolean multiTenant = tenantProvisioningUrl != null && !tenantProvisioningUrl.isBlank();
-        Map<Object, Object> targets = new HashMap<>();
-        boolean hasDefault = registersDefault(properties.url(), properties.username(),
-                properties.password(), multiTenant);
-        if (hasDefault) {
-            HikariDataSource hikari = singleDatabasePool(properties, ConnectionBounds.DEFAULT_READ_TIMEOUT);
-            targets.put(DynamicRoutingDataSource.DEFAULT_KEY, hikari);
+        DataSource configured = null;
+        if (registersDefault(properties.url(), properties.username(), properties.password(), multiTenant)) {
+            configured = singleDatabasePool(properties, ConnectionBounds.DEFAULT_READ_TIMEOUT);
             log.info("DataSource registered: {}", properties.url());
         } else {
             log.info("Multi-tenant mode: no default datasource, every project is served from its own database");
         }
-
-        DynamicRoutingDataSource routing = new DynamicRoutingDataSource(dataSourceManager, hasDefault);
-        routing.setTargetDataSources(targets);
-        if (hasDefault) {
-            routing.setDefaultTargetDataSource(targets.get(DynamicRoutingDataSource.DEFAULT_KEY));
-        }
-        routing.setLenientFallback(true);
-        routing.afterPropertiesSet();
-        return routing;
+        return new DynamicRoutingDataSource(dataSourceManager, configured);
     }
 
     /** The configured database's pool, bounded like a project's so a server that stops answering fails the request. */

@@ -53,7 +53,9 @@
         <java.version>25</java.version>
         <release.version>25</release.version>
         <micronaut.runtime>netty</micronaut.runtime>
-        <springboot.version>3.5.14</springboot.version>
+        <!-- Spring Framework is used as plain libraries (JdbcTemplate, TransactionTemplate), on its current line -->
+        <spring.framework.version>7.0.10</spring.framework.version>
+        <micronaut.platform.version>4.10.24</micronaut.platform.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
         <jackson.version>2.21.2</jackson.version>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
@@ -78,6 +80,7 @@
 
         <!--testing-->
         <testcontainers.version>1.21.4</testcontainers.version>
+        <awaitility.version>4.3.0</awaitility.version>
 
         <!--observability-->
         <opentelemetry-instrumentation.version>2.16.0-alpha</opentelemetry-instrumentation.version>
@@ -113,21 +116,53 @@
                 <artifactId>jackson-core</artifactId>
                 <version>${jackson.version}</version>
             </dependency>
-            <!-- Micronaut's versions win over the Boot BOM below (netty, jackson, micrometer, logback...) -->
+            <!-- Spring Framework first: the Micronaut platform pins an older line of the same libraries -->
             <dependency>
-                <groupId>io.micronaut.platform</groupId>
-                <artifactId>micronaut-platform</artifactId>
-                <version>4.10.24</version>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-framework-bom</artifactId>
+                <version>${spring.framework.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Spring Boot BOM only for versions of spring-jdbc/spring-tx and test libraries; no Boot runtime -->
             <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${springboot.version}</version>
+                <groupId>io.micronaut.platform</groupId>
+                <artifactId>micronaut-platform</artifactId>
+                <version>${micronaut.platform.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-jdbc</artifactId>
+                <version>${spring.framework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-tx</artifactId>
+                <version>${spring.framework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-beans</artifactId>
+                <version>${spring.framework.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework</groupId>
+                <artifactId>spring-core</artifactId>
+                <version>${spring.framework.version}</version>
+                <exclusions>
+                    <!-- Spring's own log lines go through SLF4J, like every other line (jcl-over-slf4j) -->
+                    <exclusion>
+                        <groupId>commons-logging</groupId>
+                        <artifactId>commons-logging</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+            <dependency>
+                <groupId>org.awaitility</groupId>
+                <artifactId>awaitility</artifactId>
+                <version>${awaitility.version}</version>
             </dependency>
 
             <!--Own modules-->

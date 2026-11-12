@@ -1,58 +1,45 @@
 package io.github.excalibase.config.datasource;
 
-import org.springframework.jdbc.datasource.lookup.AbstractRoutingDataSource;
-
-import javax.sql.DataSource;
+import io.micronaut.core.annotation.Nullable;
 import java.sql.Connection;
 import java.sql.SQLException;
+import javax.sql.DataSource;
+import org.springframework.jdbc.datasource.AbstractDataSource;
 
 /**
- * Routes to tenant-specific datasources when a ScopedValue tenant is set,
- * otherwise falls back to the default static datasource.
+ * Routes to the calling project's own database when a tenant is set, otherwise to the one configured
+ * database. Multi-tenant mode has no configured database, so a connection that names no project is refused.
  */
-public class DynamicRoutingDataSource extends AbstractRoutingDataSource {
-
-    public static final String DEFAULT_KEY = "default";
+public class DynamicRoutingDataSource extends AbstractDataSource {
 
     private final DynamicDataSourceManager dataSourceManager;
-    private final boolean hasDefaultTarget;
+    private final DataSource defaultTarget;
 
-    public DynamicRoutingDataSource(DynamicDataSourceManager dataSourceManager, boolean hasDefaultTarget) {
+    public DynamicRoutingDataSource(@Nullable DynamicDataSourceManager dataSourceManager,
+                                    @Nullable DataSource defaultTarget) {
         this.dataSourceManager = dataSourceManager;
-        this.hasDefaultTarget = hasDefaultTarget;
+        this.defaultTarget = defaultTarget;
     }
 
-    @Override
-    protected Object determineCurrentLookupKey() {
-        String tenantId = TenantContext.getTenantId();
-        return tenantId != null ? tenantId : DEFAULT_KEY;
-    }
-
-    @Override
-    protected DataSource determineTargetDataSource() {
+    private DataSource target() throws SQLException {
         String tenantId = TenantContext.getTenantId();
         if (tenantId != null && dataSourceManager != null) {
             return dataSourceManager.getDataSource(TenantContext.getOrgSlug(), tenantId);
         }
-        return super.determineTargetDataSource();
+        if (defaultTarget == null) {
+            throw new SQLException("No default datasource configured and no tenant context set. "
+                    + "Provide spring.datasource.url or use a JWT with projectId claim.");
+        }
+        return defaultTarget;
     }
 
     @Override
     public Connection getConnection() throws SQLException {
-        if (!hasDefaultTarget && TenantContext.getTenantId() == null) {
-            throw new SQLException(
-                "No default datasource configured and no tenant context set. "
-                + "Provide spring.datasource.url or use a JWT with projectId claim.");
-        }
-        return super.getConnection();
+        return target().getConnection();
     }
 
     @Override
     public Connection getConnection(String username, String password) throws SQLException {
-        if (!hasDefaultTarget && TenantContext.getTenantId() == null) {
-            throw new SQLException(
-                "No default datasource configured and no tenant context set.");
-        }
-        return super.getConnection(username, password);
+        return target().getConnection(username, password);
     }
 }
