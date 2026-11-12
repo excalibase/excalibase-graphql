@@ -1,9 +1,13 @@
 package io.github.excalibase.support;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.hamcrest.Matcher;
+import org.hamcrest.Matchers;
 import org.hamcrest.MatcherAssert;
 
 /** Checks on an {@link HttpAnswer}: its status, its body and the values at JSON paths in it. */
@@ -16,6 +20,10 @@ public final class Expect {
         return new StatusExpectation();
     }
 
+    public static HeaderExpectation header() {
+        return new HeaderExpectation();
+    }
+
     public static ContentExpectation content() {
         return new ContentExpectation();
     }
@@ -26,6 +34,14 @@ public final class Expect {
 
     public static Expectation jsonPath(String path, Matcher<?> matcher) {
         return answer -> MatcherAssert.assertThat(describe(answer, path), actualAt(answer, path), asObjectMatcher(matcher));
+    }
+
+    private static JsonNode parse(String json) {
+        try {
+            return new ObjectMapper().readTree(json);
+        } catch (JsonProcessingException notJson) {
+            throw new IllegalArgumentException("not JSON: " + json, notJson);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -47,29 +63,36 @@ public final class Expect {
             return answer -> check(answer, status);
         }
 
-        public Expectation is2xxSuccessful() {
-            return inClass(2);
-        }
-
-        public Expectation is4xxClientError() {
-            return inClass(4);
-        }
-
-        private static Expectation inClass(int hundreds) {
-            return answer -> {
-                if (answer.status() / 100 != hundreds) {
-                    throw new AssertionError("Status expected: " + hundreds + "xx but was:<" + answer.status()
-                            + "> body: " + answer.body());
-                }
-            };
-        }
-
         public Expectation isOk() {
             return is(200);
         }
 
         public Expectation isCreated() {
             return is(201);
+        }
+
+        public Expectation is4xxClientError() {
+            return answer -> {
+                if (answer.status() / 100 != 4) {
+                    throw new AssertionError("Status expected: 4xx but was:<" + answer.status() + "> body: " + answer.body());
+                }
+            };
+        }
+
+        public Expectation is2xxSuccessful() {
+            return answer -> {
+                if (answer.status() < 200 || answer.status() > 299) {
+                    throw new AssertionError("Status expected 2xx but was:<" + answer.status() + "> body: " + answer.body());
+                }
+            };
+        }
+
+        public Expectation isMethodNotAllowed() {
+            return is(405);
+        }
+
+        public Expectation isNotAcceptable() {
+            return is(406);
         }
 
         public Expectation isBadRequest() {
@@ -104,7 +127,35 @@ public final class Expect {
         }
     }
 
+    public static final class HeaderExpectation {
+
+        public Expectation string(String name, Matcher<? super String> matcher) {
+            return answer -> MatcherAssert.assertThat("header " + name, answer.header(name), matcher);
+        }
+    }
+
     public static final class ContentExpectation {
+
+        public Expectation string(String expected) {
+            return answer -> MatcherAssert.assertThat("response body", answer.body(), Matchers.is(expected));
+        }
+
+        public Expectation json(String expected, boolean strict) {
+            return answer -> {
+                if (!answer.json().equals(parse(expected))) {
+                    throw new AssertionError("response body expected JSON:<" + expected + "> but was:<" + answer.body() + ">");
+                }
+            };
+        }
+
+        public Expectation contentTypeCompatibleWith(String mediaType) {
+            return answer -> {
+                String actual = answer.header("Content-Type");
+                if (actual == null || !actual.toLowerCase().startsWith(mediaType.toLowerCase())) {
+                    throw new AssertionError("Content-Type expected compatible with:<" + mediaType + "> but was:<" + actual + ">");
+                }
+            };
+        }
 
         public Expectation string(Matcher<? super String> matcher) {
             return answer -> MatcherAssert.assertThat("response body", answer.body(), matcher);
@@ -120,16 +171,16 @@ public final class Expect {
         }
 
         public Expectation value(Object expected) {
+            if (expected instanceof Matcher<?> matcher) {
+                return answer -> MatcherAssert.assertThat(describe(answer, path), actualAt(answer, path),
+                        asObjectMatcher(matcher));
+            }
             return answer -> {
                 Object actual = unwrapSingle(answer, expected);
                 if (!JsonPaths.sameValue(expected, actual)) {
                     throw new AssertionError(describe(answer, path) + " expected:<" + expected + "> but was:<" + actual + ">");
                 }
             };
-        }
-
-        public Expectation value(Matcher<?> matcher) {
-            return jsonPath(path, matcher);
         }
 
         public Expectation exists() {

@@ -10,6 +10,7 @@ class PostgresResponseShapeIntegrationTest extends ResponseShapeContract {
     static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-shape-contract.sql");
 
+
     @Override
     public Map<String, String> getProperties() {
         return EngineProperties.postgres(postgres, "test-proj");

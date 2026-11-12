@@ -30,6 +30,9 @@ final class JsonPaths {
         if (!path.startsWith("$")) {
             throw new IllegalArgumentException("not a JSONPath: " + path);
         }
+        if (path.endsWith(".length()")) {
+            return length(select(root, path.substring(0, path.length() - ".length()".length())));
+        }
         List<JsonNode> current = List.of(root);
         boolean indefinite = false;
         boolean missing = false;
@@ -48,6 +51,18 @@ final class JsonPaths {
             return new Selection(Optional.of(current.stream().map(JsonPaths::toJava).toList()), true);
         }
         return new Selection(missing ? Optional.empty() : Optional.ofNullable(toJava(current.getFirst())), false);
+    }
+
+    private static Selection length(Selection selected) {
+        Optional<Object> size = selected.value().map(JsonPaths::sizeOf);
+        return new Selection(size, false);
+    }
+
+    private static Object sizeOf(Object value) {
+        if (value instanceof List<?> list) {
+            return list.size();
+        }
+        return value instanceof Map<?, ?> map ? map.size() : value.toString().length();
     }
 
     private static List<JsonNode> apply(List<JsonNode> nodes, Matcher step) {
@@ -103,9 +118,21 @@ final class JsonPaths {
         return node.isBoolean() ? (Object) node.booleanValue() : node.asText();
     }
 
+    /** A JSON string holding a number matches that number, as a client reading the value as a number would. */
+    private static boolean numericallyEqual(Number expected, String text) {
+        try {
+            return new BigDecimal(expected.toString()).compareTo(new BigDecimal(text)) == 0;
+        } catch (NumberFormatException notNumeric) {
+            return false;
+        }
+    }
+
     static boolean sameValue(Object expected, Object actual) {
         if (expected instanceof Number left && actual instanceof Number right) {
             return new BigDecimal(left.toString()).compareTo(new BigDecimal(right.toString())) == 0;
+        }
+        if (expected instanceof Number number && actual instanceof String text) {
+            return numericallyEqual(number, text);
         }
         return expected == null ? actual == null : expected.equals(actual);
     }

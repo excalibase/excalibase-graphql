@@ -25,12 +25,6 @@ public class ExcalibaseGraphqlApplication {
                 properties.put("micronaut.server.netty.listeners.metrics.host", address);
             }
         }
-        // Excess clients wait in the kernel accept queue: its length follows the CPUs the container has.
-        if (!"false".equalsIgnoreCase(env.getOrDefault("APP_OVERLOAD_ENABLED", "true"))) {
-            int perCpu = Integer.parseInt(env.getOrDefault("APP_OVERLOAD_ACCEPT_COUNT_PER_CPU", "256"));
-            properties.put("micronaut.server.netty.options.SO_BACKLOG",
-                    Math.multiplyExact(Runtime.getRuntime().availableProcessors(), perCpu));
-        }
         // Exports go only to a configured collector; without one no signal is exported or retried.
         String collector = env.getOrDefault("OTEL_EXPORTER_OTLP_ENDPOINT", "").strip();
         if (!collector.isEmpty()) {
