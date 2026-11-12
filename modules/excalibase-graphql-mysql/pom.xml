@@ -105,5 +105,11 @@
             <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
+            <!-- commons-compress (managed by the Micronaut platform) needs it when Testcontainers copies files -->
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
