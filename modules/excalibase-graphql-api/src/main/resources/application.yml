@@ -14,6 +14,8 @@ micronaut:
     binders:
       web:
         enabled: false   # http.server.requests is recorded by HttpRequestTimerFilter, with the same tags as before
+      executor:
+        enabled: false   # the earlier build registered no executor meters
     export:
       prometheus:
         enabled: true

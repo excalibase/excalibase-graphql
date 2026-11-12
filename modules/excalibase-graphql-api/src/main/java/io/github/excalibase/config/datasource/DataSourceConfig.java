@@ -1,7 +1,9 @@
 package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory;
 import io.github.excalibase.service.DatabaseEngine;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.context.annotation.Value;
@@ -42,11 +44,15 @@ public class DataSourceConfig {
     @Context
     DataSource dataSource(DataSourceSettings properties,
                           @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
-                          @Nullable DynamicDataSourceManager dataSourceManager) {
+                          @Nullable DynamicDataSourceManager dataSourceManager, MeterRegistry meters,
+                          HikariSettings hikari) {
         boolean multiTenant = tenantProvisioningUrl != null && !tenantProvisioningUrl.isBlank();
         DataSource configured = null;
         if (registersDefault(properties.url(), properties.username(), properties.password(), multiTenant)) {
-            configured = singleDatabasePool(properties, ConnectionBounds.DEFAULT_READ_TIMEOUT);
+            HikariDataSource pool = singleDatabasePool(properties, ConnectionBounds.DEFAULT_READ_TIMEOUT);
+            hikari.applyTo(pool);
+            pool.setMetricsTrackerFactory(new MicrometerMetricsTrackerFactory(meters));
+            configured = pool;
             log.info("DataSource registered: {}", properties.url());
         } else {
             log.info("Multi-tenant mode: no default datasource, every project is served from its own database");
