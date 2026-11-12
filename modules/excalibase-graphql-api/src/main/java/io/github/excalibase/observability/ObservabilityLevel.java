@@ -4,14 +4,21 @@ import java.util.Locale;
 
 /**
  * How much per-request monitoring the engine does ({@code excalibase.observability.level}).
- * {@link #FULL} keeps every observation, span and metric; {@link #LITE} swaps the HTTP server and
- * Spring Security observations for a plain request timer with the same tags, which costs far less CPU;
- * {@link #OFF} drops them without the timer.
+ * {@link #FULL} keeps every metric and span; {@link #LITE} keeps the {@code http.server.requests} timer with the same
+ * tags but makes no span per HTTP request, which costs far less CPU; {@link #OFF} drops both.
  */
 public enum ObservabilityLevel {
     FULL, LITE, OFF;
 
     public static final String PROPERTY = "excalibase.observability.level";
+
+    public boolean timesRequests() {
+        return this != OFF;
+    }
+
+    public boolean tracesRequests() {
+        return this == FULL;
+    }
 
     /** Unset or blank means {@link #FULL}; anything that is not a level fails rather than guessing. */
     public static ObservabilityLevel parse(String value) {

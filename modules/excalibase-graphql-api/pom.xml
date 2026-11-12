@@ -52,10 +52,10 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-observation</artifactId>
         </dependency>
-        <!-- OpenTelemetry tracing + OTLP export, only active with OTEL_EXPORTER_OTLP_ENDPOINT -->
+        <!-- OpenTelemetry SDK + OTLP export; spans leave the process only with OTEL_EXPORTER_OTLP_ENDPOINT -->
         <dependency>
-            <groupId>io.micronaut.tracing</groupId>
-            <artifactId>micronaut-tracing-opentelemetry-http</artifactId>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk</artifactId>
         </dependency>
         <dependency>
             <groupId>io.opentelemetry</groupId>
