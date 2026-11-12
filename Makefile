@@ -257,6 +257,11 @@ study-cases-wait-ready:
 		sleep 5; \
 	done
 
+# Contract tests: the engine's wire behaviour, black-box, for any build of the image
+.PHONY: contracts-e2e
+contracts-e2e: build-image ## Pin metrics, health, logs, tracing, HTTP, WebSocket, config and overload behaviour
+	@e2e/contracts/run.sh
+
 # CDC subscription test targets
 .PHONY: subscription-test
 subscription-test: ## Run Postgres CDC subscription e2e tests (requires make up)

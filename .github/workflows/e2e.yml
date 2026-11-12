@@ -284,3 +284,41 @@ jobs:
         retention-days: 3
         if-no-files-found: ignore
 
+  contracts-e2e:
+    name: Engine Contracts
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 25
+      uses: actions/setup-java@v4
+      with:
+        java-version: '25'
+        distribution: 'corretto'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Run engine contract tests
+      run: make contracts-e2e
+
+    - name: Upload engine logs on failure
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: contracts-engine-logs
+        path: e2e/contracts/engine.log
+        retention-days: 3
+        if-no-files-found: ignore

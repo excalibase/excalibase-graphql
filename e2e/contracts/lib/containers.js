@@ -1,9 +1,15 @@
-const { execFileSync } = require('child_process');
+const { execFileSync, spawnSync } = require('child_process');
 const crypto = require('crypto');
 const { stack } = require('./stack');
 const { waitUntil, request } = require('./http');
 
 const docker = (...args) => execFileSync('docker', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+
+/** Everything the container wrote, standard output and standard error. */
+const logsOf = (name) => {
+  const result = spawnSync('docker', ['logs', name], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  return `${result.stdout}${result.stderr}`.split('\n').filter(Boolean);
+};
 
 const SINGLE_DATABASE_ENV = {
   POSTGRES_URL: 'jdbc:postgresql://postgres:5432/hana',
@@ -23,10 +29,11 @@ function networkAddress(name) {
 }
 
 /** Starts an engine container on the contract network; resolves once `readyPath` answers on `readyPort`. */
-async function startEngine(env, { cpus, network = stack.network, readyPort = 10000, readyPath = '/', readyUntil = (response) => response.status > 0 } = {}) {
+async function startEngine(env, { cpus, mounts = [], network = stack.network, readyPort = 10000, readyPath = '/', readyUntil = (response) => response.status > 0 } = {}) {
   const name = `contract-engine-${crypto.randomBytes(4).toString('hex')}`;
   const args = ['run', '-d', '--name', name, '--network', network];
   if (cpus) args.push('--cpus', String(cpus));
+  mounts.forEach((mount) => args.push('-v', mount));
   Object.entries(env).forEach(([key, value]) => args.push('-e', `${key}=${value}`));
   docker(...args, stack.image);
   created.add(name);
@@ -35,7 +42,7 @@ async function startEngine(env, { cpus, network = stack.network, readyPort = 100
     name, address,
     app: `http://${address}:${env.SERVER_PORT || 10000}`,
     management: `http://${address}:${env.MANAGEMENT_SERVER_PORT || 8081}`,
-    logs: () => docker('logs', name).split('\n').filter(Boolean),
+    logs: () => logsOf(name),
     stop: () => removeContainer(name),
   };
   await waitUntil(async () => readyUntil(await request(`http://${address}:${readyPort}`, readyPath)), { timeoutMs: 90000, label: `${name} ready` })
@@ -51,7 +58,7 @@ async function startFailingEngine(env) {
   docker(...args, stack.image);
   created.add(name);
   await waitUntil(() => docker('inspect', '-f', '{{.State.Running}}', name) === 'false', { timeoutMs: 90000, label: `${name} exit` });
-  return { exitCode: Number(docker('inspect', '-f', '{{.State.ExitCode}}', name)), logs: docker('logs', name).split('\n').filter(Boolean) };
+  return { exitCode: Number(docker('inspect', '-f', '{{.State.ExitCode}}', name)), logs: logsOf(name) };
 }
 
 function removeContainer(name) {
