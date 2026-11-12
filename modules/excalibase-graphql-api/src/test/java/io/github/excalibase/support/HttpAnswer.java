@@ -22,6 +22,21 @@ public record HttpAnswer(int status, String body, HttpHeaders headers) {
         }
     }
 
+    /** The value at {@code path} in the body, typed by the caller; fails when the path leads nowhere. */
+    @SuppressWarnings("unchecked")
+    public <T> T jsonPath(String path) {
+        return (T) JsonPaths.select(json(), path).value()
+                .orElseThrow(() -> new AssertionError("No value at JSON path " + path + " in " + body));
+    }
+
+    /** Runs each check against this answer; the first one that fails stops the test. */
+    public HttpAnswer expect(Expectation... expectations) {
+        for (Expectation expectation : expectations) {
+            expectation.check(this);
+        }
+        return this;
+    }
+
     public String header(String name) {
         return headers.firstValue(name).orElse(null);
     }

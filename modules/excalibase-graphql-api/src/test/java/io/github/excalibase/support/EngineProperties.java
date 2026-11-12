@@ -10,10 +10,18 @@ public final class EngineProperties {
     private EngineProperties() {
     }
 
+    /** Settings every engine under test needs: no management port, so engines in one JVM never collide on it. */
+    public static Map<String, String> isolated() {
+        Map<String, String> properties = new HashMap<>();
+        properties.put("endpoints.all.port", "-1");
+        properties.put("micronaut.server.port", "-1");
+        return properties;
+    }
+
     public static Map<String, String> singleDatabase(JdbcDatabaseContainer<?> database, String databaseType,
                                                      String projectId) {
         database.start();
-        Map<String, String> properties = new HashMap<>();
+        Map<String, String> properties = isolated();
         properties.put("spring.datasource.url", database.getJdbcUrl());
         properties.put("spring.datasource.username", database.getUsername());
         properties.put("spring.datasource.password", database.getPassword());
@@ -22,7 +30,6 @@ public final class EngineProperties {
         properties.put("app.security.jwt-enabled", "false");
         properties.put("app.security.insecure-dev-mode", "true");
         properties.put("app.max-rows", "30");
-        properties.put("endpoints.all.port", "-1");
         return properties;
     }
 
