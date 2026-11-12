@@ -42,10 +42,23 @@ class GracefulStartupTest {
     @Autowired
     private MockMvc mockMvc;
 
+    @Autowired
+    private org.springframework.context.ApplicationContext context;
+
     private static final ObjectMapper mapper = new ObjectMapper();
 
     private String graphql(String query) throws Exception {
         return mapper.writeValueAsString(Map.of("query", query));
+    }
+
+    // Authentication is the JWT filter alone: Spring Security's built-in user (user + a password printed
+    // at startup) must not exist, so there is no second way in.
+    @Test
+    void noDefaultUserIsCreated() {
+        assertThat(context.getBeanNamesForType(org.springframework.security.core.userdetails.UserDetailsService.class))
+                .isEmpty();
+        assertThat(context.getBeanNamesForType(org.springframework.security.authentication.AuthenticationManager.class))
+                .isEmpty();
     }
 
     @Test

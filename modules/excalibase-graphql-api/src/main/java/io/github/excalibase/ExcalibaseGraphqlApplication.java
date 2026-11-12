@@ -7,10 +7,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.autoconfigure.data.jdbc.JdbcRepositoriesAutoConfiguration;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
+import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
 
 @SpringBootApplication(scanBasePackages = "io.github.excalibase",
         exclude = {DataSourceAutoConfiguration.class, JdbcRepositoriesAutoConfiguration.class,
-                DataSourceObservationAutoConfiguration.class})
+                DataSourceObservationAutoConfiguration.class, UserDetailsServiceAutoConfiguration.class})
 @ImportRuntimeHints(ExcalibaseRuntimeHints.class)
 public class ExcalibaseGraphqlApplication {
     public static void main(String[] args) {
