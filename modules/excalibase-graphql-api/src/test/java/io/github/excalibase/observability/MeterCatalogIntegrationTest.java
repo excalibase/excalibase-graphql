@@ -31,7 +31,6 @@ class MeterCatalogIntegrationTest extends EngineIntegrationTest {
     public Map<String, String> getProperties() {
         return Map.of(
                 "micronaut.server.port", "-1",
-                "spring.datasource.hikari.maximum-pool-size", "7",
                 "spring.datasource.url", "jdbc:postgresql://localhost:59999/nonexistent",
                 "spring.datasource.username", "fake",
                 "spring.datasource.password", "fake",
@@ -97,9 +96,9 @@ class MeterCatalogIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("spring.datasource.hikari.* settings, as the charts pass them, size the pool")
-    void hikariSettingsApplied() {
-        assertThat(text).contains("hikaricp_connections_max{pool=\"HikariPool-1\"} 7.0");
+    @DisplayName("spring.datasource.hikari.* is ignored: the pool keeps its bounded default size")
+    void poolSizeUnchanged() {
+        assertThat(text).contains("hikaricp_connections_max{pool=\"HikariPool-1\"} 10.0");
     }
 
     @Test

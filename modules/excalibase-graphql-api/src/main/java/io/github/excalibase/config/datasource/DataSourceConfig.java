@@ -44,13 +44,11 @@ public class DataSourceConfig {
     @Context
     DataSource dataSource(DataSourceSettings properties,
                           @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
-                          @Nullable DynamicDataSourceManager dataSourceManager, MeterRegistry meters,
-                          HikariSettings hikari) {
+                          @Nullable DynamicDataSourceManager dataSourceManager, MeterRegistry meters) {
         boolean multiTenant = tenantProvisioningUrl != null && !tenantProvisioningUrl.isBlank();
         DataSource configured = null;
         if (registersDefault(properties.url(), properties.username(), properties.password(), multiTenant)) {
             HikariDataSource pool = singleDatabasePool(properties, ConnectionBounds.DEFAULT_READ_TIMEOUT);
-            hikari.applyTo(pool);
             pool.setMetricsTrackerFactory(new MicrometerMetricsTrackerFactory(meters));
             configured = pool;
             log.info("DataSource registered: {}", properties.url());

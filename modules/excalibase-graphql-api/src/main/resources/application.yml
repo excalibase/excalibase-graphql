@@ -21,8 +21,9 @@ micronaut:
         enabled: true
         descriptions: false
       otlp:
-        enabled: false   # on only with OTEL_EXPORTER_OTLP_ENDPOINT (ExcalibaseGraphqlApplication)
+        enabled: false   # on only with OTEL_EXPORTER_OTLP_ENDPOINT (StartupSettings)
         step: PT30S
+        resourceAttributes: service.name=Excalibase graphql
 
 endpoints:
   all:
@@ -43,6 +44,9 @@ management:
   health:
     db:
       enabled: true
+  tracing:
+    sampling:
+      probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}   # 100% by default; tune in production
 
 jackson:
   serialization-inclusion: non_null
