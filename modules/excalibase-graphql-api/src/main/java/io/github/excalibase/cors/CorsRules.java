@@ -38,6 +38,10 @@ public final class CorsRules {
         return exposedHeaders;
     }
 
+    public List<String> allowedHeaders() {
+        return allowedHeaders;
+    }
+
     public boolean allowCredentials() {
         return allowCredentials;
     }
