@@ -1,5 +1,9 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.DatabaseAccess;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -16,20 +20,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -50,14 +43,14 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
 import static io.github.excalibase.PermissionDocs.entry;
 import static io.github.excalibase.PermissionDocs.insert;
 import static io.github.excalibase.PermissionDocs.select;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 /**
  * Nested inserts (docs/features/permissions.md §5) over HTTP on real Postgres, as Hasura runs them: every
@@ -65,10 +58,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * row goes in first and the array relationship's rows last, each statement checked on its own, and one
  * failure anywhere rolls back everything. What comes back is only what the role may select.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-class NestedInsertIntegrationTest {
+class NestedInsertIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "proj-nested-insert";
     private static final String ORDERS = "public.orders";
@@ -85,8 +75,7 @@ class NestedInsertIntegrationTest {
     private static final String ORDER_COLUMNS = "[\"customer_id\",\"note\",\"status\"]";
     private static final String ITEM_COLUMNS = "[\"sku\",\"qty\",\"hidden\"]";
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-nested-insert.sql");
 
     private static final AtomicReference<String> PERMISSIONS = new AtomicReference<>();
@@ -124,28 +113,28 @@ class NestedInsertIntegrationTest {
         if (mockVault != null) mockVault.stop(0);
     }
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("app.security.jwt-enabled", () -> "true");
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.auth.jwks-url",
-                () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
-        registry.add("app.security.rls.policy-url", () -> "http://localhost:" + mockVaultPort + "/api");
-        registry.add("app.security.rls.policy-pat", () -> "test-pat");
-        registry.add("app.security.rls.policy-ttl-ms", () -> 0);
+    @Override
+    public Map<String, String> getProperties() {
+        Map<String, String> properties = EngineProperties.datasource(postgres);
+        properties.put("app.database-type", "postgres");
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.project-id", PROJECT);
+        properties.put("app.security.auth.jwks-url", "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
+        properties.put("app.security.rls.policy-url", "http://localhost:" + mockVaultPort + "/api");
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        properties.put("app.security.rls.policy-ttl-ms", "0");
+        return properties;
     }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @Autowired
-    private MockMvc mockMvc;
 
-    @Autowired
     private JdbcTemplate jdbc;
+
+    @BeforeEach
+    void openJdbc() {
+        jdbc = DatabaseAccess.template(postgres);
+    }
 
     @BeforeEach
     void empty() {
@@ -163,19 +152,16 @@ class NestedInsertIntegrationTest {
                 entry(CUSTOMERS, "anon", insert(ANY, "[\"name\"]", "{}")));
     }
 
-    ResultActions anon(String query) throws Exception {
-        return send(post("/" + PROJECT + "/graphql"), query, Map.of());
+    HttpAnswer anon(String query) throws Exception {
+        return send(query, Map.of());
     }
 
-    private ResultActions as(String role, String query, Map<String, Object> variables) throws Exception {
-        return send(post("/" + PROJECT + "/graphql").header("Authorization", "Bearer " + token(role)), query,
-                variables);
+    private HttpAnswer as(String role, String query, Map<String, Object> variables) throws Exception {
+        return send(query, variables, "Authorization", "Bearer " + token(role));
     }
 
-    private ResultActions send(MockHttpServletRequestBuilder request, String query, Map<String, Object> variables)
-            throws Exception {
-        return mockMvc.perform(request.contentType(MediaType.APPLICATION_JSON)
-                .content(MAPPER.writeValueAsString(Map.of("query", query, "variables", variables))));
+    private HttpAnswer send(String query, Map<String, Object> variables, String... headers) throws Exception {
+        return http.postJson("/" + PROJECT + "/graphql", Map.of("query", query, "variables", variables), headers);
     }
 
     private static String token(String role) throws Exception {
@@ -213,8 +199,8 @@ class NestedInsertIntegrationTest {
         anonCheckout(ORDER_IS_NEW, ITEM_OF_NEW_ORDER);
 
         anon(checkout("new"))
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.createPublicOrders.affected_rows").value(3));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.createPublicOrders.affected_rows").value(3));
 
         assertThat(jdbc.queryForList("SELECT source FROM orders", String.class)).containsExactly("web");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM order_items i JOIN orders o ON o.id = i.order_id",
@@ -227,8 +213,8 @@ class NestedInsertIntegrationTest {
 
         anon("mutation { createPublicOrders(input: { note: \"x\", publicOrderItems: { data: ["
                 + "{ sku: \"a\", qty: 1 }, { sku: \"b\", qty: 0 }] } }) { affected_rows } }")
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"))
-                .andExpect(jsonPath("$.data").doesNotExist());
+                .expect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"))
+                .expect(jsonPath("$.data").doesNotExist());
 
         assertNothingWritten();
     }
@@ -237,8 +223,8 @@ class NestedInsertIntegrationTest {
     void aChildCheck_seesTheParentInsertedBeforeIt_inTheSameMutation() throws Exception {
         anonCheckout(ANY, ITEM_OF_NEW_ORDER);
 
-        anon(checkout("new")).andExpect(jsonPath("$.data.createPublicOrders.affected_rows").value(3));
-        anon(checkout("held")).andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
+        anon(checkout("new")).expect(jsonPath("$.data.createPublicOrders.affected_rows").value(3));
+        anon(checkout("held")).expect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
 
         assertThat(jdbc.queryForList("SELECT status FROM orders", String.class)).containsExactly("new");
         assertThat(rows("order_items")).isEqualTo(2);
@@ -248,7 +234,7 @@ class NestedInsertIntegrationTest {
     void aParentCheck_doesNotSeeTheChildrenInsertedAfterIt_asInHasura() throws Exception {
         anonCheckout(ORDER_HAS_ITEMS, ANY);
 
-        anon(checkout("new")).andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
+        anon(checkout("new")).expect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
 
         assertNothingWritten();
     }
@@ -259,8 +245,8 @@ class NestedInsertIntegrationTest {
 
         anon("mutation { createPublicOrders(input: { note: \"x\", publicOrderItems: { data: [{ sku: \"a\", qty: 1,"
                 + " publicItemNotes: { data: [{ body: \"gift\" }] } }] } }) { affected_rows } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("publicItemNotes")))
-                .andExpect(jsonPath("$.data").doesNotExist());
+                .expect(jsonPath("$.errors[0].message", containsString("publicItemNotes")))
+                .expect(jsonPath("$.data").doesNotExist());
 
         assertNothingWritten();
     }
@@ -272,7 +258,7 @@ class NestedInsertIntegrationTest {
 
         anon("mutation { createPublicOrders(input: { note: \"x\", publicOrderItems: { data: ["
                 + "{ order_id: 1, sku: \"a\", qty: 1 }] } }) { affected_rows } }")
-                .andExpect(jsonPath("$.errors[0].message").value(
+                .expect(jsonPath("$.errors[0].message").value(
                         "cannot insert \"order_id\" columns as their values are already being determined by parent insert"));
 
         assertNothingWritten();
@@ -284,8 +270,8 @@ class NestedInsertIntegrationTest {
 
         anon("mutation { createPublicOrders(input: { note: \"x\", publicCustomerId: { data: { name: \"Ann\" } },"
                 + " publicOrderItems: { data: [{ sku: \"a\", qty: 1 }] } }) { affected_rows } }")
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.createPublicOrders.affected_rows").value(3));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.createPublicOrders.affected_rows").value(3));
 
         assertThat(jdbc.queryForObject("SELECT c.name FROM orders o JOIN customers c ON c.id = o.customer_id",
                 String.class)).isEqualTo("Ann");
@@ -300,11 +286,11 @@ class NestedInsertIntegrationTest {
 
         as("clerk", "mutation { createPublicOrders(input: { note: \"kept\", publicOrderItems: { data: ["
                 + "{ sku: \"a\", qty: 1 }] } }) { note } }", Map.of())
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.createPublicOrders.note").value("kept"));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.createPublicOrders.note").value("kept"));
         as("clerk", "mutation { createPublicOrders(input: { note: \"peek\", publicOrderItems: { data: ["
                 + "{ sku: \"a\", qty: 1 }] } }) { note publicOrderItems { sku } } }", Map.of())
-                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field(s): publicOrderItems")));
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown field(s): publicOrderItems")));
 
         assertThat(jdbc.queryForList("SELECT note FROM orders", String.class)).containsExactly("kept");
         assertThat(rows("order_items")).isEqualTo(1);
@@ -316,10 +302,10 @@ class NestedInsertIntegrationTest {
                 entry(ITEMS, "manager", select(ANY, "\"*\""), insert(ANY, ITEM_COLUMNS, "{}")));
 
         as("manager", checkout("new"), Map.of())
-                .andExpect(jsonPath("$.data.createPublicOrders.affected_rows").value(3));
+                .expect(jsonPath("$.data.createPublicOrders.affected_rows").value(3));
         as("manager", "mutation { createPublicOrders(input: { note: \"x\", publicOrderItems: { data: ["
                 + "{ sku: \"a\", qty: 1 }] } }) { id } }", Map.of())
-                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field(s): id")));
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown field(s): id")));
 
         assertThat(rows("orders")).isEqualTo(1);
     }
@@ -333,9 +319,9 @@ class NestedInsertIntegrationTest {
         as("staff", "mutation { createPublicOrders(input: { note: \"n\", publicOrderItems: { data: ["
                 + "{ sku: \"shown\", qty: 1 }, { sku: \"secret\", qty: 1, hidden: true }] } })"
                 + " { note publicOrderItems { sku } } }", Map.of())
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.createPublicOrders.publicOrderItems", hasSize(1)))
-                .andExpect(jsonPath("$.data.createPublicOrders.publicOrderItems[0].sku").value("shown"));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.createPublicOrders.publicOrderItems", hasSize(1)))
+                .expect(jsonPath("$.data.createPublicOrders.publicOrderItems[0].sku").value("shown"));
 
         assertThat(rows("order_items")).isEqualTo(2);
     }
@@ -350,10 +336,10 @@ class NestedInsertIntegrationTest {
                 Map.of("note", "two", "publicOrderItems", Map.of("data", List.of(Map.of("sku", "b", "qty", 1),
                         Map.of("sku", "c", "qty", 1)))));
 
-        send(post("/" + PROJECT + "/graphql"), "mutation($rows: [PublicOrdersCreateInput!]!) {"
+        send("mutation($rows: [PublicOrdersCreateInput!]!) {"
                 + " createManyPublicOrders(inputs: $rows) { affected_rows } }", Map.of("rows", inputs))
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.createManyPublicOrders.affected_rows").value(5));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.createManyPublicOrders.affected_rows").value(5));
 
         assertThat(jdbc.queryForObject("SELECT count(*) FROM order_items i JOIN orders o ON o.id = i.order_id"
                 + " WHERE o.note = 'two'", Integer.class)).isEqualTo(2);
@@ -368,8 +354,8 @@ class NestedInsertIntegrationTest {
         anon("mutation { createPublicOrders(input: { note: \"x\", publicOrderItems: { data: ["
                 + "{ sku: \"gift\", qty: 1, publicItemNotes: { data: [{ body: \"wrap it\" }] } },"
                 + " { sku: \"plain\", qty: 1 }] } }) { affected_rows } }")
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.createPublicOrders.affected_rows").value(4));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.createPublicOrders.affected_rows").value(4));
 
         assertThat(jdbc.queryForObject("SELECT i.sku FROM item_notes n JOIN order_items i ON i.id = n.item_id",
                 String.class)).isEqualTo("gift");
@@ -382,14 +368,14 @@ class NestedInsertIntegrationTest {
         anon("mutation { first: createPublicCustomers(input: { name: \"Bo\" }) { affected_rows }"
                 + " second: createPublicOrders(input: { note: \"x\", publicOrderItems: { data: [{ sku: \"a\", qty: 0 }] } })"
                 + " { affected_rows } }")
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
+                .expect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
         assertNothingWritten();
 
         anon("mutation { first: createPublicCustomers(input: { name: \"Bo\" }) { affected_rows }"
                 + " second: createPublicOrders(input: { note: \"x\", publicOrderItems: { data: [{ sku: \"a\", qty: 1 }] } })"
                 + " { affected_rows } }")
-                .andExpect(jsonPath("$.data.first.affected_rows").value(1))
-                .andExpect(jsonPath("$.data.second.affected_rows").value(2));
+                .expect(jsonPath("$.data.first.affected_rows").value(1))
+                .expect(jsonPath("$.data.second.affected_rows").value(2));
     }
 
     // ---- parity with native Postgres row security ----
@@ -424,7 +410,7 @@ class NestedInsertIntegrationTest {
         boolean nativeAccepts = nativeAccepts(parity);
         anonCheckout(parity.orderCheck(), parity.itemCheck());
 
-        String body = anon(checkout(parity.status())).andReturn().getResponse().getContentAsString();
+        String body = anon(checkout(parity.status())).body();
 
         assertThat(!body.contains("\"errors\"")).as(body).isEqualTo(nativeAccepts);
         assertThat(rows("orders")).isEqualTo(nativeAccepts ? 1 : 0);

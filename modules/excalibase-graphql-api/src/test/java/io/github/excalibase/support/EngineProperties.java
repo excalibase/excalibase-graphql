@@ -12,17 +12,24 @@ public final class EngineProperties {
 
     public static Map<String, String> singleDatabase(JdbcDatabaseContainer<?> database, String databaseType,
                                                      String projectId) {
-        database.start();
-        Map<String, String> properties = new HashMap<>();
-        properties.put("spring.datasource.url", database.getJdbcUrl());
-        properties.put("spring.datasource.username", database.getUsername());
-        properties.put("spring.datasource.password", database.getPassword());
+        Map<String, String> properties = datasource(database);
         properties.put("app.project-id", projectId);
         properties.put("app.database-type", databaseType);
         properties.put("app.security.jwt-enabled", "false");
         properties.put("app.security.insecure-dev-mode", "true");
         properties.put("app.max-rows", "30");
         properties.put("endpoints.all.port", "-1");
+        return properties;
+    }
+
+    /** Starts the database and names it as the engine's data source; the caller adds the rest. */
+    public static Map<String, String> datasource(JdbcDatabaseContainer<?> database) {
+        database.start();
+        Map<String, String> properties = new HashMap<>();
+        properties.put("spring.datasource.url", database.getJdbcUrl());
+        properties.put("spring.datasource.username", database.getUsername());
+        properties.put("spring.datasource.password", database.getPassword());
+        properties.put("micronaut.server.port", "-1");
         return properties;
     }
 

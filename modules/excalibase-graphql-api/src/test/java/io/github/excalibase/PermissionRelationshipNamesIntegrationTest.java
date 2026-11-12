@@ -1,5 +1,9 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.DatabaseAccess;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.jwk.Curve;
 import com.nimbusds.jose.jwk.ECKey;
@@ -10,18 +14,8 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -33,30 +27,25 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static io.github.excalibase.support.Expect.jsonPath;
 import static io.github.excalibase.PermissionDocs.entry;
 import static io.github.excalibase.PermissionDocs.insert;
 import static io.github.excalibase.PermissionDocs.select;
 import static io.github.excalibase.PermissionDocs.selectAll;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsInAnyOrder;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 /**
  * A permission written with a relationship's id-like name ({@code publicHomeTeamId}) keeps enforcing now
  * that the relationship is also called {@code publicHomeTeam}, and a permission written with the new name
  * enforces the same: rows are allowed and denied identically under both names.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-class PermissionRelationshipNamesIntegrationTest {
+class PermissionRelationshipNamesIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "proj-permission-relationship-names";
     private static final String ANON = "anon";
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-relationships.sql");
 
     private static final AtomicReference<String> PERMISSIONS = new AtomicReference<>();
@@ -90,32 +79,27 @@ class PermissionRelationshipNamesIntegrationTest {
         controlPlane.stop(0);
     }
 
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("app.security.jwt-enabled", () -> "true");
-        registry.add("app.security.auth.jwks-url",
-                () -> "http://localhost:" + controlPlane.getAddress().getPort() + "/.well-known/jwks.json");
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.rls.policy-url",
-                () -> "http://localhost:" + controlPlane.getAddress().getPort() + "/api");
-        registry.add("app.security.rls.policy-pat", () -> "test-pat");
-        registry.add("app.security.rls.policy-ttl-ms", () -> 0);
+    @Override
+    public Map<String, String> getProperties() {
+        Map<String, String> properties = EngineProperties.datasource(postgres);
+        properties.put("app.database-type", "postgres");
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.security.auth.jwks-url", "http://localhost:" + controlPlane.getAddress().getPort() + "/.well-known/jwks.json");
+        properties.put("app.project-id", PROJECT);
+        properties.put("app.security.rls.policy-url", "http://localhost:" + controlPlane.getAddress().getPort() + "/api");
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        properties.put("app.security.rls.policy-ttl-ms", "0");
+        return properties;
     }
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @Autowired
-    private MockMvc mockMvc;
 
-    @Autowired
     private JdbcTemplate jdbc;
 
     @BeforeEach
     void freshGoals() {
+        jdbc = DatabaseAccess.template(postgres);
         jdbc.update("DELETE FROM goals WHERE id >= 100");
     }
 
@@ -123,10 +107,8 @@ class PermissionRelationshipNamesIntegrationTest {
         PERMISSIONS.set(PermissionDocs.document(PROJECT, VERSION.incrementAndGet(), entries));
     }
 
-    private ResultActions graphql(String query) throws Exception {
-        return mockMvc.perform(post("/" + PROJECT + "/graphql")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(MAPPER.writeValueAsString(Map.of("query", query))));
+    private HttpAnswer graphql(String query) throws Exception {
+        return http.post("/" + PROJECT + "/graphql", MAPPER.writeValueAsString(Map.of("query", query)), "Content-Type", "application/json");
     }
 
     @ParameterizedTest
@@ -138,8 +120,8 @@ class PermissionRelationshipNamesIntegrationTest {
 
         // Lions are home in matches 1 and 2; match 3 is the Tigers' home game and is denied.
         graphql("{ publicMatches { id } }")
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.publicMatches[*].id", containsInAnyOrder("1", "2")));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.publicMatches[*].id", containsInAnyOrder("1", "2")));
     }
 
     @ParameterizedTest
@@ -150,8 +132,8 @@ class PermissionRelationshipNamesIntegrationTest {
 
         // Lions won match 1 and Tigers match 3; the Bears never won and are denied.
         graphql("{ publicTeams { name } }")
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.publicTeams[*].name", containsInAnyOrder("Lions", "Tigers")));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.publicTeams[*].name", containsInAnyOrder("Lions", "Tigers")));
     }
 
     @ParameterizedTest
@@ -164,11 +146,11 @@ class PermissionRelationshipNamesIntegrationTest {
 
         // Match 1 is a Lions home game: allowed.
         graphql("mutation { createPublicGoals(input: { match_id: 1, minute: 5, scorer: \"Ed\" }) { scorer } }")
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.createPublicGoals.scorer").value("Ed"));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.createPublicGoals.scorer").value("Ed"));
         // Match 3 is a Tigers home game: the check denies it and nothing is written.
         graphql("mutation { createPublicGoals(input: { match_id: 3, minute: 6, scorer: \"Flo\" }) { scorer } }")
-                .andExpect(jsonPath("$.errors").exists());
+                .expect(jsonPath("$.errors").exists());
         assertThat(jdbc.queryForObject("SELECT count(*) FROM goals WHERE scorer = 'Flo'", Integer.class)).isZero();
     }
 }
