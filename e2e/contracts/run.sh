@@ -30,4 +30,4 @@ wait_for http://127.0.0.1:14081/actuator/health
 wait_for http://127.0.0.1:14181/actuator/health
 wait_for http://127.0.0.1:14281/actuator/health
 
-cd "$here/.." && npm ci --silent && npx jest contracts --forceExit "$@"
+cd "$here/.." && npm ci --silent && npx jest contracts --runInBand --forceExit "$@"
