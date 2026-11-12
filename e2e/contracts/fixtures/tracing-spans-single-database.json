@@ -1,0 +1,139 @@
+{
+  "graphql query": {
+    "authorize request": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "spring.security.authentication.authorities",
+        "spring.security.authentication.type",
+        "spring.security.authorization.decision",
+        "spring.security.authorization.decision.details",
+        "spring.security.object"
+      ],
+      "scope": "org.springframework.boot"
+    },
+    "graphql.request": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "operation.name",
+        "operation.type"
+      ],
+      "scope": "org.springframework.boot"
+    },
+    "http post /{projectId}/graphql": {
+      "kind": 2,
+      "count": 1,
+      "attributes": [
+        "exception",
+        "http.url",
+        "method",
+        "org.name",
+        "org.slug",
+        "outcome",
+        "project.name",
+        "status",
+        "tenant.id",
+        "uri"
+      ],
+      "scope": "org.springframework.boot",
+      "childOfCaller": true
+    },
+    "secured request": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [],
+      "scope": "org.springframework.boot"
+    },
+    "security filterchain after": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "spring.security.filterchain.position",
+        "spring.security.filterchain.size",
+        "spring.security.reached.filter.name",
+        "spring.security.reached.filter.section"
+      ],
+      "scope": "org.springframework.boot"
+    },
+    "security filterchain before": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "org.name",
+        "org.slug",
+        "project.name",
+        "spring.security.filterchain.position",
+        "spring.security.filterchain.size",
+        "spring.security.reached.filter.name",
+        "spring.security.reached.filter.section",
+        "tenant.id"
+      ],
+      "scope": "org.springframework.boot"
+    }
+  },
+  "rest read": {
+    "authorize request": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "spring.security.authentication.authorities",
+        "spring.security.authentication.type",
+        "spring.security.authorization.decision",
+        "spring.security.authorization.decision.details",
+        "spring.security.object"
+      ],
+      "scope": "org.springframework.boot"
+    },
+    "http get /{projectId}/api/v1/{table}": {
+      "kind": 2,
+      "count": 1,
+      "attributes": [
+        "exception",
+        "http.url",
+        "method",
+        "org.name",
+        "org.slug",
+        "outcome",
+        "project.name",
+        "status",
+        "tenant.id",
+        "uri"
+      ],
+      "scope": "org.springframework.boot",
+      "childOfCaller": true
+    },
+    "secured request": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [],
+      "scope": "org.springframework.boot"
+    },
+    "security filterchain after": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "spring.security.filterchain.position",
+        "spring.security.filterchain.size",
+        "spring.security.reached.filter.name",
+        "spring.security.reached.filter.section"
+      ],
+      "scope": "org.springframework.boot"
+    },
+    "security filterchain before": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "org.name",
+        "org.slug",
+        "project.name",
+        "spring.security.filterchain.position",
+        "spring.security.filterchain.size",
+        "spring.security.reached.filter.name",
+        "spring.security.reached.filter.section",
+        "tenant.id"
+      ],
+      "scope": "org.springframework.boot"
+    }
+  }
+}
