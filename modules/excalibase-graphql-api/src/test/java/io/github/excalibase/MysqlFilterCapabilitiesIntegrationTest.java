@@ -1,0 +1,116 @@
+package io.github.excalibase;
+
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.MySQLContainer;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import static org.hamcrest.Matchers.containsInAnyOrder;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
+
+/**
+ * A MySQL schema offers the filters MySQL runs and no others, and the operators it offers run against MySQL 8.4;
+ * one it does not offer is an error naming the operator, never a query that answers every row.
+ */
+class MysqlFilterCapabilitiesIntegrationTest extends EngineIntegrationTest {
+
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withInitScript("init-mysql-filters.sql");
+
+    @Override
+    public Map<String, String> getProperties() {
+        mysql.start();
+        Map<String, String> properties = EngineProperties.isolated();
+        properties.put("spring.datasource.url", mysql.getJdbcUrl());
+        properties.put("spring.datasource.username", mysql.getUsername());
+        properties.put("spring.datasource.password", mysql.getPassword());
+        properties.put("spring.datasource.driver-class-name", "com.mysql.cj.jdbc.Driver");
+        properties.put("app.project-id", "test-proj");
+        properties.put("app.security.jwt-enabled", "false");
+        properties.put("app.security.insecure-dev-mode", "true");
+        properties.put("app.database-type", "mysql");
+        return properties;
+    }
+
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private HttpAnswer graphql(String query, Map<String, Object> variables) throws Exception {
+        Map<String, Object> body = new HashMap<>();
+        body.put("query", query);
+        body.put("variables", variables);
+        return http.post("/test-proj/graphql", MAPPER.writeValueAsString(body), "Content-Type", "application/json").expect(status().isOk());
+    }
+
+    private HttpAnswer graphql(String query) throws Exception {
+        return graphql(query, Map.of());
+    }
+
+    /** One type per request: graphql-java refuses an introspection that asks for input fields more than once. */
+    private HttpAnswer type(String name) throws Exception {
+        return graphql("{ __type(name: \"" + name + "\") { name inputFields { name type { name } } } }");
+    }
+
+    @Test
+    void theSchemaOffersOnlyWhatMysqlRuns() throws Exception {
+        type("JsonFilterInput")
+                .expect(jsonPath("$.data.__type.inputFields[*].name", not(hasItem("eq"))))
+                .expect(jsonPath("$.data.__type.inputFields[*].name", hasItem("hasKeys")));
+        type("TsvectorFilterInput")
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.__type").doesNotExist());
+        type("StringFilterInput")
+                .expect(jsonPath("$.data.__type.inputFields[*].name", hasItem("iregex")))
+                .expect(jsonPath("$.data.__type.inputFields[*].name", not(hasItem("search"))));
+        type("SearchableStringFilterInput")
+                .expect(jsonPath("$.data.__type.inputFields[*].name", hasItem("phraseSearch")))
+                .expect(jsonPath("$.data.__type.inputFields[*].name", not(hasItem("webSearch"))));
+        type("TestArticleWhereInput")
+                .expect(jsonPath("$.data.__type.inputFields[?(@.name == 'body')].type.name")
+                        .value(hasItem("SearchableStringFilterInput")))
+                .expect(jsonPath("$.data.__type.inputFields[?(@.name == 'title')].type.name")
+                        .value(hasItem("StringFilterInput")));
+    }
+
+    @Test
+    void offeredOperatorsRunOnMysql() throws Exception {
+        graphql("{ regex: testArticle(where: { title: { iregex: \"^a|^g\" } }) { id } "
+                + "json: testArticle(where: { meta: { hasKeys: [\"a\", \"b\"] } }) { id } "
+                + "text: testArticle(where: { body: { search: \"quick fox\" } }) { id } }")
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.regex[*].id", containsInAnyOrder(1, 3)))
+                .expect(jsonPath("$.data.json[*].id", containsInAnyOrder(3)))
+                .expect(jsonPath("$.data.text[*].id", containsInAnyOrder(1, 3)));
+    }
+
+    @Test
+    void anOperatorMysqlCannotRunIsAnError() throws Exception {
+        graphql("{ testArticle(where: { body: { webSearch: \"fox\" } }) { id } }")
+                .expect(jsonPath("$.data").doesNotExist())
+                .expect(jsonPath("$.errors[0].message", containsString("'webSearch'")));
+        graphql("{ testArticle(where: { title: { search: \"alpha\" } }) { id } }")
+                .expect(jsonPath("$.errors[0].message", containsString("FULLTEXT index")));
+    }
+
+    @Test
+    void aWholeWhereVariableIsApplied() throws Exception {
+        graphql("query($w: TestArticleWhereInput) { testArticle(where: $w) { id } }",
+                Map.of("w", Map.of("title", Map.of("eq", "beta"))))
+                .expect(jsonPath("$.data.testArticle[*].id", containsInAnyOrder(2)));
+    }
+
+    @Test
+    void onConflictIsRefusedOnMysql() throws Exception {
+        graphql("mutation { createTestArticle(input: { title: \"x\" }, onConflict: { constraint: \"PRIMARY\", "
+                + "update_columns: [\"title\"] }) { id } }")
+                .expect(jsonPath("$.errors[0].message", containsString("'onConflict'")));
+    }
+}

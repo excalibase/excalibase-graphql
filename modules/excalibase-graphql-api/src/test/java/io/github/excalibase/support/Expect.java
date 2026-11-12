@@ -71,6 +71,14 @@ public final class Expect {
             return is(201);
         }
 
+        public Expectation is4xxClientError() {
+            return answer -> {
+                if (answer.status() / 100 != 4) {
+                    throw new AssertionError("Status expected: 4xx but was:<" + answer.status() + "> body: " + answer.body());
+                }
+            };
+        }
+
         public Expectation is2xxSuccessful() {
             return answer -> {
                 if (answer.status() < 200 || answer.status() > 299) {

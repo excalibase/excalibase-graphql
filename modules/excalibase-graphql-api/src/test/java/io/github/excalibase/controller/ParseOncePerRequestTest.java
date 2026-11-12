@@ -5,19 +5,18 @@ import graphql.parser.Parser;
 import io.github.excalibase.compiler.ParsedQueries;
 import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
 import io.github.excalibase.config.datasource.TenantContext;
-import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.StubbedSchemaManager;
-import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.SecurityConstants;
 import io.github.excalibase.service.QueryExecutionService;
-import jakarta.servlet.http.HttpServletRequest;
+import io.github.excalibase.http.Reply;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.MutableHttpRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.http.ResponseEntity;
 
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -36,7 +35,7 @@ class ParseOncePerRequestTest {
     private final AtomicInteger parses = new AtomicInteger();
     private GraphqlController controller;
     private Principal principal;
-    private HttpServletRequest request;
+    private MutableHttpRequest<Object> request;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -52,25 +51,22 @@ class ParseOncePerRequestTest {
                 StubbedSchemaManager.document("p1", entry), (sql, params) -> false);
 
         QueryExecutionService executor = mock(QueryExecutionService.class);
-        ResponseEntity<Object> answer = ResponseEntity.ok(Map.of("data", MAPPER.readTree("{\"notes\":[]}")));
+        HttpResponse<Object> answer = Reply.ok(Map.of("data", MAPPER.readTree("{\"notes\":[]}")));
         when(executor.executeQuery(any(), any())).thenReturn(answer);
         when(executor.executeInContext(any(), any(), any())).thenReturn(answer);
         when(executor.executeSequence(any())).thenReturn(answer);
         GraphQLObservabilityInstrumentation observability = mock(GraphQLObservabilityInstrumentation.class);
         when(observability.observe(any(), any(), any())).thenAnswer(call ->
                 ((Supplier<?>) call.getArgument(2)).get());
-        @SuppressWarnings("unchecked")
-        ObjectProvider<RequestMetrics> metrics = mock(ObjectProvider.class);
         ParsedQueries parsedQueries = new ParsedQueries(1_000_000, text -> {
             parses.incrementAndGet();
             return Parser.parse(text);
         });
-        controller = new GraphqlController(schemaManager, executor, observability, metrics, parsedQueries);
+        controller = new GraphqlController(schemaManager, executor, observability, null, parsedQueries);
 
         principal = new Principal(ROLE, false, null, Map.of());
-        request = mock(HttpServletRequest.class);
-        when(request.getAttribute(SecurityConstants.PRINCIPAL_ATTR)).thenReturn(principal);
-        when(request.getAttribute(JwtAuthFilter.JWT_CLAIMS_ATTR)).thenReturn(null);
+        request = HttpRequest.POST("/p1/graphql", "");
+        request.setAttribute(SecurityConstants.PRINCIPAL_ATTR, principal);
         TenantContext.setTenantId("p1");
     }
 
@@ -79,7 +75,7 @@ class ParseOncePerRequestTest {
         TenantContext.clear();
     }
 
-    private ResponseEntity<Object> post(String query) {
+    private HttpResponse<Object> post(String query) {
         return controller.graphql("p1", Map.of("query", query), request);
     }
 
@@ -114,12 +110,12 @@ class ParseOncePerRequestTest {
 
     @Test
     void syntaxErrorAnswersAsBefore() {
-        ResponseEntity<Object> first = post("{ publicNotes { id ");
-        ResponseEntity<Object> second = post("{ publicNotes { id ");
+        HttpResponse<Object> first = post("{ publicNotes { id ");
+        HttpResponse<Object> second = post("{ publicNotes { id ");
 
-        assertThat(first.getStatusCode().value()).isEqualTo(200);
-        assertThat(String.valueOf(first.getBody())).contains("errors");
-        assertThat(second.getBody()).isEqualTo(first.getBody());
+        assertThat(first.getStatus().getCode()).isEqualTo(200);
+        assertThat(String.valueOf(first.body())).contains("errors");
+        assertThat(second.body()).isEqualTo(first.body());
         assertThat(parses).hasValue(2);
     }
 }

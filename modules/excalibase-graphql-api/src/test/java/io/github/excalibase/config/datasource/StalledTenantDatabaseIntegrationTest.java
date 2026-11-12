@@ -7,7 +7,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.images.builder.Transferable;
@@ -103,10 +102,9 @@ class StalledTenantDatabaseIntegrationTest {
   @DisplayName("the single-database pool fails within the read cap when its server stops answering, then reconnects")
   void singleDatabaseFailsFastThenReconnects() throws Exception {
     try (StallingProxy proxy = new StallingProxy(postgres.getHost(), postgres.getFirstMappedPort())) {
-      DataSourceProperties properties = new DataSourceProperties();
-      properties.setUrl("jdbc:postgresql://localhost:" + proxy.port() + "/" + postgres.getDatabaseName());
-      properties.setUsername(postgres.getUsername());
-      properties.setPassword(postgres.getPassword());
+      DataSourceConfig.DataSourceSettings properties = new DataSourceConfig.DataSourceSettings(
+          "jdbc:postgresql://localhost:" + proxy.port() + "/" + postgres.getDatabaseName(),
+          postgres.getUsername(), postgres.getPassword(), "");
       assertFailsFastThenReconnects(proxy, DataSourceConfig.singleDatabasePool(properties, READ_CAP));
     }
   }
