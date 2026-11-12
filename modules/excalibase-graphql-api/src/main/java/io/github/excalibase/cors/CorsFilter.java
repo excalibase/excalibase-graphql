@@ -1,5 +1,6 @@
 package io.github.excalibase.cors;
 
+import io.github.excalibase.http.UntypedText;
 import io.micronaut.context.annotation.Replaces;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.order.Ordered;
@@ -96,15 +97,14 @@ public class CorsFilter implements Ordered {
         List<String> headers = rules.checkHeaders(requestedHeaders == null ? List.of()
                 : Arrays.stream(requestedHeaders.split(",")).map(String::trim).filter(h -> !h.isEmpty()).toList());
         MutableHttpResponse<Object> response = HttpResponse.ok();
-        response.header("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers");
         if (allowOrigin == null || methods == null || headers == null) {
             log.debug("CORS preflight refused");
-            return HttpResponse.status(HttpStatus.FORBIDDEN, "Invalid CORS request")
-                    .header("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
-                    .body("Invalid CORS request");
+            return HttpResponse.status(HttpStatus.FORBIDDEN)
+                    .contentType(UntypedText.MEDIA_TYPE)
+                    .body(new UntypedText("Invalid CORS request"));
         }
         response.header("Access-Control-Allow-Origin", allowOrigin);
-        response.header("Access-Control-Allow-Methods", String.join(", ", methods));
+        response.header("Access-Control-Allow-Methods", String.join(",", methods));
         if (!headers.isEmpty()) {
             response.header("Access-Control-Allow-Headers", String.join(", ", headers));
         }
