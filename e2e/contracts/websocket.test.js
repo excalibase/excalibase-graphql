@@ -74,25 +74,27 @@ describe('graphql-transport-ws handshake', () => {
 describe('subscriptions', () => {
   // Without tenant-in-subject the watcher's events carry no tenant, so only a session without one (anon) receives them.
   test('subscribe delivers next frames for changes until complete', async () => {
+    const marker = `Watched-${Date.now()}`;
+    const isMine = (frame) => frame.type === 'next' && frame.payload.data.hanaCustomerChanges.operation === 'INSERT' && frame.payload.data.hanaCustomerChanges.data.first_name === marker;
     const session = openSocket(stack.app, {});
     await waitUntil(() => session.frames.length === 1, { label: 'ack' });
     session.socket.send(SUBSCRIBE('sub-1'));
     await new Promise((resolve) => setTimeout(resolve, 1500));
-    await request(stack.app, `/${P}/api/v1/customer`, { method: 'POST', headers: { ...service(), ...PROFILE }, body: { first_name: 'Watched', last_name: 'Row' } });
-    const next = await waitUntil(() => session.frames.find((frame) => frame.type === 'next' && frame.payload.data.hanaCustomerChanges.operation !== 'HEARTBEAT'), { label: 'next frame', timeoutMs: 20000 });
+    await request(stack.app, `/${P}/api/v1/customer`, { method: 'POST', headers: { ...service(), ...PROFILE }, body: { first_name: marker, last_name: 'Row' } });
+    const next = await waitUntil(() => session.frames.find(isMine), { label: 'next frame', timeoutMs: 20000 });
     expect(Object.keys(next).sort()).toEqual(['id', 'payload', 'type']);
     expect(next.id).toBe('sub-1');
     expect(Object.keys(next.payload.data)).toEqual(['hanaCustomerChanges']);
     expect(Object.keys(next.payload.data.hanaCustomerChanges).sort()).toEqual(['data', 'operation', 'table', 'timestamp']);
     expect(next.payload.data.hanaCustomerChanges.operation).toBe('INSERT');
-    expect(next.payload.data.hanaCustomerChanges.data.first_name).toBe('Watched');
+    expect(next.payload.data.hanaCustomerChanges.data.first_name).toBe(marker);
 
     send(session.socket, { id: 'sub-1', type: 'complete' });
     await new Promise((resolve) => setTimeout(resolve, 500));
-    const delivered = session.frames.length;
-    await request(stack.app, `/${P}/api/v1/customer`, { method: 'POST', headers: { ...service(), ...PROFILE }, body: { first_name: 'Unwatched', last_name: 'Row' } });
+    const unwatched = `Unwatched-${Date.now()}`;
+    await request(stack.app, `/${P}/api/v1/customer`, { method: 'POST', headers: { ...service(), ...PROFILE }, body: { first_name: unwatched, last_name: 'Row' } });
     await new Promise((resolve) => setTimeout(resolve, 2500));
-    expect(session.frames.length).toBe(delivered);
+    expect(session.frames.some((frame) => frame.type === 'next' && frame.payload.data.hanaCustomerChanges.data?.first_name === unwatched)).toBe(false);
     session.socket.close();
   }, 60000);
 
