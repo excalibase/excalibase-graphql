@@ -27,6 +27,7 @@ public interface WsSession {
 
     /** A close code with its reason. */
     record CloseStatus(int code, String reason) {
+        public static final CloseStatus NORMAL = new CloseStatus(1000, null);
         public static final CloseStatus POLICY_VIOLATION = new CloseStatus(1008, null);
         public static final CloseStatus SERVICE_OVERLOAD = new CloseStatus(1013, null);
 

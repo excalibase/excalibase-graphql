@@ -1,9 +1,9 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.socket.PingMessage;
-import org.springframework.web.socket.WebSocketSession;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -19,20 +19,20 @@ class WebSocketHeartbeatTest {
     @Test
     @DisplayName("pingAll sends a PING frame to every open registered session")
     void pingAll_pingsOpenSessions() throws Exception {
-        WebSocketSession open = mock(WebSocketSession.class);
+        WsSession open = mock(WsSession.class);
         when(open.isOpen()).thenReturn(true);
         when(open.getId()).thenReturn("open");
 
         heartbeat.register(open);
         heartbeat.pingAll();
 
-        verify(open).sendMessage(any(PingMessage.class));
+        verify(open).sendPing();
     }
 
     @Test
     @DisplayName("pingAll skips and de-registers closed sessions")
     void pingAll_dropsClosedSessions() throws Exception {
-        WebSocketSession closed = mock(WebSocketSession.class);
+        WsSession closed = mock(WsSession.class);
         when(closed.isOpen()).thenReturn(false);
         when(closed.getId()).thenReturn("closed");
 
@@ -46,7 +46,7 @@ class WebSocketHeartbeatTest {
     @Test
     @DisplayName("unregister stops a session from being pinged")
     void unregister_stopsPings() throws Exception {
-        WebSocketSession open = mock(WebSocketSession.class);
+        WsSession open = mock(WsSession.class);
         when(open.isOpen()).thenReturn(true);
         when(open.getId()).thenReturn("open");
 
@@ -60,16 +60,16 @@ class WebSocketHeartbeatTest {
     @Test
     @DisplayName("a send failure de-registers the broken session")
     void pingFailure_dropsSession() throws Exception {
-        WebSocketSession broken = mock(WebSocketSession.class);
+        WsSession broken = mock(WsSession.class);
         when(broken.isOpen()).thenReturn(true);
         when(broken.getId()).thenReturn("broken");
         org.mockito.Mockito.doThrow(new java.io.IOException("boom"))
-                .when(broken).sendMessage(any(PingMessage.class));
+                .when(broken).sendPing();
 
         heartbeat.register(broken);
         heartbeat.pingAll();   // throws internally, drops session
         heartbeat.pingAll();   // already gone — no second attempt
 
-        verify(broken, times(1)).sendMessage(any(PingMessage.class));
+        verify(broken, times(1)).sendPing();
     }
 }

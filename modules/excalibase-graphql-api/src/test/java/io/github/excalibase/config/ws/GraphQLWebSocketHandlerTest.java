@@ -1,5 +1,7 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
 import io.github.excalibase.compiler.ParsedQueries;
 import graphql.parser.Parser;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -16,9 +18,6 @@ import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -53,14 +52,6 @@ class GraphQLWebSocketHandlerTest {
         mapper = new ObjectMapper();
     }
 
-    private static <T> ObjectProvider<T> provider(T value) {
-        return new ObjectProvider<>() {
-            @Override public T getObject() { return value; }
-            @Override public T getObject(Object... args) { return value; }
-            @Override public T getIfAvailable() { return value; }
-            @Override public T getIfUnique() { return value; }
-        };
-    }
 
     private static SchemaInfo schema() {
         SchemaInfo schema = new SchemaInfo();
@@ -89,12 +80,12 @@ class GraphQLWebSocketHandlerTest {
         AccessPlans plans = StubbedSchemaManager.withDocument(schema(),
                 StubbedSchemaManager.document("p1", tableEntries), (sql, params) -> probes.add(sql));
         return new GraphQLWebSocketHandler(subscriptionService, mapper,
-                provider((JwtService) null), new WebSocketHeartbeat(0), provider(plans),
-                provider((RequestMetrics) null), new ParsedQueries(1_000_000, Parser::parse));
+                (JwtService) null, new WebSocketHeartbeat(0), plans,
+                (RequestMetrics) null, new ParsedQueries(1_000_000, Parser::parse));
     }
 
-    private WebSocketSession session(List<String> sink, String projectId, JwtClaims claims) throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
+    private WsSession session(List<String> sink, String projectId, JwtClaims claims) throws Exception {
+        WsSession session = mock(WsSession.class);
         when(session.getId()).thenReturn("gql-session-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
         Map<String, Object> attrs = new ConcurrentHashMap<>();
@@ -127,7 +118,7 @@ class GraphQLWebSocketHandlerTest {
                 : new Principal(claims.role(), false, claims, Map.of());
     }
 
-    private void subscribe(GraphQLWebSocketHandler handler, WebSocketSession session, String field) throws Exception {
+    private void subscribe(GraphQLWebSocketHandler handler, WsSession session, String field) throws Exception {
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "subscribe", "id", "s1",
                 "payload", Map.of("query", "subscription { " + field + " { operation table data timestamp } }")))));

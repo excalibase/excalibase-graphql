@@ -1,9 +1,10 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaUnavailableException;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.socket.WebSocketSession;
 
 import java.sql.SQLException;
 import java.util.HashMap;
@@ -22,7 +23,7 @@ class RealtimeGateUnavailableTest {
         AccessPlans plans = mock(AccessPlans.class);
         when(plans.realtime(any(), any(), any(), any()))
                 .thenThrow(new SchemaUnavailableException("being restored", new SQLException("link failure")));
-        WebSocketSession session = mock(WebSocketSession.class);
+        WsSession session = mock(WsSession.class);
         Map<String, Object> attributes = new HashMap<>();
         attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "proj_restore01");
         when(session.getAttributes()).thenReturn(attributes);
