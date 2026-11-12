@@ -7,7 +7,7 @@ RUN apk upgrade --no-cache && apk add --no-cache curl \
 
 VOLUME /tmp
 
-ADD /modules/excalibase-graphql-api/target/*.jar /app.jar
+ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar /app.jar
 
 USER app
 
