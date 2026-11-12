@@ -3,16 +3,16 @@ package io.github.excalibase.overload;
 
 /**
  * Bounds open connections to the CPUs available: excess clients wait in the kernel accept
- * backlog instead of being parsed and parked on virtual threads that starve the admitted ones.
+ * backlog instead of being parsed and parked on threads that starve the admitted ones.
  */
-public class TomcatConnectionBound {
+public final class ConnectionBound {
 
     private final int maxConnections;
-    private final int acceptCount;
+    private final int acceptBacklog;
     private final int maxKeepAliveRequests;
     private final int keepAliveTimeoutMillis;
 
-    public TomcatConnectionBound(int cpus, int connectionsPerCpu, int backlogPerCpu, int maxKeepAliveRequests,
+    public ConnectionBound(int cpus, int connectionsPerCpu, int backlogPerCpu, int maxKeepAliveRequests,
                                  int keepAliveTimeoutMillis) {
         if (cpus < 1 || connectionsPerCpu < 1 || backlogPerCpu < 1) {
             throw new IllegalArgumentException("cpus and per-cpu limits must be at least 1");
@@ -22,7 +22,7 @@ public class TomcatConnectionBound {
                     "app.overload.max-keep-alive-requests and keep-alive-timeout-ms must be at least 1");
         }
         this.maxConnections = multiply(cpus, connectionsPerCpu, "app.overload.max-connections-per-cpu");
-        this.acceptCount = multiply(cpus, backlogPerCpu, "app.overload.accept-count-per-cpu");
+        this.acceptBacklog = multiply(cpus, backlogPerCpu, "app.overload.accept-count-per-cpu");
         this.maxKeepAliveRequests = maxKeepAliveRequests;
         this.keepAliveTimeoutMillis = keepAliveTimeoutMillis;
     }
@@ -40,13 +40,21 @@ public class TomcatConnectionBound {
         return maxConnections;
     }
 
-    public int acceptCount() {
-        return acceptCount;
+    public int acceptBacklog() {
+        return acceptBacklog;
+    }
+
+    public int maxKeepAliveRequests() {
+        return maxKeepAliveRequests;
+    }
+
+    public int keepAliveTimeoutMillis() {
+        return keepAliveTimeoutMillis;
     }
 
     @Override
     public String toString() {
-        return "maxConnections=" + maxConnections + ", acceptCount=" + acceptCount
+        return "maxConnections=" + maxConnections + ", acceptCount=" + acceptBacklog
                 + ", maxKeepAliveRequests=" + maxKeepAliveRequests + ", keepAliveTimeoutMs=" + keepAliveTimeoutMillis;
     }
 }
