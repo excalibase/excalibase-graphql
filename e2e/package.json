@@ -16,7 +16,7 @@
     "test": "jest --forceExit"
   },
   "dependencies": {
-    "graphql": "^16.9.0",
+    "graphql": "^17.1.0",
     "graphql-request": "^6.1.0",
     "ws": "^8.20.1"
   },
