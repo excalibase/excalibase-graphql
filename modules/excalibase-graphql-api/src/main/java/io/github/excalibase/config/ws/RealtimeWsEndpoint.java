@@ -32,12 +32,14 @@ public class RealtimeWsEndpoint {
     @OnOpen
     public Publisher<Void> onOpen(WebSocketSession session, HttpRequest<?> request) {
         handler.afterConnectionEstablished(MicronautWsSession.open(session, attributes(request)));
+        MicronautWsSession.markOpened(session);
         return Publishers.empty();
     }
 
     @OnMessage
     @ExecuteOn(TaskExecutors.BLOCKING)
     public void onMessage(String message, WebSocketSession session) throws Exception {
+        MicronautWsSession.awaitOpened(session);
         handler.onMessage(MicronautWsSession.of(session), message);
     }
 

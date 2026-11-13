@@ -9,6 +9,8 @@ import java.util.Map;
 final class MicronautWsSession implements WsSession {
 
     private static final String KEY = "excalibase.wsSession";
+    private static final String OPENED = "excalibase.wsOpened";
+    private static final long OPEN_WAIT_SECONDS = 10;
 
     private final WebSocketSession delegate;
     private final Map<String, Object> attributes;
@@ -22,6 +24,38 @@ final class MicronautWsSession implements WsSession {
     static MicronautWsSession of(WebSocketSession session) {
         return session.get(KEY, MicronautWsSession.class)
                 .orElseGet(() -> open(session, new java.util.concurrent.ConcurrentHashMap<>()));
+    }
+
+    /**
+     * The upgrade finishes on a request thread while the client's first frame is read on the event loop, so a
+     * frame can reach its handler before the open handler has run. Called when the open handler is done.
+     */
+    static void markOpened(WebSocketSession session) {
+        opened(session).complete(null);
+    }
+
+    /** Waits until the open handler has run, so a frame is never handled on a session that is not set up. */
+    static void awaitOpened(WebSocketSession session) {
+        try {
+            opened(session).get(OPEN_WAIT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } catch (java.util.concurrent.ExecutionException | java.util.concurrent.TimeoutException failure) {
+            throw new IllegalStateException("WebSocket session " + session.getId() + " was not opened", failure);
+        }
+    }
+
+    private static java.util.concurrent.CompletableFuture<Void> opened(WebSocketSession session) {
+        synchronized (session) {
+            @SuppressWarnings("unchecked")
+            java.util.concurrent.CompletableFuture<Void> opened = session.get(OPENED, java.util.concurrent.CompletableFuture.class)
+                    .orElse(null);
+            if (opened == null) {
+                opened = new java.util.concurrent.CompletableFuture<>();
+                session.put(OPENED, opened);
+            }
+            return opened;
+        }
     }
 
     static MicronautWsSession open(WebSocketSession session, Map<String, Object> attributes) {
