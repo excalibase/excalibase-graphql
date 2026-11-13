@@ -15,7 +15,7 @@ import io.micronaut.context.annotation.Value;
  * the flag the process refuses to start.
  */
 @Context
-@Requires(property = "app.security.jwt-enabled", value = "false")
+@Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.OFF_PATTERN)
 public class InsecureDevModeGuard {
 
     private static final Logger log = LoggerFactory.getLogger(InsecureDevModeGuard.class);

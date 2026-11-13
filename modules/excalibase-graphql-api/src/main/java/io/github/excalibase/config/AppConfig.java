@@ -119,7 +119,7 @@ public class AppConfig {
     }
 
     @Context
-    @Requires(property = "app.security.jwt-enabled", notEquals = "false")
+    @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
     JwtService jwtService(SecurityProperties security, @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes) {
         SecurityProperties.Auth auth = security.auth();
         boolean hasJwks = auth != null && auth.hasJwksUrl();
@@ -139,7 +139,7 @@ public class AppConfig {
      * policy URL there is no source, and every read is refused rather than answered with an empty document.
      */
     @Singleton
-    @Requires(property = "app.security.jwt-enabled", notEquals = "false")
+    @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
     PermissionProvider permissionProvider(
             @Value("${app.security.rls.policy-url:}") String policyUrl,
             TokenFileSource provisioningTokenSource,
@@ -157,7 +157,7 @@ public class AppConfig {
 
     /** Invalidates a project's cached permissions and engines on a NATS {@code policies.{id}.changed} signal. */
     @Context
-    @Requires(property = "app.security.jwt-enabled", notEquals = "false")
+    @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
     PolicyChangeSubscriber policyChangeSubscriber(
             PermissionProvider permissionProvider,
             GraphqlSchemaManager schemaManager,

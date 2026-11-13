@@ -106,4 +106,43 @@ class InsecureDevModeGuardTest {
             assertThat(context.getBeansOfType(InsecureDevModeGuard.class)).hasSize(1);
         }
     }
+
+    @org.junit.jupiter.params.ParameterizedTest(name = "jwt-enabled={0} is authentication off, so the guard refuses it")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"FALSE", "False", "fAlSe", " false "})
+    @DisplayName("any case of false reaches the guard")
+    void falseInAnyCase_failsContext(String value) {
+        assertThatThrownBy(() -> ApplicationContext.run(engine(Map.of("app.security.jwt-enabled", value))).close())
+                .hasStackTraceContaining("app.security.insecure-dev-mode");
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest(name = "jwt-enabled={0} is refused")
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"0", "no", "off", "yes", "disabled", "1", "on"})
+    @DisplayName("a value that is not true or false stops start-up instead of being read as one of them")
+    void notABoolean_failsContext(String value) {
+        assertThatThrownBy(() -> ApplicationContext.run(engine(Map.of("app.security.jwt-enabled", value,
+                "app.security.insecure-dev-mode", "true",
+                "app.security.auth.hmac-secret", "test-hmac-secret-0123456789abcdef0123456789"))).close())
+                .hasStackTraceContaining("app.security.jwt-enabled must be true or false");
+    }
+
+    @Test
+    @DisplayName("FALSE with the insecure dev flag starts with no auth filter")
+    void upperCaseFalseWithFlag_hasNoAuthFilter() {
+        try (ApplicationContext context = ApplicationContext.run(engine(Map.of(
+                "app.security.jwt-enabled", "FALSE", "app.security.insecure-dev-mode", "true")))) {
+            assertThat(context.getBeansOfType(InsecureDevModeGuard.class)).hasSize(1);
+            assertThat(context.containsBean(io.github.excalibase.security.JwtAuthFilter.class)).isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("TRUE keeps the auth filter and no guard")
+    void upperCaseTrue_keepsAuthFilter() {
+        try (ApplicationContext context = ApplicationContext.run(engine(Map.of(
+                "app.security.jwt-enabled", "TRUE",
+                "app.security.auth.hmac-secret", "test-hmac-secret-0123456789abcdef0123456789")))) {
+            assertThat(context.containsBean(InsecureDevModeGuard.class)).isFalse();
+            assertThat(context.containsBean(io.github.excalibase.security.JwtAuthFilter.class)).isTrue();
+        }
+    }
 }

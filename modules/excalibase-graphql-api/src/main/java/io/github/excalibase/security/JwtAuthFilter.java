@@ -1,6 +1,7 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.access.AccessPlan;
+import io.github.excalibase.config.JwtEnabledSetting;
 import io.github.excalibase.access.RequestGuard;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.AccessPlans;
@@ -29,7 +30,7 @@ import java.util.Map;
  * handler. The project comes from the URL path only, already matched to a project this deployment serves.
  */
 @ServerFilter(Filter.MATCH_ALL_PATTERN)
-@Requires(property = "app.security.jwt-enabled", notEquals = "false")
+@Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
 public class JwtAuthFilter implements Ordered {
 
     public static final String JWT_CLAIMS_ATTR = SecurityConstants.JWT_CLAIMS_ATTR;
