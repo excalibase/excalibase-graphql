@@ -2,6 +2,7 @@ package io.github.excalibase.http;
 
 import io.github.excalibase.observability.HttpRequestFacts;
 import io.micronaut.context.annotation.Replaces;
+import io.micronaut.http.HttpStatus;
 import io.micronaut.http.MediaType;
 import io.micronaut.http.MutableHttpResponse;
 import io.micronaut.http.server.exceptions.response.ErrorContext;
@@ -13,7 +14,7 @@ import java.util.Map;
 
 /**
  * Renders every error the framework answers, a missing route to an unhandled exception, as {@link DefaultErrorBody},
- * and leaves the exception behind a server error on the request so the request's metric and span name it.
+ * and leaves the exception behind an error on the request so the request's metric and span name it.
  * A 404 the router answers is not an exception of the request.
  */
 @Singleton
@@ -24,7 +25,7 @@ public class DefaultErrorBodyProcessor implements ErrorResponseProcessor<Map<Str
     @SuppressWarnings("unchecked")
     public MutableHttpResponse<Map<String, Object>> processResponse(ErrorContext context,
                                                                     MutableHttpResponse<?> response) {
-        if (response.code() >= 500) {
+        if (response.code() != HttpStatus.NOT_FOUND.getCode()) {
             context.getRootCause().ifPresent(cause -> context.getRequest().setAttribute(HttpRequestFacts.EXCEPTION_ATTRIBUTE, cause));
         }
         return ((MutableHttpResponse<Map<String, Object>>) response)

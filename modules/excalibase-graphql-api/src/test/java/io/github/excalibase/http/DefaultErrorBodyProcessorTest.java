@@ -27,6 +27,17 @@ class DefaultErrorBodyProcessorTest {
     }
 
     @Test
+    @DisplayName("the exception behind a client error is kept too")
+    void clientErrorExceptionIsKept() {
+        MutableHttpRequest<?> request = HttpRequest.GET("/proj/api/v1/rpc/a;b");
+        IllegalArgumentException cause = new IllegalArgumentException("rejected");
+
+        processor.processResponse(ErrorContext.builder(request).cause(cause).build(), HttpResponse.badRequest());
+
+        assertThat(request.getAttribute(HttpRequestFacts.EXCEPTION_ATTRIBUTE, Throwable.class)).containsSame(cause);
+    }
+
+    @Test
     @DisplayName("a missing route, though the router has a cause for it, is not an exception of the request")
     void missingRouteNothingKept() {
         MutableHttpRequest<?> request = HttpRequest.GET("/proj/nothing");
