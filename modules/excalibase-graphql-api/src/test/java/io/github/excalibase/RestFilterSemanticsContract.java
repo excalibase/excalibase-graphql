@@ -26,7 +26,7 @@ abstract class RestFilterSemanticsContract extends EngineIntegrationTest {
     abstract String goodsField();
 
     private HttpAnswer call(String path) {
-        return http.getUnencoded(REST + path);
+        return http.getUnencoded(REST + path.replace("%", "%25"));   // a literal % is sent escaped, as the earlier test client did
     }
 
     private List<String> skus(String query) throws Exception {

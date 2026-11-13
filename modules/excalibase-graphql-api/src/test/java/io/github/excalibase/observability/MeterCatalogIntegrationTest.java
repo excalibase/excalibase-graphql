@@ -98,7 +98,7 @@ class MeterCatalogIntegrationTest extends EngineIntegrationTest {
     @Test
     @DisplayName("spring.datasource.hikari.* is ignored: the pool keeps its bounded default size")
     void poolSizeUnchanged() {
-        assertThat(text).contains("hikaricp_connections_max{pool=\"HikariPool-1\"} 10.0");
+        assertThat(text).containsPattern("hikaricp_connections_max\\{pool=\"HikariPool-\\d+\"\\} 10\\.0");   // the pool number counts the pools of the JVM
     }
 
     @Test

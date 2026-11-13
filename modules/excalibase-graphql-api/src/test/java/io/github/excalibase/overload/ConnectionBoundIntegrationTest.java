@@ -36,6 +36,7 @@ class ConnectionBoundIntegrationTest extends EngineIntegrationTest {
                 Map.entry("spring.datasource.password", "fake"),
                 Map.entry("app.project-id", PROJECT),
                 Map.entry("app.security.jwt-enabled", "false"),
+                Map.entry("management.health.db.enabled", "false"),
                 Map.entry("app.security.insecure-dev-mode", "true"),
                 Map.entry("app.database-type", "postgres"),
                 Map.entry("app.overload.max-connections-per-cpu", "2"),
