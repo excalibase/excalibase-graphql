@@ -606,6 +606,34 @@ class RestQueryCompilerTest {
     }
 
     @Test
+    @DisplayName("an empty in.() list matches no rows instead of IN ('')")
+    void emptyInListMatchesNothing() {
+      var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(new RestQueryCompiler.FilterSpec("id", "in", "()", false)), null,
+          List.of(), null, 10, 0, false));
+      assertTrue(result.sql().contains("1 = 0"), result.sql());
+      assertFalse(result.sql().contains(" IN "), result.sql());
+    }
+
+    @Test
+    @DisplayName("two filters on one column are both applied")
+    void twoFiltersOnOneColumnAreBothApplied() {
+      var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(new RestQueryCompiler.FilterSpec("price", "gte", "10", false),
+              new RestQueryCompiler.FilterSpec("price", "lt", "20", false)), null, List.of(), null, 10, 0, false));
+      assertTrue(result.sql().contains(" >= ") && result.sql().contains(" < "), result.sql());
+    }
+
+    @Test
+    @DisplayName("a reverse embed is capped at the engine's row limit when the caller sets none")
+    void reverseEmbedIsCapped() {
+      var embed = new RestQueryCompiler.EmbedSpec("orders", List.of("*"));
+      var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(), null, List.of(embed), null, 10, 0, false));
+      assertTrue(result.sql().contains("LIMIT 30"), "embedded list must be capped: " + result.sql());
+    }
+
+    @Test
     @DisplayName("deep embed SQL uses parent alias (r1) for child FK join, not top-level alias (c)")
     void deepEmbedUsesCorrectParentAlias() {
       var embed = new RestQueryCompiler.EmbedSpec(

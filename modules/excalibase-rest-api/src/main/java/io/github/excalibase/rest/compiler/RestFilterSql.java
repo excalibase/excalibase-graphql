@@ -214,6 +214,10 @@ final class RestFilterSql {
     private String buildInSql(FilterSpec filter, String col, String neg, String pn, Map<String, Object> params, boolean not, String table) {
         String inner = filter.value();
         if (inner.startsWith("(") && inner.endsWith(")")) inner = inner.substring(1, inner.length() - 1);
+        if (inner.isBlank()) {
+            // Nothing is in an empty list; everything is outside it.
+            return neg + parens(not ? "1 = 1" : "1 = 0");
+        }
         String[] items = inner.split(",");
         if (items.length > MAX_IN_LIST) throw new IllegalArgumentException("IN list exceeds maximum of " + MAX_IN_LIST);
         List<String> ph = new ArrayList<>();
