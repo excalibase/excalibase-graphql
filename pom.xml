@@ -55,10 +55,10 @@
         <tomcat.version>10.1.60</tomcat.version>
         <kotlin.version>2.1.0</kotlin.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
-        <jackson.version>2.21.2</jackson.version>
+        <jackson.version>2.23.0</jackson.version>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
         <!-- databases -->
-        <postgresql.version>42.7.11</postgresql.version>
+        <postgresql.version>42.7.14</postgresql.version>
         <mysql.connector.version>9.3.0</mysql.connector.version>
         <!--java graphql-->
         <graphql.java.version>24.0</graphql.java.version>
@@ -72,7 +72,7 @@
         <groovy-json.version>4.0.24</groovy-json.version>
 
         <!--nats-->
-        <jnats.version>2.22.0</jnats.version>
+        <jnats.version>2.26.4</jnats.version>
         <!-- jnats brings 2.73.8; pinned past CVE-2026-8763 (EXC-642) -->
         <bouncycastle.version>2.73.13</bouncycastle.version>
 
@@ -80,7 +80,7 @@
         <testcontainers.version>1.21.4</testcontainers.version>
 
         <!--observability-->
-        <opentelemetry-instrumentation.version>2.16.0-alpha</opentelemetry-instrumentation.version>
+        <opentelemetry-instrumentation.version>2.33.1-alpha</opentelemetry-instrumentation.version>
 
         <!-- SonarCloud. Token via SONAR_TOKEN env / -Dsonar.token=<token> at CLI. -->
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
@@ -299,7 +299,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.13</version>
+                <version>0.8.16</version>
                 <configuration>
                     <excludes>
                         <!-- Spring Boot main class -->
