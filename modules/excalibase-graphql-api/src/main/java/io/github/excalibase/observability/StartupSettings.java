@@ -3,6 +3,7 @@ package io.github.excalibase.observability;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +16,9 @@ public final class StartupSettings {
 
     private static final String COLLECTOR = "OTEL_EXPORTER_OTLP_ENDPOINT";
     private static final String METRICS_URL = "MANAGEMENT_OTLP_METRICS_EXPORT_URL";
+    // The spelling the deploy sets; the framework's own relaxed binding would read it as percentileshistogram.
+    private static final String HISTOGRAM_VARIABLE = "MANAGEMENT_METRICS_DISTRIBUTION_PERCENTILESHISTOGRAM_HTTP_SERVER_REQUESTS";
+    private static final String HISTOGRAM_PROPERTY = "management.metrics.distribution.percentiles-histogram.http.server.requests";
     private static final String LEVEL_PREFIX = "LOGGING_LEVEL_";
     private static final Set<String> LEVELS = Set.of("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "OFF");
     private static final Map<String, String> LEGACY_LEVEL_VARIABLES = Map.of(
@@ -27,6 +31,7 @@ public final class StartupSettings {
         requireKnownLogFormat(env.get("LOG_FORMAT"));
         Map<String, Object> settings = new HashMap<>(metricsExport(env));
         settings.putAll(loggerLevels(env));
+        histogram(env).ifPresent(value -> settings.put(HISTOGRAM_PROPERTY, value));
         return settings;
     }
 
@@ -61,6 +66,17 @@ public final class StartupSettings {
             return Map.of("micronaut.metrics.export.otlp.enabled", "false");
         }
         return Map.of("micronaut.metrics.export.otlp.enabled", "true", "micronaut.metrics.export.otlp.url", url);
+    }
+
+    private static Optional<String> histogram(Map<String, String> env) {
+        String value = env.getOrDefault(HISTOGRAM_VARIABLE, "").strip();
+        if (value.isEmpty()) {
+            return Optional.empty();
+        }
+        if (!value.equalsIgnoreCase("true") && !value.equalsIgnoreCase("false")) {
+            throw new IllegalArgumentException(HISTOGRAM_VARIABLE + " must be true or false but was '" + value + "'");
+        }
+        return Optional.of(value.toLowerCase(Locale.ROOT));
     }
 
     private static Map<String, Object> loggerLevels(Map<String, String> env) {

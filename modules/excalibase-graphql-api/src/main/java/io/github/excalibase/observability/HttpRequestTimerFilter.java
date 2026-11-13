@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 import io.micronaut.context.annotation.Value;
+import jakarta.inject.Inject;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.order.Ordered;
 import io.micronaut.http.HttpRequest;
@@ -38,12 +39,25 @@ public class HttpRequestTimerFilter implements Ordered {
     private final ConcurrentHashMap<String, LongTaskTimer> activeTimers = new ConcurrentHashMap<>();
 
     private final int managementPort;
+    private final boolean percentileHistogram;
 
+    public HttpRequestTimerFilter(MeterRegistry registry, ObservabilityLevel level, int managementPort) {
+        this(registry, level, managementPort, false);
+    }
+
+    /**
+     * {@code percentileHistogram} publishes {@code http.server.requests} buckets, which the platform's p99 latency
+     * alert reads; the earlier build took it from {@code management.metrics.distribution.percentiles-histogram.http.server.requests}.
+     */
+    @Inject
     public HttpRequestTimerFilter(MeterRegistry registry, ObservabilityLevel level,
-                                  @Value("${endpoints.all.port:-1}") int managementPort) {
+                                  @Value("${endpoints.all.port:-1}") int managementPort,
+                                  @Value("${management.metrics.distribution.percentiles-histogram.http.server.requests:false}")
+                                  boolean percentileHistogram) {
         this.registry = registry;
         this.level = level;
         this.managementPort = managementPort;
+        this.percentileHistogram = percentileHistogram;
     }
 
     @Override
@@ -91,7 +105,9 @@ public class HttpRequestTimerFilter implements Ordered {
                 Tag.of("tenant.id", facts.tenant().tenantId()),
                 Tag.of("org.slug", facts.tenant().orgSlug()),
                 Tag.of("project.name", facts.tenant().projectName()),
-                Tag.of("org.name", facts.tenant().orgName()))).register(registry);
+                Tag.of("org.name", facts.tenant().orgName())))
+                .publishPercentileHistogram(percentileHistogram)
+                .register(registry);
     }
 
     private LongTaskTimer activeTimer(String method) {
