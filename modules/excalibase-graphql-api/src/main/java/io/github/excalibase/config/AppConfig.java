@@ -20,6 +20,7 @@ import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.KnownProjects;
+import io.github.excalibase.security.LookupLimiter;
 import io.github.excalibase.security.TokenFileSource;
 import io.github.excalibase.security.UnknownProjectCache;
 import io.github.excalibase.service.VaultCredentialService;
@@ -197,10 +198,12 @@ public class AppConfig {
             @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
             @Nullable DynamicDataSourceManager dataSourceManager,
             @Value("${app.security.multi-tenant.unknown-project-cache.max-entries:10000}") int unknownMaxEntries,
-            @Value("${app.security.multi-tenant.unknown-project-cache.ttl-seconds:30}") long unknownTtlSeconds) {
+            @Value("${app.security.multi-tenant.unknown-project-cache.ttl-seconds:30}") long unknownTtlSeconds,
+            @Value("${app.security.multi-tenant.lookup-rate-per-second:50}") int lookupsPerSecond) {
         UnknownProjectCache unknown = new UnknownProjectCache(unknownMaxEntries,
                 Duration.ofSeconds(unknownTtlSeconds), System::currentTimeMillis);
-        return KnownProjects.forDeployment(projectId, tenantProvisioningUrl, dataSourceManager, unknown);
+        return KnownProjects.forDeployment(projectId, tenantProvisioningUrl, dataSourceManager, unknown,
+                LookupLimiter.perSecond(lookupsPerSecond));
     }
 
     /** {@code app.graphql.parse-cache.heap-share}: the share of the maximum heap the parsed-query cache may use. */
