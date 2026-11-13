@@ -3,7 +3,7 @@ const { stack } = require('./lib/stack');
 const { token, bearer } = require('./lib/tokens');
 const { sendKnownMix, graphql, PROFILE } = require('./lib/traffic');
 const { parseMetricShape, parseSamples, withoutAbsentOptional } = require('./lib/prometheus');
-const { expectFixture } = require('./lib/fixture');
+const { expectFixture, fixtureFile } = require('./lib/fixture');
 const { startEngine, removeAll, SINGLE_DATABASE_ENV } = require('./lib/containers');
 
 const OPTIONAL_PREFIXES = ['jvm_gc_'];
@@ -18,8 +18,7 @@ async function shapeOf(base, path) {
 /** Compares to the reviewed fixture with the timing-dependent GC names treated as optional. */
 function expectShape(name, actual) {
   const fs = require('fs');
-  const path = require('path');
-  const file = path.join(__dirname, 'fixtures', `${name}.json`);
+  const file = fixtureFile(name);
   if (process.env.UPDATE_CONTRACTS === '1') {
     expectFixture(name, actual);
     return;

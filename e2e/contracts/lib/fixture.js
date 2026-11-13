@@ -10,15 +10,20 @@ const VARIANT = process.env.CONTRACT_VARIANT || '';
  * framework cannot produce some of the signals of the original (CONTRACT_VARIANT=micronaut) has its own reviewed
  * `<name>.<variant>.json` for exactly those fixtures, and the diff against `<name>.json` is the list of differences.
  */
-function expectFixture(name, actual) {
+function fixtureFile(name) {
   const variantFile = path.join(DIR, `${name}.${VARIANT}.json`);
-  const file = VARIANT && (process.env.UPDATE_CONTRACTS === '1' || fs.existsSync(variantFile)) ? variantFile : path.join(DIR, `${name}.json`);
+  return VARIANT && (process.env.UPDATE_CONTRACTS === '1' || fs.existsSync(variantFile)) ? variantFile : path.join(DIR, `${name}.json`);
+}
+
+/** `normalize` is applied to both sides, to leave out what depends on timing rather than on the engine. */
+function expectFixture(name, actual, normalize = (value) => value) {
+  const file = fixtureFile(name);
   const rendered = `${JSON.stringify(actual, null, 2)}\n`;
   if (process.env.UPDATE_CONTRACTS === '1') {
     fs.writeFileSync(file, rendered);
     return;
   }
-  expect(JSON.parse(rendered)).toEqual(JSON.parse(fs.readFileSync(file, 'utf8')));
+  expect(normalize(JSON.parse(rendered))).toEqual(normalize(JSON.parse(fs.readFileSync(file, 'utf8'))));
 }
 
-module.exports = { expectFixture };
+module.exports = { expectFixture, fixtureFile };

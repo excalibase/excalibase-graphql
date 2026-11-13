@@ -2,6 +2,9 @@ const { request, waitUntil } = require('./lib/http');
 const { stack } = require('./lib/stack');
 const { capture } = require('./lib/capture');
 const { expectFixture } = require('./lib/fixture');
+
+/** GC cycles show up in the metric names only once one has run, which depends on timing. */
+const withoutGcNames = (value) => JSON.parse(JSON.stringify(value, (key, item) => (Array.isArray(item) ? item.filter((entry) => typeof entry !== 'string' || !entry.startsWith('jvm.gc.')) : item)));
 const { docker, startEngine, removeContainer, removeAll, SINGLE_DATABASE_ENV } = require('./lib/containers');
 
 const PATHS = ['/actuator', '/actuator/health', '/actuator/health/liveness', '/actuator/health/readiness',
@@ -31,7 +34,7 @@ describe('health on the management port', () => {
   test('the default exposure, with no environment overrides', async () => {
     const engine = await startEngine(SINGLE_DATABASE_ENV, { readyPort: 8081, readyPath: '/actuator/health', readyUntil: (response) => response.status === 200 });
     try {
-      expectFixture('health-default-exposure', await capturePaths(engine.management, [...PATHS, '/actuator/prometheus', '/actuator/metrics']));
+      expectFixture('health-default-exposure', await capturePaths(engine.management, [...PATHS, '/actuator/prometheus', '/actuator/metrics']), withoutGcNames);
     } finally {
       engine.stop();
     }

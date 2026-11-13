@@ -27,11 +27,12 @@ class DefaultErrorBodyProcessorTest {
     }
 
     @Test
-    @DisplayName("an error with no exception behind it, a missing route, leaves nothing on the request")
-    void noExceptionNothingKept() {
+    @DisplayName("a missing route, though the router has a cause for it, is not an exception of the request")
+    void missingRouteNothingKept() {
         MutableHttpRequest<?> request = HttpRequest.GET("/proj/nothing");
 
-        processor.processResponse(ErrorContext.builder(request).build(), HttpResponse.status(HttpStatus.NOT_FOUND));
+        processor.processResponse(ErrorContext.builder(request).cause(new IllegalStateException("no route")).build(),
+                HttpResponse.status(HttpStatus.NOT_FOUND));
 
         assertThat(request.getAttribute(HttpRequestFacts.EXCEPTION_ATTRIBUTE)).isEmpty();
     }
