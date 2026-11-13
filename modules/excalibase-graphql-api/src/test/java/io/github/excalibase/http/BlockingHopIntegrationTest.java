@@ -67,4 +67,24 @@ class BlockingHopIntegrationTest extends EngineIntegrationTest {
 
         assertOnRequestThread("GET " + path);
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/test-proj/graphql", "/test-proj/api/v1/realtime"})
+    @DisplayName("an upgrade goes back to the event loop once the security filters are done, where Micronaut finishes it")
+    void webSocketUpgradeEndsOnTheEventLoop(String path) throws IOException {
+        try (RawWebSocket socket = RawWebSocket.connect(http.base(), path, null)) {
+            assertThat(socket.handshakeAnswer()).startsWith("HTTP/1.1 101");
+        }
+
+        assertThat(ThreadRecorder.THREADS.get("late GET " + path)).contains("eventLoopGroup");
+    }
+
+    @Test
+    @DisplayName("a request that is not an upgrade stays on its request thread to the handler")
+    void plainRequestStaysOnTheRequestThread() {
+        http.raw("POST", "/" + PROJECT + "/graphql");
+
+        assertThat(ThreadRecorder.THREADS).as("recorded").containsKey("late POST /" + PROJECT + "/graphql");
+        assertThat(ThreadRecorder.THREADS.get("late POST /" + PROJECT + "/graphql")).startsWith("tomcat-handler-");
+    }
 }
