@@ -79,6 +79,15 @@ class WsHandshakeOriginTest {
     }
 
     @Test
+    @DisplayName("a same-origin page over TLS passes without being listed")
+    void sameOriginPassesOverTls() {
+        MutableHttpRequest<?> request = org.mockito.Mockito.spy(upgrade("https://api.excalibase.io"));
+        org.mockito.Mockito.doReturn(true).when(request).isSecure();
+
+        assertThat(filter.filter(request)).isNull();
+    }
+
+    @Test
     @DisplayName("a project whose allowlist is '*' admits any web origin")
     void wildcardAdmitsAnyWebOrigin() {
         assertThat(filterFor(List.of("*")).filter(upgrade("https://evil.example"))).isNull();
