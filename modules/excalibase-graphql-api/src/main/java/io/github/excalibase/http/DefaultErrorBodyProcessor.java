@@ -25,7 +25,8 @@ public class DefaultErrorBodyProcessor implements ErrorResponseProcessor<Map<Str
     @SuppressWarnings("unchecked")
     public MutableHttpResponse<Map<String, Object>> processResponse(ErrorContext context,
                                                                     MutableHttpResponse<?> response) {
-        if (response.code() != HttpStatus.NOT_FOUND.getCode()) {
+        if (response.code() != HttpStatus.NOT_FOUND.getCode()
+                && context.getRequest().getAttribute(HttpRequestFacts.EXCEPTION_ATTRIBUTE).isEmpty()) {
             context.getRootCause().ifPresent(cause -> context.getRequest().setAttribute(HttpRequestFacts.EXCEPTION_ATTRIBUTE, cause));
         }
         return ((MutableHttpResponse<Map<String, Object>>) response)

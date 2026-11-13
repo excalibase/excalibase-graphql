@@ -38,6 +38,19 @@ class DefaultErrorBodyProcessorTest {
     }
 
     @Test
+    @DisplayName("an exception a handler already left on the request is not replaced by the router's cause")
+    void earlierExceptionIsKept() {
+        MutableHttpRequest<?> request = HttpRequest.GET("/proj/api/v1/rpc/a;b");
+        IllegalArgumentException rejection = new IllegalArgumentException("rejected");
+        request.setAttribute(HttpRequestFacts.EXCEPTION_ATTRIBUTE, rejection);
+
+        processor.processResponse(ErrorContext.builder(request).cause(new IllegalStateException("other")).build(),
+                HttpResponse.badRequest());
+
+        assertThat(request.getAttribute(HttpRequestFacts.EXCEPTION_ATTRIBUTE, Throwable.class)).containsSame(rejection);
+    }
+
+    @Test
     @DisplayName("a missing route, though the router has a cause for it, is not an exception of the request")
     void missingRouteNothingKept() {
         MutableHttpRequest<?> request = HttpRequest.GET("/proj/nothing");
