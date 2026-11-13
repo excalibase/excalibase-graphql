@@ -9,7 +9,8 @@ import java.util.List;
 
 /**
  * First in a connection's pipeline. A connection over the bound is accepted by the kernel but nothing it
- * sends is read by the server until a slot frees, the same wait a client has in the accept queue.
+ * sends is read by the server until a slot frees, the same wait a client has in the accept queue: reads are
+ * switched off while it waits, so what it sends stays in the kernel's buffer instead of piling up here.
  */
 final class ConnectionAdmission extends ChannelInboundHandlerAdapter implements ConnectionGate.Waiter {
 
@@ -29,6 +30,7 @@ final class ConnectionAdmission extends ChannelInboundHandlerAdapter implements 
     public void handlerAdded(ChannelHandlerContext context) {
         this.context = context;
         admitted = gate.tryAdmit(this);
+        context.channel().config().setAutoRead(admitted);
         updateListener(context.channel());
         if (admitted) {
             rotation.start();
@@ -63,6 +65,7 @@ final class ConnectionAdmission extends ChannelInboundHandlerAdapter implements 
             return;
         }
         admitted = true;
+        context.channel().config().setAutoRead(true);
         updateListener(context.channel());
         rotation.start();
         List<Object> replay = new ArrayList<>(held);
