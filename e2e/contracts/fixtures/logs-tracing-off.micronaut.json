@@ -1,0 +1,97 @@
+{
+  "startup": [
+    [
+      "@timestamp",
+      "ecs.version",
+      "log.level",
+      "log.logger",
+      "message",
+      "process.pid",
+      "process.thread.name",
+      "service.name",
+      "service.node",
+      "service.version"
+    ]
+  ],
+  "afterRequests": [
+    [
+      "@timestamp",
+      "ecs.version",
+      "log.level",
+      "log.logger",
+      "message",
+      "org",
+      "org_name",
+      "process.pid",
+      "process.thread.name",
+      "project_name",
+      "service.name",
+      "service.node",
+      "service.version",
+      "spanId",
+      "tenant",
+      "traceId"
+    ]
+  ],
+  "afterRequestsWithStackTrace": [
+    [
+      "@timestamp",
+      "ecs.version",
+      "error.message",
+      "error.stack_trace",
+      "error.type",
+      "log.level",
+      "log.logger",
+      "message",
+      "org",
+      "org_name",
+      "process.pid",
+      "process.thread.name",
+      "project_name",
+      "service.name",
+      "service.node",
+      "service.version",
+      "spanId",
+      "tenant",
+      "traceId"
+    ],
+    [
+      "@timestamp",
+      "ecs.version",
+      "error.message",
+      "error.stack_trace",
+      "error.type",
+      "log.level",
+      "log.logger",
+      "message",
+      "process.pid",
+      "process.thread.name",
+      "service.name",
+      "service.node",
+      "service.version",
+      "spanId",
+      "traceId"
+    ]
+  ],
+  "stackTraceSample": [
+    {
+      "level": "ERROR",
+      "type": "org.springframework.jdbc.BadSqlGrammarException",
+      "startsWithType": true
+    },
+    {
+      "level": "ERROR",
+      "type": "io.github.excalibase.rest.controller.InvalidFunctionNameException",
+      "startsWithType": true
+    }
+  ],
+  "constants": {
+    "ecsVersion": "8.11",
+    "serviceName": "Excalibase graphql",
+    "levels": [
+      "ERROR",
+      "INFO"
+    ]
+  },
+  "nonJsonLines": false
+}

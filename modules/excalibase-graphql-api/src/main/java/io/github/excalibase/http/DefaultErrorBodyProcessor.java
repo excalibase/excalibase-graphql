@@ -1,5 +1,6 @@
 package io.github.excalibase.http;
 
+import io.github.excalibase.observability.HttpRequestFacts;
 import io.micronaut.context.annotation.Replaces;
 import io.micronaut.http.MediaType;
 import io.micronaut.http.MutableHttpResponse;
@@ -10,7 +11,10 @@ import jakarta.inject.Singleton;
 
 import java.util.Map;
 
-/** Renders every error the framework answers, a missing route to an unhandled exception, as {@link DefaultErrorBody}. */
+/**
+ * Renders every error the framework answers, a missing route to an unhandled exception, as {@link DefaultErrorBody},
+ * and leaves the exception on the request so the request's metric and span name it.
+ */
 @Singleton
 @Replaces(HateoasErrorResponseProcessor.class)
 public class DefaultErrorBodyProcessor implements ErrorResponseProcessor<Map<String, Object>> {
@@ -19,6 +23,7 @@ public class DefaultErrorBodyProcessor implements ErrorResponseProcessor<Map<Str
     @SuppressWarnings("unchecked")
     public MutableHttpResponse<Map<String, Object>> processResponse(ErrorContext context,
                                                                     MutableHttpResponse<?> response) {
+        context.getRootCause().ifPresent(cause -> context.getRequest().setAttribute(HttpRequestFacts.EXCEPTION_ATTRIBUTE, cause));
         return ((MutableHttpResponse<Map<String, Object>>) response)
                 .contentType(MediaType.APPLICATION_JSON_TYPE)
                 .body(DefaultErrorBody.of(context.getRequest(), response.status()));

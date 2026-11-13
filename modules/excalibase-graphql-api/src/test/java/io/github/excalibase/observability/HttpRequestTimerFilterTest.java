@@ -64,6 +64,19 @@ class HttpRequestTimerFilterTest {
     }
 
     @Test
+    @DisplayName("an exception the router recorded on the request names the series")
+    void routerRecordedException() {
+        MutableHttpRequest<?> request = HttpRequest.POST("/proj/api/v1/rpc/a.b.c", "{}");
+        request.setAttribute(HttpAttributes.URI_TEMPLATE, "/{projectId}/api/v1/rpc/{function}");
+        request.setAttribute(HttpAttributes.EXCEPTION, new IllegalArgumentException("bad function"));
+
+        serve(ObservabilityLevel.FULL, request, HttpStatus.INTERNAL_SERVER_ERROR, null);
+
+        assertThat(timer("/{projectId}/api/v1/rpc/{function}", "500").getId().getTag("exception"))
+                .isEqualTo("IllegalArgumentException");
+    }
+
+    @Test
     @DisplayName("a matched route is timed under its template with the outcome and no exception")
     void matchedRoute() {
         MutableHttpRequest<?> request = HttpRequest.GET("/proj/api/v1/orders");

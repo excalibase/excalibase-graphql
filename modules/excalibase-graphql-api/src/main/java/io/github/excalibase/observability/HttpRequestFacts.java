@@ -25,6 +25,7 @@ public record HttpRequestFacts(String method, int status, String uri, String rou
     public static HttpRequestFacts of(HttpRequest<?> request, int answeredStatus, Throwable thrown) {
         Throwable failure = thrown != null ? thrown
                 : request.getAttribute(EXCEPTION_ATTRIBUTE, Throwable.class)
+                        .or(() -> request.getAttribute(HttpAttributes.EXCEPTION, Throwable.class))
                         .or(() -> request.getAttribute(HttpAttributes.ERROR, Throwable.class)).orElse(null);
         int status = failure != null && answeredStatus < 400 ? 500 : upgradedStatus(request, answeredStatus);
         String pattern = routePattern(request, status);
