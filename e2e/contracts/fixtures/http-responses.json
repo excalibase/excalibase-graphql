@@ -226,7 +226,7 @@
     }
   },
   "plain get on an unknown project graphql path": {
-    "status": 401,
+    "status": 404,
     "headers": {
       "content-type": "application/json;charset=ISO-8859-1",
       "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
@@ -238,9 +238,9 @@
     "body": {
       "errors": [
         {
-          "message": "Invalid or expired token",
+          "message": "Project not found",
           "extensions": {
-            "code": "aud_mismatch"
+            "code": "project_not_found"
           }
         }
       ]
@@ -580,7 +580,7 @@
     "headers": {
       "content-type": "text/html;charset=utf-8"
     },
-    "body": "<html: HTTP Status 400 – Bad Request>"
+    "body": "<html: HTTP Status 400 \u2013 Bad Request>"
   },
   "rest read": {
     "status": 200,
@@ -874,7 +874,7 @@
     "headers": {
       "content-type": "text/html;charset=utf-8"
     },
-    "body": "<html: HTTP Status 400 – Bad Request>"
+    "body": "<html: HTTP Status 400 \u2013 Bad Request>"
   },
   "double slash prefix": {
     "status": 400,
@@ -951,7 +951,7 @@
         {
           "variables": {
             "projectId": {
-              "description": "Project identifier — the single path segment your token is scoped to",
+              "description": "Project identifier \u2014 the single path segment your token is scoped to",
               "default": "your-project-id"
             }
           },

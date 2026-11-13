@@ -36,7 +36,7 @@ const cases = {
   'unknown project': ['/no-such-project/graphql', withHeaders(query('{ __typename }'), bearer(token({ project: 'no-such-project' })))],
   'unknown project rest': ['/no-such-project/api/v1/customer', { headers: bearer(token({ project: 'no-such-project' })) }],
   // firewall and route matching
-  'plain get on an unknown project graphql path': ['/no-such-project/graphql', { headers: service() }],
+  'plain get on an unknown project graphql path': ['/no-such-project/graphql', {}],
   'plain get on a known project graphql path': [GRAPHQL, { headers: service() }],
   'trace method': [GRAPHQL, { method: 'TRACE', headers: service() }],
   'custom method': [GRAPHQL, { method: 'FOO', headers: service() }],
