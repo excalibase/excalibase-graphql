@@ -3,6 +3,7 @@ package io.github.excalibase.config.datasource;
 import io.micronaut.core.annotation.Nullable;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.jdbc.datasource.AbstractDataSource;
 
@@ -19,6 +20,11 @@ public class DynamicRoutingDataSource extends AbstractDataSource {
                                     @Nullable DataSource defaultTarget) {
         this.dataSourceManager = dataSourceManager;
         this.defaultTarget = defaultTarget;
+    }
+
+    /** The one configured database, absent in multi-tenant mode where every project has its own. */
+    public Optional<DataSource> configured() {
+        return Optional.ofNullable(defaultTarget);
     }
 
     private DataSource target() throws SQLException {
