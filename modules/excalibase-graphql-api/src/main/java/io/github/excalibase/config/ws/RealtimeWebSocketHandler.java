@@ -14,6 +14,8 @@ import io.github.excalibase.security.JwtService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.micronaut.context.annotation.Value;
+import io.github.excalibase.config.JwtEnabledSetting;
+import jakarta.inject.Inject;
 import io.micronaut.core.annotation.Nullable;
 import io.github.excalibase.config.ws.WsSession.CloseStatus;
 import io.github.excalibase.config.ws.WsSession.TextMessage;
@@ -56,8 +58,13 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
     private final JwtService jwtService;
     private final AccessPlans accessPlans;
 
-    @Value("${app.security.jwt-enabled:true}")
     private boolean jwtEnabled;
+
+    /** The parsed setting, the same answer the authentication filter and the schema manager use. */
+    @Inject
+    void jwtEnabled(JwtEnabledSetting setting) {
+        this.jwtEnabled = setting.enabled();
+    }
 
     @Value("${app.nats.tenant-in-subject:false}")
     private boolean wsAuthRequired;

@@ -94,7 +94,7 @@ public class AppConfig {
 
     @Singleton
     SecurityProperties securityProperties(
-            @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled,
+            JwtEnabledSetting jwtEnabledSetting,
             @Value("${app.security.auth.jwks-url:}") String jwksUrl,
             @Value("${app.security.auth.hmac-secret:}") String hmacSecret,
             @Value("${app.security.auth.jwks-ttl-minutes:}") String jwksTtlMinutes,
@@ -104,7 +104,7 @@ public class AppConfig {
             @Value("${app.security.multi-tenant.provisioning-url:}") String provisioningUrl,
             @Value("${app.security.multi-tenant.provisioning-pat:}") String provisioningPat,
             @Value("${app.security.multi-tenant.provisioning-pat-file:}") String provisioningPatFile) {
-        return new SecurityProperties(jwtEnabled,
+        return new SecurityProperties(jwtEnabledSetting.enabled(),
                 new SecurityProperties.Auth(jwksUrl, hmacSecret, jwksTtlMinutes, blankToNull(issuer), requireAud, audPrefix),
                 new SecurityProperties.MultiTenant(provisioningUrl, provisioningPat, provisioningPatFile));
     }

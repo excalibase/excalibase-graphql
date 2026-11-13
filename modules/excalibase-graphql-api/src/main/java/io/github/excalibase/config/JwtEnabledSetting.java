@@ -2,13 +2,12 @@ package io.github.excalibase.config;
 
 import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Value;
-import jakarta.annotation.PostConstruct;
 import java.util.Locale;
 
 /**
  * {@code app.security.jwt-enabled} is read by conditions on beans and by plain values, so a spelling one of them
  * reads as "on" and another as "off" would leave authentication half applied. Only true and false are accepted, in
- * any case; anything else stops start-up. A blank value (an unset variable) means the default, on.
+ * any case; anything else, a blank or padded value included, stops start-up. Nothing else may read the property.
  */
 @Context
 public class JwtEnabledSetting {
@@ -17,15 +16,15 @@ public class JwtEnabledSetting {
     public static final String OFF_PATTERN = "(?i)\\s*false\\s*";
     public static final String ON_PATTERN = "(?is)(?!\\s*false\\s*$).*";
 
-    private final String value;
+    private final boolean enabled;
 
     public JwtEnabledSetting(@Value("${app.security.jwt-enabled:true}") String value) {
-        this.value = value;
+        this.enabled = parse(value);
     }
 
-    @PostConstruct
-    void check() {
-        parse(value);
+    /** Whether authentication is on: the one answer start-up, the filter and the engine all use. */
+    public boolean enabled() {
+        return enabled;
     }
 
     static boolean parse(String value) {

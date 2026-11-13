@@ -25,6 +25,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Value;
+import io.github.excalibase.config.JwtEnabledSetting;
+import jakarta.inject.Inject;
 import io.micronaut.core.annotation.Nullable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -92,6 +94,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     private final TTLCache<String, Reflection> reflections;
     private final TTLCache<EngineKey, EngineState> tenantEngineStates;
 
+    @Inject
     public GraphqlSchemaManager(
             JdbcTemplate jdbcTemplate,
             @Value("${app.max-rows:30}") int maxRows,
@@ -102,7 +105,23 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             @Nullable NatsCDCService natsCDCService,
             @Nullable DynamicDataSourceManager dataSourceManager,
             @Nullable PermissionProvider permissionProvider,
-            @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
+            JwtEnabledSetting jwtEnabledSetting) {
+        this(jdbcTemplate, maxRows, databaseType, maxQueryDepth, schemaTtlMinutes, reservedSchemasConfig,
+                natsCDCService, dataSourceManager, permissionProvider, jwtEnabledSetting.enabled());
+    }
+
+    /** For code that already holds the parsed setting; the engine itself is built with {@link JwtEnabledSetting}. */
+    GraphqlSchemaManager(
+            JdbcTemplate jdbcTemplate,
+            int maxRows,
+            String databaseType,
+            int maxQueryDepth,
+            int schemaTtlMinutes,
+            String reservedSchemasConfig,
+            NatsCDCService natsCDCService,
+            DynamicDataSourceManager dataSourceManager,
+            PermissionProvider permissionProvider,
+            boolean jwtEnabled) {
         this.jdbcTemplate = jdbcTemplate;
         this.maxRows = maxRows;
         this.databaseType = databaseType;
