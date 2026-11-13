@@ -8,6 +8,7 @@ public class ExcalibaseGraphqlApplication {
     public static void main(String[] args) {
         Micronaut.build(args)
                 .mainClass(ExcalibaseGraphqlApplication.class)
+                .banner(false)
                 .properties(StartupSettings.from(System.getenv()))
                 .start();
     }

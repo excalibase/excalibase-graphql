@@ -19,13 +19,25 @@ class HttpRequestTimerFilterTest {
     private final MeterRegistry registry = new SimpleMeterRegistry();
 
     private void serve(ObservabilityLevel level, MutableHttpRequest<?> request, HttpStatus status, Throwable thrown) {
-        HttpRequestTimerFilter filter = new HttpRequestTimerFilter(registry, level);
+        HttpRequestTimerFilter filter = new HttpRequestTimerFilter(registry, level, 8081);
         filter.start(request);
         filter.end(request, HttpResponse.status(status), thrown);
     }
 
     private Timer timer(String uri, String status) {
         return registry.find("http.server.requests").tag("uri", uri).tag("status", status).timer();
+    }
+
+    @Test
+    @DisplayName("a request to the actuator port is not timed")
+    void managementPortIsNotTimed() {
+        MutableHttpRequest<?> request = org.mockito.Mockito.spy(HttpRequest.GET("/actuator/health"));
+        org.mockito.Mockito.doReturn(new java.net.InetSocketAddress("localhost", 8081)).when(request).getServerAddress();
+
+        serve(ObservabilityLevel.FULL, request, HttpStatus.OK, null);
+
+        assertThat(registry.find("http.server.requests").timers()).isEmpty();
+        assertThat(registry.find("http.server.requests.active").meters()).isEmpty();
     }
 
     @Test

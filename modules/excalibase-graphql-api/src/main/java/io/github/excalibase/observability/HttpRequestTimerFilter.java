@@ -5,6 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
+import io.micronaut.context.annotation.Value;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.order.Ordered;
 import io.micronaut.http.HttpRequest;
@@ -13,6 +14,7 @@ import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.annotation.RequestFilter;
 import io.micronaut.http.annotation.ResponseFilter;
 import io.micronaut.http.annotation.ServerFilter;
+import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
@@ -35,9 +37,13 @@ public class HttpRequestTimerFilter implements Ordered {
     private final ConcurrentHashMap<TimerKey, Timer> timers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, LongTaskTimer> activeTimers = new ConcurrentHashMap<>();
 
-    public HttpRequestTimerFilter(MeterRegistry registry, ObservabilityLevel level) {
+    private final int managementPort;
+
+    public HttpRequestTimerFilter(MeterRegistry registry, ObservabilityLevel level,
+                                  @Value("${endpoints.all.port:-1}") int managementPort) {
         this.registry = registry;
         this.level = level;
+        this.managementPort = managementPort;
     }
 
     @Override
@@ -47,7 +53,7 @@ public class HttpRequestTimerFilter implements Ordered {
 
     @RequestFilter
     public void start(HttpRequest<?> request) {
-        if (!level.timesRequests()) {
+        if (!level.timesRequests() || onManagementPort(request)) {
             return;
         }
         request.getAttributes().put(ACTIVE, activeTimer(HttpRequestFacts.method(request)).start());
@@ -65,6 +71,12 @@ public class HttpRequestTimerFilter implements Ordered {
         }
         HttpRequestFacts facts = HttpRequestFacts.of(request, response.code(), thrown);
         timers.computeIfAbsent(new TimerKey(facts), this::newTimer).record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    /** Requests to the actuator port are not part of the served traffic and are never timed. */
+    private boolean onManagementPort(HttpRequest<?> request) {
+        InetSocketAddress server = request.getServerAddress();
+        return server != null && server.getPort() == managementPort;
     }
 
     private Timer newTimer(TimerKey key) {
