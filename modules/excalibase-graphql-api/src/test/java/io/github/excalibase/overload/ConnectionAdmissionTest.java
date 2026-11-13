@@ -46,4 +46,43 @@ class ConnectionAdmissionTest {
         assertThat(second.<io.netty.buffer.ByteBuf>readInbound().toString(java.nio.charset.StandardCharsets.UTF_8))
                 .isEqualTo("a");
     }
+
+    /** Counts the reads that reach the transport, which a server that reads on demand asks for one at a time. */
+    private static final class CountingChannel extends EmbeddedChannel {
+        private int reads;
+
+        CountingChannel(io.netty.channel.ChannelHandler... handlers) {
+            super(false, false, handlers);
+            config().setAutoRead(false);
+            try {
+                register();
+            } catch (Exception failure) {
+                throw new IllegalStateException(failure);
+            }
+        }
+
+        @Override
+        protected void doBeginRead() {
+            reads++;
+        }
+    }
+
+    @Test
+    @DisplayName("a read asked for by the handlers behind it is held while the connection waits, then made on admission")
+    void onDemandReadsAreHeld() {
+        ConnectionGate gate = new ConnectionGate(1);
+        CountingChannel first = new CountingChannel(new ConnectionAdmission(gate, rotation()));
+        CountingChannel second = new CountingChannel(new ConnectionAdmission(gate, rotation()));
+        first.pipeline().read();
+        second.pipeline().read();
+
+        assertThat(first.reads).isEqualTo(1);
+        assertThat(second.reads).isZero();
+
+        first.close();
+        second.runPendingTasks();
+
+        assertThat(second.reads).isEqualTo(1);
+        assertThat(second.config().isAutoRead()).as("the setting the connection arrived with is restored").isFalse();
+    }
 }

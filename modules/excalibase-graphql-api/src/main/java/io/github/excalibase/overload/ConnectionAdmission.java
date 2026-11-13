@@ -2,7 +2,7 @@ package io.github.excalibase.overload;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.util.ReferenceCountUtil;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,7 +12,7 @@ import java.util.List;
  * sends is read by the server until a slot frees, the same wait a client has in the accept queue: reads are
  * switched off while it waits, so what it sends stays in the kernel's buffer instead of piling up here.
  */
-final class ConnectionAdmission extends ChannelInboundHandlerAdapter implements ConnectionGate.Waiter {
+final class ConnectionAdmission extends ChannelDuplexHandler implements ConnectionGate.Waiter {
 
     private final ConnectionGate gate;
     private final KeepAliveRotation rotation;
@@ -20,6 +20,8 @@ final class ConnectionAdmission extends ChannelInboundHandlerAdapter implements 
     private ChannelHandlerContext context;
     private boolean admitted;
     private boolean finished;
+    private boolean autoReadOnArrival;
+    private boolean readWaiting;
 
     ConnectionAdmission(ConnectionGate gate, KeepAliveRotation rotation) {
         this.gate = gate;
@@ -30,7 +32,10 @@ final class ConnectionAdmission extends ChannelInboundHandlerAdapter implements 
     public void handlerAdded(ChannelHandlerContext context) {
         this.context = context;
         admitted = gate.tryAdmit(this);
-        context.channel().config().setAutoRead(admitted);
+        autoReadOnArrival = context.channel().config().isAutoRead();
+        if (!admitted) {
+            context.channel().config().setAutoRead(false);
+        }
         updateListener(context.channel());
         if (admitted) {
             rotation.start();
@@ -43,6 +48,16 @@ final class ConnectionAdmission extends ChannelInboundHandlerAdapter implements 
             context.fireChannelRead(message);
         } else {
             held.add(message);
+        }
+    }
+
+    /** The server reads on demand; a read it asks for while this connection waits is made once it is admitted. */
+    @Override
+    public void read(ChannelHandlerContext context) {
+        if (admitted) {
+            context.read();
+        } else {
+            readWaiting = true;
         }
     }
 
@@ -65,7 +80,11 @@ final class ConnectionAdmission extends ChannelInboundHandlerAdapter implements 
             return;
         }
         admitted = true;
-        context.channel().config().setAutoRead(true);
+        context.channel().config().setAutoRead(autoReadOnArrival);
+        if (readWaiting) {
+            readWaiting = false;
+            context.read();
+        }
         updateListener(context.channel());
         rotation.start();
         List<Object> replay = new ArrayList<>(held);
