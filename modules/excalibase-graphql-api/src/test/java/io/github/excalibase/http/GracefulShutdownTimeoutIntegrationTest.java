@@ -2,49 +2,64 @@ package io.github.excalibase.http;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineClient;
 import io.micronaut.context.ApplicationContext;
-import jakarta.inject.Inject;
+import io.micronaut.runtime.server.EmbeddedServer;
+import java.net.URI;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 /** The drain is bounded: a request still held when the timeout passes does not keep the process up. */
-class GracefulShutdownTimeoutIntegrationTest extends EngineIntegrationTest {
-
-    @Inject
-    ApplicationContext context;
-
-    @Override
-    public Map<String, String> getProperties() {
-        return Map.ofEntries(
-                Map.entry("app.security.multi-tenant.provisioning-url", "http://localhost:59998/api"),
-                Map.entry("app.security.auth.hmac-secret", "shutdown-test-hmac-secret-0123456789abcdef"),
-                Map.entry("app.nats.enabled", "false"),
-                Map.entry("micronaut.lifecycle.graceful-shutdown.grace-period", "PT1S"),
-                Map.entry("test.held-endpoint", "true"));
-    }
+@Timeout(value = 120, unit = TimeUnit.SECONDS)
+class GracefulShutdownTimeoutIntegrationTest {
 
     @Test
     @DisplayName("shutdown gives up on a request held past the timeout instead of waiting for it")
     void stopsAfterTheTimeout() throws Exception {
-        HeldEndpoint.reset();
-        CompletableFuture.runAsync(() -> {
-            try {
-                http.get("/test-proj/held");
-            } catch (RuntimeException cutOff) {
-                // the connection is closed under the request: expected
-            }
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("app.security.multi-tenant.provisioning-url", "http://localhost:59998/api");
+        properties.put("app.security.auth.hmac-secret", "shutdown-test-hmac-secret-0123456789abcdef");
+        properties.put("app.nats.enabled", "false");
+        properties.put("micronaut.server.port", "-1");
+        properties.put("endpoints.all.port", "-1");
+        properties.put("micronaut.lifecycle.graceful-shutdown.grace-period", "PT1S");
+        properties.put("test.held-endpoint", "true");
+        ExecutorService threads = Executors.newCachedThreadPool(runnable -> {
+            Thread thread = new Thread(runnable, "graceful-shutdown-timeout-test");
+            thread.setDaemon(true);
+            return thread;
         });
-        assertThat(HeldEndpoint.started.await(10, TimeUnit.SECONDS)).isTrue();
+        ApplicationContext context = ApplicationContext.run(properties);
+        try {
+            int port = context.getBean(EmbeddedServer.class).getPort();
+            HeldEndpoint.reset();
+            CompletableFuture.runAsync(() -> {
+                try {
+                    new EngineClient(URI.create("http://localhost:" + port + "/")).get("/test-proj/held");
+                } catch (RuntimeException cutOff) {
+                    // the connection is closed under the request: expected
+                }
+            }, threads);
+            assertThat(HeldEndpoint.started.await(10, TimeUnit.SECONDS)).isTrue();
 
-        long begun = System.nanoTime();
-        context.stop();
-        long seconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - begun);
+            long begun = System.nanoTime();
+            CompletableFuture.runAsync(context::stop, threads).get(30, TimeUnit.SECONDS);
+            long seconds = TimeUnit.NANOSECONDS.toSeconds(System.nanoTime() - begun);
 
-        assertThat(seconds).isLessThan(5);
-        HeldEndpoint.release.countDown();
+            assertThat(seconds).isLessThan(5);
+        } finally {
+            HeldEndpoint.release.countDown();
+            threads.shutdownNow();
+            if (context.isRunning()) {
+                context.stop();
+            }
+        }
     }
 }

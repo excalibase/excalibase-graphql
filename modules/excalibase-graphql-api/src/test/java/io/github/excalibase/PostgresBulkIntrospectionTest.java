@@ -24,17 +24,24 @@ class PostgresBulkIntrospectionTest {
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-multischema.sql");
 
+    private static HikariDataSource dataSource;
     private static JdbcTemplate jdbcTemplate;
     private static PostgresSchemaLoader loader;
 
     @BeforeAll
     static void setUp() {
-        HikariDataSource ds = new HikariDataSource();
-        ds.setJdbcUrl(postgres.getJdbcUrl());
-        ds.setUsername(postgres.getUsername());
-        ds.setPassword(postgres.getPassword());
-        jdbcTemplate = new JdbcTemplate(ds);
+        dataSource = new HikariDataSource();
+        dataSource.setJdbcUrl(postgres.getJdbcUrl());
+        dataSource.setUsername(postgres.getUsername());
+        dataSource.setPassword(postgres.getPassword());
+        jdbcTemplate = new JdbcTemplate(dataSource);
         loader = new PostgresSchemaLoader();
+    }
+
+    /** The pool is closed before the container goes away, or it keeps retrying a database that is gone. */
+    @org.junit.jupiter.api.AfterAll
+    static void closePool() {
+        dataSource.close();
     }
 
     // === loadAll returns both schemas ===
