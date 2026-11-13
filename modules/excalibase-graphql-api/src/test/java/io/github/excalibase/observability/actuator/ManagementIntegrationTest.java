@@ -131,4 +131,12 @@ class ManagementIntegrationTest extends EngineIntegrationTest {
         assertThat(http.get("/actuator/health").status()).isEqualTo(404);
         assertThat(http.get("/actuator").status()).isEqualTo(404);
     }
+
+    @org.junit.jupiter.params.ParameterizedTest(name = "{0} {1}")
+    @org.junit.jupiter.params.provider.CsvSource({"GET,/p/graphql", "POST,/p/graphql", "GET,/p/api/v1/customer",
+            "GET,/p/api/v1/realtime", "GET,/graphql"})
+    @DisplayName("the management port serves the actuator only; a project route is a 404 there")
+    void projectRoutesAreNotServed(String method, String path) {
+        assertThat(management.raw(method, path).status()).isEqualTo(404);
+    }
 }

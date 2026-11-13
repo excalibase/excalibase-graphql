@@ -30,7 +30,9 @@ class RequestFirewallIntegrationTest extends EngineIntegrationTest {
     @ParameterizedTest
     @ValueSource(strings = {"/test-proj/api/v1/customer;x=1", "/test-proj/api/v1/../graphql", "//test-proj/graphql",
             "/test-proj/api/v1/./customer", "/test-proj/api/v1/customer%3Bx", "/test-proj/api/v1/a%2ee",
-            "/test-proj/api/v1/a%25b", "/test-proj/api/v1/customer/.."})
+            "/test-proj/api/v1/a%25b", "/test-proj/api/v1/customer/..",
+            "/test-proj/api/v1/rpc/x%0ay", "/test-proj/api/v1/rpc/x%0Ay", "/test-proj/api/v1/rpc/x%0dy",
+            "/test-proj/api/v1/rpc/x%0Dy", "/test-proj/api/v1/rpc/x%E2%80%A8y", "/test-proj/api/v1/rpc/x%e2%80%a9y"})
     @DisplayName("a path with a matrix parameter, dot segment, double slash or encoded dot is a 400 with the default body and no security headers")
     void rejectedWithDefaultBody(String target) {
         HttpAnswer answer = http.raw("GET", target);
@@ -64,6 +66,48 @@ class RequestFirewallIntegrationTest extends EngineIntegrationTest {
         assertThat(answer.header("Content-Type")).isEqualTo("text/html;charset=utf-8");
         assertThat(answer.body()).contains(HTML_400_TITLE);
         assertThat(answer.header("X-Frame-Options")).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/test-proj/api/v1/rpc/x\u2028y", "/test-proj/api/v1/rpc/x\u2029y"})
+    @DisplayName("a raw line or paragraph separator in the path is a 400 HTML page, as the server's own parser answers")
+    void rawSeparatorRejectedWithHtmlPage(String target) {
+        HttpAnswer answer = http.raw("GET", target);
+
+        assertThat(answer.status()).isEqualTo(400);
+        assertThat(answer.header("Content-Type")).isEqualTo("text/html;charset=utf-8");
+        assertThat(answer.body()).contains(HTML_400_TITLE);
+    }
+
+    @Test
+    @DisplayName("TRACE is a 400 with the methods served, an empty body and no security headers")
+    void traceIsRefused() {
+        HttpAnswer answer = http.raw("TRACE", "/" + PROJECT + "/graphql");
+
+        assertThat(answer.status()).isEqualTo(400);
+        assertThat(answer.header("Allow")).isEqualTo("HEAD, DELETE, POST, GET, OPTIONS, PUT");
+        assertThat(answer.body()).isEmpty();
+        assertThat(answer.header("X-Frame-Options")).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"FOO", "PROPFIND", "MKCOL"})
+    @DisplayName("a method the firewall does not know is a 400 with an empty body, on any path")
+    void unknownMethodIsRefused(String method) {
+        for (String path : new String[] {"/" + PROJECT + "/graphql", "/" + PROJECT + "/api/v1/customer", "/nowhere"}) {
+            HttpAnswer answer = http.raw(method, path);
+
+            assertThat(answer.status()).as(method + " " + path).isEqualTo(400);
+            assertThat(answer.header("Allow")).isNull();
+            assertThat(answer.body()).isEmpty();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"HEAD", "OPTIONS", "PATCH", "PUT", "DELETE"})
+    @DisplayName("the methods the firewall allows are not refused by it")
+    void allowedMethodsPass(String method) {
+        assertThat(http.raw(method, "/" + PROJECT + "/nothing.here").status()).isNotEqualTo(400);
     }
 
     @Test

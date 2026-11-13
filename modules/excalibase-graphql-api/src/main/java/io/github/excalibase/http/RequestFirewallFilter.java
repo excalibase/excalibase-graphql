@@ -36,6 +36,10 @@ public class RequestFirewallFilter implements Ordered {
     @RequestFilter
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request) {
+        HttpResponse<?> refusedMethod = RequestTargetRules.refusalForMethod(request.getMethodName());
+        if (refusedMethod != null) {
+            return refusedMethod;
+        }
         String path = RequestTarget.rawPath(request);
         if (RequestTargetRules.refusedByServer(path)) {
             return TomcatErrorPage.badRequest();
