@@ -7,7 +7,7 @@ const { stack } = require('./stack');
 const { token, bearer, sign } = require('./tokens');
 const { parseSamples } = require('./prometheus');
 const { startEngine, startFailingEngine, SINGLE_DATABASE_ENV } = require('./containers');
-const { PROFILE } = require('./traffic');
+const { PROFILE, openSocket } = require('./traffic');
 
 const P = stack.project;
 const service = () => bearer(token({ role: 'service' }));
@@ -124,7 +124,13 @@ const CASES = [
   ['LOG_FORMAT=plain, documented as the plain console, makes the engine exit at start (observed)', refusal({ ...SINGLE_DATABASE_ENV, LOG_FORMAT: 'plain' }, "Unknown format 'plain'"), { refused: true, mentions: true }],
   ['LOGGING_LEVEL_IO_GITHUB_EXCALIBASE=WARN silences the engine\'s own INFO lines', runtime({ ...SINGLE_DATABASE_ENV, LOGGING_LEVEL_IO_GITHUB_EXCALIBASE: 'WARN' }, READY_APP, async (engine) => engine.logs().filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).log)
     .some((entry) => entry.logger.startsWith('io.github.excalibase') && entry.level === 'INFO')), false],
-  ['LOGGING_LEVEL_IO_GITHUB_EXCALIBASE=DEBUG adds DEBUG lines', runtime({ ...SINGLE_DATABASE_ENV, LOGGING_LEVEL_IO_GITHUB_EXCALIBASE: 'DEBUG' }, READY_APP, async (engine) => engine.logs().filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).log.level).includes('DEBUG')), true],
+  ['LOGGING_LEVEL_IO_GITHUB_EXCALIBASE=DEBUG adds DEBUG lines', runtime({ ...SINGLE_DATABASE_ENV, LOGGING_LEVEL_IO_GITHUB_EXCALIBASE: 'DEBUG' }, READY_APP, async (engine) => {
+    const session = openSocket(engine.app, service());   // a connection is logged at DEBUG by the engine's own handler
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    session.socket.close();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    return engine.logs().filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).log.level).includes('DEBUG');
+  }), true],
   ['JWT_REQUIRE_AUD=false accepts a token with no audience', runtime({ ...SINGLE_DATABASE_ENV, JWT_REQUIRE_AUD: 'false' }, READY_APP, async (engine) => (await graphqlAs(engine, '{ __typename }', bearer(token({ extra: { aud: undefined } })))).status), 200],
   ['the audience is required by default', runtime(SINGLE_DATABASE_ENV, READY_APP, async (engine) => (await graphqlAs(engine, '{ __typename }', bearer(token({ extra: { aud: undefined } })))).status), 401],
   ['AUTH_AUD_PREFIX changes the expected audience prefix', runtime({ ...SINGLE_DATABASE_ENV, AUTH_AUD_PREFIX: 'custom:' }, READY_APP, async (engine) => ({
@@ -173,7 +179,7 @@ const CASES = [
     await rows(engine);
     const names = await metricNames(engine);
     return { http: names.has('http_server_requests_seconds_count'), security: [...names].some((name) => name.startsWith('spring_security_')) };
-  }), { http: true, security: true }],
+  }), { http: true, security: !process.env.CONTRACT_VARIANT }],   // Spring Security's own series exist only in its build
   ['SPRING_THREADS_VIRTUAL_ENABLED=false serves requests on platform threads', runtime({ ...SINGLE_DATABASE_ENV, SPRING_THREADS_VIRTUAL_ENABLED: 'false', LOGGING_LEVEL_IO_GITHUB_EXCALIBASE: 'DEBUG' }, READY_APP, async (engine) => {
     await rows(engine, 'first_name=cs.{A}');
     const threads = engine.logs().filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).process.thread.name);
