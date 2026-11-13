@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.github.excalibase.support.EngineIntegrationTest;
 import io.github.excalibase.support.EngineProperties;
 import io.github.excalibase.support.HttpAnswer;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.inject.Inject;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,6 +18,9 @@ class RequestFirewallIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "test-proj";
     private static final String HTML_400_TITLE = "<title>HTTP Status 400 – Bad Request</title>";
+
+    @Inject
+    MeterRegistry registry;
 
     @Override
     public Map<String, String> getProperties() {
@@ -36,6 +41,17 @@ class RequestFirewallIntegrationTest extends EngineIntegrationTest {
         assertThat(answer.json().get("path").asText()).isEqualTo(target);
         assertThat(answer.header("X-Frame-Options")).isNull();
         assertThat(answer.header("Cache-Control")).isNull();
+    }
+
+    @Test
+    @DisplayName("a rejected request is counted under the route its path would have matched, named by the rejection")
+    void rejectedRequestIsCountedUnderItsRoute() {
+        assertThat(http.raw("GET", "/test-proj/api/v1/rpc/no-such;fn").status()).isEqualTo(400);
+
+        var timer = registry.find("http.server.requests").tag("status", "400")
+                .tag("uri", "/{projectId}/api/v1/rpc/{function}").tag("exception", "RequestRejectedException").timer();
+        assertThat(timer).isNotNull();
+        assertThat(timer.getId().getTag("outcome")).isEqualTo("CLIENT_ERROR");
     }
 
     @ParameterizedTest
