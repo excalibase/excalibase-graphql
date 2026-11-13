@@ -268,5 +268,11 @@
     "allDeclaredConstructors": true,
     "allPublicMethods": true,
     "allDeclaredFields": true
+  },
+  {
+    "name": "io.github.excalibase.observability.logging.EcsEncoder",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allPublicMethods": true
   }
 ]
