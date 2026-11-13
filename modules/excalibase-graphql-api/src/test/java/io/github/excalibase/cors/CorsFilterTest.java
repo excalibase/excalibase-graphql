@@ -129,4 +129,35 @@ class CorsFilterTest {
         assertThat(response.code()).isEqualTo(200);
         assertThat(response.getHeaders().get(ALLOW_ORIGIN)).isNull();
     }
+
+    private static CorsFilter countingFilter(java.util.concurrent.atomic.AtomicInteger lookups) {
+        ProjectCorsConfigurationSource source = new ProjectCorsConfigurationSource(project -> {
+            lookups.incrementAndGet();
+            return List.of(LISTED);
+        }, ProjectCorsConfigurationSource.configFor(List.of()));
+        return new CorsFilter(source);
+    }
+
+    @Test
+    @DisplayName("the project's origins are looked up for every project request, with or without an Origin header")
+    void everyProjectRequestLooksUpTheOrigins() {
+        java.util.concurrent.atomic.AtomicInteger lookups = new java.util.concurrent.atomic.AtomicInteger();
+        CorsFilter counting = countingFilter(lookups);
+
+        answer(counting, HttpRequest.create(HttpMethod.GET, "/p1/api/v1/customer").header("Host", "api.excalibase.io"));
+        answer(counting, actual(HttpMethod.POST, "http://api.excalibase.io"));
+        answer(counting, actual(HttpMethod.POST, LISTED));
+
+        assertThat(lookups).hasValue(3);
+    }
+
+    @Test
+    @DisplayName("a request with no Origin is served with no CORS headers whatever the lookup says")
+    void noOriginGetsNoHeaders() {
+        HttpResponse<?> response = answer(countingFilter(new java.util.concurrent.atomic.AtomicInteger()),
+                HttpRequest.create(HttpMethod.GET, "/p1/api/v1/customer").header("Host", "api.excalibase.io"));
+
+        assertThat(response.getHeaders().contains(ALLOW_ORIGIN)).isFalse();
+        assertThat(response.getHeaders().contains("Vary")).isFalse();
+    }
 }

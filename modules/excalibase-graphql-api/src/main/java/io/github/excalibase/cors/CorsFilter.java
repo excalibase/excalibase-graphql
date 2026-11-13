@@ -50,12 +50,11 @@ public class CorsFilter implements Ordered {
     @RequestFilter
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request) {
-        String origin = request.getHeaders().get("Origin");
-        if (origin == null || sameOrigin(request, origin)) {
-            return null;
-        }
+        // Looked up for every request, as the servlet filter did, so the project's origins are fetched (and a
+        // failed fetch is logged) whether or not this request carries an Origin.
         CorsRules rules = source.getCorsConfiguration(request);
-        if (rules == null) {
+        String origin = request.getHeaders().get("Origin");
+        if (origin == null || sameOrigin(request, origin) || rules == null) {
             return null;
         }
         if (isPreflight(request)) {
