@@ -168,6 +168,23 @@ class JwtAuthFilterRoleTest {
     }
 
     @Test
+    void logLinesWrittenWhileThePlanIsResolvedNameTheTenant_andNothingStaysBehind() throws Exception {
+        AccessPlans plans = mock(AccessPlans.class);
+        AtomicReference<Map<String, String>> seen = new AtomicReference<>();
+        when(plans.planFor(any())).thenAnswer(invocation -> {
+            seen.set(org.slf4j.MDC.getCopyOfContextMap());
+            return null;
+        });
+
+        run(request(token(Map.of("role", "user", "orgSlug", "acme")), null), plans);
+
+        assertThat(seen.get()).containsEntry("tenant", PROJECT).containsEntry("org", "acme")
+                .containsKeys("project_name", "org_name");
+        assertThat(org.slf4j.MDC.get("tenant")).isNull();
+        assertThat(org.slf4j.MDC.get("org")).isNull();
+    }
+
+    @Test
     void noToken_runsAsAnon() {
         Outcome outcome = run(request(null, null));
 

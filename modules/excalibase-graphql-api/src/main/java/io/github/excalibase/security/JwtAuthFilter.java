@@ -17,6 +17,7 @@ import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.annotation.RequestFilter;
 import io.micronaut.http.annotation.ServerFilter;
 import io.opentelemetry.api.trace.Span;
+import org.slf4j.MDC;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -79,7 +80,8 @@ public class JwtAuthFilter implements Ordered {
             return null;
         }
         String orgSlug = claims != null ? claims.orgSlug() : null;
-        TenantScope scope = new TenantScope(pathProjectId, orgSlug);
+        TenantScope scope = new TenantScope(pathProjectId, orgSlug,
+                claims != null ? claims.projectName() : null, claims != null ? claims.orgName() : null);
         scope.enter();
         try {
             return applyGuards(pathProjectId, principal, claims, propagated);
@@ -91,15 +93,30 @@ public class JwtAuthFilter implements Ordered {
         }
     }
 
-    /** The tenant on this thread while the access plan is read (it routes the plan's database reads). */
-    private record TenantScope(String projectId, String orgSlug) {
+    /**
+     * The tenant on this thread while the access plan is read (it routes the plan's database reads); the lines
+     * logged meanwhile name it as the handler's lines do.
+     */
+    private record TenantScope(String projectId, String orgSlug, String projectName, String orgName) {
         void enter() {
             io.github.excalibase.config.datasource.TenantContext.setTenantId(projectId);
             io.github.excalibase.config.datasource.TenantContext.setOrgSlug(orgSlug);
+            MDC.put("tenant", projectId);
+            MDC.put("org", orEmpty(orgSlug));
+            MDC.put("project_name", orEmpty(projectName));
+            MDC.put("org_name", orEmpty(orgName));
         }
 
         void leave() {
             io.github.excalibase.config.datasource.TenantContext.clear();
+            MDC.remove("tenant");
+            MDC.remove("org");
+            MDC.remove("project_name");
+            MDC.remove("org_name");
+        }
+
+        private static String orEmpty(String value) {
+            return value != null ? value : "";
         }
     }
 
