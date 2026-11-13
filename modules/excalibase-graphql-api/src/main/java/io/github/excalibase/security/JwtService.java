@@ -7,7 +7,6 @@ import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.MACVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import io.github.excalibase.cache.TTLCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -36,11 +35,15 @@ import java.util.Set;
 public class JwtService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
-    private static final String CACHE_KEY = "jwks";
+    /** The auth service gets this long to answer, and its answer this many bytes (a JWKS is a few hundred). */
+    private static final int JWKS_TIMEOUT_MILLIS = 3_000;
+    private static final int JWKS_SIZE_LIMIT_BYTES = 64 * 1024;
+    /** A failed fetch, and a token naming a key we do not hold, wait this long before reaching the auth service again. */
+    private static final Duration JWKS_MIN_RETRY = Duration.ofSeconds(10);
 
     // JWKS mode
     private final String jwksUrl;
-    private final TTLCache<String, List<ECPublicKey>> keyCache;
+    private final JwksKeys keys;
 
     // HMAC mode
     private final byte[] hmacSecret;
@@ -73,11 +76,11 @@ public class JwtService {
     /** JWKS mode — fetches EC public keys from the given URL, caches with TTL. */
     public JwtService(String jwksUrl, int ttlMinutes) {
         this.jwksUrl = jwksUrl;
-        this.keyCache = new TTLCache<>(Duration.ofMinutes(ttlMinutes));
         this.hmacSecret = null;
 
         try {
-            keyCache.put(CACHE_KEY, fetchKeys());
+            this.keys = new JwksKeys(() -> fetchKeys(jwksUrl), Duration.ofMinutes(ttlMinutes), JWKS_MIN_RETRY,
+                    System::currentTimeMillis, fetchKeys(jwksUrl));
             log.info("jwt_keys_loaded jwks_url={}", jwksUrl);
         } catch (Exception e) {
             throw new IllegalStateException("Cannot start with jwt-enabled=true — failed to load JWKS from: " + jwksUrl, e);
@@ -91,15 +94,15 @@ public class JwtService {
         }
         this.hmacSecret = hmacSecret.getBytes(StandardCharsets.UTF_8);
         this.jwksUrl = null;
-        this.keyCache = null;
+        this.keys = null;
         log.info("jwt_service_mode=hmac");
     }
 
     /** Test constructor — inject EC key directly, no remote fetch. */
     public JwtService(ECPublicKey publicKey) {
         this.jwksUrl = "test";
-        this.keyCache = new TTLCache<>(Duration.ofHours(24));
-        this.keyCache.put(CACHE_KEY, List.of(publicKey));
+        this.keys = new JwksKeys(() -> List.of(new JwksKeys.Key(null, publicKey)), Duration.ofHours(24),
+                JWKS_MIN_RETRY, System::currentTimeMillis, List.of(new JwksKeys.Key(null, publicKey)));
         this.hmacSecret = null;
     }
 
@@ -248,13 +251,13 @@ public class JwtService {
         // Pin ES256 explicitly. ECDSAVerifier otherwise accepts ES384/ES512/ES256K,
         // and this closes any header-driven algorithm ambiguity ("alg confusion").
         requireAlg(jwt, JWSAlgorithm.ES256);
-        List<ECPublicKey> keys = getKeys();
+        List<JwksKeys.Key> candidates = keys.keysFor(jwt.getHeader().getKeyID());
         // Fail closed on an empty/absent key set — never fall through to "verified".
-        if (keys == null || keys.isEmpty()) {
+        if (candidates.isEmpty()) {
             throw new JwtVerificationException("No JWKS verification keys available");
         }
-        for (ECPublicKey key : keys) {
-            if (jwt.verify(new ECDSAVerifier(key))) {
+        for (JwksKeys.Key candidate : candidates) {
+            if (jwt.verify(new ECDSAVerifier(candidate.publicKey()))) {
                 return;
             }
         }
@@ -360,24 +363,15 @@ public class JwtService {
         throw new JwtVerificationException("Missing required claim: userId or sub");
     }
 
-    private List<ECPublicKey> getKeys() {
-        return keyCache.computeIfAbsent(CACHE_KEY, k -> {
-            try {
-                log.info("jwt_keys_refresh jwks_url={}", jwksUrl);
-                return fetchKeys();
-            } catch (Exception e) {
-                throw new JwtVerificationException("Failed to refresh JWKS from: " + jwksUrl, e);
-            }
-        });
-    }
-
-    private List<ECPublicKey> fetchKeys() throws java.io.IOException, java.text.ParseException, java.net.URISyntaxException {
-        JWKSet jwkSet = JWKSet.load(new java.net.URI(jwksUrl).toURL());
-        List<ECPublicKey> ecKeys = jwkSet.getKeys().stream()
+    private static List<JwksKeys.Key> fetchKeys(String jwksUrl)
+            throws java.io.IOException, java.text.ParseException, java.net.URISyntaxException {
+        JWKSet jwkSet = JWKSet.load(new java.net.URI(jwksUrl).toURL(), JWKS_TIMEOUT_MILLIS, JWKS_TIMEOUT_MILLIS,
+                JWKS_SIZE_LIMIT_BYTES);
+        List<JwksKeys.Key> ecKeys = jwkSet.getKeys().stream()
                 .filter(ECKey.class::isInstance)
                 .map(k -> {
                     try {
-                        return ((ECKey) k).toECPublicKey();
+                        return new JwksKeys.Key(k.getKeyID(), ((ECKey) k).toECPublicKey());
                     } catch (com.nimbusds.jose.JOSEException e) {
                         throw new JwtVerificationException("Failed to parse EC key from JWKS", e);
                     }
