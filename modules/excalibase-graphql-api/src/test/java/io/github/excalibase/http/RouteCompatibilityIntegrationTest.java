@@ -45,4 +45,29 @@ class RouteCompatibilityIntegrationTest extends EngineIntegrationTest {
         assertThat(answer.status()).isEqualTo(404);
         assertThat(answer.json().get("error").asText()).isEqualTo("Not Found");
     }
+
+    private String firstLine(String path, String... upgradeValues) throws java.io.IOException {
+        java.net.URI base = http.base();
+        StringBuilder request = new StringBuilder("GET " + path + " HTTP/1.1\r\nHost: " + base.getHost() + "\r\n");
+        for (String value : upgradeValues) {
+            request.append("Upgrade: ").append(value).append("\r\n");
+        }
+        request.append("Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\n"
+                + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n");
+        try (java.net.Socket socket = new java.net.Socket(base.getHost(), base.getPort())) {
+            socket.setSoTimeout(5_000);
+            socket.getOutputStream().write(request.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            socket.getOutputStream().flush();
+            return new java.io.BufferedReader(new java.io.InputStreamReader(socket.getInputStream(),
+                    java.nio.charset.StandardCharsets.UTF_8)).readLine();
+        }
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"foo|websocket", "foo, websocket", "h2c|WebSocket"})
+    @DisplayName("an upgrade the servlet stack did not see (websocket not the first Upgrade value) is answered as a plain GET")
+    void disguisedUpgradeIsAPlainRequest(String lines) throws java.io.IOException {
+        assertThat(firstLine("/" + PROJECT + "/graphql", lines.split("\\|"))).startsWith("HTTP/1.1 405");
+        assertThat(firstLine("/" + PROJECT + "/api/v1/realtime", lines.split("\\|"))).startsWith("HTTP/1.1 404");
+    }
 }

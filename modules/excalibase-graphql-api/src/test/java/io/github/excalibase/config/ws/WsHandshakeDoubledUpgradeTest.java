@@ -28,8 +28,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 /**
- * A request is an upgrade when any value of any Upgrade header says websocket. The server upgrades it then, so the
- * handshake checks (origin, project, token) must run whatever else the header lists first.
+ * The servlet stack read the first Upgrade header only: websocket there is an upgrade, whatever follows, and the
+ * handshake checks (origin, project, token) apply. Any other first value is a plain request, which this framework
+ * would still upgrade when a later value says websocket; that request is answered as plain
+ * (RouteCompatibilityIntegrationTest).
  */
 class WsHandshakeDoubledUpgradeTest {
 
@@ -70,7 +72,7 @@ class WsHandshakeDoubledUpgradeTest {
     }
 
     private static String[][] spellings() {
-        return new String[][] {{"foo", "websocket"}, {"websocket", "foo"}, {"foo, websocket"}, {"h2c", "WebSocket"}};
+        return new String[][] {{"websocket", "foo"}, {"WebSocket", "h2c"}, {"websocket", "websocket"}, {"websocket"}};
     }
 
     @ParameterizedTest
@@ -110,11 +112,27 @@ class WsHandshakeDoubledUpgradeTest {
         assertThat(attributes).containsEntry(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, PATH_PROJECT);
     }
 
-    @Test
-    @DisplayName("a request whose Upgrade values never say websocket is not an upgrade")
-    void otherUpgradeIsIgnored() {
-        MutableHttpRequest<?> request = request("h2c", "foo").header("Origin", "https://evil.example");
+    @ParameterizedTest
+    @ValueSource(strings = {"h2c|foo", "foo|websocket", "foo, websocket", "h2c"})
+    @DisplayName("a request whose first Upgrade header is not websocket is not an upgrade, as the servlet stack read it")
+    void otherFirstValueIsNotAnUpgrade(String lines) {
+        MutableHttpRequest<?> request = request(lines.split("\\|")).header("Origin", "https://evil.example");
 
         assertThat(filter().filter(request)).isNull();
+        assertThat(request.getAttribute(WsHandshakeFilter.ATTRIBUTES)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"foo|websocket", "foo, websocket", "h2c|WebSocket"})
+    @DisplayName("a websocket named only after another value is disguised: the framework would upgrade it")
+    void laterWebSocketIsDisguised(String lines) {
+        assertThat(io.github.excalibase.http.WebSocketUpgrade.isDisguised(request(lines.split("\\|")))).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"websocket|foo", "websocket", "h2c", "h2c|foo"})
+    @DisplayName("a first value of websocket, or no websocket at all, is not disguised")
+    void notDisguised(String lines) {
+        assertThat(io.github.excalibase.http.WebSocketUpgrade.isDisguised(request(lines.split("\\|")))).isFalse();
     }
 }

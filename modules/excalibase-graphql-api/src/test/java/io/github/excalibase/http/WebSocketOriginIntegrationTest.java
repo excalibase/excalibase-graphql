@@ -47,8 +47,15 @@ class WebSocketOriginIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("a second Upgrade header naming websocket does not skip the origin check")
+    @DisplayName("a second Upgrade header after websocket does not skip the origin check")
     void doubledUpgradeStillChecksOrigin() throws IOException {
-        assertThat(upgradeAnswer("https://evil.example", "foo", "websocket")).startsWith("HTTP/1.1 403");
+        assertThat(upgradeAnswer("https://evil.example", "websocket", "foo")).startsWith("HTTP/1.1 403");
+    }
+
+    @Test
+    @DisplayName("websocket named only after another Upgrade value is never upgraded, whatever the origin")
+    void laterWebSocketIsNotUpgraded() throws IOException {
+        assertThat(upgradeAnswer("https://evil.example", "foo", "websocket")).startsWith("HTTP/1.1 405");
+        assertThat(upgradeAnswer("https://app.example.com", "foo", "websocket")).startsWith("HTTP/1.1 405");
     }
 }

@@ -14,7 +14,8 @@ import java.util.regex.Pattern;
 
 /**
  * Where Spring's route matching and Micronaut's differ: a trailing slash is not the route, and the GraphQL path
- * (also a WebSocket path) serves POST, so a GET that is not an upgrade is a 405 naming it.
+ * (also a WebSocket path) serves POST, so a GET that is not an upgrade is a 405 naming it. An upgrade the old stack
+ * did not recognise (websocket named after another Upgrade value) is a plain request there, and here too.
  */
 @ServerFilter(Filter.MATCH_ALL_PATTERN)
 public class RouteCompatibilityFilter implements Ordered {
@@ -26,6 +27,7 @@ public class RouteCompatibilityFilter implements Ordered {
     public static final int ORDER = -60;
 
     private static final Pattern GRAPHQL_PATH = Pattern.compile("^/[^/]+/graphql$");
+    private static final Pattern REALTIME_PATH = Pattern.compile("^/[^/]+/api/v1/realtime$");
 
     @Override
     public int getOrder() {
@@ -41,6 +43,10 @@ public class RouteCompatibilityFilter implements Ordered {
         }
         if (isPlainGet(request) && GRAPHQL_PATH.matcher(path).matches()) {
             return DefaultErrorBody.response(request, HttpStatus.METHOD_NOT_ALLOWED).header("Allow", "POST");
+        }
+        if (request.getMethod() == HttpMethod.GET && WebSocketUpgrade.isDisguised(request)
+                && REALTIME_PATH.matcher(path).matches()) {
+            return DefaultErrorBody.response(request, HttpStatus.NOT_FOUND);
         }
         return null;
     }

@@ -225,6 +225,110 @@
       ]
     }
   },
+  "plain get on an unknown project graphql path": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Invalid or expired token",
+          "extensions": {
+            "code": "aud_mismatch"
+          }
+        }
+      ]
+    }
+  },
+  "plain get on a known project graphql path": {
+    "status": 405,
+    "headers": {
+      "content-type": "application/json",
+      "allow": "POST",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 405,
+      "error": "Method Not Allowed",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "trace method": {
+    "status": 400,
+    "headers": {
+      "allow": "HEAD, DELETE, POST, GET, OPTIONS, PUT"
+    },
+    "body": ""
+  },
+  "custom method": {
+    "status": 400,
+    "headers": {},
+    "body": ""
+  },
+  "custom method on rest": {
+    "status": 400,
+    "headers": {},
+    "body": ""
+  },
+  "encoded line feed in a path": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/rpc/x%0ay"
+    }
+  },
+  "encoded carriage return in a path": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/rpc/x%0Dy"
+    }
+  },
+  "encoded line separator in a path": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/rpc/x%E2%80%A8y"
+    }
+  },
+  "encoded paragraph separator in a path": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/rpc/x%e2%80%a9y"
+    }
+  },
   "unscoped graphql": {
     "status": 404,
     "headers": {
@@ -705,8 +809,8 @@
       "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
     },
     "body": {
-      "code": "internal_error",
-      "error": "Query execution failed"
+      "error": "Query execution failed",
+      "code": "internal_error"
     }
   },
   "unencoded pipe backtick caret": {
@@ -839,19 +943,19 @@
     "body": {
       "openapi": "3.0.3",
       "info": {
-        "version": "1.0.0",
+        "title": "Excalibase REST API",
         "description": "Auto-generated from database schema",
-        "title": "Excalibase REST API"
+        "version": "1.0.0"
       },
       "servers": [
         {
-          "url": "/{projectId}/api/v1",
           "variables": {
             "projectId": {
-              "default": "your-project-id",
-              "description": "Project identifier — the single path segment your token is scoped to"
+              "description": "Project identifier — the single path segment your token is scoped to",
+              "default": "your-project-id"
             }
-          }
+          },
+          "url": "/{projectId}/api/v1"
         }
       ],
       "paths": [
@@ -909,9 +1013,9 @@
         }
       ],
       "pagination": {
-        "limit": 1,
+        "offset": 0,
         "total": 4,
-        "offset": 0
+        "limit": 1
       }
     }
   },

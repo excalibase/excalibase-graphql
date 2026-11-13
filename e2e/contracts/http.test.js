@@ -35,6 +35,16 @@ const cases = {
   // routing
   'unknown project': ['/no-such-project/graphql', withHeaders(query('{ __typename }'), bearer(token({ project: 'no-such-project' })))],
   'unknown project rest': ['/no-such-project/api/v1/customer', { headers: bearer(token({ project: 'no-such-project' })) }],
+  // firewall and route matching
+  'plain get on an unknown project graphql path': ['/no-such-project/graphql', { headers: service() }],
+  'plain get on a known project graphql path': [GRAPHQL, { headers: service() }],
+  'trace method': [GRAPHQL, { method: 'TRACE', headers: service() }],
+  'custom method': [GRAPHQL, { method: 'FOO', headers: service() }],
+  'custom method on rest': [`${REST}/customer`, { method: 'PROPFIND', headers: service() }],
+  'encoded line feed in a path': [`${REST}/rpc/x%0ay`, { headers: service() }],
+  'encoded carriage return in a path': [`${REST}/rpc/x%0Dy`, { headers: service() }],
+  'encoded line separator in a path': [`${REST}/rpc/x%E2%80%A8y`, { headers: service() }],
+  'encoded paragraph separator in a path': [`${REST}/rpc/x%e2%80%a9y`, { headers: service() }],
   'unscoped graphql': ['/graphql', withHeaders(query('{ __typename }'), service())],
   'trailing slash graphql': [`${GRAPHQL}/`, withHeaders(query('{ __typename }'), service())],
   'unknown path': ['/', {}],
@@ -106,6 +116,17 @@ describe('HTTP behaviour', () => {
   });
 });
 
+describe('management port', () => {
+  test('serves the actuator only; a project route is a 404 there', async () => {
+    const result = {};
+    for (const [label, method, path] of [['get graphql', 'GET', GRAPHQL], ['post graphql', 'POST', GRAPHQL],
+      ['get rest', 'GET', `${REST}/customer`], ['get realtime', 'GET', `${REST}/realtime`], ['get unscoped graphql', 'GET', '/graphql']]) {
+      result[label] = capture(await request(stack.management, path, { method, headers: service(), body: method === 'POST' ? { query: '{ __typename }' } : undefined }));
+    }
+    expectFixture('http-management-port', result);
+  });
+});
+
 describe('CORS', () => {
   let mappingId;
   beforeAll(async () => {
@@ -134,5 +155,24 @@ describe('CORS', () => {
       'preflight on a route with no project': capture(await request(stack.app, '/', { method: 'OPTIONS', headers: { Origin: ORIGIN, 'Access-Control-Request-Method': 'GET' } })),
     };
     expectFixture('http-cors', result);
+  });
+
+  /** The first line the server answers a WebSocket upgrade with, the Upgrade header written twice. */
+  const upgradeAnswer = (origin, upgradeValues) => new Promise((resolve, reject) => {
+    const socket = require('net').connect({ host: new URL(stack.app).hostname, port: new URL(stack.app).port });
+    socket.setTimeout(10000, () => { socket.destroy(); reject(new Error('timeout')); });
+    const lines = [`GET ${GRAPHQL} HTTP/1.1`, 'Host: localhost', ...upgradeValues.map((value) => `Upgrade: ${value}`), 'Connection: Upgrade',
+      'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', `Origin: ${origin}`, '', ''];
+    socket.on('connect', () => socket.write(lines.join('\r\n')));
+    socket.on('data', (chunk) => { resolve(chunk.toString('latin1').split('\r\n')[0].trim()); socket.destroy(); });
+    socket.on('error', reject);
+  });
+
+  test('a second Upgrade header naming websocket does not skip the origin check', async () => {
+    expectFixture('http-websocket-origin', {
+      'refused origin, one Upgrade header': await upgradeAnswer('https://evil.contract.test', ['websocket']),
+      'refused origin, two Upgrade headers': await upgradeAnswer('https://evil.contract.test', ['foo', 'websocket']),
+      'allowed origin, two Upgrade headers': await upgradeAnswer(ORIGIN, ['foo', 'websocket']),
+    });
   });
 });
