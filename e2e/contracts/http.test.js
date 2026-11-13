@@ -164,7 +164,7 @@ describe('CORS', () => {
     const lines = [`GET ${GRAPHQL} HTTP/1.1`, 'Host: localhost', ...upgradeValues.map((value) => `Upgrade: ${value}`), 'Connection: Upgrade',
       'Sec-WebSocket-Version: 13', 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==', `Origin: ${origin}`, '', ''];
     socket.on('connect', () => socket.write(lines.join('\r\n')));
-    socket.on('data', (chunk) => { resolve(chunk.toString('latin1').split('\r\n')[0].trim()); socket.destroy(); });
+    socket.on('data', (chunk) => { resolve(chunk.toString('latin1').split('\r\n')[0].match(/^HTTP\/1\.1 \d{3}/)[0]); socket.destroy(); });
     socket.on('error', reject);
   });
 

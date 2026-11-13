@@ -31,6 +31,20 @@
       "spanId",
       "tenant",
       "traceId"
+    ],
+    [
+      "@timestamp",
+      "ecs.version",
+      "log.level",
+      "log.logger",
+      "message",
+      "process.pid",
+      "process.thread.name",
+      "service.name",
+      "service.node",
+      "service.version",
+      "spanId",
+      "traceId"
     ]
   ],
   "afterRequestsWithStackTrace": [
@@ -70,6 +84,7 @@
       "service.node",
       "service.version",
       "spanId",
+      "tenant",
       "traceId"
     ]
   ],

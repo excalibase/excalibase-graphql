@@ -18,8 +18,8 @@ import io.micronaut.http.annotation.ServerFilter;
 @ServerFilter(Filter.MATCH_ALL_PATTERN)
 public class ManagementPortFilter implements Ordered {
 
-    /** Behind the firewall (-990), ahead of every other filter that reads a project or a database. */
-    public static final int ORDER = -985;
+    /** Behind the security headers (-950), so the 404 carries them, ahead of every filter that reads a project. */
+    public static final int ORDER = -940;
 
     private static final String ACTUATOR = "/actuator";
 
