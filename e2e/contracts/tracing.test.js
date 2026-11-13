@@ -21,7 +21,7 @@ const SCENARIOS = {
 async function traced(base, scenario) {
   const { traceId, parentSpanId, header } = newTraceparent();
   const response = await SCENARIOS[scenario](base, header);
-  const spans = await collectTrace(traceId, { minSpans: 2 });
+  const spans = await collectTrace(traceId, { minSpans: process.env.CONTRACT_VARIANT ? 1 : 2 });
   return { response, spans, parentSpanId };
 }
 

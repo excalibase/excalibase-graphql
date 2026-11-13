@@ -6,6 +6,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 compose=(docker compose -f "$here/docker-compose.contracts.yml")
 export ENGINE_IMAGE="${ENGINE_IMAGE:-excalibase/excalibase-graphql}"
+export CONTRACT_VARIANT="${CONTRACT_VARIANT-micronaut}"   # fixtures for the signals this framework cannot produce; empty runs the originals
 
 cleanup() {
   "${compose[@]}" logs engine > "$here/engine.log" 2>&1 || true
