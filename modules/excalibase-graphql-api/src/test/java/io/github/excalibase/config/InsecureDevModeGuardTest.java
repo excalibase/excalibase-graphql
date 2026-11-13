@@ -1,18 +1,20 @@
 package io.github.excalibase.config;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import io.micronaut.context.ApplicationContext;
+import java.util.HashMap;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
-import org.springframework.boot.test.context.runner.ApplicationContextRunner;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Authentication is on unless an operator explicitly opts into insecure dev
@@ -34,6 +36,19 @@ class InsecureDevModeGuardTest {
     @AfterEach
     void detachAppender() {
         logger.detachAppender(appender);
+    }
+
+    private static Map<String, Object> engine(Map<String, Object> extra) {
+        Map<String, Object> properties = new HashMap<>(Map.of(
+                "spring.datasource.url", "jdbc:postgresql://localhost:59999/nonexistent",
+                "spring.datasource.username", "fake",
+                "spring.datasource.password", "fake",
+                "app.project-id", "test-proj",
+                "app.nats.enabled", "false",
+                "micronaut.server.port", "-1",
+                "endpoints.all.port", "-1"));
+        properties.putAll(extra);
+        return properties;
     }
 
     @Test
@@ -70,26 +85,25 @@ class InsecureDevModeGuardTest {
     @Test
     @DisplayName("with no property set authentication is on and the guard is not involved")
     void noProperty_guardInactive() {
-        new ApplicationContextRunner()
-                .withUserConfiguration(InsecureDevModeGuard.class)
-                .run(context -> assertThat(context).hasNotFailed().doesNotHaveBean(InsecureDevModeGuard.class));
+        try (ApplicationContext context = ApplicationContext.run(
+                engine(Map.of("app.security.auth.hmac-secret", "test-hmac-secret-0123456789abcdef0123456789")))) {
+            assertThat(context.containsBean(InsecureDevModeGuard.class)).isFalse();
+        }
     }
 
     @Test
     @DisplayName("jwt-enabled=false alone fails the context")
     void authOffProperty_failsContext() {
-        new ApplicationContextRunner()
-                .withUserConfiguration(InsecureDevModeGuard.class)
-                .withPropertyValues("app.security.jwt-enabled=false")
-                .run(context -> assertThat(context).hasFailed());
+        assertThatThrownBy(() -> ApplicationContext.run(engine(Map.of("app.security.jwt-enabled", "false"))).close())
+                .hasStackTraceContaining("app.security.insecure-dev-mode");
     }
 
     @Test
     @DisplayName("jwt-enabled=false with the insecure dev flag starts")
     void authOffPropertyWithFlag_starts() {
-        new ApplicationContextRunner()
-                .withUserConfiguration(InsecureDevModeGuard.class)
-                .withPropertyValues("app.security.jwt-enabled=false", "app.security.insecure-dev-mode=true")
-                .run(context -> assertThat(context).hasNotFailed().hasSingleBean(InsecureDevModeGuard.class));
+        try (ApplicationContext context = ApplicationContext.run(engine(Map.of(
+                "app.security.jwt-enabled", "false", "app.security.insecure-dev-mode", "true")))) {
+            assertThat(context.getBeansOfType(InsecureDevModeGuard.class)).hasSize(1);
+        }
     }
 }

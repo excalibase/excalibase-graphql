@@ -170,6 +170,12 @@ public class AppConfig {
                 natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 
+    /** The tenant TLS mode, read at start in every mode so a weaker one is refused even when no tenant is served. */
+    @Context
+    TenantDbSslMode tenantDbSslMode(@Value("${app.tenant-db.sslmode:verify-full}") String tenantSslMode) {
+        return TenantDbSslMode.parse(tenantSslMode);
+    }
+
     /** Per-project database routing, present only when a provisioning URL is set. */
     @Singleton
     @Requires(property = "app.security.multi-tenant.provisioning-url", pattern = ".+")
@@ -177,9 +183,8 @@ public class AppConfig {
             TokenFileSource provisioningTokenSource,
             @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes,
             @Value("${app.hikari.tenant-pool-size:5}") int poolSize,
-            @Value("${app.tenant-db.sslmode:verify-full}") String tenantSslMode,
+            TenantDbSslMode sslMode,
             @Value("${app.tenant-db.read-timeout-seconds:60}") int readTimeoutSeconds) {
-        TenantDbSslMode sslMode = TenantDbSslMode.parse(tenantSslMode);
         VaultCredentialService vault = new VaultCredentialService(
                 security.multiTenant().provisioningUrl(), provisioningTokenSource);
         return new DynamicDataSourceManager(vault,

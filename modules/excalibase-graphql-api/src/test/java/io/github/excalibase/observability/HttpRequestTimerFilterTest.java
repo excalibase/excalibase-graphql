@@ -153,4 +153,93 @@ class HttpRequestTimerFilterTest {
 
         assertThat(registry.getMeters()).isEmpty();
     }
+
+    @Test
+    @DisplayName("every standard method keeps its own name")
+    void everyStandardMethodKeepsItsOwnName() {
+        for (HttpMethod method : new HttpMethod[] {HttpMethod.GET, HttpMethod.HEAD, HttpMethod.POST, HttpMethod.PUT,
+                HttpMethod.PATCH, HttpMethod.DELETE, HttpMethod.OPTIONS, HttpMethod.TRACE}) {
+            serve(ObservabilityLevel.FULL, HttpRequest.create(method, "/x"), HttpStatus.OK, null);
+        }
+
+        assertThat(registry.find("http.server.requests").timers()).extracting(t -> t.getId().getTag("method"))
+                .containsExactlyInAnyOrder("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE");
+    }
+
+    @Test
+    @DisplayName("an unmatched redirect uses REDIRECTION, not the raw path")
+    void anUnmatchedRedirectUsesRedirection() {
+        serve(ObservabilityLevel.FULL, HttpRequest.GET("/old"), HttpStatus.FOUND, null);
+
+        assertThat(timer("REDIRECTION", "302").getId().getTag("outcome")).isEqualTo("REDIRECTION");
+    }
+
+    @Test
+    @DisplayName("an unmatched response that is neither a 404 nor a redirect uses UNKNOWN")
+    void anUnmatchedOtherResponseUsesUnknown() {
+        serve(ObservabilityLevel.FULL, HttpRequest.GET("/odd"), HttpStatus.OK, null);
+
+        assertThat(timer("UNKNOWN", "200")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("an exception an application handler answered is not named: the series says none")
+    void anExceptionHandledByTheApplicationIsNotNamed() {
+        MutableHttpRequest<?> request = HttpRequest.POST("/proj/graphql", "{}");
+        request.setAttribute(HttpAttributes.URI_TEMPLATE, "/{projectId}/graphql");
+
+        serve(ObservabilityLevel.FULL, request, HttpStatus.BAD_REQUEST, null);
+
+        assertThat(timer("/{projectId}/graphql", "400").getId().getTag("exception")).isEqualTo("none");
+    }
+
+    @Test
+    @DisplayName("different paths of one route share one timer")
+    void uriIsThePatternSoDifferentPathsShareOneTimer() {
+        for (String path : new String[] {"/a/api/v1/orders", "/b/api/v1/orders"}) {
+            MutableHttpRequest<?> request = HttpRequest.GET(path);
+            request.setAttribute(HttpAttributes.URI_TEMPLATE, "/{projectId}/api/v1/{table}");
+            serve(ObservabilityLevel.FULL, request, HttpStatus.OK, null);
+        }
+
+        assertThat(timer("/{projectId}/api/v1/{table}", "200").count()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("an in-flight request is counted by the active timer and released afterwards")
+    void anInFlightRequestIsCountedByTheActiveTimerAndReleasedAfterwards() {
+        HttpRequestTimerFilter filter = new HttpRequestTimerFilter(registry, ObservabilityLevel.FULL, 8081);
+        MutableHttpRequest<?> request = HttpRequest.GET("/x");
+
+        filter.start(request);
+        assertThat(registry.get("http.server.requests.active").longTaskTimer().activeTasks()).isEqualTo(1);
+        filter.end(request, HttpResponse.ok(), null);
+
+        assertThat(registry.get("http.server.requests.active").longTaskTimer().activeTasks()).isZero();
+        assertThat(registry.get("http.server.requests.active").longTaskTimer().getId().getTags())
+                .extracting(tag -> tag.getKey())
+                .containsExactlyInAnyOrder("exception", "method", "org.name", "org.slug", "outcome",
+                        "project.name", "status", "tenant.id", "uri");
+    }
+
+    @Test
+    @DisplayName("the series is labelled with the tenant, org and project names of the request's token")
+    void theSeriesLabelsTenantsExactlyAsBefore() {
+        MutableHttpRequest<?> request = HttpRequest.GET("/acme/api/v1/customers");
+        request.setAttribute(HttpAttributes.URI_TEMPLATE, "/{projectId}/api/v1/{table}");
+        request.setAttribute(io.github.excalibase.security.SecurityConstants.JWT_CLAIMS_ATTR,
+                new io.github.excalibase.security.JwtClaims("u1", "proj-1", "acme-org", "Shop", "Acme Inc", "user",
+                        "a@b.c", null, 0));
+
+        serve(ObservabilityLevel.FULL, request, HttpStatus.OK, null);
+
+        Timer timer = timer("/{projectId}/api/v1/{table}", "200");
+        assertThat(timer.getId().getTag("tenant.id")).isEqualTo("proj-1");
+        assertThat(timer.getId().getTag("org.slug")).isEqualTo("acme-org");
+        assertThat(timer.getId().getTag("project.name")).isEqualTo("Shop");
+        assertThat(timer.getId().getTag("org.name")).isEqualTo("Acme Inc");
+        assertThat(timer.getId().getTag("method")).isEqualTo("GET");
+        assertThat(timer.getId().getTag("outcome")).isEqualTo("SUCCESS");
+        assertThat(timer.getId().getTag("exception")).isEqualTo("none");
+    }
 }

@@ -86,6 +86,7 @@ class DefaultErrorBodyIntegrationTest extends EngineIntegrationTest {
         String path = "/" + PROJECT + "/api/v1/rpc/" + "x".repeat(64);
 
         assertDefaultBody(http.postJson(path, "{}"), 500, "Internal Server Error", path);
+        assertDefaultBody(http.get(path), 500, "Internal Server Error", path);
     }
 
     @Test
