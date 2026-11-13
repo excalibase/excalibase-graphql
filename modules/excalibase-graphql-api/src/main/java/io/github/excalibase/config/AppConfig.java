@@ -78,7 +78,8 @@ public class AppConfig {
 
     @Singleton
     ProjectCorsConfigurationSource corsConfigurationSource(
-            @Value("${app.cors.allowed-origins:*}") String platformOrigins,
+            @Value("${app.cors.allowed-origins:}") String allowedOrigins,
+            @Value("${CORS_ORIGINS:}") String platformAioOrigins,
             @Value("${app.cors.provisioning-url:}") String corsProvisioningUrl,
             @Value("${app.security.rls.policy-url:}") String policyUrl,
             TokenFileSource provisioningTokenSource,
@@ -88,9 +89,15 @@ public class AppConfig {
         if (provisioningUrl != null && !provisioningUrl.isBlank()) {
             provider = new ProvisioningProjectCorsProvider(provisioningUrl, provisioningTokenSource, ttlMillis);
         }
-        List<String> origins = Arrays.stream(platformOrigins.split(",")).map(String::trim)
+        List<String> origins = Arrays.stream(platformOrigins(allowedOrigins, platformAioOrigins).split(",")).map(String::trim)
                 .filter(origin -> !origin.isEmpty()).toList();
         return new ProjectCorsConfigurationSource(provider, ProjectCorsConfigurationSource.configFor(origins));
+    }
+
+    /** {@code APP_CORS_ALLOWED_ORIGINS}, else {@code CORS_ORIGINS} (the name platform-aio sets), else any origin. */
+    static String platformOrigins(String allowedOrigins, String platformAioOrigins) {
+        String origins = firstNonBlank(allowedOrigins, platformAioOrigins);
+        return origins.isBlank() ? "*" : origins;
     }
 
     @Singleton
@@ -131,8 +138,21 @@ public class AppConfig {
         if (!hasJwks && !hasHmac) {
             throw new IllegalStateException(NO_VERIFIER);
         }
+        requireAudienceWhenMultiTenant(security.multiTenant() == null ? null : security.multiTenant().provisioningUrl(),
+                auth.requireAudOrDefault());
         JwtService service = hasJwks ? new JwtService(auth.jwksUrl(), ttlMinutes) : new JwtService(auth.hmacSecret());
         return service.expectedIssuer(auth.issuer()).requireAudience(auth.requireAudOrDefault(), auth.audPrefix());
+    }
+
+    /**
+     * Without the audience check a token minted for one project passes the path check of every other, which
+     * a deployment serving many projects cannot allow.
+     */
+    static void requireAudienceWhenMultiTenant(String provisioningUrl, boolean requireAudience) {
+        if (provisioningUrl != null && !provisioningUrl.isBlank() && !requireAudience) {
+            throw new IllegalStateException("app.security.auth.require-aud=false is refused in multi-tenant mode "
+                    + "(app.security.multi-tenant.provisioning-url): a token for one project would open every other");
+        }
     }
 
     /**

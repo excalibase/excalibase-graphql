@@ -86,7 +86,7 @@ app:
   cache:
     schema-ttl-minutes: 30
   cors:
-    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:*}
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}   # empty: CORS_ORIGINS (platform-aio's name), else *
     provisioning-url: ${APP_CORS_PROVISIONING_URL:}   # empty: the RLS policy URL
     ttl-ms: 30000
   security:

@@ -96,8 +96,8 @@ class JwtServiceHmacTest {
     }
 
     @Test
-    @DisplayName("api-key scoped token may omit exp claim")
-    void apiKeyToken_noExp_isAccepted() throws Exception {
+    @DisplayName("an api-key scoped token without exp is refused like any other")
+    void apiKeyToken_noExp_isRefused() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("bot@example.com")
@@ -108,10 +108,9 @@ class JwtServiceHmacTest {
                 .build();
         String token = signHmac(SECRET, claims);
 
-        JwtClaims result = svc.verify(token);
-
-        assertThat(result.scope()).isEqualTo("api-key");
-        assertThat(result.keyId()).isEqualTo(99L);
+        assertThatThrownBy(() -> svc.verify(token))
+                .isInstanceOf(JwtVerificationException.class)
+                .hasMessageContaining("missing required 'exp'");
     }
 
     @Test
