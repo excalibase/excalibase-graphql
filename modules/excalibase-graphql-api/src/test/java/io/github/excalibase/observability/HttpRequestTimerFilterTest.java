@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import io.micronaut.http.HttpAttributes;
 import io.micronaut.http.HttpMethod;
 import io.micronaut.http.HttpRequest;
@@ -241,5 +243,20 @@ class HttpRequestTimerFilterTest {
         assertThat(timer.getId().getTag("method")).isEqualTo("GET");
         assertThat(timer.getId().getTag("outcome")).isEqualTo("SUCCESS");
         assertThat(timer.getId().getTag("exception")).isEqualTo("none");
+    }
+
+    @Test
+    @DisplayName("with the histogram on the series carries buckets, off it does not")
+    void percentileHistogram() {
+        for (boolean on : new boolean[] {true, false}) {
+            PrometheusMeterRegistry fresh = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+            HttpRequestTimerFilter filter = new HttpRequestTimerFilter(fresh, ObservabilityLevel.FULL, 8081, on);
+            MutableHttpRequest<?> request = HttpRequest.GET("/x");
+            filter.start(request);
+            filter.end(request, HttpResponse.ok(), null);
+
+            boolean buckets = fresh.scrape().contains("http_server_requests_seconds_bucket");
+            assertThat(buckets).isEqualTo(on);
+        }
     }
 }

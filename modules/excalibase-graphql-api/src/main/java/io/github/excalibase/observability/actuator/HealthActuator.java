@@ -15,7 +15,7 @@ import java.util.Map;
 
 /**
  * {@code /actuator/health}: UP, or DOWN with 503 when the configured database does not answer; with probes on, the
- * liveness and readiness groups too. The body carries the status only, never details.
+ * liveness and readiness groups too, and readiness takes part in the overall status (OUT_OF_SERVICE while draining). The body carries the status only, never details.
  */
 @Endpoint(id = "health", prefix = ActuatorEndpoint.PREFIX, defaultEnabled = true, defaultSensitive = false)
 @Requires(condition = ExposedEndpointCondition.class)
@@ -38,7 +38,7 @@ public class HealthActuator {
     @Read(produces = ActuatorEndpoint.JSON)
     @ExecuteOn(TaskExecutors.BLOCKING)
     public HttpResponse<Map<String, Object>> health() {
-        HealthStatus status = database.status();
+        HealthStatus status = HealthStatus.combine(database.status(), probes ? readiness.status() : HealthStatus.UP);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("status", status.name());
         if (probes) {

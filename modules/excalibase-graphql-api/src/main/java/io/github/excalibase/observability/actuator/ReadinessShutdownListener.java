@@ -1,11 +1,13 @@
 package io.github.excalibase.observability.actuator;
 
 import io.micronaut.context.event.ApplicationEventListener;
-import io.micronaut.runtime.server.event.ServerShutdownEvent;
+import io.micronaut.context.event.ShutdownEvent;
+import io.micronaut.core.order.Ordered;
 import jakarta.inject.Singleton;
 
+/** Readiness turns OUT_OF_SERVICE as shutdown begins, before the drain starts waiting for requests. */
 @Singleton
-class ReadinessShutdownListener implements ApplicationEventListener<ServerShutdownEvent> {
+class ReadinessShutdownListener implements ApplicationEventListener<ShutdownEvent>, Ordered {
 
     private final ReadinessState readiness;
 
@@ -14,7 +16,12 @@ class ReadinessShutdownListener implements ApplicationEventListener<ServerShutdo
     }
 
     @Override
-    public void onApplicationEvent(ServerShutdownEvent event) {
+    public void onApplicationEvent(ShutdownEvent event) {
         readiness.refuseTraffic();
+    }
+
+    @Override
+    public int getOrder() {
+        return HIGHEST_PRECEDENCE;
     }
 }
