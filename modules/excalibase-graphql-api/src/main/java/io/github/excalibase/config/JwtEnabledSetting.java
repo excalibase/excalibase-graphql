@@ -28,9 +28,9 @@ public class JwtEnabledSetting {
     }
 
     static boolean parse(String value) {
-        String text = value == null ? "" : value.strip().toLowerCase(Locale.ROOT);
+        String text = value == null ? "" : value.toLowerCase(Locale.ROOT);
         return switch (text) {
-            case "", "true" -> true;
+            case "true" -> true;
             case "false" -> false;
             default -> throw new IllegalStateException("app.security.jwt-enabled must be true or false but was '"
                     + value + "'; any other spelling is refused so authentication cannot be switched off by one.");

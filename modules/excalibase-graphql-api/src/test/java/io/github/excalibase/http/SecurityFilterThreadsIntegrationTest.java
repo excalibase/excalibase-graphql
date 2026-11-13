@@ -196,7 +196,7 @@ class SecurityFilterThreadsIntegrationTest extends EngineIntegrationTest {
         List<Socket> held = new ArrayList<>();
         List<Socket> waiting = new ArrayList<>();
         try {
-            for (int i = 0; i < CPUS; i++) {
+            for (int i = 0; i < CPUS * 2; i++) {
                 Socket slot = new Socket("localhost", server.getPort());
                 // half a request line: the server keeps waiting for the rest and the connection holds its slot
                 slot.getOutputStream().write(("GET /" + PROJECT + "/api/v1/cus").getBytes(StandardCharsets.UTF_8));

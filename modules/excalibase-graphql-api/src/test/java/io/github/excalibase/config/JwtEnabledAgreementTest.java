@@ -82,7 +82,10 @@ class JwtEnabledAgreementTest {
     void everythingElseIsRefused(String value) {
         assertThatThrownBy(() -> ApplicationContext.run(engine(value, true)).close())
                 .hasStackTraceContaining("app.security.jwt-enabled must be true or false");
+        // without the dev flag a value that reads as off is stopped by the guard first, with its own message
         assertThatThrownBy(() -> ApplicationContext.run(engine(value, false)).close())
-                .hasStackTraceContaining("app.security.jwt-enabled must be true or false");
+                .satisfiesAnyOf(
+                        failure -> assertThat(failure).hasStackTraceContaining("app.security.jwt-enabled must be true or false"),
+                        failure -> assertThat(failure).hasStackTraceContaining("app.security.insecure-dev-mode"));
     }
 }

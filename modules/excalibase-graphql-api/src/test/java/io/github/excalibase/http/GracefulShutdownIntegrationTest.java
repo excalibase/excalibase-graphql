@@ -50,9 +50,10 @@ class GracefulShutdownIntegrationTest {
             thread.setDaemon(true);
             return thread;
         });
-        ApplicationContext context = ApplicationContext.run(properties(managementPort));
+        ApplicationContext context = ApplicationContext.run(properties(managementPort), "test");
         try {
-            int port = context.getBean(EmbeddedServer.class).getPort();
+            EmbeddedServer embedded = context.getBean(EmbeddedServer.class).start();
+            int port = embedded.getPort();
             HeldEndpoint.reset();
             CompletableFuture<HttpAnswer> inFlight = CompletableFuture.supplyAsync(
                     () -> new EngineClient(URI.create("http://localhost:" + port + "/")).get("/test-proj/held"), threads);

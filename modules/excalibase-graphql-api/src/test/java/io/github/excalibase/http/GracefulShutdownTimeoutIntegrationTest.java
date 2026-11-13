@@ -36,9 +36,10 @@ class GracefulShutdownTimeoutIntegrationTest {
             thread.setDaemon(true);
             return thread;
         });
-        ApplicationContext context = ApplicationContext.run(properties);
+        ApplicationContext context = ApplicationContext.run(properties, "test");
         try {
-            int port = context.getBean(EmbeddedServer.class).getPort();
+            EmbeddedServer embedded = context.getBean(EmbeddedServer.class).start();
+            int port = embedded.getPort();
             HeldEndpoint.reset();
             CompletableFuture.runAsync(() -> {
                 try {
