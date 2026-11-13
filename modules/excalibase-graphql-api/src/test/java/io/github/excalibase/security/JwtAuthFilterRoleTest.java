@@ -83,9 +83,11 @@ class JwtAuthFilterRoleTest {
         final HttpResponse<?> refusal;
         final Principal principal;
         final boolean rlsRegistered;
+        final MutablePropagatedContext context;
 
         Outcome(HttpResponse<?> refusal, HttpRequest<?> request, MutablePropagatedContext context) {
             this.refusal = refusal;
+            this.context = context;
             this.principal = (Principal) request.getAttribute(SecurityConstants.PRINCIPAL_ATTR).orElse(null);
             this.rlsRegistered = context.getContext().find(RequestContextElement.class)
                     .map(element -> element.guard() != null).orElse(false);
@@ -114,7 +116,7 @@ class JwtAuthFilterRoleTest {
     @Test
     void unreadableDatabase_refusesTheRequestWith503() throws Exception {
         AccessPlans restoring = mock(AccessPlans.class);
-        when(restoring.planFor(any())).thenThrow(new SchemaUnavailableException("being restored",
+        when(restoring.planFor(any(), any())).thenThrow(new SchemaUnavailableException("being restored",
                 new SQLException("Communications link failure")));
 
         Outcome outcome = run(request(token(Map.of("role", "user")), null), restoring);
@@ -147,31 +149,20 @@ class JwtAuthFilterRoleTest {
     }
 
     @Test
-    void theRequestsResolvedEngine_isReleasedWhenTheRequestEnds() throws Exception {
+    void theEngineIsResolvedOnceOnTheRequestsContext_soTheHandlerIsServedTheSameOne() throws Exception {
         AccessPlans plans = mock(AccessPlans.class);
-
-        run(request(token(Map.of("role", "user")), null), plans);
-
-        verify(plans).planFor(any());
-        verify(plans).requestFinished();
-    }
-
-    @Test
-    void theRequestsResolvedEngine_isReleasedWhenPermissionsAreUnavailable() throws Exception {
-        AccessPlans plans = mock(AccessPlans.class);
-        when(plans.planFor(any())).thenThrow(new PermissionsUnavailableException("control plane down"));
 
         Outcome outcome = run(request(token(Map.of("role", "user")), null), plans);
 
-        assertThat(outcome.status()).isEqualTo(503);
-        verify(plans).requestFinished();
+        verify(plans).planFor(any(), org.mockito.ArgumentMatchers.same(outcome.context));
+        org.mockito.Mockito.verifyNoMoreInteractions(plans);
     }
 
     @Test
     void logLinesWrittenWhileThePlanIsResolvedNameTheTenant_andNothingStaysBehind() throws Exception {
         AccessPlans plans = mock(AccessPlans.class);
         AtomicReference<Map<String, String>> seen = new AtomicReference<>();
-        when(plans.planFor(any())).thenAnswer(invocation -> {
+        when(plans.planFor(any(), any())).thenAnswer(invocation -> {
             seen.set(org.slf4j.MDC.getCopyOfContextMap());
             return null;
         });

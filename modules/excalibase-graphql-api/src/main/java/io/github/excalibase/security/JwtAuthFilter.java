@@ -88,9 +88,6 @@ public class JwtAuthFilter implements Ordered {
             return applyGuards(pathProjectId, principal, claims, propagated);
         } finally {
             scope.leave();
-            if (accessPlans != null) {
-                accessPlans.requestFinished();
-            }
         }
     }
 
@@ -131,7 +128,7 @@ public class JwtAuthFilter implements Ordered {
         AccessPlan plan = null;
         if (accessPlans != null) {
             try {
-                plan = accessPlans.planFor(principal);
+                plan = accessPlans.planFor(principal, propagated);
             } catch (PermissionsUnavailableException e) {
                 return FilterErrors.write(HttpStatus.SERVICE_UNAVAILABLE, "Permissions unavailable",
                         PermissionsUnavailableException.CODE);

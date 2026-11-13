@@ -34,6 +34,8 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import io.micronaut.core.propagation.MutablePropagatedContext;
+import io.micronaut.core.propagation.PropagatedContext;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -89,7 +91,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     private final AtomicReference<Reflection> defaultReflection = new AtomicReference<>();
     private final TTLCache<String, Reflection> reflections;
     private final TTLCache<EngineKey, EngineState> tenantEngineStates;
-    private final ThreadLocal<RequestEngine> requestEngine = new ThreadLocal<>();
 
     public GraphqlSchemaManager(
             JdbcTemplate jdbcTemplate,
@@ -195,32 +196,20 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     /**
      * Resolve EngineState for the current request. The project comes from {@link TenantContext} — the
      * URL path, already checked against the projects this deployment serves — and never from the
-     * token. The role is the one the request runs as, resolved once by the authentication filter.
+     * token. The role is the one the request runs as. The engine the authentication filter resolved for
+     * this request, if it is on the request's context, is the one served.
      */
     public EngineState resolveEngineState(Principal principal) {
         String projectId = TenantContext.getTenantId();
-        RequestEngine resolved = requestEngine.get();
-        if (resolved != null && resolved.principal() == principal && Objects.equals(resolved.projectId(), projectId)) {
-            return resolved.state();
+        Optional<ResolvedEngine> resolved = PropagatedContext.getOrEmpty().find(ResolvedEngine.class);
+        if (resolved.isPresent() && resolved.get().serves(principal, projectId)) {
+            return resolved.get().state();
         }
         String orgSlug = TenantContext.getOrgSlug();
         if (orgSlug == null && principal != null && principal.claims() != null) {
             orgSlug = principal.claims().orgSlug();
         }
-        EngineState state = resolveEngineState(orgSlug, projectId, principal);
-        if (principal != null) {
-            requestEngine.set(new RequestEngine(principal, projectId, state));
-        }
-        return state;
-    }
-
-    /**
-     * Ends the request's reuse of its resolved engine. The authentication filter resolves it first; the
-     * controllers then read that same engine rather than asking the permission source again.
-     */
-    @Override
-    public void requestFinished() {
-        requestEngine.remove();
+        return resolveEngineState(orgSlug, projectId, principal);
     }
 
     /**
@@ -327,12 +316,12 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         return dataSourceManager != null ? reflectTenant(orgSlug, projectId) : defaultReflection.get();
     }
 
-    /** The engine one request resolved, reused for the rest of that request on this thread. */
-    private record RequestEngine(Principal principal, String projectId, EngineState state) {}
-
     @Override
-    public AccessPlan planFor(Principal principal) {
+    public AccessPlan planFor(Principal principal, MutablePropagatedContext request) {
         EngineState state = resolveEngineState(principal);
+        if (state != null && principal != null) {
+            request.add(new ResolvedEngine(principal, TenantContext.getTenantId(), state));
+        }
         return state == null ? null : state.plan();
     }
 

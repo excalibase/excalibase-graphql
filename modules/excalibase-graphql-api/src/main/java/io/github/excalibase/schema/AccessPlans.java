@@ -5,6 +5,7 @@ import io.github.excalibase.access.ChangeFilter;
 import io.github.excalibase.access.ProbeRunner;
 import io.github.excalibase.security.Principal;
 
+import io.micronaut.core.propagation.MutablePropagatedContext;
 import java.util.Optional;
 
 /**
@@ -13,11 +14,12 @@ import java.util.Optional;
  */
 public interface AccessPlans {
 
-    /** The plan of the request's project (from its path) for the role {@code principal} runs as. */
-    AccessPlan planFor(Principal principal);
-
-    /** The request that called {@link #planFor} has ended; nothing it resolved may be reused. */
-    void requestFinished();
+    /**
+     * The plan of the request's project (from its path) for the role {@code principal} runs as. The engine it
+     * resolves is put on {@code request}'s context, so the handler is served that same engine on whatever thread
+     * it runs, and nothing outlives the request.
+     */
+    AccessPlan planFor(Principal principal, MutablePropagatedContext request);
 
     /**
      * What a realtime subscription on {@code subscriptionKey} ({@code schema_table}, or a bare table in
