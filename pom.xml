@@ -61,7 +61,7 @@
         <postgresql.version>42.7.11</postgresql.version>
         <mysql.connector.version>9.3.0</mysql.connector.version>
         <!--java graphql-->
-        <graphql.java.version>24.0</graphql.java.version>
+        <graphql.java.version>26.1</graphql.java.version>
 
         <!--own module-->
         <excalibase.version>0.0.1-SNAPSHOT</excalibase.version>
