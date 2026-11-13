@@ -6,8 +6,8 @@ micronaut:
       additional-types: application/vnd.spring-boot.actuator.v3+json   # the media type actuator answers carry
   server:
     port: ${SERVER_PORT:10000}
-    max-request-size: 64MB   # Tomcat set no limit on a JSON body; a 12 MiB one was served
-    max-request-buffer-size: 64MB   # what a JSON body may take in memory to be read
+    max-request-size: 8MB   # a bulk insert of 1000 rows is far smaller; more is a 413 before it is read (EXC-726)
+    max-request-buffer-size: 8MB   # what a JSON body may take in memory to be read
     netty:
       max-header-size: 8KB   # like Tomcat's: more is a 400 before routing
       max-initial-line-length: 8KB
