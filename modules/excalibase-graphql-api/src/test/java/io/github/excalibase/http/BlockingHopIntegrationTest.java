@@ -15,7 +15,8 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * The security filters read the database, the control plane and a key set, so every request reaches them on the
- * blocking executor, whatever its method or path, an upgrade included.
+ * blocking executor, whatever its method or path, an upgrade included. TRACE and unknown methods are refused by
+ * the firewall before any of them (RequestFirewallIntegrationTest).
  */
 class BlockingHopIntegrationTest extends EngineIntegrationTest {
 
@@ -39,17 +40,16 @@ class BlockingHopIntegrationTest extends EngineIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD", "TRACE", "FOO"})
+    @ValueSource(strings = {"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"})
     @DisplayName("any method on the GraphQL path reaches the filters on a request thread")
     void everyMethodOnGraphql(String method) {
-        var answer = http.raw(method, "/" + PROJECT + "/graphql");
-        System.out.println("ANS " + method + " " + answer.status());
+        http.raw(method, "/" + PROJECT + "/graphql");
 
         assertOnRequestThread(method + " /" + PROJECT + "/graphql");
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"GET", "TRACE", "FOO"})
+    @ValueSource(strings = {"GET", "POST", "OPTIONS"})
     @DisplayName("any method on the realtime path reaches the filters on a request thread")
     void everyMethodOnRealtime(String method) {
         http.raw(method, "/" + PROJECT + "/api/v1/realtime");

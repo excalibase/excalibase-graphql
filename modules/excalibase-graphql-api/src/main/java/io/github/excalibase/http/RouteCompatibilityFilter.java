@@ -19,8 +19,11 @@ import java.util.regex.Pattern;
 @ServerFilter(Filter.MATCH_ALL_PATTERN)
 public class RouteCompatibilityFilter implements Ordered {
 
-    /** Behind the security headers (-950), so the refusals carry them. */
-    public static final int ORDER = -940;
+    /**
+     * Behind every security filter (the last, the WebSocket handshake, is -70): the servlet dispatch that chose a
+     * route came after the security chain, so an unknown project or a bad token is answered first.
+     */
+    public static final int ORDER = -60;
 
     private static final Pattern GRAPHQL_PATH = Pattern.compile("^/[^/]+/graphql$");
 

@@ -137,6 +137,10 @@ class ManagementIntegrationTest extends EngineIntegrationTest {
             "GET,/p/api/v1/realtime", "GET,/graphql"})
     @DisplayName("the management port serves the actuator only; a project route is a 404 there")
     void projectRoutesAreNotServed(String method, String path) {
-        assertThat(management.raw(method, path).status()).isEqualTo(404);
+        HttpAnswer answer = management.raw(method, path);
+
+        assertThat(answer.status()).isEqualTo(404);
+        assertThat(answer.json().get("error").asText()).isEqualTo("Not Found");
+        assertThat(answer.json().get("path").asText()).isEqualTo(path);
     }
 }
