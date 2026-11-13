@@ -93,7 +93,7 @@ public class SqlCompiler {
         OperationDefinition op = ops.getFirst();
 
         Map<String, FragmentDefinition> fragments = collectFragments(doc);
-        enforceMaxDepth(op, fragments);
+        enforceQueryLimits(op, fragments);
         fragmentsHolder.set(fragments);
 
         try {
@@ -116,11 +116,14 @@ public class SqlCompiler {
         return fragments;
     }
 
-    /** Throws IllegalArgumentException when the operation exceeds the configured max depth. */
-    private void enforceMaxDepth(OperationDefinition op, Map<String, FragmentDefinition> fragments) {
-        if (maxDepth <= 0) return;
-        int depth = measureDepth(op.getSelectionSet(), fragments);
-        if (depth > maxDepth) {
+    /**
+     * Refuses a fragment cycle or an operation that expands to too many selections
+     * ({@link QueryRejectedException}), and an operation deeper than the configured max depth
+     * ({@link IllegalArgumentException}).
+     */
+    private void enforceQueryLimits(OperationDefinition op, Map<String, FragmentDefinition> fragments) {
+        int depth = QueryComplexity.measure(op, fragments);
+        if (maxDepth > 0 && depth > maxDepth) {
             throw new IllegalArgumentException("Query depth " + depth + " exceeds maximum allowed depth of " + maxDepth);
         }
     }
@@ -355,25 +358,6 @@ public class SqlCompiler {
             entries.add(new TwoPhaseWrites.Entry(fragment.fieldName(), write));
         }
         return CompiledQuery.twoPhase(new TwoPhaseWrites(entries), params);
-    }
-
-    private int measureDepth(SelectionSet selectionSet, Map<String, FragmentDefinition> fragments) {
-        if (selectionSet == null || selectionSet.getSelections().isEmpty()) return 0;
-        int max = 0;
-        for (Selection<?> sel : selectionSet.getSelections()) {
-            if (sel instanceof Field field) {
-                int childDepth = measureDepth(field.getSelectionSet(), fragments);
-                max = Math.max(max, 1 + childDepth);
-            } else if (sel instanceof InlineFragment inf) {
-                max = Math.max(max, measureDepth(inf.getSelectionSet(), fragments));
-            } else if (sel instanceof FragmentSpread fs) {
-                FragmentDefinition frag = fragments.get(fs.getName());
-                if (frag != null) {
-                    max = Math.max(max, measureDepth(frag.getSelectionSet(), fragments));
-                }
-            }
-        }
-        return max;
     }
 
     /**

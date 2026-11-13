@@ -7,6 +7,7 @@ import graphql.language.Document;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.ParsedQueries;
 import io.github.excalibase.compiler.SqlCompilationException;
+import io.github.excalibase.compiler.QueryRejectedException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
@@ -134,6 +135,10 @@ public class GraphqlController {
                 return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims), document);
             } catch (Exception e) {
                 return errorResponse(e, state == null ? null : state.compiler().dialect());
+            } catch (StackOverflowError e) {
+                log.warn("GraphQL request refused: nesting too deep for the compiler");
+                return Reply.badRequest().body(Map.of(
+                        ERRORS_KEY, List.of(Map.of(MESSAGE_KEY, "Query is nested too deeply"))));
             }
         });
         if (requestMetricsOn && answer.body() instanceof Map<?, ?> body && body.containsKey(ERRORS_KEY)) {
@@ -153,6 +158,10 @@ public class GraphqlController {
         if (e instanceof PermissionsUnavailableException) {
             return Reply.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(ERRORS_KEY, List.of(
                     PermissionErrors.graphqlError(PermissionsUnavailableException.CODE, "Permissions unavailable"))));
+        }
+        if (e instanceof QueryRejectedException) {
+            log.info("GraphQL request refused: {}", e.getMessage());
+            return Reply.badRequest().body(Map.of(ERRORS_KEY, List.of(Map.of(MESSAGE_KEY, e.getMessage()))));
         }
         if (e instanceof PermissionEvaluationException evaluation) {
             return Reply.ok(Map.of(ERRORS_KEY,
