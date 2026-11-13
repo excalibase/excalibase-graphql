@@ -1,5 +1,6 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.http.WebSocketUpgrade;
 import io.github.excalibase.cors.CorsFilter;
 import io.github.excalibase.cors.CorsRules;
 import io.github.excalibase.cors.ProjectCorsConfigurationSource;
@@ -50,8 +51,7 @@ public class WsHandshakeFilter implements Ordered {
     @RequestFilter
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request) {
-        String upgrade = request.getHeaders().get("Upgrade");
-        if (upgrade == null || !"websocket".equalsIgnoreCase(upgrade)) {
+        if (!WebSocketUpgrade.isRequested(request)) {
             return null;
         }
         String pathProject = WsProjectPath.projectId(request.getPath());

@@ -6,6 +6,7 @@ import io.github.excalibase.support.EngineIntegrationTest;
 import io.github.excalibase.support.EngineProperties;
 import io.github.excalibase.support.RawWebSocket;
 import java.io.IOException;
+import java.net.URI;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,8 @@ class WebSocketHandshakeIntegrationTest extends EngineIntegrationTest {
 
     @Override
     public Map<String, String> getProperties() {
-        return EngineProperties.unreachableDatabase(PROJECT);
+        Map<String, String> properties = EngineProperties.unreachableDatabase(PROJECT);
+        return properties;
     }
 
     @Test

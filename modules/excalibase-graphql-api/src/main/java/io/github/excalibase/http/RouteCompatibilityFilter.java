@@ -47,6 +47,6 @@ public class RouteCompatibilityFilter implements Ordered {
 
     private static boolean isPlainGet(HttpRequest<?> request) {
         return request.getMethod() == HttpMethod.GET
-                && !"websocket".equalsIgnoreCase(request.getHeaders().get("Upgrade"));
+                && !WebSocketUpgrade.isRequested(request);
     }
 }

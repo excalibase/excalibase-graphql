@@ -1,5 +1,6 @@
 package io.github.excalibase.observability.requests;
 
+import io.github.excalibase.http.WebSocketUpgrade;
 import io.github.excalibase.security.KnownProjectFilter;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.core.annotation.Nullable;
@@ -62,6 +63,6 @@ public class RequestMetricsFilter implements Ordered {
     }
 
     private static boolean isWebSocketUpgrade(HttpRequest<?> request) {
-        return "websocket".equalsIgnoreCase(request.getHeaders().get("Upgrade"));
+        return WebSocketUpgrade.isRequested(request);
     }
 }

@@ -1,5 +1,6 @@
 package io.github.excalibase.observability;
 
+import io.github.excalibase.http.WebSocketUpgrade;
 import io.micronaut.http.HttpAttributes;
 import io.micronaut.http.HttpRequest;
 import java.util.Locale;
@@ -35,7 +36,7 @@ public record HttpRequestFacts(String method, int status, String uri, String rou
 
     /** A WebSocket handshake that was accepted switched protocols, whatever placeholder status the filter chain saw. */
     private static int upgradedStatus(HttpRequest<?> request, int answeredStatus) {
-        boolean upgrade = "websocket".equalsIgnoreCase(request.getHeaders().get("Upgrade"));
+        boolean upgrade = WebSocketUpgrade.isRequested(request);
         return upgrade && answeredStatus == 200 ? 101 : answeredStatus;
     }
 
