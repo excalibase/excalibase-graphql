@@ -4,6 +4,8 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Settings computed from the process environment before the application starts: OTLP metric export (only to a
@@ -26,6 +28,23 @@ public final class StartupSettings {
         Map<String, Object> settings = new HashMap<>(metricsExport(env));
         settings.putAll(loggerLevels(env));
         return settings;
+    }
+
+    /**
+     * Sets the levels named in {@code settings} on the logging system itself. The framework applies the same
+     * settings while the context starts, by which time some beans have already logged.
+     */
+    public static void applyLoggerLevels(Map<String, Object> settings) {
+        String prefix = "logger.levels.";
+        settings.forEach((key, value) -> {
+            if (key.startsWith(prefix)) {
+                String name = key.substring(prefix.length());
+                Logger logger = LoggerFactory.getLogger(name.equals("ROOT") ? Logger.ROOT_LOGGER_NAME : name);
+                if (logger instanceof ch.qos.logback.classic.Logger logback) {
+                    logback.setLevel(ch.qos.logback.classic.Level.toLevel(String.valueOf(value)));
+                }
+            }
+        });
     }
 
     private static void requireKnownLogFormat(String format) {

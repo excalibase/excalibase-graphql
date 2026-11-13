@@ -83,4 +83,19 @@ class StartupSettingsTest {
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("Unknown format 'plain'");
         assertThat(StartupSettings.from(Map.of("LOG_FORMAT", "ecs"))).isNotNull();
     }
+
+    @Test
+    @DisplayName("logger levels are applied to the logging system before anything starts, so no early line escapes them")
+    void levelsAreAppliedAtOnce() {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger("io.github.excalibase.levelcheck");
+        ch.qos.logback.classic.Level before = logger.getLevel();
+        try {
+            StartupSettings.applyLoggerLevels(StartupSettings.from(Map.of("LOGGING_LEVEL_IO_GITHUB_EXCALIBASE_LEVELCHECK", "error")));
+
+            assertThat(logger.getLevel()).isEqualTo(ch.qos.logback.classic.Level.ERROR);
+        } finally {
+            logger.setLevel(before);
+        }
+    }
 }
