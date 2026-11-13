@@ -749,30 +749,26 @@ public class FilterBuilder {
     }
 
     /**
-     * LIMIT and OFFSET for a nested list: the caller's {@code limit} within the caller's own row limit on
-     * {@code tableName}. Without either a nested list stays uncapped; an offset alone is capped like a list.
+     * LIMIT and OFFSET for a nested list: the caller's {@code limit} within the row cap on
+     * {@code tableName} (the engine's max rows, or the caller's own lower row limit). A nested list
+     * without a {@code limit} is capped like a top-level one.
      */
     public void applyNestedLimit(StringBuilder sql, Field field, Map<String, Object> params, String tableName) {
-        Integer limit = roleRowLimit(tableName);
+        int limit = rowCap(tableName);
         Integer offset = null;
         for (Argument arg : field.getArguments()) {
             if (!ARG_LIMIT.equals(arg.getName()) && !ARG_OFFSET.equals(arg.getName())) continue;
             Integer value = nonNegative(arg);
             if (value == null) continue;
             if (ARG_LIMIT.equals(arg.getName())) {
-                limit = limit == null ? value : Math.min(value, limit);
+                limit = Math.min(value, limit);
             } else if (ARG_OFFSET.equals(arg.getName())) {
                 offset = value;
             }
         }
-        if (limit == null && offset != null) {
-            limit = rowCap(tableName);
-        }
-        if (limit != null) {
-            String limitParam = namedParam(P_LIMIT, params.size());
-            sql.append(LIMIT).append(PARAM_PREFIX).append(limitParam);
-            params.put(limitParam, limit);
-        }
+        String limitParam = namedParam(P_LIMIT, params.size());
+        sql.append(LIMIT).append(PARAM_PREFIX).append(limitParam);
+        params.put(limitParam, limit);
         if (offset != null) {
             String offsetParam = "offset_" + params.size();
             sql.append(" OFFSET :").append(offsetParam);
@@ -1014,11 +1010,6 @@ public class FilterBuilder {
     public int rowCap(String tableName) {
         Integer roleLimit = tableName == null ? null : access.rowLimit(tableName);
         return roleLimit == null ? maxRows : Math.min(roleLimit, maxRows);
-    }
-
-    /** The caller's own row limit on {@code tableName}, or null when it has none. */
-    public Integer roleRowLimit(String tableName) {
-        return tableName == null ? null : access.rowLimit(tableName);
     }
 
     public TableAccess access() {

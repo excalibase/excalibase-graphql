@@ -614,10 +614,9 @@ public class RestQueryCompiler {
         return dialect.jsonValue(alias + DOT + dialect.quoteIdentifier(column), schemaInfo.getColumnType(table, column));
     }
 
-    /** {@code LIMIT n} for the caller's own row limit on an embedded table, or nothing. */
+    /** {@code LIMIT n} on an embedded list: the caller's own row limit on the table, within the engine's row cap. */
     private String roleLimit(String table) {
-        Integer limit = access.rowLimit(table);
-        return limit == null ? "" : LIMIT + limit;
+        return LIMIT + capped(table, defaultMaxRows);
     }
 
     /** The select's rows capped by the caller's own row limit on {@code table}. */
