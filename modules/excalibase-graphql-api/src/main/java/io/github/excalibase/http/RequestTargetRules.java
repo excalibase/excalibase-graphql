@@ -19,9 +19,9 @@ final class RequestTargetRules {
     private static final List<String> REFUSED_BY_SERVER = List.of("%2f", "%5c", "%00");
     private static final String LINE_SEPARATOR = "\u2028";
     private static final String PARAGRAPH_SEPARATOR = "\u2029";
-    /** The same two characters as the request line's bytes, which the HTTP codec reads one byte to a char. */
-    private static final String LINE_SEPARATOR_BYTES = "\u00e2\u0080\u00a8";
-    private static final String PARAGRAPH_SEPARATOR_BYTES = "\u00e2\u0080\u00a9";
+    /** The same two characters sent raw: the HTTP codec reads one byte to a char, and the target is then escaped. */
+    private static final String LINE_SEPARATOR_BYTES = "%c3%a2%c2%80%c2%a8";
+    private static final String PARAGRAPH_SEPARATOR_BYTES = "%c3%a2%c2%80%c2%a9";
     private static final List<String> REFUSED_BY_FIREWALL = List.of("%2e", "%3b", "%25", "%0a", "%0d", "%e2%80%a8", "%e2%80%a9");
     private static final List<String> DOT_SEGMENTS = List.of(".", "..");
 
@@ -35,8 +35,8 @@ final class RequestTargetRules {
     static boolean refusedByServer(String rawPath) {
         String lower = rawPath.toLowerCase(Locale.ROOT);
         return REFUSED_BY_SERVER.stream().anyMatch(lower::contains)
-                || Stream.of(LINE_SEPARATOR, PARAGRAPH_SEPARATOR, LINE_SEPARATOR_BYTES, PARAGRAPH_SEPARATOR_BYTES)
-                        .anyMatch(rawPath::contains);
+                || Stream.of(LINE_SEPARATOR, PARAGRAPH_SEPARATOR).anyMatch(rawPath::contains)
+                || Stream.of(LINE_SEPARATOR_BYTES, PARAGRAPH_SEPARATOR_BYTES).anyMatch(lower::contains);
     }
 
     /** True for a path the application firewall refuses; the answer is a 400 with the default error body. */
