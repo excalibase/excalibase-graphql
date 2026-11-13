@@ -41,6 +41,16 @@ class HttpRequestTimerFilterTest {
     }
 
     @Test
+    @DisplayName("an accepted WebSocket handshake is a 101, outcome informational")
+    void webSocketUpgrade() {
+        MutableHttpRequest<?> request = HttpRequest.GET("/proj/graphql").header("Upgrade", "websocket");
+
+        serve(ObservabilityLevel.FULL, request, HttpStatus.OK, null);
+
+        assertThat(timer("UNKNOWN", "101").getId().getTag("outcome")).isEqualTo("INFORMATIONAL");
+    }
+
+    @Test
     @DisplayName("a matched route is timed under its template with the outcome and no exception")
     void matchedRoute() {
         MutableHttpRequest<?> request = HttpRequest.GET("/proj/api/v1/orders");

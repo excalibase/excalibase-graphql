@@ -25,10 +25,16 @@ public record HttpRequestFacts(String method, int status, String uri, String rou
     public static HttpRequestFacts of(HttpRequest<?> request, int answeredStatus, Throwable thrown) {
         Throwable failure = thrown != null ? thrown
                 : request.getAttribute(EXCEPTION_ATTRIBUTE, Throwable.class).orElse(null);
-        int status = failure != null && answeredStatus < 400 ? 500 : answeredStatus;
+        int status = failure != null && answeredStatus < 400 ? 500 : upgradedStatus(request, answeredStatus);
         String pattern = routePattern(request, status);
         return new HttpRequestFacts(method(request), status, uri(pattern, status), pattern, exceptionName(failure),
                 TenantTags.of(request));
+    }
+
+    /** A WebSocket handshake that was accepted switched protocols, whatever placeholder status the filter chain saw. */
+    private static int upgradedStatus(HttpRequest<?> request, int answeredStatus) {
+        boolean upgrade = "websocket".equalsIgnoreCase(request.getHeaders().get("Upgrade"));
+        return upgrade && answeredStatus == 200 ? 101 : answeredStatus;
     }
 
     /** Only the standard methods name a series; anything else is one series, so a client cannot mint more. */
