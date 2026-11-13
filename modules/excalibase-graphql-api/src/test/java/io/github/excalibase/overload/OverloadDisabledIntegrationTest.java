@@ -42,11 +42,12 @@ class OverloadDisabledIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("with app.overload.enabled=false the bound is not reported")
-    void noBoundMetric() throws Exception {
+    @DisplayName("with app.overload.enabled=false the server keeps its own default connection limit")
+    void serverDefaultKept() throws Exception {
         HttpResponse<String> max = HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create(
                 "http://localhost:" + MANAGEMENT_PORT + "/actuator/metrics/tomcat.connections.config.max")).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
-        assertThat(max.statusCode()).isEqualTo(404);
+        assertThat(max.statusCode()).isEqualTo(200);
+        assertThat(max.body()).contains("\"value\":8192");
     }
 }
