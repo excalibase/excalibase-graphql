@@ -98,4 +98,59 @@ class StartupSettingsTest {
             logger.setLevel(before);
         }
     }
+
+    @Test
+    @DisplayName("the histogram variable the platform chart sets becomes the property the timer reads")
+    void histogramVariable() {
+        assertThat(StartupSettings.from(Map.of("MANAGEMENT_METRICS_DISTRIBUTION_PERCENTILESHISTOGRAM_HTTP_SERVER_REQUESTS", "true")))
+                .containsEntry("management.metrics.distribution.percentiles-histogram.http.server.requests", "true");
+        assertThat(StartupSettings.from(Map.of())).doesNotContainKey("management.metrics.distribution.percentiles-histogram.http.server.requests");
+        assertThatThrownBy(() -> StartupSettings.from(Map.of("MANAGEMENT_METRICS_DISTRIBUTION_PERCENTILESHISTOGRAM_HTTP_SERVER_REQUESTS", "yes")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @DisplayName("on Kubernetes (host and port variables) the probe groups are on, as in the earlier build")
+    void probesOnKubernetes() {
+        Map<String, Object> settings = StartupSettings.from(Map.of("KUBERNETES_SERVICE_HOST", "10.0.0.1", "KUBERNETES_SERVICE_PORT", "443"));
+
+        assertThat(settings).containsEntry("management.endpoint.health.probes.enabled", "true");
+    }
+
+    @Test
+    @DisplayName("one Kubernetes variable alone, or an explicit probes setting, leaves the probes to their own setting")
+    void probesNotImplied() {
+        assertThat(StartupSettings.from(Map.of("KUBERNETES_SERVICE_HOST", "10.0.0.1"))).doesNotContainKey("management.endpoint.health.probes.enabled");
+        assertThat(StartupSettings.from(Map.of())).doesNotContainKey("management.endpoint.health.probes.enabled");
+        assertThat(StartupSettings.from(Map.of("KUBERNETES_SERVICE_HOST", "10.0.0.1", "KUBERNETES_SERVICE_PORT", "443",
+                "MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED", "false"))).doesNotContainKey("management.endpoint.health.probes.enabled");
+    }
+
+    @Test
+    @DisplayName("SERVER_SHUTDOWN=immediate switches the drain off; graceful and unset leave it on")
+    void shutdownMode() {
+        assertThat(StartupSettings.from(Map.of("SERVER_SHUTDOWN", "immediate")))
+                .containsEntry("micronaut.lifecycle.graceful-shutdown.enabled", "false");
+        assertThat(StartupSettings.from(Map.of("SERVER_SHUTDOWN", "Graceful"))).doesNotContainKey("micronaut.lifecycle.graceful-shutdown.enabled");
+        assertThat(StartupSettings.from(Map.of())).doesNotContainKey("micronaut.lifecycle.graceful-shutdown.enabled");
+        assertThatThrownBy(() -> StartupSettings.from(Map.of("SERVER_SHUTDOWN", "soon")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("SERVER_SHUTDOWN");
+    }
+
+    @Test
+    @DisplayName("the drain timeout takes the durations Spring does: 30s, 1m, 500ms, ISO-8601, a bare number of milliseconds")
+    void shutdownTimeout() {
+        assertThat(grace("30s")).isEqualTo("PT30S");
+        assertThat(grace("1m")).isEqualTo("PT1M");
+        assertThat(grace("500ms")).isEqualTo("PT0.5S");
+        assertThat(grace("PT45S")).isEqualTo("PT45S");
+        assertThat(grace("2000")).isEqualTo("PT2S");
+        assertThatThrownBy(() -> grace("soon")).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE");
+    }
+
+    private static Object grace(String value) {
+        return StartupSettings.from(Map.of("SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE", value))
+                .get("micronaut.lifecycle.graceful-shutdown.grace-period");
+    }
 }

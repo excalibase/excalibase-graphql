@@ -29,6 +29,11 @@ micronaut:
         step: PT30S
         resourceAttributes: service.name=Excalibase graphql
 
+  lifecycle:
+    graceful-shutdown:
+      enabled: true   # stop accepting, let in-flight requests finish; SERVER_SHUTDOWN=immediate turns it off
+      grace-period: 30s   # SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE
+
 endpoints:
   all:
     enabled: false   # Micronaut's own endpoints (beans, routes, env, ...) are never served; observability.actuator serves the exposed ones
