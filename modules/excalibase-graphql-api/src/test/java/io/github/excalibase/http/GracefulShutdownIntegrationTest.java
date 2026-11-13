@@ -64,12 +64,17 @@ class GracefulShutdownIntegrationTest {
 
             assertThat(stopping).as("the stop waits for the request").isNotDone();
             assertThat(inFlight).as("the request is not cut off").isNotDone();
-            assertThatThrownBy(() -> new EngineClient(URI.create("http://localhost:" + port + "/")).get("/test-proj/held"))
-                    .as("no new connection is accepted").isNotNull();
-            HttpAnswer readiness = new EngineClient(URI.create("http://localhost:" + managementPort + "/"))
-                    .get("/actuator/health/readiness");
+            EngineClient management = new EngineClient(URI.create("http://localhost:" + managementPort + "/"));
+            HttpAnswer readiness = management.get("/actuator/health/readiness");
+            for (int attempt = 0; attempt < 50 && readiness.status() != 503; attempt++) {
+                Thread.sleep(100);   // the drain begins a moment after stop is asked for, longer when the machine is busy
+                readiness = management.get("/actuator/health/readiness");
+            }
             assertThat(readiness.status()).isEqualTo(503);
             assertThat(readiness.body()).isEqualTo("{\"status\":\"OUT_OF_SERVICE\"}");
+            assertThat(inFlight).as("the request is still held while readiness drains").isNotDone();
+            assertThatThrownBy(() -> new EngineClient(URI.create("http://localhost:" + port + "/")).get("/test-proj/held"))
+                    .as("no new connection is accepted").isNotNull();
 
             HeldEndpoint.release.countDown();
 
