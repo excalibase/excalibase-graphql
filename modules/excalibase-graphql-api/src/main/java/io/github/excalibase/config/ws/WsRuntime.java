@@ -198,6 +198,14 @@ public class WsRuntime implements ProjectCacheEvictor {
         return project == null || acquire(subscriptionsByProject, project, limits.maxSubscriptionsPerProject());
     }
 
+    /** Gives back a reservation whose subscription never started. */
+    void cancelReservation(WsSession session) {
+        String project = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
+        if (project != null) {
+            drop(subscriptionsByProject, project);
+        }
+    }
+
     /** Wraps a reserved subscription so that disposing it, once, gives the reservation back. */
     Disposable counted(WsSession session, Disposable subscription) {
         String project = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);

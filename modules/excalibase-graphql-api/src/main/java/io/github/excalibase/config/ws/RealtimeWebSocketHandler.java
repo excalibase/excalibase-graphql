@@ -196,9 +196,15 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
             sendError(session, id, "Too many subscriptions for this project");
             return;
         }
-        SessionOutbox outbox = runtime.outbox(session);
-        Disposable disposable = runtime.counted(session, subscriptionService.subscribe(tenantId, resource)
-                .subscribe(event -> outbox.submit(() -> dispatchEvent(session, id, filter, delivery, event))));
+        Disposable disposable;
+        try {
+            SessionOutbox outbox = runtime.outbox(session);
+            disposable = runtime.counted(session, subscriptionService.subscribe(tenantId, resource)
+                    .subscribe(event -> outbox.submit(() -> dispatchEvent(session, id, filter, delivery, event))));
+        } catch (RuntimeException failure) {
+            runtime.cancelReservation(session);
+            throw failure;
+        }
         sessionSubs.put(id, disposable);
         log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, resource);
     }

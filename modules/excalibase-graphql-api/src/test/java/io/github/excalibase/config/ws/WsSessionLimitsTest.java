@@ -131,6 +131,34 @@ class WsSessionLimitsTest {
     }
 
     @Test
+    @DisplayName("a subscribe that fails after its reservation gives the reservation back")
+    void failedSubscribeReleasesItsReservation() throws Exception {
+        java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean(true);
+        subscriptions = new SubscriptionService() {
+            @Override
+            public reactor.core.publisher.Flux<CDCEvent> subscribe(String tenantId, String tableName) {
+                if (fail.getAndSet(false)) {
+                    throw new IllegalStateException("sink unavailable");
+                }
+                return super.subscribe(tenantId, tableName);
+            }
+        };
+        RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 1, 8), Runnable::run);
+        List<String> sent = new ArrayList<>();
+        WsSession session = session("p1", "1.1.1.1", sent);
+        handler.afterConnectionEstablished(session);
+        runtime.initialised(session);
+        try {
+            send(handler, session, subscribe("a", "t1"));
+        } catch (RuntimeException expected) {
+            // the failure may surface to the caller; what matters is the count
+        }
+        send(handler, session, subscribe("b", "t1"));
+        assertThat(sent).noneMatch(message -> message.contains("Too many subscriptions"));
+        assertThat(subscriptions.hasSubscribers(null, "public.t1")).isTrue();
+    }
+
+    @Test
     @DisplayName("subscriptions are capped per project across sessions")
     void subscriptionsCappedPerProject() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 2, 8), Runnable::run);

@@ -274,11 +274,17 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
 
         // Changes are published under schema.table: subscribe to the table the field resolved to, so a
         // bare field name of the default schema receives them too. Delivery runs off the publishing thread.
-        SessionOutbox outbox = runtime.outbox(session);
-        Flux<CDCEvent> changes = Flux.merge(sinkKeys(delivery, tableName).stream()
-                .map(key -> subscriptionService.subscribe(tenantId, key)).toList());
-        Disposable disposable = runtime.counted(session,
-                changes.subscribe(event -> outbox.submit(() -> forward(session, id, fieldName, delivery, event))));
+        Disposable disposable;
+        try {
+            SessionOutbox outbox = runtime.outbox(session);
+            Flux<CDCEvent> changes = Flux.merge(sinkKeys(delivery, tableName).stream()
+                    .map(key -> subscriptionService.subscribe(tenantId, key)).toList());
+            disposable = runtime.counted(session,
+                    changes.subscribe(event -> outbox.submit(() -> forward(session, id, fieldName, delivery, event))));
+        } catch (RuntimeException failure) {
+            runtime.cancelReservation(session);
+            throw failure;
+        }
 
         sessionSubs.put(id, disposable);
     }
