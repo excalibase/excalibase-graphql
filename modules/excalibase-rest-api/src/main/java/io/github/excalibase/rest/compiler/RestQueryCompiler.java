@@ -36,6 +36,7 @@ public class RestQueryCompiler {
     private final SqlDialect dialect;
     private final String defaultSchema;
     private final int defaultMaxRows;
+    private final boolean capNestedLists;
     private final TableAccess access;
     private final ParamValues values;
     private final RestFilterSql filterSql;
@@ -102,6 +103,13 @@ public class RestQueryCompiler {
      */
     public RestQueryCompiler(SchemaInfo schemaInfo, SqlDialect dialect, String defaultSchema, int maxRows,
                              TableAccess access) {
+        this(schemaInfo, dialect, defaultSchema, maxRows, access, false);
+    }
+
+    /** {@code capNestedLists}: an embedded list is cut at {@code maxRows}, as a top-level one is. */
+    public RestQueryCompiler(SchemaInfo schemaInfo, SqlDialect dialect, String defaultSchema, int maxRows,
+                             TableAccess access, boolean capNestedLists) {
+        this.capNestedLists = capNestedLists;
         this.schemaInfo = schemaInfo;
         this.dialect = dialect;
         this.defaultSchema = defaultSchema;
@@ -614,8 +622,9 @@ public class RestQueryCompiler {
         return dialect.jsonValue(alias + DOT + dialect.quoteIdentifier(column), schemaInfo.getColumnType(table, column));
     }
 
-    /** {@code LIMIT n} for the caller's own row limit on an embedded table, or nothing. */
+    /** {@code LIMIT n} on an embedded list: the caller's own row limit; with nested lists capped, within the engine's row cap too. */
     private String roleLimit(String table) {
+        if (capNestedLists) return LIMIT + capped(table, defaultMaxRows);
         Integer limit = access.rowLimit(table);
         return limit == null ? "" : LIMIT + limit;
     }

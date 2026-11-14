@@ -66,10 +66,13 @@ public class RestApiController {
     private final TransactionTemplate txTemplate;
     private final ObjectMapper mapper;
     private final int maxRows;
+    private final boolean capNestedLists;
 
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
-                             @Value("${app.max-rows:30}") int maxRows) {
+                             @Value("${app.max-rows:30}") int maxRows,
+                             @Value("${app.cap-nested-lists:false}") boolean capNestedLists) {
+        this.capNestedLists = capNestedLists;
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
@@ -273,7 +276,7 @@ public class RestApiController {
         String call = FunctionCall.sql(callable, arguments, RlsContext.sessionVariables(), dialect, params);
         var parsed = parseSelectParams(readParams.get("select"), readParams.get("order"), readParams);
         var compiler = new RestQueryCompiler(schemaProvider.resolveSchemaInfo(principal), dialect, schema, maxRows,
-                schemaProvider.resolveAccess(principal));
+                schemaProvider.resolveAccess(principal), capNestedLists);
         var query = new RestQueryCompiler.SelectQuery(callable.returnTable(), parsed.columns, parsed.filters,
                 parsed.orConditions, parsed.embeds, parsed.orderSpecs,
                 Math.clamp(paging("limit", readParams.get("limit"), maxRows), 1, maxRows),
@@ -539,7 +542,7 @@ public class RestApiController {
             return new Resolved(null, permissionDenied(request.getMethod() + " is not permitted on " + table));
         }
         SqlDialect dialect = schemaProvider.resolveDialect(principal);
-        var compiler = new RestQueryCompiler(schemaInfo, dialect, schema, maxRows, access);
+        var compiler = new RestQueryCompiler(schemaInfo, dialect, schema, maxRows, access, capNestedLists);
         return new Resolved(new RequestContext(tableKey, compiler, schemaInfo, access, dialect), null);
     }
 
