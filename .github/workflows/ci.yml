@@ -99,7 +99,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: jar-artifacts
-        path: modules/excalibase-graphql-api/target/*.jar
+        path: modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar
         retention-days: 7
 
   build-native:
