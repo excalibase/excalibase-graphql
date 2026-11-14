@@ -204,6 +204,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             throw failure;
         }
         sessionSubs.put(id, disposable);
+        // A close that ran during the subscribe has already emptied and unregistered the map: this one is
+        // nobody's, so it is disposed here, which also gives its project slot back.
+        if (sessionSubscriptions.get(session.getId()) != sessionSubs) {
+            disposable.dispose();
+        }
         log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, resource);
     }
 

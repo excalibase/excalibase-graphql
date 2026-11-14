@@ -172,6 +172,66 @@ class WsSessionLimitsTest {
     }
 
     @Test
+    @DisplayName("realtime: a close that lands during a subscribe gives its project slot back")
+    void realtimeCloseDuringSubscribeKeepsNoSlot() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<Runnable> midSubscribe = new java.util.concurrent.atomic.AtomicReference<>();
+        subscriptions = new SubscriptionService() {
+            @Override
+            public reactor.core.publisher.Flux<CDCEvent> subscribe(String tenantId, String tableName) {
+                Runnable hook = midSubscribe.getAndSet(null);
+                if (hook != null) {
+                    hook.run();
+                }
+                return super.subscribe(tenantId, tableName);
+            }
+        };
+        RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 1, 8), Runnable::run);
+        WebSocketSession closing = session("p1", "1.1.1.1", new ArrayList<>());
+        handler.afterConnectionEstablished(closing);
+        runtime.initialised(closing);
+        midSubscribe.set(() -> handler.afterConnectionClosed(closing, CloseStatus.NORMAL));
+        send(handler, closing, subscribe("a", "t1"));
+
+        List<String> sent = new ArrayList<>();
+        WebSocketSession fresh = session("p1", "2.2.2.2", sent);
+        handler.afterConnectionEstablished(fresh);
+        runtime.initialised(fresh);
+        send(handler, fresh, subscribe("b", "t1"));
+        assertThat(sent).noneMatch(message -> message.contains("Too many subscriptions"));
+    }
+
+    @Test
+    @DisplayName("GraphQL: a close that lands during a subscribe gives its project slot back")
+    void graphqlCloseDuringSubscribeKeepsNoSlot() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<Runnable> midSubscribe = new java.util.concurrent.atomic.AtomicReference<>();
+        subscriptions = new SubscriptionService() {
+            @Override
+            public reactor.core.publisher.Flux<CDCEvent> subscribe(String tenantId, String tableName) {
+                Runnable hook = midSubscribe.getAndSet(null);
+                if (hook != null) {
+                    hook.run();
+                }
+                return super.subscribe(tenantId, tableName);
+            }
+        };
+        GraphQLWebSocketHandler handler = graphql(limits(10, 10, 5, 1, 8));
+        String query = "{\"type\":\"subscribe\",\"id\":\"1\",\"payload\":"
+                + "{\"query\":\"subscription { notesChanges { operation } }\"}}";
+        WebSocketSession closing = session("p1", "1.1.1.1", new ArrayList<>());
+        handler.afterConnectionEstablished(closing);
+        runtime.initialised(closing);
+        midSubscribe.set(() -> handler.afterConnectionClosed(closing, CloseStatus.NORMAL));
+        handler.handleTextMessage(closing, new TextMessage(query));
+
+        List<String> sent = new ArrayList<>();
+        WebSocketSession fresh = session("p1", "2.2.2.2", sent);
+        handler.afterConnectionEstablished(fresh);
+        runtime.initialised(fresh);
+        handler.handleTextMessage(fresh, new TextMessage(query));
+        assertThat(sent).noneMatch(message -> message.contains("Too many subscriptions"));
+    }
+
+    @Test
     @DisplayName("subscriptions are capped per project across sessions")
     void subscriptionsCappedPerProject() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 2, 8), Runnable::run);
