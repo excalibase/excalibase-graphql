@@ -69,7 +69,7 @@
         <!--groovy & spock-->
         <groovy-all.version>4.0.24</groovy-all.version>
         <spock-core.version>2.4-M4-groovy-4.0</spock-core.version>
-        <groovy-json.version>4.0.24</groovy-json.version>
+        <groovy-json.version>6.0.0</groovy-json.version>
 
         <!--nats-->
         <jnats.version>2.22.0</jnats.version>
