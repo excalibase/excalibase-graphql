@@ -851,6 +851,16 @@ class RestControllerIntegrationTest {
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.data", hasSize(3))); // Widget, Thingamajig (tools) + Doohickey (gadgets)
     }
+
+    @Test
+    @DisplayName("count=exact with an or= group counts the rows the group keeps, not the whole table")
+    void countRespectsOrGroups() throws Exception {
+      mockMvc.perform(get(BASE + "/products?or=(category.eq.tools,category.eq.gadgets)&limit=1")
+              .header("Prefer", "count=exact"))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.pagination.total", is(3)))
+          .andExpect(header().string("Content-Range", containsString("/3")));
+    }
   }
 
   @Nested
