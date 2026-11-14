@@ -40,6 +40,11 @@ final class RealtimeGate {
     /** One subscription's delivery rule; {@code access} is null for the pass-through path. */
     record Delivery(AccessPlans.RealtimeAccess access) {
 
+        /** False for a change of another table than the one this subscription resolved to. */
+        boolean isFor(CDCEvent event) {
+            return access == null || access.table().equals(event.schema() + "." + event.table());
+        }
+
         /** As {@link #render}, with values written the way a GraphQL query reads them. */
         Optional<Object> renderForGraphql(CDCEvent event, Object parsed) {
             return render(event, parsed)
@@ -68,6 +73,17 @@ final class RealtimeGate {
     static ObjectMapper changeWriter(ObjectMapper objectMapper) {
         return objectMapper.copy().setDefaultPropertyInclusion(
                 JsonInclude.Value.construct(JsonInclude.Include.ALWAYS, JsonInclude.Include.ALWAYS));
+    }
+
+    /**
+     * The tenant a subscription is routed under. With tenant-in-subject on, changes arrive under the project in
+     * the URL (the token was checked against it); otherwise under the token's tenant, as before.
+     */
+    static String sinkTenant(WsSession session, boolean tenantInSubject) {
+        Map<String, Object> attributes = session.getAttributes();
+        Object key = tenantInSubject ? GraphQLWebSocketHandler.SESSION_PROJECT_KEY
+                : GraphQLWebSocketHandler.SESSION_TENANT_KEY;
+        return (String) attributes.get(key);
     }
 
     static Opening open(AccessPlans plans, WsSession session, String subscriptionKey) {

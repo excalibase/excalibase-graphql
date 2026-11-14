@@ -12,6 +12,11 @@ public interface WsSession {
 
     boolean isOpen();
 
+    /** True while the client is not reading what was sent, so more would only pile up in memory. */
+    default boolean isBackedUp() {
+        return false;
+    }
+
     void sendMessage(TextMessage message) throws IOException;
 
     void sendPing() throws IOException;

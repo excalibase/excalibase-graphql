@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Decoupled from NATS — any event source (NATS, test harness, etc.) can call
  * {@link #publish(String, CDCEvent)}.
  *
- * <p>Events are routed by ({@code tenantId}, {@code schema_table}). A {@code null}
+ * <p>Events are routed by ({@code tenantId}, {@code schema.table}). A {@code null}
  * tenantId means "no tenant scope" and stays isolated from any tenant-scoped
  * subscriber: a null-tenant publish is never delivered to a tenant-scoped
  * subscriber, and vice-versa.
@@ -64,13 +64,13 @@ public class SubscriptionService {
     }
 
     /**
-     * Publish a CDC event to subscribers scoped to ({@code tenantId}, event.schema_event.table).
+     * Publish a CDC event to subscribers scoped to ({@code tenantId}, event.schema.event.table).
      */
     public void publish(String tenantId, CDCEvent event) {
         if (event.table() == null) {
             return;
         }
-        String tableKey = (event.schema() != null ? event.schema() + "_" : "") + event.table();
+        String tableKey = (event.schema() != null ? event.schema() + "." : "") + event.table();
         String key = sinkKey(tenantId, tableKey);
         Sinks.Many<CDCEvent> sink = tableSinks.get(key);
         if (sink != null) {

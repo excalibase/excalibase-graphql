@@ -27,6 +27,7 @@ import io.github.excalibase.config.ws.WsSession.CloseStatus;
 import io.github.excalibase.config.ws.WsSession.TextMessage;
 import jakarta.inject.Singleton;
 import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 
 import java.io.IOException;
 import java.time.Instant;
@@ -87,14 +88,27 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
     private final WebSocketHeartbeat heartbeat;
     private final RealtimeMetering metering;
     private final ParsedQueries parsedQueries;
+    private final WsRuntime runtime;
 
+    /** For tests of one handler: no caps in the way, delivery on the publishing thread. */
+    GraphQLWebSocketHandler(SubscriptionService subscriptionService, ObjectMapper objectMapper,
+                            @Nullable JwtService jwtService, WebSocketHeartbeat heartbeat,
+                            @Nullable AccessPlans accessPlans, @Nullable RequestMetrics requestMetrics,
+                            ParsedQueries parsedQueries) {
+        this(subscriptionService, objectMapper, jwtService, heartbeat, accessPlans, requestMetrics, parsedQueries,
+                WsRuntime.inline());
+    }
+
+    @Inject
     public GraphQLWebSocketHandler(SubscriptionService subscriptionService,
                                    ObjectMapper objectMapper,
                                    @Nullable JwtService jwtService,
                                    WebSocketHeartbeat heartbeat,
                                    @Nullable AccessPlans accessPlans,
                                    @Nullable RequestMetrics requestMetrics,
-                                   ParsedQueries parsedQueries) {
+                                   ParsedQueries parsedQueries,
+                                   WsRuntime runtime) {
+        this.runtime = runtime;
         this.parsedQueries = parsedQueries;
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
@@ -109,9 +123,15 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
     @Override
     public void afterConnectionEstablished(WsSession session) {
         log.debug("WebSocket connection established: {}", session.getId());
+        if (!runtime.admit(session)) {
+            runtime.close(session, WsClose.LIMIT);
+            return;
+        }
         sessionSubscriptions.put(session.getId(), new ConcurrentHashMap<>());
         heartbeat.register(session);
         metering.opened(session);
+        runtime.expectInit(session);
+        runtime.closeAtExpiry(session);
     }
 
     @Override
@@ -134,6 +154,7 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
         log.debug("WebSocket closed for session {}: {}", session.getId(), status);
         heartbeat.unregister(session);
         metering.closed(session);
+        runtime.release(session);
         Map<String, Disposable> subs = sessionSubscriptions.remove(session.getId());
         if (subs != null) {
             subs.values().forEach(disposable -> {
@@ -172,6 +193,8 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
             log.info("WS session {} runs as role '{}' for tenant '{}'", session.getId(),
                     principalOf(session).role(), session.getAttributes().get(SESSION_TENANT_KEY));
         }
+        runtime.initialised(session);
+        runtime.closeAtExpiry(session);
         sendMessage(session, "{\"type\":\"connection_ack\"}");
     }
 
@@ -197,6 +220,10 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
 
     @SuppressWarnings("unchecked")
     private void handleSubscribe(WsSession session, Map<String, Object> msg) {
+        if (!runtime.isInitialised(session)) {
+            runtime.close(session, WsClose.UNAUTHORIZED);
+            return;
+        }
         String id = (String) msg.get("id");
         Map<String, Object> payloadMap = (Map<String, Object>) msg.get(PAYLOAD);
         String query = (String) payloadMap.get("query");
@@ -232,23 +259,48 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
         }
         RealtimeGate.Delivery delivery = opening.delivery();
 
-        String tenantId = (String) session.getAttributes().get(SESSION_TENANT_KEY);
+        if (runtime.atSessionCap(sessionSubs.size())) {
+            sendError(session, id, "Too many subscriptions on this connection");
+            return;
+        }
+        if (!runtime.reserveSubscription(session)) {
+            sendError(session, id, "Too many subscriptions for this project");
+            return;
+        }
+
+        String tenantId = RealtimeGate.sinkTenant(session, wsAuthRequired);
         log.info("Starting subscription '{}' for tenant '{}' table '{}' (field: '{}'), session {}",
                 id, tenantId, tableName, fieldName, session.getId());
 
-        // Subscribe to the table's event stream — scoped to the JWT's tenant (null in single-tenant mode)
-        // Changes are published under schema_table: subscribe to the table the field resolved to, so a
-        // bare field name of the default schema receives them too.
-        String sinkKey = delivery.access() == null ? tableName : delivery.access().table().replace('.', '_');
-        Disposable disposable = subscriptionService.subscribe(tenantId, sinkKey)
-                .subscribe(event -> forward(session, id, fieldName, delivery, event));
+        // Changes are published under schema.table: subscribe to the table the field resolved to, so a
+        // bare field name of the default schema receives them too. Delivery runs off the publishing thread.
+        SessionOutbox outbox = runtime.outbox(session);
+        Flux<CDCEvent> changes = Flux.merge(sinkKeys(delivery, tableName).stream()
+                .map(key -> subscriptionService.subscribe(tenantId, key)).toList());
+        Disposable disposable = runtime.counted(session,
+                changes.subscribe(event -> outbox.submit(() -> forward(session, id, fieldName, delivery, event))));
 
         sessionSubs.put(id, disposable);
+    }
+
+    /**
+     * The sink keys a subscription listens on. A planned table has one, {@code schema.table}. With no plan the
+     * field name is all there is: it can read {@code schema_table} or be a bare table, so both are tried.
+     */
+    private static List<String> sinkKeys(RealtimeGate.Delivery delivery, String tableName) {
+        if (delivery.access() != null) {
+            return List.of(delivery.access().table());
+        }
+        String qualified = tableName.replaceFirst("_", ".");
+        return qualified.equals(tableName) ? List.of(tableName) : List.of(tableName, qualified);
     }
 
     /** Sends one change, only as far as the subscriber's role may read it. */
     private void forward(WsSession session, String id, String fieldName, RealtimeGate.Delivery delivery,
                          CDCEvent event) {
+        if (!delivery.isFor(event)) {
+            return;
+        }
         Optional<Object> data = delivery.renderForGraphql(event, parseEventData(event.data()));
         if (data.isEmpty()) {
             return;
@@ -333,7 +385,9 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
                 }
             }
         } catch (Exception e) {
-            log.error("Failed to parse subscription query: {}", query, e);
+            // The query is client input: its size and the parser's reason are enough to diagnose.
+            log.warn("Failed to parse a subscription query of {} characters: {}",
+                    query == null ? 0 : query.length(), e.getClass().getSimpleName());
         }
         return new String[0];
     }

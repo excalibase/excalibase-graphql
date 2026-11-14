@@ -70,6 +70,7 @@ services:
       APP_SECURITY_RLS_POLICY_PAT: test-pat
 
       APP_NATS_ENABLED: true
+      APP_NATS_ALLOW_UNTENANTED_REALTIME: true
       APP_NATS_URL: nats://nats:4222
       APP_NATS_STREAM_NAME: CDC
       APP_NATS_SUBJECT_PREFIX: cdc

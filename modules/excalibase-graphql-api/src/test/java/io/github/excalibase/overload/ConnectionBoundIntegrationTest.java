@@ -40,6 +40,9 @@ class ConnectionBoundIntegrationTest extends EngineIntegrationTest {
                 Map.entry("app.security.insecure-dev-mode", "true"),
                 Map.entry("app.database-type", "postgres"),
                 Map.entry("app.overload.max-connections-per-cpu", "2"),
+                // This test is about the connection bound: the per-client and per-project socket caps stay out of it.
+                Map.entry("app.websocket.max-per-client-percent", "100"),
+                Map.entry("app.websocket.max-per-project-percent", "100"),
                 Map.entry("app.overload.accept-count-per-cpu", "256"),
                 Map.entry("app.overload.max-keep-alive-requests", "2"),
                 Map.entry("app.overload.keep-alive-timeout-ms", "300"),

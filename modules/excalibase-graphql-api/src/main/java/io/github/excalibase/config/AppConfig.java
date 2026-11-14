@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import io.github.excalibase.compiler.ParsedQueries;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
+import io.github.excalibase.config.ws.WsRuntime;
 import io.github.excalibase.config.datasource.TenantDataSourceFactory;
 import io.github.excalibase.config.datasource.TenantDbSslMode;
 import io.github.excalibase.cors.ProjectCorsConfigurationSource;
@@ -182,12 +183,13 @@ public class AppConfig {
     PolicyChangeSubscriber policyChangeSubscriber(
             PermissionProvider permissionProvider,
             GraphqlSchemaManager schemaManager,
+            WsRuntime webSockets,
             @Value("${app.nats.enabled:false}") boolean natsEnabled,
             @Value("${app.nats.url:nats://localhost:4222}") String natsUrl,
             @Value("${app.nats.username:}") String natsUsername,
             @Value("${app.nats.password:}") String natsPassword,
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
-        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict),
+        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict, webSockets),
                 natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 

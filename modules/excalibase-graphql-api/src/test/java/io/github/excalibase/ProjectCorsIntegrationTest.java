@@ -180,7 +180,7 @@ class ProjectCorsIntegrationTest extends EngineIntegrationTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", "null", ""})
+    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", ""})
     @DisplayName("WebSocket upgrade: a listed web origin, native-app origins and no Origin pass the origin check")
     void websocketAdmitsListedNativeAndAbsentOrigins(String origin) throws Exception {
         String sent = origin.isEmpty() ? null : origin;

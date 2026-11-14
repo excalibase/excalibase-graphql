@@ -83,6 +83,8 @@ services:
 
       # NATS CDC subscription (events from excalibase-watcher)
       APP_NATS_ENABLED: true
+      # Test stack with no real tenants: its watcher publishes no tenant in the subject.
+      APP_NATS_ALLOW_UNTENANTED_REALTIME: true
       APP_NATS_URL: nats://nats:4222
       APP_NATS_STREAM_NAME: CDC
       APP_NATS_SUBJECT_PREFIX: cdc

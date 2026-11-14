@@ -101,7 +101,9 @@ class GraphQLWebSocketHandlerTest {
         when(session.getAttributes()).thenReturn(attrs);
         doAnswer(invocation -> {
             TextMessage msg = invocation.getArgument(0);
-            sink.add(msg.getPayload());
+            if (!msg.getPayload().contains("connection_ack")) {
+                sink.add(msg.getPayload());
+            }
             return null;
         }).when(session).sendMessage(any(TextMessage.class));
         return session;
@@ -119,6 +121,7 @@ class GraphQLWebSocketHandlerTest {
     }
 
     private void subscribe(GraphQLWebSocketHandler handler, WsSession session, String field) throws Exception {
+        handler.handleTextMessage(session, new TextMessage("{\"type\":\"connection_init\"}"));
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "subscribe", "id", "s1",
                 "payload", Map.of("query", "subscription { " + field + " { operation table data timestamp } }")))));

@@ -33,7 +33,6 @@ public class WsHandshakeFilter implements Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(WsHandshakeFilter.class);
     static final String ATTRIBUTES = "excalibase.ws.attributes";
-    private static final String NULL_ORIGIN = "null";
 
     private final ProjectCorsConfigurationSource corsSource;
     private final JwtService jwtService;
@@ -65,6 +64,7 @@ public class WsHandshakeFilter implements Ordered {
         }
         Map<String, Object> attributes = new ConcurrentHashMap<>();
         attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, pathProject);
+        attributes.put(WsRuntime.SESSION_CLIENT_KEY, ClientAddress.of(request));
         request.getAttributes().put(ATTRIBUTES, attributes);
         if (jwtService == null) {
             return null;
@@ -89,11 +89,8 @@ public class WsHandshakeFilter implements Ordered {
         }
     }
 
-    /** True for an http(s) origin and for anything unparseable, which is checked (and refused) as one. */
+    /** True for an http(s) origin and for anything unparseable, {@code null} included: checked, and refused unless allowed. */
     private static boolean isWebOrigin(String origin) {
-        if (NULL_ORIGIN.equals(origin)) {
-            return false;
-        }
         int separator = origin.indexOf("://");
         if (separator <= 0) {
             return true;
