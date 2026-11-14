@@ -117,6 +117,20 @@ class RequestBodyLimitIntegrationTest {
     }
 
     @Test
+    @DisplayName("a chunked 9 MiB form body on PATCH, PUT and DELETE is refused with 413, not read by the container")
+    void oversizedChunkedFormOnWriteMethodsIsRefused() throws Exception {
+        String form = "a=" + "x".repeat(9 * MIB);
+        for (String method : List.of("PATCH", "PUT", "DELETE")) {
+            HttpResponse<String> response = client.send(
+                    HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/test-proj/api/v1/messages?id=eq.1"))
+                            .header("Content-Type", "application/x-www-form-urlencoded")
+                            .method(method, chunked(form)).build(),
+                    HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).as(method).isEqualTo(413);
+        }
+    }
+
+    @Test
     @DisplayName("a body of 6 MiB, more than a 1000-row bulk insert, is still read")
     void largeLegitimateBodyIsServed() throws Exception {
         assertThat(post("/test-proj/graphql", "application/json", BodyPublishers.ofString(json(6 * MIB))).statusCode())

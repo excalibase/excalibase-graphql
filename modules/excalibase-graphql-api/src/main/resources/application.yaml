@@ -12,6 +12,10 @@ server:
     # PostgREST filters carry these unencoded (cs.{a,b}, in.("a,b")); without them Tomcat answers its own HTML 400.
     relaxed-query-chars: ['"', '<', '>', '[', '\', ']', '^', '`', '{', '|', '}']
 spring:
+  mvc:
+    formcontent:
+      filter:
+        enabled: false  # it reads PUT/PATCH/DELETE form bodies before the 8 MB limit; no endpoint takes a form
   application:
     name: Excalibase graphql
   threads:
