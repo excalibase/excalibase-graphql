@@ -90,9 +90,9 @@ class DefaultErrorBodyIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("a 12 MiB JSON body is read, not refused for its size")
+    @DisplayName("a 6 MiB JSON body is read, not refused for its size; over 8 MiB it is a 413 (RequestBodyLimitIntegrationTest)")
     void largeJsonBody() {
-        String padded = "{\"query\":\"\",\"pad\":\"" + "x".repeat(12 * 1024 * 1024) + "\"}";
+        String padded = "{\"query\":\"\",\"pad\":\"" + "x".repeat(6 * 1024 * 1024) + "\"}";
 
         HttpAnswer answer = http.postJson("/" + PROJECT + "/graphql", padded);
 
