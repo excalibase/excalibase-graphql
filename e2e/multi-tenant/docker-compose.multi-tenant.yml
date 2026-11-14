@@ -91,7 +91,7 @@ services:
       - multi-tenant-network
 
   excalibase-app:
-    image: excalibase/excalibase-graphql
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql}
     container_name: mt-excalibase-graphql
     environment:
       # NO default datasource — pure multi-tenant mode

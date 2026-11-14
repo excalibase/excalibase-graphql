@@ -101,7 +101,7 @@ services:
       - study-cases-network
 
   sc-excalibase-app:
-    image: excalibase/excalibase-graphql
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql}
     container_name: sc-excalibase-graphql
     environment:
       # Pure multi-tenant mode — no default datasource, credentials fetched from vault per JWT
