@@ -33,6 +33,7 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
@@ -96,7 +97,7 @@ public class RestApiController {
             @RequestParam(required = false) Integer first, @RequestParam(required = false) String after,
             @RequestHeader(value = "Prefer", required = false) String prefer,
             @RequestHeader(value = "Accept-Profile", required = false) String acceptProfile,
-            @RequestParam Map<String, String> allParams, HttpServletRequest request) {
+            @RequestParam MultiValueMap<String, String> allParams, HttpServletRequest request) {
 
         var resolved = resolveContext(table, acceptProfile, request);
         if (resolved.refusal() != null) return resolved.refusal();
@@ -219,7 +220,7 @@ public class RestApiController {
     @GetMapping("/rpc/{function}")
     public ResponseEntity<Object> rpcGet(
             @PathVariable String function,
-            @RequestParam Map<String, String> allParams,
+            @RequestParam MultiValueMap<String, String> allParams,
             @RequestHeader(value = "Accept-Profile", required = false) String profile,
             HttpServletRequest request) {
         return rpc(function, profile, allParams, null, request);
@@ -230,7 +231,7 @@ public class RestApiController {
     public ResponseEntity<Object> rpcPost(
             @PathVariable String function,
             @RequestBody(required = false) Map<String, Object> body,
-            @RequestParam Map<String, String> allParams,
+            @RequestParam MultiValueMap<String, String> allParams,
             @RequestHeader(value = "Content-Profile", required = false) String profile,
             HttpServletRequest request) {
         return rpc(function, profile, allParams, body == null ? Map.of() : body, request);
@@ -244,7 +245,7 @@ public class RestApiController {
      *
      * @param body the arguments of a POST, or null for a GET, whose arguments are query parameters
      */
-    private ResponseEntity<Object> rpc(String function, String profile, Map<String, String> allParams,
+    private ResponseEntity<Object> rpc(String function, String profile, Map<String, List<String>> allParams,
                                        Map<String, Object> body, HttpServletRequest request) {
         requireIdentifier(function);
         var principal = getPrincipal(request);
@@ -262,11 +263,11 @@ public class RestApiController {
                     .body(errorBody("method_not_allowed", function + " changes data: call it with POST"));
         }
         Map<String, Object> arguments = new LinkedHashMap<>();
-        Map<String, String> readParams = new LinkedHashMap<>(allParams);
+        Map<String, List<String>> readParams = new LinkedHashMap<>(allParams);
         if (body == null) {
             callable.arguments().forEach(argument -> {
                 if (readParams.containsKey(argument.name())) {
-                    arguments.put(argument.name(), readParams.remove(argument.name()));
+                    arguments.put(argument.name(), readParams.remove(argument.name()).getFirst());
                 }
             });
         } else {
@@ -274,13 +275,13 @@ public class RestApiController {
         }
         Map<String, Object> params = new LinkedHashMap<>();
         String call = FunctionCall.sql(callable, arguments, RlsContext.sessionVariables(), dialect, params);
-        var parsed = parseSelectParams(readParams.get("select"), readParams.get("order"), readParams);
+        var parsed = parseSelectParams(first(readParams, "select"), first(readParams, "order"), readParams);
         var compiler = new RestQueryCompiler(schemaProvider.resolveSchemaInfo(principal), dialect, schema, maxRows,
                 schemaProvider.resolveAccess(principal), capNestedLists);
         var query = new RestQueryCompiler.SelectQuery(callable.returnTable(), parsed.columns, parsed.filters,
                 parsed.orConditions, parsed.embeds, parsed.orderSpecs,
-                Math.clamp(paging("limit", readParams.get("limit"), maxRows), 1, maxRows),
-                paging("offset", readParams.get("offset"), 0), false);
+                Math.clamp(paging("limit", first(readParams, "limit"), maxRows), 1, maxRows),
+                paging("offset", first(readParams, "offset"), 0), false);
         var compiled = compiler.compileFunctionSelect(query, call, params, !callable.returnsSet());
         return executeInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
             List<?> data = rowsOf(rows.get("body"), parsed.columns);
@@ -307,25 +308,27 @@ public class RestApiController {
     @PatchMapping("/{table}")
     public ResponseEntity<Object> update(@PathVariable String table, @RequestBody Map<String, Object> body,
             @RequestHeader(value = "Prefer", required = false) String prefer, @RequestHeader(value = "Content-Profile", required = false) String cp,
-            @RequestParam Map<String, String> allParams, HttpServletRequest request) {
+            @RequestParam MultiValueMap<String, String> allParams, HttpServletRequest request) {
         return mutate(table, body, prefer, cp, allParams, request);
     }
 
     @PutMapping("/{table}")
     public ResponseEntity<Object> replace(@PathVariable String table, @RequestBody Map<String, Object> body,
             @RequestHeader(value = "Prefer", required = false) String prefer, @RequestHeader(value = "Content-Profile", required = false) String cp,
-            @RequestParam Map<String, String> allParams, HttpServletRequest request) {
+            @RequestParam MultiValueMap<String, String> allParams, HttpServletRequest request) {
         return mutate(table, body, prefer, cp, allParams, request);
     }
 
     @DeleteMapping("/{table}")
     public ResponseEntity<Object> delete(@PathVariable String table,
             @RequestHeader(value = "Prefer", required = false) String prefer, @RequestHeader(value = "Content-Profile", required = false) String cp,
-            @RequestParam Map<String, String> allParams, HttpServletRequest request) {
+            @RequestParam MultiValueMap<String, String> allParams, HttpServletRequest request) {
 
         var resolved = resolveContext(table, cp, request);
         if (resolved.refusal() != null) return resolved.refusal();
         var ctx = resolved.context();
+        var logic = refuseLogicGroups(allParams);
+        if (logic != null) return logic;
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return ResponseEntity.badRequest().body(errorBody(BAD_REQUEST, "At least one filter is required"));
 
@@ -336,10 +339,12 @@ public class RestApiController {
     }
 
 
-    private ResponseEntity<Object> mutate(String table, Map<String, Object> body, String prefer, String cp, Map<String, String> allParams, HttpServletRequest request) {
+    private ResponseEntity<Object> mutate(String table, Map<String, Object> body, String prefer, String cp, Map<String, List<String>> allParams, HttpServletRequest request) {
         var resolved = resolveContext(table, cp, request);
         if (resolved.refusal() != null) return resolved.refusal();
         var ctx = resolved.context();
+        var logic = refuseLogicGroups(allParams);
+        if (logic != null) return logic;
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return ResponseEntity.badRequest().body(errorBody(BAD_REQUEST, "At least one filter is required"));
 
@@ -513,7 +518,7 @@ public class RestApiController {
         }
     }
 
-    private ParsedParams parseSelectParams(String select, String order, Map<String, String> allParams) {
+    private ParsedParams parseSelectParams(String select, String order, Map<String, List<String>> allParams) {
         var selectResult = SelectParser.parse(select);
         return new ParsedParams(
             selectResult.columns(),
@@ -610,26 +615,50 @@ public class RestApiController {
 
     private Principal getPrincipal(HttpServletRequest request) { return (Principal) request.getAttribute(SecurityConstants.PRINCIPAL_ATTR); }
 
-    private List<RestQueryCompiler.FilterSpec> parseFilters(Map<String, String> allParams) {
+    /** The first value of {@code name}, or null: the parameters that take one value (select, order, limit). */
+    private static String first(Map<String, List<String>> params, String name) {
+        List<String> values = params.get(name);
+        return values == null || values.isEmpty() ? null : values.getFirst();
+    }
+
+    private List<RestQueryCompiler.FilterSpec> parseFilters(Map<String, List<String>> allParams) {
         List<RestQueryCompiler.FilterSpec> filters = new ArrayList<>();
         for (var entry : allParams.entrySet()) {
             if (RESERVED_PARAMS.contains(entry.getKey())) continue;
-            var parsed = FilterParser.parse(entry.getKey(), entry.getValue());
-            filters.add(new RestQueryCompiler.FilterSpec(parsed.column(), parsed.operator(), parsed.value(), parsed.negated()));
+            // Every value is a filter, ANDed: ?created=gte.X&created=lt.Y is a range.
+            for (String value : entry.getValue()) {
+                var parsed = FilterParser.parse(entry.getKey(), value);
+                filters.add(new RestQueryCompiler.FilterSpec(parsed.column(), parsed.operator(), parsed.value(), parsed.negated()));
+            }
         }
         return filters;
     }
 
-    /** Each of {@code or}, {@code and}, {@code not.or} and {@code not.and} present, as one logic group. */
-    private List<RestQueryCompiler.OrCondition> parseOrConditions(Map<String, String> allParams) {
+    /**
+     * A write is scoped by plain column filters only. An {@code or}/{@code and} param, whatever its value or
+     * count, is refused rather than dropped, which would let the write touch more rows than the request asked for.
+     */
+    private static ResponseEntity<Object> refuseLogicGroups(Map<String, List<String>> allParams) {
+        for (String name : LOGIC_PARAMS) {
+            if (allParams.containsKey(name)) {
+                return ResponseEntity.badRequest().body(errorBody(BAD_REQUEST,
+                        "'" + name + "' is not supported on PATCH, PUT or DELETE: filter by column"));
+            }
+        }
+        return null;
+    }
+
+    /** Every {@code or}, {@code and}, {@code not.or} and {@code not.and} param, each as one logic group; the groups are ANDed. */
+    private List<RestQueryCompiler.OrCondition> parseOrConditions(Map<String, List<String>> allParams) {
         List<RestQueryCompiler.OrCondition> groups = new ArrayList<>();
         for (String name : LOGIC_PARAMS) {
-            String value = allParams.get(name);
-            if (value == null || value.isBlank()) continue;
-            String grouped = value.trim().startsWith("(") ? value : "(" + value + ")";
             boolean negated = name.startsWith("not.");
             boolean and = name.endsWith("and");
-            groups.add(new RestQueryCompiler.OrCondition(toCompilerGroup(FilterParser.parseLogic(grouped, and, negated))));
+            for (String value : allParams.getOrDefault(name, List.of())) {
+                if (value == null || value.isBlank()) continue;
+                String grouped = value.trim().startsWith("(") ? value : "(" + value + ")";
+                groups.add(new RestQueryCompiler.OrCondition(toCompilerGroup(FilterParser.parseLogic(grouped, and, negated))));
+            }
         }
         return groups;
     }
