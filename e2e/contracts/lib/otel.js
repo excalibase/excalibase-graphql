@@ -21,12 +21,17 @@ function spansOfTrace(traceId) {
     .filter((span) => span.traceId === traceId);
 }
 
-/** Spans of one trace, once the collector has flushed them and no more arrive. */
+const SERVER = 2;
+
+/**
+ * Spans of one trace, once the collector has flushed them: the server span is there, which ends last and can
+ * land in a later export batch than the spans before it, and no more arrive.
+ */
 async function collectTrace(traceId, { minSpans = 1 } = {}) {
   let previous = -1;
   return waitUntil(() => {
     const spans = spansOfTrace(traceId);
-    const settled = spans.length >= minSpans && spans.length === previous;
+    const settled = spans.length >= minSpans && spans.some((span) => span.kind === SERVER) && spans.length === previous;
     previous = spans.length;
     return settled ? spans : null;
   }, { timeoutMs: 30000, intervalMs: 1500, label: `trace ${traceId}` });
