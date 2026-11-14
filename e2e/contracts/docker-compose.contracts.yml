@@ -10,6 +10,7 @@ x-engine-env: &engine-env
   APP_SECURITY_RLS_POLICY_URL: http://mock-vault:8080/api
   TENANT_DB_SSLMODE: disable
   APP_NATS_ENABLED: "true"
+  APP_NATS_ALLOW_UNTENANTED_REALTIME: "true"
   APP_NATS_URL: nats://nats:4222
   MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,metrics,prometheus
   MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"

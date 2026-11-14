@@ -125,7 +125,7 @@ class RequestMetricsIntegrationTest extends EngineIntegrationTest {
         assertThat(session.poll(Duration.ofSeconds(5))).contains("connection_ack");
         session.send("{\"type\":\"subscribe\",\"id\":\"s1\",\"payload\":"
                 + "{\"query\":\"subscription { publicProductsChanges { operation } }\"}}");
-        await().atMost(Duration.ofSeconds(5)).until(() -> subscriptionService.hasSubscribers(null, "public_products"));
+        await().atMost(Duration.ofSeconds(5)).until(() -> subscriptionService.hasSubscribers(null, "public.products"));
         return session;
     }
 }
