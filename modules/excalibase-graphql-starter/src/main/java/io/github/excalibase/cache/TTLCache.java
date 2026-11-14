@@ -104,7 +104,8 @@ public class TTLCache<K, V> {
      * evicted while it was being built is released through onEvict and built again, never kept.
      */
     public V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
-        for (int attempt = 1; ; attempt++) {
+        int rebuilds = 0;
+        while (true) {
             V cached = get(key);
             if (cached != null) return cached;
             Build<V> mine = new Build<>();
@@ -118,9 +119,11 @@ public class TTLCache<K, V> {
                 V value = get(key);
                 if (value == null) {
                     value = mappingFunction.apply(key);
-                    if (value != null && !keep(key, value, mine, attempt)) {
+                    if (value != null && !keep(key, value, mine)) {
                         mine.complete(value);
-                        continue;
+                        // Evicted again and again while being built: the last value is handed out, never cached.
+                        if (rebuilds++ < REBUILDS) continue;
+                        return value;
                     }
                 }
                 mine.complete(value);
@@ -135,18 +138,19 @@ public class TTLCache<K, V> {
     }
 
     /**
-     * Stores a freshly built value unless its key was evicted meanwhile. The check runs after the put as well:
-     * an evict marks the build before it touches the map, so one of the two sides always sees the other.
+     * Stores a freshly built value unless its key was evicted meanwhile, in which case it is released and false
+     * comes back. The check runs after the put as well: an evict marks the build before it touches the map, so
+     * one of the two sides always sees the other.
      */
-    private boolean keep(K key, V value, Build<V> build, int attempt) {
-        if (attempt < REBUILDS && build.stale) {
+    private boolean keep(K key, V value, Build<V> build) {
+        if (build.stale) {
             release(value);
             return false;
         }
         CacheEntry<V> entry = new CacheEntry<>(value, ttl);
         CacheEntry<V> previous = cache.put(key, entry);
         if (previous != null && onEvict != null) onEvict.accept(previous.getValue());
-        if (attempt < REBUILDS && build.stale) {
+        if (build.stale) {
             evictEntry(key, entry);
             return false;
         }

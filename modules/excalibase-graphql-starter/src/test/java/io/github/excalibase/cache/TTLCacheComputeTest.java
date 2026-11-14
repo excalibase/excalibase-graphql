@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
+import java.util.stream.IntStream;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -61,7 +64,7 @@ class TTLCacheComputeTest {
         CountDownLatch release = new CountDownLatch(1);
         ExecutorService pool = Executors.newFixedThreadPool(4);
         try {
-            List<Future<String>> callers = java.util.stream.IntStream.range(0, 4)
+            List<Future<String>> callers = IntStream.range(0, 4)
                     .mapToObj(i -> pool.submit(() -> cache.computeIfAbsent("key", key -> {
                         builds.incrementAndGet();
                         await(release);
@@ -94,7 +97,7 @@ class TTLCacheComputeTest {
     }
 
     /** Runs a build that is still going when {@code invalidate} fires, then lets it finish. */
-    private static void evictDuringBuild(java.util.function.Consumer<TTLCache<String, String>> invalidate,
+    private static void evictDuringBuild(Consumer<TTLCache<String, String>> invalidate,
                                          List<String> evicted) throws Exception {
         TTLCache<String, String> cache = new TTLCache<>(Duration.ofMinutes(1), evicted::add);
         CountDownLatch building = new CountDownLatch(1);
@@ -123,24 +126,44 @@ class TTLCacheComputeTest {
 
     @Test
     void aRemoveDuringABuildIsNotLost() throws Exception {
-        evictDuringBuild(cache -> cache.remove("schema"), new java.util.concurrent.CopyOnWriteArrayList<>());
+        evictDuringBuild(cache -> cache.remove("schema"), new CopyOnWriteArrayList<>());
     }
 
     @Test
     void aRemoveIfDuringABuildIsNotLost() throws Exception {
-        evictDuringBuild(cache -> cache.removeIf("schema"::equals), new java.util.concurrent.CopyOnWriteArrayList<>());
+        evictDuringBuild(cache -> cache.removeIf("schema"::equals), new CopyOnWriteArrayList<>());
     }
 
     @Test
     void aClearDuringABuildIsNotLost() throws Exception {
-        evictDuringBuild(TTLCache::clear, new java.util.concurrent.CopyOnWriteArrayList<>());
+        evictDuringBuild(TTLCache::clear, new CopyOnWriteArrayList<>());
     }
 
     @Test
     void aValueBuiltBeforeAnEvictIsReleasedThroughOnEvict() throws Exception {
-        List<String> evicted = new java.util.concurrent.CopyOnWriteArrayList<>();
+        List<String> evicted = new CopyOnWriteArrayList<>();
         evictDuringBuild(cache -> cache.remove("schema"), evicted);
         assertThat(evicted).contains("stale");
+    }
+
+    @Test
+    void aKeyEvictedDuringEveryBuildLeavesNothingCached() {
+        List<String> evicted = new CopyOnWriteArrayList<>();
+        TTLCache<String, String> cache = new TTLCache<>(Duration.ofMinutes(1), evicted::add);
+        AtomicInteger builds = new AtomicInteger();
+        try {
+            String served = cache.computeIfAbsent("p", key -> {
+                String built = "built-before-evict-" + builds.incrementAndGet();
+                cache.remove("p");
+                return built;
+            });
+            assertThat(served).startsWith("built-before-evict-");
+            assertThat(cache.get("p")).as("a value built across an evict is never kept").isNull();
+            assertThat(evicted).containsExactlyInAnyOrderElementsOf(
+                    IntStream.rangeClosed(1, builds.get()).mapToObj(i -> "built-before-evict-" + i).toList());
+        } finally {
+            cache.shutdown();
+        }
     }
 
     private static void await(CountDownLatch latch) {
