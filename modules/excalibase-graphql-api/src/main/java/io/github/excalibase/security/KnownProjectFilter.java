@@ -50,6 +50,7 @@ public class KnownProjectFilter extends OncePerRequestFilter {
             writeError(response, HttpServletResponse.SC_NOT_FOUND, "Project not found", "project_not_found");
             return;
         } catch (ProjectLookupThrottledException e) {
+            allowAnyOriginToRead(request, response);
             writeError(response, 429, "Too many project lookups", "project_lookup_throttled");
             return;
         } catch (ProjectWithoutDatabaseException e) {
@@ -65,6 +66,18 @@ public class KnownProjectFilter extends OncePerRequestFilter {
             request.setAttribute(KNOWN_PROJECT_ATTR, projectId);
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * This runs before the CORS filter, which would have to ask provisioning for the project's origins, and
+     * the throttle exists to keep that from happening. The refusal says nothing about any project, so any origin
+     * may read it: a browser then sees a 429 it can back off from instead of an opaque network error.
+     */
+    private static void allowAnyOriginToRead(HttpServletRequest request, HttpServletResponse response) {
+        response.addHeader("Vary", "Origin");
+        if (request.getHeader("Origin") != null) {
+            response.setHeader("Access-Control-Allow-Origin", "*");
+        }
     }
 
     private static void writeError(HttpServletResponse response, int status, String message, String code)
