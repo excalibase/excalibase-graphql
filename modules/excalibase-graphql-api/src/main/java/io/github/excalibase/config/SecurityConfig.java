@@ -45,8 +45,9 @@ public class SecurityConfig {
         // check, and neither lookup should reach provisioning on its behalf.
         http.addFilterBefore(new KnownProjectFilter(knownProjects, requestMetrics.getIfAvailable() != null),
                 CorsFilter.class);
-        // Before anything else looks at the request: an oversized body costs nothing to refuse.
-        http.addFilterBefore(new RequestBodyLimitFilter(maxBodyBytes.toBytes()), KnownProjectFilter.class);
+        // Right behind CORS, ahead of authentication: an oversized body costs nothing to refuse, and the refusal
+        // still carries the CORS vary headers.
+        http.addFilterAfter(new RequestBodyLimitFilter(maxBodyBytes.toBytes()), CorsFilter.class);
         if (jwtAuthFilter != null) {
             http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         }
