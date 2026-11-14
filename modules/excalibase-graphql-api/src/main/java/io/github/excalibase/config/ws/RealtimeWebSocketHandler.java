@@ -147,6 +147,10 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
 
     @SuppressWarnings("unchecked")
     private void handleSubscribe(WsSession session, Map<String, Object> msg) {
+        if (!runtime.isInitialised(session)) {
+            runtime.close(session, WsClose.UNAUTHORIZED);
+            return;
+        }
         String id = (String) msg.get("id");
         String collection = (String) msg.get("collection");
         String schema = (String) msg.getOrDefault("schema", null);
@@ -169,7 +173,8 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
         if (existing != null) existing.dispose();
 
         String tenantId = RealtimeGate.sinkTenant(session, wsAuthRequired);
-        if (jwtEnabled && wsAuthRequired && tenantId == null) {
+        boolean hasToken = session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY) != null;
+        if (jwtEnabled && wsAuthRequired && !hasToken) {
             sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
             return;
         }

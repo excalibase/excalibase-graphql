@@ -84,6 +84,12 @@ class WsSessionLimitsTest {
         handler.handleTextMessage(session, new TextMessage(json));
     }
 
+    private static void set(Object target, String field, boolean value) throws Exception {
+        java.lang.reflect.Field f = target.getClass().getDeclaredField(field);
+        f.setAccessible(true);
+        f.setBoolean(target, value);
+    }
+
     private static String subscribe(String id, String collection) {
         return "{\"type\":\"subscribe\",\"id\":\"" + id + "\",\"collection\":\"" + collection + "\"}";
     }
@@ -112,6 +118,7 @@ class WsSessionLimitsTest {
         List<String> sent = new ArrayList<>();
         WsSession session = session("p1", "1.1.1.1", sent);
         handler.afterConnectionEstablished(session);
+        runtime.initialised(session);
         send(handler, session, subscribe("a", "t1"));
         send(handler, session, subscribe("b", "t2"));
         send(handler, session, subscribe("c", "t3"));
@@ -134,15 +141,48 @@ class WsSessionLimitsTest {
         for (WsSession s : List.of(one, two, other)) {
             handler.afterConnectionEstablished(s);
         }
+        runtime.initialised(one);
         send(handler, one, subscribe("a", "t1"));
+        runtime.initialised(two);
         send(handler, two, subscribe("a", "t1"));
         send(handler, two, subscribe("b", "t2"));
+        runtime.initialised(other);
         send(handler, other, subscribe("a", "t1"));
         assertThat(sent).hasSize(1);
         assertThat(sent.get(0)).contains("Too many subscriptions for this project");
         handler.afterConnectionClosed(one, CloseStatus.NORMAL);
         send(handler, two, subscribe("b", "t2"));
         assertThat(sent).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("realtime: subscribe before connection_init closes the socket with 4401 and subscribes nothing")
+    void realtimeSubscribeBeforeInitIsRefused() throws Exception {
+        RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 8), Runnable::run);
+        WsSession session = session("p1", "1.1.1.1", new ArrayList<>());
+        handler.afterConnectionEstablished(session);
+        send(handler, session, subscribe("a", "notes"));
+        verify(session).close(new CloseStatus(4401, "connection_init_required"));
+        assertThat(subscriptions.hasSubscribers("p1", "public.notes")).isFalse();
+        assertThat(subscriptions.hasSubscribers(null, "public.notes")).isFalse();
+    }
+
+    @Test
+    @DisplayName("realtime: a tokenless subscribe is refused and gets no events when auth is required")
+    void realtimeTokenlessSubscribeGetsNothingWhenAuthRequired() throws Exception {
+        RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 8), Runnable::run);
+        set(handler, "jwtEnabled", true);
+        set(handler, "wsAuthRequired", true);
+        List<String> sent = new ArrayList<>();
+        WsSession session = session("p1", "1.1.1.1", sent);
+        handler.afterConnectionEstablished(session);
+        // initialised without a token (as a gateway-less deployment could reach), no tenant claim in the session
+        runtime.initialised(session);
+        send(handler, session, subscribe("a", "notes"));
+        subscriptions.publish("p1", new CDCEvent("INSERT", "public", "notes", "{\"id\":1}", 0L));
+        assertThat(sent).hasSize(1);
+        assertThat(sent.get(0)).contains("\"type\":\"error\"").contains("Unauthenticated");
+        assertThat(subscriptions.hasSubscribers("p1", "public.notes")).isFalse();
     }
 
     @Test
@@ -178,6 +218,7 @@ class WsSessionLimitsTest {
         WsSession stuck = session("p1", "1.1.1.1", new ArrayList<>());
         when(stuck.isBackedUp()).thenReturn(true);
         handler.afterConnectionEstablished(stuck);
+        runtime.initialised(stuck);
         send(handler, stuck, subscribe("a", "t"));
         for (int i = 0; i < 6; i++) {
             subscriptions.publish(null, new CDCEvent("INSERT", "public", "t", "{\"id\":" + i + "}", 0L));
@@ -192,6 +233,7 @@ class WsSessionLimitsTest {
         WsSession stuck = session("p1", "1.1.1.1", new ArrayList<>());
         when(stuck.isBackedUp()).thenReturn(true);
         handler.afterConnectionEstablished(stuck);
+        runtime.initialised(stuck);
         send(handler, stuck, subscribe("a", "t"));
         subscriptions.publish(null, new CDCEvent("INSERT", "public", "t", "{\"id\":1}", 0L));
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
@@ -218,7 +260,9 @@ class WsSessionLimitsTest {
         WsSession fast = session("p2", "2.2.2.2", fastSent);
         handler.afterConnectionEstablished(slow);
         handler.afterConnectionEstablished(fast);
+        runtime.initialised(slow);
         send(handler, slow, subscribe("a", "t"));
+        runtime.initialised(fast);
         send(handler, fast, subscribe("a", "t"));
 
         // p1 and p2 are different tenants only when routed by tenant; here both see the table, which is the worst case.
@@ -240,6 +284,7 @@ class WsSessionLimitsTest {
         List<String> sent = new ArrayList<>();
         WsSession session = session("p1", "1.1.1.1", sent);
         handler.afterConnectionEstablished(session);
+        runtime.initialised(session);
         send(handler, session, subscribe("a", "secret_x"));
         subscriptions.publish(null, new CDCEvent("INSERT", "public_secret", "x", "{\"id\":1}", 0L));
         assertThat(sent).isEmpty();

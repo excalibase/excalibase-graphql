@@ -35,7 +35,7 @@ public class WsRuntime implements ProjectCacheEvictor {
     private static final Logger log = LoggerFactory.getLogger(WsRuntime.class);
     static final String SESSION_CLIENT_KEY = "excalibase.clientAddress";
     private static final String ADMITTED_KEY = "excalibase.ws.admitted";
-    private static final String INITIALISED_KEY = "excalibase.ws.initialised";
+    static final String INITIALISED_KEY = "excalibase.ws.initialised";
     private static final String OUTBOX_KEY = "excalibase.ws.outbox";
     private static final String EXPIRY_KEY = "excalibase.ws.expiry";
 
