@@ -13,14 +13,14 @@ env:
 jobs:
   docker:
     name: Build & Push Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.workflow_run.conclusion == 'success')
     
     steps:
     - name: Checkout code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       
-    - name: Set up JDK 21 (if building from scratch)
+    - name: Set up JDK 25 (if building from scratch)
       if: github.event_name == 'push'
       uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
       with:
@@ -102,7 +102,7 @@ jobs:
 
   docker-native:
     name: Build & Push Native Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event.workflow_run.conclusion == 'success'
 
     steps:
@@ -137,6 +137,8 @@ jobs:
         tags: |
           type=raw,value=native-main,enable={{is_default_branch}}
           type=raw,value=native-${{ github.sha }}
+          type=raw,value=main-native
+          type=sha,prefix={{branch}}-,suffix=-native
 
     # Built into the local daemon and scanned before anything is pushed
     # (EXC-642); the push below is served from this build's cache.
