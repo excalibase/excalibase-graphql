@@ -63,7 +63,7 @@ class LookupThrottleHeadersIntegrationTest {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(429);
-        assertThat(response.headers().firstValue("access-control-allow-origin")).isPresent();
+        assertThat(response.headers().firstValue("access-control-allow-origin")).contains("https://app.example.com");
         assertThat(response.headers().firstValue("vary").orElse("")).contains("Origin");
         assertThat(response.headers().firstValue("x-content-type-options")).contains("nosniff");
     }
@@ -80,7 +80,7 @@ class LookupThrottleHeadersIntegrationTest {
                 HttpResponse.BodyHandlers.ofString());
 
         assertThat(response.statusCode()).isEqualTo(204);
-        assertThat(response.headers().firstValue("access-control-allow-origin")).contains("*");
+        assertThat(response.headers().firstValue("access-control-allow-origin")).contains("https://app.example.com");
         assertThat(response.headers().firstValue("access-control-allow-methods").orElse("")).contains("POST");
         assertThat(response.headers().firstValue("access-control-allow-headers")).contains("authorization");
         assertThat(response.headers().firstValue("access-control-max-age")).contains("0");
