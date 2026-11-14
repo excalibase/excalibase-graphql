@@ -15,7 +15,7 @@ class ClientAddressTest {
         assertThat(ClientAddress.lastForwarded("6.6.6.6, 203.0.113.9")).isEqualTo("203.0.113.9");
         assertThat(ClientAddress.lastForwarded("203.0.113.9")).isEqualTo("203.0.113.9");
         assertThat(ClientAddress.lastForwarded(" ")).isNull();
-        assertThat(ClientAddress.lastForwarded(null)).isNull();
+        assertThat(ClientAddress.lastForwarded((String) null)).isNull();
         assertThat(ClientAddress.lastForwarded("x".repeat(100))).isNull();
     }
 
@@ -58,5 +58,18 @@ class ClientAddressTest {
                 .isEqualTo(ClientAddress.of(from("10.0.0.6", "2001:db8:1:2:2::2")));
         assertThat(ClientAddress.of(from("203.0.113.9", null))).isEqualTo("203.0.113.9");
         assertThat(ClientAddress.of(from("10.0.0.5", "203.0.113.7"))).isEqualTo("203.0.113.7");
+    }
+
+    @Test
+    @DisplayName("with two X-Forwarded-For lines the proxy's own, the last, decides; the client's first line cannot")
+    void lastHeaderLineWins() throws Exception {
+        io.micronaut.http.MutableHttpRequest<?> real = io.micronaut.http.HttpRequest.GET("/p/graphql");
+        real.header("X-Forwarded-For", "6.6.6.6");
+        real.header("X-Forwarded-For", "203.0.113.9");
+        io.micronaut.http.HttpRequest<?> request = org.mockito.Mockito.mock(io.micronaut.http.HttpRequest.class);
+        org.mockito.Mockito.when(request.getHeaders()).thenReturn(real.getHeaders());
+        org.mockito.Mockito.when(request.getRemoteAddress())
+                .thenReturn(new java.net.InetSocketAddress(InetAddress.getByName("10.0.0.5"), 40000));
+        assertThat(ClientAddress.of(request)).isEqualTo("203.0.113.9");
     }
 }

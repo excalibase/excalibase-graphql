@@ -59,4 +59,14 @@ class ForwardedOriginTest {
         HttpRequest<?> request = from("10.0.0.5", "Host", "api.example.com", "X-Forwarded-Proto", "gopher");
         assertThat(CorsFilter.sameOrigin(request, "http://api.example.com")).isTrue();
     }
+
+    @Test
+    @DisplayName("with two forwarded lines the proxy's, the last, decides; the client's first line cannot")
+    void lastHeaderLineWins() throws Exception {
+        HttpRequest<?> request = from("10.0.0.5", "Host", "engine.internal",
+                "X-Forwarded-Proto", "http", "X-Forwarded-Proto", "https",
+                "X-Forwarded-Host", "evil.example", "X-Forwarded-Host", "api.example.com");
+        assertThat(CorsFilter.sameOrigin(request, "https://api.example.com")).isTrue();
+        assertThat(CorsFilter.sameOrigin(request, "https://evil.example")).isFalse();
+    }
 }

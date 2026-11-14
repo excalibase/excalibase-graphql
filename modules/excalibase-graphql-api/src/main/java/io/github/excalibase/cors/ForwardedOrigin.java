@@ -19,7 +19,7 @@ final class ForwardedOrigin {
 
     static String scheme(HttpRequest<?> request) {
         if (trusted(request)) {
-            String forwarded = ClientAddress.lastForwarded(request.getHeaders().get("X-Forwarded-Proto"));
+            String forwarded = ClientAddress.lastForwarded(request.getHeaders().getAll("X-Forwarded-Proto"));
             if (forwarded != null) {
                 String scheme = forwarded.toLowerCase(Locale.ROOT);
                 if (scheme.equals("http") || scheme.equals("https")) {
@@ -32,7 +32,7 @@ final class ForwardedOrigin {
 
     static String host(HttpRequest<?> request) {
         if (trusted(request)) {
-            String forwarded = ClientAddress.lastForwarded(request.getHeaders().get("X-Forwarded-Host"));
+            String forwarded = ClientAddress.lastForwarded(request.getHeaders().getAll("X-Forwarded-Host"));
             if (forwarded != null) {
                 return forwarded;
             }

@@ -22,7 +22,7 @@ public final class ClientAddress {
         InetSocketAddress remote = request.getRemoteAddress();
         InetAddress peer = remote == null ? null : remote.getAddress();
         if (peer != null && isInternal(peer)) {
-            String forwarded = lastForwarded(request.getHeaders().get(FORWARDED_FOR));
+            String forwarded = lastForwarded(request.getHeaders().getAll(FORWARDED_FOR));
             if (forwarded != null) {
                 return byPrefix(forwarded);
             }
@@ -51,6 +51,11 @@ public final class ClientAddress {
         } catch (java.net.UnknownHostException malformed) {
             return address;
         }
+    }
+
+    /** The last entry of the last header line: a proxy adds its own line, and the first line is the client's. */
+    public static String lastForwarded(java.util.List<String> lines) {
+        return lines == null || lines.isEmpty() ? null : lastForwarded(lines.get(lines.size() - 1));
     }
 
     public static String lastForwarded(String header) {
