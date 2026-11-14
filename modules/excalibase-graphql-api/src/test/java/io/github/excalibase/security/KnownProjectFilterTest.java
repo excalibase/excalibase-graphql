@@ -3,6 +3,7 @@ package io.github.excalibase.security;
 import io.github.excalibase.service.VaultCredentialException;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
+import io.micronaut.http.MutableHttpRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -39,6 +40,46 @@ class KnownProjectFilterTest {
             assertThat(response.code()).as(uri).isEqualTo(404);
             assertThat(body(response)).contains("\"code\":\"project_not_found\"");
         }
+    }
+
+    private static final KnownProjects THROTTLED = id -> {
+        throw new ProjectLookupThrottledException();
+    };
+
+    @Test
+    @DisplayName("a throttled lookup is a 429 a browser can read: any origin, and Vary")
+    void throttledLookupIsReadableByABrowser() {
+        MutableHttpRequest<?> request = HttpRequest.POST("/" + PROJECT + "/graphql", "")
+                .header("Origin", "https://app.example.com");
+
+        HttpResponse<?> response = new KnownProjectFilter(THROTTLED, false).filter(request);
+
+        assertThat(response.code()).isEqualTo(429);
+        assertThat(response.getHeaders().get("Access-Control-Allow-Origin")).isEqualTo("*");
+        assertThat(response.getHeaders().getAll("Vary")).contains("Origin");
+        assertThat(body(response)).contains("\"code\":\"project_lookup_throttled\"");
+    }
+
+    @Test
+    @DisplayName("a throttled preflight is answered here, without ever reaching the CORS lookup, and the real request still gets the 429")
+    void throttledPreflightIsAnsweredWithoutAnyLookup() {
+        MutableHttpRequest<?> preflight = HttpRequest.OPTIONS("/" + PROJECT + "/graphql")
+                .header("Origin", "https://app.example.com")
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "authorization,content-type");
+
+        HttpResponse<?> response = new KnownProjectFilter(THROTTLED, false).filter(preflight);
+
+        assertThat(response).isNotNull();
+        assertThat(response.code()).isEqualTo(204);
+        assertThat(response.getHeaders().get("Access-Control-Allow-Origin")).isEqualTo("*");
+        assertThat(response.getHeaders().getAll("Vary")).contains("Origin");
+        assertThat(response.getHeaders().get("Access-Control-Allow-Methods")).contains("POST").contains("DELETE");
+        assertThat(response.getHeaders().get("Access-Control-Allow-Headers")).isEqualTo("authorization,content-type");
+        assertThat(response.getHeaders().get("Access-Control-Max-Age")).isEqualTo("0");
+
+        HttpResponse<?> plain = new KnownProjectFilter(THROTTLED, false).filter(HttpRequest.OPTIONS("/" + PROJECT + "/graphql"));
+        assertThat(plain.code()).isEqualTo(429);
     }
 
     @Test

@@ -1,10 +1,13 @@
 package io.github.excalibase.security;
 
+import io.github.excalibase.cors.ProjectCorsConfigurationSource;
 import io.github.excalibase.service.VaultCredentialException;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.order.Ordered;
 import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpMethod;
 import io.micronaut.http.HttpResponse;
+import io.micronaut.http.MutableHttpResponse;
 import io.micronaut.http.HttpStatus;
 import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.annotation.RequestFilter;
@@ -59,7 +62,11 @@ public class KnownProjectFilter implements Ordered {
         } catch (UnknownProjectException e) {
             return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
         } catch (ProjectLookupThrottledException e) {
-            return FilterErrors.write(HttpStatus.TOO_MANY_REQUESTS, "Too many project lookups", "project_lookup_throttled");
+            if (isPreflight(request)) {
+                return answerPreflight(request);
+            }
+            return readableByAnyOrigin(request,
+                    FilterErrors.write(HttpStatus.TOO_MANY_REQUESTS, "Too many project lookups", "project_lookup_throttled"));
         } catch (ProjectWithoutDatabaseException e) {
             return FilterErrors.write(HttpStatus.CONFLICT, "Project has no database", "project_has_no_database");
         } catch (VaultCredentialException e) {
@@ -70,5 +77,43 @@ public class KnownProjectFilter implements Ordered {
             request.getAttributes().put(KNOWN_PROJECT_ATTR, projectId);
         }
         return null;
+    }
+
+    private static boolean isPreflight(HttpRequest<?> request) {
+        return request.getMethod() == HttpMethod.OPTIONS
+                && request.getHeaders().contains("Origin")
+                && request.getHeaders().contains("Access-Control-Request-Method");
+    }
+
+    /**
+     * This runs before the CORS filter, which would have to ask provisioning for the project's origins, and the
+     * throttle exists to keep that from happening. The refusal says nothing about any project, so any origin may
+     * read it: a browser then sees a 429 it can back off from instead of an opaque network error.
+     */
+    private static HttpResponse<String> readableByAnyOrigin(HttpRequest<?> request, HttpResponse<String> refusal) {
+        MutableHttpResponse<String> response = (MutableHttpResponse<String>) refusal;
+        response.header("Vary", "Origin");
+        if (request.getHeaders().contains("Origin")) {
+            response.header("Access-Control-Allow-Origin", "*");
+        }
+        return response;
+    }
+
+    /**
+     * A preflight for a project whose lookup is throttled is answered here, never passed on: the CORS filter would
+     * fetch the project's origins from provisioning, once per preflight, for an id nobody has vouched for. Any
+     * origin may then send the real request, which gets the readable 429 (or its real answer).
+     */
+    private static HttpResponse<?> answerPreflight(HttpRequest<?> request) {
+        MutableHttpResponse<?> response = HttpResponse.noContent()
+                .header("Vary", "Origin")
+                .header("Access-Control-Allow-Origin", "*")
+                .header("Access-Control-Allow-Methods", String.join(",", ProjectCorsConfigurationSource.ALLOWED_METHODS))
+                .header("Access-Control-Max-Age", "0");
+        String requested = request.getHeaders().get("Access-Control-Request-Headers");
+        if (requested != null) {
+            response.header("Access-Control-Allow-Headers", requested);
+        }
+        return response;
     }
 }
