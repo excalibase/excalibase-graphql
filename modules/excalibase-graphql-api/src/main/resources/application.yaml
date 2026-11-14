@@ -7,7 +7,7 @@ server:
     connection-timeout: 20000
     mbeanregistry:
       enabled: true  # tomcat.connections.* metrics show how close the connection bound is
-    max-http-form-post-size: 10MB
+    max-http-form-post-size: 8MB
     max-swallow-size: 10MB
     # PostgREST filters carry these unencoded (cs.{a,b}, in.("a,b")); without them Tomcat answers its own HTML 400.
     relaxed-query-chars: ['"', '<', '>', '[', '\', ']', '^', '`', '{', '|', '}']
@@ -72,6 +72,7 @@ app:
   project-id: ${APP_PROJECT_ID:}  # single-database mode: the one project this database serves (required); unset in multi-tenant mode
   database-type: postgres
   max-rows: 30
+  max-request-body: 8MB   # a bulk insert of 1000 rows is far smaller; more is a 413 before it is read (EXC-726)
   cap-nested-lists: false   # true: a nested list or REST embed without a limit is cut at max-rows, as a top-level list is
   max-query-depth: 15  # Reject queries nested beyond this depth (0 = unlimited)
   graphql:
