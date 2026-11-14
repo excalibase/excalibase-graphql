@@ -137,6 +137,8 @@ jobs:
         tags: |
           type=raw,value=native-main,enable={{is_default_branch}}
           type=raw,value=native-${{ github.sha }}
+          type=raw,value=main-native
+          type=sha,prefix={{branch}}-,suffix=-native
 
     # Built into the local daemon and scanned before anything is pushed
     # (EXC-642); the push below is served from this build's cache.
