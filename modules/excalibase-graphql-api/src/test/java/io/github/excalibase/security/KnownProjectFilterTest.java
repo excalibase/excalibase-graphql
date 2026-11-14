@@ -110,7 +110,7 @@ class KnownProjectFilterTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"null", "ftp://example.com", "https://", "example.com", "https://a.com/path",
-            "https://a.com?x=1", "https://user@a.com", "https://a.com#f", "https://a .com", "*", ""})
+            "https://a.com?x=1", "https://user@a.com", "https://a.com#f", "https://a .com", "*", "", "https:a.com", "https:", "http:/a", "https:///"})
     @DisplayName("a malformed, null or injected origin gets no Access-Control-Allow-Origin")
     void invalidOriginGetsNoAllowOrigin(String origin) {
         for (io.micronaut.http.HttpMethod method : new io.micronaut.http.HttpMethod[]{
