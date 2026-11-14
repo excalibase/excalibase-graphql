@@ -1,0 +1,763 @@
+{
+  "entries": [
+    {
+      "property": "server.port",
+      "default": "10000",
+      "envForms": [
+        "SERVER_PORT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "server.tomcat.threads.max",
+      "default": "200",
+      "envForms": [
+        "SERVER_TOMCAT_THREADS_MAX"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "server.tomcat.threads.min-spare",
+      "default": "10",
+      "envForms": [
+        "SERVER_TOMCAT_THREADS_MIN_SPARE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "server.tomcat.connection-timeout",
+      "default": "20000",
+      "envForms": [
+        "SERVER_TOMCAT_CONNECTION_TIMEOUT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "server.tomcat.max-http-form-post-size",
+      "default": "10MB",
+      "envForms": [
+        "SERVER_TOMCAT_MAX_HTTP_FORM_POST_SIZE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "server.tomcat.max-swallow-size",
+      "default": "10MB",
+      "envForms": [
+        "SERVER_TOMCAT_MAX_SWALLOW_SIZE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.threads.virtual.enabled",
+      "default": "true",
+      "envForms": [
+        "SPRING_THREADS_VIRTUAL_ENABLED"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.datasource.driver-class-name",
+      "default": "org.postgresql.Driver",
+      "envForms": [
+        "SPRING_DATASOURCE_DRIVER_CLASS_NAME"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.datasource.url",
+      "default": "${POSTGRES_URL:}",
+      "envForms": [
+        "POSTGRES_URL",
+        "SPRING_DATASOURCE_URL"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.datasource.username",
+      "default": "${POSTGRES_USER:}",
+      "envForms": [
+        "POSTGRES_USER",
+        "SPRING_DATASOURCE_USERNAME"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.datasource.password",
+      "default": "${POSTGRES_PASSWORD:}",
+      "envForms": [
+        "POSTGRES_PASSWORD",
+        "SPRING_DATASOURCE_PASSWORD"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.datasource.hikari.maximum-pool-size",
+      "default": "50",
+      "envForms": [
+        "SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.datasource.hikari.minimum-idle",
+      "default": "2",
+      "envForms": [
+        "SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.datasource.hikari.connection-timeout",
+      "default": "30000",
+      "envForms": [
+        "SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.datasource.hikari.idle-timeout",
+      "default": "600000",
+      "envForms": [
+        "SPRING_DATASOURCE_HIKARI_IDLE_TIMEOUT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "spring.datasource.hikari.max-lifetime",
+      "default": "1800000",
+      "envForms": [
+        "SPRING_DATASOURCE_HIKARI_MAX_LIFETIME"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "management.server.port",
+      "default": "8081",
+      "envForms": [
+        "MANAGEMENT_SERVER_PORT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "management.endpoints.web.exposure.include",
+      "default": "health,info,metrics",
+      "envForms": [
+        "MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "management.endpoint.health.show-details",
+      "default": "when-authorized",
+      "envForms": [
+        "MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "management.endpoint.health.probes.enabled",
+      "default": "",
+      "envForms": [
+        "MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED"
+      ],
+      "declaredIn": "boot"
+    },
+    {
+      "property": "management.health.db.enabled",
+      "default": "true",
+      "envForms": [
+        "MANAGEMENT_HEALTH_DB_ENABLED"
+      ],
+      "declaredIn": "boot"
+    },
+    {
+      "property": "management.tracing.sampling.probability",
+      "default": "${OTEL_TRACES_SAMPLER_ARG:1.0}",
+      "envForms": [
+        "MANAGEMENT_TRACING_SAMPLING_PROBABILITY",
+        "OTEL_TRACES_SAMPLER_ARG"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "management.otlp.metrics.export.step",
+      "default": "30s",
+      "envForms": [
+        "MANAGEMENT_OTLP_METRICS_EXPORT_STEP"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "management.otlp.metrics.export.url",
+      "default": "${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/metrics",
+      "envForms": [
+        "MANAGEMENT_OTLP_METRICS_EXPORT_URL",
+        "OTEL_EXPORTER_OTLP_ENDPOINT"
+      ],
+      "declaredIn": "processor"
+    },
+    {
+      "property": "management.otlp.tracing.endpoint",
+      "default": "${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces",
+      "envForms": [
+        "MANAGEMENT_OTLP_TRACING_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_ENDPOINT"
+      ],
+      "declaredIn": "processor"
+    },
+    {
+      "property": "management.otlp.logging.endpoint",
+      "default": "${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/logs",
+      "envForms": [
+        "MANAGEMENT_OTLP_LOGGING_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_ENDPOINT"
+      ],
+      "declaredIn": "processor"
+    },
+    {
+      "property": "excalibase.observability.level",
+      "default": "full",
+      "envForms": [
+        "EXCALIBASE_OBSERVABILITY_LEVEL"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.project-id",
+      "default": "",
+      "envForms": [
+        "APP_PROJECT_ID"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.database-type",
+      "default": "postgres",
+      "envForms": [
+        "APP_DATABASE_TYPE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.max-rows",
+      "default": "30",
+      "envForms": [
+        "APP_MAX_ROWS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.cap-nested-lists",
+      "default": "false",
+      "envForms": [
+        "APP_CAP_NESTED_LISTS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.max-request-body",
+      "default": "8MB",
+      "envForms": [
+        "APP_MAX_REQUEST_BODY"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.max-query-depth",
+      "default": "15",
+      "envForms": [
+        "APP_MAX_QUERY_DEPTH"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.graphql.parse-cache.heap-share",
+      "default": "0.02",
+      "envForms": [
+        "APP_GRAPHQL_PARSE_CACHE_HEAP_SHARE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.reserved-schemas",
+      "default": "",
+      "envForms": [
+        "APP_RESERVED_SCHEMAS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.overload.enabled",
+      "default": "true",
+      "envForms": [
+        "APP_OVERLOAD_ENABLED"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.overload.max-connections-per-cpu",
+      "default": "256",
+      "envForms": [
+        "APP_OVERLOAD_MAX_CONNECTIONS_PER_CPU"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.overload.accept-count-per-cpu",
+      "default": "256",
+      "envForms": [
+        "APP_OVERLOAD_ACCEPT_COUNT_PER_CPU"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.overload.max-keep-alive-requests",
+      "default": "20",
+      "envForms": [
+        "APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.overload.keep-alive-timeout-ms",
+      "default": "5000",
+      "envForms": [
+        "APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.websocket.max-per-project-percent",
+      "default": "25",
+      "envForms": [
+        "APP_WEBSOCKET_MAX_PER_PROJECT_PERCENT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.websocket.max-per-client-percent",
+      "default": "5",
+      "envForms": [
+        "APP_WEBSOCKET_MAX_PER_CLIENT_PERCENT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.websocket.init-timeout-seconds",
+      "default": "10",
+      "envForms": [
+        "APP_WEBSOCKET_INIT_TIMEOUT_SECONDS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.websocket.max-subscriptions-per-session",
+      "default": "20",
+      "envForms": [
+        "APP_WEBSOCKET_MAX_SUBSCRIPTIONS_PER_SESSION"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.websocket.max-subscriptions-per-project-per-cpu",
+      "default": "250",
+      "envForms": [
+        "APP_WEBSOCKET_MAX_SUBSCRIPTIONS_PER_PROJECT_PER_CPU"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.websocket.outbox-capacity",
+      "default": "256",
+      "envForms": [
+        "APP_WEBSOCKET_OUTBOX_CAPACITY"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.websocket.slow-consumer-seconds",
+      "default": "10",
+      "envForms": [
+        "APP_WEBSOCKET_SLOW_CONSUMER_SECONDS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.cache.schema-ttl-minutes",
+      "default": "30",
+      "envForms": [
+        "APP_CACHE_SCHEMA_TTL_MINUTES"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.hikari.tenant-pool-size",
+      "default": "5",
+      "envForms": [
+        "APP_HIKARI_TENANT_POOL_SIZE"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.cors.allowed-origins",
+      "default": "*",
+      "envForms": [
+        "APP_CORS_ALLOWED_ORIGINS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.cors.provisioning-url",
+      "default": "${app.security.rls.policy-url:}",
+      "envForms": [
+        "APP_CORS_PROVISIONING_URL"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.cors.ttl-ms",
+      "default": "30000",
+      "envForms": [
+        "APP_CORS_TTL_MS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.jwt-enabled",
+      "default": "true",
+      "envForms": [
+        "APP_SECURITY_JWT_ENABLED",
+        "JWT_ENABLED"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.insecure-dev-mode",
+      "default": "false",
+      "envForms": [
+        "APP_SECURITY_INSECURE_DEV_MODE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.auth.jwks-url",
+      "default": "",
+      "envForms": [
+        "APP_SECURITY_AUTH_JWKS_URL"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.auth.hmac-secret",
+      "default": "",
+      "envForms": [
+        "APP_SECURITY_AUTH_HMAC_SECRET"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.auth.jwks-ttl-minutes",
+      "default": "",
+      "envForms": [
+        "APP_SECURITY_AUTH_JWKS_TTL_MINUTES"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.security.auth.issuer",
+      "default": "",
+      "envForms": [
+        "APP_SECURITY_AUTH_ISSUER"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.security.auth.require-aud",
+      "default": "true",
+      "envForms": [
+        "APP_SECURITY_AUTH_REQUIRE_AUD",
+        "JWT_REQUIRE_AUD"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.auth.aud-prefix",
+      "default": "excalibase:",
+      "envForms": [
+        "APP_SECURITY_AUTH_AUD_PREFIX",
+        "AUTH_AUD_PREFIX"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.multi-tenant.provisioning-url",
+      "default": "",
+      "envForms": [
+        "APP_SECURITY_MULTI_TENANT_PROVISIONING_URL",
+        "PROVISIONING_URL"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.multi-tenant.provisioning-pat",
+      "default": "",
+      "envForms": [
+        "APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT",
+        "PROVISIONING_PAT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.multi-tenant.provisioning-pat-file",
+      "default": "",
+      "envForms": [
+        "APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT_FILE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.multi-tenant.unknown-project-cache.max-entries",
+      "default": "10000",
+      "envForms": [
+        "APP_SECURITY_MULTI_TENANT_UNKNOWN_PROJECT_CACHE_MAX_ENTRIES"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.multi-tenant.unknown-project-cache.ttl-seconds",
+      "default": "30",
+      "envForms": [
+        "APP_SECURITY_MULTI_TENANT_UNKNOWN_PROJECT_CACHE_TTL_SECONDS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.multi-tenant.lookup-rate-per-second",
+      "default": "50",
+      "envForms": [
+        "APP_SECURITY_MULTI_TENANT_LOOKUP_RATE_PER_SECOND"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.security.permissions.max-stale-ms",
+      "default": "300000",
+      "envForms": [
+        "APP_SECURITY_PERMISSIONS_MAX_STALE_MS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.permissions.retry-interval-ms",
+      "default": "2000",
+      "envForms": [
+        "APP_SECURITY_PERMISSIONS_RETRY_INTERVAL_MS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.security.rls.policy-url",
+      "default": "",
+      "envForms": [
+        "APP_SECURITY_RLS_POLICY_URL"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.security.rls.policy-pat",
+      "default": "${app.security.multi-tenant.provisioning-pat:}",
+      "envForms": [
+        "APP_SECURITY_RLS_POLICY_PAT"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.security.rls.policy-pat-file",
+      "default": "${app.security.multi-tenant.provisioning-pat-file:}",
+      "envForms": [
+        "APP_SECURITY_RLS_POLICY_PAT_FILE"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.security.rls.policy-ttl-ms",
+      "default": "30000",
+      "envForms": [
+        "APP_SECURITY_RLS_POLICY_TTL_MS"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.tenant-db.sslmode",
+      "default": "verify-full",
+      "envForms": [
+        "APP_TENANT_DB_SSLMODE",
+        "TENANT_DB_SSLMODE"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.tenant-db.read-timeout-seconds",
+      "default": "60",
+      "envForms": [
+        "APP_TENANT_DB_READ_TIMEOUT_SECONDS",
+        "TENANT_DB_READ_TIMEOUT_SECONDS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.request-metrics.enabled",
+      "default": "false",
+      "envForms": [
+        "APP_REQUEST_METRICS_ENABLED"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.request-metrics.port",
+      "default": "9464",
+      "envForms": [
+        "APP_REQUEST_METRICS_PORT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.request-metrics.address",
+      "default": "",
+      "envForms": [
+        "APP_REQUEST_METRICS_ADDRESS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.request-metrics.max-projects",
+      "default": "1000",
+      "envForms": [
+        "APP_REQUEST_METRICS_MAX_PROJECTS"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.nats.enabled",
+      "default": "false",
+      "envForms": [
+        "APP_NATS_ENABLED"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.nats.url",
+      "default": "nats://localhost:4222",
+      "envForms": [
+        "APP_NATS_URL"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.nats.stream-name",
+      "default": "CDC",
+      "envForms": [
+        "APP_NATS_STREAM_NAME"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.nats.subject-prefix",
+      "default": "cdc",
+      "envForms": [
+        "APP_NATS_SUBJECT_PREFIX"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.nats.tenant-in-subject",
+      "default": "false",
+      "envForms": [
+        "APP_NATS_TENANT_IN_SUBJECT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.nats.allow-untenanted-realtime",
+      "default": "false",
+      "envForms": [
+        "APP_NATS_ALLOW_UNTENANTED_REALTIME"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.nats.resubscribe-interval",
+      "default": "5s",
+      "envForms": [
+        "APP_NATS_RESUBSCRIBE_INTERVAL"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "app.nats.username",
+      "default": "",
+      "envForms": [
+        "APP_NATS_USERNAME"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.nats.password",
+      "default": "",
+      "envForms": [
+        "APP_NATS_PASSWORD"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.nats.inbox-prefix",
+      "default": "",
+      "envForms": [
+        "APP_NATS_INBOX_PREFIX"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "app.websocket.heartbeat-seconds",
+      "default": "25",
+      "envForms": [
+        "APP_WEBSOCKET_HEARTBEAT_SECONDS"
+      ],
+      "declaredIn": "code"
+    },
+    {
+      "property": "logging.structured.format.console",
+      "default": "ecs",
+      "envForms": [
+        "LOGGING_STRUCTURED_FORMAT_CONSOLE",
+        "LOG_FORMAT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "logging.level.root",
+      "default": "${log.level.root:info}",
+      "envForms": [
+        "LOGGING_LEVEL_ROOT"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "logging.level.org.springframework",
+      "default": "${log.level.spring:info}",
+      "envForms": [
+        "LOGGING_LEVEL_ORG_SPRINGFRAMEWORK"
+      ],
+      "declaredIn": "yaml"
+    },
+    {
+      "property": "logging.level.io.github.excalibase",
+      "default": "${log.level.app:info}",
+      "envForms": [
+        "LOGGING_LEVEL_IO_GITHUB_EXCALIBASE"
+      ],
+      "declaredIn": "yaml"
+    }
+  ]
+}

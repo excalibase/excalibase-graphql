@@ -1,0 +1,1068 @@
+{
+  "graphql without token runs as anon": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": {
+        "__typename": "Query"
+      }
+    }
+  },
+  "bad token": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Invalid or expired token",
+          "extensions": {
+            "code": "invalid_token"
+          }
+        }
+      ]
+    }
+  },
+  "token signed with another key": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Invalid or expired token",
+          "extensions": {
+            "code": "invalid_token"
+          }
+        }
+      ]
+    }
+  },
+  "expired token": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Invalid or expired token",
+          "extensions": {
+            "code": "invalid_token"
+          }
+        }
+      ]
+    }
+  },
+  "token for another project": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Invalid or expired token",
+          "extensions": {
+            "code": "aud_mismatch"
+          }
+        }
+      ]
+    }
+  },
+  "refresh token": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Invalid or expired token",
+          "extensions": {
+            "code": "refresh_token_not_accepted"
+          }
+        }
+      ]
+    }
+  },
+  "role the token may not act as": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Role not allowed",
+          "extensions": {
+            "code": "role_not_allowed"
+          }
+        }
+      ]
+    }
+  },
+  "anon asking for another role": {
+    "status": 403,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Role not allowed",
+          "extensions": {
+            "code": "role_not_allowed"
+          }
+        }
+      ]
+    }
+  },
+  "rest bad token": {
+    "status": 401,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Invalid or expired token",
+          "extensions": {
+            "code": "invalid_token"
+          }
+        }
+      ]
+    }
+  },
+  "unknown project": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Project not found",
+          "extensions": {
+            "code": "project_not_found"
+          }
+        }
+      ]
+    }
+  },
+  "unknown project rest": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Project not found",
+          "extensions": {
+            "code": "project_not_found"
+          }
+        }
+      ]
+    }
+  },
+  "plain get on an unknown project graphql path": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json;charset=ISO-8859-1",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Project not found",
+          "extensions": {
+            "code": "project_not_found"
+          }
+        }
+      ]
+    }
+  },
+  "plain get on a known project graphql path": {
+    "status": 405,
+    "headers": {
+      "content-type": "application/json",
+      "allow": "POST",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 405,
+      "error": "Method Not Allowed",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "trace method": {
+    "status": 400,
+    "headers": {
+      "allow": "HEAD, DELETE, POST, GET, OPTIONS, PUT"
+    },
+    "body": ""
+  },
+  "custom method": {
+    "status": 400,
+    "headers": {},
+    "body": ""
+  },
+  "custom method on rest": {
+    "status": 400,
+    "headers": {},
+    "body": ""
+  },
+  "encoded line feed in a path": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/rpc/x%0ay"
+    }
+  },
+  "encoded carriage return in a path": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/rpc/x%0Dy"
+    }
+  },
+  "encoded line separator in a path": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/rpc/x%E2%80%A8y"
+    }
+  },
+  "encoded paragraph separator in a path": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/rpc/x%e2%80%a9y"
+    }
+  },
+  "unscoped graphql": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/graphql"
+    }
+  },
+  "trailing slash graphql": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/e2e-test/graphql/"
+    }
+  },
+  "unknown path": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/"
+    }
+  },
+  "actuator is not on the public port": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/actuator/health"
+    }
+  },
+  "graphql query": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": {
+        "hanaCustomer": [
+          {
+            "customer_id": 1,
+            "first_name": "MARY"
+          }
+        ]
+      }
+    }
+  },
+  "graphql unknown field": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Unknown field(s): nope"
+        }
+      ]
+    }
+  },
+  "graphql syntax error": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Invalid syntax with offending token '<EOF>' at line 1 column 18"
+        }
+      ]
+    }
+  },
+  "graphql too deep": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Query depth 22 exceeds maximum allowed depth of 15"
+        }
+      ]
+    }
+  },
+  "graphql missing query": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "errors": [
+        {
+          "message": "Missing or invalid 'query' field"
+        }
+      ]
+    }
+  },
+  "graphql malformed json": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "graphql get": {
+    "status": 405,
+    "headers": {
+      "content-type": "application/json",
+      "allow": "POST",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 405,
+      "error": "Method Not Allowed",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "graphql text/plain": {
+    "status": 415,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 415,
+      "error": "Unsupported Media Type",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "graphql json body of 12 MiB": {
+    "status": 413,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 413,
+      "error": "Payload Too Large",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "graphql json body just under 8 MB": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": {
+        "__typename": "Query"
+      }
+    }
+  },
+  "graphql form body of 12 MiB": {
+    "status": 413,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 413,
+      "error": "Payload Too Large",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "graphql request header of 70 KB": {
+    "status": 400,
+    "headers": {
+      "content-type": "text/html;charset=utf-8"
+    },
+    "body": "<html: HTTP Status 400 \u2013 Bad Request>"
+  },
+  "rest read": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": [
+        {
+          "customer_id": 1,
+          "first_name": "MARY"
+        },
+        {
+          "customer_id": 2,
+          "first_name": "PATRICIA"
+        }
+      ]
+    }
+  },
+  "rest read as user": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": [
+        {
+          "customer_id": 1
+        }
+      ]
+    }
+  },
+  "rest read as anon": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": [
+        {
+          "customer_id": 1
+        }
+      ]
+    }
+  },
+  "rest unknown table": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "code": "not_found",
+      "message": "Not found",
+      "error": "Not found"
+    }
+  },
+  "rest bad filter value": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "code": "invalid_value",
+      "message": "Invalid value for column 'customer_id' of hana.customer: \"bogus\" is not an integer",
+      "error": "Invalid value for column 'customer_id' of hana.customer: \"bogus\" is not an integer",
+      "column": "customer_id"
+    }
+  },
+  "rest unknown filter column": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "code": "bad_request",
+      "message": "Unknown column 'nope' on hana.customer",
+      "error": "Unknown column 'nope' on hana.customer"
+    }
+  },
+  "rest unknown rpc": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "code": "not_found",
+      "message": "Not found",
+      "error": "Not found"
+    }
+  },
+  "rest rpc name that is not an identifier": {
+    "status": 500,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 500,
+      "error": "Internal Server Error",
+      "path": "/e2e-test/api/v1/rpc/a.b.c"
+    }
+  },
+  "rest rpc name with a space": {
+    "status": 500,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 500,
+      "error": "Internal Server Error",
+      "path": "/e2e-test/api/v1/rpc/bad%20name"
+    }
+  },
+  "rest rpc name with a semicolon": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/rpc/no-such;fn"
+    }
+  },
+  "rest delete without filter": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "code": "bad_request",
+      "message": "At least one filter is required",
+      "error": "At least one filter is required"
+    }
+  },
+  "rest value too long": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "code": "invalid_value",
+      "message": "value too long for type character varying(45)",
+      "error": "value too long for type character varying(45)"
+    }
+  },
+  "rest body of 12 MiB": {
+    "status": 413,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 413,
+      "error": "Payload Too Large",
+      "path": "/e2e-test/api/v1/customer"
+    }
+  },
+  "unencoded braces and quotes": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": []
+    }
+  },
+  "unencoded braces in cs": {
+    "status": 500,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "error": "Query execution failed",
+      "code": "internal_error"
+    }
+  },
+  "unencoded pipe backtick caret": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": []
+    }
+  },
+  "malformed percent escape": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": [
+        {
+          "customer_id": 1
+        }
+      ]
+    }
+  },
+  "matrix parameter in path": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/customer;x=1"
+    }
+  },
+  "path traversal": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "/e2e-test/api/v1/../graphql"
+    }
+  },
+  "encoded slash in path": {
+    "status": 400,
+    "headers": {
+      "content-type": "text/html;charset=utf-8"
+    },
+    "body": "<html: HTTP Status 400 \u2013 Bad Request>"
+  },
+  "double slash prefix": {
+    "status": 400,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 400,
+      "error": "Bad Request",
+      "path": "//e2e-test/graphql"
+    }
+  },
+  "rest vendor object json one row": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.pgrst.object+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "customer_id": 1
+    }
+  },
+  "rest vendor object json many rows": {
+    "status": 406,
+    "headers": {
+      "content-type": "application/vnd.pgrst.object+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "code": "not_acceptable",
+      "message": "Expected 1 row, got 2",
+      "error": "Expected 1 row, got 2"
+    }
+  },
+  "rest csv": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/csv",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": "customer_id,first_name\n\"1\",\"MARY\"\n\"2\",\"PATRICIA\"\n"
+  },
+  "rest openapi": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/openapi+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "openapi": "3.0.3",
+      "info": {
+        "title": "Excalibase REST API",
+        "description": "Auto-generated from database schema",
+        "version": "1.0.0"
+      },
+      "servers": [
+        {
+          "variables": {
+            "projectId": {
+              "description": "Project identifier \u2014 the single path segment your token is scoped to",
+              "default": "your-project-id"
+            }
+          },
+          "url": "/{projectId}/api/v1"
+        }
+      ],
+      "paths": [
+        "/active_employees",
+        "/audit_log",
+        "/comment",
+        "/company",
+        "/config_a",
+        "/config_b",
+        "/department",
+        "/document",
+        "/employee",
+        "/order",
+        "/project",
+        "/project_member",
+        "/project_summary",
+        "/task",
+        "/task_overview",
+        "/team"
+      ]
+    }
+  },
+  "rest root as plain json": {
+    "status": 406,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 406,
+      "error": "Not Acceptable",
+      "path": "/e2e-test/api/v1"
+    }
+  },
+  "rest count exact": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "content-range": "0-0/4",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "data": [
+        {
+          "customer_id": 1
+        }
+      ],
+      "pagination": {
+        "offset": 0,
+        "total": 4,
+        "limit": 1
+      }
+    }
+  },
+  "rest head": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": ""
+  }
+}

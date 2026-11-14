@@ -1,0 +1,165 @@
+{
+  "/actuator": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": [
+      "health",
+      "health-path",
+      "info",
+      "metrics",
+      "metrics-requiredMetricName",
+      "prometheus",
+      "self"
+    ]
+  },
+  "/actuator/health": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "status": "UP",
+      "groups": [
+        "liveness",
+        "readiness"
+      ]
+    }
+  },
+  "/actuator/health/liveness": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "status": "UP"
+    }
+  },
+  "/actuator/health/readiness": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "status": "UP"
+    }
+  },
+  "/actuator/info": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {}
+  },
+  "/actuator/env": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/actuator/env"
+    }
+  },
+  "/actuator/beans": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/actuator/beans"
+    }
+  },
+  "/actuator/loggers": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/actuator/loggers"
+    }
+  },
+  "/health": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/health"
+    }
+  },
+  "/": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/"
+    }
+  }
+}

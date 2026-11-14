@@ -1,0 +1,543 @@
+{
+  "application_ready_time_seconds": [
+    "main_application_class"
+  ],
+  "application_started_time_seconds": [
+    "main_application_class"
+  ],
+  "disk_free_bytes": [
+    "path"
+  ],
+  "disk_total_bytes": [
+    "path"
+  ],
+  "excalibase_permissions_stale_seconds": [
+    "project"
+  ],
+  "graphql_request_active_seconds_count": [
+    "operation_type"
+  ],
+  "graphql_request_active_seconds_max": [
+    "operation_type"
+  ],
+  "graphql_request_active_seconds_sum": [
+    "operation_type"
+  ],
+  "graphql_request_errors_total": [
+    "operation_type"
+  ],
+  "graphql_request_seconds_count": [
+    "error",
+    "operation_type"
+  ],
+  "graphql_request_seconds_max": [
+    "error",
+    "operation_type"
+  ],
+  "graphql_request_seconds_sum": [
+    "error",
+    "operation_type"
+  ],
+  "hikaricp_connections": [
+    "pool"
+  ],
+  "hikaricp_connections_acquire_seconds_count": [
+    "pool"
+  ],
+  "hikaricp_connections_acquire_seconds_max": [
+    "pool"
+  ],
+  "hikaricp_connections_acquire_seconds_sum": [
+    "pool"
+  ],
+  "hikaricp_connections_active": [
+    "pool"
+  ],
+  "hikaricp_connections_creation_seconds_count": [
+    "pool"
+  ],
+  "hikaricp_connections_creation_seconds_max": [
+    "pool"
+  ],
+  "hikaricp_connections_creation_seconds_sum": [
+    "pool"
+  ],
+  "hikaricp_connections_idle": [
+    "pool"
+  ],
+  "hikaricp_connections_max": [
+    "pool"
+  ],
+  "hikaricp_connections_min": [
+    "pool"
+  ],
+  "hikaricp_connections_pending": [
+    "pool"
+  ],
+  "hikaricp_connections_timeout_total": [
+    "pool"
+  ],
+  "hikaricp_connections_usage_seconds_count": [
+    "pool"
+  ],
+  "hikaricp_connections_usage_seconds_max": [
+    "pool"
+  ],
+  "hikaricp_connections_usage_seconds_sum": [
+    "pool"
+  ],
+  "http_server_requests_active_seconds_count": [
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_active_seconds_max": [
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_active_seconds_sum": [
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_seconds_count": [
+    "error",
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_seconds_max": [
+    "error",
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_seconds_sum": [
+    "error",
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "jvm_buffer_count_buffers": [
+    "id"
+  ],
+  "jvm_buffer_memory_used_bytes": [
+    "id"
+  ],
+  "jvm_buffer_total_capacity_bytes": [
+    "id"
+  ],
+  "jvm_classes_loaded_classes": [],
+  "jvm_classes_unloaded_classes_total": [],
+  "jvm_compilation_time_ms_total": [
+    "compiler"
+  ],
+  "jvm_gc_concurrent_phase_time_seconds_count": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_concurrent_phase_time_seconds_max": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_concurrent_phase_time_seconds_sum": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_live_data_size_bytes": [],
+  "jvm_gc_max_data_size_bytes": [],
+  "jvm_gc_memory_allocated_bytes_total": [],
+  "jvm_gc_memory_promoted_bytes_total": [],
+  "jvm_gc_overhead": [],
+  "jvm_gc_pause_seconds_count": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_pause_seconds_max": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_pause_seconds_sum": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_info": [
+    "runtime",
+    "vendor",
+    "version"
+  ],
+  "jvm_memory_committed_bytes": [
+    "area",
+    "id"
+  ],
+  "jvm_memory_max_bytes": [
+    "area",
+    "id"
+  ],
+  "jvm_memory_usage_after_gc": [
+    "area",
+    "pool"
+  ],
+  "jvm_memory_used_bytes": [
+    "area",
+    "id"
+  ],
+  "jvm_threads_daemon_threads": [],
+  "jvm_threads_live_threads": [],
+  "jvm_threads_peak_threads": [],
+  "jvm_threads_started_threads_total": [],
+  "jvm_threads_states_threads": [
+    "state"
+  ],
+  "logback_events_total": [
+    "level"
+  ],
+  "process_cpu_time_ns_total": [],
+  "process_cpu_usage": [],
+  "process_files_max_files": [],
+  "process_files_open_files": [],
+  "process_start_time_seconds": [],
+  "process_uptime_seconds": [],
+  "spring_security_authorizations_active_seconds_count": [
+    "spring_security_authentication_type",
+    "spring_security_authorization_decision",
+    "spring_security_object"
+  ],
+  "spring_security_authorizations_active_seconds_max": [
+    "spring_security_authentication_type",
+    "spring_security_authorization_decision",
+    "spring_security_object"
+  ],
+  "spring_security_authorizations_active_seconds_sum": [
+    "spring_security_authentication_type",
+    "spring_security_authorization_decision",
+    "spring_security_object"
+  ],
+  "spring_security_authorizations_seconds_count": [
+    "error",
+    "spring_security_authentication_type",
+    "spring_security_authorization_decision",
+    "spring_security_object"
+  ],
+  "spring_security_authorizations_seconds_max": [
+    "error",
+    "spring_security_authentication_type",
+    "spring_security_authorization_decision",
+    "spring_security_object"
+  ],
+  "spring_security_authorizations_seconds_sum": [
+    "error",
+    "spring_security_authentication_type",
+    "spring_security_authorization_decision",
+    "spring_security_object"
+  ],
+  "spring_security_filterchains_access_exceptions_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_access_exceptions_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_active_seconds_count": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_active_seconds_max": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_active_seconds_sum": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_authentication_anonymous_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_authentication_anonymous_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_authorization_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_authorization_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_context_async_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_context_async_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_context_holder_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_context_holder_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_context_servlet_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_context_servlet_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_cors_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_cors_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_header_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_header_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_JwtAuthFilter_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_JwtAuthFilter_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_KnownProjectFilter_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_KnownProjectFilter_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_logout_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_logout_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_requestcache_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_requestcache_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_seconds_count": [
+    "error",
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_seconds_max": [
+    "error",
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_seconds_sum": [
+    "error",
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_session_urlencoding_after_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_filterchains_session_urlencoding_before_total": [
+    "spring_security_filterchain_position",
+    "spring_security_filterchain_size",
+    "spring_security_reached_filter_name",
+    "spring_security_reached_filter_section"
+  ],
+  "spring_security_http_secured_requests_active_seconds_count": [],
+  "spring_security_http_secured_requests_active_seconds_max": [],
+  "spring_security_http_secured_requests_active_seconds_sum": [],
+  "spring_security_http_secured_requests_seconds_count": [
+    "error"
+  ],
+  "spring_security_http_secured_requests_seconds_max": [
+    "error"
+  ],
+  "spring_security_http_secured_requests_seconds_sum": [
+    "error"
+  ],
+  "system_cpu_count": [],
+  "system_cpu_usage": [],
+  "system_load_average_1m": [],
+  "tomcat_cache_access_total": [],
+  "tomcat_cache_hit_total": [],
+  "tomcat_connections_config_max_connections": [
+    "name"
+  ],
+  "tomcat_connections_current_connections": [
+    "name"
+  ],
+  "tomcat_connections_keepalive_current_connections": [
+    "name"
+  ],
+  "tomcat_global_error_total": [
+    "name"
+  ],
+  "tomcat_global_received_bytes_total": [
+    "name"
+  ],
+  "tomcat_global_request_max_seconds": [
+    "name"
+  ],
+  "tomcat_global_request_seconds_count": [
+    "name"
+  ],
+  "tomcat_global_request_seconds_sum": [
+    "name"
+  ],
+  "tomcat_global_sent_bytes_total": [
+    "name"
+  ],
+  "tomcat_servlet_error_total": [
+    "name"
+  ],
+  "tomcat_servlet_request_max_seconds": [
+    "name"
+  ],
+  "tomcat_servlet_request_seconds_count": [
+    "name"
+  ],
+  "tomcat_servlet_request_seconds_sum": [
+    "name"
+  ],
+  "tomcat_sessions_active_current_sessions": [],
+  "tomcat_sessions_active_max_sessions": [],
+  "tomcat_sessions_alive_max_seconds": [],
+  "tomcat_sessions_created_sessions_total": [],
+  "tomcat_sessions_expired_sessions_total": [],
+  "tomcat_sessions_rejected_sessions_total": [],
+  "tomcat_threads_busy_threads": [
+    "name"
+  ],
+  "tomcat_threads_config_max_threads": [
+    "name"
+  ],
+  "tomcat_threads_current_threads": [
+    "name"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "up": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "status": "UP"
+    }
+  },
+  "down": {
+    "status": 503,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "status": "DOWN"
+    }
+  },
+  "livenessWhileDown": {
+    "status": 404,
+    "headers": {
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": ""
+  },
+  "recovered": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "status": "UP"
+    }
+  }
+}
