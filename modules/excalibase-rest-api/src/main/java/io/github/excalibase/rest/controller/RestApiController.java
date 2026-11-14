@@ -675,8 +675,7 @@ public class RestApiController {
      */
     private static HttpResponse<Object> refuseLogicGroups(Map<String, List<String>> allParams) {
         for (String name : LOGIC_PARAMS) {
-            String value = first(allParams, name);
-            if (value != null && !value.isBlank()) {
+            if (allParams.containsKey(name)) {
                 return Reply.badRequest().body(errorBody(BAD_REQUEST,
                         "'" + name + "' is not supported on PATCH, PUT or DELETE: filter by column"));
             }
@@ -684,16 +683,17 @@ public class RestApiController {
         return null;
     }
 
-    /** Each of {@code or}, {@code and}, {@code not.or} and {@code not.and} present, as one logic group. */
+    /** Every {@code or}, {@code and}, {@code not.or} and {@code not.and} param, each as one logic group; the groups are ANDed. */
     private List<RestQueryCompiler.OrCondition> parseOrConditions(Map<String, List<String>> allParams) {
         List<RestQueryCompiler.OrCondition> groups = new ArrayList<>();
         for (String name : LOGIC_PARAMS) {
-            String value = first(allParams, name);
-            if (value == null || value.isBlank()) continue;
-            String grouped = value.trim().startsWith("(") ? value : "(" + value + ")";
             boolean negated = name.startsWith("not.");
             boolean and = name.endsWith("and");
-            groups.add(new RestQueryCompiler.OrCondition(toCompilerGroup(FilterParser.parseLogic(grouped, and, negated))));
+            for (String value : allParams.getOrDefault(name, List.of())) {
+                if (value == null || value.isBlank()) continue;
+                String grouped = value.trim().startsWith("(") ? value : "(" + value + ")";
+                groups.add(new RestQueryCompiler.OrCondition(toCompilerGroup(FilterParser.parseLogic(grouped, and, negated))));
+            }
         }
         return groups;
     }

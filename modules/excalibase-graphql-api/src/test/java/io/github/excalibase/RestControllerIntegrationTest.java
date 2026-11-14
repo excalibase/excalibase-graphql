@@ -535,6 +535,21 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("DELETE with a repeated or= whose first value is empty is refused and deletes nothing")
+    void deleteWithRepeatedOrGroupIsRefused() throws Exception {
+      // rolled back, so a request that is wrongly run cannot hurt the rows the other tests read
+      String[] rollback = {"Prefer", "tx=rollback"};
+      http.delete(BASE + "/tags?entity_id=gte.0&or=&or=(tag.eq.popular)", rollback)
+          .expect(status().isBadRequest())
+          .expect(jsonPath("$.error", containsString("or")));
+      http.delete(BASE + "/tags?entity_id=gte.0&or=", rollback)
+          .expect(status().isBadRequest());
+      http.delete(BASE + "/tags?entity_id=gte.0&not.or=&and=(tag.eq.popular)", rollback)
+          .expect(status().isBadRequest());
+      http.get(BASE + "/tags").expect(status().isOk()).expect(jsonPath("$.data", hasSize(4)));
+    }
+
+    @Test
     @DisplayName("PATCH with an and= group is refused, not run with the group dropped")
     void patchWithAndGroupIsRefused() throws Exception {
       http.send("PATCH", BASE + "/products?price=gte.0&and=(name.eq.Widget,price.gt.1)", "{\"price\":1}",
