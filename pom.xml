@@ -307,6 +307,20 @@
                         </plugin>
                     </plugins>
                 </pluginManagement>
+                <plugins>
+                    <!-- micronaut-parent binds native test generation to every module; with -am it fails on the pom
+                         parent and on jar modules. Only the api module builds an image. -->
+                    <plugin>
+                        <groupId>org.graalvm.buildtools</groupId>
+                        <artifactId>native-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>test-native</id>
+                                <phase>none</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
             </build>
         </profile>
     </profiles>
