@@ -25,8 +25,9 @@ import static org.mockito.Mockito.when;
 /**
  * Browsers do not apply CORS to WebSockets, so the upgrade checks Origin
  * itself: a web page (http/https) must be on the project's allowlist; no
- * Origin (server clients) and native-app schemes (Capacitor, Tauri, Electron,
- * file pages sending {@code null}) are not web pages and pass.
+ * Origin (server clients) and native-app schemes (Capacitor, Tauri, Electron) are
+ * not web pages and pass. {@code Origin: null} (sandboxed frames, redirects, file pages) is
+ * not a native app: it is refused unless the project lists it.
  */
 class WebSocketOriginInterceptorTest {
 
@@ -76,12 +77,21 @@ class WebSocketOriginInterceptorTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"capacitor://localhost", "ionic://localhost", "tauri://localhost", "app://bundle",
-            "file://", "null"})
+            "file://"})
     @DisplayName("a native-app origin is not a web page and passes")
     void nativeOriginPasses(String origin) {
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         assertThat(handshake(origin, response)).isTrue();
+    }
+
+    @Test
+    @DisplayName("Origin: null is refused with 403, a page cannot hide its origin to get past the allowlist")
+    void nullOriginIsRefused() {
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertThat(handshake("null", response)).isFalse();
+        assertThat(response.getStatus()).isEqualTo(403);
     }
 
     @Test

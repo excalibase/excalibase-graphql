@@ -25,8 +25,10 @@ import java.util.Map;
  *   <li>a web page ({@code http}/{@code https}) passes when it is same-origin or
  *       on the project's allowlist, and is otherwise refused with 403;</li>
  *   <li>any other scheme ({@code capacitor://}, {@code tauri://}, {@code app://},
- *       {@code file://}) and {@code null} come from native apps or local files,
- *       not from a site an attacker can send a visitor to, and pass.</li>
+ *       {@code file://}) comes from a native app, not from a site an attacker can send a
+ *       visitor to, and passes;</li>
+ *   <li>{@code Origin: null} (sandboxed frames, redirects, local files) is not a native app: a
+ *       page can send it to hide where it came from, so it is refused unless the project lists it.</li>
  * </ul>
  * The session is still authenticated by its bearer token; this only keeps an
  * unlisted web page from opening the stream, as CORS does for HTTP.
@@ -34,8 +36,6 @@ import java.util.Map;
 class WebSocketOriginInterceptor implements HandshakeInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketOriginInterceptor.class);
-
-    private static final String NULL_ORIGIN = "null";
 
     private final CorsConfigurationSource corsSource;
 
@@ -61,11 +61,8 @@ class WebSocketOriginInterceptor implements HandshakeInterceptor {
         // no-op
     }
 
-    /** True for an http(s) origin and for anything unparseable, which is checked (and refused) as one. */
+    /** True for an http(s) origin and for anything unparseable, {@code null} included: checked, and refused unless allowed. */
     private static boolean isWebOrigin(String origin) {
-        if (NULL_ORIGIN.equals(origin)) {
-            return false;
-        }
         int separator = origin.indexOf("://");
         if (separator <= 0) {
             return true;

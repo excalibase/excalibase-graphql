@@ -14,6 +14,7 @@ import io.github.excalibase.security.JwtService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -68,13 +69,28 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
     private final WebSocketHeartbeat heartbeat;
     private final RealtimeMetering metering;
+    private final WsRuntime runtime;
 
+    /** For tests of one handler: no caps in the way, delivery on the publishing thread. */
+    RealtimeWebSocketHandler(SubscriptionService subscriptionService,
+                             ObjectMapper objectMapper,
+                             ObjectProvider<JwtService> jwtServiceProvider,
+                             WebSocketHeartbeat heartbeat,
+                             ObjectProvider<AccessPlans> accessPlansProvider,
+                             ObjectProvider<RequestMetrics> requestMetricsProvider) {
+        this(subscriptionService, objectMapper, jwtServiceProvider, heartbeat, accessPlansProvider,
+                requestMetricsProvider, WsRuntime.inline());
+    }
+
+    @Autowired
     public RealtimeWebSocketHandler(SubscriptionService subscriptionService,
                                     ObjectMapper objectMapper,
                                     ObjectProvider<JwtService> jwtServiceProvider,
                                     WebSocketHeartbeat heartbeat,
                                     ObjectProvider<AccessPlans> accessPlansProvider,
-                                    ObjectProvider<RequestMetrics> requestMetricsProvider) {
+                                    ObjectProvider<RequestMetrics> requestMetricsProvider,
+                                    WsRuntime runtime) {
+        this.runtime = runtime;
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.changeReader = RealtimeGate.changeReader(objectMapper);
@@ -87,9 +103,15 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
+        if (!runtime.admit(session)) {
+            runtime.close(session, WsClose.LIMIT);
+            return;
+        }
         sessionSubscriptions.put(session.getId(), new ConcurrentHashMap<>());
         heartbeat.register(session);
         metering.opened(session);
+        runtime.expectInit(session);
+        runtime.closeAtExpiry(session);
         log.debug("Realtime WS connected: {}", session.getId());
     }
 
@@ -112,6 +134,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         heartbeat.unregister(session);
         metering.closed(session);
+        runtime.release(session);
         Map<String, Disposable> subs = sessionSubscriptions.remove(session.getId());
         if (subs != null) {
             subs.values().forEach(d -> {
@@ -123,6 +146,10 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     @SuppressWarnings("unchecked")
     private void handleSubscribe(WebSocketSession session, Map<String, Object> msg) {
+        if (!runtime.isInitialised(session)) {
+            runtime.close(session, WsClose.UNAUTHORIZED);
+            return;
+        }
         String id = (String) msg.get("id");
         String collection = (String) msg.get("collection");
         String schema = (String) msg.getOrDefault("schema", null);
@@ -133,7 +160,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        String key = (schema == null ? "public" : schema) + "." + collection;
+        String resource = (schema == null ? "public" : schema) + "." + collection;
 
         Map<String, Disposable> sessionSubs = sessionSubscriptions.get(session.getId());
         if (sessionSubs == null) {
@@ -150,7 +177,6 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         // A collection the role cannot select is refused like one that does not exist.
-        String resource = (schema == null ? "public" : schema) + "." + collection;
         RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, resource);
         if (opening.delivery() == null) {
             sendError(session, id, opening.unavailable() ? opening.refusal() : "Unknown collection: " + collection);
@@ -160,10 +186,25 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
         RealtimeGate.Delivery delivery = opening.delivery();
-        Disposable disposable = subscriptionService.subscribe(tenantId, key)
-                .subscribe(event -> dispatchEvent(session, id, filter, delivery, event));
+        if (runtime.atSessionCap(sessionSubs.size())) {
+            sendError(session, id, "Too many subscriptions on this connection");
+            return;
+        }
+        if (!runtime.reserveSubscription(session)) {
+            sendError(session, id, "Too many subscriptions for this project");
+            return;
+        }
+        Disposable disposable;
+        try {
+            SessionOutbox outbox = runtime.outbox(session);
+            disposable = runtime.counted(session, subscriptionService.subscribe(tenantId, resource)
+                    .subscribe(event -> outbox.submit(() -> dispatchEvent(session, id, filter, delivery, event))));
+        } catch (RuntimeException failure) {
+            runtime.cancelReservation(session);
+            throw failure;
+        }
         sessionSubs.put(id, disposable);
-        log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, key);
+        log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, resource);
     }
 
     private void handleComplete(WebSocketSession session, Map<String, Object> msg) {
@@ -193,6 +234,8 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                     GraphQLWebSocketHandler.principalOf(session).role(),
                     session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY));
         }
+        runtime.initialised(session);
+        runtime.closeAtExpiry(session);
         sendAck(session);
     }
 
@@ -221,6 +264,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
 
     private void dispatchEvent(WebSocketSession session, String subId,
                                 Map<String, Object> filter, RealtimeGate.Delivery delivery, CDCEvent event) {
+        if (!delivery.isFor(event)) return;
         String op = switch (event.type() == null ? "" : event.type().toUpperCase()) {
             case "INSERT" -> "insert";
             case "UPDATE" -> "update";

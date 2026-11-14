@@ -7,6 +7,7 @@ import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionCachePolicy;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
+import io.github.excalibase.config.ws.WsRuntime;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.GraphqlSchemaManager;
@@ -112,12 +113,13 @@ public class JwtSecurityConfig {
     public PolicyChangeSubscriber policyChangeSubscriber(
             PermissionProvider permissionProvider,
             GraphqlSchemaManager schemaManager,
+            WsRuntime webSockets,
             @Value("${app.nats.enabled:false}") boolean natsEnabled,
             @Value("${app.nats.url:nats://localhost:4222}") String natsUrl,
             @Value("${app.nats.username:}") String natsUsername,
             @Value("${app.nats.password:}") String natsPassword,
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
-        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict),
+        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict, webSockets),
                 natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 

@@ -50,7 +50,9 @@ class RealtimeWebSocketHandlerTest {
         WebSocketSession session = mock(WebSocketSession.class);
         when(session.getId()).thenReturn("test-session-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
-        when(session.getAttributes()).thenReturn(new ConcurrentHashMap<>());
+        Map<String, Object> attributes = new ConcurrentHashMap<>();
+        attributes.put(WsRuntime.INITIALISED_KEY, Boolean.TRUE);
+        when(session.getAttributes()).thenReturn(attributes);
         doAnswer(invocation -> {
             TextMessage msg = invocation.getArgument(0);
             sink.add(msg.getPayload());

@@ -41,6 +41,11 @@ final class RealtimeGate {
     /** One subscription's delivery rule; {@code access} is null for the pass-through path. */
     record Delivery(AccessPlans.RealtimeAccess access) {
 
+        /** False for a change of another table than the one this subscription resolved to. */
+        boolean isFor(CDCEvent event) {
+            return access == null || access.table().equals(event.schema() + "." + event.table());
+        }
+
         /** As {@link #render}, with values written the way a GraphQL query reads them. */
         Optional<Object> renderForGraphql(CDCEvent event, Object parsed) {
             return render(event, parsed)
