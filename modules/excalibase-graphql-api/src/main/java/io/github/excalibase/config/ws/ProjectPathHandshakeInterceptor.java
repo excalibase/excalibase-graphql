@@ -24,6 +24,7 @@ class ProjectPathHandshakeInterceptor implements HandshakeInterceptor {
         if (projectId != null) {
             attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, projectId);
         }
+        attributes.put(WsRuntime.SESSION_CLIENT_KEY, ClientAddress.of(request));
         return true;
     }
 

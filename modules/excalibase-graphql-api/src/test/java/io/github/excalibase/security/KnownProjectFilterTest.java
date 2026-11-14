@@ -4,6 +4,8 @@ import io.github.excalibase.service.VaultCredentialException;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -49,6 +51,104 @@ class KnownProjectFilterTest {
             assertThat(response.getContentAsString()).contains("\"code\":\"project_not_found\"");
             verify(chain, never()).doFilter(any(), any());
         }
+    }
+
+    @Test
+    @DisplayName("a project lookup refused for its rate is a 429 and does not reach the chain")
+    void throttledLookup_isTooManyRequests() throws Exception {
+        FilterChain chain = mock(FilterChain.class);
+        KnownProjects throttled = id -> {
+            throw new ProjectLookupThrottledException();
+        };
+
+        MockHttpServletResponse response = call(throttled, "POST", "/" + PROJECT + "/graphql", chain);
+
+        assertThat(response.getStatus()).isEqualTo(429);
+        assertThat(response.getContentAsString()).contains("\"code\":\"project_lookup_throttled\"");
+        verify(chain, never()).doFilter(any(), any());
+    }
+
+    @Test
+    @DisplayName("a throttled preflight is answered here, with no lookup and no CORS provider call, and the real request still gets the 429")
+    void throttledPreflightIsAnsweredWithoutAnyLookup() throws Exception {
+        KnownProjects throttled = id -> {
+            throw new ProjectLookupThrottledException();
+        };
+        FilterChain chain = mock(FilterChain.class);
+        MockHttpServletRequest preflight = new MockHttpServletRequest("OPTIONS", "/" + PROJECT + "/graphql");
+        preflight.setRequestURI("/" + PROJECT + "/graphql");
+        preflight.addHeader("Origin", "https://app.example.com");
+        preflight.addHeader("Access-Control-Request-Method", "POST");
+        preflight.addHeader("Access-Control-Request-Headers", "authorization,content-type");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        new KnownProjectFilter(throttled).doFilter(preflight, response, chain);
+
+        verify(chain, never()).doFilter(any(), any());
+        assertThat(response.getStatus()).isEqualTo(204);
+        assertThat(response.getHeader("Access-Control-Allow-Origin")).isEqualTo("https://app.example.com");
+        assertThat(response.getHeader("Vary")).contains("Origin");
+        assertThat(response.getHeader("Access-Control-Allow-Methods")).contains("POST").contains("DELETE");
+        assertThat(response.getHeader("Access-Control-Allow-Headers")).isEqualTo("authorization,content-type");
+        assertThat(response.getHeader("Access-Control-Max-Age")).isEqualTo("0");
+
+        MockHttpServletRequest plainOptions = new MockHttpServletRequest("OPTIONS", "/" + PROJECT + "/graphql");
+        plainOptions.setRequestURI("/" + PROJECT + "/graphql");
+        MockHttpServletResponse refused = new MockHttpServletResponse();
+        new KnownProjectFilter(throttled).doFilter(plainOptions, refused, mock(FilterChain.class));
+        assertThat(refused.getStatus()).isEqualTo(429);
+    }
+
+    private static final KnownProjects THROTTLED = id -> {
+        throw new ProjectLookupThrottledException();
+    };
+
+    private static MockHttpServletResponse throttledCall(String method, String origin) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest(method, "/" + PROJECT + "/graphql");
+        request.setRequestURI("/" + PROJECT + "/graphql");
+        if (origin != null) {
+            request.addHeader("Origin", origin);
+        }
+        if ("OPTIONS".equals(method)) {
+            request.addHeader("Access-Control-Request-Method", "POST");
+        }
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        new KnownProjectFilter(THROTTLED).doFilter(request, response, mock(FilterChain.class));
+        return response;
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"https://app.example.com", "http://localhost:3000", "https://a.b.example.com:8443"})
+    @DisplayName("a valid origin is echoed on the 429 and on a throttled preflight, never a literal *")
+    void validOriginIsEchoed(String origin) throws Exception {
+        for (String method : new String[]{"POST", "OPTIONS"}) {
+            MockHttpServletResponse response = throttledCall(method, origin);
+            assertThat(response.getHeader("Access-Control-Allow-Origin")).as(method).isEqualTo(origin);
+            assertThat(response.getHeaders("Vary")).as(method).contains("Origin");
+            assertThat(response.getHeader("Access-Control-Allow-Credentials")).as(method).isNull();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "ftp://example.com", "https://", "example.com", "https://a.com/path",
+            "https://a.com?x=1", "https://user@a.com", "https://a.com#f", "https://a .com", "*", "https:a.com", "https:", "http:/a", "https:///",
+            "https://a.com\r\nX-Injected: 1", "https://a.com\nSet-Cookie: x=1", ""})
+    @DisplayName("a malformed, null or injected origin gets no Access-Control-Allow-Origin")
+    void invalidOriginGetsNoAllowOrigin(String origin) throws Exception {
+        for (String method : new String[]{"POST", "OPTIONS"}) {
+            MockHttpServletResponse response = throttledCall(method, origin);
+            assertThat(response.getHeader("Access-Control-Allow-Origin")).as(method + " " + origin).isNull();
+            assertThat(response.getHeader("X-Injected")).isNull();
+            assertThat(response.getStatus()).isEqualTo("OPTIONS".equals(method) ? 204 : 429);
+        }
+    }
+
+    @Test
+    @DisplayName("a throttled request with no Origin gets no Access-Control-Allow-Origin and never reaches provisioning")
+    void missingOriginGetsNoAllowOrigin() throws Exception {
+        MockHttpServletResponse response = throttledCall("POST", null);
+        assertThat(response.getHeader("Access-Control-Allow-Origin")).isNull();
+        assertThat(response.getStatus()).isEqualTo(429);
     }
 
     @Test

@@ -7,6 +7,7 @@ import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionCachePolicy;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
+import io.github.excalibase.config.ws.WsRuntime;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.GraphqlSchemaManager;
@@ -52,6 +53,8 @@ public class JwtSecurityConfig {
             throw new IllegalStateException(NO_VERIFIER);
         }
 
+        requireAudienceWhenMultiTenant(security.isMultiTenantEnabled() ? security.multiTenant().provisioningUrl() : null,
+                auth.requireAudOrDefault());
         JwtService service = hasJwks
                 ? new JwtService(auth.jwksUrl(), ttlMinutes)
                 : new JwtService(auth.hmacSecret());
@@ -59,6 +62,17 @@ public class JwtSecurityConfig {
         return service
                 .expectedIssuer(auth.issuer())
                 .requireAudience(auth.requireAudOrDefault(), auth.audPrefix());
+    }
+
+    /**
+     * Without the audience check a token minted for one project passes the path check of every other, which
+     * a deployment serving many projects cannot allow.
+     */
+    static void requireAudienceWhenMultiTenant(String provisioningUrl, boolean requireAudience) {
+        if (provisioningUrl != null && !provisioningUrl.isBlank() && !requireAudience) {
+            throw new IllegalStateException("app.security.auth.require-aud=false is refused in multi-tenant mode "
+                    + "(app.security.multi-tenant.provisioning-url): a token for one project would open every other");
+        }
     }
 
     /**
@@ -99,12 +113,13 @@ public class JwtSecurityConfig {
     public PolicyChangeSubscriber policyChangeSubscriber(
             PermissionProvider permissionProvider,
             GraphqlSchemaManager schemaManager,
+            WsRuntime webSockets,
             @Value("${app.nats.enabled:false}") boolean natsEnabled,
             @Value("${app.nats.url:nats://localhost:4222}") String natsUrl,
             @Value("${app.nats.username:}") String natsUsername,
             @Value("${app.nats.password:}") String natsPassword,
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
-        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict),
+        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict, webSockets),
                 natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 

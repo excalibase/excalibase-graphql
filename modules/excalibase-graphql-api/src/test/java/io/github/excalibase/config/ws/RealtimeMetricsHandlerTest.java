@@ -124,6 +124,7 @@ class RealtimeMetricsHandlerTest {
         if (projectId != null) {
             attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, projectId);
         }
+        attributes.put(WsRuntime.INITIALISED_KEY, Boolean.TRUE);
         when(session.getAttributes()).thenReturn(attributes);
         doAnswer(invocation -> {
             TextMessage message = invocation.getArgument(0);

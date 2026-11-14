@@ -330,6 +330,96 @@ class RestControllerIntegrationTest {
     }
   }
 
+  // ─── Repeated filters on one column (EXC-729) ─────────────────────────────
+
+  @Nested
+  @Order(31)
+  class RangeFilters {
+
+    private static final String RANGE = "category=eq.rangetest&price=gte.150&price=lt.250";
+
+    private void seed() throws Exception {
+      for (int price : new int[] {100, 200, 300}) {
+        mockMvc.perform(post(BASE + "/products")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"range-" + price + "\",\"price\":" + price + ",\"category\":\"rangetest\"}"))
+            .andExpect(status().isCreated());
+      }
+    }
+
+    private void cleanUp() throws Exception {
+      mockMvc.perform(delete(BASE + "/products?category=eq.rangetest&price=gte.0")).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("a range of two filters on one column is ANDed on read and on count")
+    void rangeRead() throws Exception {
+      seed();
+      try {
+        mockMvc.perform(get(BASE + "/products?" + RANGE))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data", hasSize(1)))
+            .andExpect(jsonPath("$.data[0].name", is("range-200")));
+        mockMvc.perform(get(BASE + "/products?" + RANGE).header("Prefer", "count=exact"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.pagination.total", is(1)));
+      } finally {
+        cleanUp();
+      }
+    }
+
+    @Test
+    @DisplayName("a range PATCH changes only the rows inside the range")
+    void rangeUpdate() throws Exception {
+      seed();
+      try {
+        mockMvc.perform(patch(BASE + "/products?" + RANGE)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"in_stock\":false}")
+                .header("Prefer", "return=representation"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data", hasSize(1)))
+            .andExpect(jsonPath("$.data[0].name", is("range-200")));
+        mockMvc.perform(get(BASE + "/products?category=eq.rangetest&in_stock=eq.false"))
+            .andExpect(jsonPath("$.data", hasSize(1)));
+      } finally {
+        cleanUp();
+      }
+    }
+
+    @Test
+    @DisplayName("a range DELETE removes only the rows inside the range")
+    void rangeDelete() throws Exception {
+      seed();
+      try {
+        mockMvc.perform(delete(BASE + "/products?" + RANGE).header("Prefer", "return=representation"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data", hasSize(1)))
+            .andExpect(jsonPath("$.data[0].name", is("range-200")));
+        mockMvc.perform(get(BASE + "/products?category=eq.rangetest"))
+            .andExpect(jsonPath("$.data", hasSize(2)));
+      } finally {
+        cleanUp();
+      }
+    }
+
+    @Test
+    @DisplayName("an empty in.() list matches no rows, and not.in.() matches all")
+    void emptyInList() throws Exception {
+      seed();
+      try {
+        mockMvc.perform(get(BASE + "/products?category=eq.rangetest&id=in.()"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data", hasSize(0)));
+        mockMvc.perform(get(BASE + "/products?category=eq.rangetest&id=not.in.()"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data", hasSize(3)));
+      } finally {
+        cleanUp();
+      }
+    }
+  }
+
   // ─── Orders table (FK relationship data) ───────────────────────────────────
 
   @Nested
@@ -460,6 +550,37 @@ class RestControllerIntegrationTest {
     }
 
     @Test
+    @DisplayName("DELETE with an or= group is refused, not run with the group dropped")
+    void deleteWithOrGroupIsRefused() throws Exception {
+      mockMvc.perform(delete(BASE + "/products?price=gte.0&or=(name.eq.Widget,name.eq.Gadget)"))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.error", containsString("'or' is not supported")));
+      mockMvc.perform(get(BASE + "/products")).andExpect(status().isOk()).andExpect(jsonPath("$.data", hasSize(5)));
+    }
+
+    @Test
+    @DisplayName("DELETE with a repeated or= whose first value is empty is refused and deletes nothing")
+    void deleteWithRepeatedOrGroupIsRefused() throws Exception {
+      // rolled back, so a request that is wrongly run cannot hurt the rows the other tests read
+      for (String query : new String[] {"or=&or=(tag.eq.popular)", "or=", "not.or=&and=(tag.eq.popular)"}) {
+        mockMvc.perform(delete(BASE + "/tags?entity_id=gte.0&" + query).header("Prefer", "tx=rollback"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error", containsString("is not supported")));
+      }
+      mockMvc.perform(get(BASE + "/tags")).andExpect(status().isOk()).andExpect(jsonPath("$.data", hasSize(4)));
+    }
+
+    @Test
+    @DisplayName("PATCH with an and= group is refused, not run with the group dropped")
+    void patchWithAndGroupIsRefused() throws Exception {
+      mockMvc.perform(patch(BASE + "/products?price=gte.0&and=(name.eq.Widget,price.gt.1)")
+              .contentType(MediaType.APPLICATION_JSON)
+              .content("{\"price\":1}"))
+          .andExpect(status().isBadRequest())
+          .andExpect(jsonPath("$.error", containsString("'and' is not supported")));
+    }
+
+    @Test
     @DisplayName("PATCH without filter returns 400")
     void patchWithoutFilter() throws Exception {
       mockMvc.perform(patch(BASE + "/products")
@@ -497,6 +618,36 @@ class RestControllerIntegrationTest {
               .content("[{\"name\":\"Bulk1\",\"price\":1.00},{\"name\":\"Bulk2\",\"price\":2.00}]"))
           .andExpect(status().isCreated())
           .andExpect(jsonPath("$.data", hasSize(2)));
+    }
+
+    @Test
+    @DisplayName("bulk insert into columns named with a space or a quote")
+    void bulkInsertColumnNamesWithSpaces() throws Exception {
+      mockMvc.perform(post(BASE + "/spaced_columns")
+              .contentType(MediaType.APPLICATION_JSON)
+              .header("Prefer", "return=representation")
+              .content("[{\"first name\":\"Ada\",\"o'neil\":\"x\"},{\"first name\":\"Bob\",\"o'neil\":\"y\"}]"))
+          .andExpect(status().isCreated())
+          .andExpect(jsonPath("$.data", hasSize(2)))
+          .andExpect(jsonPath("$.data[1]['first name']", is("Bob")));
+    }
+
+    @Test
+    @DisplayName("bulk insert columns whose names sanitise alike each keep their own value")
+    void bulkInsertCollidingColumnNames() throws Exception {
+      mockMvc.perform(post(BASE + "/colliding_columns")
+              .contentType(MediaType.APPLICATION_JSON)
+              .header("Prefer", "return=representation")
+              .content("[{\"a_b_2\":\"one\",\"a b\":\"two\",\"a_b\":\"three\"},"
+                  + "{\"a_b_2\":\"four\",\"a b\":\"five\",\"a_b\":\"six\"}]"))
+          .andExpect(status().isCreated())
+          .andExpect(jsonPath("$.data", hasSize(2)))
+          .andExpect(jsonPath("$.data[0].a_b_2", is("one")))
+          .andExpect(jsonPath("$.data[0]['a b']", is("two")))
+          .andExpect(jsonPath("$.data[0].a_b", is("three")))
+          .andExpect(jsonPath("$.data[1].a_b_2", is("four")))
+          .andExpect(jsonPath("$.data[1]['a b']", is("five")))
+          .andExpect(jsonPath("$.data[1].a_b", is("six")));
     }
 
     @Test
@@ -699,6 +850,16 @@ class RestControllerIntegrationTest {
       mockMvc.perform(get(BASE + "/products?or=(category.eq.tools,category.eq.gadgets)"))
           .andExpect(status().isOk())
           .andExpect(jsonPath("$.data", hasSize(3))); // Widget, Thingamajig (tools) + Doohickey (gadgets)
+    }
+
+    @Test
+    @DisplayName("count=exact with an or= group counts the rows the group keeps, not the whole table")
+    void countRespectsOrGroups() throws Exception {
+      mockMvc.perform(get(BASE + "/products?or=(category.eq.tools,category.eq.gadgets)&limit=1")
+              .header("Prefer", "count=exact"))
+          .andExpect(status().isOk())
+          .andExpect(jsonPath("$.pagination.total", is(3)))
+          .andExpect(header().string("Content-Range", containsString("/3")));
     }
   }
 

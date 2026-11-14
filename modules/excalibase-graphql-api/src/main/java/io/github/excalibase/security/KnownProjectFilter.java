@@ -1,5 +1,6 @@
 package io.github.excalibase.security;
 
+import io.github.excalibase.cors.ProjectCorsConfigurationSource;
 import io.github.excalibase.service.VaultCredentialException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -7,9 +8,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Optional;
 
 /**
  * Refuses a request whose path names a project this deployment does not serve.
@@ -49,6 +54,14 @@ public class KnownProjectFilter extends OncePerRequestFilter {
         } catch (UnknownProjectException e) {
             writeError(response, HttpServletResponse.SC_NOT_FOUND, "Project not found", "project_not_found");
             return;
+        } catch (ProjectLookupThrottledException e) {
+            if (CorsUtils.isPreFlightRequest(request)) {
+                answerPreflight(request, response);
+                return;
+            }
+            allowAskingOriginToRead(request, response);
+            writeError(response, 429, "Too many project lookups", "project_lookup_throttled");
+            return;
         } catch (ProjectWithoutDatabaseException e) {
             writeError(response, HttpServletResponse.SC_CONFLICT, "Project has no database", "project_has_no_database");
             return;
@@ -62,6 +75,52 @@ public class KnownProjectFilter extends OncePerRequestFilter {
             request.setAttribute(KNOWN_PROJECT_ATTR, projectId);
         }
         chain.doFilter(request, response);
+    }
+
+    /**
+     * This runs before the CORS filter, which would have to ask provisioning for the project's origins, and
+     * the throttle exists to keep that from happening. The refusal says nothing about any project, so the asking
+     * origin may read it: a browser then sees a 429 it can back off from instead of an opaque network error.
+     */
+    private static void allowAskingOriginToRead(HttpServletRequest request, HttpServletResponse response) {
+        response.addHeader("Vary", "Origin");
+        validOrigin(request).ifPresent(origin -> response.setHeader("Access-Control-Allow-Origin", origin));
+    }
+
+    /** The request's Origin when it is exactly scheme, host and optional port; anything else is not echoed. */
+    private static Optional<String> validOrigin(HttpServletRequest request) {
+        String origin = request.getHeader("Origin");
+        if (origin == null || origin.chars().anyMatch(c -> c <= ' ' || c >= 0x7f)) {
+            return Optional.empty();
+        }
+        try {
+            URI uri = new URI(origin);
+            boolean webScheme = "http".equals(uri.getScheme()) || "https".equals(uri.getScheme());
+            boolean bare = !uri.isOpaque() && uri.getRawUserInfo() == null && "".equals(uri.getRawPath())
+                    && uri.getRawQuery() == null && uri.getRawFragment() == null;
+            return webScheme && bare && uri.getHost() != null ? Optional.of(origin) : Optional.empty();
+        } catch (URISyntaxException | RuntimeException _) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * A preflight for a project whose lookup is throttled is answered here, never passed on: the CORS filter would
+     * fetch the project's origins from provisioning, once per preflight, for an id nobody has vouched for. The
+     * asking origin may then send the real request, which gets the readable 429 (or its real answer).
+     */
+    private static void answerPreflight(HttpServletRequest request, HttpServletResponse response) {
+        response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+        response.addHeader("Vary", "Origin");
+        response.addHeader("Vary", "Access-Control-Request-Method");
+        response.addHeader("Vary", "Access-Control-Request-Headers");
+        validOrigin(request).ifPresent(origin -> response.setHeader("Access-Control-Allow-Origin", origin));
+        response.setHeader("Access-Control-Allow-Methods", String.join(",", ProjectCorsConfigurationSource.ALLOWED_METHODS));
+        String requested = request.getHeader("Access-Control-Request-Headers");
+        if (requested != null) {
+            response.setHeader("Access-Control-Allow-Headers", requested);
+        }
+        response.setHeader("Access-Control-Max-Age", "0");
     }
 
     private static void writeError(HttpServletResponse response, int status, String message, String code)

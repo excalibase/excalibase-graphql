@@ -220,13 +220,20 @@ class ProjectCorsIntegrationTest {
     // Sec-WebSocket-* headers MockMvc cannot supply; what matters is that the
     // origin check let it through rather than answering 403.
     @ParameterizedTest
-    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", "null"})
+    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost"})
     @DisplayName("WebSocket upgrade: a listed web origin and native-app origins pass the origin check")
     void websocketAdmitsListedAndNativeOrigins(String origin) throws Exception {
         mockMvc.perform(wsUpgrade("/" + PROJECT + "/api/v1/realtime", origin))
                 .andExpect(PASSED_ORIGIN_CHECK);
         mockMvc.perform(wsUpgrade("/" + PROJECT + "/graphql", origin))
                 .andExpect(PASSED_ORIGIN_CHECK);
+    }
+
+    @Test
+    @DisplayName("WebSocket upgrade: Origin null is refused, a page cannot hide its origin")
+    void websocketRefusesNullOrigin() throws Exception {
+        mockMvc.perform(wsUpgrade("/" + PROJECT + "/api/v1/realtime", "null")).andExpect(status().isForbidden());
+        mockMvc.perform(wsUpgrade("/" + PROJECT + "/graphql", "null")).andExpect(status().isForbidden());
     }
 
     @Test

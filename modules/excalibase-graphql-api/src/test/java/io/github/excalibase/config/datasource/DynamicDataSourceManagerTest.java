@@ -183,4 +183,26 @@ class DynamicDataSourceManagerTest {
 
     assertEquals(List.of("OLD-CA-PEM", "NEW-CA-PEM"), trustedCas);
   }
+
+  @Test
+  @DisplayName("an aged-out pool is closed after a grace period, not under the queries still running on it")
+  void agedOutPoolIsClosedAfterTheGracePeriod() {
+    var config = new com.zaxxer.hikari.HikariConfig();
+    config.setJdbcUrl("jdbc:postgresql://127.0.0.1:1/none");
+    config.setUsername("u");
+    config.setPassword("p");
+    config.setInitializationFailTimeout(-1);
+    var retiring = new com.zaxxer.hikari.HikariDataSource(config);
+    var ageing = new DynamicDataSourceManager(vaultService,
+        creds -> creds == CREDS ? retiring : mockDataSourceB, Duration.ofMillis(50), Duration.ofSeconds(1));
+    var renewed = new VaultCredentials("localhost", "5432", "app_db", "excalibase_app", "renewed");
+    when(vaultService.fetchCredentials("duc-corp", "app-a")).thenReturn(CREDS, renewed);
+
+    ageing.getDataSource("duc-corp", "app-a");
+    await().atMost(Duration.ofSeconds(5)).until(() -> ageing.getDataSource("duc-corp", "app-a") == mockDataSourceB);
+
+    assertFalse(retiring.isClosed(), "closed while queries may still be running on it");
+    await().atMost(Duration.ofSeconds(5)).until(retiring::isClosed);
+    ageing.destroy();
+  }
 }

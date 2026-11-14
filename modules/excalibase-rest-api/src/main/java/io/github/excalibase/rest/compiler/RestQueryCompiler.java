@@ -36,6 +36,7 @@ public class RestQueryCompiler {
     private final SqlDialect dialect;
     private final String defaultSchema;
     private final int defaultMaxRows;
+    private final boolean capNestedLists;
     private final TableAccess access;
     private final ParamValues values;
     private final RestFilterSql filterSql;
@@ -102,6 +103,13 @@ public class RestQueryCompiler {
      */
     public RestQueryCompiler(SchemaInfo schemaInfo, SqlDialect dialect, String defaultSchema, int maxRows,
                              TableAccess access) {
+        this(schemaInfo, dialect, defaultSchema, maxRows, access, false);
+    }
+
+    /** {@code capNestedLists}: an embedded list is cut at {@code maxRows}, as a top-level one is. */
+    public RestQueryCompiler(SchemaInfo schemaInfo, SqlDialect dialect, String defaultSchema, int maxRows,
+                             TableAccess access, boolean capNestedLists) {
+        this.capNestedLists = capNestedLists;
         this.schemaInfo = schemaInfo;
         this.dialect = dialect;
         this.defaultSchema = defaultSchema;
@@ -187,7 +195,7 @@ public class RestQueryCompiler {
 
         StringBuilder sql = new StringBuilder();
         sql.append(SELECT).append(jsonAgg).append(AS_BODY);
-        if (query.includeCount()) appendCountSubquery(sql, filters, quotedTable, params, query.table());
+        if (query.includeCount()) appendCountSubquery(sql, filters, query.orConditions(), quotedTable, params, query.table());
         sql.append(FROM).append(parens(inner.toString())).append(SPACE).append(ALIAS);
         return new CompiledResult(sql.toString(), params);
     }
@@ -217,16 +225,21 @@ public class RestQueryCompiler {
     @SuppressWarnings("unchecked")
     private VectorSearchBuilder.VectorClause compileVectorFilter(
             FilterSpec filter, String tableAlias, Map<String, Object> params) {
+        Map<String, Object> shape;
         try {
-            Map<String, Object> shape = MAPPER.readValue(filter.value(), Map.class);
-            // The column name is the URL key (e.g. ?embedding=vector.{...}), not
-            // a field inside the JSON — ensure the shape carries it for the builder.
-            shape.putIfAbsent("column", filter.column());
-            VectorSearchBuilder builder = new VectorSearchBuilder(dialect);
-            return builder.buildFromMap(shape, tableAlias, schemaInfo, params).orElse(null);
+            shape = MAPPER.readValue(filter.value(), Map.class);
         } catch (Exception _) {
             return null;
         }
+        // The column is the URL key, which the caller's view already vouched for; a different one
+        // inside the JSON would order by a column nobody checked.
+        Object named = shape.get("column");
+        if (named != null && !filter.column().equals(named)) {
+            throw new IllegalArgumentException("The vector search column must be '" + filter.column()
+                    + "', not '" + named + "'");
+        }
+        shape.put("column", filter.column());
+        return new VectorSearchBuilder(dialect).buildFromMap(shape, tableAlias, schemaInfo, params).orElse(null);
     }
 
     public CompiledResult compileInsert(String table, Map<String, Object> input) {
@@ -276,8 +289,9 @@ public class RestQueryCompiler {
         List<String> valueRows = new ArrayList<>();
         for (int rowIndex = 0; rowIndex < written.size(); rowIndex++) {
             List<String> vals = new ArrayList<>();
-            for (String col : colNames) {
-                String pn = P_INSERT + rowIndex + UNDERSCORE + col;
+            for (int colIndex = 0; colIndex < colNames.size(); colIndex++) {
+                String col = colNames.get(colIndex);
+                String pn = P_INSERT + rowIndex + UNDERSCORE + colIndex;   // a column name is any text, never a name
                 params.put(pn, values.coerceParam(table, col, written.get(rowIndex).getOrDefault(col, null)));
                 vals.add(PARAM_PREFIX + pn);
             }
@@ -609,8 +623,9 @@ public class RestQueryCompiler {
         return dialect.jsonValue(alias + DOT + dialect.quoteIdentifier(column), schemaInfo.getColumnType(table, column));
     }
 
-    /** {@code LIMIT n} for the caller's own row limit on an embedded table, or nothing. */
+    /** {@code LIMIT n} on an embedded list: the caller's own row limit; with nested lists capped, within the engine's row cap too. */
     private String roleLimit(String table) {
+        if (capNestedLists) return LIMIT + capped(table, defaultMaxRows);
         Integer limit = access.rowLimit(table);
         return limit == null ? "" : LIMIT + limit;
     }
@@ -690,9 +705,14 @@ public class RestQueryCompiler {
     }
 
     private void appendOrConditions(StringBuilder where, List<OrCondition> ors, Map<String, Object> params, String table) {
+        appendOrConditions(where, ors, P_OR, params, table);
+    }
+
+    private void appendOrConditions(StringBuilder where, List<OrCondition> ors, String prefix,
+                                    Map<String, Object> params, String table) {
         if (ors == null) return;
         for (int oi = 0; oi < ors.size(); oi++) {
-            String group = logicSql(ors.get(oi).group(), P_OR + oi, params, table);
+            String group = logicSql(ors.get(oi).group(), prefix + oi, params, table);
             if (!group.isEmpty()) {
                 if (!where.isEmpty()) where.append(AND);
                 where.append(group);
@@ -794,8 +814,10 @@ public class RestQueryCompiler {
         return entries;
     }
 
-    private void appendCountSubquery(StringBuilder sql, List<FilterSpec> filters, String quotedTable, Map<String, Object> params, String table) {
+    private void appendCountSubquery(StringBuilder sql, List<FilterSpec> filters, List<OrCondition> ors,
+                                     String quotedTable, Map<String, Object> params, String table) {
         StringBuilder cw = buildWhere(filters, P_FILTER_COUNT, params, table);
+        appendOrConditions(cw, ors, P_FILTER_COUNT + "or_", params, table);
         // totalCount must respect RLS or it leaks the unfiltered total. The count
         // table is unaliased, so relationship/EXISTS correlate by table name (null).
         appendRls(cw, table, null, RlsOp.SELECT, params);

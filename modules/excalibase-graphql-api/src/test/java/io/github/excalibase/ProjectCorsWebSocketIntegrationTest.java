@@ -3,6 +3,7 @@ package io.github.excalibase;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -108,8 +109,16 @@ class ProjectCorsWebSocketIntegrationTest {
                 .hasStackTraceContaining("403");
     }
 
+    @Test
+    @DisplayName("Origin: null cannot open the socket")
+    void nullOriginIsRefused() {
+        assertThatThrownBy(() -> open("/" + PROJECT + "/api/v1/realtime", "null"))
+                .isInstanceOf(ExecutionException.class)
+                .hasStackTraceContaining("403");
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", "null", ""})
+    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", ""})
     @DisplayName("a listed origin, a native-app origin and no Origin all open the socket")
     void admittedOriginsConnect(String origin) throws Exception {
         WebSocketSession session = open("/" + PROJECT + "/api/v1/realtime", origin.isEmpty() ? null : origin);

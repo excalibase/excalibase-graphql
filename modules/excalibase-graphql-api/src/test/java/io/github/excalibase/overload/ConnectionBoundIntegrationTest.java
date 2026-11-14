@@ -55,6 +55,10 @@ class ConnectionBoundIntegrationTest {
         registry.add("app.security.insecure-dev-mode", () -> "true");
         registry.add("app.database-type", () -> "postgres");
         registry.add("app.overload.max-connections-per-cpu", () -> "2");
+        // This test is about the connection bound: the per-client and per-project socket caps stay out of it.
+        registry.add("app.websocket.max-per-client-percent", () -> "100");
+        registry.add("app.websocket.max-per-project-percent", () -> "100");
+        registry.add("app.websocket.init-timeout-seconds", () -> "600");
         registry.add("app.overload.accept-count-per-cpu", () -> "256");
         registry.add("app.overload.max-keep-alive-requests", () -> "2");
         registry.add("app.overload.keep-alive-timeout-ms", () -> "300");

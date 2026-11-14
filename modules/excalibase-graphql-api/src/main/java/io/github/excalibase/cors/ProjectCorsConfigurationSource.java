@@ -32,7 +32,7 @@ public final class ProjectCorsConfigurationSource implements CorsConfigurationSo
 
     private static final Logger log = LoggerFactory.getLogger(ProjectCorsConfigurationSource.class);
 
-    private static final List<String> ALLOWED_METHODS = List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
+    public static final List<String> ALLOWED_METHODS = List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
     private static final List<String> EXPOSED_HEADERS = List.of("Content-Range", "Location");
     private static final long MAX_AGE_SECONDS = 3600L;
 

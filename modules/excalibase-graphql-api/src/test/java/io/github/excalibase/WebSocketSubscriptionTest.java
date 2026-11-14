@@ -152,7 +152,7 @@ class WebSocketSubscriptionTest {
             session.sendMessage(new TextMessage(subscribeMsg));
 
             // Wait for subscription to be registered
-            awaitSubscription("test_schema_customer");
+            awaitSubscription("test_schema.customer");
 
             // Simulate a CDC event via SubscriptionService
             CDCEvent event = new CDCEvent(
@@ -209,7 +209,7 @@ class WebSocketSubscriptionTest {
                     )
             ));
             session.sendMessage(new TextMessage(subscribeMsg));
-            awaitSubscription("test_schema_customer");
+            awaitSubscription("test_schema.customer");
 
             // Complete (unsubscribe)
             session.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
@@ -259,8 +259,8 @@ class WebSocketSubscriptionTest {
                     "payload", Map.of("query", "subscription { testSchemaOrdersChanges { operation table } }")
             ))));
 
-            awaitSubscription("test_schema_customer");
-            awaitSubscription("test_schema_orders");
+            awaitSubscription("test_schema.customer");
+            awaitSubscription("test_schema.orders");
 
             // Publish order event — only sub-orders should receive
             subscriptionService.publish(null, new CDCEvent(
@@ -297,7 +297,7 @@ class WebSocketSubscriptionTest {
                     "payload", Map.of("query", "subscription { testSchemaOrderItemsChanges { operation table data } }")
             ))));
 
-            awaitSubscription("test_schema_order_items");
+            awaitSubscription("test_schema.order_items");
 
             // Publish event for order_items table
             subscriptionService.publish(null, new CDCEvent(

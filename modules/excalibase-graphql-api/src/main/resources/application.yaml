@@ -7,11 +7,15 @@ server:
     connection-timeout: 20000
     mbeanregistry:
       enabled: true  # tomcat.connections.* metrics show how close the connection bound is
-    max-http-form-post-size: 10MB
+    max-http-form-post-size: 8MB
     max-swallow-size: 10MB
     # PostgREST filters carry these unencoded (cs.{a,b}, in.("a,b")); without them Tomcat answers its own HTML 400.
     relaxed-query-chars: ['"', '<', '>', '[', '\', ']', '^', '`', '{', '|', '}']
 spring:
+  mvc:
+    formcontent:
+      filter:
+        enabled: false  # it reads PUT/PATCH/DELETE form bodies before the 8 MB limit; no endpoint takes a form
   application:
     name: Excalibase graphql
   threads:
@@ -72,6 +76,8 @@ app:
   project-id: ${APP_PROJECT_ID:}  # single-database mode: the one project this database serves (required); unset in multi-tenant mode
   database-type: postgres
   max-rows: 30
+  max-request-body: 8MB   # a bulk insert of 1000 rows is far smaller; more is a 413 before it is read (EXC-726)
+  cap-nested-lists: false   # true: a nested list or REST embed without a limit is cut at max-rows, as a top-level list is
   max-query-depth: 15  # Reject queries nested beyond this depth (0 = unlimited)
   graphql:
     parse-cache:
@@ -83,10 +89,19 @@ app:
     accept-count-per-cpu: ${APP_OVERLOAD_ACCEPT_COUNT_PER_CPU:256}        # accept backlog = this x CPUs
     max-keep-alive-requests: ${APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS:20}   # connection rotation lets queued clients in
     keep-alive-timeout-ms: ${APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS:5000}      # idle keep-alive connections give their slot back
+  websocket:
+    # Socket caps are percent of the connection bound (max-connections-per-cpu x CPUs).
+    max-per-project-percent: ${APP_WEBSOCKET_MAX_PER_PROJECT_PERCENT:25}
+    max-per-client-percent: ${APP_WEBSOCKET_MAX_PER_CLIENT_PERCENT:5}
+    init-timeout-seconds: ${APP_WEBSOCKET_INIT_TIMEOUT_SECONDS:10}
+    max-subscriptions-per-session: ${APP_WEBSOCKET_MAX_SUBSCRIPTIONS_PER_SESSION:20}
+    max-subscriptions-per-project-per-cpu: ${APP_WEBSOCKET_MAX_SUBSCRIPTIONS_PER_PROJECT_PER_CPU:250}
+    outbox-capacity: ${APP_WEBSOCKET_OUTBOX_CAPACITY:256}
+    slow-consumer-seconds: ${APP_WEBSOCKET_SLOW_CONSUMER_SECONDS:10}
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
   cors:
-    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:*}      # platform default: routes without a project (health, actuator, legacy unscoped)
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}       # platform default for routes without a project (health, actuator, legacy unscoped); empty: CORS_ORIGINS (platform-aio name), else *
     provisioning-url: ${APP_CORS_PROVISIONING_URL:${app.security.rls.policy-url:}}  # per-project allowlist source (GET {url}/projects/{id}/info); empty = platform default everywhere
     # The service token is the shared provisioning one (app.security.rls.policy-pat[-file],
     # else app.security.multi-tenant.provisioning-pat[-file]); there is no CORS-specific token.
@@ -137,6 +152,8 @@ app:
     stream-name: CDC  # JetStream stream name
     subject-prefix: cdc  # Subject prefix (events on cdc.{schema}.{table})
     tenant-in-subject: false  # When true, subject shape is cdc.{tenantId}.{schema}.{table} (multi-tenant)
+    # Local test stacks only: serve a multi-tenant engine with realtime changes shared across projects.
+    allow-untenanted-realtime: ${APP_NATS_ALLOW_UNTENANTED_REALTIME:false}
     # Bus credential (EXC-324). The platform NATS server scopes subject permissions
     # per principal; svc-graphql may subscribe cdc.> and policies.> and publish nothing.
     username: ${APP_NATS_USERNAME:}

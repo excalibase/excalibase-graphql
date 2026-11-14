@@ -169,7 +169,7 @@ class RequestMetricsIntegrationTest {
         assertThat(received.poll(5, TimeUnit.SECONDS)).contains("connection_ack");
         session.sendMessage(new TextMessage("{\"type\":\"subscribe\",\"id\":\"s1\",\"payload\":"
                 + "{\"query\":\"subscription { publicProductsChanges { operation } }\"}}"));
-        await().atMost(Duration.ofSeconds(5)).until(() -> subscriptionService.hasSubscribers(null, "public_products"));
+        await().atMost(Duration.ofSeconds(5)).until(() -> subscriptionService.hasSubscribers(null, "public.products"));
         return session;
     }
 

@@ -4,6 +4,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.PingMessage;
@@ -11,6 +12,8 @@ import org.springframework.web.socket.WebSocketSession;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -36,11 +39,20 @@ public class WebSocketHeartbeat {
     private static final PingMessage PING = new PingMessage();
 
     private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
+    /** Sessions with a ping still being written: a session whose writer is stuck is not pinged again. */
+    private final Set<WebSocketSession> pinging = ConcurrentHashMap.newKeySet();
     private final long intervalSeconds;
+    private final Executor pinger;
     private ScheduledExecutorService scheduler;
 
+    @Autowired
     public WebSocketHeartbeat(@Value("${app.websocket.heartbeat-seconds:25}") long intervalSeconds) {
+        this(intervalSeconds, Executors.newVirtualThreadPerTaskExecutor());
+    }
+
+    WebSocketHeartbeat(long intervalSeconds, Executor pinger) {
         this.intervalSeconds = intervalSeconds;
+        this.pinger = pinger;
     }
 
     @PostConstruct
@@ -75,7 +87,17 @@ public class WebSocketHeartbeat {
                 sessions.remove(session);
                 continue;
             }
-            ping(session);
+            // A write can block until the container's write timeout while it holds the session's monitor,
+            // so each ping runs on its own thread: one stuck socket must not delay everyone else's ping.
+            if (pinging.add(session)) {
+                pinger.execute(() -> {
+                    try {
+                        ping(session);
+                    } finally {
+                        pinging.remove(session);
+                    }
+                });
+            }
         }
     }
 
@@ -101,6 +123,9 @@ public class WebSocketHeartbeat {
     void stop() {
         if (scheduler != null) {
             scheduler.shutdownNow();
+        }
+        if (pinger instanceof ExecutorService service) {
+            service.shutdownNow();
         }
     }
 }

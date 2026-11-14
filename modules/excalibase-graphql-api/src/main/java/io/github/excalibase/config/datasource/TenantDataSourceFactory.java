@@ -25,7 +25,7 @@ public final class TenantDataSourceFactory implements Function<VaultCredentials,
 
   private static final Runnable NOTHING_TO_RELEASE = () -> { };
   // Sessions in UTC, so a timestamp written without an offset means the same instant on every pool.
-  private static final String MYSQL_SESSION_INIT = "SET time_zone = '+00:00'";
+  private static final String MYSQL_SESSION_INIT = "time_zone = '+00:00'";
 
   public static final Duration DEFAULT_READ_TIMEOUT = ConnectionBounds.DEFAULT_READ_TIMEOUT;
 
@@ -89,7 +89,7 @@ public final class TenantDataSourceFactory implements Function<VaultCredentials,
     config.addDataSourceProperty("trustCertificateKeyStoreType", TenantTrustStore.TYPE);
     config.addDataSourceProperty("trustCertificateKeyStorePassword", trustStore.password());
     config.addDataSourceProperty("fallbackToSystemTrustStore", "false");
-    config.setConnectionInitSql(MYSQL_SESSION_INIT);
+    ConnectionBounds.addMysqlAssignment(config, MYSQL_SESSION_INIT);
     return config;
   }
 

@@ -1,6 +1,7 @@
 package io.github.excalibase.rls;
 
 import io.github.excalibase.config.JwtSecurityConfig;
+import io.github.excalibase.config.ws.WsRuntime;
 import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
@@ -54,15 +55,17 @@ class PermissionEvictionWiringTest {
     }
 
     @Test
-    void policyChange_evictsThePermissionsAlongsideTheSchemas() {
+    void policyChange_evictsThePermissionsAndClosesTheProjectsSocketsAlongsideTheSchemas() {
         PermissionProvider permissions = mock(PermissionProvider.class);
         GraphqlSchemaManager schemas = mock(GraphqlSchemaManager.class);
+        WsRuntime webSockets = mock(WsRuntime.class);
 
         PolicyChangeSubscriber subscriber = new JwtSecurityConfig().policyChangeSubscriber(
-                permissions, schemas, false, "nats://localhost:4222", "", "", "");
+                permissions, schemas, webSockets, false, "nats://localhost:4222", "", "", "");
         subscriber.evictFor("policies.proj-abc.changed");
 
         verify(permissions).evict("proj-abc");
         verify(schemas).evict("proj-abc");
+        verify(webSockets).evict("proj-abc");
     }
 }

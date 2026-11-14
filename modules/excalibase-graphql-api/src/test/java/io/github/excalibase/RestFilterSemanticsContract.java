@@ -119,6 +119,13 @@ abstract class RestFilterSemanticsContract {
     }
 
     @Test
+    @DisplayName("repeated or= groups are all applied, ANDed together")
+    void repeatedOrGroupsAreAnded() throws Exception {
+        assertThat(skus("or=(sku.eq.A-1,sku.eq.B-2)&or=(sku.eq.B-2,sku.eq.C-3)")).containsExactly("B-2");
+        assertThat(skus("or=(sku.eq.A-1,sku.eq.B-2)&or=(sku.eq.C-3,sku.eq.D-4)")).isEmpty();
+    }
+
+    @Test
     @DisplayName("limit=0 returns no rows")
     void limitZero_returnsNoRows() throws Exception {
         assertThat(skus("limit=0")).isEmpty();

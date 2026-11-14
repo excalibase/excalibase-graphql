@@ -2,6 +2,8 @@ package io.github.excalibase.security;
 
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 
+import java.util.regex.Pattern;
+
 /**
  * Which projects this deployment serves. A path project that is not one of them
  * is refused before anything is read on its behalf; there is no default project
@@ -22,14 +24,29 @@ public interface KnownProjects {
         };
     }
 
-    /**
-     * Multi-tenant mode: a project is known when its own database resolves. A vault
-     * 404 is remembered in {@code unknown}; any other failure is not.
-     */
+    /** The shape every project id has; anything else cannot exist, so no lookup is made for it. */
+    Pattern PROJECT_ID = Pattern.compile("[a-zA-Z0-9_-]{1,64}");
+
+    /** Looks up at most {@link #DEFAULT_LOOKUPS_PER_SECOND} unresolved projects a second. */
+    int DEFAULT_LOOKUPS_PER_SECOND = 50;
+
     static KnownProjects tenants(DynamicDataSourceManager dataSourceManager, UnknownProjectCache unknown) {
+        return tenants(dataSourceManager, unknown, LookupLimiter.perSecond(DEFAULT_LOOKUPS_PER_SECOND));
+    }
+
+    /**
+     * Multi-tenant mode: a project is known when its own database resolves. An id that cannot be a
+     * project is unknown without a lookup; a vault 404 is remembered in {@code unknown}, any other
+     * failure is not; a project not yet resolved is looked up only within {@code lookups}' rate.
+     */
+    static KnownProjects tenants(DynamicDataSourceManager dataSourceManager, UnknownProjectCache unknown,
+                                 LookupLimiter lookups) {
         return projectId -> {
-            if (unknown.isKnownMissing(projectId)) {
+            if (!PROJECT_ID.matcher(projectId).matches() || unknown.isKnownMissing(projectId)) {
                 throw new UnknownProjectException(projectId);
+            }
+            if (!dataSourceManager.isCached(projectId) && !lookups.tryAcquire()) {
+                throw new ProjectLookupThrottledException();
             }
             try {
                 dataSourceManager.getDataSource(null, projectId);
@@ -47,6 +64,13 @@ public interface KnownProjects {
      */
     static KnownProjects forDeployment(String pinnedProjectId, String tenantProvisioningUrl,
                                        DynamicDataSourceManager dataSourceManager, UnknownProjectCache unknown) {
+        return forDeployment(pinnedProjectId, tenantProvisioningUrl, dataSourceManager, unknown,
+                LookupLimiter.perSecond(DEFAULT_LOOKUPS_PER_SECOND));
+    }
+
+    static KnownProjects forDeployment(String pinnedProjectId, String tenantProvisioningUrl,
+                                       DynamicDataSourceManager dataSourceManager, UnknownProjectCache unknown,
+                                       LookupLimiter lookups) {
         boolean pinned = pinnedProjectId != null && !pinnedProjectId.isBlank();
         boolean multiTenant = tenantProvisioningUrl != null && !tenantProvisioningUrl.isBlank();
         if (multiTenant) {
@@ -58,7 +82,7 @@ public interface KnownProjects {
                 throw new IllegalStateException("Multi-tenant mode resolves projects through authenticated "
                         + "provisioning: set app.security.jwt-enabled=true");
             }
-            return tenants(dataSourceManager, unknown);
+            return tenants(dataSourceManager, unknown, lookups);
         }
         if (!pinned) {
             throw new IllegalStateException("Single-database mode requires app.project-id (APP_PROJECT_ID): "
