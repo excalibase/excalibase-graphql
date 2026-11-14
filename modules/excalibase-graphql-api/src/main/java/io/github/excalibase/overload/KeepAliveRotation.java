@@ -8,6 +8,7 @@ import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpRequest;
 import io.netty.handler.codec.http.HttpResponse;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpStatusClass;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
@@ -102,6 +103,11 @@ final class KeepAliveRotation extends ChannelDuplexHandler {
     public void write(ChannelHandlerContext context, Object message, ChannelPromise promise) throws Exception {
         if (upgraded) {
             super.write(context, message, promise);
+            return;
+        }
+        if (message instanceof HttpResponse interim && interim.status().codeClass() == HttpStatusClass.INFORMATIONAL
+                && !HttpResponseStatus.SWITCHING_PROTOCOLS.equals(interim.status())) {
+            super.write(context, message, promise);   // 100 Continue: the request is not answered yet
             return;
         }
         if (message instanceof HttpResponse response && HttpResponseStatus.SWITCHING_PROTOCOLS.equals(response.status())) {
