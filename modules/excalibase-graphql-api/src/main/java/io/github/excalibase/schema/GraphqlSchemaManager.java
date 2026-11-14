@@ -60,6 +60,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     private final JdbcTemplate jdbcTemplate;
     private final int maxRows;
+    private final boolean capNestedLists;
     private final String databaseType;
     private final int maxQueryDepth;
     private final ReservedSchemas reservedSchemas;
@@ -105,9 +106,10 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             @Nullable NatsCDCService natsCDCService,
             @Nullable DynamicDataSourceManager dataSourceManager,
             @Nullable PermissionProvider permissionProvider,
-            JwtEnabledSetting jwtEnabledSetting) {
+            JwtEnabledSetting jwtEnabledSetting,
+            @Value("${app.cap-nested-lists:false}") boolean capNestedLists) {
         this(jdbcTemplate, maxRows, databaseType, maxQueryDepth, schemaTtlMinutes, reservedSchemasConfig,
-                natsCDCService, dataSourceManager, permissionProvider, jwtEnabledSetting.enabled());
+                natsCDCService, dataSourceManager, permissionProvider, jwtEnabledSetting.enabled(), capNestedLists);
     }
 
     /** For code that already holds the parsed setting; the engine itself is built with {@link JwtEnabledSetting}. */
@@ -122,6 +124,23 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             DynamicDataSourceManager dataSourceManager,
             PermissionProvider permissionProvider,
             boolean jwtEnabled) {
+        this(jdbcTemplate, maxRows, databaseType, maxQueryDepth, schemaTtlMinutes, reservedSchemasConfig,
+                natsCDCService, dataSourceManager, permissionProvider, jwtEnabled, false);
+    }
+
+    GraphqlSchemaManager(
+            JdbcTemplate jdbcTemplate,
+            int maxRows,
+            String databaseType,
+            int maxQueryDepth,
+            int schemaTtlMinutes,
+            String reservedSchemasConfig,
+            NatsCDCService natsCDCService,
+            DynamicDataSourceManager dataSourceManager,
+            PermissionProvider permissionProvider,
+            boolean jwtEnabled,
+            boolean capNestedLists) {
+        this.capNestedLists = capNestedLists;
         this.jdbcTemplate = jdbcTemplate;
         this.maxRows = maxRows;
         this.databaseType = databaseType;
@@ -191,7 +210,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         SchemaInfo view = plan.view();
         SqlCompiler compiler = new SqlCompiler(view, reflection.defaultSchema(), maxRows,
                 reflection.engine().dialect(), reflection.engine().mutationCompiler(), maxQueryDepth, plan.access(),
-                plan.functions());
+                plan.functions(), capNestedLists);
         IntrospectionHandler handler = null;
         try {
             handler = new IntrospectionHandler(view, plan.access(), plan.functions(),

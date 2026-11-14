@@ -54,11 +54,18 @@ public class SqlCompiler {
     public SqlCompiler(SchemaInfo schemaInfo, String dbSchema, int maxRows, SqlDialect dialect,
                        MutationCompiler mutationCompiler, int maxDepth, TableAccess access,
                        ExposedFunctions functions) {
+        this(schemaInfo, dbSchema, maxRows, dialect, mutationCompiler, maxDepth, access, functions, false);
+    }
+
+    /** As above; {@code capNestedLists} cuts a nested list without a {@code limit} at {@code maxRows}. */
+    public SqlCompiler(SchemaInfo schemaInfo, String dbSchema, int maxRows, SqlDialect dialect,
+                       MutationCompiler mutationCompiler, int maxDepth, TableAccess access,
+                       ExposedFunctions functions, boolean capNestedLists) {
         this.schemaInfo = schemaInfo;
         this.dialect = dialect;
         this.maxDepth = maxDepth;
         this.functions = functions == null ? ExposedFunctions.NONE : functions;
-        this.filterBuilder = new FilterBuilder(dialect, maxRows, schemaInfo, dbSchema, access);
+        this.filterBuilder = new FilterBuilder(dialect, maxRows, schemaInfo, dbSchema, access, capNestedLists);
         this.queryBuilder = new QueryBuilder(schemaInfo, dialect, filterBuilder, dbSchema, maxRows, fragmentsHolder);
         this.mutationBuilder = new MutationBuilder(schemaInfo, dialect, filterBuilder, dbSchema, queryBuilder,
                 mutationCompiler, access);

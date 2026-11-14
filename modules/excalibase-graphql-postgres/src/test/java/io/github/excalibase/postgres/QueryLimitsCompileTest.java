@@ -4,7 +4,9 @@ import graphql.parser.Parser;
 import io.github.excalibase.compiler.QueryRejectedException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.compiler.SqlKeywords;
+import io.github.excalibase.schema.ExposedFunctions;
 import io.github.excalibase.schema.SchemaInfo;
+import io.github.excalibase.schema.TableAccess;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -19,6 +21,10 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 class QueryLimitsCompileTest {
 
     private static SqlCompiler compiler() {
+        return compiler(false);
+    }
+
+    private static SqlCompiler compiler(boolean capNestedLists) {
         SchemaInfo info = new SchemaInfo();
         info.setTableSchema("public.users", "public");
         info.addColumn("public.users", "id", "integer");
@@ -29,7 +35,8 @@ class QueryLimitsCompileTest {
         info.addColumn("public.posts", "user_id", "integer");
         info.addPrimaryKey("public.posts", "id");
         info.addForeignKey("public.posts", "user_id", "public.users", "id");
-        return new SqlCompiler(info, "public", 30, new PostgresDialect(), new PostgresMutationCompiler(), 15);
+        return new SqlCompiler(info, "public", 30, new PostgresDialect(), new PostgresMutationCompiler(), 15,
+                TableAccess.UNRESTRICTED, ExposedFunctions.NONE, capNestedLists);
     }
 
     @Test
@@ -85,15 +92,22 @@ class QueryLimitsCompileTest {
     }
 
     @Test
-    void aNestedListWithoutALimitIsCappedAtMaxRows() {
+    void aNestedListWithoutALimitIsNotCutByDefault() {
         var compiled = compiler().compile(Parser.parse("{ publicUsers { id publicPosts { id } } }"));
+        long caps = compiled.params().values().stream().filter(value -> Integer.valueOf(30).equals(value)).count();
+        assertThat(caps).as("only the top-level list carries the 30 row cap: " + compiled.params()).isEqualTo(1);
+    }
+
+    @Test
+    void aNestedListWithoutALimitIsCappedAtMaxRowsWhenConfigured() {
+        var compiled = compiler(true).compile(Parser.parse("{ publicUsers { id publicPosts { id } } }"));
         long caps = compiled.params().values().stream().filter(value -> Integer.valueOf(30).equals(value)).count();
         assertThat(caps).as("top-level and nested lists both carry the 30 row cap: " + compiled.params()).isEqualTo(2);
     }
 
     @Test
-    void aNestedLimitAboveMaxRowsIsLowered() {
-        var compiled = compiler().compile(Parser.parse("{ publicUsers { id publicPosts(limit: 100000) { id } } }"));
+    void aNestedLimitAboveMaxRowsIsLoweredWhenConfigured() {
+        var compiled = compiler(true).compile(Parser.parse("{ publicUsers { id publicPosts(limit: 100000) { id } } }"));
         assertThat(compiled.params().values()).doesNotContain(100000);
     }
 

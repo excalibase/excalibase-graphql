@@ -34,6 +34,7 @@ public class FilterBuilder {
     private final SchemaInfo schemaInfo;
     private final String dbSchema;
     private final TableAccess access;
+    private final boolean capNestedLists;
 
     public FilterBuilder(SqlDialect dialect, int maxRows) {
         this(dialect, maxRows, null, null);
@@ -45,6 +46,13 @@ public class FilterBuilder {
 
     public FilterBuilder(SqlDialect dialect, int maxRows, SchemaInfo schemaInfo, String dbSchema,
                          TableAccess access) {
+        this(dialect, maxRows, schemaInfo, dbSchema, access, false);
+    }
+
+    /** {@code capNestedLists}: a nested list without a {@code limit} is cut at the row cap, as a top-level one is. */
+    public FilterBuilder(SqlDialect dialect, int maxRows, SchemaInfo schemaInfo, String dbSchema,
+                         TableAccess access, boolean capNestedLists) {
+        this.capNestedLists = capNestedLists;
         this.dialect = dialect;
         this.maxRows = maxRows;
         this.schemaInfo = schemaInfo;
@@ -749,26 +757,31 @@ public class FilterBuilder {
     }
 
     /**
-     * LIMIT and OFFSET for a nested list: the caller's {@code limit} within the row cap on
-     * {@code tableName} (the engine's max rows, or the caller's own lower row limit). A nested list
-     * without a {@code limit} is capped like a top-level one.
+     * LIMIT and OFFSET for a nested list: the caller's {@code limit} within the caller's own row limit on
+     * {@code tableName}. Without either a nested list stays uncapped, unless nested lists are capped
+     * ({@code app.cap-nested-lists}): then the engine's row cap is the default and the ceiling.
      */
     public void applyNestedLimit(StringBuilder sql, Field field, Map<String, Object> params, String tableName) {
-        int limit = rowCap(tableName);
+        Integer limit = capNestedLists ? Integer.valueOf(rowCap(tableName)) : roleRowLimit(tableName);
         Integer offset = null;
         for (Argument arg : field.getArguments()) {
             if (!ARG_LIMIT.equals(arg.getName()) && !ARG_OFFSET.equals(arg.getName())) continue;
             Integer value = nonNegative(arg);
             if (value == null) continue;
             if (ARG_LIMIT.equals(arg.getName())) {
-                limit = Math.min(value, limit);
+                limit = limit == null ? value : Math.min(value, limit);
             } else if (ARG_OFFSET.equals(arg.getName())) {
                 offset = value;
             }
         }
-        String limitParam = namedParam(P_LIMIT, params.size());
-        sql.append(LIMIT).append(PARAM_PREFIX).append(limitParam);
-        params.put(limitParam, limit);
+        if (limit == null && offset != null) {
+            limit = rowCap(tableName);
+        }
+        if (limit != null) {
+            String limitParam = namedParam(P_LIMIT, params.size());
+            sql.append(LIMIT).append(PARAM_PREFIX).append(limitParam);
+            params.put(limitParam, limit);
+        }
         if (offset != null) {
             String offsetParam = "offset_" + params.size();
             sql.append(" OFFSET :").append(offsetParam);
@@ -1010,6 +1023,11 @@ public class FilterBuilder {
     public int rowCap(String tableName) {
         Integer roleLimit = tableName == null ? null : access.rowLimit(tableName);
         return roleLimit == null ? maxRows : Math.min(roleLimit, maxRows);
+    }
+
+    /** The caller's own row limit on {@code tableName}, or null when it has none. */
+    public Integer roleRowLimit(String tableName) {
+        return tableName == null ? null : access.rowLimit(tableName);
     }
 
     public TableAccess access() {

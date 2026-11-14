@@ -72,6 +72,7 @@ app:
   project-id: ${APP_PROJECT_ID:}
   database-type: postgres
   max-rows: 30
+  cap-nested-lists: false   # true: a nested list or REST embed without a limit is cut at max-rows, as a top-level list is
   max-query-depth: 15
   graphql:
     parse-cache:

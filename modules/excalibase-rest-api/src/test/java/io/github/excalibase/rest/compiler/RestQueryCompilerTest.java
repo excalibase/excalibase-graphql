@@ -625,10 +625,20 @@ class RestQueryCompilerTest {
     }
 
     @Test
-    @DisplayName("a reverse embed is capped at the engine's row limit when the caller sets none")
-    void reverseEmbedIsCapped() {
+    @DisplayName("a reverse embed is not cut by default")
+    void reverseEmbedIsNotCappedByDefault() {
       var embed = new RestQueryCompiler.EmbedSpec("orders", List.of("*"));
       var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(), null, List.of(embed), null, 10, 0, false));
+      assertFalse(result.sql().contains("LIMIT 30"), result.sql());
+    }
+
+    @Test
+    @DisplayName("with nested lists capped, a reverse embed is cut at the engine's row limit")
+    void reverseEmbedIsCappedWhenConfigured() {
+      var capped = new RestQueryCompiler(schema, dialect, "public", 30, TableAccess.UNRESTRICTED, true);
+      var embed = new RestQueryCompiler.EmbedSpec("orders", List.of("*"));
+      var result = capped.compileSelect(new RestQueryCompiler.SelectQuery(
           "public.products", List.of(), List.of(), null, List.of(embed), null, 10, 0, false));
       assertTrue(result.sql().contains("LIMIT 30"), "embedded list must be capped: " + result.sql());
     }
