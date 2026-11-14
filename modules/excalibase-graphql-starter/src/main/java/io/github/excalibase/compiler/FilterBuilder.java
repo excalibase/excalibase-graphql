@@ -804,7 +804,7 @@ public class FilterBuilder {
      * Generates a unique parameter name using the prefix and current param map size.
      */
     public String nextParam(String prefix, Map<String, Object> params) {
-        return prefix + "_" + params.size();
+        return paramSafe(prefix) + "_" + params.size();
     }
 
     // === Value extraction ===

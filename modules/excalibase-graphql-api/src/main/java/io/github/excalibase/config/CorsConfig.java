@@ -35,7 +35,8 @@ public class CorsConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource(
-            @Value("${app.cors.allowed-origins:*}") String platformOrigins,
+            @Value("${app.cors.allowed-origins:}") String allowedOrigins,
+            @Value("${CORS_ORIGINS:}") String platformAioOrigins,
             @Value("${app.cors.provisioning-url:${app.security.rls.policy-url:}}") String provisioningUrl,
             TokenFileSource provisioningTokenSource,
             @Value("${app.cors.ttl-ms:30000}") long ttlMillis) {
@@ -43,7 +44,13 @@ public class CorsConfig {
         if (provisioningUrl != null && !provisioningUrl.isBlank()) {
             provider = new ProvisioningProjectCorsProvider(provisioningUrl, provisioningTokenSource, ttlMillis);
         }
-        return new ProjectCorsConfigurationSource(provider, ProjectCorsConfigurationSource.configFor(split(platformOrigins)));
+        return new ProjectCorsConfigurationSource(provider, ProjectCorsConfigurationSource.configFor(split(platformOrigins(allowedOrigins, platformAioOrigins))));
+    }
+
+    /** {@code APP_CORS_ALLOWED_ORIGINS}, else {@code CORS_ORIGINS} (the name platform-aio sets), else any origin. */
+    static String platformOrigins(String allowedOrigins, String platformAioOrigins) {
+        String origins = allowedOrigins != null && !allowedOrigins.isBlank() ? allowedOrigins : platformAioOrigins;
+        return origins == null || origins.isBlank() ? "*" : origins;
     }
 
     private static List<String> split(String origins) {

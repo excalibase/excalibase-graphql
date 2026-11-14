@@ -178,17 +178,16 @@ public class JwtService {
     // -------------------------------------------------------------------------
 
     /**
-     * Validates the time window ({@code exp}, {@code nbf}) and issuer binding.
-     * API-key tokens ({@code scope=api-key}) are allowed to omit {@code exp};
-     * the issuer check applies only when an expected issuer is configured.
+     * Validates the time window ({@code exp}, {@code nbf}) and issuer binding. Every token
+     * must carry {@code exp}, an API key included; the issuer check applies only when an
+     * expected issuer is configured.
      */
     private void validateTemporalAndIssuer(JWTClaimsSet claims) throws JwtVerificationException {
         Date expiration = claims.getExpirationTime();
-        boolean isApiKey = "api-key".equals(claims.getClaim("scope"));
-        if (expiration == null && !isApiKey) {
+        if (expiration == null) {
             throw new JwtVerificationException("JWT missing required 'exp' claim");
         }
-        if (expiration != null && new Date().after(expiration)) {
+        if (new Date().after(expiration)) {
             throw new JwtVerificationException("JWT token expired");
         }
         Date notBefore = claims.getNotBeforeTime();

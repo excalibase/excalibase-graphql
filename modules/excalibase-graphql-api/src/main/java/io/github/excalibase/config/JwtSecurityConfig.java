@@ -52,6 +52,8 @@ public class JwtSecurityConfig {
             throw new IllegalStateException(NO_VERIFIER);
         }
 
+        requireAudienceWhenMultiTenant(security.isMultiTenantEnabled() ? security.multiTenant().provisioningUrl() : null,
+                auth.requireAudOrDefault());
         JwtService service = hasJwks
                 ? new JwtService(auth.jwksUrl(), ttlMinutes)
                 : new JwtService(auth.hmacSecret());
@@ -59,6 +61,17 @@ public class JwtSecurityConfig {
         return service
                 .expectedIssuer(auth.issuer())
                 .requireAudience(auth.requireAudOrDefault(), auth.audPrefix());
+    }
+
+    /**
+     * Without the audience check a token minted for one project passes the path check of every other, which
+     * a deployment serving many projects cannot allow.
+     */
+    static void requireAudienceWhenMultiTenant(String provisioningUrl, boolean requireAudience) {
+        if (provisioningUrl != null && !provisioningUrl.isBlank() && !requireAudience) {
+            throw new IllegalStateException("app.security.auth.require-aud=false is refused in multi-tenant mode "
+                    + "(app.security.multi-tenant.provisioning-url): a token for one project would open every other");
+        }
     }
 
     /**

@@ -3,6 +3,7 @@ package io.github.excalibase.postgres;
 import graphql.parser.Parser;
 import io.github.excalibase.compiler.QueryRejectedException;
 import io.github.excalibase.compiler.SqlCompiler;
+import io.github.excalibase.compiler.SqlKeywords;
 import io.github.excalibase.schema.ExposedFunctions;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
@@ -108,5 +109,10 @@ class QueryLimitsCompileTest {
     void aNestedLimitAboveMaxRowsIsLoweredWhenConfigured() {
         var compiled = compiler(true).compile(Parser.parse("{ publicUsers { id publicPosts(limit: 100000) { id } } }"));
         assertThat(compiled.params().values()).doesNotContain(100000);
+    }
+
+    @Test
+    void aColumnNameCannotSplitAParameterName() {
+        assertThat(SqlKeywords.namedParam("p_", "first name; DROP", 3)).matches("[A-Za-z0-9_]+");
     }
 }

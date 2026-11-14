@@ -88,7 +88,7 @@ app:
   cache:
     schema-ttl-minutes: 30  # Schema cache TTL in minutes (default: 30 minutes)
   cors:
-    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:*}      # platform default: routes without a project (health, actuator, legacy unscoped)
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}       # platform default for routes without a project (health, actuator, legacy unscoped); empty: CORS_ORIGINS (platform-aio name), else *
     provisioning-url: ${APP_CORS_PROVISIONING_URL:${app.security.rls.policy-url:}}  # per-project allowlist source (GET {url}/projects/{id}/info); empty = platform default everywhere
     # The service token is the shared provisioning one (app.security.rls.policy-pat[-file],
     # else app.security.multi-tenant.provisioning-pat[-file]); there is no CORS-specific token.
