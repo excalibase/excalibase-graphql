@@ -6,6 +6,8 @@ import io.micronaut.http.HttpResponse;
 import io.micronaut.http.MutableHttpRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -47,7 +49,7 @@ class KnownProjectFilterTest {
     };
 
     @Test
-    @DisplayName("a throttled lookup is a 429 a browser can read: any origin, and Vary")
+    @DisplayName("a throttled lookup is a 429 a browser can read: the asking origin, and Vary")
     void throttledLookupIsReadableByABrowser() {
         MutableHttpRequest<?> request = HttpRequest.POST("/" + PROJECT + "/graphql", "")
                 .header("Origin", "https://app.example.com");
@@ -55,7 +57,7 @@ class KnownProjectFilterTest {
         HttpResponse<?> response = new KnownProjectFilter(THROTTLED, false).filter(request);
 
         assertThat(response.code()).isEqualTo(429);
-        assertThat(response.getHeaders().get("Access-Control-Allow-Origin")).isEqualTo("*");
+        assertThat(response.getHeaders().get("Access-Control-Allow-Origin")).isEqualTo("https://app.example.com");
         assertThat(response.getHeaders().getAll("Vary")).contains("Origin");
         assertThat(body(response)).contains("\"code\":\"project_lookup_throttled\"");
     }
@@ -72,7 +74,7 @@ class KnownProjectFilterTest {
 
         assertThat(response).isNotNull();
         assertThat(response.code()).isEqualTo(204);
-        assertThat(response.getHeaders().get("Access-Control-Allow-Origin")).isEqualTo("*");
+        assertThat(response.getHeaders().get("Access-Control-Allow-Origin")).isEqualTo("https://app.example.com");
         assertThat(response.getHeaders().getAll("Vary")).contains("Origin");
         assertThat(response.getHeaders().get("Access-Control-Allow-Methods")).contains("POST").contains("DELETE");
         assertThat(response.getHeaders().get("Access-Control-Allow-Headers")).isEqualTo("authorization,content-type");
@@ -80,6 +82,61 @@ class KnownProjectFilterTest {
 
         HttpResponse<?> plain = new KnownProjectFilter(THROTTLED, false).filter(HttpRequest.OPTIONS("/" + PROJECT + "/graphql"));
         assertThat(plain.code()).isEqualTo(429);
+    }
+
+    private static HttpResponse<?> throttled(io.micronaut.http.HttpMethod method, String origin) {
+        MutableHttpRequest<?> request = HttpRequest.create(method, "/" + PROJECT + "/graphql");
+        if (origin != null) {
+            request.header("Origin", origin);
+        }
+        if (method == io.micronaut.http.HttpMethod.OPTIONS) {
+            request.header("Access-Control-Request-Method", "POST");
+        }
+        return new KnownProjectFilter(THROTTLED, false).filter(request);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"https://app.example.com", "http://localhost:3000", "https://a.b.example.com:8443"})
+    @DisplayName("a valid origin is echoed on the 429 and on a throttled preflight, never a literal *")
+    void validOriginIsEchoed(String origin) {
+        for (io.micronaut.http.HttpMethod method : new io.micronaut.http.HttpMethod[]{
+                io.micronaut.http.HttpMethod.POST, io.micronaut.http.HttpMethod.OPTIONS}) {
+            HttpResponse<?> response = throttled(method, origin);
+            assertThat(response.getHeaders().get("Access-Control-Allow-Origin")).as(method.name()).isEqualTo(origin);
+            assertThat(response.getHeaders().getAll("Vary")).as(method.name()).contains("Origin");
+            assertThat(response.getHeaders().get("Access-Control-Allow-Credentials")).as(method.name()).isNull();
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"null", "ftp://example.com", "https://", "example.com", "https://a.com/path",
+            "https://a.com?x=1", "https://user@a.com", "https://a.com#f", "https://a .com", "*", ""})
+    @DisplayName("a malformed, null or injected origin gets no Access-Control-Allow-Origin")
+    void invalidOriginGetsNoAllowOrigin(String origin) {
+        for (io.micronaut.http.HttpMethod method : new io.micronaut.http.HttpMethod[]{
+                io.micronaut.http.HttpMethod.POST, io.micronaut.http.HttpMethod.OPTIONS}) {
+            HttpResponse<?> response = throttled(method, origin);
+            assertThat(response.getHeaders().get("Access-Control-Allow-Origin")).as(method.name() + " " + origin).isNull();
+            assertThat(response.getHeaders().get("X-Injected")).isNull();
+            assertThat(response.code()).isEqualTo(method == io.micronaut.http.HttpMethod.OPTIONS ? 204 : 429);
+        }
+    }
+
+    @Test
+    @DisplayName("a CR or LF in an Origin never reaches a response: the server refuses to build the request")
+    void crlfOriginCannotBeBuilt() {
+        assertThat(org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> throttled(io.micronaut.http.HttpMethod.POST, "https://a.com\r\nX-Injected: 1"))).isNotNull();
+        assertThat(org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> throttled(io.micronaut.http.HttpMethod.POST, "https://a.com\nSet-Cookie: x=1"))).isNotNull();
+    }
+
+    @Test
+    @DisplayName("a throttled request with no Origin gets no Access-Control-Allow-Origin")
+    void missingOriginGetsNoAllowOrigin() {
+        HttpResponse<?> response = throttled(io.micronaut.http.HttpMethod.POST, null);
+        assertThat(response.getHeaders().get("Access-Control-Allow-Origin")).isNull();
+        assertThat(response.code()).isEqualTo(429);
     }
 
     @Test

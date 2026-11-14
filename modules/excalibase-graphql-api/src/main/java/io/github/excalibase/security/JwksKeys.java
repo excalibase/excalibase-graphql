@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import java.security.interfaces.ECPublicKey;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.LongSupplier;
 
@@ -36,7 +37,7 @@ final class JwksKeys {
     private final long minRetryMillis;
     private final LongSupplier clock;
     private final ReentrantLock refreshing = new ReentrantLock();
-    private volatile Snapshot snapshot;
+    private final AtomicReference<Snapshot> snapshot;
     private volatile long lastAttemptMillis;
 
     JwksKeys(Fetcher fetcher, Duration ttl, Duration minRetry, LongSupplier millisClock, List<Key> initial) {
@@ -44,19 +45,19 @@ final class JwksKeys {
         this.ttlMillis = ttl.toMillis();
         this.minRetryMillis = minRetry.toMillis();
         this.clock = millisClock;
-        this.snapshot = new Snapshot(List.copyOf(initial), millisClock.getAsLong());
+        this.snapshot = new AtomicReference<>(new Snapshot(List.copyOf(initial), millisClock.getAsLong()));
         this.lastAttemptMillis = millisClock.getAsLong();
     }
 
     /** The keys a token with {@code keyId} (null when it names none) may be verified with. */
     List<Key> keysFor(String keyId) {
-        if (clock.getAsLong() - snapshot.fetchedAtMillis() >= ttlMillis) {
+        if (clock.getAsLong() - snapshot.get().fetchedAtMillis() >= ttlMillis) {
             refresh();
         }
-        if (keyId != null && snapshot.keys().stream().noneMatch(key -> keyId.equals(key.keyId()))) {
+        if (keyId != null && snapshot.get().keys().stream().noneMatch(key -> keyId.equals(key.keyId()))) {
             refresh();
         }
-        List<Key> keys = snapshot.keys();
+        List<Key> keys = snapshot.get().keys();
         if (keyId == null) {
             return keys;
         }
@@ -73,7 +74,7 @@ final class JwksKeys {
                 return;
             }
             lastAttemptMillis = clock.getAsLong();
-            snapshot = new Snapshot(List.copyOf(fetcher.fetch()), clock.getAsLong());
+            snapshot.set(new Snapshot(List.copyOf(fetcher.fetch()), clock.getAsLong()));
         } catch (Exception e) {
             log.warn("jwt_keys_refresh_failed, keeping the keys held: {}", e.toString());
         } finally {
