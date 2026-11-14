@@ -67,6 +67,31 @@ class KnownProjectFilterTest {
     }
 
     @Test
+    @DisplayName("a browser preflight is not throttled, so the real request that follows gets the readable 429")
+    void preflightSkipsTheLookupThrottle() throws Exception {
+        KnownProjects throttled = id -> {
+            throw new ProjectLookupThrottledException();
+        };
+        FilterChain chain = mock(FilterChain.class);
+        MockHttpServletRequest preflight = new MockHttpServletRequest("OPTIONS", "/" + PROJECT + "/graphql");
+        preflight.setRequestURI("/" + PROJECT + "/graphql");
+        preflight.addHeader("Origin", "https://app.example.com");
+        preflight.addHeader("Access-Control-Request-Method", "POST");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        new KnownProjectFilter(throttled).doFilter(preflight, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(chain).doFilter(any(), any());
+
+        MockHttpServletRequest plainOptions = new MockHttpServletRequest("OPTIONS", "/" + PROJECT + "/graphql");
+        plainOptions.setRequestURI("/" + PROJECT + "/graphql");
+        MockHttpServletResponse refused = new MockHttpServletResponse();
+        new KnownProjectFilter(throttled).doFilter(plainOptions, refused, mock(FilterChain.class));
+        assertThat(refused.getStatus()).isEqualTo(429);
+    }
+
+    @Test
     @DisplayName("with request metrics on, only a project that passed the check is marked known")
     void knownProjectAttribute() throws Exception {
         MockHttpServletRequest known = new MockHttpServletRequest("POST", "/" + PROJECT + "/graphql");

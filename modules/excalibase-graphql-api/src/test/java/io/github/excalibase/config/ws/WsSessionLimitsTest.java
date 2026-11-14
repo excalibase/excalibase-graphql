@@ -16,7 +16,12 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+import reactor.core.publisher.Flux;
 
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -53,7 +58,7 @@ class WsSessionLimitsTest {
         runtime.stop();
     }
 
-    private RealtimeWebSocketHandler realtime(WsLimits limits, java.util.concurrent.Executor executor) {
+    private RealtimeWebSocketHandler realtime(WsLimits limits, Executor executor) {
         runtime = new WsRuntime(limits, executor);
         return new RealtimeWebSocketHandler(subscriptions, mapper, provider((JwtService) null),
                 new WebSocketHeartbeat(0), provider((AccessPlans) null), provider((RequestMetrics) null), runtime);
@@ -98,7 +103,7 @@ class WsSessionLimitsTest {
     }
 
     private static void set(Object target, String field, boolean value) throws Exception {
-        java.lang.reflect.Field f = target.getClass().getDeclaredField(field);
+        Field f = target.getClass().getDeclaredField(field);
         f.setAccessible(true);
         f.setBoolean(target, value);
     }
@@ -146,10 +151,10 @@ class WsSessionLimitsTest {
     @Test
     @DisplayName("a subscribe that fails after its reservation gives the reservation back")
     void failedSubscribeReleasesItsReservation() throws Exception {
-        java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean(true);
+        AtomicBoolean fail = new AtomicBoolean(true);
         subscriptions = new SubscriptionService() {
             @Override
-            public reactor.core.publisher.Flux<CDCEvent> subscribe(String tenantId, String tableName) {
+            public Flux<CDCEvent> subscribe(String tenantId, String tableName) {
                 if (fail.getAndSet(false)) {
                     throw new IllegalStateException("sink unavailable");
                 }
@@ -174,10 +179,10 @@ class WsSessionLimitsTest {
     @Test
     @DisplayName("realtime: a close that lands during a subscribe gives its project slot back")
     void realtimeCloseDuringSubscribeKeepsNoSlot() throws Exception {
-        java.util.concurrent.atomic.AtomicReference<Runnable> midSubscribe = new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicReference<Runnable> midSubscribe = new AtomicReference<>();
         subscriptions = new SubscriptionService() {
             @Override
-            public reactor.core.publisher.Flux<CDCEvent> subscribe(String tenantId, String tableName) {
+            public Flux<CDCEvent> subscribe(String tenantId, String tableName) {
                 Runnable hook = midSubscribe.getAndSet(null);
                 if (hook != null) {
                     hook.run();
@@ -203,10 +208,10 @@ class WsSessionLimitsTest {
     @Test
     @DisplayName("GraphQL: a close that lands during a subscribe gives its project slot back")
     void graphqlCloseDuringSubscribeKeepsNoSlot() throws Exception {
-        java.util.concurrent.atomic.AtomicReference<Runnable> midSubscribe = new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicReference<Runnable> midSubscribe = new AtomicReference<>();
         subscriptions = new SubscriptionService() {
             @Override
-            public reactor.core.publisher.Flux<CDCEvent> subscribe(String tenantId, String tableName) {
+            public Flux<CDCEvent> subscribe(String tenantId, String tableName) {
                 Runnable hook = midSubscribe.getAndSet(null);
                 if (hook != null) {
                     hook.run();
@@ -316,7 +321,7 @@ class WsSessionLimitsTest {
     @DisplayName("a client that never reads is closed with 4429 once its queue overflows")
     void overflowClosesSlowConsumer() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 3),
-                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+                Executors.newVirtualThreadPerTaskExecutor());
         CountDownLatch release = new CountDownLatch(1);
         WebSocketSession stuck = session("p1", "1.1.1.1", new ArrayList<>());
         doAnswer(call -> {
@@ -337,7 +342,7 @@ class WsSessionLimitsTest {
     @DisplayName("a send that does not come back within the grace closes the client with 4429")
     void stuckSendClosesSlowConsumer() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 100),
-                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+                Executors.newVirtualThreadPerTaskExecutor());
         CountDownLatch release = new CountDownLatch(1);
         WebSocketSession stuck = session("p1", "1.1.1.1", new ArrayList<>());
         doAnswer(call -> {
@@ -357,7 +362,7 @@ class WsSessionLimitsTest {
     @DisplayName("one client that never reads, or is slow to render, does not delay another project's events")
     void slowClientDoesNotDelayAnotherProject() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 50),
-                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+                Executors.newVirtualThreadPerTaskExecutor());
         AtomicBoolean stalled = new AtomicBoolean(true);
         CountDownLatch sending = new CountDownLatch(1);
         List<String> slowSent = Collections.synchronizedList(new ArrayList<>());

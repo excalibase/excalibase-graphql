@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
@@ -50,6 +51,12 @@ public class KnownProjectFilter extends OncePerRequestFilter {
             writeError(response, HttpServletResponse.SC_NOT_FOUND, "Project not found", "project_not_found");
             return;
         } catch (ProjectLookupThrottledException e) {
+            if (CorsUtils.isPreFlightRequest(request)) {
+                // The throttle answers the real request, with a 429 a browser can read; a preflight on its own
+                // would only get a bare 429 without the allowed methods and headers.
+                chain.doFilter(request, response);
+                return;
+            }
             allowAnyOriginToRead(request, response);
             writeError(response, 429, "Too many project lookups", "project_lookup_throttled");
             return;

@@ -5,6 +5,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.PingMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -13,6 +15,8 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -70,7 +74,7 @@ class WebSocketHeartbeatTest {
         WebSocketSession broken = mock(WebSocketSession.class);
         when(broken.isOpen()).thenReturn(true);
         when(broken.getId()).thenReturn("broken");
-        org.mockito.Mockito.doThrow(new java.io.IOException("boom"))
+        doThrow(new IOException("boom"))
                 .when(broken).sendMessage(any(PingMessage.class));
 
         heartbeat.register(broken);
@@ -88,7 +92,7 @@ class WebSocketHeartbeatTest {
         WebSocketSession stuck = mock(WebSocketSession.class);
         when(stuck.isOpen()).thenReturn(true);
         when(stuck.getId()).thenReturn("stuck");
-        org.mockito.Mockito.doAnswer(call -> {
+        doAnswer(call -> {
             unblock.await(30, TimeUnit.SECONDS);
             return null;
         }).when(stuck).sendMessage(any(PingMessage.class));
@@ -111,7 +115,7 @@ class WebSocketHeartbeatTest {
                 }
             });
             heartbeat.pingAll();
-            assertThat(round.join(java.time.Duration.ofSeconds(2))).isTrue();
+            assertThat(round.join(Duration.ofSeconds(2))).isTrue();
             verify(stuck, times(1)).sendMessage(any(PingMessage.class));
         } finally {
             unblock.countDown();

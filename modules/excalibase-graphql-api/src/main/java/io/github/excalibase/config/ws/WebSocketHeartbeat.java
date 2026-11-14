@@ -13,6 +13,7 @@ import org.springframework.web.socket.WebSocketSession;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -46,7 +47,7 @@ public class WebSocketHeartbeat {
 
     @Autowired
     public WebSocketHeartbeat(@Value("${app.websocket.heartbeat-seconds:25}") long intervalSeconds) {
-        this(intervalSeconds, java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+        this(intervalSeconds, Executors.newVirtualThreadPerTaskExecutor());
     }
 
     WebSocketHeartbeat(long intervalSeconds, Executor pinger) {
@@ -122,6 +123,9 @@ public class WebSocketHeartbeat {
     void stop() {
         if (scheduler != null) {
             scheduler.shutdownNow();
+        }
+        if (pinger instanceof ExecutorService service) {
+            service.shutdownNow();
         }
     }
 }
