@@ -133,7 +133,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        String key = (schema == null ? "public" : schema) + "_" + collection;
+        String key = (schema == null ? "public" : schema) + "." + collection;
 
         Map<String, Disposable> sessionSubs = sessionSubscriptions.get(session.getId());
         if (sessionSubs == null) {

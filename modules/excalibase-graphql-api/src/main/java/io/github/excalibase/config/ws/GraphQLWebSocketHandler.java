@@ -233,9 +233,9 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
                 id, tenantId, tableName, fieldName, session.getId());
 
         // Subscribe to the table's event stream — scoped to the JWT's tenant (null in single-tenant mode)
-        // Changes are published under schema_table: subscribe to the table the field resolved to, so a
+        // Changes are published under schema.table: subscribe to the table the field resolved to, so a
         // bare field name of the default schema receives them too.
-        String sinkKey = delivery.access() == null ? tableName : delivery.access().table().replace('.', '_');
+        String sinkKey = delivery.access() == null ? tableName : delivery.access().table();
         Disposable disposable = subscriptionService.subscribe(tenantId, sinkKey)
                 .subscribe(event -> forward(session, id, fieldName, delivery, event));
 
