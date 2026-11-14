@@ -12,6 +12,9 @@ import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Optional;
 
 /**
  * Refuses a request whose path names a project this deployment does not serve.
@@ -56,7 +59,7 @@ public class KnownProjectFilter extends OncePerRequestFilter {
                 answerPreflight(request, response);
                 return;
             }
-            allowAnyOriginToRead(request, response);
+            allowAskingOriginToRead(request, response);
             writeError(response, 429, "Too many project lookups", "project_lookup_throttled");
             return;
         } catch (ProjectWithoutDatabaseException e) {
@@ -76,27 +79,42 @@ public class KnownProjectFilter extends OncePerRequestFilter {
 
     /**
      * This runs before the CORS filter, which would have to ask provisioning for the project's origins, and
-     * the throttle exists to keep that from happening. The refusal says nothing about any project, so any origin
-     * may read it: a browser then sees a 429 it can back off from instead of an opaque network error.
+     * the throttle exists to keep that from happening. The refusal says nothing about any project, so the asking
+     * origin may read it: a browser then sees a 429 it can back off from instead of an opaque network error.
      */
-    private static void allowAnyOriginToRead(HttpServletRequest request, HttpServletResponse response) {
+    private static void allowAskingOriginToRead(HttpServletRequest request, HttpServletResponse response) {
         response.addHeader("Vary", "Origin");
-        if (request.getHeader("Origin") != null) {
-            response.setHeader("Access-Control-Allow-Origin", "*");
+        validOrigin(request).ifPresent(origin -> response.setHeader("Access-Control-Allow-Origin", origin));
+    }
+
+    /** The request's Origin when it is exactly scheme, host and optional port; anything else is not echoed. */
+    private static Optional<String> validOrigin(HttpServletRequest request) {
+        String origin = request.getHeader("Origin");
+        if (origin == null || origin.chars().anyMatch(c -> c <= ' ' || c >= 0x7f)) {
+            return Optional.empty();
+        }
+        try {
+            URI uri = new URI(origin);
+            boolean webScheme = "http".equals(uri.getScheme()) || "https".equals(uri.getScheme());
+            boolean bare = uri.getRawUserInfo() == null && uri.getRawPath().isEmpty()
+                    && uri.getRawQuery() == null && uri.getRawFragment() == null;
+            return webScheme && bare && uri.getHost() != null ? Optional.of(origin) : Optional.empty();
+        } catch (URISyntaxException _) {
+            return Optional.empty();
         }
     }
 
     /**
      * A preflight for a project whose lookup is throttled is answered here, never passed on: the CORS filter would
-     * fetch the project's origins from provisioning, once per preflight, for an id nobody has vouched for. Any
-     * origin may then send the real request, which gets the readable 429 (or its real answer).
+     * fetch the project's origins from provisioning, once per preflight, for an id nobody has vouched for. The
+     * asking origin may then send the real request, which gets the readable 429 (or its real answer).
      */
     private static void answerPreflight(HttpServletRequest request, HttpServletResponse response) {
         response.setStatus(HttpServletResponse.SC_NO_CONTENT);
         response.addHeader("Vary", "Origin");
         response.addHeader("Vary", "Access-Control-Request-Method");
         response.addHeader("Vary", "Access-Control-Request-Headers");
-        response.setHeader("Access-Control-Allow-Origin", "*");
+        validOrigin(request).ifPresent(origin -> response.setHeader("Access-Control-Allow-Origin", origin));
         response.setHeader("Access-Control-Allow-Methods", String.join(",", ProjectCorsConfigurationSource.ALLOWED_METHODS));
         String requested = request.getHeader("Access-Control-Request-Headers");
         if (requested != null) {

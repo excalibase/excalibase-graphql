@@ -108,7 +108,7 @@ class QueryLimitsCompileTest {
     @Test
     void aNestedLimitAboveMaxRowsIsLoweredWhenConfigured() {
         var compiled = compiler(true).compile(Parser.parse("{ publicUsers { id publicPosts(limit: 100000) { id } } }"));
-        assertThat(compiled.params().values()).doesNotContain(100000);
+        assertThat(compiled.params().values()).isNotEmpty().doesNotContain(100000);
     }
 
     @Test
