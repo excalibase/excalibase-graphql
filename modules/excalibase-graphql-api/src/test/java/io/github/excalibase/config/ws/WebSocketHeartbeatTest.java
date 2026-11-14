@@ -5,6 +5,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.PingMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -14,7 +21,7 @@ import static org.mockito.Mockito.when;
 
 class WebSocketHeartbeatTest {
 
-    private final WebSocketHeartbeat heartbeat = new WebSocketHeartbeat(0);
+    private final WebSocketHeartbeat heartbeat = new WebSocketHeartbeat(0, Runnable::run);
 
     @Test
     @DisplayName("pingAll sends a PING frame to every open registered session")
@@ -71,5 +78,43 @@ class WebSocketHeartbeatTest {
         heartbeat.pingAll();   // already gone — no second attempt
 
         verify(broken, times(1)).sendMessage(any(PingMessage.class));
+    }
+
+    @Test
+    @DisplayName("a session whose write is stuck does not delay the ping of any other, and is not pinged again meanwhile")
+    void stuckWriterDoesNotStallOthers() throws Exception {
+        WebSocketHeartbeat heartbeat = new WebSocketHeartbeat(0);
+        CountDownLatch unblock = new CountDownLatch(1);
+        WebSocketSession stuck = mock(WebSocketSession.class);
+        when(stuck.isOpen()).thenReturn(true);
+        when(stuck.getId()).thenReturn("stuck");
+        org.mockito.Mockito.doAnswer(call -> {
+            unblock.await(30, TimeUnit.SECONDS);
+            return null;
+        }).when(stuck).sendMessage(any(PingMessage.class));
+        heartbeat.register(stuck);
+        List<WebSocketSession> healthy = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            WebSocketSession session = mock(WebSocketSession.class);
+            when(session.isOpen()).thenReturn(true);
+            when(session.getId()).thenReturn("ok-" + i);
+            heartbeat.register(session);
+            healthy.add(session);
+        }
+        Thread round = new Thread(heartbeat::pingAll);
+        round.setDaemon(true);
+        try {
+            round.start();
+            await().atMost(3, TimeUnit.SECONDS).untilAsserted(() -> {
+                for (WebSocketSession session : healthy) {
+                    verify(session).sendMessage(any(PingMessage.class));
+                }
+            });
+            heartbeat.pingAll();
+            assertThat(round.join(java.time.Duration.ofSeconds(2))).isTrue();
+            verify(stuck, times(1)).sendMessage(any(PingMessage.class));
+        } finally {
+            unblock.countDown();
+        }
     }
 }
