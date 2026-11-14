@@ -217,16 +217,21 @@ public class RestQueryCompiler {
     @SuppressWarnings("unchecked")
     private VectorSearchBuilder.VectorClause compileVectorFilter(
             FilterSpec filter, String tableAlias, Map<String, Object> params) {
+        Map<String, Object> shape;
         try {
-            Map<String, Object> shape = MAPPER.readValue(filter.value(), Map.class);
-            // The column name is the URL key (e.g. ?embedding=vector.{...}), not
-            // a field inside the JSON — ensure the shape carries it for the builder.
-            shape.putIfAbsent("column", filter.column());
-            VectorSearchBuilder builder = new VectorSearchBuilder(dialect);
-            return builder.buildFromMap(shape, tableAlias, schemaInfo, params).orElse(null);
+            shape = MAPPER.readValue(filter.value(), Map.class);
         } catch (Exception _) {
             return null;
         }
+        // The column is the URL key, which the caller's view already vouched for; a different one
+        // inside the JSON would order by a column nobody checked.
+        Object named = shape.get("column");
+        if (named != null && !filter.column().equals(named)) {
+            throw new IllegalArgumentException("The vector search column must be '" + filter.column()
+                    + "', not '" + named + "'");
+        }
+        shape.put("column", filter.column());
+        return new VectorSearchBuilder(dialect).buildFromMap(shape, tableAlias, schemaInfo, params).orElse(null);
     }
 
     public CompiledResult compileInsert(String table, Map<String, Object> input) {
