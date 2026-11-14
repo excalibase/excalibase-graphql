@@ -582,6 +582,17 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("bulk insert into columns named with a space or a quote")
+    void bulkInsertColumnNamesWithSpaces() throws Exception {
+      http.post(BASE + "/spaced_columns",
+              "[{\"first name\":\"Ada\",\"o'neil\":\"x\"},{\"first name\":\"Bob\",\"o'neil\":\"y\"}]",
+              "Content-Type", "application/json", "Prefer", "return=representation")
+          .expect(status().isCreated())
+          .expect(jsonPath("$.data", hasSize(2)))
+          .expect(jsonPath("$.data[1]['first name']", is("Bob")));
+    }
+
+    @Test
     @DisplayName("POST with Prefer: resolution=merge-duplicates upserts")
     void upsert() throws Exception {
       http.post(BASE + "/products", "{\"id\":1,\"name\":\"Upserted Widget\",\"price\":99.99}", "Content-Type", "application/json", "Prefer", "return=representation, resolution=merge-duplicates")

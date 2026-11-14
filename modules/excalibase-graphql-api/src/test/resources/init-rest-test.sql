@@ -74,3 +74,9 @@ CREATE OR REPLACE FUNCTION add_numbers(a integer, b integer)
 RETURNS integer LANGUAGE sql IMMUTABLE AS $$
     SELECT a + b;
 $$;
+
+CREATE TABLE spaced_columns (
+    id SERIAL PRIMARY KEY,
+    "first name" TEXT,
+    "o'neil" TEXT
+);
