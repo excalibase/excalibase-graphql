@@ -621,6 +621,36 @@ class RestControllerIntegrationTest {
     }
 
     @Test
+    @DisplayName("bulk insert into columns named with a space or a quote")
+    void bulkInsertColumnNamesWithSpaces() throws Exception {
+      mockMvc.perform(post(BASE + "/spaced_columns")
+              .contentType(MediaType.APPLICATION_JSON)
+              .header("Prefer", "return=representation")
+              .content("[{\"first name\":\"Ada\",\"o'neil\":\"x\"},{\"first name\":\"Bob\",\"o'neil\":\"y\"}]"))
+          .andExpect(status().isCreated())
+          .andExpect(jsonPath("$.data", hasSize(2)))
+          .andExpect(jsonPath("$.data[1]['first name']", is("Bob")));
+    }
+
+    @Test
+    @DisplayName("bulk insert columns whose names sanitise alike each keep their own value")
+    void bulkInsertCollidingColumnNames() throws Exception {
+      mockMvc.perform(post(BASE + "/colliding_columns")
+              .contentType(MediaType.APPLICATION_JSON)
+              .header("Prefer", "return=representation")
+              .content("[{\"a_b_2\":\"one\",\"a b\":\"two\",\"a_b\":\"three\"},"
+                  + "{\"a_b_2\":\"four\",\"a b\":\"five\",\"a_b\":\"six\"}]"))
+          .andExpect(status().isCreated())
+          .andExpect(jsonPath("$.data", hasSize(2)))
+          .andExpect(jsonPath("$.data[0].a_b_2", is("one")))
+          .andExpect(jsonPath("$.data[0]['a b']", is("two")))
+          .andExpect(jsonPath("$.data[0].a_b", is("three")))
+          .andExpect(jsonPath("$.data[1].a_b_2", is("four")))
+          .andExpect(jsonPath("$.data[1]['a b']", is("five")))
+          .andExpect(jsonPath("$.data[1].a_b", is("six")));
+    }
+
+    @Test
     @DisplayName("POST with Prefer: resolution=merge-duplicates upserts")
     void upsert() throws Exception {
       mockMvc.perform(post(BASE + "/products")
