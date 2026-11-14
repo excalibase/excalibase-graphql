@@ -80,6 +80,19 @@ class RequestBodyLimitIntegrationTest {
     }
 
     @Test
+    @DisplayName("the 413 carries the security headers and Vary of any other error, in the default error body")
+    void refusalLooksLikeOtherSpringErrors() throws Exception {
+        HttpResponse<String> response = post("/test-proj/graphql", "application/json",
+                BodyPublishers.ofString(json(9 * MIB)));
+
+        assertThat(response.statusCode()).isEqualTo(413);
+        assertThat(response.headers().firstValue("x-content-type-options")).contains("nosniff");
+        assertThat(response.headers().firstValue("vary").orElse("")).contains("Origin");
+        assertThat(response.headers().firstValue("content-type").orElse("")).contains("application/json");
+        assertThat(response.body()).contains("\"status\":413").contains("Payload Too Large");
+    }
+
+    @Test
     @DisplayName("a REST JSON body of 9 MiB is refused with 413")
     void oversizedRestBodyIsRefused() throws Exception {
         assertThat(post("/test-proj/api/v1/messages", "application/json", BodyPublishers.ofString(json(9 * MIB))).statusCode())

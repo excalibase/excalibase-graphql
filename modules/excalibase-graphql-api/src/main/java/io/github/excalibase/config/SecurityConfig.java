@@ -2,7 +2,6 @@ package io.github.excalibase.config;
 
 import io.github.excalibase.cors.BrowserEnforcedCorsProcessor;
 import io.github.excalibase.observability.requests.RequestMetrics;
-import io.github.excalibase.http.RequestBodyLimitFilter;
 import io.github.excalibase.security.JwtAuthFilter;
 import io.github.excalibase.security.KnownProjectFilter;
 import io.github.excalibase.security.KnownProjects;
@@ -11,9 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.util.unit.DataSize;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
@@ -26,8 +23,7 @@ public class SecurityConfig {
                                            CorsConfigurationSource corsConfigurationSource,
                                            KnownProjects knownProjects,
                                            ObjectProvider<RequestMetrics> requestMetrics,
-                                           @Autowired(required = false) JwtAuthFilter jwtAuthFilter,
-                                           @Value("${app.max-request-body:8MB}") DataSize maxBodyBytes) throws Exception {
+                                           @Autowired(required = false) JwtAuthFilter jwtAuthFilter) throws Exception {
         // CSRF disabled — stateless JWT API, no session cookies, Bearer-token auth only.
         // CORS runs here, ahead of auth, so a preflight never needs a token and the
         // per-project origin check covers every servlet path (incl. WS upgrades) of a
@@ -45,9 +41,6 @@ public class SecurityConfig {
         // check, and neither lookup should reach provisioning on its behalf.
         http.addFilterBefore(new KnownProjectFilter(knownProjects, requestMetrics.getIfAvailable() != null),
                 CorsFilter.class);
-        // Right behind CORS, ahead of authentication: an oversized body costs nothing to refuse, and the refusal
-        // still carries the CORS vary headers.
-        http.addFilterAfter(new RequestBodyLimitFilter(maxBodyBytes.toBytes()), CorsFilter.class);
         if (jwtAuthFilter != null) {
             http.addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
         }
