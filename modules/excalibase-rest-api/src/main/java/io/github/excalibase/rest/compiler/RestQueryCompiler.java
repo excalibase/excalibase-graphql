@@ -195,7 +195,7 @@ public class RestQueryCompiler {
 
         StringBuilder sql = new StringBuilder();
         sql.append(SELECT).append(jsonAgg).append(AS_BODY);
-        if (query.includeCount()) appendCountSubquery(sql, filters, quotedTable, params, query.table());
+        if (query.includeCount()) appendCountSubquery(sql, filters, query.orConditions(), quotedTable, params, query.table());
         sql.append(FROM).append(parens(inner.toString())).append(SPACE).append(ALIAS);
         return new CompiledResult(sql.toString(), params);
     }
@@ -705,9 +705,14 @@ public class RestQueryCompiler {
     }
 
     private void appendOrConditions(StringBuilder where, List<OrCondition> ors, Map<String, Object> params, String table) {
+        appendOrConditions(where, ors, P_OR, params, table);
+    }
+
+    private void appendOrConditions(StringBuilder where, List<OrCondition> ors, String prefix,
+                                    Map<String, Object> params, String table) {
         if (ors == null) return;
         for (int oi = 0; oi < ors.size(); oi++) {
-            String group = logicSql(ors.get(oi).group(), P_OR + oi, params, table);
+            String group = logicSql(ors.get(oi).group(), prefix + oi, params, table);
             if (!group.isEmpty()) {
                 if (!where.isEmpty()) where.append(AND);
                 where.append(group);
@@ -809,8 +814,10 @@ public class RestQueryCompiler {
         return entries;
     }
 
-    private void appendCountSubquery(StringBuilder sql, List<FilterSpec> filters, String quotedTable, Map<String, Object> params, String table) {
+    private void appendCountSubquery(StringBuilder sql, List<FilterSpec> filters, List<OrCondition> ors,
+                                     String quotedTable, Map<String, Object> params, String table) {
         StringBuilder cw = buildWhere(filters, P_FILTER_COUNT, params, table);
+        appendOrConditions(cw, ors, P_FILTER_COUNT + "or_", params, table);
         // totalCount must respect RLS or it leaks the unfiltered total. The count
         // table is unaliased, so relationship/EXISTS correlate by table name (null).
         appendRls(cw, table, null, RlsOp.SELECT, params);

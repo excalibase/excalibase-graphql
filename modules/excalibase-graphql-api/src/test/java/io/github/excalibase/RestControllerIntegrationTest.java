@@ -790,6 +790,15 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
           .expect(status().isOk())
           .expect(jsonPath("$.data", hasSize(3))); // Widget, Thingamajig (tools) + Doohickey (gadgets)
     }
+
+    @Test
+    @DisplayName("count=exact with an or= group counts the rows the group keeps, not the whole table")
+    void countRespectsOrGroups() throws Exception {
+      http.get(BASE + "/products?or=(category.eq.tools,category.eq.gadgets)&limit=1", "Prefer", "count=exact")
+          .expect(status().isOk())
+          .expect(jsonPath("$.pagination.total", is(3)))
+          .expect(header().string("Content-Range", containsString("/3")));
+    }
   }
 
   @Nested
