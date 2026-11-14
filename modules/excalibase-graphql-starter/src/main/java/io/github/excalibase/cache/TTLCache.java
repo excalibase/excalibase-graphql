@@ -38,10 +38,17 @@ import java.util.function.Predicate;
 public class TTLCache<K, V> {
 
     private final Map<K, CacheEntry<V>> cache = new ConcurrentHashMap<>();
-    private final Map<K, CompletableFuture<V>> inFlight = new ConcurrentHashMap<>();
+    private final Map<K, Build<V>> inFlight = new ConcurrentHashMap<>();
     private final Duration ttl;
     private final Consumer<V> onEvict;
     private final ScheduledExecutorService cleanupExecutor;
+
+    /** A value being built for one key; an evict of that key while it runs marks it stale. */
+    private static final class Build<V> extends CompletableFuture<V> {
+        private volatile boolean stale;
+    }
+
+    private static final int REBUILDS = 3;
 
     private static class CacheEntry<V> {
         private final V value;
@@ -93,28 +100,67 @@ public class TTLCache<K, V> {
     /**
      * The cached value, or the one {@code mappingFunction} builds. Only one thread builds a value per key and the
      * others wait for it; the build runs outside any map lock, so a slow or hanging one blocks neither the cached
-     * keys nor the other keys' builds. A failure reaches every waiter and is not cached.
+     * keys nor the other keys' builds. A failure reaches every waiter and is not cached. A value whose key was
+     * evicted while it was being built is released through onEvict and built again, never kept.
      */
     public V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
-        V cached = get(key);
-        if (cached != null) return cached;
-        CompletableFuture<V> mine = new CompletableFuture<>();
-        CompletableFuture<V> running = inFlight.putIfAbsent(key, mine);
-        if (running != null) return await(running);
-        try {
-            V value = get(key);
-            if (value == null) {
-                value = mappingFunction.apply(key);
-                if (value != null) put(key, value);
+        for (int attempt = 1; ; attempt++) {
+            V cached = get(key);
+            if (cached != null) return cached;
+            Build<V> mine = new Build<>();
+            Build<V> running = inFlight.putIfAbsent(key, mine);
+            if (running != null) {
+                V shared = await(running);
+                if (!running.stale) return shared;
+                continue;
             }
-            mine.complete(value);
-            return value;
-        } catch (RuntimeException | Error failure) {
-            mine.completeExceptionally(failure);
-            throw failure;
-        } finally {
-            inFlight.remove(key, mine);
+            try {
+                V value = get(key);
+                if (value == null) {
+                    value = mappingFunction.apply(key);
+                    if (value != null && !keep(key, value, mine, attempt)) {
+                        mine.complete(value);
+                        continue;
+                    }
+                }
+                mine.complete(value);
+                return value;
+            } catch (RuntimeException | Error failure) {
+                mine.completeExceptionally(failure);
+                throw failure;
+            } finally {
+                inFlight.remove(key, mine);
+            }
         }
+    }
+
+    /**
+     * Stores a freshly built value unless its key was evicted meanwhile. The check runs after the put as well:
+     * an evict marks the build before it touches the map, so one of the two sides always sees the other.
+     */
+    private boolean keep(K key, V value, Build<V> build, int attempt) {
+        if (attempt < REBUILDS && build.stale) {
+            release(value);
+            return false;
+        }
+        CacheEntry<V> entry = new CacheEntry<>(value, ttl);
+        CacheEntry<V> previous = cache.put(key, entry);
+        if (previous != null && onEvict != null) onEvict.accept(previous.getValue());
+        if (attempt < REBUILDS && build.stale) {
+            evictEntry(key, entry);
+            return false;
+        }
+        return true;
+    }
+
+    private void release(V value) {
+        if (onEvict != null) onEvict.accept(value);
+    }
+
+    private void markStale(Predicate<? super K> keyFilter) {
+        inFlight.forEach((key, build) -> {
+            if (keyFilter.test(key)) build.stale = true;
+        });
     }
 
     private static <V> V await(CompletableFuture<V> running) {
@@ -131,6 +177,7 @@ public class TTLCache<K, V> {
     }
 
     public V remove(K key) {
+        markStale(key::equals);
         CacheEntry<V> entry = cache.remove(key);
         if (entry != null) {
             if (onEvict != null) onEvict.accept(entry.getValue());
@@ -141,6 +188,7 @@ public class TTLCache<K, V> {
 
     /** Removes every entry whose key matches, running onEvict for each. */
     public void removeIf(Predicate<? super K> keyFilter) {
+        markStale(keyFilter);
         for (K key : Set.copyOf(cache.keySet())) {
             if (keyFilter.test(key)) {
                 remove(key);
@@ -149,6 +197,7 @@ public class TTLCache<K, V> {
     }
 
     public void clear() {
+        markStale(key -> true);
         if (onEvict != null) {
             cache.values().forEach(entry -> onEvict.accept(entry.getValue()));
         }

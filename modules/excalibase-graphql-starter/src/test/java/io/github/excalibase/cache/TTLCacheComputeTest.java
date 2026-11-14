@@ -93,6 +93,56 @@ class TTLCacheComputeTest {
         }
     }
 
+    /** Runs a build that is still going when {@code invalidate} fires, then lets it finish. */
+    private static void evictDuringBuild(java.util.function.Consumer<TTLCache<String, String>> invalidate,
+                                         List<String> evicted) throws Exception {
+        TTLCache<String, String> cache = new TTLCache<>(Duration.ofMinutes(1), evicted::add);
+        CountDownLatch building = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            AtomicInteger builds = new AtomicInteger();
+            Future<String> build = pool.submit(() -> cache.computeIfAbsent("schema", key -> {
+                if (builds.incrementAndGet() > 1) {
+                    return "fresh";
+                }
+                building.countDown();
+                await(release);
+                return "stale";
+            }));
+            assertThat(building.await(5, TimeUnit.SECONDS)).isTrue();
+            invalidate.accept(cache);
+            release.countDown();
+            assertThat(build.get(5, TimeUnit.SECONDS)).as("the caller gets a value built after the evict").isEqualTo("fresh");
+            assertThat(cache.get("schema")).as("the build that began before the evict is not kept").isEqualTo("fresh");
+        } finally {
+            pool.shutdownNow();
+            cache.shutdown();
+        }
+    }
+
+    @Test
+    void aRemoveDuringABuildIsNotLost() throws Exception {
+        evictDuringBuild(cache -> cache.remove("schema"), new java.util.concurrent.CopyOnWriteArrayList<>());
+    }
+
+    @Test
+    void aRemoveIfDuringABuildIsNotLost() throws Exception {
+        evictDuringBuild(cache -> cache.removeIf("schema"::equals), new java.util.concurrent.CopyOnWriteArrayList<>());
+    }
+
+    @Test
+    void aClearDuringABuildIsNotLost() throws Exception {
+        evictDuringBuild(TTLCache::clear, new java.util.concurrent.CopyOnWriteArrayList<>());
+    }
+
+    @Test
+    void aValueBuiltBeforeAnEvictIsReleasedThroughOnEvict() throws Exception {
+        List<String> evicted = new java.util.concurrent.CopyOnWriteArrayList<>();
+        evictDuringBuild(cache -> cache.remove("schema"), evicted);
+        assertThat(evicted).contains("stale");
+    }
+
     private static void await(CountDownLatch latch) {
         try {
             latch.await(10, TimeUnit.SECONDS);
