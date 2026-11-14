@@ -121,7 +121,7 @@ public class CorsFilter implements Ordered {
 
     /** True when the Origin is this server's own scheme, host and port. */
     public static boolean sameOrigin(HttpRequest<?> request, String origin) {
-        String host = request.getHeaders().get("Host");
+        String host = ForwardedOrigin.host(request);
         if (host == null) {
             return false;
         }
@@ -129,7 +129,7 @@ public class CorsFilter implements Ordered {
             URI uri = URI.create(origin);
             String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
             int port = uri.getPort() != -1 ? uri.getPort() : defaultPort(scheme);
-            String own = request.isSecure() ? "https" : "http";
+            String own = ForwardedOrigin.scheme(request);
             URI hostUri = URI.create(own + "://" + host);
             int ownPort = hostUri.getPort() != -1 ? hostUri.getPort() : defaultPort(own);
             return scheme.equals(own) && hostUri.getHost() != null

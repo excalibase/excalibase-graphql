@@ -10,7 +10,7 @@ import java.net.InetSocketAddress;
  * {@code X-Forwarded-For} entry (the one the proxy appended) is used, but only when the peer is on a private
  * network: a client that reaches the engine directly cannot pick its own address.
  */
-final class ClientAddress {
+public final class ClientAddress {
 
     private static final String FORWARDED_FOR = "X-Forwarded-For";
     private static final int MAX_LENGTH = 64;
@@ -30,7 +30,7 @@ final class ClientAddress {
         return peer == null ? "unknown" : peer.getHostAddress();
     }
 
-    static String lastForwarded(String header) {
+    public static String lastForwarded(String header) {
         if (header == null || header.isBlank()) {
             return null;
         }
@@ -39,7 +39,7 @@ final class ClientAddress {
         return last.isEmpty() || last.length() > MAX_LENGTH ? null : last;
     }
 
-    static boolean isInternal(InetAddress address) {
+    public static boolean isInternal(InetAddress address) {
         if (address.isLoopbackAddress() || address.isSiteLocalAddress() || address.isLinkLocalAddress()) {
             return true;
         }
