@@ -303,6 +303,93 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
     }
   }
 
+  // ─── Repeated filters on one column (EXC-729) ─────────────────────────────
+
+  @Nested
+  @Order(31)
+  class RangeFilters {
+
+    private static final String RANGE = "category=eq.rangetest&price=gte.150&price=lt.250";
+
+    private void seed() throws Exception {
+      for (int price : new int[] {100, 200, 300}) {
+        http.post(BASE + "/products", "{\"name\":\"range-" + price + "\",\"price\":" + price
+                + ",\"category\":\"rangetest\"}", "Content-Type", "application/json")
+            .expect(status().isCreated());
+      }
+    }
+
+    private void cleanUp() throws Exception {
+      http.delete(BASE + "/products?category=eq.rangetest&price=gte.0").expect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("a range of two filters on one column is ANDed on read and on count")
+    void rangeRead() throws Exception {
+      seed();
+      try {
+        http.get(BASE + "/products?" + RANGE)
+            .expect(status().isOk())
+            .expect(jsonPath("$.data", hasSize(1)))
+            .expect(jsonPath("$.data[0].name", is("range-200")));
+        http.get(BASE + "/products?" + RANGE, "Prefer", "count=exact")
+            .expect(status().isOk())
+            .expect(jsonPath("$.pagination.total", is(1)));
+      } finally {
+        cleanUp();
+      }
+    }
+
+    @Test
+    @DisplayName("a range PATCH changes only the rows inside the range")
+    void rangeUpdate() throws Exception {
+      seed();
+      try {
+        http.send("PATCH", BASE + "/products?" + RANGE, "{\"in_stock\":false}", "Content-Type", "application/json",
+                "Prefer", "return=representation")
+            .expect(status().isOk())
+            .expect(jsonPath("$.data", hasSize(1)))
+            .expect(jsonPath("$.data[0].name", is("range-200")));
+        http.get(BASE + "/products?category=eq.rangetest&in_stock=eq.false")
+            .expect(jsonPath("$.data", hasSize(1)));
+      } finally {
+        cleanUp();
+      }
+    }
+
+    @Test
+    @DisplayName("a range DELETE removes only the rows inside the range")
+    void rangeDelete() throws Exception {
+      seed();
+      try {
+        http.delete(BASE + "/products?" + RANGE, "Prefer", "return=representation")
+            .expect(status().isOk())
+            .expect(jsonPath("$.data", hasSize(1)))
+            .expect(jsonPath("$.data[0].name", is("range-200")));
+        http.get(BASE + "/products?category=eq.rangetest")
+            .expect(jsonPath("$.data", hasSize(2)));
+      } finally {
+        cleanUp();
+      }
+    }
+
+    @Test
+    @DisplayName("an empty in.() list matches no rows, and not.in.() matches all")
+    void emptyInList() throws Exception {
+      seed();
+      try {
+        http.get(BASE + "/products?category=eq.rangetest&id=in.()")
+            .expect(status().isOk())
+            .expect(jsonPath("$.data", hasSize(0)));
+        http.get(BASE + "/products?category=eq.rangetest&id=not.in.()")
+            .expect(status().isOk())
+            .expect(jsonPath("$.data", hasSize(3)));
+      } finally {
+        cleanUp();
+      }
+    }
+  }
+
   // ─── Orders table (FK relationship data) ───────────────────────────────────
 
   @Nested
@@ -436,6 +523,24 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
       http.send("PATCH", BASE + "/products", "{\"price\":1}", "Content-Type", "application/json")
           .expect(status().isBadRequest())
           .expect(jsonPath("$.error", containsString("filter")));
+    }
+
+    @Test
+    @DisplayName("DELETE with an or= group is refused, not run with the group dropped")
+    void deleteWithOrGroupIsRefused() throws Exception {
+      http.delete(BASE + "/products?price=gte.0&or=(name.eq.Widget,name.eq.Gadget)")
+          .expect(status().isBadRequest())
+          .expect(jsonPath("$.error", containsString("or")));
+      http.get(BASE + "/products").expect(status().isOk()).expect(jsonPath("$.data", hasSize(5)));
+    }
+
+    @Test
+    @DisplayName("PATCH with an and= group is refused, not run with the group dropped")
+    void patchWithAndGroupIsRefused() throws Exception {
+      http.send("PATCH", BASE + "/products?price=gte.0&and=(name.eq.Widget,price.gt.1)", "{\"price\":1}",
+              "Content-Type", "application/json")
+          .expect(status().isBadRequest())
+          .expect(jsonPath("$.error", containsString("and")));
     }
 
     @Test

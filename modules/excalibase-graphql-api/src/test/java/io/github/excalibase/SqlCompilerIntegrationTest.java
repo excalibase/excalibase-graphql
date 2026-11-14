@@ -934,4 +934,25 @@ class SqlCompilerIntegrationTest extends EngineIntegrationTest {
                 .expect(status().isOk())
                 .expect(jsonPath("$.errors[0].message", containsString("exceeds maximum allowed depth of 15")));
     }
+
+    @Test
+    @Order(301)
+    void aFragmentCycleIsA400NotAStackOverflow() throws Exception {
+        String cycle = "{ testSchemaCustomer { ...A } } fragment A on TestSchemaCustomer { customer_id ...A }";
+
+        http.post("/test-proj/graphql", graphql(cycle), "Content-Type", "application/json")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.errors[0].message", containsString("spreads itself")));
+    }
+
+    @Test
+    @Order(302)
+    void aQueryThatExpandsToTooManySelectionsIsA400() throws Exception {
+        StringBuilder aliases = new StringBuilder();
+        for (int i = 0; i < 2000; i++) aliases.append("a").append(i).append(": customer_id ");
+
+        http.post("/test-proj/graphql", graphql("{ testSchemaCustomer { " + aliases + "} }"), "Content-Type", "application/json")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.errors[0].message", containsString("more than 1000 fields")));
+    }
 }

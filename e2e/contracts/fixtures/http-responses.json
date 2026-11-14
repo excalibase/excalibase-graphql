@@ -543,6 +543,23 @@
     }
   },
   "graphql json body of 12 MiB": {
+    "status": 413,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 413,
+      "error": "Request Entity Too Large",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "graphql json body just under 8 MB": {
     "status": 200,
     "headers": {
       "content-type": "application/json",
@@ -782,6 +799,23 @@
       "code": "invalid_value",
       "message": "value too long for type character varying(45)",
       "error": "value too long for type character varying(45)"
+    }
+  },
+  "rest body of 12 MiB": {
+    "status": 413,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 413,
+      "error": "Request Entity Too Large",
+      "path": "/e2e-test/api/v1/customer"
     }
   },
   "unencoded braces and quotes": {

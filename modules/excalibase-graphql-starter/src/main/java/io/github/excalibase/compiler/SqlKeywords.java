@@ -166,9 +166,17 @@ public final class SqlKeywords {
         return leftAlias + "." + leftCol + ASSIGN + rightAlias + "." + rightCol;
     }
 
+    /**
+     * {@code name} reduced to what a named parameter may hold: a column name is any text, and one
+     * with a space, quote or colon would otherwise split or end the parameter name in the SQL.
+     */
+    public static String paramSafe(String name) {
+        return name.replaceAll("\\W", "_");
+    }
+
     /** Generate a unique named parameter: prefix + key + "_" + counter */
     public static String namedParam(String prefix, String key, int counter) {
-        return prefix + key + "_" + counter;
+        return prefix + paramSafe(key) + "_" + counter;
     }
 
     /** Generate a unique named parameter: prefix + counter */

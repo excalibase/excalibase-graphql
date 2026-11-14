@@ -84,10 +84,13 @@ public class RestApiController {
     private final TransactionTemplate txTemplate;
     private final ObjectMapper mapper;
     private final int maxRows;
+    private final boolean capNestedLists;
 
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
-                             @Value("${app.max-rows:30}") int maxRows) {
+                             @Value("${app.max-rows:30}") int maxRows,
+                             @Value("${app.cap-nested-lists:false}") boolean capNestedLists) {
+        this.capNestedLists = capNestedLists;
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
@@ -115,7 +118,7 @@ public class RestApiController {
             @Header("Prefer") @Nullable String prefer,
             @Header("Accept-Profile") @Nullable String acceptProfile,
             HttpRequest<?> request) {
-        Map<String, String> allParams = allParams(request);
+        Map<String, List<String>> allParams = allParams(request);
 
         var resolved = resolveContext(table, acceptProfile, request);
         if (resolved.refusal() != null) return resolved.refusal();
@@ -243,7 +246,7 @@ public class RestApiController {
             @PathVariable String function,
             @Header("Accept-Profile") @Nullable String profile,
             HttpRequest<?> request) {
-        Map<String, String> allParams = allParams(request);
+        Map<String, List<String>> allParams = allParams(request);
         return rpc(function, profile, allParams, null, request);
     }
 
@@ -254,7 +257,7 @@ public class RestApiController {
             @Body @Nullable Map<String, Object> body,
             @Header("Content-Profile") @Nullable String profile,
             HttpRequest<?> request) {
-        Map<String, String> allParams = allParams(request);
+        Map<String, List<String>> allParams = allParams(request);
         return rpc(function, profile, allParams, body == null ? Map.of() : body, request);
     }
 
@@ -266,7 +269,7 @@ public class RestApiController {
      *
      * @param body the arguments of a POST, or null for a GET, whose arguments are query parameters
      */
-    private HttpResponse<Object> rpc(String function, String profile, Map<String, String> allParams,
+    private HttpResponse<Object> rpc(String function, String profile, Map<String, List<String>> allParams,
                                        Map<String, Object> body, HttpRequest<?> request) {
         requireIdentifier(function);
         var principal = getPrincipal(request);
@@ -284,11 +287,11 @@ public class RestApiController {
                     .body(errorBody("method_not_allowed", function + " changes data: call it with POST"));
         }
         Map<String, Object> arguments = new LinkedHashMap<>();
-        Map<String, String> readParams = new LinkedHashMap<>(allParams);
+        Map<String, List<String>> readParams = new LinkedHashMap<>(allParams);
         if (body == null) {
             callable.arguments().forEach(argument -> {
                 if (readParams.containsKey(argument.name())) {
-                    arguments.put(argument.name(), readParams.remove(argument.name()));
+                    arguments.put(argument.name(), readParams.remove(argument.name()).getFirst());
                 }
             });
         } else {
@@ -296,13 +299,13 @@ public class RestApiController {
         }
         Map<String, Object> params = new LinkedHashMap<>();
         String call = FunctionCall.sql(callable, arguments, RlsContext.sessionVariables(), dialect, params);
-        var parsed = parseSelectParams(readParams.get("select"), readParams.get("order"), readParams);
+        var parsed = parseSelectParams(first(readParams, "select"), first(readParams, "order"), readParams);
         var compiler = new RestQueryCompiler(schemaProvider.resolveSchemaInfo(principal), dialect, schema, maxRows,
-                schemaProvider.resolveAccess(principal));
+                schemaProvider.resolveAccess(principal), capNestedLists);
         var query = new RestQueryCompiler.SelectQuery(callable.returnTable(), parsed.columns, parsed.filters,
                 parsed.orConditions, parsed.embeds, parsed.orderSpecs,
-                Math.clamp(paging("limit", readParams.get("limit"), maxRows), 1, maxRows),
-                paging("offset", readParams.get("offset"), 0), false);
+                Math.clamp(paging("limit", first(readParams, "limit"), maxRows), 1, maxRows),
+                paging("offset", first(readParams, "offset"), 0), false);
         var compiled = compiler.compileFunctionSelect(query, call, params, !callable.returnsSet());
         return executeInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
             List<?> data = rowsOf(rows.get("body"), parsed.columns);
@@ -337,7 +340,7 @@ public class RestApiController {
     public HttpResponse<Object> update(@PathVariable String table, @Body Map<String, Object> body,
             @Header("Prefer") @Nullable String prefer, @Header("Content-Profile") @Nullable String cp,
             HttpRequest<?> request) {
-        Map<String, String> allParams = allParams(request);
+        Map<String, List<String>> allParams = allParams(request);
         return mutate(table, body, prefer, cp, allParams, request);
     }
 
@@ -345,7 +348,7 @@ public class RestApiController {
     public HttpResponse<Object> replace(@PathVariable String table, @Body Map<String, Object> body,
             @Header("Prefer") @Nullable String prefer, @Header("Content-Profile") @Nullable String cp,
             HttpRequest<?> request) {
-        Map<String, String> allParams = allParams(request);
+        Map<String, List<String>> allParams = allParams(request);
         return mutate(table, body, prefer, cp, allParams, request);
     }
 
@@ -353,11 +356,13 @@ public class RestApiController {
     public HttpResponse<Object> delete(@PathVariable String table,
             @Header("Prefer") @Nullable String prefer, @Header("Content-Profile") @Nullable String cp,
             HttpRequest<?> request) {
-        Map<String, String> allParams = allParams(request);
+        Map<String, List<String>> allParams = allParams(request);
 
         var resolved = resolveContext(table, cp, request);
         if (resolved.refusal() != null) return resolved.refusal();
         var ctx = resolved.context();
+        var logic = refuseLogicGroups(allParams);
+        if (logic != null) return logic;
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return Reply.badRequest().body(errorBody(BAD_REQUEST, "At least one filter is required"));
 
@@ -368,10 +373,12 @@ public class RestApiController {
     }
 
 
-    private HttpResponse<Object> mutate(String table, Map<String, Object> body, String prefer, String cp, Map<String, String> allParams, HttpRequest<?> request) {
+    private HttpResponse<Object> mutate(String table, Map<String, Object> body, String prefer, String cp, Map<String, List<String>> allParams, HttpRequest<?> request) {
         var resolved = resolveContext(table, cp, request);
         if (resolved.refusal() != null) return resolved.refusal();
         var ctx = resolved.context();
+        var logic = refuseLogicGroups(allParams);
+        if (logic != null) return logic;
         var filters = parseFilters(allParams);
         if (filters.isEmpty()) return Reply.badRequest().body(errorBody(BAD_REQUEST, "At least one filter is required"));
 
@@ -545,7 +552,7 @@ public class RestApiController {
         }
     }
 
-    private ParsedParams parseSelectParams(String select, String order, Map<String, String> allParams) {
+    private ParsedParams parseSelectParams(String select, String order, Map<String, List<String>> allParams) {
         var selectResult = SelectParser.parse(select);
         return new ParsedParams(
             selectResult.columns(),
@@ -574,7 +581,7 @@ public class RestApiController {
             return new Resolved(null, permissionDenied(request.getMethodName() + " is not permitted on " + table));
         }
         SqlDialect dialect = schemaProvider.resolveDialect(principal);
-        var compiler = new RestQueryCompiler(schemaInfo, dialect, schema, maxRows, access);
+        var compiler = new RestQueryCompiler(schemaInfo, dialect, schema, maxRows, access, capNestedLists);
         return new Resolved(new RequestContext(tableKey, compiler, schemaInfo, access, dialect), null);
     }
 
@@ -634,30 +641,54 @@ public class RestApiController {
         return (Principal) request.getAttribute(SecurityConstants.PRINCIPAL_ATTR).orElse(null);
     }
 
-    /** The first value of each query parameter, in the order the request sent them. */
-    private static Map<String, String> allParams(HttpRequest<?> request) {
-        Map<String, String> params = new LinkedHashMap<>();
+    /** Every value of each query parameter, in the order the request sent them. */
+    private static Map<String, List<String>> allParams(HttpRequest<?> request) {
+        Map<String, List<String>> params = new LinkedHashMap<>();
         request.getParameters().forEach((name, values) -> {
-            if (!values.isEmpty()) params.put(name, values.get(0));
+            if (!values.isEmpty()) params.put(name, List.copyOf(values));
         });
         return params;
     }
 
-    private List<RestQueryCompiler.FilterSpec> parseFilters(Map<String, String> allParams) {
+    /** The first value of {@code name}, or null: the parameters that take one value (select, order, limit). */
+    private static String first(Map<String, List<String>> params, String name) {
+        List<String> values = params.get(name);
+        return values == null ? null : values.getFirst();
+    }
+
+    private List<RestQueryCompiler.FilterSpec> parseFilters(Map<String, List<String>> allParams) {
         List<RestQueryCompiler.FilterSpec> filters = new ArrayList<>();
         for (var entry : allParams.entrySet()) {
             if (RESERVED_PARAMS.contains(entry.getKey())) continue;
-            var parsed = FilterParser.parse(entry.getKey(), entry.getValue());
-            filters.add(new RestQueryCompiler.FilterSpec(parsed.column(), parsed.operator(), parsed.value(), parsed.negated()));
+            // Every value is a filter, ANDed: ?created=gte.X&created=lt.Y is a range.
+            for (String value : entry.getValue()) {
+                var parsed = FilterParser.parse(entry.getKey(), value);
+                filters.add(new RestQueryCompiler.FilterSpec(parsed.column(), parsed.operator(), parsed.value(), parsed.negated()));
+            }
         }
         return filters;
     }
 
+    /**
+     * A write is scoped by plain column filters only. An {@code or=}/{@code and=} group is refused rather than
+     * dropped, which would let the write touch more rows than the request asked for.
+     */
+    private static HttpResponse<Object> refuseLogicGroups(Map<String, List<String>> allParams) {
+        for (String name : LOGIC_PARAMS) {
+            String value = first(allParams, name);
+            if (value != null && !value.isBlank()) {
+                return Reply.badRequest().body(errorBody(BAD_REQUEST,
+                        "'" + name + "' is not supported on PATCH, PUT or DELETE: filter by column"));
+            }
+        }
+        return null;
+    }
+
     /** Each of {@code or}, {@code and}, {@code not.or} and {@code not.and} present, as one logic group. */
-    private List<RestQueryCompiler.OrCondition> parseOrConditions(Map<String, String> allParams) {
+    private List<RestQueryCompiler.OrCondition> parseOrConditions(Map<String, List<String>> allParams) {
         List<RestQueryCompiler.OrCondition> groups = new ArrayList<>();
         for (String name : LOGIC_PARAMS) {
-            String value = allParams.get(name);
+            String value = first(allParams, name);
             if (value == null || value.isBlank()) continue;
             String grouped = value.trim().startsWith("(") ? value : "(" + value + ")";
             boolean negated = name.startsWith("not.");

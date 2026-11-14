@@ -13,7 +13,9 @@ const user = () => bearer(token({ role: 'user' }));
 const query = (text) => ({ method: 'POST', body: { query: text } });
 const withHeaders = (spec, headers) => ({ ...spec, headers: { ...(spec.headers || {}), ...headers } });
 const ORIGIN = 'https://app.contract.test';
-const BIG_TEXT = 'x'.repeat(12 * 1024 * 1024);
+const BIG_TEXT = 'x'.repeat(12 * 1024 * 1024);   // over the 8 MB body limit: a 413
+const LARGE_TEXT = 'x'.repeat(8 * 1024 * 1024 - 4096);   // just under it: served
+const LONG_VALUE = 'x'.repeat(1024 * 1024);
 
 function deepQuery(depth) {
   let selection = 'customer_id';
@@ -59,6 +61,7 @@ const cases = {
   'graphql get': [`${GRAPHQL}?query=%7B__typename%7D`, { headers: service() }],
   'graphql text/plain': [GRAPHQL, { method: 'POST', headers: { ...service(), 'Content-Type': 'text/plain' }, body: '{}' }],
   'graphql json body of 12 MiB': [GRAPHQL, { method: 'POST', headers: service(), body: JSON.stringify({ query: '{ __typename }', pad: BIG_TEXT }) }],
+  'graphql json body just under 8 MB': [GRAPHQL, { method: 'POST', headers: service(), body: JSON.stringify({ query: '{ __typename }', pad: LARGE_TEXT }) }],
   'graphql form body of 12 MiB': [GRAPHQL, { method: 'POST', headers: { ...service(), 'Content-Type': 'application/x-www-form-urlencoded' }, body: `query=${BIG_TEXT}` }],
   'graphql request header of 70 KB': [GRAPHQL, withHeaders(query('{ __typename }'), { ...service(), 'X-Big': 'y'.repeat(70000) })],
   // rest behaviour
@@ -73,7 +76,8 @@ const cases = {
   'rest rpc name with a space': [`${REST}/rpc/bad%20name`, { method: 'POST', headers: { ...service(), ...PROFILE }, body: {} }],
   'rest rpc name with a semicolon': [`${REST}/rpc/no-such;fn`, { headers: { ...service(), ...PROFILE } }],
   'rest delete without filter': [`${REST}/customer`, { method: 'DELETE', headers: { ...service(), ...PROFILE } }],
-  'rest value too long': [`${REST}/customer`, { method: 'POST', headers: { ...service(), ...PROFILE }, body: { first_name: BIG_TEXT, last_name: 'x' } }],
+  'rest value too long': [`${REST}/customer`, { method: 'POST', headers: { ...service(), ...PROFILE }, body: { first_name: LONG_VALUE, last_name: 'x' } }],
+  'rest body of 12 MiB': [`${REST}/customer`, { method: 'POST', headers: { ...service(), ...PROFILE }, body: { first_name: BIG_TEXT, last_name: 'x' } }],
   // unencoded query characters
   'unencoded braces and quotes': [`${REST}/customer?select=customer_id&first_name=in.("MARY","JOHN")&order=customer_id.asc`, { headers: { ...service(), ...PROFILE } }],
   'unencoded braces in cs': [`${REST}/customer?select=customer_id&first_name=cs.{A}`, { headers: { ...service(), ...PROFILE } }],

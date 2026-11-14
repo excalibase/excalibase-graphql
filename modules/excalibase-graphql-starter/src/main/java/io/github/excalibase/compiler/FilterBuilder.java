@@ -34,6 +34,7 @@ public class FilterBuilder {
     private final SchemaInfo schemaInfo;
     private final String dbSchema;
     private final TableAccess access;
+    private final boolean capNestedLists;
 
     public FilterBuilder(SqlDialect dialect, int maxRows) {
         this(dialect, maxRows, null, null);
@@ -45,6 +46,13 @@ public class FilterBuilder {
 
     public FilterBuilder(SqlDialect dialect, int maxRows, SchemaInfo schemaInfo, String dbSchema,
                          TableAccess access) {
+        this(dialect, maxRows, schemaInfo, dbSchema, access, false);
+    }
+
+    /** {@code capNestedLists}: a nested list without a {@code limit} is cut at the row cap, as a top-level one is. */
+    public FilterBuilder(SqlDialect dialect, int maxRows, SchemaInfo schemaInfo, String dbSchema,
+                         TableAccess access, boolean capNestedLists) {
+        this.capNestedLists = capNestedLists;
         this.dialect = dialect;
         this.maxRows = maxRows;
         this.schemaInfo = schemaInfo;
@@ -750,10 +758,11 @@ public class FilterBuilder {
 
     /**
      * LIMIT and OFFSET for a nested list: the caller's {@code limit} within the caller's own row limit on
-     * {@code tableName}. Without either a nested list stays uncapped; an offset alone is capped like a list.
+     * {@code tableName}. Without either a nested list stays uncapped, unless nested lists are capped
+     * ({@code app.cap-nested-lists}): then the engine's row cap is the default and the ceiling.
      */
     public void applyNestedLimit(StringBuilder sql, Field field, Map<String, Object> params, String tableName) {
-        Integer limit = roleRowLimit(tableName);
+        Integer limit = capNestedLists ? Integer.valueOf(rowCap(tableName)) : roleRowLimit(tableName);
         Integer offset = null;
         for (Argument arg : field.getArguments()) {
             if (!ARG_LIMIT.equals(arg.getName()) && !ARG_OFFSET.equals(arg.getName())) continue;
@@ -795,7 +804,7 @@ public class FilterBuilder {
      * Generates a unique parameter name using the prefix and current param map size.
      */
     public String nextParam(String prefix, Map<String, Object> params) {
-        return prefix + "_" + params.size();
+        return paramSafe(prefix) + "_" + params.size();
     }
 
     // === Value extraction ===

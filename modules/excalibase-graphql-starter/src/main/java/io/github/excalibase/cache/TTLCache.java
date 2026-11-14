@@ -20,11 +20,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -32,11 +33,12 @@ import java.util.function.Predicate;
 /**
  * Thread-safe cache with TTL (Time To Live) support.
  * Supports an optional onEvict callback for resource cleanup (e.g., closing connection pools).
- * computeIfAbsent is atomic per key — only one thread computes for a given key.
+ * computeIfAbsent builds a missing value on one thread per key, outside any lock.
  */
 public class TTLCache<K, V> {
 
     private final Map<K, CacheEntry<V>> cache = new ConcurrentHashMap<>();
+    private final Map<K, CompletableFuture<V>> inFlight = new ConcurrentHashMap<>();
     private final Duration ttl;
     private final Consumer<V> onEvict;
     private final ScheduledExecutorService cleanupExecutor;
@@ -89,26 +91,43 @@ public class TTLCache<K, V> {
     }
 
     /**
-     * Atomic compute-if-absent with expiry check.
-     * Uses ConcurrentHashMap.compute to ensure only one thread creates the value per key.
+     * The cached value, or the one {@code mappingFunction} builds. Only one thread builds a value per key and the
+     * others wait for it; the build runs outside any map lock, so a slow or hanging one blocks neither the cached
+     * keys nor the other keys' builds. A failure reaches every waiter and is not cached.
      */
     public V computeIfAbsent(K key, Function<? super K, ? extends V> mappingFunction) {
-        var result = new AtomicReference<CacheEntry<V>>();
-        cache.compute(key, (k, existing) -> {
-            if (existing != null && !existing.isExpired()) {
-                result.set(existing);
-                return existing;
+        V cached = get(key);
+        if (cached != null) return cached;
+        CompletableFuture<V> mine = new CompletableFuture<>();
+        CompletableFuture<V> running = inFlight.putIfAbsent(key, mine);
+        if (running != null) return await(running);
+        try {
+            V value = get(key);
+            if (value == null) {
+                value = mappingFunction.apply(key);
+                if (value != null) put(key, value);
             }
-            if (existing != null && onEvict != null) {
-                onEvict.accept(existing.getValue());
-            }
-            V newValue = mappingFunction.apply(k);
-            if (newValue == null) return null;
-            CacheEntry<V> newEntry = new CacheEntry<>(newValue, ttl);
-            result.set(newEntry);
-            return newEntry;
-        });
-        return result.get() != null ? result.get().getValue() : null;
+            mine.complete(value);
+            return value;
+        } catch (RuntimeException | Error failure) {
+            mine.completeExceptionally(failure);
+            throw failure;
+        } finally {
+            inFlight.remove(key, mine);
+        }
+    }
+
+    private static <V> V await(CompletableFuture<V> running) {
+        try {
+            return running.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while waiting for a cache value", e);
+        } catch (ExecutionException e) {
+            if (e.getCause() instanceof RuntimeException failure) throw failure;
+            if (e.getCause() instanceof Error failure) throw failure;
+            throw new IllegalStateException(e.getCause());
+        }
     }
 
     public V remove(K key) {

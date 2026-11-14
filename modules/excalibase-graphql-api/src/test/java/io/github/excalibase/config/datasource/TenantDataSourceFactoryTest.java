@@ -120,7 +120,7 @@ class TenantDataSourceFactoryTest {
       assertFalse(props.containsKey("sslmode"));
       assertFalse(props.containsKey("sslcert"));
       assertEquals("pw", config.getPassword());
-      assertEquals("SET time_zone = '+00:00'", config.getConnectionInitSql());
+      assertEquals("SET SESSION max_execution_time = 54000, time_zone = '+00:00'", config.getConnectionInitSql());
     }
   }
 

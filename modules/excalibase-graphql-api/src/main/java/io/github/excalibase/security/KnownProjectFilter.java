@@ -58,6 +58,8 @@ public class KnownProjectFilter implements Ordered {
             knownProjects.require(projectId);
         } catch (UnknownProjectException e) {
             return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
+        } catch (ProjectLookupThrottledException e) {
+            return FilterErrors.write(HttpStatus.TOO_MANY_REQUESTS, "Too many project lookups", "project_lookup_throttled");
         } catch (ProjectWithoutDatabaseException e) {
             return FilterErrors.write(HttpStatus.CONFLICT, "Project has no database", "project_has_no_database");
         } catch (VaultCredentialException e) {

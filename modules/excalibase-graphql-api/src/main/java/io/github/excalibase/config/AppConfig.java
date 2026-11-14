@@ -20,6 +20,7 @@ import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.KnownProjects;
+import io.github.excalibase.security.LookupLimiter;
 import io.github.excalibase.security.TokenFileSource;
 import io.github.excalibase.security.UnknownProjectCache;
 import io.github.excalibase.service.VaultCredentialService;
@@ -77,7 +78,8 @@ public class AppConfig {
 
     @Singleton
     ProjectCorsConfigurationSource corsConfigurationSource(
-            @Value("${app.cors.allowed-origins:*}") String platformOrigins,
+            @Value("${app.cors.allowed-origins:}") String allowedOrigins,
+            @Value("${CORS_ORIGINS:}") String platformAioOrigins,
             @Value("${app.cors.provisioning-url:}") String corsProvisioningUrl,
             @Value("${app.security.rls.policy-url:}") String policyUrl,
             TokenFileSource provisioningTokenSource,
@@ -87,9 +89,15 @@ public class AppConfig {
         if (provisioningUrl != null && !provisioningUrl.isBlank()) {
             provider = new ProvisioningProjectCorsProvider(provisioningUrl, provisioningTokenSource, ttlMillis);
         }
-        List<String> origins = Arrays.stream(platformOrigins.split(",")).map(String::trim)
+        List<String> origins = Arrays.stream(platformOrigins(allowedOrigins, platformAioOrigins).split(",")).map(String::trim)
                 .filter(origin -> !origin.isEmpty()).toList();
         return new ProjectCorsConfigurationSource(provider, ProjectCorsConfigurationSource.configFor(origins));
+    }
+
+    /** {@code APP_CORS_ALLOWED_ORIGINS}, else {@code CORS_ORIGINS} (the name platform-aio sets), else any origin. */
+    static String platformOrigins(String allowedOrigins, String platformAioOrigins) {
+        String origins = firstNonBlank(allowedOrigins, platformAioOrigins);
+        return origins.isBlank() ? "*" : origins;
     }
 
     @Singleton
@@ -130,8 +138,21 @@ public class AppConfig {
         if (!hasJwks && !hasHmac) {
             throw new IllegalStateException(NO_VERIFIER);
         }
+        requireAudienceWhenMultiTenant(security.multiTenant() == null ? null : security.multiTenant().provisioningUrl(),
+                auth.requireAudOrDefault());
         JwtService service = hasJwks ? new JwtService(auth.jwksUrl(), ttlMinutes) : new JwtService(auth.hmacSecret());
         return service.expectedIssuer(auth.issuer()).requireAudience(auth.requireAudOrDefault(), auth.audPrefix());
+    }
+
+    /**
+     * Without the audience check a token minted for one project passes the path check of every other, which
+     * a deployment serving many projects cannot allow.
+     */
+    static void requireAudienceWhenMultiTenant(String provisioningUrl, boolean requireAudience) {
+        if (provisioningUrl != null && !provisioningUrl.isBlank() && !requireAudience) {
+            throw new IllegalStateException("app.security.auth.require-aud=false is refused in multi-tenant mode "
+                    + "(app.security.multi-tenant.provisioning-url): a token for one project would open every other");
+        }
     }
 
     /**
@@ -197,10 +218,12 @@ public class AppConfig {
             @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
             @Nullable DynamicDataSourceManager dataSourceManager,
             @Value("${app.security.multi-tenant.unknown-project-cache.max-entries:10000}") int unknownMaxEntries,
-            @Value("${app.security.multi-tenant.unknown-project-cache.ttl-seconds:30}") long unknownTtlSeconds) {
+            @Value("${app.security.multi-tenant.unknown-project-cache.ttl-seconds:30}") long unknownTtlSeconds,
+            @Value("${app.security.multi-tenant.lookup-rate-per-second:50}") int lookupsPerSecond) {
         UnknownProjectCache unknown = new UnknownProjectCache(unknownMaxEntries,
                 Duration.ofSeconds(unknownTtlSeconds), System::currentTimeMillis);
-        return KnownProjects.forDeployment(projectId, tenantProvisioningUrl, dataSourceManager, unknown);
+        return KnownProjects.forDeployment(projectId, tenantProvisioningUrl, dataSourceManager, unknown,
+                LookupLimiter.perSecond(lookupsPerSecond));
     }
 
     /** {@code app.graphql.parse-cache.heap-share}: the share of the maximum heap the parsed-query cache may use. */
