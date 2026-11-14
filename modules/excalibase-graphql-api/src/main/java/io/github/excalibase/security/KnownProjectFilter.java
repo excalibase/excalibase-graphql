@@ -96,10 +96,10 @@ public class KnownProjectFilter extends OncePerRequestFilter {
         try {
             URI uri = new URI(origin);
             boolean webScheme = "http".equals(uri.getScheme()) || "https".equals(uri.getScheme());
-            boolean bare = uri.getRawUserInfo() == null && uri.getRawPath().isEmpty()
+            boolean bare = !uri.isOpaque() && uri.getRawUserInfo() == null && "".equals(uri.getRawPath())
                     && uri.getRawQuery() == null && uri.getRawFragment() == null;
             return webScheme && bare && uri.getHost() != null ? Optional.of(origin) : Optional.empty();
-        } catch (URISyntaxException _) {
+        } catch (URISyntaxException | RuntimeException _) {
             return Optional.empty();
         }
     }
