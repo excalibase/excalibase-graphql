@@ -24,10 +24,33 @@ public final class ClientAddress {
         if (peer != null && isInternal(peer)) {
             String forwarded = lastForwarded(request.getHeaders().get(FORWARDED_FOR));
             if (forwarded != null) {
-                return forwarded;
+                return byPrefix(forwarded);
             }
         }
-        return peer == null ? "unknown" : peer.getHostAddress();
+        return peer == null ? "unknown" : byPrefix(peer.getHostAddress());
+    }
+
+    /**
+     * An IPv6 client is counted by its /64, the smallest block one subscriber is given: a host can pick any
+     * address inside it, so counting each address would let it take as many sockets as it likes.
+     */
+    static String byPrefix(String address) {
+        if (address.indexOf(':') < 0) {
+            return address;
+        }
+        try {
+            byte[] bytes = InetAddress.getByName(address).getAddress();
+            if (bytes.length != 16) {
+                return address;
+            }
+            StringBuilder prefix = new StringBuilder();
+            for (int i = 0; i < 8; i++) {
+                prefix.append(String.format("%02x", bytes[i] & 0xff)).append(i % 2 == 1 && i < 7 ? ":" : "");
+            }
+            return prefix.append("::/64").toString();
+        } catch (java.net.UnknownHostException malformed) {
+            return address;
+        }
     }
 
     public static String lastForwarded(String header) {
