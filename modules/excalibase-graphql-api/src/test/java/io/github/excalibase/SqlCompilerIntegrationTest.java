@@ -1128,4 +1128,29 @@ class SqlCompilerIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.errors[0].message", containsString("exceeds maximum allowed depth of 15")));
     }
+
+    @Test
+    @Order(301)
+    void aFragmentCycleIsA400NotAStackOverflow() throws Exception {
+        String cycle = "{ testSchemaCustomer { ...A } } fragment A on TestSchemaCustomer { customer_id ...A }";
+
+        mockMvc.perform(post("/test-proj/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql(cycle)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].message", containsString("spreads itself")));
+    }
+
+    @Test
+    @Order(302)
+    void aQueryThatExpandsToTooManySelectionsIsA400() throws Exception {
+        StringBuilder aliases = new StringBuilder();
+        for (int i = 0; i < 2000; i++) aliases.append("a").append(i).append(": customer_id ");
+
+        mockMvc.perform(post("/test-proj/graphql")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(graphql("{ testSchemaCustomer { " + aliases + "} }")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].message", containsString("more than 1000 fields")));
+    }
 }
