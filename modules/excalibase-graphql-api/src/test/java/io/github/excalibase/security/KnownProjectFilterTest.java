@@ -67,8 +67,8 @@ class KnownProjectFilterTest {
     }
 
     @Test
-    @DisplayName("a browser preflight is not throttled, so the real request that follows gets the readable 429")
-    void preflightSkipsTheLookupThrottle() throws Exception {
+    @DisplayName("a throttled preflight is answered here, with no lookup and no CORS provider call, and the real request still gets the 429")
+    void throttledPreflightIsAnsweredWithoutAnyLookup() throws Exception {
         KnownProjects throttled = id -> {
             throw new ProjectLookupThrottledException();
         };
@@ -77,12 +77,18 @@ class KnownProjectFilterTest {
         preflight.setRequestURI("/" + PROJECT + "/graphql");
         preflight.addHeader("Origin", "https://app.example.com");
         preflight.addHeader("Access-Control-Request-Method", "POST");
+        preflight.addHeader("Access-Control-Request-Headers", "authorization,content-type");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         new KnownProjectFilter(throttled).doFilter(preflight, response, chain);
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        verify(chain).doFilter(any(), any());
+        verify(chain, never()).doFilter(any(), any());
+        assertThat(response.getStatus()).isEqualTo(204);
+        assertThat(response.getHeader("Access-Control-Allow-Origin")).isEqualTo("*");
+        assertThat(response.getHeader("Vary")).contains("Origin");
+        assertThat(response.getHeader("Access-Control-Allow-Methods")).contains("POST").contains("DELETE");
+        assertThat(response.getHeader("Access-Control-Allow-Headers")).isEqualTo("authorization,content-type");
+        assertThat(response.getHeader("Access-Control-Max-Age")).isEqualTo("0");
 
         MockHttpServletRequest plainOptions = new MockHttpServletRequest("OPTIONS", "/" + PROJECT + "/graphql");
         plainOptions.setRequestURI("/" + PROJECT + "/graphql");

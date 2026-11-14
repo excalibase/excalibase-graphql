@@ -67,4 +67,22 @@ class LookupThrottleHeadersIntegrationTest {
         assertThat(response.headers().firstValue("vary").orElse("")).contains("Origin");
         assertThat(response.headers().firstValue("x-content-type-options")).contains("nosniff");
     }
+
+    @Test
+    @DisplayName("a throttled preflight is answered 204 with the allowed methods and no caching")
+    void throttledPreflightIsAnswered() throws Exception {
+        HttpResponse<String> response = HttpClient.newHttpClient().send(
+                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/some-project/graphql"))
+                        .header("Origin", "https://app.example.com")
+                        .header("Access-Control-Request-Method", "POST")
+                        .header("Access-Control-Request-Headers", "authorization")
+                        .method("OPTIONS", HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.ofString());
+
+        assertThat(response.statusCode()).isEqualTo(204);
+        assertThat(response.headers().firstValue("access-control-allow-origin")).contains("*");
+        assertThat(response.headers().firstValue("access-control-allow-methods").orElse("")).contains("POST");
+        assertThat(response.headers().firstValue("access-control-allow-headers")).contains("authorization");
+        assertThat(response.headers().firstValue("access-control-max-age")).contains("0");
+    }
 }

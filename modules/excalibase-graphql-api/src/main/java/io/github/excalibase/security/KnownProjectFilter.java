@@ -1,5 +1,6 @@
 package io.github.excalibase.security;
 
+import io.github.excalibase.cors.ProjectCorsConfigurationSource;
 import io.github.excalibase.service.VaultCredentialException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -52,9 +53,7 @@ public class KnownProjectFilter extends OncePerRequestFilter {
             return;
         } catch (ProjectLookupThrottledException e) {
             if (CorsUtils.isPreFlightRequest(request)) {
-                // The throttle answers the real request, with a 429 a browser can read; a preflight on its own
-                // would only get a bare 429 without the allowed methods and headers.
-                chain.doFilter(request, response);
+                answerPreflight(request, response);
                 return;
             }
             allowAnyOriginToRead(request, response);
@@ -85,6 +84,25 @@ public class KnownProjectFilter extends OncePerRequestFilter {
         if (request.getHeader("Origin") != null) {
             response.setHeader("Access-Control-Allow-Origin", "*");
         }
+    }
+
+    /**
+     * A preflight for a project whose lookup is throttled is answered here, never passed on: the CORS filter would
+     * fetch the project's origins from provisioning, once per preflight, for an id nobody has vouched for. Any
+     * origin may then send the real request, which gets the readable 429 (or its real answer).
+     */
+    private static void answerPreflight(HttpServletRequest request, HttpServletResponse response) {
+        response.setStatus(HttpServletResponse.SC_NO_CONTENT);
+        response.addHeader("Vary", "Origin");
+        response.addHeader("Vary", "Access-Control-Request-Method");
+        response.addHeader("Vary", "Access-Control-Request-Headers");
+        response.setHeader("Access-Control-Allow-Origin", "*");
+        response.setHeader("Access-Control-Allow-Methods", String.join(",", ProjectCorsConfigurationSource.ALLOWED_METHODS));
+        String requested = request.getHeader("Access-Control-Request-Headers");
+        if (requested != null) {
+            response.setHeader("Access-Control-Allow-Headers", requested);
+        }
+        response.setHeader("Access-Control-Max-Age", "0");
     }
 
     private static void writeError(HttpServletResponse response, int status, String message, String code)
