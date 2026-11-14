@@ -83,6 +83,15 @@ app:
     accept-count-per-cpu: ${APP_OVERLOAD_ACCEPT_COUNT_PER_CPU:256}
     max-keep-alive-requests: ${APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS:20}
     keep-alive-timeout-ms: ${APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS:5000}
+  websocket:
+    # Socket caps are percent of the connection bound (max-connections-per-cpu x CPUs).
+    max-per-project-percent: ${APP_WEBSOCKET_MAX_PER_PROJECT_PERCENT:25}
+    max-per-client-percent: ${APP_WEBSOCKET_MAX_PER_CLIENT_PERCENT:5}
+    init-timeout-seconds: ${APP_WEBSOCKET_INIT_TIMEOUT_SECONDS:10}
+    max-subscriptions-per-session: ${APP_WEBSOCKET_MAX_SUBSCRIPTIONS_PER_SESSION:20}
+    max-subscriptions-per-project-per-cpu: ${APP_WEBSOCKET_MAX_SUBSCRIPTIONS_PER_PROJECT_PER_CPU:250}
+    outbox-capacity: ${APP_WEBSOCKET_OUTBOX_CAPACITY:256}
+    slow-consumer-seconds: ${APP_WEBSOCKET_SLOW_CONSUMER_SECONDS:10}
   cache:
     schema-ttl-minutes: 30
   cors:
@@ -121,6 +130,8 @@ app:
     stream-name: CDC
     subject-prefix: cdc
     tenant-in-subject: false
+    # Local test stacks only: serve a multi-tenant engine with realtime changes shared across projects.
+    allow-untenanted-realtime: ${APP_NATS_ALLOW_UNTENANTED_REALTIME:false}
     username: ${APP_NATS_USERNAME:}
     password: ${APP_NATS_PASSWORD:}
     inbox-prefix: ${APP_NATS_INBOX_PREFIX:}

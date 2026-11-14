@@ -45,11 +45,12 @@ class RealtimeMetricsHandlerTest {
         WsSession session = session(sent, PROJECT);
 
         handler.afterConnectionEstablished(session);
+        handler.handleTextMessage(session, new TextMessage("{\"type\":\"connection_init\"}"));
         handler.handleTextMessage(session, new TextMessage("{\"type\":\"ping\"}"));
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of("type", "subscribe",
                 "id", "s1", "payload", Map.of("query", "subscription { publicCustomerChanges { operation } }")))));
         subscriptionService.publish(null, new CDCEvent("INSERT", "public", "customer", "{\"id\":1}", 0L));
-        await().atMost(Duration.ofSeconds(2)).until(() -> sent.size() == 2);
+        await().atMost(Duration.ofSeconds(2)).until(() -> sent.size() == 3);
 
         assertThat(metrics.scrape())
                 .contains("excalibase_realtime_connections{project=\"proj-ws\"} 1")

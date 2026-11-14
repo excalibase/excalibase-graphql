@@ -6,6 +6,7 @@ import io.github.excalibase.support.StubControlPlane;
 import io.github.excalibase.support.WsClient;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -66,8 +67,16 @@ class ProjectCorsWebSocketIntegrationTest extends EngineIntegrationTest {
                 .satisfies(failure -> assertThat(WsClient.refusedStatus(failure)).isEqualTo(403));
     }
 
+    @Test
+    @DisplayName("Origin: null cannot open the socket")
+    void nullOriginIsRefused() {
+        assertThatThrownBy(() -> open("/" + PROJECT + "/api/v1/realtime", "null"))
+                .isInstanceOf(ExecutionException.class)
+                .satisfies(failure -> assertThat(WsClient.refusedStatus(failure)).isEqualTo(403));
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", "null", ""})
+    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", ""})
     @DisplayName("a listed origin, a native-app origin and no Origin all open the socket")
     void admittedOriginsConnect(String origin) throws Exception {
         try (WsClient session = open("/" + PROJECT + "/api/v1/realtime", origin.isEmpty() ? null : origin)) {

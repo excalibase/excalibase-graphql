@@ -80,6 +80,11 @@ final class MicronautWsSession implements WsSession {
     }
 
     @Override
+    public boolean isBackedUp() {
+        return !delegate.isWritable();
+    }
+
+    @Override
     public void sendMessage(TextMessage message) {
         delegate.sendAsync(message.getPayload());
     }
