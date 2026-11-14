@@ -13,7 +13,7 @@ SELECT coalesce(jsonb_agg(jsonb_build_object('id', c."id", 'name', c."name", 'pr
 insert
 WITH ins AS (INSERT INTO "public"."products"("name") VALUES (:ins_0) RETURNING *) SELECT row_to_json(out) FROM (SELECT ins."id" AS "id", ins."name" AS "name", ins."price"::text AS "price", ins."metadata" AS "metadata", ins."tags" AS "tags", ins."created_at" AS "created_at" FROM ins) out
 bulk_insert
-WITH ins AS (INSERT INTO "public"."products"("name") VALUES (:ins_0_name), (:ins_1_name) RETURNING *) SELECT coalesce(jsonb_agg(row_to_json(out)), '[]'::jsonb) FROM (SELECT ins."id" AS "id", ins."name" AS "name", ins."price"::text AS "price", ins."metadata" AS "metadata", ins."tags" AS "tags", ins."created_at" AS "created_at" FROM ins) out
+WITH ins AS (INSERT INTO "public"."products"("name") VALUES (:ins_0_0), (:ins_1_0) RETURNING *) SELECT coalesce(jsonb_agg(row_to_json(out)), '[]'::jsonb) FROM (SELECT ins."id" AS "id", ins."name" AS "name", ins."price"::text AS "price", ins."metadata" AS "metadata", ins."tags" AS "tags", ins."created_at" AS "created_at" FROM ins) out
 upsert
 WITH ins AS (INSERT INTO "public"."products"("id", "name") VALUES (:ins_0, :ins_1) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING *) SELECT row_to_json(out) FROM (SELECT ins."id" AS "id", ins."name" AS "name", ins."price"::text AS "price", ins."metadata" AS "metadata", ins."tags" AS "tags", ins."created_at" AS "created_at" FROM ins) out
 upsert_nothing

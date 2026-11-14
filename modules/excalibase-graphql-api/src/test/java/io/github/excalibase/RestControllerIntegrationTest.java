@@ -593,6 +593,23 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("bulk insert columns whose names sanitise alike each keep their own value")
+    void bulkInsertCollidingColumnNames() throws Exception {
+      http.post(BASE + "/colliding_columns",
+              "[{\"a_b_2\":\"one\",\"a b\":\"two\",\"a_b\":\"three\"},"
+                      + "{\"a_b_2\":\"four\",\"a b\":\"five\",\"a_b\":\"six\"}]",
+              "Content-Type", "application/json", "Prefer", "return=representation")
+          .expect(status().isCreated())
+          .expect(jsonPath("$.data", hasSize(2)))
+          .expect(jsonPath("$.data[0].a_b_2", is("one")))
+          .expect(jsonPath("$.data[0]['a b']", is("two")))
+          .expect(jsonPath("$.data[0].a_b", is("three")))
+          .expect(jsonPath("$.data[1].a_b_2", is("four")))
+          .expect(jsonPath("$.data[1]['a b']", is("five")))
+          .expect(jsonPath("$.data[1].a_b", is("six")));
+    }
+
+    @Test
     @DisplayName("POST with Prefer: resolution=merge-duplicates upserts")
     void upsert() throws Exception {
       http.post(BASE + "/products", "{\"id\":1,\"name\":\"Upserted Widget\",\"price\":99.99}", "Content-Type", "application/json", "Prefer", "return=representation, resolution=merge-duplicates")

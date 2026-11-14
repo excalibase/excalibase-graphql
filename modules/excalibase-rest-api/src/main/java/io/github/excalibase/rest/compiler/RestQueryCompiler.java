@@ -291,10 +291,7 @@ public class RestQueryCompiler {
             List<String> vals = new ArrayList<>();
             for (int colIndex = 0; colIndex < colNames.size(); colIndex++) {
                 String col = colNames.get(colIndex);
-                String pn = P_INSERT + rowIndex + UNDERSCORE + paramSafe(col);
-                if (params.containsKey(pn)) {
-                    pn = pn + UNDERSCORE + colIndex;   // "a b" and "a_b" sanitise alike
-                }
+                String pn = P_INSERT + rowIndex + UNDERSCORE + colIndex;   // a column name is any text, never a name
                 params.put(pn, values.coerceParam(table, col, written.get(rowIndex).getOrDefault(col, null)));
                 vals.add(PARAM_PREFIX + pn);
             }

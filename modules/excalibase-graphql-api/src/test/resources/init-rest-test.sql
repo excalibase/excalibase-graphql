@@ -80,3 +80,10 @@ CREATE TABLE spaced_columns (
     "first name" TEXT,
     "o'neil" TEXT
 );
+
+CREATE TABLE colliding_columns (
+    id SERIAL PRIMARY KEY,
+    "a_b_2" TEXT,
+    "a b" TEXT,
+    "a_b" TEXT
+);
