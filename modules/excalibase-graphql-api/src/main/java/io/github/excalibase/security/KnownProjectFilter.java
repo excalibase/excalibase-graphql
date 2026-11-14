@@ -49,6 +49,9 @@ public class KnownProjectFilter extends OncePerRequestFilter {
         } catch (UnknownProjectException e) {
             writeError(response, HttpServletResponse.SC_NOT_FOUND, "Project not found", "project_not_found");
             return;
+        } catch (ProjectLookupThrottledException e) {
+            writeError(response, 429, "Too many project lookups", "project_lookup_throttled");
+            return;
         } catch (ProjectWithoutDatabaseException e) {
             writeError(response, HttpServletResponse.SC_CONFLICT, "Project has no database", "project_has_no_database");
             return;

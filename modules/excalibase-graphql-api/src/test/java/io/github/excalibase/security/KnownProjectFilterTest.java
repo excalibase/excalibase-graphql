@@ -52,6 +52,21 @@ class KnownProjectFilterTest {
     }
 
     @Test
+    @DisplayName("a project lookup refused for its rate is a 429 and does not reach the chain")
+    void throttledLookup_isTooManyRequests() throws Exception {
+        FilterChain chain = mock(FilterChain.class);
+        KnownProjects throttled = id -> {
+            throw new ProjectLookupThrottledException();
+        };
+
+        MockHttpServletResponse response = call(throttled, "POST", "/" + PROJECT + "/graphql", chain);
+
+        assertThat(response.getStatus()).isEqualTo(429);
+        assertThat(response.getContentAsString()).contains("\"code\":\"project_lookup_throttled\"");
+        verify(chain, never()).doFilter(any(), any());
+    }
+
+    @Test
     @DisplayName("with request metrics on, only a project that passed the check is marked known")
     void knownProjectAttribute() throws Exception {
         MockHttpServletRequest known = new MockHttpServletRequest("POST", "/" + PROJECT + "/graphql");
