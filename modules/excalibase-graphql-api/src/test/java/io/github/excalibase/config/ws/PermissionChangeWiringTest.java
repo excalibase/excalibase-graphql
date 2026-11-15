@@ -142,7 +142,8 @@ class PermissionChangeWiringTest {
         verify(session).close(CHANGED);
     }
 
-    private void raceAnnouncementAgainstSubscribe(boolean realtimeHandler) throws Exception {
+    private void raceAnnouncementAgainstSubscribe(boolean realtimeHandler, long announcedVersion, boolean closes)
+            throws Exception {
         CountDownLatch resolving = new CountDownLatch(1);
         CountDownLatch announced = new CountDownLatch(1);
         AccessPlans slow = mock(AccessPlans.class);
@@ -152,6 +153,10 @@ class PermissionChangeWiringTest {
             assertThat(announced.await(5, TimeUnit.SECONDS)).isTrue();
             return fast.realtime(null, PROJECT, null, "t1");
         });
+        // An earlier subscription of the project, so the document last announced is known.
+        WebSocketSession earlier = socket();
+        runtime.admit(earlier);
+        runtime.openedUnder(earlier, 7, runtime.permissionGeneration(earlier));
         WebSocketSession session = socket();
         Thread subscriber;
         if (realtimeHandler) {
@@ -178,23 +183,39 @@ class PermissionChangeWiringTest {
             });
         }
         assertThat(resolving.await(5, TimeUnit.SECONDS)).isTrue();
-        eventFindingVersion(8);
+        eventFindingVersion(announcedVersion);
         announced.countDown();
         subscriber.join(5_000);
 
-        verify(session).close(CHANGED);
+        if (closes) {
+            verify(session).close(CHANGED);
+        } else {
+            verify(session, never()).close(any(CloseStatus.class));
+        }
     }
 
     @Test
     @DisplayName("realtime: a change announced while the plan is being resolved closes the new socket")
     void realtimeOpeningRacingAnAnnouncement() throws Exception {
-        raceAnnouncementAgainstSubscribe(true);
+        raceAnnouncementAgainstSubscribe(true, 8, true);
     }
 
     @Test
     @DisplayName("graphql: a change announced while the plan is being resolved closes the new socket")
     void graphqlOpeningRacingAnAnnouncement() throws Exception {
-        raceAnnouncementAgainstSubscribe(false);
+        raceAnnouncementAgainstSubscribe(false, 8, true);
+    }
+
+    @Test
+    @DisplayName("realtime: an event that finds the same document while the plan is being resolved leaves the new socket open")
+    void realtimeOpeningRacingANoOpEvent() throws Exception {
+        raceAnnouncementAgainstSubscribe(true, 7, false);
+    }
+
+    @Test
+    @DisplayName("graphql: an event that finds the same document while the plan is being resolved leaves the new socket open")
+    void graphqlOpeningRacingANoOpEvent() throws Exception {
+        raceAnnouncementAgainstSubscribe(false, 7, false);
     }
 
     @Test
