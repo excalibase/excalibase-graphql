@@ -29,7 +29,7 @@ function networkAddress(name) {
 }
 
 /** Starts an engine container on the contract network; resolves once `readyPath` answers on `readyPort`. */
-async function startEngine(env, { cpus, mounts = [], network = stack.network, readyPort = 10000, readyPath = '/', readyUntil = (response) => response.status > 0 } = {}) {
+async function startEngine(env, { cpus, mounts = [], network = stack.network, readyPort = 10000, readyPath = '/', readyHeaders = () => ({}), readyUntil = (response) => response.status > 0 } = {}) {
   const name = `contract-engine-${crypto.randomBytes(4).toString('hex')}`;
   const args = ['run', '-d', '--name', name, '--network', network];
   if (cpus) args.push('--cpus', String(cpus));
@@ -45,7 +45,7 @@ async function startEngine(env, { cpus, mounts = [], network = stack.network, re
     logs: () => logsOf(name),
     stop: () => removeContainer(name),
   };
-  await waitUntil(async () => readyUntil(await request(`http://${address}:${readyPort}`, readyPath)), { timeoutMs: 90000, label: `${name} ready` })
+  await waitUntil(async () => readyUntil(await request(`http://${address}:${readyPort}`, readyPath, { headers: readyHeaders() })), { timeoutMs: 90000, label: `${name} ready` })
     .catch((error) => { throw new Error(`${error.message}\n${engine.logs().slice(-5).join('\n')}`); });
   return engine;
 }
