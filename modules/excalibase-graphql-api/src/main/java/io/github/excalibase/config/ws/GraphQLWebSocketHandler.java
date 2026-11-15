@@ -258,6 +258,7 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
             return;
         }
         RealtimeGate.Delivery delivery = opening.delivery();
+        runtime.openedUnder(session, delivery.permissionsVersion());
 
         if (runtime.atSessionCap(sessionSubs.size())) {
             sendError(session, id, "Too many subscriptions on this connection");

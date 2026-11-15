@@ -40,6 +40,11 @@ final class RealtimeGate {
     /** One subscription's delivery rule; {@code access} is null for the pass-through path. */
     record Delivery(AccessPlans.RealtimeAccess access) {
 
+        /** The permission document this subscription's plan was built from; negative when there is none. */
+        long permissionsVersion() {
+            return access == null ? -1 : access.permissionsVersion();
+        }
+
         /** False for a change of another table than the one this subscription resolved to. */
         boolean isFor(CDCEvent event) {
             return access == null || access.table().equals(event.schema() + "." + event.table());

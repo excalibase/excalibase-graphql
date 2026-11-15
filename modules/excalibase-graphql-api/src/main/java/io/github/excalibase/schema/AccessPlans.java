@@ -31,5 +31,6 @@ public interface AccessPlans {
      * @param table the table key changes are judged against
      * @param view  the role's view of the schema, whose column types shape what is delivered
      */
-    record RealtimeAccess(String table, ChangeFilter filter, ProbeRunner probes, SchemaInfo view) {}
+    record RealtimeAccess(String table, ChangeFilter filter, ProbeRunner probes, SchemaInfo view,
+                          long permissionsVersion) {}
 }

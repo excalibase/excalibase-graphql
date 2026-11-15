@@ -23,7 +23,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.ObjLongConsumer;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -81,6 +83,7 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
     private final Map<String, Long> firstFailureAt = new ConcurrentHashMap<>();
     private final Set<String> expiryReported = ConcurrentHashMap.newKeySet();
     private final Set<String> gaugedProjects = ConcurrentHashMap.newKeySet();
+    private final List<ObjLongConsumer<String>> listeners = new CopyOnWriteArrayList<>();
 
     private record Cached(PermissionSet permissions, long fetchedAt) {}
 
@@ -162,6 +165,7 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
         try {
             PermissionSet fresh = fetch(projectId);
             cache.put(projectId, new Cached(fresh, nowMs));
+            announceIfChanged(projectId, current, fresh);
             firstRefusalAt.remove(projectId);
             endOutage(projectId);
             return fresh;
@@ -253,8 +257,21 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
     }
 
     @Override
-    public Optional<PermissionSet> cached(String projectId) {
-        return Optional.ofNullable(cache.get(projectId)).map(Cached::permissions);
+    public void onChange(ObjLongConsumer<String> listener) {
+        listeners.add(listener);
+    }
+
+    private void announceIfChanged(String projectId, Cached previous, PermissionSet fresh) {
+        if (previous == null || previous.permissions().equals(fresh)) {
+            return;
+        }
+        for (ObjLongConsumer<String> listener : listeners) {
+            try {
+                listener.accept(projectId, fresh.version());
+            } catch (RuntimeException e) {
+                log.error("permissions_change_listener_failed project={}", projectId, e);
+            }
+        }
     }
 
     @Override
