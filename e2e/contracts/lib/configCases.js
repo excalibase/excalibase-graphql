@@ -58,7 +58,12 @@ function runtime(env, opts, observe) {
   return async () => {
     const engine = await startEngine(env, opts);
     try {
-      return await observe(engine);
+      const outcome = await observe(engine);
+      if (outcome && outcome.error) {
+        // a request that failed to answer: keep the engine's side of it, the container is removed right after
+        console.error(`engine log before "${outcome.error}":\n${engine.logs().slice(-60).join('\n')}`);
+      }
+      return outcome;
     } finally {
       engine.stop();
     }
