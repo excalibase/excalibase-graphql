@@ -20,11 +20,16 @@ public final class DefaultErrorBody {
     private DefaultErrorBody() {
     }
 
+    /** The phrase Spring Boot answered with, where Micronaut's differs. */
+    private static String reason(HttpStatus status) {
+        return status == HttpStatus.REQUEST_ENTITY_TOO_LARGE ? "Payload Too Large" : status.getReason();
+    }
+
     public static Map<String, Object> of(HttpRequest<?> request, HttpStatus status) {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", TIMESTAMP.format(OffsetDateTime.now(ZoneOffset.UTC)));
         body.put("status", status.getCode());
-        body.put("error", status.getReason());
+        body.put("error", reason(status));
         body.put("path", RequestTarget.rawPath(request));
         return body;
     }

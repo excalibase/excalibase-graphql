@@ -98,6 +98,7 @@ class GraphQLWebSocketHandlerTest {
             attrs.put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claims);
             attrs.put(GraphQLWebSocketHandler.SESSION_PRINCIPAL_KEY, principalOf(claims));
         }
+        attrs.put(WsRuntime.INITIALISED_KEY, Boolean.TRUE);
         when(session.getAttributes()).thenReturn(attrs);
         doAnswer(invocation -> {
             TextMessage msg = invocation.getArgument(0);

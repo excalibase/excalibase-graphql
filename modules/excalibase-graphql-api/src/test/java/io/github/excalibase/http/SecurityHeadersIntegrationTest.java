@@ -48,6 +48,15 @@ class SecurityHeadersIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("a refusal the project filter writes itself (unknown project) is hardened too")
+    void projectFilterRefusal() {
+        HttpAnswer answer = http.get("/not-" + PROJECT + "/graphql");
+
+        assertThat(answer.status()).isEqualTo(404);
+        assertHardened(answer);
+    }
+
+    @Test
     @DisplayName("a request that sends an Origin still has each Vary value once")
     void varyWithOrigin() {
         HttpAnswer answer = http.get("/nothing", "Origin", "https://app.example.test");

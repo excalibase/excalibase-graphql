@@ -43,6 +43,12 @@ class ClientAddressTest {
     }
 
     @Test
+    @DisplayName("a public peer cannot choose its address with X-Forwarded-For")
+    void publicPeerIsNotTrustedToForward() throws Exception {
+        assertThat(ClientAddress.of(from("203.0.113.9", "6.6.6.6"))).isEqualTo("203.0.113.9");
+    }
+
+    @Test
     @DisplayName("IPv6 clients are counted by their /64, so one host cannot take a new address per socket")
     void ipv6ByPrefix() throws Exception {
         String first = ClientAddress.of(from("2001:db8:1:2:aaaa::1", null));

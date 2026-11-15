@@ -70,6 +70,31 @@ This repo is one service in a larger stack. Each piece runs independently:
 | [excalibase](https://github.com/excalibase/excalibase) | Control plane and Studio: projects, provisioning, backups, functions, app hosting |
 | [excalibase-sdk-js](https://github.com/excalibase/excalibase-sdk-js) | TypeScript SDK (dual-protocol, auth, codegen) |
 
+## Why Micronaut
+
+The engine runs on Micronaut. It used to run on Spring Boot, and three things were wrong for a thin application that mostly turns a request into one SQL statement:
+
+- **Slow startup.** The engine was not ready for 13.8 s on one CPU.
+- **Heavy for what it does.** More memory and more CPU for the same traffic.
+- **Lower throughput and higher latency than it needs to be**, which showed first on GraphQL.
+
+Measured with the same harness on both builds: a 1 CPU / 1 GiB container, 3 repetitions each.
+
+| | Spring Boot | Micronaut |
+|---|---|---|
+| Ready time | 13.8 s | 7.8 s |
+| Highest clean rate, REST and GraphQL (errors < 1%, p99 < 100 ms) | 1600 rps | 3200 rps (top of the ladder) |
+| Served when 3200 rps was offered, REST / GraphQL | 1845 / 1616 rps | 3200 / 3200 rps |
+| GraphQL p95 at 500 rps | 623 ms | 4.9 ms |
+| REST p99 at 500 rps | 5.6 ms | 2.9 ms |
+| Time to reach 800 rps after a cold start | 50-60 s | 10-20 s |
+| Memory (RSS) after the ladders | 459 MiB | 285 MiB |
+| CPU at 500 rps, REST | 0.46 cores | 0.22 cores |
+
+One harness, one container size, the same database and the same requests against both builds. The full method and the raw evidence will be in the [excalibase/benchmarking](https://github.com/excalibase/benchmarking) repo.
+
+**Staying on Spring:** the last Spring Boot release is tagged `spring-v1.6.3`, and the Spring code lives on the `spring-1.x` branch.
+
 ## Development
 
 ```bash

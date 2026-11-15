@@ -555,7 +555,7 @@
     "body": {
       "timestamp": "<timestamp>",
       "status": 413,
-      "error": "Request Entity Too Large",
+      "error": "Payload Too Large",
       "path": "/e2e-test/graphql"
     }
   },
@@ -576,7 +576,7 @@
     }
   },
   "graphql form body of 12 MiB": {
-    "status": 415,
+    "status": 413,
     "headers": {
       "content-type": "application/json",
       "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
@@ -587,8 +587,8 @@
     },
     "body": {
       "timestamp": "<timestamp>",
-      "status": 415,
-      "error": "Unsupported Media Type",
+      "status": 413,
+      "error": "Payload Too Large",
       "path": "/e2e-test/graphql"
     }
   },
@@ -814,7 +814,7 @@
     "body": {
       "timestamp": "<timestamp>",
       "status": 413,
-      "error": "Request Entity Too Large",
+      "error": "Payload Too Large",
       "path": "/e2e-test/api/v1/customer"
     }
   },

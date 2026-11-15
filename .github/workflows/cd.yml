@@ -7,47 +7,38 @@ on:
       - completed
     branches: [ main ]
 
+# One deployment per CI-tested commit. The sha a workflow_run exposes by
+# default is the branch tip when the run starts, not the commit CI tested, so everything
+# below uses the CI run's own head_sha (EXC-745).
+concurrency:
+  group: cd-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
 env:
   DOCKER_IMAGE: excalibase/excalibase-graphql
+  COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
 
 jobs:
   docker:
     name: Build & Push Docker Image
     runs-on: ubuntu-24.04
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.workflow_run.conclusion == 'success')
+    # Only CI runs of pushes to this repo's main; a fork PR from a branch
+    # named main must never reach the registry credentials.
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'
     
     steps:
     - name: Checkout code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      
-    - name: Set up JDK 25 (if building from scratch)
-      if: github.event_name == 'push'
-      uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
       with:
-        java-version: '25'
-        distribution: 'corretto'
-        
-    - name: Cache Maven dependencies (if building from scratch)
-      if: github.event_name == 'push'
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-maven-
+        ref: ${{ github.event.workflow_run.head_sha }}
       
-    - name: Download JAR artifacts (if from workflow_run)
-      if: github.event_name == 'workflow_run'
+    - name: Download JAR artifacts
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: jar-artifacts
         path: modules/excalibase-graphql-api/target/
         github-token: ${{ secrets.GITHUB_TOKEN }}
         run-id: ${{ github.event.workflow_run.id }}
-        
-    - name: Build JAR with Make (if not from workflow_run)
-      if: github.event_name == 'push'
-      run: make build
         
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -58,33 +49,50 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
         
+    - name: Resolve commit
+      id: commit
+      run: echo "short=${COMMIT_SHA::7}" >> "$GITHUB_OUTPUT"
+
+    - name: Check the trunk tag is unused
+      id: trunk
+      run: |
+        exists=$(scripts/ci/trunk-tag-exists.sh "$DOCKER_IMAGE" "main-${{ steps.commit.outputs.short }}")
+        echo "exists=$exists" >> "$GITHUB_OUTPUT"
+        if [ "$exists" = "true" ]; then
+          echo "::notice::main-${{ steps.commit.outputs.short }} already exists; leaving it untouched"
+        fi
+
     - name: Extract metadata
       id: meta
       uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.DOCKER_IMAGE }}
+        labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}
         tags: |
           type=ref,event=branch
-          type=sha,prefix={{branch}}-
+          type=raw,value=main-${{ steps.commit.outputs.short }}
           
     # Built into the local daemon and scanned before anything is pushed
     # (EXC-642); the push below is served from this build's cache.
     - name: Build the candidate image
+      if: steps.trunk.outputs.exists != 'true'
       uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
         context: .
         load: true
         push: false
-        tags: graphql-candidate:${{ github.sha }}
+        tags: graphql-candidate:${{ env.COMMIT_SHA }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
     - name: Trivy
+      if: steps.trunk.outputs.exists != 'true'
       uses: ./.github/actions/trivy
       with:
-        image: graphql-candidate:${{ github.sha }}
+        image: graphql-candidate:${{ env.COMMIT_SHA }}
 
     - name: Build and push Docker image
+      if: steps.trunk.outputs.exists != 'true'
       uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
         context: .
@@ -95,7 +103,7 @@ jobs:
         cache-to: type=gha,mode=max
         
     - name: Update deployment status
-      if: success()
+      if: success() && steps.trunk.outputs.exists != 'true'
       run: |
         echo "🚀 Docker image pushed successfully!"
         echo "📦 Tags: ${{ steps.meta.outputs.tags }}"
@@ -103,11 +111,13 @@ jobs:
   docker-native:
     name: Build & Push Native Docker Image
     runs-on: ubuntu-24.04
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'
 
     steps:
     - name: Checkout code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        ref: ${{ github.event.workflow_run.head_sha }}
 
     - name: Download native binary from CI
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -129,36 +139,53 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+    - name: Resolve commit
+      id: commit
+      run: echo "short=${COMMIT_SHA::7}" >> "$GITHUB_OUTPUT"
+
+    - name: Check the trunk tag is unused
+      id: trunk
+      run: |
+        exists=$(scripts/ci/trunk-tag-exists.sh "$DOCKER_IMAGE" "main-${{ steps.commit.outputs.short }}-native")
+        echo "exists=$exists" >> "$GITHUB_OUTPUT"
+        if [ "$exists" = "true" ]; then
+          echo "::notice::main-${{ steps.commit.outputs.short }}-native already exists; leaving it untouched"
+        fi
+
     - name: Extract metadata
       id: meta
       uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.DOCKER_IMAGE }}
+        labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}
         tags: |
           type=raw,value=native-main,enable={{is_default_branch}}
-          type=raw,value=native-${{ github.sha }}
+          type=raw,value=native-${{ env.COMMIT_SHA }}
           type=raw,value=main-native
-          type=sha,prefix={{branch}}-,suffix=-native
+          type=raw,value=main-${{ steps.commit.outputs.short }}-native
 
     # Built into the local daemon and scanned before anything is pushed
     # (EXC-642); the push below is served from this build's cache.
     - name: Build the candidate image
+      if: steps.trunk.outputs.exists != 'true'
       uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
         context: .
         file: Dockerfile.native
         load: true
         push: false
-        tags: graphql-native-candidate:${{ github.sha }}
+        tags: graphql-native-candidate:${{ env.COMMIT_SHA }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
     - name: Trivy
+      if: steps.trunk.outputs.exists != 'true'
       uses: ./.github/actions/trivy
       with:
-        image: graphql-native-candidate:${{ github.sha }}
+        image: graphql-native-candidate:${{ env.COMMIT_SHA }}
 
     - name: Build and push native Docker image
+      if: steps.trunk.outputs.exists != 'true'
       uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
       with:
         context: .
@@ -170,7 +197,7 @@ jobs:
         cache-to: type=gha,mode=max
 
     - name: Update deployment status
-      if: success()
+      if: success() && steps.trunk.outputs.exists != 'true'
       run: |
         echo "🚀 Native Docker image pushed successfully!"
         echo "📦 Tags: ${{ steps.meta.outputs.tags }}"
