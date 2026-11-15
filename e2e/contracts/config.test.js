@@ -4,7 +4,8 @@ const { CASES } = require('./lib/configCases');
 const { removeAll } = require('./lib/containers');
 const catalog = require('./fixtures/config-catalog.json');
 
-const CONCURRENCY = Number(process.env.CONTRACT_CONFIG_CONCURRENCY || 5);
+// Five cold engines at once on a CI runner left some first requests past the 30s limit; two keep each start well inside it.
+const CONCURRENCY = Number(process.env.CONTRACT_CONFIG_CONCURRENCY || 2);
 const outcomes = {};
 
 async function runAll(cases) {
