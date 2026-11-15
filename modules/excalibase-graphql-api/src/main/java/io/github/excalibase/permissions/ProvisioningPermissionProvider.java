@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -249,6 +250,11 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
         log.warn("permissions_stale project={} version={} reason=document_refused",
                 projectId, current.permissions().version());
         return current.permissions();
+    }
+
+    @Override
+    public Optional<PermissionSet> cached(String projectId) {
+        return Optional.ofNullable(cache.get(projectId)).map(Cached::permissions);
     }
 
     @Override

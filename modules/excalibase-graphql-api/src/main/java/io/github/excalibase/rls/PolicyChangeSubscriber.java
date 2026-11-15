@@ -1,6 +1,7 @@
 package io.github.excalibase.rls;
 
 import io.github.excalibase.nats.NatsOptionsFactory;
+import io.github.excalibase.permissions.PermissionChangeCheck;
 import io.nats.client.Connection;
 import io.nats.client.Dispatcher;
 import io.nats.client.Message;
@@ -35,6 +36,8 @@ public class PolicyChangeSubscriber {
     static final String SUBJECT = "policies.*.changed";
 
     private final List<ProjectCacheEvictor> evictors;
+    private final PermissionChangeCheck permissionChange;
+    private final ProjectSockets sockets;
     private final boolean natsEnabled;
     private final String natsUrl;
     private final String natsUsername;
@@ -61,7 +64,19 @@ public class PolicyChangeSubscriber {
      */
     public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, boolean natsEnabled, String natsUrl,
                                   String natsUsername, String natsPassword, String natsInboxPrefix) {
+        this(evictors, null, null, natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
+    }
+
+    /**
+     * @param permissionChange compares the permission document before and after the eviction
+     * @param sockets     the project's open sockets, closed only when the document actually changed
+     */
+    public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, PermissionChangeCheck permissionChange,
+                                  ProjectSockets sockets, boolean natsEnabled, String natsUrl,
+                                  String natsUsername, String natsPassword, String natsInboxPrefix) {
         this.evictors = List.copyOf(evictors);
+        this.permissionChange = permissionChange;
+        this.sockets = sockets;
         this.natsEnabled = natsEnabled;
         this.natsUrl = natsUrl;
         this.natsUsername = natsUsername;
@@ -131,7 +146,16 @@ public class PolicyChangeSubscriber {
             return;
         }
         log.info("Policy change for project {} - evicting cached policies and engines", projectId);
+        boolean watched = sockets != null && sockets.hasSockets(projectId);
+        if (watched) {
+            permissionChange.remember(projectId);
+        }
         evictors.forEach(evictor -> evictor.evict(projectId));
+        // An event that changes nothing (a plain statement run in Studio publishes one too) keeps the sockets
+        // open. When the permissions cannot be compared or read back the sockets close, as every event once did.
+        if (watched && permissionChange.changed(projectId)) {
+            sockets.closeForPermissionChange(projectId);
+        }
     }
 
     static String parseProjectId(String subject) {

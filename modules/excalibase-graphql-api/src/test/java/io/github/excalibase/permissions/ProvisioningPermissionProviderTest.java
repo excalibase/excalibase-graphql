@@ -389,6 +389,19 @@ class ProvisioningPermissionProviderTest {
         assertThat(hits.get()).isEqualTo(2);
     }
 
+    @Test
+    void cached_isTheLastDocumentReadAndAsksNobody() {
+        ProvisioningPermissionProvider provider = provider(60_000);
+        assertThat(provider.cached("proj1")).isEmpty();
+
+        PermissionSet read = provider.permissionsFor("proj1");
+
+        assertThat(provider.cached("proj1")).contains(read);
+        assertThat(hits.get()).isEqualTo(1);
+        provider.evict("proj1");
+        assertThat(provider.cached("proj1")).isEmpty();
+    }
+
     // ---- control-plane outage: the cached copy is served for at most max-stale from the first failure ----
 
     @Test

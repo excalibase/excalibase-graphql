@@ -144,7 +144,7 @@ class WsRuntimeTest {
         WsSession other = session("p2", "1.1.1.1");
         rt.admit(mine);
         rt.admit(other);
-        rt.evict("p1");
+        rt.closeForPermissionChange("p1");
         verify(mine).close(new CloseStatus(1012, "permissions_changed"));
         verify(other, never()).close(any(CloseStatus.class));
     }

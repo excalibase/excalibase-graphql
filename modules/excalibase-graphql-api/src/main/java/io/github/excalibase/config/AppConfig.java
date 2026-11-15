@@ -15,6 +15,7 @@ import io.github.excalibase.cors.ProvisioningProjectCorsProvider;
 import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionCachePolicy;
+import io.github.excalibase.permissions.PermissionChangeCheck;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
@@ -189,8 +190,8 @@ public class AppConfig {
             @Value("${app.nats.username:}") String natsUsername,
             @Value("${app.nats.password:}") String natsPassword,
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
-        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict, webSockets),
-                natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
+        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict),
+                new PermissionChangeCheck(permissionProvider), webSockets, natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 
     /** The tenant TLS mode, read at start in every mode so a weaker one is refused even when no tenant is served. */
