@@ -36,4 +36,24 @@ describe('the engine side of a case that failed to answer', () => {
     expect(outcome).toEqual({ status: 200 });
     expect(written).toEqual([]);
   });
+
+  test('a failed case also keeps what the engine threads were doing', async () => {
+    const written = [];
+    const dumping = { logs: () => ['a'], threadDump: async () => ['"tomcat-handler-1" waiting', '  at Foo.bar'] };
+
+    await expect(observeWithLogs(dumping, async () => { throw new Error('timeout GET /p'); }, (text) => written.push(text))).rejects.toThrow('timeout');
+
+    expect(written).toHaveLength(2);
+    expect(written[1]).toContain('engine threads at "timeout GET /p"');
+    expect(written[1]).toContain('tomcat-handler-1');
+  });
+
+  test('a thread dump that cannot be taken is reported and does not hide the failure', async () => {
+    const written = [];
+    const broken = { logs: () => ['a'], threadDump: async () => { throw new Error('no such container'); } };
+
+    await expect(observeWithLogs(broken, async () => { throw new Error('timeout GET /p'); }, (text) => written.push(text))).rejects.toThrow('timeout GET /p');
+
+    expect(written[1]).toContain('no thread dump: no such container');
+  });
 });
