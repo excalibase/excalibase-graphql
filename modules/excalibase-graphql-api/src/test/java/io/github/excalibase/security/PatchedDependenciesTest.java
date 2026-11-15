@@ -6,6 +6,8 @@ import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import io.opentelemetry.api.OpenTelemetry;
 import org.postgresql.Driver;
+import org.apache.commons.lang3.StringUtils;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -43,6 +45,16 @@ class PatchedDependenciesTest {
     @Test
     void postgresDriverIsPatched() {
         assertAtLeast(Driver.class, "postgresql", "42.7.12");
+    }
+
+    @Test
+    void testScopeAssertjIsPatched() {
+        assertAtLeast(Assertions.class, "assertj-core", "3.27.7");
+    }
+
+    @Test
+    void testScopeCommonsLangIsPatched() {
+        assertAtLeast(StringUtils.class, "commons-lang3", "3.18.0");
     }
 
     private static void assertAtLeast(Class<?> marker, String artifact, String minimum) {
