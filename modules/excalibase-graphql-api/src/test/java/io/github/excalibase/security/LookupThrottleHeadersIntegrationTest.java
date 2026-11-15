@@ -1,88 +1,80 @@
 package io.github.excalibase.security;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
+import io.github.excalibase.support.StubControlPlane;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.IntFunction;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
 /** EXC-722: the 429 of a throttled project lookup is readable by a browser and carries the security headers. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-class LookupThrottleHeadersIntegrationTest {
+class LookupThrottleHeadersIntegrationTest extends EngineIntegrationTest {
 
-    @TestConfiguration
-    static class Throttled {
-        @Bean
-        @Primary
-        KnownProjects alwaysThrottled() {
-            return projectId -> {
-                throw new ProjectLookupThrottledException();
-            };
+    private static final String ORIGIN = "https://app.example.com";
+    private static final AtomicInteger NEXT = new AtomicInteger();
+
+    /** A control plane that knows no project: every lookup is a 404, so each new id costs a lookup. */
+    static final StubControlPlane provisioning = new StubControlPlane().start();
+
+    @AfterAll
+    static void teardown() {
+        provisioning.close();
+    }
+
+    @Override
+    public Map<String, String> getProperties() {
+        Map<String, String> properties = new HashMap<>(EngineProperties.isolated());
+        properties.put("app.database-type", "postgres");
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.security.auth.hmac-secret", "0123456789abcdef0123456789abcdef");
+        properties.put("app.security.multi-tenant.provisioning-url", provisioning.url("/api"));
+        properties.put("app.security.multi-tenant.provisioning-pat", "test-pat");
+        properties.put("app.security.multi-tenant.lookup-rate-per-second", "1");
+        properties.put("app.security.rls.policy-url", provisioning.url("/api"));
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        properties.put("app.tenant-db.sslmode", "disable");
+        return properties;
+    }
+
+    /** Asks about made-up projects, one lookup each, until an answer with {@code status} comes back. */
+    private HttpAnswer untilAnswered(int status, IntFunction<HttpAnswer> ask) {
+        for (int attempt = 0; attempt < 30; attempt++) {
+            HttpAnswer answer = ask.apply(NEXT.incrementAndGet());
+            if (answer.status() == status) {
+                return answer;
+            }
         }
+        throw new AssertionError("no " + status + " after 30 lookups of unknown projects");
     }
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withInitScript("init-insert-only.sql");
-
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.project-id", () -> "test-proj");
-        registry.add("app.security.jwt-enabled", () -> "false");
-        registry.add("app.security.insecure-dev-mode", () -> "true");
-    }
-
-    @LocalServerPort
-    private int port;
 
     @Test
     @DisplayName("a throttled lookup answers 429 with CORS for the asking origin, Vary and the security headers")
-    void throttledAnswerIsReadableByABrowser() throws Exception {
-        HttpResponse<String> response = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/some-project/graphql"))
-                        .header("Origin", "https://app.example.com")
-                        .POST(HttpRequest.BodyPublishers.ofString("{\"query\":\"{ __typename }\"}")).build(),
-                HttpResponse.BodyHandlers.ofString());
+    void throttledAnswerIsReadableByABrowser() {
+        HttpAnswer answer = untilAnswered(429, id -> http.post("/unknown-" + id + "/graphql",
+                "{\"query\":\"{ __typename }\"}", "Origin", ORIGIN, "Content-Type", "application/json"));
 
-        assertThat(response.statusCode()).isEqualTo(429);
-        assertThat(response.headers().firstValue("access-control-allow-origin")).contains("https://app.example.com");
-        assertThat(response.headers().firstValue("vary").orElse("")).contains("Origin");
-        assertThat(response.headers().firstValue("x-content-type-options")).contains("nosniff");
+        assertThat(answer.header("Access-Control-Allow-Origin")).isEqualTo(ORIGIN);
+        assertThat(String.join(",", answer.headers().allValues("Vary"))).contains("Origin");
+        assertThat(answer.header("X-Content-Type-Options")).isEqualTo("nosniff");
     }
 
     @Test
     @DisplayName("a throttled preflight is answered 204 with the allowed methods and no caching")
-    void throttledPreflightIsAnswered() throws Exception {
-        HttpResponse<String> response = HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/some-project/graphql"))
-                        .header("Origin", "https://app.example.com")
-                        .header("Access-Control-Request-Method", "POST")
-                        .header("Access-Control-Request-Headers", "authorization")
-                        .method("OPTIONS", HttpRequest.BodyPublishers.noBody()).build(),
-                HttpResponse.BodyHandlers.ofString());
+    void throttledPreflightIsAnswered() {
+        HttpAnswer answer = untilAnswered(204, id -> http.send("OPTIONS", "/unknown-p" + id + "/graphql", null,
+                "Origin", ORIGIN, "Access-Control-Request-Method", "POST",
+                "Access-Control-Request-Headers", "authorization"));
 
-        assertThat(response.statusCode()).isEqualTo(204);
-        assertThat(response.headers().firstValue("access-control-allow-origin")).contains("https://app.example.com");
-        assertThat(response.headers().firstValue("access-control-allow-methods").orElse("")).contains("POST");
-        assertThat(response.headers().firstValue("access-control-allow-headers")).contains("authorization");
-        assertThat(response.headers().firstValue("access-control-max-age")).contains("0");
+        assertThat(answer.header("Access-Control-Allow-Origin")).isEqualTo(ORIGIN);
+        assertThat(answer.header("Access-Control-Allow-Methods")).contains("POST");
+        assertThat(answer.header("Access-Control-Allow-Headers")).isEqualTo("authorization");
+        assertThat(answer.header("Access-Control-Max-Age")).isEqualTo("0");
     }
 }

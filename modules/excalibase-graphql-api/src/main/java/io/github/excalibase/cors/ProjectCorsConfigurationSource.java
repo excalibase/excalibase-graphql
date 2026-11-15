@@ -1,11 +1,9 @@
 package io.github.excalibase.cors;
 
 import io.github.excalibase.security.ProjectPath;
-import jakarta.servlet.http.HttpServletRequest;
+import io.micronaut.http.HttpRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
 
 import java.util.List;
 import java.util.Objects;
@@ -28,7 +26,7 @@ import java.util.Objects;
  * </ul>
  * Non-browser clients send no {@code Origin} and are unaffected by any of this.
  */
-public final class ProjectCorsConfigurationSource implements CorsConfigurationSource {
+public final class ProjectCorsConfigurationSource {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectCorsConfigurationSource.class);
 
@@ -37,21 +35,20 @@ public final class ProjectCorsConfigurationSource implements CorsConfigurationSo
     private static final long MAX_AGE_SECONDS = 3600L;
 
     private final ProjectCorsProvider provider;
-    private final CorsConfiguration platformDefault;
+    private final CorsRules platformDefault;
 
     /**
      * @param provider        per-project allowlist source; {@code null} when no
      *                        provisioning is configured (platform default everywhere)
      * @param platformDefault configuration for routes that carry no project
      */
-    public ProjectCorsConfigurationSource(ProjectCorsProvider provider, CorsConfiguration platformDefault) {
+    public ProjectCorsConfigurationSource(ProjectCorsProvider provider, CorsRules platformDefault) {
         this.provider = provider;
         this.platformDefault = Objects.requireNonNull(platformDefault, "platformDefault");
     }
 
-    @Override
-    public CorsConfiguration getCorsConfiguration(HttpServletRequest request) {
-        String projectId = ProjectPath.fromUri(request.getRequestURI());
+    public CorsRules getCorsConfiguration(HttpRequest<?> request) {
+        String projectId = ProjectPath.fromUri(request.getPath());
         if (projectId == null || provider == null) {
             return platformDefault;
         }
@@ -71,14 +68,7 @@ public final class ProjectCorsConfigurationSource implements CorsConfigurationSo
      * Auth is a Bearer token, never a cookie, so credentials stay off — which
      * is also what makes the {@code *} entry safe to honour.
      */
-    public static CorsConfiguration configFor(List<String> origins) {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(List.copyOf(origins));
-        config.setAllowedMethods(ALLOWED_METHODS);
-        config.setAllowedHeaders(List.of(CorsConfiguration.ALL));
-        config.setExposedHeaders(EXPOSED_HEADERS);
-        config.setAllowCredentials(false);
-        config.setMaxAge(MAX_AGE_SECONDS);
-        return config;
+    public static CorsRules configFor(List<String> origins) {
+        return new CorsRules(origins, ALLOWED_METHODS, List.of(CorsRules.ALL), EXPOSED_HEADERS, false, MAX_AGE_SECONDS);
     }
 }

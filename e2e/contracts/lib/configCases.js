@@ -58,7 +58,12 @@ function runtime(env, opts, observe) {
   return async () => {
     const engine = await startEngine(env, opts);
     try {
-      return await observe(engine);
+      const outcome = await observe(engine);
+      if (outcome && outcome.error) {
+        // a request that failed to answer: keep the engine's side of it, the container is removed right after
+        console.error(`engine log before "${outcome.error}":\n${engine.logs().slice(-60).join('\n')}`);
+      }
+      return outcome;
     } finally {
       engine.stop();
     }
@@ -126,10 +131,13 @@ const CASES = [
     .some((entry) => entry.logger.startsWith('io.github.excalibase') && entry.level === 'INFO')), false],
   ['LOGGING_LEVEL_IO_GITHUB_EXCALIBASE=DEBUG adds DEBUG lines', runtime({ ...SINGLE_DATABASE_ENV, LOGGING_LEVEL_IO_GITHUB_EXCALIBASE: 'DEBUG' }, READY_APP, async (engine) => {
     const session = openSocket(engine.app, service());   // a connection is logged at DEBUG by the engine's own handler
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const hasDebug = () => engine.logs().filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).log.level).includes('DEBUG');
+    const deadline = Date.now() + 15000;
+    while (!hasDebug() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
     session.socket.close();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    return engine.logs().filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).log.level).includes('DEBUG');
+    return hasDebug();
   }), true],
   ['JWT_REQUIRE_AUD=false accepts a token with no audience', runtime({ ...SINGLE_DATABASE_ENV, JWT_REQUIRE_AUD: 'false' }, READY_APP, async (engine) => (await graphqlAs(engine, '{ __typename }', bearer(token({ extra: { aud: undefined } })))).status), 200],
   ['the audience is required by default', runtime(SINGLE_DATABASE_ENV, READY_APP, async (engine) => (await graphqlAs(engine, '{ __typename }', bearer(token({ extra: { aud: undefined } })))).status), 401],
@@ -141,8 +149,10 @@ const CASES = [
     withoutIssuer: (await graphqlAs(engine, '{ __typename }', bearer(token()))).status,
     withIssuer: (await graphqlAs(engine, '{ __typename }', bearer(token({ extra: { iss: 'contract-issuer' } })))).status,
   })), { withoutIssuer: 401, withIssuer: 200 }],
-  ['APP_CORS_ALLOWED_ORIGINS sets the origins for routes with no project', runtime({ ...SINGLE_DATABASE_ENV, APP_CORS_ALLOWED_ORIGINS: 'https://allowed.contract.test' }, READY_APP, async (engine) => {
-    const preflight = (origin) => request(engine.app, '/', { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'GET' } });
+  // No path is served without a project, so the platform default applies to a project's routes only where no
+  // provisioning is configured to say otherwise.
+  ['APP_CORS_ALLOWED_ORIGINS sets the origins where no provisioning says otherwise', runtime({ ...withoutKeys(SINGLE_DATABASE_ENV, 'APP_SECURITY_RLS_POLICY_URL', 'APP_SECURITY_RLS_POLICY_PAT'), APP_CORS_ALLOWED_ORIGINS: 'https://allowed.contract.test' }, READY_APP, async (engine) => {
+    const preflight = (origin) => request(engine.app, `/${P}/graphql`, { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST' } });
     const allowed = await preflight('https://allowed.contract.test');
     const refused = await preflight('https://other.contract.test');
     return { allowed: [allowed.status, allowed.headers['access-control-allow-origin']], refused: refused.status };

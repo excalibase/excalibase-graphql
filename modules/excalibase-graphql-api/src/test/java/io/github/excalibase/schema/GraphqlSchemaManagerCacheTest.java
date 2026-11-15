@@ -11,6 +11,13 @@ import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.spi.SqlEngineFactory;
+import io.github.excalibase.access.AccessPlan;
+import io.github.excalibase.schema.GraphqlSchemaManager.EngineState;
+import io.micronaut.core.propagation.MutablePropagatedContext;
+import io.micronaut.core.propagation.PropagatedContext;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -249,6 +256,7 @@ class GraphqlSchemaManagerCacheTest {
     @DisplayName("request principal")
     class RequestPrincipal {
 
+        private PropagatedContext request;
 
         @BeforeEach
         void setTenant() {
@@ -257,46 +265,117 @@ class GraphqlSchemaManagerCacheTest {
         }
 
         @AfterEach
-        void finishRequest() {
-            manager.requestFinished();
+        void clearTenant() {
             TenantContext.clear();
+        }
+
+        /** What the authentication filter does: resolve once and leave the engine on the request's context. */
+        private AccessPlan filterResolves(Principal principal) {
+            MutablePropagatedContext context = MutablePropagatedContext.of(PropagatedContext.empty());
+            AccessPlan plan = manager.planFor(principal, context);
+            request = context.getContext();
+            return plan;
+        }
+
+        private <T> T handler(Supplier<T> work) {
+            try (PropagatedContext.Scope ignored = request.propagate()) {
+                return work.get();
+            }
+        }
+
+        private <T> T handlerOnAnotherThread(Supplier<T> work) throws Exception {
+            try (ExecutorService other = Executors.newSingleThreadExecutor()) {
+                return other.submit(() -> {
+                    TenantContext.setTenantId("proj-1");   // the request context sets this on the thread that runs the handler
+                    try {
+                        return handler(work);
+                    } finally {
+                        TenantContext.clear();
+                    }
+                }).get();
+            }
         }
 
         @Test
         void oneRequest_readsThePermissionDocumentOnce() {
             Principal user = runningAs("user");
 
-            manager.planFor(user);
-            manager.resolveEngineState(user);
-            manager.resolveAccess(user);
-            manager.resolveDefaultSchema(user);
+            filterResolves(user);
+            handler(() -> {
+                manager.resolveEngineState(user);
+                manager.resolveAccess(user);
+                return manager.resolveDefaultSchema(user);
+            });
 
             assertThat(permissions.reads).containsExactly("proj-1");
         }
 
         @Test
-        void theNextRequest_readsTheDocumentAgain() {
+        void theHandlerOnAnotherThread_isServedTheEngineTheFilterResolved() throws Exception {
             Principal user = runningAs("user");
-            manager.planFor(user);
+            AccessPlan plan = filterResolves(user);
 
-            manager.requestFinished();
-            manager.planFor(user);
+            EngineState served = handlerOnAnotherThread(() -> manager.resolveEngineState(user));
+
+            assertThat(served.plan()).isSameAs(plan);
+            assertThat(permissions.reads).containsExactly("proj-1");
+        }
+
+        @Test
+        void aPermissionChangeBetweenFilterAndHandler_isNotMixedIn() {
+            Principal user = runningAs("user");
+            AccessPlan plan = filterResolves(user);
+
+            permissions.version = 2;
+            EngineState served = handler(() -> manager.resolveEngineState(user));
+
+            assertThat(served.plan()).isSameAs(plan);
+            assertThat(permissions.reads).containsExactly("proj-1");
+        }
+
+        @Test
+        void theNextRequest_readsTheDocumentAgain_andSeesTheChange() {
+            Principal user = runningAs("user");
+            AccessPlan first = filterResolves(user);
+
+            permissions.version = 2;
+            AccessPlan second = filterResolves(user);
+
+            assertThat(second).isNotSameAs(first);
+            assertThat(permissions.reads).containsExactly("proj-1", "proj-1");
+        }
+
+        @Test
+        void nothingStaysOnAThreadWhenTheRequestEnds() {
+            Principal user = runningAs("user");
+            filterResolves(user);
+            handler(() -> manager.resolveEngineState(user));
+
+            manager.resolveEngineState(user);
 
             assertThat(permissions.reads).containsExactly("proj-1", "proj-1");
         }
 
         @Test
-        void anotherPrincipalOnTheSameThread_isNotServedTheFirstOnesEngine() {
-            manager.planFor(runningAs("user"));
+        void managerKeepsNoThreadLocalForTheRequest() {
+            assertThat(java.util.Arrays.stream(GraphqlSchemaManager.class.getDeclaredFields())
+                    .noneMatch(field -> ThreadLocal.class.isAssignableFrom(field.getType()))).isTrue();
+        }
 
-            assertThat(manager.planFor(Principal.anonymous()).view().getTableNames()).isEmpty();
+        @Test
+        void anotherPrincipalInTheSameRequest_isNotServedTheFirstOnesEngine() {
+            filterResolves(runningAs("user"));
+
+            EngineState served = handler(() -> manager.resolveEngineState(Principal.anonymous()));
+
+            assertThat(served.plan().view().getTableNames()).isEmpty();
             assertThat(permissions.reads).containsExactly("proj-1", "proj-1");
         }
 
         @Test
         void planFor_isTheRequestProjectsPlanForTheRole() {
-            assertThat(manager.planFor(runningAs("user")).view().getTableNames()).containsExactly(ORDERS);
-            assertThat(manager.planFor(Principal.anonymous()).view().getTableNames()).isEmpty();
+            assertThat(filterResolves(runningAs("user")).view().getTableNames()).containsExactly(ORDERS);
+            assertThat(filterResolves(Principal.anonymous()).view().getTableNames()).isEmpty();
         }
     }
 }

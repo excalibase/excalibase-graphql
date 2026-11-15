@@ -1,3 +1,0 @@
-org.springframework.boot.env.EnvironmentPostProcessor=\
-io.github.excalibase.observability.OtlpExportEnvironmentPostProcessor,\
-io.github.excalibase.observability.ObservabilityLevelEnvironmentPostProcessor

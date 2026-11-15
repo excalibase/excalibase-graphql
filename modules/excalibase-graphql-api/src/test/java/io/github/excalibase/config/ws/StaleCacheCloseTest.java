@@ -6,8 +6,7 @@ import io.github.excalibase.permissions.PermissionVersions;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.WebSocketSession;
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
 
 import java.util.List;
 import java.util.Map;
@@ -22,8 +21,8 @@ import static org.mockito.Mockito.when;
 /** The close after a permission change is judged by what each socket was opened under, not by the cache. */
 class StaleCacheCloseTest {
 
-    private static WebSocketSession socket(WsRuntime runtime, long openedUnder) throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
+    private static WsSession socket(WsRuntime runtime, long openedUnder) throws Exception {
+        WsSession session = mock(WsSession.class);
         when(session.getId()).thenReturn("s-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
         Map<String, Object> attributes = new ConcurrentHashMap<>();
@@ -45,7 +44,7 @@ class StaleCacheCloseTest {
     @DisplayName("a socket opened under v7 closes when the event finds v8, even if the cache already held v8")
     void socketOpenedUnderTheOldDocumentCloses() throws Exception {
         WsRuntime runtime = WsRuntime.inline();
-        WebSocketSession stale = socket(runtime, 7);
+        WsSession stale = socket(runtime, 7);
 
         eventWithTheCacheAt(runtime, 8);
 
@@ -56,7 +55,7 @@ class StaleCacheCloseTest {
     @DisplayName("a socket opened under the current document stays open")
     void socketOpenedUnderTheCurrentDocumentStays() throws Exception {
         WsRuntime runtime = WsRuntime.inline();
-        WebSocketSession current = socket(runtime, 8);
+        WsSession current = socket(runtime, 8);
 
         eventWithTheCacheAt(runtime, 8);
 
@@ -67,9 +66,9 @@ class StaleCacheCloseTest {
     @DisplayName("one subscription under an old document is enough to close the socket; a plan-less socket is left alone")
     void mixedSubscriptions() throws Exception {
         WsRuntime runtime = WsRuntime.inline();
-        WebSocketSession mixed = socket(runtime, 8);
+        WsSession mixed = socket(runtime, 8);
         runtime.openedUnder(mixed, 7, runtime.permissionGeneration(mixed));
-        WebSocketSession untracked = socket(runtime, -1);
+        WsSession untracked = socket(runtime, -1);
 
         eventWithTheCacheAt(runtime, 8);
 
@@ -81,8 +80,8 @@ class StaleCacheCloseTest {
     @DisplayName("a refresh that finds a different document closes the sockets opened under the old one")
     void permissionsAreClosesByVersion() throws Exception {
         WsRuntime runtime = WsRuntime.inline();
-        WebSocketSession old = socket(runtime, 7);
-        WebSocketSession fresh = socket(runtime, 9);
+        WsSession old = socket(runtime, 7);
+        WsSession fresh = socket(runtime, 9);
 
         runtime.permissionsAre("p1", 9);
 

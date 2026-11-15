@@ -1,0 +1,201 @@
+{
+  "application_ready_time_seconds": [
+    "main_application_class"
+  ],
+  "application_started_time_seconds": [
+    "main_application_class"
+  ],
+  "disk_free_bytes": [
+    "path"
+  ],
+  "disk_total_bytes": [
+    "path"
+  ],
+  "excalibase_permissions_stale_seconds": [
+    "project"
+  ],
+  "graphql_request_active_seconds_count": [
+    "operation_type"
+  ],
+  "graphql_request_active_seconds_max": [
+    "operation_type"
+  ],
+  "graphql_request_active_seconds_sum": [
+    "operation_type"
+  ],
+  "graphql_request_errors_total": [
+    "operation_type"
+  ],
+  "graphql_request_seconds_count": [
+    "error",
+    "operation_type"
+  ],
+  "graphql_request_seconds_max": [
+    "error",
+    "operation_type"
+  ],
+  "graphql_request_seconds_sum": [
+    "error",
+    "operation_type"
+  ],
+  "http_server_requests_active_seconds_count": [
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_active_seconds_max": [
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_active_seconds_sum": [
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_seconds_count": [
+    "error",
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_seconds_max": [
+    "error",
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "http_server_requests_seconds_sum": [
+    "error",
+    "exception",
+    "method",
+    "org_name",
+    "org_slug",
+    "outcome",
+    "project_name",
+    "status",
+    "tenant_id",
+    "uri"
+  ],
+  "jvm_classes_loaded_classes": [],
+  "jvm_classes_unloaded_classes_total": [],
+  "jvm_gc_concurrent_phase_time_seconds_count": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_concurrent_phase_time_seconds_max": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_concurrent_phase_time_seconds_sum": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_live_data_size_bytes": [],
+  "jvm_gc_max_data_size_bytes": [],
+  "jvm_gc_memory_allocated_bytes_total": [],
+  "jvm_gc_memory_promoted_bytes_total": [],
+  "jvm_gc_overhead": [],
+  "jvm_gc_pause_seconds_count": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_pause_seconds_max": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_gc_pause_seconds_sum": [
+    "action",
+    "cause",
+    "gc"
+  ],
+  "jvm_info": [
+    "runtime",
+    "vendor",
+    "version"
+  ],
+  "jvm_memory_committed_bytes": [
+    "area",
+    "id"
+  ],
+  "jvm_memory_max_bytes": [
+    "area",
+    "id"
+  ],
+  "jvm_memory_used_bytes": [
+    "area",
+    "id"
+  ],
+  "jvm_threads_daemon_threads": [],
+  "jvm_threads_live_threads": [],
+  "jvm_threads_peak_threads": [],
+  "jvm_threads_started_threads_total": [],
+  "jvm_threads_states_threads": [
+    "state"
+  ],
+  "logback_events_total": [
+    "level"
+  ],
+  "process_cpu_time_ns_total": [],
+  "process_cpu_usage": [],
+  "process_files_max_files": [],
+  "process_files_open_files": [],
+  "process_start_time_seconds": [],
+  "process_uptime_seconds": [],
+  "system_cpu_count": [],
+  "system_cpu_usage": [],
+  "system_load_average_1m": [],
+  "tomcat_connections_config_max_connections": [
+    "name"
+  ],
+  "tomcat_connections_current_connections": [
+    "name"
+  ],
+  "tomcat_connections_keepalive_current_connections": [
+    "name"
+  ],
+  "tomcat_threads_busy_threads": [
+    "name"
+  ],
+  "tomcat_threads_config_max_threads": [
+    "name"
+  ],
+  "tomcat_threads_current_threads": [
+    "name"
+  ]
+}

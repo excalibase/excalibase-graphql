@@ -23,17 +23,21 @@ import io.github.excalibase.spi.SqlEngineFactory;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import io.micronaut.context.annotation.Context;
+import io.micronaut.context.annotation.Value;
+import io.github.excalibase.config.JwtEnabledSetting;
+import jakarta.inject.Inject;
+import io.micronaut.core.annotation.Nullable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import io.micronaut.core.propagation.MutablePropagatedContext;
+import io.micronaut.core.propagation.PropagatedContext;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -44,7 +48,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * access plan (docs/features/permissions.md §7). This is the one place a plan is built: the compiler,
  * introspection, the request guards and realtime all take theirs from the {@link EngineState} made here.
  */
-@Component
+@Context
 public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, ProjectCacheEvictor {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlSchemaManager.class);
@@ -56,13 +60,13 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     private final JdbcTemplate jdbcTemplate;
     private final int maxRows;
+    private final boolean capNestedLists;
     private final String databaseType;
     private final int maxQueryDepth;
     private final ReservedSchemas reservedSchemas;
     private final DynamicDataSourceManager dataSourceManager;
     private final PermissionProvider permissionProvider;
     private final boolean jwtEnabled;
-    private final boolean capNestedLists;
 
     /**
      * One role's engine on one project.
@@ -90,10 +94,26 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     private final AtomicReference<Reflection> defaultReflection = new AtomicReference<>();
     private final TTLCache<String, Reflection> reflections;
     private final TTLCache<EngineKey, EngineState> tenantEngineStates;
-    private final ThreadLocal<RequestEngine> requestEngine = new ThreadLocal<>();
 
-    /** Without nested-list capping, which is what the settings default to. */
+    @Inject
     public GraphqlSchemaManager(
+            JdbcTemplate jdbcTemplate,
+            @Value("${app.max-rows:30}") int maxRows,
+            @Value("${app.database-type:postgres}") String databaseType,
+            @Value("${app.max-query-depth:15}") int maxQueryDepth,
+            @Value("${app.cache.schema-ttl-minutes:30}") int schemaTtlMinutes,
+            @Value("${app.reserved-schemas:}") String reservedSchemasConfig,
+            @Nullable NatsCDCService natsCDCService,
+            @Nullable DynamicDataSourceManager dataSourceManager,
+            @Nullable PermissionProvider permissionProvider,
+            JwtEnabledSetting jwtEnabledSetting,
+            @Value("${app.cap-nested-lists:false}") boolean capNestedLists) {
+        this(jdbcTemplate, maxRows, databaseType, maxQueryDepth, schemaTtlMinutes, reservedSchemasConfig,
+                natsCDCService, dataSourceManager, permissionProvider, jwtEnabledSetting.enabled(), capNestedLists);
+    }
+
+    /** For code that already holds the parsed setting; the engine itself is built with {@link JwtEnabledSetting}. */
+    GraphqlSchemaManager(
             JdbcTemplate jdbcTemplate,
             int maxRows,
             String databaseType,
@@ -108,19 +128,18 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
                 natsCDCService, dataSourceManager, permissionProvider, jwtEnabled, false);
     }
 
-    @Autowired
-    public GraphqlSchemaManager(
+    GraphqlSchemaManager(
             JdbcTemplate jdbcTemplate,
-            @Value("${app.max-rows:30}") int maxRows,
-            @Value("${app.database-type:postgres}") String databaseType,
-            @Value("${app.max-query-depth:#{T(io.github.excalibase.schema.GraphqlSchemaManager).DEFAULT_MAX_QUERY_DEPTH}}") int maxQueryDepth,
-            @Value("${app.cache.schema-ttl-minutes:30}") int schemaTtlMinutes,
-            @Value("${app.reserved-schemas:}") String reservedSchemasConfig,
-            @Autowired(required = false) NatsCDCService natsCDCService,
-            @Autowired(required = false) DynamicDataSourceManager dataSourceManager,
-            @Autowired(required = false) PermissionProvider permissionProvider,
-            @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled,
-            @Value("${app.cap-nested-lists:false}") boolean capNestedLists) {
+            int maxRows,
+            String databaseType,
+            int maxQueryDepth,
+            int schemaTtlMinutes,
+            String reservedSchemasConfig,
+            NatsCDCService natsCDCService,
+            DynamicDataSourceManager dataSourceManager,
+            PermissionProvider permissionProvider,
+            boolean jwtEnabled,
+            boolean capNestedLists) {
         this.capNestedLists = capNestedLists;
         this.jdbcTemplate = jdbcTemplate;
         this.maxRows = maxRows;
@@ -215,32 +234,20 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     /**
      * Resolve EngineState for the current request. The project comes from {@link TenantContext} — the
      * URL path, already checked against the projects this deployment serves — and never from the
-     * token. The role is the one the request runs as, resolved once by the authentication filter.
+     * token. The role is the one the request runs as. The engine the authentication filter resolved for
+     * this request, if it is on the request's context, is the one served.
      */
     public EngineState resolveEngineState(Principal principal) {
         String projectId = TenantContext.getTenantId();
-        RequestEngine resolved = requestEngine.get();
-        if (resolved != null && resolved.principal() == principal && Objects.equals(resolved.projectId(), projectId)) {
-            return resolved.state();
+        Optional<ResolvedEngine> resolved = PropagatedContext.getOrEmpty().find(ResolvedEngine.class);
+        if (resolved.isPresent() && resolved.get().serves(principal, projectId)) {
+            return resolved.get().state();
         }
         String orgSlug = TenantContext.getOrgSlug();
         if (orgSlug == null && principal != null && principal.claims() != null) {
             orgSlug = principal.claims().orgSlug();
         }
-        EngineState state = resolveEngineState(orgSlug, projectId, principal);
-        if (principal != null) {
-            requestEngine.set(new RequestEngine(principal, projectId, state));
-        }
-        return state;
-    }
-
-    /**
-     * Ends the request's reuse of its resolved engine. The authentication filter resolves it first; the
-     * controllers then read that same engine rather than asking the permission source again.
-     */
-    @Override
-    public void requestFinished() {
-        requestEngine.remove();
+        return resolveEngineState(orgSlug, projectId, principal);
     }
 
     /**
@@ -347,12 +354,12 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         return dataSourceManager != null ? reflectTenant(orgSlug, projectId) : defaultReflection.get();
     }
 
-    /** The engine one request resolved, reused for the rest of that request on this thread. */
-    private record RequestEngine(Principal principal, String projectId, EngineState state) {}
-
     @Override
-    public AccessPlan planFor(Principal principal) {
+    public AccessPlan planFor(Principal principal, MutablePropagatedContext request) {
         EngineState state = resolveEngineState(principal);
+        if (state != null && principal != null) {
+            request.add(new ResolvedEngine(principal, TenantContext.getTenantId(), state));
+        }
         return state == null ? null : state.plan();
     }
 

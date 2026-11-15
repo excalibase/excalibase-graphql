@@ -143,28 +143,29 @@ mutation {
 
 ## Option 2: Local Development
 
-1. **Configure database** in `modules/excalibase-graphql-api/src/main/resources/application.yaml`:
+1. **Configure database** in `modules/excalibase-graphql-api/src/main/resources/application.yml` (or the environment):
 
     ```yaml
     spring:
-      datasource:
+      datasource:   # same keys as ever; env POSTGRES_URL / POSTGRES_USER / POSTGRES_PASSWORD also work
         url: jdbc:postgresql://localhost:5432/hana
         username: hana001
         password: password123
 
     app:
-      schemas: hana
       database-type: postgres   # or: mysql
 
-    server:
-      port: 10000
+    micronaut:
+      server:
+        port: 10000
     ```
 
 2. **Build and run:**
 
     ```bash
     mvn clean compile
-    mvn spring-boot:run -pl modules/excalibase-graphql-api
+    mvn package -DskipTests -pl modules/excalibase-graphql-api
+    java -jar modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar
     ```
 
 ---

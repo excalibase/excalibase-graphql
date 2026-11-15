@@ -13,31 +13,31 @@ class AudienceInMultiTenantTest {
     @Test
     @DisplayName("multi-tenant mode refuses require-aud=false")
     void multiTenantRefusesAudienceOff() {
-        assertThatThrownBy(() -> JwtSecurityConfig.requireAudienceWhenMultiTenant("http://provisioning/api", false))
+        assertThatThrownBy(() -> AppConfig.requireAudienceWhenMultiTenant("http://provisioning/api", false))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("require-aud");
     }
 
     @Test
     @DisplayName("audience off stays possible for a single database, and on is always fine")
     void otherCombinationsStart() {
-        assertThatCode(() -> JwtSecurityConfig.requireAudienceWhenMultiTenant("", false)).doesNotThrowAnyException();
-        assertThatCode(() -> JwtSecurityConfig.requireAudienceWhenMultiTenant(null, false)).doesNotThrowAnyException();
-        assertThatCode(() -> JwtSecurityConfig.requireAudienceWhenMultiTenant("http://provisioning/api", true))
+        assertThatCode(() -> AppConfig.requireAudienceWhenMultiTenant("", false)).doesNotThrowAnyException();
+        assertThatCode(() -> AppConfig.requireAudienceWhenMultiTenant(null, false)).doesNotThrowAnyException();
+        assertThatCode(() -> AppConfig.requireAudienceWhenMultiTenant("http://provisioning/api", true))
                 .doesNotThrowAnyException();
     }
 
     @Test
     @DisplayName("CORS_ORIGINS sets the platform origins when APP_CORS_ALLOWED_ORIGINS is absent")
     void corsOriginsEnvName() {
-        assertThat(CorsConfig.platformOrigins("", "https://studio.example.test")).isEqualTo("https://studio.example.test");
-        assertThat(CorsConfig.platformOrigins(null, "https://studio.example.test")).isEqualTo("https://studio.example.test");
+        assertThat(AppConfig.platformOrigins("", "https://studio.example.test")).isEqualTo("https://studio.example.test");
+        assertThat(AppConfig.platformOrigins(null, "https://studio.example.test")).isEqualTo("https://studio.example.test");
     }
 
     @Test
     @DisplayName("APP_CORS_ALLOWED_ORIGINS wins over CORS_ORIGINS, and neither set means any origin as before")
     void appNameWinsAndDefaultIsAny() {
-        assertThat(CorsConfig.platformOrigins("https://b.example.test", "https://a.example.test"))
+        assertThat(AppConfig.platformOrigins("https://b.example.test", "https://a.example.test"))
                 .isEqualTo("https://b.example.test");
-        assertThat(CorsConfig.platformOrigins("", "")).isEqualTo("*");
+        assertThat(AppConfig.platformOrigins("", "")).isEqualTo("*");
     }
 }

@@ -5,11 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.utils.SqlUtils;
-import org.springframework.http.ResponseEntity;
+import io.github.excalibase.http.Reply;
+import io.micronaut.http.HttpResponse;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.stereotype.Service;
+import jakarta.inject.Singleton;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -27,7 +28,7 @@ import java.util.Map;
  *   <li>{@link #executeQuery} — a single read for a request without a caller. No transaction.</li>
  * </ul>
  */
-@Service
+@Singleton
 public class QueryExecutionService {
 
     private final NamedParameterJdbcTemplate namedJdbc;
@@ -42,7 +43,7 @@ public class QueryExecutionService {
         this.objectMapper = objectMapper;
     }
 
-    public ResponseEntity<Object> executeQuery(SqlCompiler.CompiledQuery compiled,
+    public HttpResponse<Object> executeQuery(SqlCompiler.CompiledQuery compiled,
                                                MapSqlParameterSource params) throws JsonProcessingException {
         String json = namedJdbc.queryForObject(compiled.sql(), params, String.class);
         return wrapResult(json);
@@ -52,14 +53,14 @@ public class QueryExecutionService {
      * Runs a compiled query inside one connection + manual transaction so the
      * two-phase mutation / plain branches share atomicity.
      */
-    public ResponseEntity<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
+    public HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
                                                    MapSqlParameterSource params,
                                                    MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
         try (Connection conn = dataSource.getConnection()) {
             boolean autoCommit = conn.getAutoCommit();
             try {
                 conn.setAutoCommit(false);
-                ResponseEntity<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor);
+                HttpResponse<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor);
                 conn.commit();
                 return result;
             } catch (SQLException | JsonProcessingException | RuntimeException e) {
@@ -75,7 +76,7 @@ public class QueryExecutionService {
      * Runs a mutation of ordered statements (a nested insert) in one connection and transaction, whatever
      * the request's path: a failure anywhere rolls back every statement.
      */
-    public ResponseEntity<Object> executeSequence(SqlCompiler.CompiledQuery compiled)
+    public HttpResponse<Object> executeSequence(SqlCompiler.CompiledQuery compiled)
             throws SQLException, JsonProcessingException {
         try (Connection conn = dataSource.getConnection()) {
             boolean autoCommit = conn.getAutoCommit();
@@ -93,7 +94,7 @@ public class QueryExecutionService {
         }
     }
 
-    private ResponseEntity<Object> dispatchInsideTx(Connection conn,
+    private HttpResponse<Object> dispatchInsideTx(Connection conn,
                                                     SqlCompiler.CompiledQuery compiled,
                                                     MapSqlParameterSource params,
                                                     MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
@@ -107,7 +108,7 @@ public class QueryExecutionService {
     // Per-branch implementations against a shared Connection.
     // ------------------------------------------------------------------------
 
-    private ResponseEntity<Object> executePlainOn(Connection conn,
+    private HttpResponse<Object> executePlainOn(Connection conn,
                                                   SqlCompiler.CompiledQuery compiled) throws SQLException, JsonProcessingException {
         SqlUtils.ResolvedSql resolvedSql = SqlUtils.resolveNamedParams(compiled.sql(), compiled.params());
         String json;
@@ -122,7 +123,7 @@ public class QueryExecutionService {
         return wrapResult(json);
     }
 
-    private ResponseEntity<Object> executeTwoPhaseOn(Connection conn,
+    private HttpResponse<Object> executeTwoPhaseOn(Connection conn,
                                                      SqlCompiler.CompiledQuery compiled,
                                                      MapSqlParameterSource params,
                                                      MutationExecutor mutationExecutor) throws JsonProcessingException {
@@ -138,10 +139,10 @@ public class QueryExecutionService {
      * The data is kept as a JSON tree so a null field survives serialization: a mutation whose
      * written row the role may not read answers {@code "field": null}, not a missing key.
      */
-    private ResponseEntity<Object> wrapResult(String json) throws JsonProcessingException {
+    private HttpResponse<Object> wrapResult(String json) throws JsonProcessingException {
         if (json != null) {
-            return ResponseEntity.ok(Map.of("data", objectMapper.readTree(json)));
+            return Reply.ok(Map.of("data", objectMapper.readTree(json)));
         }
-        return ResponseEntity.ok(Map.of("data", Map.of()));
+        return Reply.ok(Map.of("data", Map.of()));
     }
 }

@@ -21,7 +21,7 @@ env:
 jobs:
   docker:
     name: Build & Push Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Only CI runs of pushes to this repo's main; a fork PR from a branch
     # named main must never reach the registry credentials.
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'
@@ -110,7 +110,7 @@ jobs:
 
   docker-native:
     name: Build & Push Native Docker Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'
 
     steps:

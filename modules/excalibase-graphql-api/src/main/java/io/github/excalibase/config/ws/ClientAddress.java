@@ -1,16 +1,14 @@
 package io.github.excalibase.config.ws;
 
-import org.springframework.http.server.ServerHttpRequest;
+import io.micronaut.http.HttpRequest;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
-import java.net.UnknownHostException;
-import java.util.List;
 
 /**
  * The address a WebSocket client is counted under. Behind the edge proxy every peer is the proxy, so the last
- * {@code X-Forwarded-For} entry of the last header line (the one the proxy appended) is used, but only when the
- * peer is on a private network: a client that reaches the engine directly cannot pick its own address.
+ * {@code X-Forwarded-For} entry (the one the proxy appended) is used, but only when the peer is on a private
+ * network: a client that reaches the engine directly cannot pick its own address.
  */
 public final class ClientAddress {
 
@@ -20,14 +18,11 @@ public final class ClientAddress {
     private ClientAddress() {
     }
 
-    static String of(ServerHttpRequest request) {
-        return of(request.getRemoteAddress(), request.getHeaders().get(FORWARDED_FOR));
-    }
-
-    static String of(InetSocketAddress remote, List<String> forwardedFor) {
+    static String of(HttpRequest<?> request) {
+        InetSocketAddress remote = request.getRemoteAddress();
         InetAddress peer = remote == null ? null : remote.getAddress();
         if (peer != null && isInternal(peer)) {
-            String forwarded = lastForwarded(forwardedFor);
+            String forwarded = lastForwarded(request.getHeaders().getAll(FORWARDED_FOR));
             if (forwarded != null) {
                 return byPrefix(forwarded);
             }
@@ -53,13 +48,13 @@ public final class ClientAddress {
                 prefix.append(String.format("%02x", bytes[i] & 0xff)).append(i % 2 == 1 && i < 7 ? ":" : "");
             }
             return prefix.append("::/64").toString();
-        } catch (UnknownHostException malformed) {
+        } catch (java.net.UnknownHostException malformed) {
             return address;
         }
     }
 
     /** The last entry of the last header line: a proxy adds its own line, and the first line is the client's. */
-    public static String lastForwarded(List<String> lines) {
+    public static String lastForwarded(java.util.List<String> lines) {
         return lines == null || lines.isEmpty() ? null : lastForwarded(lines.get(lines.size() - 1));
     }
 

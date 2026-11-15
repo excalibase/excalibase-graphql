@@ -12,11 +12,13 @@ import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaUnavailableException;
 import io.github.excalibase.schema.StubbedSchemaManager;
-import jakarta.servlet.FilterChain;
+import io.micronaut.core.propagation.MutablePropagatedContext;
+import io.micronaut.core.propagation.PropagatedContext;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.MutableHttpRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.mock.web.MockHttpServletResponse;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -33,7 +35,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -66,55 +67,67 @@ class JwtAuthFilterRoleTest {
         return signed.serialize();
     }
 
-    private static MockHttpServletRequest request(String bearer, String requestedRole) {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/" + PROJECT + "/graphql");
-        request.setRequestURI("/" + PROJECT + "/graphql");
+    private static MutableHttpRequest<?> request(String bearer, String requestedRole) {
+        MutableHttpRequest<?> request = HttpRequest.POST("/" + PROJECT + "/graphql", "");
         if (bearer != null) {
-            request.addHeader("Authorization", "Bearer " + bearer);
+            request.header("Authorization", "Bearer " + bearer);
         }
         if (requestedRole != null) {
-            request.addHeader(RoleResolver.ROLE_HEADER, requestedRole);
+            request.header(RoleResolver.ROLE_HEADER, requestedRole);
         }
         return request;
     }
 
-    private static final class Capture {
-        final AtomicReference<Principal> principal = new AtomicReference<>();
-        final AtomicReference<Boolean> rlsRegistered = new AtomicReference<>();
-        final FilterChain chain = (req, res) -> {
-            principal.set((Principal) req.getAttribute(SecurityConstants.PRINCIPAL_ATTR));
-            rlsRegistered.set(RlsContext.current() != null);
-        };
+    /** What the filter decided: a refusal, or the principal and guards it hands to the handler. */
+    private static final class Outcome {
+        final HttpResponse<?> refusal;
+        final Principal principal;
+        final boolean rlsRegistered;
+        final MutablePropagatedContext context;
+
+        Outcome(HttpResponse<?> refusal, HttpRequest<?> request, MutablePropagatedContext context) {
+            this.refusal = refusal;
+            this.context = context;
+            this.principal = (Principal) request.getAttribute(SecurityConstants.PRINCIPAL_ATTR).orElse(null);
+            this.rlsRegistered = context.getContext().find(RequestContextElement.class)
+                    .map(element -> element.guard() != null).orElse(false);
+        }
+
+        int status() {
+            return refusal.code();
+        }
+
+        String body() {
+            return String.valueOf(refusal.body());
+        }
     }
 
-    private static MockHttpServletResponse run(MockHttpServletRequest request, FilterChain chain) throws Exception {
-        MockHttpServletResponse response = new MockHttpServletResponse();
-        var plans = StubbedSchemaManager.withDocument(new SchemaInfo(),
-                StubbedSchemaManager.document(PROJECT), (sql, params) -> false);
-        new JwtAuthFilter(jwtService, plans).doFilter(request, response, chain);
-        return response;
+    private static Outcome run(MutableHttpRequest<?> request, AccessPlans plans) {
+        MutablePropagatedContext context = MutablePropagatedContext.of(PropagatedContext.empty());
+        HttpResponse<?> refusal = new JwtAuthFilter(jwtService, plans).filter(request, context);
+        return new Outcome(refusal, request, context);
+    }
+
+    private static Outcome run(MutableHttpRequest<?> request) {
+        return run(request, StubbedSchemaManager.withDocument(new SchemaInfo(),
+                StubbedSchemaManager.document(PROJECT), (sql, params) -> false));
     }
 
     @Test
     void unreadableDatabase_refusesTheRequestWith503() throws Exception {
-        Capture capture = new Capture();
-        MockHttpServletResponse response = new MockHttpServletResponse();
         AccessPlans restoring = mock(AccessPlans.class);
-        when(restoring.planFor(any())).thenThrow(new SchemaUnavailableException("being restored",
+        when(restoring.planFor(any(), any())).thenThrow(new SchemaUnavailableException("being restored",
                 new SQLException("Communications link failure")));
 
-        new JwtAuthFilter(jwtService, restoring)
-                .doFilter(request(token(Map.of("role", "user")), null), response, capture.chain);
+        Outcome outcome = run(request(token(Map.of("role", "user")), null), restoring);
 
-        assertThat(response.getStatus()).isEqualTo(503);
-        assertThat(response.getContentAsString()).contains("project_unavailable");
-        assertThat(capture.principal.get()).isNull();
+        assertThat(outcome.status()).isEqualTo(503);
+        assertThat(outcome.body()).contains("project_unavailable");
+        assertThat(outcome.rlsRegistered).isFalse();
     }
 
     @Test
     void unreadablePermissions_refuseTheRequestWith503() throws Exception {
-        Capture capture = new Capture();
-        MockHttpServletResponse response = new MockHttpServletResponse();
         PermissionProvider down = new PermissionProvider() {
             @Override
             public PermissionSet permissionsFor(String projectId) {
@@ -127,123 +140,107 @@ class JwtAuthFilterRoleTest {
             }
         };
 
-        new JwtAuthFilter(jwtService, StubbedSchemaManager.withProvider(new SchemaInfo(), down))
-                .doFilter(request(token(Map.of("role", "user")), null), response, capture.chain);
+        Outcome outcome = run(request(token(Map.of("role", "user")), null),
+                StubbedSchemaManager.withProvider(new SchemaInfo(), down));
 
-        assertThat(response.getStatus()).isEqualTo(503);
-        assertThat(response.getContentAsString()).contains("permissions_unavailable");
-        assertThat(capture.principal.get()).isNull();
+        assertThat(outcome.status()).isEqualTo(503);
+        assertThat(outcome.body()).contains("permissions_unavailable");
+        assertThat(outcome.rlsRegistered).isFalse();
     }
 
     @Test
-    void theRequestsResolvedEngine_isReleasedWhenTheRequestEnds() throws Exception {
+    void theEngineIsResolvedOnceOnTheRequestsContext_soTheHandlerIsServedTheSameOne() throws Exception {
         AccessPlans plans = mock(AccessPlans.class);
 
-        new JwtAuthFilter(jwtService, plans).doFilter(request(token(Map.of("role", "user")), null),
-                new MockHttpServletResponse(), new Capture().chain);
+        Outcome outcome = run(request(token(Map.of("role", "user")), null), plans);
 
-        verify(plans).planFor(any());
-        verify(plans).requestFinished();
+        verify(plans).planFor(any(), org.mockito.ArgumentMatchers.same(outcome.context));
+        org.mockito.Mockito.verifyNoMoreInteractions(plans);
     }
 
     @Test
-    void theRequestsResolvedEngine_isReleasedWhenPermissionsAreUnavailable() throws Exception {
+    void logLinesWrittenWhileThePlanIsResolvedNameTheTenant_andNothingStaysBehind() throws Exception {
         AccessPlans plans = mock(AccessPlans.class);
-        when(plans.planFor(any())).thenThrow(new PermissionsUnavailableException("control plane down"));
-        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<Map<String, String>> seen = new AtomicReference<>();
+        when(plans.planFor(any(), any())).thenAnswer(invocation -> {
+            seen.set(org.slf4j.MDC.getCopyOfContextMap());
+            return null;
+        });
 
-        new JwtAuthFilter(jwtService, plans).doFilter(request(token(Map.of("role", "user")), null),
-                response, new Capture().chain);
+        run(request(token(Map.of("role", "user", "orgSlug", "acme")), null), plans);
 
-        assertThat(response.getStatus()).isEqualTo(503);
-        verify(plans).requestFinished();
+        assertThat(seen.get()).containsEntry("tenant", PROJECT).containsEntry("org", "acme")
+                .containsKeys("project_name", "org_name");
+        assertThat(org.slf4j.MDC.get("tenant")).isNull();
+        assertThat(org.slf4j.MDC.get("org")).isNull();
     }
 
     @Test
-    void noToken_runsAsAnon() throws Exception {
-        Capture capture = new Capture();
+    void noToken_runsAsAnon() {
+        Outcome outcome = run(request(null, null));
 
-        run(request(null, null), capture.chain);
-
-        assertThat(capture.principal.get().role()).isEqualTo(Principal.ANON);
-        assertThat(capture.rlsRegistered.get()).isTrue();
+        assertThat(outcome.principal.role()).isEqualTo(Principal.ANON);
+        assertThat(outcome.rlsRegistered).isTrue();
     }
 
     @Test
     void userToken_runsAsItsDefaultRole() throws Exception {
-        Capture capture = new Capture();
+        Outcome outcome = run(request(token(Map.of("role", "user")), null));
 
-        run(request(token(Map.of("role", "user")), null), capture.chain);
-
-        assertThat(capture.principal.get().role()).isEqualTo("user");
-        assertThat(capture.principal.get().claims().userId()).isEqualTo("42");
+        assertThat(outcome.principal.role()).isEqualTo("user");
+        assertThat(outcome.principal.claims().userId()).isEqualTo("42");
     }
 
     @Test
     void allowedRoleHeader_picksThatRole() throws Exception {
-        Capture capture = new Capture();
+        Outcome outcome = run(request(token(Map.of("role", "user", "allowed_roles", List.of("user", "editor"))), "editor"));
 
-        run(request(token(Map.of("role", "user", "allowed_roles", List.of("user", "editor"))), "editor"),
-                capture.chain);
-
-        assertThat(capture.principal.get().role()).isEqualTo("editor");
+        assertThat(outcome.principal.role()).isEqualTo("editor");
     }
 
     @Test
     void roleHeaderNotAllowed_is403WithCode() throws Exception {
-        FilterChain chain = mock(FilterChain.class);
+        Outcome outcome = run(request(token(Map.of("role", "user")), "editor"));
 
-        MockHttpServletResponse response = run(request(token(Map.of("role", "user")), "editor"), chain);
-
-        assertThat(response.getStatus()).isEqualTo(403);
-        assertThat(response.getContentAsString()).contains("\"code\":\"role_not_allowed\"");
-        verify(chain, never()).doFilter(any(), any());
+        assertThat(outcome.status()).isEqualTo(403);
+        assertThat(outcome.body()).contains("\"code\":\"role_not_allowed\"");
     }
 
     @Test
-    void noTokenWithNonAnonRoleHeader_is403WithCode() throws Exception {
-        FilterChain chain = mock(FilterChain.class);
+    void noTokenWithNonAnonRoleHeader_is403WithCode() {
+        Outcome outcome = run(request(null, "user"));
 
-        MockHttpServletResponse response = run(request(null, "user"), chain);
-
-        assertThat(response.getStatus()).isEqualTo(403);
-        assertThat(response.getContentAsString()).contains("\"code\":\"role_not_allowed\"");
-        verify(chain, never()).doFilter(any(), any());
+        assertThat(outcome.status()).isEqualTo(403);
+        assertThat(outcome.body()).contains("\"code\":\"role_not_allowed\"");
     }
 
     @Test
     void tokenWithoutRole_is401InvalidRoleClaim() throws Exception {
-        FilterChain chain = mock(FilterChain.class);
+        Outcome outcome = run(request(token(Map.of()), null));
 
-        MockHttpServletResponse response = run(request(token(Map.of()), null), chain);
-
-        assertThat(response.getStatus()).isEqualTo(401);
-        assertThat(response.getContentAsString()).contains("\"code\":\"invalid_role_claim\"");
-        verify(chain, never()).doFilter(any(), any());
+        assertThat(outcome.status()).isEqualTo(401);
+        assertThat(outcome.body()).contains("\"code\":\"invalid_role_claim\"");
     }
 
     @Test
     void serviceToken_bypassesAndRegistersNoRowSecurity() throws Exception {
-        Capture capture = new Capture();
+        Outcome outcome = run(request(token(Map.of("role", "service", "scope", "service")), null));
 
-        run(request(token(Map.of("role", "service", "scope", "service")), null), capture.chain);
-
-        assertThat(capture.principal.get().bypass()).isTrue();
-        assertThat(capture.rlsRegistered.get()).isFalse();
+        assertThat(outcome.principal.bypass()).isTrue();
+        assertThat(outcome.rlsRegistered).isFalse();
     }
 
     @Test
     void serviceTokenActingAsUser_carriesTheSessionHeadersAndRowSecurity() throws Exception {
-        Capture capture = new Capture();
-        MockHttpServletRequest request = request(token(Map.of("role", "service", "scope", "service")), "user");
-        request.addHeader("X-Excalibase-User-Id", "77");
+        MutableHttpRequest<?> request = request(token(Map.of("role", "service", "scope", "service")), "user");
+        request.header("X-Excalibase-User-Id", "77");
 
-        run(request, capture.chain);
+        Outcome outcome = run(request);
 
-        Principal principal = capture.principal.get();
+        Principal principal = outcome.principal;
         assertThat(principal.role()).isEqualTo("user");
         assertThat(principal.bypass()).isFalse();
         assertThat(principal.impersonationHeaders()).containsEntry("x-excalibase-user-id", "77");
-        assertThat(capture.rlsRegistered.get()).isTrue();
+        assertThat(outcome.rlsRegistered).isTrue();
     }
 }

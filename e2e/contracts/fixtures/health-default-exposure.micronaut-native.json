@@ -1,0 +1,233 @@
+{
+  "/actuator": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": [
+      "health",
+      "health-path",
+      "info",
+      "metrics",
+      "metrics-requiredMetricName",
+      "self"
+    ]
+  },
+  "/actuator/health": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "status": "UP"
+    }
+  },
+  "/actuator/health/liveness": {
+    "status": 404,
+    "headers": {
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": ""
+  },
+  "/actuator/health/readiness": {
+    "status": 404,
+    "headers": {
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": ""
+  },
+  "/actuator/info": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {}
+  },
+  "/actuator/env": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/actuator/env"
+    }
+  },
+  "/actuator/beans": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/actuator/beans"
+    }
+  },
+  "/actuator/loggers": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/actuator/loggers"
+    }
+  },
+  "/health": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/health"
+    }
+  },
+  "/": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/"
+    }
+  },
+  "/actuator/prometheus": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/actuator/prometheus"
+    }
+  },
+  "/actuator/metrics": {
+    "status": 200,
+    "headers": {
+      "content-type": "application/vnd.spring-boot.actuator.v3+json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "names": [
+        "application.ready.time",
+        "application.started.time",
+        "disk.free",
+        "disk.total",
+        "hikaricp.connections",
+        "hikaricp.connections.acquire",
+        "hikaricp.connections.active",
+        "hikaricp.connections.creation",
+        "hikaricp.connections.idle",
+        "hikaricp.connections.max",
+        "hikaricp.connections.min",
+        "hikaricp.connections.pending",
+        "hikaricp.connections.timeout",
+        "hikaricp.connections.usage",
+        "jvm.classes.loaded",
+        "jvm.classes.unloaded",
+        "jvm.gc.live.data.size",
+        "jvm.gc.max.data.size",
+        "jvm.gc.memory.allocated",
+        "jvm.gc.memory.promoted",
+        "jvm.gc.overhead",
+        "jvm.gc.pause",
+        "jvm.info",
+        "jvm.memory.committed",
+        "jvm.memory.max",
+        "jvm.memory.used",
+        "jvm.threads.daemon",
+        "jvm.threads.live",
+        "jvm.threads.peak",
+        "jvm.threads.started",
+        "jvm.threads.states",
+        "logback.events",
+        "process.cpu.time",
+        "process.cpu.usage",
+        "process.files.max",
+        "process.files.open",
+        "process.start.time",
+        "process.uptime",
+        "system.cpu.count",
+        "system.cpu.usage",
+        "system.load.average.1m",
+        "tomcat.connections.config.max",
+        "tomcat.connections.current",
+        "tomcat.connections.keepalive.current",
+        "tomcat.threads.busy",
+        "tomcat.threads.config.max",
+        "tomcat.threads.current"
+      ]
+    }
+  }
+}

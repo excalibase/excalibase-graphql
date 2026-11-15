@@ -2,7 +2,6 @@ package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariDataSource;
 import org.junit.jupiter.api.DisplayName;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -77,11 +76,7 @@ class DataSourceConfigTest {
         }
     }
 
-    private static DataSourceProperties properties(String url) {
-        DataSourceProperties properties = new DataSourceProperties();
-        properties.setUrl(url);
-        properties.setUsername("app_user");
-        properties.setPassword("secret");
-        return properties;
+    private static DataSourceConfig.DataSourceSettings properties(String url) {
+        return new DataSourceConfig.DataSourceSettings(url, "app_user", "secret", "");
     }
 }

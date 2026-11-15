@@ -1,11 +1,10 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
 import io.github.excalibase.security.JwtClaims;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.WebSocketSession;
 
 import java.time.Duration;
 import java.util.Date;
@@ -40,8 +39,8 @@ class WsRuntimeTest {
         return runtime;
     }
 
-    private static WebSocketSession session(String project, String client) throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
+    private static WsSession session(String project, String client) throws Exception {
+        WsSession session = mock(WsSession.class);
         when(session.getId()).thenReturn("s-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
         Map<String, Object> attributes = new ConcurrentHashMap<>();
@@ -55,8 +54,8 @@ class WsRuntimeTest {
     @DisplayName("a project cannot hold more sockets than its cap, and a closed one frees its place")
     void projectCap() throws Exception {
         WsRuntime rt = runtime(limits(2, 100, Duration.ofSeconds(10)));
-        WebSocketSession first = session("p1", "10.0.0.1");
-        WebSocketSession second = session("p1", "10.0.0.2");
+        WsSession first = session("p1", "10.0.0.1");
+        WsSession second = session("p1", "10.0.0.2");
         assertThat(rt.admit(first)).isTrue();
         assertThat(rt.admit(second)).isTrue();
         assertThat(rt.admit(session("p1", "10.0.0.3"))).isFalse();
@@ -79,9 +78,9 @@ class WsRuntimeTest {
     @DisplayName("a refused socket leaves no count behind and releasing twice counts once")
     void refusedAndDoubleRelease() throws Exception {
         WsRuntime rt = runtime(limits(1, 1, Duration.ofSeconds(10)));
-        WebSocketSession admitted = session("p1", "1.1.1.1");
+        WsSession admitted = session("p1", "1.1.1.1");
         assertThat(rt.admit(admitted)).isTrue();
-        WebSocketSession refused = session("p1", "2.2.2.2");
+        WsSession refused = session("p1", "2.2.2.2");
         assertThat(rt.admit(refused)).isFalse();
         rt.release(refused);
         rt.release(admitted);
@@ -93,7 +92,7 @@ class WsRuntimeTest {
     @DisplayName("a session that sends no connection_init is closed with 4408")
     void initTimeout() throws Exception {
         WsRuntime rt = runtime(limits(10, 10, Duration.ofMillis(100)));
-        WebSocketSession idle = session("p1", "1.1.1.1");
+        WsSession idle = session("p1", "1.1.1.1");
         rt.expectInit(idle);
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
                 verify(idle).close(new CloseStatus(4408, "connection_init_timeout")));
@@ -103,7 +102,7 @@ class WsRuntimeTest {
     @DisplayName("a session that initialised in time stays open")
     void initialisedStaysOpen() throws Exception {
         WsRuntime rt = runtime(limits(10, 10, Duration.ofMillis(100)));
-        WebSocketSession active = session("p1", "1.1.1.1");
+        WsSession active = session("p1", "1.1.1.1");
         rt.expectInit(active);
         rt.initialised(active);
         Thread.sleep(400);
@@ -114,7 +113,7 @@ class WsRuntimeTest {
     @DisplayName("a session is closed with 4401 when its token expires")
     void closesAtTokenExpiry() throws Exception {
         WsRuntime rt = runtime(limits(10, 10, Duration.ofSeconds(10)));
-        WebSocketSession live = session("p1", "1.1.1.1");
+        WsSession live = session("p1", "1.1.1.1");
         live.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claimsExpiringIn(300));
         rt.closeAtExpiry(live);
         await().atMost(Duration.ofSeconds(3)).untilAsserted(() ->
@@ -125,11 +124,11 @@ class WsRuntimeTest {
     @DisplayName("a token with no exp, or one far away, does not close the session")
     void noExpiryNoClose() throws Exception {
         WsRuntime rt = runtime(limits(10, 10, Duration.ofSeconds(10)));
-        WebSocketSession keyed = session("p1", "1.1.1.1");
+        WsSession keyed = session("p1", "1.1.1.1");
         keyed.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY,
                 new JwtClaims("u", "p1", "acme", "d", "", "svc", "e", "api-key", 1L, Map.of()));
         rt.closeAtExpiry(keyed);
-        WebSocketSession later = session("p1", "1.1.1.2");
+        WsSession later = session("p1", "1.1.1.2");
         later.getAttributes().put(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY, claimsExpiringIn(3_600_000));
         rt.closeAtExpiry(later);
         Thread.sleep(300);
@@ -138,11 +137,11 @@ class WsRuntimeTest {
     }
 
     @Test
-    @DisplayName("a permission change closes its sessions with 1012 and leaves other projects alone")
+    @DisplayName("evicting a project closes its sessions with 1012 and leaves other projects alone")
     void evictClosesProjectSessions() throws Exception {
         WsRuntime rt = runtime(limits(10, 10, Duration.ofSeconds(10)));
-        WebSocketSession mine = session("p1", "1.1.1.1");
-        WebSocketSession other = session("p2", "1.1.1.1");
+        WsSession mine = session("p1", "1.1.1.1");
+        WsSession other = session("p2", "1.1.1.1");
         rt.admit(mine);
         rt.admit(other);
         rt.closeForPermissionChange("p1");
@@ -154,7 +153,7 @@ class WsRuntimeTest {
     @DisplayName("subscriptions are capped per project and the cap is given back on dispose")
     void projectSubscriptionCap() throws Exception {
         WsRuntime rt = runtime(new WsLimits(Duration.ofSeconds(10), 10, 10, 3, 2, 4, Duration.ofSeconds(1)));
-        WebSocketSession session = session("p1", "1.1.1.1");
+        WsSession session = session("p1", "1.1.1.1");
         assertThat(rt.reserveSubscription(session)).isTrue();
         var first = rt.counted(session, () -> { });
         assertThat(rt.reserveSubscription(session)).isTrue();

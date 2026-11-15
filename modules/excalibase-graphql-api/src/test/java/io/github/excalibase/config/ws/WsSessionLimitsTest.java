@@ -4,23 +4,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
 import io.github.excalibase.compiler.ParsedQueries;
-import io.github.excalibase.observability.requests.RequestMetrics;
-import io.github.excalibase.schema.AccessPlans;
-import io.github.excalibase.security.JwtService;
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
 import graphql.parser.Parser;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
 import reactor.core.publisher.Flux;
 
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -29,8 +21,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -60,22 +55,14 @@ class WsSessionLimitsTest {
 
     private RealtimeWebSocketHandler realtime(WsLimits limits, Executor executor) {
         runtime = new WsRuntime(limits, executor);
-        return new RealtimeWebSocketHandler(subscriptions, mapper, provider((JwtService) null),
-                new WebSocketHeartbeat(0), provider((AccessPlans) null), provider((RequestMetrics) null), runtime);
+        return new RealtimeWebSocketHandler(subscriptions, mapper, null, new WebSocketHeartbeat(0), null, null,
+                runtime);
     }
 
     private GraphQLWebSocketHandler graphql(WsLimits limits) {
         runtime = new WsRuntime(limits, Runnable::run);
-        return new GraphQLWebSocketHandler(subscriptions, mapper, provider((JwtService) null),
-                new WebSocketHeartbeat(0), provider((AccessPlans) null), provider((RequestMetrics) null),
+        return new GraphQLWebSocketHandler(subscriptions, mapper, null, new WebSocketHeartbeat(0), null, null,
                 new ParsedQueries(1_000, Parser::parse), runtime);
-    }
-
-    @SuppressWarnings("unchecked")
-    private static <T> ObjectProvider<T> provider(T value) {
-        ObjectProvider<T> provider = mock(ObjectProvider.class);
-        when(provider.getIfAvailable()).thenReturn(value);
-        return provider;
     }
 
     private static WsLimits limits(int perProject, int perClient, int perSession, int perProjectSubs, int outbox) {
@@ -83,8 +70,8 @@ class WsSessionLimitsTest {
                 Duration.ofMillis(300));
     }
 
-    private static WebSocketSession session(String project, String client, List<String> sink) throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
+    private static WsSession session(String project, String client, List<String> sink) throws Exception {
+        WsSession session = mock(WsSession.class);
         when(session.getId()).thenReturn("s-" + System.nanoTime() + "-" + project);
         when(session.isOpen()).thenReturn(true);
         Map<String, Object> attributes = new ConcurrentHashMap<>();
@@ -98,7 +85,7 @@ class WsSessionLimitsTest {
         return session;
     }
 
-    private void send(RealtimeWebSocketHandler handler, WebSocketSession session, String json) throws Exception {
+    private void send(RealtimeWebSocketHandler handler, WsSession session, String json) throws Exception {
         handler.handleTextMessage(session, new TextMessage(json));
     }
 
@@ -116,15 +103,15 @@ class WsSessionLimitsTest {
     @DisplayName("a socket over the project's cap is closed with 1013 on open and never subscribes")
     void socketOverCapIsClosed() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(1, 10, 5, 50, 8), Runnable::run);
-        WebSocketSession first = session("p1", "1.1.1.1", new ArrayList<>());
-        WebSocketSession second = session("p1", "2.2.2.2", new ArrayList<>());
+        WsSession first = session("p1", "1.1.1.1", new ArrayList<>());
+        WsSession second = session("p1", "2.2.2.2", new ArrayList<>());
         handler.afterConnectionEstablished(first);
         handler.afterConnectionEstablished(second);
         verify(first, never()).close(any(CloseStatus.class));
         verify(second).close(new CloseStatus(1013, "websocket_limit"));
         handler.afterConnectionClosed(second, CloseStatus.NORMAL);
         handler.afterConnectionClosed(first, CloseStatus.NORMAL);
-        WebSocketSession third = session("p1", "3.3.3.3", new ArrayList<>());
+        WsSession third = session("p1", "3.3.3.3", new ArrayList<>());
         handler.afterConnectionEstablished(third);
         verify(third, never()).close(any(CloseStatus.class));
     }
@@ -134,7 +121,7 @@ class WsSessionLimitsTest {
     void subscriptionsCappedPerSession() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 2, 50, 8), Runnable::run);
         List<String> sent = new ArrayList<>();
-        WebSocketSession session = session("p1", "1.1.1.1", sent);
+        WsSession session = session("p1", "1.1.1.1", sent);
         handler.afterConnectionEstablished(session);
         runtime.initialised(session);
         send(handler, session, subscribe("a", "t1"));
@@ -151,7 +138,7 @@ class WsSessionLimitsTest {
     @Test
     @DisplayName("a subscribe that fails after its reservation gives the reservation back")
     void failedSubscribeReleasesItsReservation() throws Exception {
-        AtomicBoolean fail = new AtomicBoolean(true);
+        java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean(true);
         subscriptions = new SubscriptionService() {
             @Override
             public Flux<CDCEvent> subscribe(String tenantId, String tableName) {
@@ -163,7 +150,7 @@ class WsSessionLimitsTest {
         };
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 1, 8), Runnable::run);
         List<String> sent = new ArrayList<>();
-        WebSocketSession session = session("p1", "1.1.1.1", sent);
+        WsSession session = session("p1", "1.1.1.1", sent);
         handler.afterConnectionEstablished(session);
         runtime.initialised(session);
         try {
@@ -176,11 +163,8 @@ class WsSessionLimitsTest {
         assertThat(subscriptions.hasSubscribers(null, "public.t1")).isTrue();
     }
 
-    @Test
-    @DisplayName("realtime: a close that lands during a subscribe gives its project slot back")
-    void realtimeCloseDuringSubscribeKeepsNoSlot() throws Exception {
-        AtomicReference<Runnable> midSubscribe = new AtomicReference<>();
-        subscriptions = new SubscriptionService() {
+    private SubscriptionService closingMidSubscribe(AtomicReference<Runnable> midSubscribe) {
+        return new SubscriptionService() {
             @Override
             public Flux<CDCEvent> subscribe(String tenantId, String tableName) {
                 Runnable hook = midSubscribe.getAndSet(null);
@@ -190,15 +174,22 @@ class WsSessionLimitsTest {
                 return super.subscribe(tenantId, tableName);
             }
         };
+    }
+
+    @Test
+    @DisplayName("realtime: a close that lands during a subscribe gives its project slot back")
+    void realtimeCloseDuringSubscribeKeepsNoSlot() throws Exception {
+        AtomicReference<Runnable> midSubscribe = new AtomicReference<>();
+        subscriptions = closingMidSubscribe(midSubscribe);
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 1, 8), Runnable::run);
-        WebSocketSession closing = session("p1", "1.1.1.1", new ArrayList<>());
+        WsSession closing = session("p1", "1.1.1.1", new ArrayList<>());
         handler.afterConnectionEstablished(closing);
         runtime.initialised(closing);
         midSubscribe.set(() -> handler.afterConnectionClosed(closing, CloseStatus.NORMAL));
         send(handler, closing, subscribe("a", "t1"));
 
         List<String> sent = new ArrayList<>();
-        WebSocketSession fresh = session("p1", "2.2.2.2", sent);
+        WsSession fresh = session("p1", "2.2.2.2", sent);
         handler.afterConnectionEstablished(fresh);
         runtime.initialised(fresh);
         send(handler, fresh, subscribe("b", "t1"));
@@ -209,27 +200,18 @@ class WsSessionLimitsTest {
     @DisplayName("GraphQL: a close that lands during a subscribe gives its project slot back")
     void graphqlCloseDuringSubscribeKeepsNoSlot() throws Exception {
         AtomicReference<Runnable> midSubscribe = new AtomicReference<>();
-        subscriptions = new SubscriptionService() {
-            @Override
-            public Flux<CDCEvent> subscribe(String tenantId, String tableName) {
-                Runnable hook = midSubscribe.getAndSet(null);
-                if (hook != null) {
-                    hook.run();
-                }
-                return super.subscribe(tenantId, tableName);
-            }
-        };
+        subscriptions = closingMidSubscribe(midSubscribe);
         GraphQLWebSocketHandler handler = graphql(limits(10, 10, 5, 1, 8));
         String query = "{\"type\":\"subscribe\",\"id\":\"1\",\"payload\":"
                 + "{\"query\":\"subscription { notesChanges { operation } }\"}}";
-        WebSocketSession closing = session("p1", "1.1.1.1", new ArrayList<>());
+        WsSession closing = session("p1", "1.1.1.1", new ArrayList<>());
         handler.afterConnectionEstablished(closing);
         runtime.initialised(closing);
         midSubscribe.set(() -> handler.afterConnectionClosed(closing, CloseStatus.NORMAL));
         handler.handleTextMessage(closing, new TextMessage(query));
 
         List<String> sent = new ArrayList<>();
-        WebSocketSession fresh = session("p1", "2.2.2.2", sent);
+        WsSession fresh = session("p1", "2.2.2.2", sent);
         handler.afterConnectionEstablished(fresh);
         runtime.initialised(fresh);
         handler.handleTextMessage(fresh, new TextMessage(query));
@@ -241,10 +223,10 @@ class WsSessionLimitsTest {
     void subscriptionsCappedPerProject() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 2, 8), Runnable::run);
         List<String> sent = new ArrayList<>();
-        WebSocketSession one = session("p1", "1.1.1.1", sent);
-        WebSocketSession two = session("p1", "2.2.2.2", sent);
-        WebSocketSession other = session("p2", "3.3.3.3", sent);
-        for (WebSocketSession s : List.of(one, two, other)) {
+        WsSession one = session("p1", "1.1.1.1", sent);
+        WsSession two = session("p1", "2.2.2.2", sent);
+        WsSession other = session("p2", "3.3.3.3", sent);
+        for (WsSession s : List.of(one, two, other)) {
             handler.afterConnectionEstablished(s);
         }
         runtime.initialised(one);
@@ -265,7 +247,7 @@ class WsSessionLimitsTest {
     @DisplayName("realtime: subscribe before connection_init closes the socket with 4401 and subscribes nothing")
     void realtimeSubscribeBeforeInitIsRefused() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 8), Runnable::run);
-        WebSocketSession session = session("p1", "1.1.1.1", new ArrayList<>());
+        WsSession session = session("p1", "1.1.1.1", new ArrayList<>());
         handler.afterConnectionEstablished(session);
         send(handler, session, subscribe("a", "notes"));
         verify(session).close(new CloseStatus(4401, "connection_init_required"));
@@ -280,7 +262,7 @@ class WsSessionLimitsTest {
         set(handler, "jwtEnabled", true);
         set(handler, "wsAuthRequired", true);
         List<String> sent = new ArrayList<>();
-        WebSocketSession session = session("p1", "1.1.1.1", sent);
+        WsSession session = session("p1", "1.1.1.1", sent);
         handler.afterConnectionEstablished(session);
         // initialised without a token (as a gateway-less deployment could reach), no tenant claim in the session
         runtime.initialised(session);
@@ -295,7 +277,7 @@ class WsSessionLimitsTest {
     @DisplayName("GraphQL: subscribe before connection_init closes the socket with 4401")
     void graphqlSubscribeBeforeInitIsRefused() throws Exception {
         GraphQLWebSocketHandler handler = graphql(limits(10, 10, 5, 50, 8));
-        WebSocketSession session = session("p1", "1.1.1.1", new ArrayList<>());
+        WsSession session = session("p1", "1.1.1.1", new ArrayList<>());
         handler.afterConnectionEstablished(session);
         handler.handleTextMessage(session, new TextMessage("{\"type\":\"subscribe\",\"id\":\"1\",\"payload\":"
                 + "{\"query\":\"subscription { notesChanges { operation } }\"}}"));
@@ -308,7 +290,7 @@ class WsSessionLimitsTest {
     void graphqlSubscribeAfterInit() throws Exception {
         GraphQLWebSocketHandler handler = graphql(limits(10, 10, 5, 50, 8));
         List<String> sent = new ArrayList<>();
-        WebSocketSession session = session("p1", "1.1.1.1", sent);
+        WsSession session = session("p1", "1.1.1.1", sent);
         handler.afterConnectionEstablished(session);
         handler.handleTextMessage(session, new TextMessage("{\"type\":\"connection_init\"}"));
         handler.handleTextMessage(session, new TextMessage("{\"type\":\"subscribe\",\"id\":\"1\",\"payload\":"
@@ -320,14 +302,9 @@ class WsSessionLimitsTest {
     @Test
     @DisplayName("a client that never reads is closed with 4429 once its queue overflows")
     void overflowClosesSlowConsumer() throws Exception {
-        RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 3),
-                Executors.newVirtualThreadPerTaskExecutor());
-        CountDownLatch release = new CountDownLatch(1);
-        WebSocketSession stuck = session("p1", "1.1.1.1", new ArrayList<>());
-        doAnswer(call -> {
-            release.await(10, TimeUnit.SECONDS);
-            return null;
-        }).when(stuck).sendMessage(any(TextMessage.class));
+        RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 3), Runnable::run);
+        WsSession stuck = session("p1", "1.1.1.1", new ArrayList<>());
+        when(stuck.isBackedUp()).thenReturn(true);
         handler.afterConnectionEstablished(stuck);
         runtime.initialised(stuck);
         send(handler, stuck, subscribe("a", "t"));
@@ -335,27 +312,20 @@ class WsSessionLimitsTest {
             subscriptions.publish(null, new CDCEvent("INSERT", "public", "t", "{\"id\":" + i + "}", 0L));
         }
         verify(stuck).close(new CloseStatus(4429, "slow_consumer"));
-        release.countDown();
     }
 
     @Test
-    @DisplayName("a send that does not come back within the grace closes the client with 4429")
-    void stuckSendClosesSlowConsumer() throws Exception {
-        RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 100),
-                Executors.newVirtualThreadPerTaskExecutor());
-        CountDownLatch release = new CountDownLatch(1);
-        WebSocketSession stuck = session("p1", "1.1.1.1", new ArrayList<>());
-        doAnswer(call -> {
-            release.await(10, TimeUnit.SECONDS);
-            return null;
-        }).when(stuck).sendMessage(any(TextMessage.class));
+    @DisplayName("a client whose send buffer stays full past the grace is closed with 4429")
+    void stuckBufferClosesSlowConsumer() throws Exception {
+        RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 100), Runnable::run);
+        WsSession stuck = session("p1", "1.1.1.1", new ArrayList<>());
+        when(stuck.isBackedUp()).thenReturn(true);
         handler.afterConnectionEstablished(stuck);
         runtime.initialised(stuck);
         send(handler, stuck, subscribe("a", "t"));
         subscriptions.publish(null, new CDCEvent("INSERT", "public", "t", "{\"id\":1}", 0L));
         await().atMost(Duration.ofSeconds(5)).untilAsserted(() ->
                 verify(stuck).close(new CloseStatus(4429, "slow_consumer")));
-        release.countDown();
     }
 
     @Test
@@ -366,7 +336,7 @@ class WsSessionLimitsTest {
         AtomicBoolean stalled = new AtomicBoolean(true);
         CountDownLatch sending = new CountDownLatch(1);
         List<String> slowSent = Collections.synchronizedList(new ArrayList<>());
-        WebSocketSession slow = session("p1", "1.1.1.1", slowSent);
+        WsSession slow = session("p1", "1.1.1.1", slowSent);
         doAnswer(call -> {
             sending.countDown();
             while (stalled.get()) {
@@ -375,7 +345,7 @@ class WsSessionLimitsTest {
             return null;
         }).when(slow).sendMessage(any(TextMessage.class));
         List<String> fastSent = Collections.synchronizedList(new ArrayList<>());
-        WebSocketSession fast = session("p2", "2.2.2.2", fastSent);
+        WsSession fast = session("p2", "2.2.2.2", fastSent);
         handler.afterConnectionEstablished(slow);
         handler.afterConnectionEstablished(fast);
         runtime.initialised(slow);
@@ -400,7 +370,7 @@ class WsSessionLimitsTest {
     void otherTablesAreDropped() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 8), Runnable::run);
         List<String> sent = new ArrayList<>();
-        WebSocketSession session = session("p1", "1.1.1.1", sent);
+        WsSession session = session("p1", "1.1.1.1", sent);
         handler.afterConnectionEstablished(session);
         runtime.initialised(session);
         send(handler, session, subscribe("a", "secret_x"));

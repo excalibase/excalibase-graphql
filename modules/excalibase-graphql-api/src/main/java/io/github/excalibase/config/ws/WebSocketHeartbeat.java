@@ -4,16 +4,14 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.socket.PingMessage;
-import org.springframework.web.socket.WebSocketSession;
+import io.micronaut.context.annotation.Value;
+import io.micronaut.core.annotation.Nullable;
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
+import jakarta.inject.Singleton;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -28,31 +26,22 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Sends are serialised per session (see {@link #ping}) because a session may
  * already be written to from several CDC fan-out threads, and a raw
- * {@link WebSocketSession} is not safe for concurrent sends.
+ * {@link WsSession} is not safe for concurrent sends.
  *
  * <p>Disabled by setting {@code app.websocket.heartbeat-seconds} to 0.
  */
-@Component
+@Singleton
 public class WebSocketHeartbeat {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketHeartbeat.class);
-    private static final PingMessage PING = new PingMessage();
+    
 
-    private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
-    /** Sessions with a ping still being written: a session whose writer is stuck is not pinged again. */
-    private final Set<WebSocketSession> pinging = ConcurrentHashMap.newKeySet();
+    private final Set<WsSession> sessions = ConcurrentHashMap.newKeySet();
     private final long intervalSeconds;
-    private final Executor pinger;
     private ScheduledExecutorService scheduler;
 
-    @Autowired
     public WebSocketHeartbeat(@Value("${app.websocket.heartbeat-seconds:25}") long intervalSeconds) {
-        this(intervalSeconds, Executors.newVirtualThreadPerTaskExecutor());
-    }
-
-    WebSocketHeartbeat(long intervalSeconds, Executor pinger) {
         this.intervalSeconds = intervalSeconds;
-        this.pinger = pinger;
     }
 
     @PostConstruct
@@ -71,33 +60,23 @@ public class WebSocketHeartbeat {
     }
 
     /** Registers a session to receive heartbeats. Idempotent. */
-    public void register(WebSocketSession session) {
+    public void register(WsSession session) {
         sessions.add(session);
     }
 
     /** Stops heartbeating a session (call on close). */
-    public void unregister(WebSocketSession session) {
+    public void unregister(WsSession session) {
         sessions.remove(session);
     }
 
     /** Visible for testing — exercised by the scheduler in production. */
     void pingAll() {
-        for (WebSocketSession session : sessions) {
+        for (WsSession session : sessions) {
             if (!session.isOpen()) {
                 sessions.remove(session);
                 continue;
             }
-            // A write can block until the container's write timeout while it holds the session's monitor,
-            // so each ping runs on its own thread: one stuck socket must not delay everyone else's ping.
-            if (pinging.add(session)) {
-                pinger.execute(() -> {
-                    try {
-                        ping(session);
-                    } finally {
-                        pinging.remove(session);
-                    }
-                });
-            }
+            ping(session);
         }
     }
 
@@ -106,11 +85,11 @@ public class WebSocketHeartbeat {
      * concurrent data send. Handlers that write to the session must synchronise
      * on the same monitor for this to hold.
      */
-    private void ping(WebSocketSession session) {
+    private void ping(WsSession session) {
         try {
             synchronized (session) {
                 if (session.isOpen()) {
-                    session.sendMessage(PING);
+                    session.sendPing();
                 }
             }
         } catch (Exception e) {
@@ -123,9 +102,6 @@ public class WebSocketHeartbeat {
     void stop() {
         if (scheduler != null) {
             scheduler.shutdownNow();
-        }
-        if (pinger instanceof ExecutorService service) {
-            service.shutdownNow();
         }
     }
 }

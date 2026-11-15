@@ -83,7 +83,7 @@ services:
     restart: unless-stopped
 
   excalibase-app:
-    image: excalibase/excalibase-graphql
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql}
     container_name: excalibase-graphql-mysql
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/hana?useSSL=false&allowPublicKeyRetrieval=true&tinyInt1isBit=false
@@ -145,7 +145,7 @@ services:
       - "20001:80"
     environment:
       GRAPHQL_ENDPOINT: http://localhost:10001/e2e-test/graphql
-      GRAPHQL_WS_ENDPOINT: http://localhost:10001/graphql
+      GRAPHQL_WS_ENDPOINT: http://localhost:10001/e2e-test/graphql
     depends_on:
       - excalibase-app
     restart: unless-stopped

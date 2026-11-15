@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.ResponseEntity;
+import io.micronaut.http.HttpResponse;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
@@ -54,11 +54,11 @@ class QueryExecutionServiceTest {
         when(namedJdbc.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(String.class)))
                 .thenReturn("{\"users\":[{\"id\":1}]}");
 
-        ResponseEntity<Object> response = service.executeQuery(selectQuery("SELECT ..."), new MapSqlParameterSource());
+        HttpResponse<Object> response = service.executeQuery(selectQuery("SELECT ..."), new MapSqlParameterSource());
 
-        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getStatus().getCode() / 100 == 2).isTrue();
         @SuppressWarnings("unchecked")
-        Map<String, Object> body = (Map<String, Object>) response.getBody();
+        Map<String, Object> body = (Map<String, Object>) response.body();
         assertThat(body).containsKey("data");
     }
 
@@ -68,9 +68,9 @@ class QueryExecutionServiceTest {
         when(namedJdbc.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(String.class)))
                 .thenReturn(null);
 
-        ResponseEntity<Object> response = service.executeQuery(selectQuery("SELECT ..."), new MapSqlParameterSource());
+        HttpResponse<Object> response = service.executeQuery(selectQuery("SELECT ..."), new MapSqlParameterSource());
 
-        assertThat(response.getBody()).isEqualTo(Map.of("data", Map.of()));
+        assertThat(response.body()).isEqualTo(Map.of("data", Map.of()));
     }
 
     @Test
@@ -87,14 +87,14 @@ class QueryExecutionServiceTest {
             return "{\"createUser\":{\"id\":7}}";
         };
 
-        ResponseEntity<Object> response = service.executeInContext(twoPhase(), new MapSqlParameterSource(), exec);
+        HttpResponse<Object> response = service.executeInContext(twoPhase(), new MapSqlParameterSource(), exec);
 
         verify(dataSource, times(1)).getConnection();
         verify(connection, times(2)).createStatement();
         verify(connection).setAutoCommit(false);
         verify(connection).commit();
         verify(connection, never()).rollback();
-        assertThat(response.getBody()).isEqualTo(Map.of("data", new ObjectMapper().readTree("{\"createUser\":{\"id\":7}}")));
+        assertThat(response.body()).isEqualTo(Map.of("data", new ObjectMapper().readTree("{\"createUser\":{\"id\":7}}")));
     }
 
     @Test

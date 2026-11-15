@@ -2,37 +2,44 @@ package io.github.excalibase.security;
 
 import io.github.excalibase.cors.ProjectCorsConfigurationSource;
 import io.github.excalibase.service.VaultCredentialException;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.web.cors.CorsUtils;
-import org.springframework.web.filter.OncePerRequestFilter;
-
-import java.io.IOException;
+import io.micronaut.core.annotation.Nullable;
+import io.micronaut.core.order.Ordered;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpMethod;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.MutableHttpResponse;
+import io.micronaut.http.HttpStatus;
+import io.micronaut.http.annotation.Filter;
+import io.micronaut.http.annotation.RequestFilter;
+import io.micronaut.http.annotation.ServerFilter;
+import jakarta.inject.Inject;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import io.github.excalibase.observability.requests.RequestMetrics;
 
 /**
- * Refuses a request whose path names a project this deployment does not serve.
- * Runs on every project-scoped route — GraphQL, REST and both WebSocket
- * upgrades — whether or not authentication is on.
+ * Refuses a request whose path names a project this deployment does not serve, and one whose path names no
+ * project at all: the first path segment is the project, on every surface, and nothing is served without one
+ * (the actuator excepted). Both answers are the same 404. Runs whether or not authentication is on.
  */
-public class KnownProjectFilter extends OncePerRequestFilter {
+@ServerFilter(Filter.MATCH_ALL_PATTERN)
+public class KnownProjectFilter implements Ordered {
 
     private static final Logger log = LoggerFactory.getLogger(KnownProjectFilter.class);
 
     /** The project id, set once it passed the check: request metrics record only these. */
     public static final String KNOWN_PROJECT_ATTR = "excalibase.knownProject";
+    public static final int ORDER = -100;
 
     private final KnownProjects knownProjects;
     private final boolean markKnownProjects;
 
-    public KnownProjectFilter(KnownProjects knownProjects) {
-        this(knownProjects, false);
+    @Inject
+    public KnownProjectFilter(KnownProjects knownProjects, @Nullable RequestMetrics requestMetrics) {
+        this(knownProjects, requestMetrics != null);
     }
 
     /** {@code markKnownProjects} only when request metrics are on, so the hot path is unchanged when off. */
@@ -42,54 +49,68 @@ public class KnownProjectFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
-                                    FilterChain chain) throws ServletException, IOException {
-        String projectId = ProjectPath.fromUri(request.getRequestURI());
+    public int getOrder() {
+        return ORDER;
+    }
+
+    @RequestFilter
+    @Nullable
+    public HttpResponse<?> filter(HttpRequest<?> request) {
+        if (isManagement(request.getPath())) {
+            return null;
+        }
+        String projectId = ProjectPath.leadingSegment(request.getPath());
         if (projectId == null) {
-            chain.doFilter(request, response);
-            return;
+            return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
         }
         try {
             knownProjects.require(projectId);
         } catch (UnknownProjectException e) {
-            writeError(response, HttpServletResponse.SC_NOT_FOUND, "Project not found", "project_not_found");
-            return;
+            return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
         } catch (ProjectLookupThrottledException e) {
-            if (CorsUtils.isPreFlightRequest(request)) {
-                answerPreflight(request, response);
-                return;
+            if (isPreflight(request)) {
+                return answerPreflight(request);
             }
-            allowAskingOriginToRead(request, response);
-            writeError(response, 429, "Too many project lookups", "project_lookup_throttled");
-            return;
+            return readableByAskingOrigin(request,
+                    FilterErrors.write(HttpStatus.TOO_MANY_REQUESTS, "Too many project lookups", "project_lookup_throttled"));
         } catch (ProjectWithoutDatabaseException e) {
-            writeError(response, HttpServletResponse.SC_CONFLICT, "Project has no database", "project_has_no_database");
-            return;
+            return FilterErrors.write(HttpStatus.CONFLICT, "Project has no database", "project_has_no_database");
         } catch (VaultCredentialException e) {
             log.error("project_lookup_failed project={}", projectId, e);
-            writeError(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Project unavailable",
-                    "project_unavailable");
-            return;
+            return FilterErrors.write(HttpStatus.SERVICE_UNAVAILABLE, "Project unavailable", "project_unavailable");
         }
         if (markKnownProjects) {
-            request.setAttribute(KNOWN_PROJECT_ATTR, projectId);
+            request.getAttributes().put(KNOWN_PROJECT_ATTR, projectId);
         }
-        chain.doFilter(request, response);
+        return null;
+    }
+
+    /** The actuator is the management surface, not a project's; it is the only path served without a project id. */
+    private static boolean isManagement(String path) {
+        return path.equals("/actuator") || path.startsWith("/actuator/");
+    }
+
+    private static boolean isPreflight(HttpRequest<?> request) {
+        return request.getMethod() == HttpMethod.OPTIONS
+                && request.getHeaders().contains("Origin")
+                && request.getHeaders().contains("Access-Control-Request-Method");
     }
 
     /**
-     * This runs before the CORS filter, which would have to ask provisioning for the project's origins, and
-     * the throttle exists to keep that from happening. The refusal says nothing about any project, so the asking
-     * origin may read it: a browser then sees a 429 it can back off from instead of an opaque network error.
+     * This runs before the CORS filter, which would have to ask provisioning for the project's origins, and the
+     * throttle exists to keep that from happening. The refusal says nothing about any project, so the asking origin
+     * may read it: a browser then sees a 429 it can back off from instead of an opaque network error.
      */
-    private static void allowAskingOriginToRead(HttpServletRequest request, HttpServletResponse response) {
-        response.addHeader("Vary", "Origin");
-        validOrigin(request).ifPresent(origin -> response.setHeader("Access-Control-Allow-Origin", origin));
+    private static HttpResponse<String> readableByAskingOrigin(HttpRequest<?> request, HttpResponse<String> refusal) {
+        MutableHttpResponse<String> response = (MutableHttpResponse<String>) refusal;
+        response.header("Vary", "Origin");
+        validOrigin(request).ifPresent(origin -> response.header("Access-Control-Allow-Origin", origin));
+        return response;
     }
 
     /** The request's Origin when it is exactly scheme, host and optional port; anything else is not echoed. */
-    private static Optional<String> validOrigin(HttpServletRequest request) {
-        String origin = request.getHeader("Origin");
+    private static Optional<String> validOrigin(HttpRequest<?> request) {
+        String origin = request.getHeaders().get("Origin");
         if (origin == null || origin.chars().anyMatch(c -> c <= ' ' || c >= 0x7f)) {
             return Optional.empty();
         }
@@ -109,25 +130,16 @@ public class KnownProjectFilter extends OncePerRequestFilter {
      * fetch the project's origins from provisioning, once per preflight, for an id nobody has vouched for. The
      * asking origin may then send the real request, which gets the readable 429 (or its real answer).
      */
-    private static void answerPreflight(HttpServletRequest request, HttpServletResponse response) {
-        response.setStatus(HttpServletResponse.SC_NO_CONTENT);
-        response.addHeader("Vary", "Origin");
-        response.addHeader("Vary", "Access-Control-Request-Method");
-        response.addHeader("Vary", "Access-Control-Request-Headers");
-        validOrigin(request).ifPresent(origin -> response.setHeader("Access-Control-Allow-Origin", origin));
-        response.setHeader("Access-Control-Allow-Methods", String.join(",", ProjectCorsConfigurationSource.ALLOWED_METHODS));
-        String requested = request.getHeader("Access-Control-Request-Headers");
+    private static HttpResponse<?> answerPreflight(HttpRequest<?> request) {
+        MutableHttpResponse<?> response = HttpResponse.noContent()
+                .header("Vary", "Origin")
+                .header("Access-Control-Allow-Methods", String.join(",", ProjectCorsConfigurationSource.ALLOWED_METHODS))
+                .header("Access-Control-Max-Age", "0");
+        validOrigin(request).ifPresent(origin -> response.header("Access-Control-Allow-Origin", origin));
+        String requested = request.getHeaders().get("Access-Control-Request-Headers");
         if (requested != null) {
-            response.setHeader("Access-Control-Allow-Headers", requested);
+            response.header("Access-Control-Allow-Headers", requested);
         }
-        response.setHeader("Access-Control-Max-Age", "0");
-    }
-
-    private static void writeError(HttpServletResponse response, int status, String message, String code)
-            throws IOException {
-        response.setStatus(status);
-        response.setContentType("application/json");
-        response.getWriter().write("{\"errors\":[{\"message\":\"" + message
-                + "\",\"extensions\":{\"code\":\"" + code + "\"}}]}");
+        return response;
     }
 }

@@ -6,23 +6,16 @@ import io.github.excalibase.access.ChangeFilter;
 import io.github.excalibase.cdc.SubscriptionService;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.compiler.ParsedQueries;
-import io.github.excalibase.config.JwtSecurityConfig;
-import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.permissions.PermissionVersions;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.schema.AccessPlans;
-import io.github.excalibase.schema.GraphqlSchemaManager;
-import io.github.excalibase.security.JwtService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
 
 import java.util.List;
 import java.util.Map;
@@ -30,7 +23,6 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.function.ObjLongConsumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -58,13 +50,6 @@ class PermissionChangeWiringTest {
         runtime.stop();
     }
 
-    @SuppressWarnings("unchecked")
-    private static <T> ObjectProvider<T> provider(T value) {
-        ObjectProvider<T> provider = mock(ObjectProvider.class);
-        when(provider.getIfAvailable()).thenReturn(value);
-        return provider;
-    }
-
     private static AccessPlans plansAt(long version) {
         AccessPlans plans = mock(AccessPlans.class);
         when(plans.realtime(any(), any(), any(), any())).thenAnswer(call -> Optional.of(
@@ -73,8 +58,8 @@ class PermissionChangeWiringTest {
         return plans;
     }
 
-    private static WebSocketSession socket() throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
+    private static WsSession socket() throws Exception {
+        WsSession session = mock(WsSession.class);
         when(session.getId()).thenReturn("s-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
         Map<String, Object> attributes = new ConcurrentHashMap<>();
@@ -85,21 +70,21 @@ class PermissionChangeWiringTest {
     }
 
     private RealtimeWebSocketHandler realtime(AccessPlans plans) {
-        return new RealtimeWebSocketHandler(new SubscriptionService(), mapper, provider((JwtService) null),
-                new WebSocketHeartbeat(0), provider(plans), provider((RequestMetrics) null), runtime);
+        return new RealtimeWebSocketHandler(new SubscriptionService(), mapper, null,
+                new WebSocketHeartbeat(0), plans, null, runtime);
     }
 
     private GraphQLWebSocketHandler graphql(AccessPlans plans) {
-        return new GraphQLWebSocketHandler(new SubscriptionService(), mapper, provider((JwtService) null),
-                new WebSocketHeartbeat(0), provider(plans), provider((RequestMetrics) null),
+        return new GraphQLWebSocketHandler(new SubscriptionService(), mapper, null,
+                new WebSocketHeartbeat(0), plans, null,
                 new ParsedQueries(1_000, Parser::parse), runtime);
     }
 
-    private static void subscribeRealtime(RealtimeWebSocketHandler handler, WebSocketSession session) throws Exception {
+    private static void subscribeRealtime(RealtimeWebSocketHandler handler, WsSession session) throws Exception {
         handler.handleTextMessage(session, new TextMessage("{\"type\":\"subscribe\",\"id\":\"a\",\"collection\":\"t1\"}"));
     }
 
-    private static void subscribeGraphql(GraphQLWebSocketHandler handler, WebSocketSession session) throws Exception {
+    private static void subscribeGraphql(GraphQLWebSocketHandler handler, WsSession session) throws Exception {
         handler.handleTextMessage(session, new TextMessage("{\"type\":\"subscribe\",\"id\":\"a\",\"payload\":"
                 + "{\"query\":\"subscription { t1Changes { operation } }\"}}"));
     }
@@ -116,7 +101,7 @@ class PermissionChangeWiringTest {
     @DisplayName("realtime: a subscribe under v7 is closed with 1012 by an event that reloads v8, and kept by one that reloads v7")
     void realtimeHandlerNotesTheOpeningVersion() throws Exception {
         RealtimeWebSocketHandler handler = realtime(plansAt(7));
-        WebSocketSession session = socket();
+        WsSession session = socket();
         handler.afterConnectionEstablished(session);
         runtime.initialised(session);
         subscribeRealtime(handler, session);
@@ -131,7 +116,7 @@ class PermissionChangeWiringTest {
     @DisplayName("graphql: a subscribe under v7 is closed with 1012 by an event that reloads v8, and kept by one that reloads v7")
     void graphqlHandlerNotesTheOpeningVersion() throws Exception {
         GraphQLWebSocketHandler handler = graphql(plansAt(7));
-        WebSocketSession session = socket();
+        WsSession session = socket();
         handler.afterConnectionEstablished(session);
         runtime.initialised(session);
         subscribeGraphql(handler, session);
@@ -154,10 +139,10 @@ class PermissionChangeWiringTest {
             return fast.realtime(null, PROJECT, null, "t1");
         });
         // An earlier subscription of the project, so the document last announced is known.
-        WebSocketSession earlier = socket();
+        WsSession earlier = socket();
         runtime.admit(earlier);
         runtime.openedUnder(earlier, 7, runtime.permissionGeneration(earlier));
-        WebSocketSession session = socket();
+        WsSession session = socket();
         Thread subscriber;
         if (realtimeHandler) {
             RealtimeWebSocketHandler handler = realtime(slow);
@@ -216,23 +201,5 @@ class PermissionChangeWiringTest {
     @DisplayName("graphql: an event that finds the same document while the plan is being resolved leaves the new socket open")
     void graphqlOpeningRacingANoOpEvent() throws Exception {
         raceAnnouncementAgainstSubscribe(false, 7, false);
-    }
-
-    @Test
-    @DisplayName("the policy-change subscriber registers the provider's refresh notice with the sockets")
-    @SuppressWarnings("unchecked")
-    void providerRefreshesAreRoutedToTheSockets() throws Exception {
-        PermissionProvider permissions = mock(PermissionProvider.class);
-        new JwtSecurityConfig().policyChangeSubscriber(permissions, mock(GraphqlSchemaManager.class), runtime,
-                false, "nats://localhost:4222", "", "", "");
-        ArgumentCaptor<ObjLongConsumer<String>> listener = ArgumentCaptor.forClass(ObjLongConsumer.class);
-        verify(permissions).onChange(listener.capture());
-        WebSocketSession session = socket();
-        runtime.admit(session);
-        runtime.openedUnder(session, 7, runtime.permissionGeneration(session));
-
-        listener.getValue().accept(PROJECT, 8);
-
-        verify(session).close(CHANGED);
     }
 }

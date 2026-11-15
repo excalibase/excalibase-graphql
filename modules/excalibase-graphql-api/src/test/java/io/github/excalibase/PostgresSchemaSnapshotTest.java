@@ -1,17 +1,14 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.introspection.IntrospectionQuery;
 import graphql.schema.idl.SchemaPrinter;
 import io.github.excalibase.schema.GraphqlSchemaManager;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -26,29 +23,25 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The Postgres schema a client introspects, printed whole and compared with the committed snapshot: building filter
  * inputs from dialect capabilities must not change a single byte of what Postgres advertises.
  */
-@SpringBootTest
-@Testcontainers
-class PostgresSchemaSnapshotTest {
+class PostgresSchemaSnapshotTest extends EngineIntegrationTest {
 
     private static final String SNAPSHOT = "snapshots/postgres-filter-schema.graphqls";
     private static final String INTROSPECTION_SNAPSHOT = "snapshots/postgres-filter-introspection.json";
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-filter-capabilities.sql");
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.project-id", () -> "test-proj");
-        registry.add("app.allowed-schema", () -> "filters");
-        registry.add("app.security.jwt-enabled", () -> "false");
-        registry.add("app.security.insecure-dev-mode", () -> "true");
+    @Override
+    public Map<String, String> getProperties() {
+        Map<String, String> properties = EngineProperties.datasource(postgres);
+        properties.put("app.project-id", "test-proj");
+        properties.put("app.allowed-schema", "filters");
+        properties.put("app.security.jwt-enabled", "false");
+        properties.put("app.security.insecure-dev-mode", "true");
+        return properties;
     }
 
-    @Autowired
+    @Inject
     private GraphqlSchemaManager schemaManager;
 
     @Test

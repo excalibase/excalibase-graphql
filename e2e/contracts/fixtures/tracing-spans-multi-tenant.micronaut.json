@@ -1,0 +1,149 @@
+{
+  "graphql query": {
+    "graphql.request": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "operation.name",
+        "operation.type"
+      ],
+      "scope": "org.springframework.boot"
+    },
+    "http post /{projectId}/graphql": {
+      "kind": 2,
+      "count": 1,
+      "attributes": [
+        "exception",
+        "http.url",
+        "method",
+        "org.name",
+        "org.slug",
+        "outcome",
+        "project.name",
+        "status",
+        "tenant.id",
+        "uri"
+      ],
+      "scope": "org.springframework.boot",
+      "childOfCaller": true
+    }
+  },
+  "graphql mutation": {
+    "graphql.request": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "operation.name",
+        "operation.type"
+      ],
+      "scope": "org.springframework.boot"
+    },
+    "http post /{projectId}/graphql": {
+      "kind": 2,
+      "count": 1,
+      "attributes": [
+        "exception",
+        "http.url",
+        "method",
+        "org.name",
+        "org.slug",
+        "outcome",
+        "project.name",
+        "status",
+        "tenant.id",
+        "uri"
+      ],
+      "scope": "org.springframework.boot",
+      "childOfCaller": true
+    }
+  },
+  "graphql error": {
+    "graphql.request": {
+      "kind": 1,
+      "count": 1,
+      "attributes": [
+        "operation.name",
+        "operation.type"
+      ],
+      "scope": "org.springframework.boot"
+    },
+    "http post /{projectId}/graphql": {
+      "kind": 2,
+      "count": 1,
+      "attributes": [
+        "exception",
+        "http.url",
+        "method",
+        "org.name",
+        "org.slug",
+        "outcome",
+        "project.name",
+        "status",
+        "tenant.id",
+        "uri"
+      ],
+      "scope": "org.springframework.boot",
+      "childOfCaller": true
+    }
+  },
+  "rest read": {
+    "http get /{projectId}/api/v1/{table}": {
+      "kind": 2,
+      "count": 1,
+      "attributes": [
+        "exception",
+        "http.url",
+        "method",
+        "org.name",
+        "org.slug",
+        "outcome",
+        "project.name",
+        "status",
+        "tenant.id",
+        "uri"
+      ],
+      "scope": "org.springframework.boot",
+      "childOfCaller": true
+    }
+  },
+  "rest error": {
+    "http get /{projectId}/api/v1/{table}": {
+      "kind": 2,
+      "count": 1,
+      "attributes": [
+        "exception",
+        "http.url",
+        "method",
+        "org.name",
+        "org.slug",
+        "outcome",
+        "project.name",
+        "status",
+        "tenant.id",
+        "uri"
+      ],
+      "scope": "org.springframework.boot",
+      "childOfCaller": true
+    }
+  },
+  "bad token": {
+    "http post /{projectId}/graphql": {
+      "kind": 2,
+      "count": 1,
+      "attributes": [
+        "exception",
+        "http.url",
+        "method",
+        "org.name",
+        "org.slug",
+        "outcome",
+        "project.name",
+        "status",
+        "tenant.id",
+        "uri"
+      ],
+      "scope": "org.springframework.boot",
+      "childOfCaller": true
+    }
+  }
+}

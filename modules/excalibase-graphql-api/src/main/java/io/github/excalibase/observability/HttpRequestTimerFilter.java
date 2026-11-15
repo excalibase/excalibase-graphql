@@ -5,158 +5,116 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.RequestDispatcher;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import java.io.IOException;
-import java.util.Set;
+import io.micronaut.context.annotation.Value;
+import jakarta.inject.Inject;
+import io.micronaut.core.annotation.Nullable;
+import io.micronaut.core.order.Ordered;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.annotation.Filter;
+import io.micronaut.http.annotation.RequestFilter;
+import io.micronaut.http.annotation.ResponseFilter;
+import io.micronaut.http.annotation.ServerFilter;
+import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.web.servlet.HandlerMapping;
 
 /**
- * Records {@code http.server.requests} with a plain timer instead of the observation API, which
- * cost about 140 microseconds of every request. The tags match what the observation convention
- * produced: method, status, outcome, uri (the matched pattern, never the raw path), exception,
- * error, and the tenant, org and project labels.
- *
- * <p>Inert unless {@code enabled}.
+ * Records {@code http.server.requests} with a plain timer: method, status, outcome, uri (the matched pattern,
+ * never the raw path), exception, error, and the tenant, org and project labels. Inert at level {@code off}.
  */
-public class HttpRequestTimerFilter extends OncePerRequestFilter {
+@ServerFilter(Filter.MATCH_ALL_PATTERN)
+public class HttpRequestTimerFilter implements Ordered {
 
     static final String METRIC = "http.server.requests";
-    /** Where {@link RejectedRequestRecorder} leaves the firewall's exception for the timer to name. */
-    static final String REJECTED_ATTRIBUTE = HttpRequestTimerFilter.class.getName() + ".rejected";
-    private static final String NONE = "none";
+    private static final String START = "excalibase.timer.start";
+    private static final String ACTIVE = "excalibase.timer.active";
 
-    private record TimerKey(String method, int status, String uri, String exception, TenantTags tenant) {
+    private record TimerKey(HttpRequestFacts facts) {
     }
 
-    private static final Set<String> STANDARD_METHODS =
-            Set.of("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE");
-    private static final String UNKNOWN = "UNKNOWN";
-
     private final MeterRegistry registry;
-    private final boolean enabled;
-    private final RoutePatternResolver routes;
+    private final ObservabilityLevel level;
     private final ConcurrentHashMap<TimerKey, Timer> timers = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, LongTaskTimer> activeTimers = new ConcurrentHashMap<>();
 
-    public HttpRequestTimerFilter(MeterRegistry registry, boolean enabled) {
-        this(registry, enabled, RoutePatternResolver.NONE);
-    }
+    private final int managementPort;
+    private final boolean percentileHistogram;
 
-    public HttpRequestTimerFilter(MeterRegistry registry, boolean enabled, RoutePatternResolver routes) {
-        this.registry = registry;
-        this.enabled = enabled;
-        this.routes = routes;
-    }
-
-    @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
-            throws ServletException, IOException {
-        if (!enabled) {
-            chain.doFilter(request, response);
-            return;
-        }
-        long start = System.nanoTime();
-        LongTaskTimer.Sample active = activeTimer(method(request)).start();
-        Throwable thrown = null;
-        try {
-            chain.doFilter(request, response);
-        } catch (Throwable failure) {
-            thrown = failure;
-            throw failure;
-        } finally {
-            active.stop();
-            record(request, response, thrown, System.nanoTime() - start);
-        }
-    }
-
-    private void record(HttpServletRequest request, HttpServletResponse response, Throwable thrown, long nanos) {
-        int status = thrown != null && response.getStatus() < 400 ? 500 : response.getStatus();
-        TimerKey key = new TimerKey(method(request), status, uri(request, status),
-                exceptionName(request, thrown), TenantTags.of(request));
-        timers.computeIfAbsent(key, this::newTimer).record(nanos, TimeUnit.NANOSECONDS);
-    }
-
-    private Timer newTimer(TimerKey key) {
-        return Timer.builder(METRIC).tags(Tags.of(
-                Tag.of("method", key.method()),
-                Tag.of("status", Integer.toString(key.status())),
-                Tag.of("uri", key.uri()),
-                Tag.of("outcome", outcome(key.status())),
-                Tag.of("exception", key.exception()),
-                Tag.of("error", key.exception()),
-                Tag.of("tenant.id", key.tenant().tenantId()),
-                Tag.of("org.slug", key.tenant().orgSlug()),
-                Tag.of("project.name", key.tenant().projectName()),
-                Tag.of("org.name", key.tenant().orgName()))).register(registry);
-    }
-
-    /** Only the standard methods name a series; anything else is one series, so a client cannot mint more. */
-    private static String method(HttpServletRequest request) {
-        String method = request.getMethod();
-        return method != null && STANDARD_METHODS.contains(method) ? method : UNKNOWN;
-    }
-
-    /** The in-flight gauge, tagged as the observation tagged it at the start of a request: only the method is known. */
-    private LongTaskTimer activeTimer(String method) {
-        return activeTimers.computeIfAbsent(method, known -> LongTaskTimer.builder(METRIC + ".active").tags(Tags.of(
-                Tag.of("exception", NONE), Tag.of("method", known), Tag.of("org.name", NONE),
-                Tag.of("org.slug", NONE), Tag.of("outcome", "SUCCESS"), Tag.of("project.name", NONE),
-                Tag.of("status", "200"), Tag.of("tenant.id", NONE), Tag.of("uri", UNKNOWN))).register(registry));
+    public HttpRequestTimerFilter(MeterRegistry registry, ObservabilityLevel level, int managementPort) {
+        this(registry, level, managementPort, false);
     }
 
     /**
-     * The matched pattern keeps cardinality bounded; unmatched requests collapse to a fixed word. A request
-     * the security chain answered before routing gets the pattern its path would have matched.
+     * {@code percentileHistogram} publishes {@code http.server.requests} buckets, which the platform's p99 latency
+     * alert reads; the earlier build took it from {@code management.metrics.distribution.percentiles-histogram.http.server.requests}.
      */
-    private String uri(HttpServletRequest request, int status) {
-        Object pattern = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
-        if (pattern != null) {
-            return pattern.toString();
-        }
-        String routed = routes.resolve(request);
-        if (routed != null) {
-            return routed;
-        }
-        if (status / 100 == 3) {
-            return "REDIRECTION";
-        }
-        return status == 404 ? "NOT_FOUND" : UNKNOWN;
+    @Inject
+    public HttpRequestTimerFilter(MeterRegistry registry, ObservabilityLevel level,
+                                  @Value("${endpoints.all.port:-1}") int managementPort,
+                                  @Value("${management.metrics.distribution.percentiles-histogram.http.server.requests:false}")
+                                  boolean percentileHistogram) {
+        this.registry = registry;
+        this.level = level;
+        this.managementPort = managementPort;
+        this.percentileHistogram = percentileHistogram;
     }
 
-    private static String exceptionName(HttpServletRequest request, Throwable thrown) {
-        Throwable failure = thrown;
-        if (failure == null && request.getAttribute(RequestDispatcher.ERROR_EXCEPTION) instanceof Throwable recorded) {
-            failure = recorded;
-        }
-        if (failure == null && request.getAttribute(REJECTED_ATTRIBUTE) instanceof Throwable rejected) {
-            failure = rejected;
-        }
-        if (failure instanceof ServletException && failure.getCause() != null) {
-            failure = failure.getCause();
-        }
-        if (failure == null) {
-            return NONE;
-        }
-        String simple = failure.getClass().getSimpleName();
-        return simple.isEmpty() ? failure.getClass().getName() : simple;
+    @Override
+    public int getOrder() {
+        return -1000;
     }
 
-    private static String outcome(int status) {
-        HttpStatus.Series series = HttpStatus.Series.resolve(status);
-        return series == null ? "UNKNOWN" : switch (series) {
-            case INFORMATIONAL -> "INFORMATIONAL";
-            case SUCCESSFUL -> "SUCCESS";
-            case REDIRECTION -> "REDIRECTION";
-            case CLIENT_ERROR -> "CLIENT_ERROR";
-            case SERVER_ERROR -> "SERVER_ERROR";
-        };
+    @RequestFilter
+    public void start(HttpRequest<?> request) {
+        if (!level.timesRequests() || onManagementPort(request)) {
+            return;
+        }
+        request.getAttributes().put(ACTIVE, activeTimer(HttpRequestFacts.method(request)).start());
+        request.getAttributes().put(START, System.nanoTime());
+    }
+
+    @ResponseFilter
+    public void end(HttpRequest<?> request, HttpResponse<?> response, @Nullable Throwable thrown) {
+        Object started = request.getAttribute(START).orElse(null);
+        if (!(started instanceof Long startNanos)) {
+            return;
+        }
+        if (request.getAttribute(ACTIVE).orElse(null) instanceof LongTaskTimer.Sample sample) {
+            sample.stop();
+        }
+        HttpRequestFacts facts = HttpRequestFacts.of(request, response.code(), thrown);
+        timers.computeIfAbsent(new TimerKey(facts), this::newTimer).record(System.nanoTime() - startNanos, TimeUnit.NANOSECONDS);
+    }
+
+    /** Requests to the actuator port are not part of the served traffic and are never timed. */
+    private boolean onManagementPort(HttpRequest<?> request) {
+        InetSocketAddress server = request.getServerAddress();
+        return server != null && server.getPort() == managementPort;
+    }
+
+    private Timer newTimer(TimerKey key) {
+        HttpRequestFacts facts = key.facts();
+        return Timer.builder(METRIC).tags(Tags.of(
+                Tag.of("method", facts.method()),
+                Tag.of("status", Integer.toString(facts.status())),
+                Tag.of("uri", facts.uri()),
+                Tag.of("outcome", facts.outcome()),
+                Tag.of("exception", facts.exception()),
+                Tag.of("error", facts.exception()),
+                Tag.of("tenant.id", facts.tenant().tenantId()),
+                Tag.of("org.slug", facts.tenant().orgSlug()),
+                Tag.of("project.name", facts.tenant().projectName()),
+                Tag.of("org.name", facts.tenant().orgName())))
+                .publishPercentileHistogram(percentileHistogram)
+                .register(registry);
+    }
+
+    private LongTaskTimer activeTimer(String method) {
+        String none = HttpRequestFacts.NONE;
+        return activeTimers.computeIfAbsent(method, known -> LongTaskTimer.builder(METRIC + ".active").tags(Tags.of(
+                Tag.of("exception", none), Tag.of("method", known), Tag.of("org.name", none),
+                Tag.of("org.slug", none), Tag.of("outcome", "SUCCESS"), Tag.of("project.name", none),
+                Tag.of("status", "200"), Tag.of("tenant.id", none), Tag.of("uri", "UNKNOWN"))).register(registry));
     }
 }

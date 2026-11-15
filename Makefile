@@ -31,6 +31,7 @@ help: ## Show this help message
 	@echo "  make e2e                  # Complete Postgres e2e test (JVM)"
 	@echo "  make postgres-e2e-native  # Complete Postgres e2e test (native)"
 	@echo "  make mysql-e2e            # Complete MySQL e2e test (JVM)"
+	@echo "  make mysql-e2e-native / multi-tenant-e2e-native / study-cases-e2e-native / contracts-e2e-native"
 	@echo "  make dev            # Build then start services and keep running"
 	@echo "  make up             # Pull and start service from docker hub "
 	@echo "  make test-only      # Run tests against running services"
@@ -106,6 +107,12 @@ mysql-e2e: down-mysql build-image mysql-up mysql-test mysql-clean ## Complete My
 postgres-e2e-native: down-native build-native-image up-native test-only-native clean-native ## Complete Postgres e2e test suite (native image)
 	@echo "$(GREEN)🎉 Postgres Native E2E testing completed successfully!$(NC)"
 
+# The *-native targets run the same suites against the native image, through ENGINE_IMAGE in the compose files.
+.PHONY: mysql-e2e-native
+mysql-e2e-native: export ENGINE_IMAGE = $(NATIVE_IMAGE)
+mysql-e2e-native: down-mysql build-native-image mysql-up mysql-test mysql-clean ## Complete MySQL e2e test suite (native image)
+	@echo "$(GREEN)🎉 MySQL Native E2E testing completed successfully!$(NC)"
+
 .PHONY: mysql-dev
 mysql-dev: build-image mysql-up ## Start MySQL services for development
 	@echo ""
@@ -163,6 +170,11 @@ MT_API_PORT = 10003
 multi-tenant-e2e: down-multi-tenant build-image multi-tenant-generate-keys multi-tenant-up multi-tenant-test multi-tenant-clean ## Complete multi-tenant e2e test suite
 	@echo "$(GREEN)🎉 Multi-tenant E2E testing completed successfully!$(NC)"
 
+.PHONY: multi-tenant-e2e-native
+multi-tenant-e2e-native: export ENGINE_IMAGE = $(NATIVE_IMAGE)
+multi-tenant-e2e-native: down-multi-tenant build-native-image multi-tenant-generate-keys multi-tenant-up multi-tenant-test multi-tenant-clean ## Complete multi-tenant e2e test suite (native image)
+	@echo "$(GREEN)🎉 Multi-tenant Native E2E testing completed successfully!$(NC)"
+
 .PHONY: multi-tenant-generate-keys
 multi-tenant-generate-keys: ## Generate test EC keypair for multi-tenant WireMock
 	@e2e/multi-tenant/generate-keys.sh
@@ -214,6 +226,10 @@ SC_AUTH_PORT = 24004
 .PHONY: study-cases-e2e
 study-cases-e2e: down-study-cases build-image study-cases-generate-keys study-cases-up study-cases-test study-cases-clean ## Complete study-cases e2e test suite
 
+.PHONY: study-cases-e2e-native
+study-cases-e2e-native: export ENGINE_IMAGE = $(NATIVE_IMAGE)
+study-cases-e2e-native: down-study-cases build-native-image study-cases-generate-keys study-cases-up study-cases-test study-cases-clean ## Complete study-cases e2e test suite (native image)
+
 .PHONY: study-cases-generate-keys
 study-cases-generate-keys: ## Generate test EC keypair for study-cases WireMock
 	@e2e/study-cases/generate-keys.sh
@@ -257,6 +273,18 @@ study-cases-wait-ready:
 		sleep 5; \
 	done
 
+# Contract tests: the engine's wire behaviour, black-box, for any build of the image
+.PHONY: contracts-e2e
+contracts-e2e: build-image ## Pin metrics, health, logs, tracing, HTTP, WebSocket, config and overload behaviour
+	@e2e/contracts/run.sh
+
+# The native build has no JVM-only meters; its reviewed fixtures are the *.micronaut-native.json ones.
+.PHONY: contracts-e2e-native
+contracts-e2e-native: export ENGINE_IMAGE = $(NATIVE_IMAGE)
+contracts-e2e-native: export CONTRACT_VARIANT = micronaut-native
+contracts-e2e-native: build-native-image ## Run the engine contracts against the native image
+	@e2e/contracts/run.sh
+
 # CDC subscription test targets
 .PHONY: subscription-test
 subscription-test: ## Run Postgres CDC subscription e2e tests (requires make up)
@@ -292,10 +320,13 @@ build-native: ## Build native image (requires GraalVM JDK 25, ~10 min)
 	@JAVA_HOME=$(GRAALVM_HOME) PATH=$(GRAALVM_HOME)/bin:$(PATH) mvn -pl modules/excalibase-graphql-api -am -Pnative package -DskipTests -q
 	@echo "$(GREEN)✓ Native image built: modules/excalibase-graphql-api/target/excalibase-graphql-api$(NC)"
 
+# NATIVE_PREBUILT=1 packages the binary already in target/ (CI downloads the one native-build compiled).
+NATIVE_IMAGE = excalibase/excalibase-graphql:native
+
 .PHONY: build-native-image
-build-native-image: build-native ## Build native Docker image
+build-native-image: $(if $(NATIVE_PREBUILT),,build-native) ## Build native Docker image
 	@echo "$(BLUE)🐳 Building native Docker image...$(NC)"
-	@docker build --no-cache -f Dockerfile.native -t excalibase/excalibase-graphql:native .
+	@docker build --no-cache -f Dockerfile.native -t $(NATIVE_IMAGE) .
 	@echo "$(GREEN)✓ Native Docker image built$(NC)"
 
 .PHONY: build-image

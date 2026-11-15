@@ -1,5 +1,8 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
@@ -17,18 +20,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -45,22 +37,18 @@ import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static io.github.excalibase.support.Expect.jsonPath;
 import static io.github.excalibase.PermissionDocs.entry;
 import static io.github.excalibase.PermissionDocs.select;
 import static io.github.excalibase.PermissionDocs.selectAll;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.contains;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 
 /**
  * A relationship has one name whatever role asks: a role's schema names every relationship it can
  * see exactly as the whole schema does, also when it sees only some of several keys between two tables.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-class RoleViewRelationshipNamesIntegrationTest {
+class RoleViewRelationshipNamesIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "proj-role-view-relationship-names";
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -69,8 +57,7 @@ class RoleViewRelationshipNamesIntegrationTest {
     private static final String[] TYPES = {"PublicTeams", "PublicSeasons", "PublicMatches", "PublicPlayers",
             "PublicTransfers"};
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-relationship-order.sql");
 
     static ECPrivateKey privateKey;
@@ -106,24 +93,19 @@ class RoleViewRelationshipNamesIntegrationTest {
         controlPlane.stop(0);
     }
 
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("app.security.jwt-enabled", () -> "true");
-        registry.add("app.security.auth.jwks-url",
-                () -> "http://localhost:" + controlPlane.getAddress().getPort() + "/.well-known/jwks.json");
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.rls.policy-url",
-                () -> "http://localhost:" + controlPlane.getAddress().getPort() + "/api");
-        registry.add("app.security.rls.policy-pat", () -> "test-pat");
-        registry.add("app.security.rls.policy-ttl-ms", () -> 0);
+    @Override
+    public Map<String, String> getProperties() {
+        Map<String, String> properties = EngineProperties.datasource(postgres);
+        properties.put("app.database-type", "postgres");
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.security.auth.jwks-url", "http://localhost:" + controlPlane.getAddress().getPort() + "/.well-known/jwks.json");
+        properties.put("app.project-id", PROJECT);
+        properties.put("app.security.rls.policy-url", "http://localhost:" + controlPlane.getAddress().getPort() + "/api");
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        properties.put("app.security.rls.policy-ttl-ms", "0");
+        return properties;
     }
 
-    @Autowired
-    private MockMvc mockMvc;
 
     /** fan reads everything; anon reads only the home team of a match and the club a player left. */
     @BeforeEach
@@ -184,14 +166,14 @@ class RoleViewRelationshipNamesIntegrationTest {
     @ValueSource(strings = {"publicMatchesHomeTeamId", "publicMatchesByHomeTeam"})
     void aRoleThatSeesOneOfSeveralKeys_answersToBothOfItsNames(String relationship) throws Exception {
         graphql(null, "{ publicTeams(where: { id: { eq: \"1\" } }) { " + relationship + " { id } } }")
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.publicTeams[0]." + relationship + "[*].id", contains("1")));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.publicTeams[0]." + relationship + "[*].id", contains("1")));
     }
 
     private Set<String> fieldNames(Map<String, Object> claims, String type) throws Exception {
         String body = graphql(claims, "{ __type(name: \"" + type + "\") { fields(includeDeprecated: true) { name } } }")
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andReturn().getResponse().getContentAsString();
+                .expect(jsonPath("$.errors").doesNotExist())
+                .body();
         Set<String> names = new TreeSet<>();
         for (JsonNode field : MAPPER.readTree(body).path("data").path("__type").path("fields")) {
             // Relationship aggregates follow the role's allowAggregations, not its naming; compared elsewhere.
@@ -203,14 +185,13 @@ class RoleViewRelationshipNamesIntegrationTest {
         return names;
     }
 
-    private ResultActions graphql(Map<String, Object> claims, String query) throws Exception {
-        MockHttpServletRequestBuilder request = post("/" + PROJECT + "/graphql")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(MAPPER.writeValueAsString(Map.of("query", query)));
-        if (claims != null) {
-            request.header("Authorization", "Bearer " + token(claims));
+    private HttpAnswer graphql(Map<String, Object> claims, String query) throws Exception {
+        String body = MAPPER.writeValueAsString(Map.of("query", query));
+        if (claims == null) {
+            return http.post("/" + PROJECT + "/graphql", body, "Content-Type", "application/json");
         }
-        return mockMvc.perform(request);
+        return http.post("/" + PROJECT + "/graphql", body, "Content-Type", "application/json",
+                "Authorization", "Bearer " + token(claims));
     }
 
     private static String token(Map<String, Object> claims) throws Exception {

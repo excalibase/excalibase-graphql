@@ -1,5 +1,8 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JOSEException;
@@ -17,17 +20,11 @@ import com.sun.net.httpserver.HttpServer;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.inject.Inject;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -55,9 +52,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * permissions for the max-stale window, then refused with 503 {@code permissions_unavailable}, while a
  * service token keeps being served; a successful refresh restores the user.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-class PermissionsOutageIntegrationTest {
+class PermissionsOutageIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "proj-outage";
     private static final String ALICE = "11111111-1111-1111-1111-111111111111";
@@ -71,8 +66,7 @@ class PermissionsOutageIntegrationTest {
     private static final String PERMISSIONS = PermissionDocs.document(PROJECT,
             PermissionDocs.entry("rls_demo.docs", USER_ROLE, PermissionDocs.select(PermissionDocs.OWNED, "\"*\"")));
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-engine-rls.sql");
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -94,22 +88,25 @@ class PermissionsOutageIntegrationTest {
         }
     }
 
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("app.security.jwt-enabled", () -> "true");
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.auth.jwks-url",
-                () -> "http://localhost:" + JWKS.getAddress().getPort() + "/.well-known/jwks.json");
-        registry.add("app.security.rls.policy-url", () -> "http://localhost:" + CONTROL_PLANE.port + "/api");
-        registry.add("app.security.rls.policy-pat", () -> "test-pat");
-        registry.add("app.security.rls.policy-ttl-ms", () -> TTL_MS);
-        registry.add("app.security.permissions.max-stale-ms", () -> MAX_STALE_MS);
-        registry.add("app.security.permissions.retry-interval-ms", () -> RETRY_INTERVAL_MS);
+    @Override
+    public Map<String, String> getProperties() {
+        postgres.start();
+        Map<String, String> properties = EngineProperties.isolated();
+        properties.put("spring.datasource.url", postgres.getJdbcUrl());
+        properties.put("spring.datasource.username", postgres.getUsername());
+        properties.put("spring.datasource.password", postgres.getPassword());
+        properties.put("app.database-type", "postgres");
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.project-id", String.valueOf(PROJECT));
+        properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + JWKS.getAddress().getPort() + "/.well-known/jwks.json"));
+        properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + CONTROL_PLANE.port + "/api"));
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        properties.put("app.security.rls.policy-ttl-ms", String.valueOf(TTL_MS));
+        properties.put("app.security.permissions.max-stale-ms", String.valueOf(MAX_STALE_MS));
+        properties.put("app.security.permissions.retry-interval-ms", String.valueOf(RETRY_INTERVAL_MS));
+        return properties;
     }
+
 
     @AfterAll
     static void stopStubs() {
@@ -117,10 +114,7 @@ class PermissionsOutageIntegrationTest {
         JWKS.stop(0);
     }
 
-    @LocalServerPort
-    private int port;
-
-    @Autowired
+    @Inject
     private MeterRegistry meters;
 
     @BeforeEach
@@ -209,7 +203,7 @@ class PermissionsOutageIntegrationTest {
     }
 
     private HttpResponse<String> graphql(String token) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/" + PROJECT + "/graphql"))
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + server.getPort() + "/" + PROJECT + "/graphql"))
                 .header("Authorization", "Bearer " + token)
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(DOCS_QUERY))
@@ -218,7 +212,7 @@ class PermissionsOutageIntegrationTest {
     }
 
     private HttpResponse<String> rest(String token) throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/" + PROJECT + "/api/v1/docs"))
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + server.getPort() + "/" + PROJECT + "/api/v1/docs"))
                 .header("Authorization", "Bearer " + token)
                 .header("Accept-Profile", "rls_demo")
                 .GET()

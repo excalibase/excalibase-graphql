@@ -2,10 +2,12 @@ package io.github.excalibase;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.github.excalibase.support.FreePort;
 import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import java.lang.management.ManagementFactory;
+import io.micronaut.context.ApplicationContext;
+import io.micronaut.runtime.server.EmbeddedServer;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -14,14 +16,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
-import javax.management.MBeanServer;
-import javax.management.ObjectName;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.builder.SpringApplicationBuilder;
-import org.springframework.context.ConfigurableApplicationContext;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -55,8 +53,8 @@ class MonitoringLevelParityIntegrationTest {
 
     private Map<String, Object> properties(String level, boolean jwt) {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("server.port", "0");
-        properties.put("management.server.port", "0");
+        properties.put("micronaut.server.port", Integer.toString(FreePort.find()));
+        properties.put("endpoints.all.port", Integer.toString(FreePort.find()));
         properties.put("spring.datasource.url", postgres.getJdbcUrl());
         properties.put("spring.datasource.username", postgres.getUsername());
         properties.put("spring.datasource.password", postgres.getPassword());
@@ -74,22 +72,15 @@ class MonitoringLevelParityIntegrationTest {
         return properties;
     }
 
-    /** Command-line arguments, so they outrank application.yaml, as the real settings do. */
-    private static String[] arguments(Map<String, Object> properties) {
-        return properties.entrySet().stream().map(entry -> "--" + entry.getKey() + "=" + entry.getValue())
-                .toArray(String[]::new);
-    }
-
-    /** What the engine at this level recorded for {@link #CALLS}: companion meters, then each timer series with its count. */
+    /** What the engine at this level recorded for {@link #CALLS}: the calls' statuses, then each series with its count. */
     private List<String> observe(String level, boolean jwt) throws Exception {
         List<String> seen = new ArrayList<>();
-        Set<ObjectName> tomcatBefore = tomcatMBeans();
-        try (ConfigurableApplicationContext context = new SpringApplicationBuilder(ExcalibaseGraphqlApplication.class)
-                .run(arguments(properties(level, jwt)))) {
-            String port = context.getEnvironment().getProperty("local.server.port");
+        try (ApplicationContext context = ApplicationContext.run(properties(level, jwt))) {
+            EmbeddedServer server = context.getBean(EmbeddedServer.class).start();
+            String base = server.getURL().toString();
             HttpClient http = HttpClient.newHttpClient();
             for (String[] call : CALLS) {
-                HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create("http://localhost:" + port + call[1]));
+                HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(base + call[1]));
                 if (call[2] != null) {
                     builder.header("Content-Type", "application/json");
                 }
@@ -100,27 +91,8 @@ class MonitoringLevelParityIntegrationTest {
             }
             Thread.sleep(300);
             seen.addAll(series(context.getBean(MeterRegistry.class)));
-        } finally {
-            unregisterTomcatMBeansAddedSince(tomcatBefore);
         }
         return seen;
-    }
-
-    private static Set<ObjectName> tomcatMBeans() throws Exception {
-        return ManagementFactory.getPlatformMBeanServer().queryNames(new ObjectName("Tomcat:*"), null);
-    }
-
-    /**
-     * A closed application leaves its Tomcat MBeans in the JVM-wide MBean server, and the tomcat.* gauges of
-     * every later application in this JVM sum over them; remove the ones this test added.
-     */
-    private static void unregisterTomcatMBeansAddedSince(Set<ObjectName> before) throws Exception {
-        MBeanServer server = ManagementFactory.getPlatformMBeanServer();
-        for (ObjectName name : tomcatMBeans()) {
-            if (!before.contains(name) && server.isRegistered(name)) {
-                server.unregisterMBean(name);
-            }
-        }
     }
 
     private static List<String> series(MeterRegistry registry) {
@@ -142,18 +114,22 @@ class MonitoringLevelParityIntegrationTest {
     }
 
     @Test
+    @DisplayName("lite records the same series as full")
     void liteRecordsTheSameSeriesAsFull() throws Exception {
         List<String> full = observe(null, false);
         List<String> lite = observe("lite", false);
 
+        assertThat(full).anyMatch(line -> line.startsWith("TIMER http.server.requests "));
         assertThat(lite).containsExactlyElementsOf(full);
     }
 
     @Test
+    @DisplayName("lite records the same series as full with authentication on")
     void liteRecordsTheSameSeriesAsFullWhenTheSecurityChainRejects() throws Exception {
         List<String> full = observe(null, true);
         List<String> lite = observe("lite", true);
 
+        assertThat(full).anyMatch(line -> line.startsWith("TIMER http.server.requests "));
         assertThat(lite).containsExactlyElementsOf(full);
     }
 }

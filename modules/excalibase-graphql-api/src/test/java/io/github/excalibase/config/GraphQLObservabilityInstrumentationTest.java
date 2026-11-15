@@ -9,7 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
-import org.springframework.http.ResponseEntity;
+import io.micronaut.http.HttpResponse;
 
 import java.util.List;
 import java.util.Map;
@@ -42,7 +42,7 @@ class GraphQLObservabilityInstrumentationTest {
     })
     void detectsOperationType(String query, String expectedType) {
         instrumentation.observe(query, null, () ->
-                ResponseEntity.ok(Map.of("data", Map.of())));
+                HttpResponse.<Object>ok(Map.of("data", Map.of())));
 
         assertThat(meterRegistry.find("graphql.request")
                 .tag("operation.type", expectedType)
@@ -54,7 +54,7 @@ class GraphQLObservabilityInstrumentationTest {
     @Test
     void nullQuery_defaultsToQueryType() {
         instrumentation.observe(null, null, () ->
-                ResponseEntity.ok(Map.of("data", Map.of())));
+                HttpResponse.<Object>ok(Map.of("data", Map.of())));
 
         assertThat(meterRegistry.find("graphql.request")
                 .tag("operation.type", "query")
@@ -65,7 +65,7 @@ class GraphQLObservabilityInstrumentationTest {
     @Test
     void incrementsErrorCounterWhenResponseHasErrors() {
         instrumentation.observe("query { users { id } }", "GetUsers", () ->
-                ResponseEntity.ok(Map.of("errors", List.of(
+                HttpResponse.<Object>ok(Map.of("errors", List.of(
                         Map.of("message", "err1"),
                         Map.of("message", "err2")))));
 
@@ -79,7 +79,7 @@ class GraphQLObservabilityInstrumentationTest {
     @Test
     void doesNotIncrementErrorCounterOnSuccess() {
         instrumentation.observe("{ users { id } }", null, () ->
-                ResponseEntity.ok(Map.of("data", Map.of())));
+                HttpResponse.<Object>ok(Map.of("data", Map.of())));
 
         assertThat(meterRegistry.find("graphql.request.errors").counter()).isNull();
     }
@@ -102,7 +102,7 @@ class GraphQLObservabilityInstrumentationTest {
     @Test
     void usesOperationNameAsHighCardinalityTag() {
         instrumentation.observe("query GetUsers { users { id } }", "GetUsers", () ->
-                ResponseEntity.ok(Map.of("data", Map.of())));
+                HttpResponse.<Object>ok(Map.of("data", Map.of())));
 
         // High-cardinality tags only go to spans, not metric tags.
         // Timer should exist tagged by operation.type only.

@@ -13,14 +13,13 @@ import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.security.JwtService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
+import io.micronaut.context.annotation.Value;
+import io.github.excalibase.config.JwtEnabledSetting;
+import jakarta.inject.Inject;
+import io.micronaut.core.annotation.Nullable;
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
+import jakarta.inject.Singleton;
 import reactor.core.Disposable;
 
 import java.io.IOException;
@@ -41,14 +40,14 @@ import java.util.concurrent.ConcurrentHashMap;
  * server → {"type":"error","id":"s1","message":"..."}
  * </pre>
  *
- * <p>Subscription key is {@code "{schema|public}_{collection}"}, matching the
+ * <p>Subscription key is {@code "{schema|public}.{collection}"}, matching the
  * sink key {@link SubscriptionService} publishes under.
  *
  * <p>Filter matching (v1): equality on a single top-level field. Empty/null
  * filter means "all events for this collection".
  */
-@Component
-public class RealtimeWebSocketHandler extends TextWebSocketHandler {
+@Singleton
+public class RealtimeWebSocketHandler extends TextWsHandler {
 
     private static final Logger log = LoggerFactory.getLogger(RealtimeWebSocketHandler.class);
 
@@ -59,8 +58,13 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final JwtService jwtService;
     private final AccessPlans accessPlans;
 
-    @Value("${app.security.jwt-enabled:true}")
     private boolean jwtEnabled;
+
+    /** The parsed setting, the same answer the authentication filter and the schema manager use. */
+    @Inject
+    void jwtEnabled(JwtEnabledSetting setting) {
+        this.jwtEnabled = setting.enabled();
+    }
 
     @Value("${app.nats.tenant-in-subject:false}")
     private boolean wsAuthRequired;
@@ -72,37 +76,34 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final WsRuntime runtime;
 
     /** For tests of one handler: no caps in the way, delivery on the publishing thread. */
-    RealtimeWebSocketHandler(SubscriptionService subscriptionService,
-                             ObjectMapper objectMapper,
-                             ObjectProvider<JwtService> jwtServiceProvider,
-                             WebSocketHeartbeat heartbeat,
-                             ObjectProvider<AccessPlans> accessPlansProvider,
-                             ObjectProvider<RequestMetrics> requestMetricsProvider) {
-        this(subscriptionService, objectMapper, jwtServiceProvider, heartbeat, accessPlansProvider,
-                requestMetricsProvider, WsRuntime.inline());
+    RealtimeWebSocketHandler(SubscriptionService subscriptionService, ObjectMapper objectMapper,
+                             @Nullable JwtService jwtService, WebSocketHeartbeat heartbeat,
+                             @Nullable AccessPlans accessPlans, @Nullable RequestMetrics requestMetrics) {
+        this(subscriptionService, objectMapper, jwtService, heartbeat, accessPlans, requestMetrics,
+                WsRuntime.inline());
     }
 
-    @Autowired
+    @Inject
     public RealtimeWebSocketHandler(SubscriptionService subscriptionService,
                                     ObjectMapper objectMapper,
-                                    ObjectProvider<JwtService> jwtServiceProvider,
+                                    @Nullable JwtService jwtService,
                                     WebSocketHeartbeat heartbeat,
-                                    ObjectProvider<AccessPlans> accessPlansProvider,
-                                    ObjectProvider<RequestMetrics> requestMetricsProvider,
+                                    @Nullable AccessPlans accessPlans,
+                                    @Nullable RequestMetrics requestMetrics,
                                     WsRuntime runtime) {
         this.runtime = runtime;
         this.subscriptionService = subscriptionService;
         this.objectMapper = objectMapper;
         this.changeReader = RealtimeGate.changeReader(objectMapper);
         this.changeWriter = RealtimeGate.changeWriter(objectMapper);
-        this.jwtService = jwtServiceProvider.getIfAvailable();
+        this.jwtService = jwtService;
         this.heartbeat = heartbeat;
-        this.accessPlans = accessPlansProvider.getIfAvailable();
-        this.metering = new RealtimeMetering(requestMetricsProvider.getIfAvailable());
+        this.accessPlans = accessPlans;
+        this.metering = new RealtimeMetering(requestMetrics);
     }
 
     @Override
-    public void afterConnectionEstablished(WebSocketSession session) {
+    public void afterConnectionEstablished(WsSession session) {
         if (!runtime.admit(session)) {
             runtime.close(session, WsClose.LIMIT);
             return;
@@ -116,7 +117,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     }
 
     @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+    protected void handleTextMessage(WsSession session, TextMessage message) throws Exception {
         Map<String, Object> msg = objectMapper.readValue(
                 message.getPayload(), new TypeReference<>() {});
         String type = (String) msg.get("type");
@@ -131,7 +132,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     }
 
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+    public void afterConnectionClosed(WsSession session, CloseStatus status) {
         heartbeat.unregister(session);
         metering.closed(session);
         runtime.release(session);
@@ -145,7 +146,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     }
 
     @SuppressWarnings("unchecked")
-    private void handleSubscribe(WebSocketSession session, Map<String, Object> msg) {
+    private void handleSubscribe(WsSession session, Map<String, Object> msg) {
         if (!runtime.isInitialised(session)) {
             runtime.close(session, WsClose.UNAUTHORIZED);
             return;
@@ -171,8 +172,9 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         Disposable existing = sessionSubs.remove(id);
         if (existing != null) existing.dispose();
 
-        String tenantId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY);
-        if (jwtEnabled && wsAuthRequired && tenantId == null) {
+        String tenantId = RealtimeGate.sinkTenant(session, wsAuthRequired);
+        boolean hasToken = session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY) != null;
+        if (jwtEnabled && wsAuthRequired && !hasToken) {
             sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
             return;
         }
@@ -216,7 +218,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, resource);
     }
 
-    private void handleComplete(WebSocketSession session, Map<String, Object> msg) {
+    private void handleComplete(WsSession session, Map<String, Object> msg) {
         String id = (String) msg.get("id");
         Map<String, Disposable> sessionSubs = sessionSubscriptions.get(session.getId());
         if (sessionSubs == null) return;
@@ -229,7 +231,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
      * handler does; see {@link WsSessionAuth}. With JWT disabled there is no principal.
      */
     @SuppressWarnings("unchecked")
-    private void handleConnectionInit(WebSocketSession session, Map<String, Object> msg) {
+    private void handleConnectionInit(WsSession session, Map<String, Object> msg) {
         if (jwtEnabled) {
             Map<String, Object> payload = msg.get("payload") instanceof Map<?, ?> map
                     ? (Map<String, Object>) map : Map.of();
@@ -248,11 +250,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         sendAck(session);
     }
 
-    private void sendAck(WebSocketSession session) {
+    private void sendAck(WsSession session) {
         sendMessage(session, "{\"type\":\"connection_ack\"}");
     }
 
-    private void closeWithAuthError(WebSocketSession session, String reason) {
+    private void closeWithAuthError(WsSession session, String reason) {
         try {
             sendMessage(session, objectMapper.writeValueAsString(Map.of(
                     "type", "connection_error",
@@ -263,7 +265,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void closeUnavailable(WebSocketSession session) {
+    private void closeUnavailable(WsSession session) {
         try {
             session.close(CloseStatus.SERVICE_OVERLOAD.withReason(PermissionsUnavailableException.CODE));
         } catch (IOException e) {
@@ -271,7 +273,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    private void dispatchEvent(WebSocketSession session, String subId,
+    private void dispatchEvent(WsSession session, String subId,
                                 Map<String, Object> filter, RealtimeGate.Delivery delivery, CDCEvent event) {
         if (!delivery.isFor(event)) return;
         String op = switch (event.type() == null ? "" : event.type().toUpperCase()) {
@@ -323,7 +325,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         return true;
     }
 
-    private void sendError(WebSocketSession session, String id, String message) {
+    private void sendError(WsSession session, String id, String message) {
         try {
             var payload = new LinkedHashMap<String, Object>();
             payload.put("type", "error");
@@ -336,11 +338,11 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     }
 
     /** True when the message went out. */
-    private boolean sendMessage(WebSocketSession session, String payload) {
+    private boolean sendMessage(WsSession session, String payload) {
         try {
             // Serialise on the session monitor: CDC events fan out from multiple
             // Reactor threads onto one session, and the heartbeat pings on another
-            // — a raw WebSocketSession is not safe for concurrent sends.
+            // — a raw WsSession is not safe for concurrent sends.
             synchronized (session) {
                 if (session.isOpen()) {
                     session.sendMessage(new TextMessage(payload));

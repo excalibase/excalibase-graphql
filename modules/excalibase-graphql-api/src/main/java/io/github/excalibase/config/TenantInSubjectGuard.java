@@ -1,8 +1,8 @@
 package io.github.excalibase.config;
 
+import io.micronaut.context.annotation.Context;
+import io.micronaut.context.annotation.Value;
 import jakarta.annotation.PostConstruct;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
 
 /**
  * A multi-tenant engine routes realtime changes by project, which needs the project in the NATS subject
@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
  * changes, so the engine refuses to start that way. {@code app.nats.allow-untenanted-realtime=true} is the
  * explicit opt-out for a local test stack that serves no real tenants.
  */
-@Component
+@Context
 public class TenantInSubjectGuard {
 
     private final boolean multiTenant;
@@ -18,12 +18,12 @@ public class TenantInSubjectGuard {
     private final boolean tenantInSubject;
     private final boolean allowUntenanted;
 
-    public TenantInSubjectGuard(@Value("${app.security.jwt-enabled:true}") boolean jwtEnabled,
+    public TenantInSubjectGuard(JwtEnabledSetting jwt,
                                 @Value("${app.security.multi-tenant.provisioning-url:}") String provisioningUrl,
                                 @Value("${app.nats.enabled:false}") boolean natsEnabled,
                                 @Value("${app.nats.tenant-in-subject:false}") boolean tenantInSubject,
                                 @Value("${app.nats.allow-untenanted-realtime:false}") boolean allowUntenanted) {
-        this.multiTenant = jwtEnabled && provisioningUrl != null && !provisioningUrl.isBlank();
+        this.multiTenant = jwt.enabled() && provisioningUrl != null && !provisioningUrl.isBlank();
         this.natsEnabled = natsEnabled;
         this.tenantInSubject = tenantInSubject;
         this.allowUntenanted = allowUntenanted;

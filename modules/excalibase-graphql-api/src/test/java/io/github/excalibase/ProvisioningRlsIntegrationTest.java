@@ -1,5 +1,9 @@
 package io.github.excalibase;
 
+import jakarta.inject.Inject;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -12,16 +16,7 @@ import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -36,31 +31,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static io.github.excalibase.support.Expect.content;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
 
 /**
  * End-to-end proof that the project's permission document, served over HTTP from a stub control
  * plane, drives what each role reads and writes. No Postgres-native RLS: every filter observed was
  * composed by the engine from the document.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-class ProvisioningRlsIntegrationTest {
+class ProvisioningRlsIntegrationTest extends EngineIntegrationTest {
 
     private static final String ALICE = "11111111-1111-1111-1111-111111111111";
     private static final String BOB = "22222222-2222-2222-2222-222222222222";
     private static final String PROJECT = "proj-rls";
     private static final String ROLE = "app_authenticated";
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-engine-rls.sql");
 
     static ECPrivateKey privateKey;
@@ -101,28 +88,23 @@ class ProvisioningRlsIntegrationTest {
 
     @Test
     void rest_insertWithCheck_rollsTheRowBack() throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/api/v1/docs")
-                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"id\": 93, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}"))
-                .andExpect(status().isForbidden());
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/docs?id=eq.93")
-                        .header("Authorization", "Bearer " + jwt(BOB)).header("Accept-Profile", "rls_demo"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data", hasSize(0)));
+        http.post("/" + PROJECT + "/api/v1/docs", "{\"id\": 93, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Content-Type", "application/json")
+                .expect(status().isForbidden());
+        http.get("/" + PROJECT + "/api/v1/docs?id=eq.93", "Authorization", "Bearer " + jwt(BOB), "Accept-Profile", "rls_demo")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data", hasSize(0)));
     }
 
     @Test
     void rest_methodWithoutPermission_isForbidden() throws Exception {
-        mockMvc.perform(delete("/" + PROJECT + "/api/v1/orders?id=eq.1")
-                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("permission_denied"));
+        http.delete("/" + PROJECT + "/api/v1/orders?id=eq.1", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_denied"));
     }
 
     // ---- realtime: judged by the same select filter, probing the database for relationships ----
 
-    @Autowired
+    @Inject
     private AccessPlans accessPlans;
 
     private AccessPlans.RealtimeAccess realtimeFor(String userId, String table) {
@@ -178,76 +160,62 @@ class ProvisioningRlsIntegrationTest {
         if (stub != null) stub.stop(0);
     }
 
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("app.max-rows", () -> 30);
-        registry.add("app.security.jwt-enabled", () -> "true");
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.auth.jwks-url",
-                () -> "http://localhost:" + stubPort + "/.well-known/jwks.json");
-        registry.add("app.security.rls.policy-url", () -> "http://localhost:" + stubPort + "/api");
-        registry.add("app.security.rls.policy-pat", () -> "test-pat");
+    @Override
+    public Map<String, String> getProperties() {
+        postgres.start();
+        Map<String, String> properties = EngineProperties.isolated();
+        properties.put("spring.datasource.url", postgres.getJdbcUrl());
+        properties.put("spring.datasource.username", postgres.getUsername());
+        properties.put("spring.datasource.password", postgres.getPassword());
+        properties.put("app.database-type", "postgres");
+        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.project-id", String.valueOf(PROJECT));
+        properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + stubPort + "/.well-known/jwks.json"));
+        properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + stubPort + "/api"));
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        return properties;
     }
 
-    @Autowired
-    private MockMvc mockMvc;
 
     private static final ObjectMapper mapper = new ObjectMapper();
 
     @Test
     void aliceSeesOnlyOwnDocs() throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoDocs { id owner_id } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id owner_id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
     }
 
     @Test
     void bobSeesOnlyOwnDocs() throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwt(BOB))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoDocs { id owner_id } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(1)));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id owner_id } }"), "Authorization", "Bearer " + jwt(BOB), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoDocs", hasSize(1)));
     }
 
     @Test
     void userFilterCannotEscapeProvisioningPolicy() throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoDocs(where: { id: { eq: 3 } }) { id } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(0)));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs(where: { id: { eq: 3 } }) { id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoDocs", hasSize(0)));
     }
 
     @Test
     void projectScopedUrl_authenticated_filtersByUser() throws Exception {
         // /{projectId}/graphql — project from the path, user from the token
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoDocs { id owner_id } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id owner_id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoDocs", hasSize(2)));
     }
 
     @Test
     void projectScopedUrl_anonymous_failsClosed() throws Exception {
         // No token runs as anon, which holds no permission on docs: the table is not in its schema.
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoDocs { id } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data").doesNotExist())
-                .andExpect(jsonPath("$.errors[0].message", containsString("rlsDemoDocs")));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id } }"), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data").doesNotExist())
+                .expect(jsonPath("$.errors[0].message", containsString("rlsDemoDocs")));
     }
 
     @Test
@@ -256,154 +224,114 @@ class ProvisioningRlsIntegrationTest {
         // The audience check catches this first, so the refusal is a 401 aud_mismatch.
         String otherProjectToken = jwtWithClaims(ALICE,
                 Map.of("projectId", "some-other-project", "aud", "excalibase:some-other-project"));
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + otherProjectToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoDocs { id } }")))
-                .andExpect(status().isUnauthorized())
-                .andExpect(content().string(org.hamcrest.Matchers.containsString("aud_mismatch")));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoDocs { id } }"), "Authorization", "Bearer " + otherProjectToken, "Content-Type", "application/json")
+                .expect(status().isUnauthorized())
+                .expect(content().string(containsString("aud_mismatch")));
     }
 
     @Test
     void unknownProjectPath_isNotFound_withOrWithoutAToken() throws Exception {
-        mockMvc.perform(post("/some-other-project/graphql")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoDocs { id } }")))
-                .andExpect(status().isNotFound());
-        mockMvc.perform(post("/some-other-project/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoDocs { id } }")))
-                .andExpect(status().isNotFound());
-        mockMvc.perform(get("/some-other-project/api/v1/docs").header("Accept-Profile", "rls_demo"))
-                .andExpect(status().isNotFound());
+        http.post("/some-other-project/graphql", body("{ rlsDemoDocs { id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isNotFound());
+        http.post("/some-other-project/graphql", body("{ rlsDemoDocs { id } }"), "Content-Type", "application/json")
+                .expect(status().isNotFound());
+        http.get("/some-other-project/api/v1/docs", "Accept-Profile", "rls_demo")
+                .expect(status().isNotFound());
     }
 
     @Test
     void relationshipPolicyFiltersOrdersByMembership() throws Exception {
         // Alice ∈ orgA → sees the two orgA orders; the relationship's correlated EXISTS
         // must resolve against the compiler's aliased outer table.
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoOrders { id org_id } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoOrders", hasSize(2)));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoOrders { id org_id } }"), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoOrders", hasSize(2)));
 
         // Bob ∈ orgB → sees the one orgB order.
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwt(BOB))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoOrders { id org_id } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoOrders", hasSize(1)));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoOrders { id org_id } }"), "Authorization", "Bearer " + jwt(BOB), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoOrders", hasSize(1)));
     }
 
     @Test
     void customClaimPolicyFiltersByRegion() throws Exception {
         // region=west claim → two west rows
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwtWithClaims(ALICE, Map.of("region", "west")))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoRegional { id region } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoRegional", hasSize(2)));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoRegional { id region } }"), "Authorization", "Bearer " + jwtWithClaims(ALICE, Map.of("region", "west")), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoRegional", hasSize(2)));
 
         // region=east claim → one east row, same query/user shape
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwtWithClaims(BOB, Map.of("region", "east")))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body("{ rlsDemoRegional { id region } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.rlsDemoRegional", hasSize(1)));
+        http.post("/" + PROJECT + "/graphql", body("{ rlsDemoRegional { id region } }"), "Authorization", "Bearer " + jwtWithClaims(BOB, Map.of("region", "east")), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.rlsDemoRegional", hasSize(1)));
     }
 
     @Test
     void rest_anonymous_failsClosed() throws Exception {
         // REST applies the same permissions as GraphQL: a table anon cannot select does not exist.
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/docs").header("Accept-Profile", "rls_demo"))
-                .andExpect(status().isNotFound());
+        http.get("/" + PROJECT + "/api/v1/docs", "Accept-Profile", "rls_demo")
+                .expect(status().isNotFound());
     }
 
     @Test
     void rest_authenticated_filtersByOwner() throws Exception {
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/docs")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
-                        .header("Accept-Profile", "rls_demo"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data", hasSize(2)));
+        http.get("/" + PROJECT + "/api/v1/docs", "Authorization", "Bearer " + jwt(ALICE), "Accept-Profile", "rls_demo")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data", hasSize(2)));
     }
 
     @Test
     void rest_relationshipPolicy_filtersByMembership() throws Exception {
         // anonymous holds no permission on orders → not found
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/orders").header("Accept-Profile", "rls_demo"))
-                .andExpect(status().isNotFound());
+        http.get("/" + PROJECT + "/api/v1/orders", "Accept-Profile", "rls_demo")
+                .expect(status().isNotFound());
         // alice ∈ orgA → her two orgA orders
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/orders")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
-                        .header("Accept-Profile", "rls_demo"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data", hasSize(2)));
+        http.get("/" + PROJECT + "/api/v1/orders", "Authorization", "Bearer " + jwt(ALICE), "Accept-Profile", "rls_demo")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data", hasSize(2)));
     }
 
     @Test
     void rpc_anUntrackedFunction_isNotFound() throws Exception {
         // Only tracked functions are reachable; this project tracks none.
-        mockMvc.perform(post("/" + PROJECT + "/api/v1/rpc/any_fn")
-                        .header("Content-Profile", "rls_demo")
-                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
-                .andExpect(status().isNotFound());
+        http.post("/" + PROJECT + "/api/v1/rpc/any_fn", "{}", "Content-Profile", "rls_demo", "Content-Type", "application/json")
+                .expect(status().isNotFound());
     }
 
     @Test
     void rest_insertWithCheck_rejectsForeignOwner() throws Exception {
         // WITH-CHECK: alice cannot insert a row owned by bob.
-        mockMvc.perform(post("/" + PROJECT + "/api/v1/docs")
-                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("permission_check_failed"))
-                .andExpect(jsonPath("$.message", not(containsString("ERROR:"))))
-                .andExpect(jsonPath("$.message", not(containsString("SQLSTATE"))))
-                .andExpect(jsonPath("$.message", not(containsString("violates"))));
+        http.post("/" + PROJECT + "/api/v1/docs", "{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Content-Type", "application/json")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_check_failed"))
+                .expect(jsonPath("$.message", not(containsString("ERROR:"))))
+                .expect(jsonPath("$.message", not(containsString("SQLSTATE"))))
+                .expect(jsonPath("$.message", not(containsString("violates"))));
     }
 
     @Test
     void rest_upsertWithCheck_rejectsForeignOwnerAsUpsert() throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/api/v1/docs")
-                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
-                        .header("Prefer", "resolution=merge-duplicates")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("permission_check_failed"));
+        http.post("/" + PROJECT + "/api/v1/docs", "{\"id\": 91, \"owner_id\": \"" + BOB + "\", \"title\": \"x\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Prefer", "resolution=merge-duplicates", "Content-Type", "application/json")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_check_failed"));
     }
 
     @Test
     void rest_insertWithCheck_allowsOwnRow() throws Exception {
         // tx=rollback: verify WITH-CHECK passes (own row allowed) without
         // persisting into the shared container (would skew the read-count tests).
-        mockMvc.perform(post("/" + PROJECT + "/api/v1/docs")
-                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
-                        .header("Prefer", "tx=rollback")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"id\": 92, \"owner_id\": \"" + ALICE + "\", \"title\": \"x\"}"))
-                .andExpect(status().isCreated());
+        http.post("/" + PROJECT + "/api/v1/docs", "{\"id\": 92, \"owner_id\": \"" + ALICE + "\", \"title\": \"x\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Prefer", "tx=rollback", "Content-Type", "application/json")
+                .expect(status().isCreated());
     }
 
     @Test
     void rest_updateWithCheck_rejectsReassignToAnotherOwner() throws Exception {
         // WITH-CHECK: alice cannot reassign her doc to bob.
-        mockMvc.perform(patch("/" + PROJECT + "/api/v1/docs?id=eq.1")
-                        .header("Authorization", "Bearer " + jwt(ALICE)).header("Content-Profile", "rls_demo")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"owner_id\": \"" + BOB + "\"}"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("permission_check_failed"))
-                .andExpect(jsonPath("$.message", not(containsString("ERROR:"))))
-                .andExpect(jsonPath("$.message", not(containsString("violates"))));
+        http.send("PATCH", "/" + PROJECT + "/api/v1/docs?id=eq.1", "{\"owner_id\": \"" + BOB + "\"}", "Authorization", "Bearer " + jwt(ALICE), "Content-Profile", "rls_demo", "Content-Type", "application/json")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_check_failed"))
+                .expect(jsonPath("$.message", not(containsString("ERROR:"))))
+                .expect(jsonPath("$.message", not(containsString("violates"))));
     }
 
     private String body(String query) throws Exception {

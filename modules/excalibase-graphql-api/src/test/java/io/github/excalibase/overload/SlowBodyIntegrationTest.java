@@ -1,44 +1,37 @@
 package io.github.excalibase.overload;
 
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.Socket;
-import java.nio.charset.StandardCharsets;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
-/**
- * Not a port regression: Tomcat's connection timeout already cuts off a request body that stops arriving
- * (the Micronaut engine needed its own timer for this).
- */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class SlowBodyIntegrationTest {
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.RawWebSocket;
+import java.io.OutputStream;
+import java.net.Socket;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+/** A request body that stops arriving gives its connection back after the read timeout, as Tomcat's connection timeout did. */
+class SlowBodyIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "test-proj";
     private static final long READ_TIMEOUT_MILLIS = 1000;
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", () -> "jdbc:postgresql://localhost:59999/nonexistent");
-        registry.add("spring.datasource.username", () -> "fake");
-        registry.add("spring.datasource.password", () -> "fake");
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.jwt-enabled", () -> "false");
-        registry.add("management.health.db.enabled", () -> "false");
-        registry.add("app.security.insecure-dev-mode", () -> "true");
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("server.tomcat.connection-timeout", () -> Long.toString(READ_TIMEOUT_MILLIS));
+    @Override
+    public Map<String, String> getProperties() {
+        return Map.ofEntries(
+                Map.entry("spring.datasource.url", "jdbc:postgresql://localhost:59999/nonexistent"),
+                Map.entry("spring.datasource.username", "fake"),
+                Map.entry("spring.datasource.password", "fake"),
+                Map.entry("app.project-id", PROJECT),
+                Map.entry("app.security.jwt-enabled", "false"),
+                Map.entry("management.health.db.enabled", "false"),
+                Map.entry("app.security.insecure-dev-mode", "true"),
+                Map.entry("app.database-type", "postgres"),
+                Map.entry("server.tomcat.connection-timeout", Long.toString(READ_TIMEOUT_MILLIS)),
+                Map.entry("endpoints.all.port", "-1"));
     }
-
-    @LocalServerPort
-    private int port;
 
     private static final String HEAD = "POST /" + PROJECT + "/graphql HTTP/1.1\r\nHost: localhost\r\n"
             + "Content-Type: application/json\r\nContent-Length: 200\r\n\r\n";
@@ -46,19 +39,15 @@ class SlowBodyIntegrationTest {
     @Test
     @DisplayName("a body that stops after the headers is cut off after the read timeout")
     void stalledBodyIsClosed() throws Exception {
-        try (Socket socket = new Socket("localhost", port)) {
+        try (Socket socket = new Socket("localhost", server.getPort())) {
             socket.setSoTimeout(6000);
             OutputStream out = socket.getOutputStream();
             out.write((HEAD + "{\"query\":").getBytes(StandardCharsets.UTF_8));
             out.flush();
             long started = System.nanoTime();
-            InputStream in = socket.getInputStream();
-            int first = in.read();
+            int read = socket.getInputStream().read();
             long seconds = (System.nanoTime() - started) / 1_000_000_000L;
-            // Tomcat answers 400 (or just closes): either way the connection is not held open.
-            if (first != -1) {
-                assertThat(new String(in.readAllBytes(), StandardCharsets.UTF_8)).startsWith("TTP/1.1 4");
-            }
+            assertThat(read).as("the server closes the connection").isEqualTo(-1);
             assertThat(seconds).isLessThan(4);
         }
     }
@@ -69,7 +58,7 @@ class SlowBodyIntegrationTest {
         byte[] body = "{\"query\":\"{ __typename }\"}".getBytes(StandardCharsets.UTF_8);
         String head = "POST /" + PROJECT + "/graphql HTTP/1.1\r\nHost: localhost\r\n"
                 + "Content-Type: application/json\r\nContent-Length: " + body.length + "\r\n\r\n";
-        try (Socket socket = new Socket("localhost", port)) {
+        try (Socket socket = new Socket("localhost", server.getPort())) {
             socket.setSoTimeout(6000);
             OutputStream out = socket.getOutputStream();
             out.write(head.getBytes(StandardCharsets.UTF_8));
@@ -83,6 +72,17 @@ class SlowBodyIntegrationTest {
             byte[] answer = new byte[8];
             assertThat(socket.getInputStream().readNBytes(answer, 0, 8)).isEqualTo(8);
             assertThat(new String(answer, StandardCharsets.UTF_8)).isEqualTo("HTTP/1.1");
+        }
+    }
+
+    @Test
+    @DisplayName("an idle websocket is not closed by the read timeout")
+    void idleWebSocketSurvives() throws Exception {
+        try (RawWebSocket socket = RawWebSocket.connect(URI.create("ws://localhost:" + server.getPort()),
+                "/" + PROJECT + "/graphql", null)) {
+            Thread.sleep(READ_TIMEOUT_MILLIS * 3);
+            socket.sendText("{\"type\":\"connection_init\"}");
+            assertThat(socket.readFrame().text()).contains("connection_ack");
         }
     }
 }

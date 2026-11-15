@@ -5,10 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.MvcResult;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.HttpAnswer;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -17,8 +15,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
  * Column values round-trip exactly through REST and GraphQL: decimals keep every digit, the largest key the
@@ -26,14 +22,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * takes the same JSON value as input that it answers. Fixture: {@code ledger(id, amount numeric(30,10),
  * big_id, blob_col binary, meta json)} with row 1 at the extremes.
  */
-abstract class ColumnTypesContract {
+abstract class ColumnTypesContract extends EngineIntegrationTest {
 
     /** Reads numbers as the server wrote them, every digit kept. */
     static final ObjectMapper MAPPER = new ObjectMapper().enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS);
     static final String EXACT = "12345678901234567890.1234567891";
-
-    @Autowired
-    MockMvc mockMvc;
 
     /** The GraphQL query field of the ledger table, e.g. {@code publicLedger}. */
     abstract String ledgerField();
@@ -46,17 +39,16 @@ abstract class ColumnTypesContract {
     }
 
     JsonNode rest(String path) throws Exception {
-        MvcResult result = mockMvc.perform(get("/test-proj/api/v1/" + path)).andReturn();
-        assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString()).isEqualTo(200);
-        return MAPPER.readTree(result.getResponse().getContentAsString()).get("data");
+        HttpAnswer answer = http.get("/test-proj/api/v1/" + path);
+        assertThat(answer.status()).as(answer.body()).isEqualTo(200);
+        return MAPPER.readTree(answer.body()).get("data");
     }
 
     JsonNode restPost(String path, String body) throws Exception {
-        MvcResult result = mockMvc.perform(post("/test-proj/api/v1/" + path)
-                .header("Prefer", "return=representation").contentType(MediaType.APPLICATION_JSON).content(body))
-                .andReturn();
-        assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString()).isLessThan(300);
-        JsonNode data = MAPPER.readTree(result.getResponse().getContentAsString()).get("data");
+        HttpAnswer answer = http.post("/test-proj/api/v1/" + path, body, "Prefer", "return=representation",
+                "Content-Type", "application/json");
+        assertThat(answer.status()).as(answer.body()).isLessThan(300);
+        JsonNode data = MAPPER.readTree(answer.body()).get("data");
         return data.isArray() ? data.get(0) : data;
     }
 
@@ -64,9 +56,8 @@ abstract class ColumnTypesContract {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("query", query);
         request.put("variables", variables);
-        MvcResult result = mockMvc.perform(post("/test-proj/graphql").contentType(MediaType.APPLICATION_JSON)
-                .content(MAPPER.writeValueAsString(request))).andReturn();
-        JsonNode body = MAPPER.readTree(result.getResponse().getContentAsString());
+        HttpAnswer answer = http.postJson("/test-proj/graphql", request);
+        JsonNode body = MAPPER.readTree(answer.body());
         assertThat(body.get("errors")).as(body.toString()).isNull();
         return body.get("data");
     }

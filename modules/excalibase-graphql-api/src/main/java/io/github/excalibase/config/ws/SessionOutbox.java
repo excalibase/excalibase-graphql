@@ -2,25 +2,24 @@ package io.github.excalibase.config.ws;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.web.socket.WebSocketSession;
 
 import java.util.ArrayDeque;
 import java.util.Queue;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Delivers one session's changes, in order, off the thread that publishes them. The queue is bounded and each
- * delivery is timed: a client that does not read (so a send blocks past the grace, or the queue fills behind
- * it) is closed ({@link WsClose#SLOW_CONSUMER}) instead of growing memory or holding up anyone else's events.
+ * Delivers one session's changes, in order, off the thread that publishes them. The queue is bounded and the
+ * session's send buffer is watched: a client that does not read is closed ({@link WsClose#SLOW_CONSUMER}) instead
+ * of growing memory or holding up anyone else's events.
  */
 final class SessionOutbox {
 
     private static final Logger log = LoggerFactory.getLogger(SessionOutbox.class);
+    private static final long RETRY_MILLIS = 100;
 
-    private final WebSocketSession session;
+    private final WsSession session;
     private final WsRuntime runtime;
     private final Executor executor;
     private final ScheduledExecutorService scheduler;
@@ -30,8 +29,9 @@ final class SessionOutbox {
     private final Queue<Runnable> queue = new ArrayDeque<>();
     private boolean draining;
     private boolean closed;
+    private long blockedSince;
 
-    SessionOutbox(WebSocketSession session, WsRuntime runtime, Executor executor, ScheduledExecutorService scheduler,
+    SessionOutbox(WsSession session, WsRuntime runtime, Executor executor, ScheduledExecutorService scheduler,
                   WsLimits limits) {
         this.session = session;
         this.runtime = runtime;
@@ -74,29 +74,44 @@ final class SessionOutbox {
     private void drain() {
         while (true) {
             Runnable work;
+            boolean slow = false;
             synchronized (this) {
-                work = closed ? null : queue.poll();
-                if (work == null) {
+                if (closed || queue.isEmpty()) {
                     draining = false;
                     return;
                 }
+                if (session.isBackedUp()) {
+                    long now = System.nanoTime();
+                    blockedSince = blockedSince == 0 ? now : blockedSince;
+                    if (now - blockedSince > slowConsumerNanos) {
+                        closed = true;
+                        queue.clear();
+                        draining = false;
+                        slow = true;
+                    }
+                    work = null;
+                } else {
+                    blockedSince = 0;
+                    work = queue.poll();
+                }
+            }
+            if (slow) {
+                runtime.close(session, WsClose.SLOW_CONSUMER);
+                return;
+            }
+            if (work == null) {
+                scheduler.schedule(() -> executor.execute(this::drain), RETRY_MILLIS, TimeUnit.MILLISECONDS);
+                return;
             }
             run(work);
         }
     }
 
-    /** One delivery, with a timer that closes the session if the send does not come back within the grace. */
     private void run(Runnable work) {
-        ScheduledFuture<?> watchdog = scheduler.schedule(() -> {
-            close();
-            runtime.close(session, WsClose.SLOW_CONSUMER);
-        }, slowConsumerNanos, TimeUnit.NANOSECONDS);
         try {
             work.run();
         } catch (RuntimeException failure) {
             log.warn("Delivery to session {} failed: {}", session.getId(), failure.toString());
-        } finally {
-            watchdog.cancel(false);
         }
     }
 }

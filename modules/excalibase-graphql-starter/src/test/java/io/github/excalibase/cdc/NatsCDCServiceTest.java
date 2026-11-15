@@ -12,7 +12,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
 import java.time.Duration;
@@ -45,7 +44,7 @@ class NatsCDCServiceTest {
     @Test
     @DisplayName("start does nothing and leaves running=false when nats is disabled")
     void start_disabled_isNoop() {
-        ReflectionTestUtils.setField(service, "natsEnabled", false);
+        Fields.set(service, "natsEnabled", false);
 
         service.start();
 
@@ -64,8 +63,8 @@ class NatsCDCServiceTest {
     @DisplayName("stop closes the connection and marks the service stopped")
     void stop_closesConnection() throws Exception {
         Connection conn = org.mockito.Mockito.mock(Connection.class);
-        ReflectionTestUtils.setField(service, "natsConnection", conn);
-        ReflectionTestUtils.setField(service, "running", new java.util.concurrent.atomic.AtomicBoolean(true));
+        Fields.set(service, "natsConnection", conn);
+        Fields.set(service, "running", new java.util.concurrent.atomic.AtomicBoolean(true));
 
         service.stop();
 
@@ -211,9 +210,9 @@ class NatsCDCServiceTest {
         JetStreamSubscription sub = org.mockito.Mockito.mock(JetStreamSubscription.class);
         Dispatcher dispatcher = mock(Dispatcher.class);
         Connection conn = org.mockito.Mockito.mock(Connection.class);
-        ReflectionTestUtils.setField(service, "subscription", sub);
-        ReflectionTestUtils.setField(service, "dispatcher", dispatcher);
-        ReflectionTestUtils.setField(service, "natsConnection", conn);
+        Fields.set(service, "subscription", sub);
+        Fields.set(service, "dispatcher", dispatcher);
+        Fields.set(service, "natsConnection", conn);
 
         service.stop();
 
@@ -227,8 +226,8 @@ class NatsCDCServiceTest {
     @Test
     @DisplayName("handleMessage with tenant-in-subject=false publishes with null tenant (legacy)")
     void handleMessage_tenantModeOff_publishesWithNullTenant() throws Exception {
-        ReflectionTestUtils.setField(service, "subjectPrefix", "cdc");
-        ReflectionTestUtils.setField(service, "tenantInSubject", false);
+        Fields.set(service, "subjectPrefix", "cdc");
+        Fields.set(service, "tenantInSubject", false);
 
         CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1L);
         // tenant mode off — subject is not parsed, stub not needed
@@ -243,8 +242,8 @@ class NatsCDCServiceTest {
     @Test
     @DisplayName("handleMessage with tenant-in-subject=true extracts single-token tenant from subject")
     void handleMessage_tenantMode_singleTokenTenant() throws Exception {
-        ReflectionTestUtils.setField(service, "subjectPrefix", "cdc");
-        ReflectionTestUtils.setField(service, "tenantInSubject", true);
+        Fields.set(service, "subjectPrefix", "cdc");
+        Fields.set(service, "tenantInSubject", true);
 
         CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1L);
         Message msg = mockMessageWithSubject(event, "cdc.proj_abc123.public.customers");
@@ -257,8 +256,8 @@ class NatsCDCServiceTest {
     @Test
     @DisplayName("handleMessage with tenant-in-subject=true extracts multi-token tenant (e.g. org.project)")
     void handleMessage_tenantMode_multiTokenTenant() throws Exception {
-        ReflectionTestUtils.setField(service, "subjectPrefix", "cdc");
-        ReflectionTestUtils.setField(service, "tenantInSubject", true);
+        Fields.set(service, "subjectPrefix", "cdc");
+        Fields.set(service, "tenantInSubject", true);
 
         CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1L);
         Message msg = mockMessageWithSubject(event, "cdc.acme-corp.app-a.public.customers");
@@ -271,8 +270,8 @@ class NatsCDCServiceTest {
     @Test
     @DisplayName("handleMessage with tenant-in-subject=true and no tenant tokens falls back to null tenant")
     void handleMessage_tenantMode_noTenantTokens_fallsBackToNull() throws Exception {
-        ReflectionTestUtils.setField(service, "subjectPrefix", "cdc");
-        ReflectionTestUtils.setField(service, "tenantInSubject", true);
+        Fields.set(service, "subjectPrefix", "cdc");
+        Fields.set(service, "tenantInSubject", true);
 
         CDCEvent event = new CDCEvent("INSERT", "public", "customers", "{\"id\":1}", 1L);
         Message msg = mockMessageWithSubject(event, "cdc.public.customers");

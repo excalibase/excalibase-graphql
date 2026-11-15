@@ -1,127 +1,40 @@
 package io.github.excalibase.http;
 
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ReadListener;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.ServletInputStream;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletRequestWrapper;
-import jakarta.servlet.http.HttpServletResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.web.filter.OncePerRequestFilter;
-
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
-import java.util.Locale;
+import io.micronaut.core.annotation.Nullable;
+import io.micronaut.core.order.Ordered;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.HttpStatus;
+import io.micronaut.http.annotation.Filter;
+import io.micronaut.http.annotation.RequestFilter;
+import io.micronaut.http.annotation.ServerFilter;
+import io.micronaut.http.server.HttpServerConfiguration;
 
 /**
- * Refuses a request body over the limit with 413 (EXC-726), whatever its type: the container capped only
- * form bodies and left JSON unbounded. A body whose length is announced is judged before it is read; a
- * chunked one is read up to the limit and refused as soon as it goes past.
+ * Refuses a body whose announced length is over the limit with 413, whatever its type: left to the route, a
+ * form body on a JSON-only route was answered 415 without its size ever being judged (EXC-726).
  */
-public class RequestBodyLimitFilter extends OncePerRequestFilter {
+@ServerFilter(Filter.MATCH_ALL_PATTERN)
+public class RequestBodyLimitFilter implements Ordered {
 
-    private static final Logger log = LoggerFactory.getLogger(RequestBodyLimitFilter.class);
+    /** Behind the security headers (-950), so the refusal carries them like any other answer. */
+    public static final int ORDER = -940;
 
     private final long maxBytes;
 
-    public RequestBodyLimitFilter(long maxBytes) {
-        if (maxBytes <= 0) {
-            throw new IllegalArgumentException("The request body limit must be positive");
-        }
-        this.maxBytes = maxBytes;
+    public RequestBodyLimitFilter(HttpServerConfiguration server) {
+        this.maxBytes = server.getMaxRequestSize();
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
-            throws ServletException, IOException {
-        long announced = request.getContentLengthLong();
-        if (announced > maxBytes) {
-            refuse(request, response);
-            return;
-        }
-        if (announced < 0 && isChunked(request)) {
-            byte[] body = request.getInputStream().readNBytes((int) maxBytes + 1);
-            if (body.length > maxBytes) {
-                refuse(request, response);
-                return;
-            }
-            chain.doFilter(new BufferedBodyRequest(request, body), response);
-            return;
-        }
-        chain.doFilter(request, response);
+    public int getOrder() {
+        return ORDER;
     }
 
-    private static boolean isChunked(HttpServletRequest request) {
-        String encoding = request.getHeader("Transfer-Encoding");
-        return encoding != null && encoding.toLowerCase(Locale.ROOT).contains("chunked");
-    }
-
-    private void refuse(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        log.info("Request refused: body over {} bytes", maxBytes);
-        response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
-    }
-
-    /** The body already read, handed on as the request's input. */
-    private static final class BufferedBodyRequest extends HttpServletRequestWrapper {
-        private final byte[] body;
-
-        BufferedBodyRequest(HttpServletRequest request, byte[] body) {
-            super(request);
-            this.body = body;
-        }
-
-        @Override
-        public ServletInputStream getInputStream() {
-            ByteArrayInputStream source = new ByteArrayInputStream(body);
-            return new ServletInputStream() {
-                @Override
-                public int read() {
-                    return source.read();
-                }
-
-                @Override
-                public int read(byte[] target, int offset, int length) {
-                    return source.read(target, offset, length);
-                }
-
-                @Override
-                public boolean isFinished() {
-                    return source.available() == 0;
-                }
-
-                @Override
-                public boolean isReady() {
-                    return true;
-                }
-
-                @Override
-                public void setReadListener(ReadListener listener) {
-                    throw new IllegalStateException("Asynchronous reads are not supported");
-                }
-            };
-        }
-
-        @Override
-        public BufferedReader getReader() {
-            String encoding = getCharacterEncoding();
-            Charset charset = encoding == null ? StandardCharsets.UTF_8 : Charset.forName(encoding);
-            return new BufferedReader(new InputStreamReader(getInputStream(), charset));
-        }
-
-        @Override
-        public int getContentLength() {
-            return body.length;
-        }
-
-        @Override
-        public long getContentLengthLong() {
-            return body.length;
-        }
+    @RequestFilter
+    @Nullable
+    public HttpResponse<?> filter(HttpRequest<?> request) {
+        long announced = request.getContentLength();
+        return announced > maxBytes ? DefaultErrorBody.response(request, HttpStatus.REQUEST_ENTITY_TOO_LARGE) : null;
     }
 }

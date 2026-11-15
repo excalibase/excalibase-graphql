@@ -279,7 +279,7 @@ export function useCustomerSubscription() {
 
   useEffect(() => {
     const client = createClient({
-      url: 'ws://localhost:10000/graphql'
+      url: 'ws://localhost:10000/{projectId}/graphql'
     });
 
     const subscription = client.iterate({
@@ -337,7 +337,7 @@ For testing and debugging, you can use `wscat` to connect directly:
 npm install -g wscat
 
 # Connect to WebSocket endpoint
-wscat -c ws://localhost:10000/graphql -s graphql-transport-ws
+wscat -c ws://localhost:10000/{projectId}/graphql -s graphql-transport-ws
 
 # Send connection init
 {"type":"connection_init"}
@@ -512,7 +512,7 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO cdc_user;
 **Client-side reconnection:**
 ```javascript
 const client = createClient({
-  url: 'ws://localhost:10000/graphql',
+  url: 'ws://localhost:10000/{projectId}/graphql',
   retryAttempts: 5,
   retryWait: async function* () {
     for (const wait of [1000, 2000, 4000, 8000, 16000]) {
@@ -573,7 +573,7 @@ Test with a real database using Docker Compose:
 make dev
 
 # Connect to WebSocket for manual testing
-wscat -c ws://localhost:10000/graphql -s graphql-transport-ws
+wscat -c ws://localhost:10000/{projectId}/graphql -s graphql-transport-ws
 
 # In another terminal, make database changes
 make db-shell

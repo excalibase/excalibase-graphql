@@ -1,0 +1,139 @@
+micronaut:
+  application:
+    name: Excalibase graphql
+  codec:
+    json:
+      additional-types: application/vnd.spring-boot.actuator.v3+json   # the media type actuator answers carry
+  server:
+    port: ${SERVER_PORT:10000}
+    max-request-size: ${app.max-request-body:8MB}   # APP_MAX_REQUEST_BODY; a bulk insert of 1000 rows is far smaller; more is a 413 before it is read (EXC-726)
+    max-request-buffer-size: ${app.max-request-body:8MB}   # what a JSON body may take in memory to be read
+    netty:
+      max-header-size: 8KB   # like Tomcat's: more is a 400 before routing
+      max-initial-line-length: 8KB
+    multipart:
+      max-file-size: 10MB
+  metrics:
+    enabled: true
+    binders:
+      web:
+        enabled: false   # http.server.requests is recorded by HttpRequestTimerFilter, with the same tags as before
+      executor:
+        enabled: false   # the earlier build registered no executor meters
+    export:
+      prometheus:
+        enabled: true
+        descriptions: false
+      otlp:
+        enabled: false   # on only with OTEL_EXPORTER_OTLP_ENDPOINT (StartupSettings)
+        step: PT30S
+        resourceAttributes: service.name=Excalibase graphql
+
+  lifecycle:
+    graceful-shutdown:
+      enabled: true   # stop accepting, let in-flight requests finish; SERVER_SHUTDOWN=immediate turns it off
+      grace-period: 30s   # SPRING_LIFECYCLE_TIMEOUT_PER_SHUTDOWN_PHASE
+
+endpoints:
+  all:
+    enabled: false   # Micronaut's own endpoints (beans, routes, env, ...) are never served; observability.actuator serves the exposed ones
+    path: /actuator
+    port: ${MANAGEMENT_SERVER_PORT:8081}   # actuator (health probes) on its own port; never expose it publicly
+
+# Same property names as the engine's earlier build read
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: false
+  health:
+    db:
+      enabled: true
+  tracing:
+    sampling:
+      probability: ${OTEL_TRACES_SAMPLER_ARG:1.0}   # 100% by default; tune in production
+
+jackson:
+  serialization-inclusion: non_null
+
+# Same property names as the engine has always read
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${POSTGRES_URL:}
+    username: ${POSTGRES_USER:}
+    password: ${POSTGRES_PASSWORD:}
+
+app:
+  project-id: ${APP_PROJECT_ID:}
+  database-type: postgres
+  max-rows: 30
+  max-request-body: 8MB   # a request body over this is a 413 before it is read (EXC-726); APP_MAX_REQUEST_BODY
+  cap-nested-lists: false   # true: a nested list or REST embed without a limit is cut at max-rows, as a top-level list is
+  max-query-depth: 15
+  graphql:
+    parse-cache:
+      heap-share: 0.02
+  reserved-schemas: ${APP_RESERVED_SCHEMAS:}
+  overload:
+    enabled: ${APP_OVERLOAD_ENABLED:true}
+    max-connections-per-cpu: ${APP_OVERLOAD_MAX_CONNECTIONS_PER_CPU:256}
+    accept-count-per-cpu: ${APP_OVERLOAD_ACCEPT_COUNT_PER_CPU:256}
+    max-keep-alive-requests: ${APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS:20}
+    keep-alive-timeout-ms: ${APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS:5000}
+  websocket:
+    # Socket caps are percent of the connection bound (max-connections-per-cpu x CPUs).
+    max-per-project-percent: ${APP_WEBSOCKET_MAX_PER_PROJECT_PERCENT:25}
+    max-per-client-percent: ${APP_WEBSOCKET_MAX_PER_CLIENT_PERCENT:5}
+    init-timeout-seconds: ${APP_WEBSOCKET_INIT_TIMEOUT_SECONDS:10}
+    max-subscriptions-per-session: ${APP_WEBSOCKET_MAX_SUBSCRIPTIONS_PER_SESSION:20}
+    max-subscriptions-per-project-per-cpu: ${APP_WEBSOCKET_MAX_SUBSCRIPTIONS_PER_PROJECT_PER_CPU:250}
+    outbox-capacity: ${APP_WEBSOCKET_OUTBOX_CAPACITY:256}
+    slow-consumer-seconds: ${APP_WEBSOCKET_SLOW_CONSUMER_SECONDS:10}
+  cache:
+    schema-ttl-minutes: 30
+  cors:
+    allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}   # empty: CORS_ORIGINS (platform-aio's name), else *
+    provisioning-url: ${APP_CORS_PROVISIONING_URL:}   # empty: the RLS policy URL
+    ttl-ms: 30000
+  security:
+    jwt-enabled: ${JWT_ENABLED:true}
+    insecure-dev-mode: ${APP_SECURITY_INSECURE_DEV_MODE:false}
+    auth:
+      jwks-url: ${APP_SECURITY_AUTH_JWKS_URL:}
+      hmac-secret: ${APP_SECURITY_AUTH_HMAC_SECRET:}
+      require-aud: ${JWT_REQUIRE_AUD:true}
+      aud-prefix: ${AUTH_AUD_PREFIX:excalibase:}
+    multi-tenant:
+      provisioning-url: ${PROVISIONING_URL:}
+      provisioning-pat: ${PROVISIONING_PAT:}
+      provisioning-pat-file: ${APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT_FILE:}
+      unknown-project-cache:
+        max-entries: 10000
+        ttl-seconds: 30
+    permissions:
+      max-stale-ms: ${APP_SECURITY_PERMISSIONS_MAX_STALE_MS:300000}
+      retry-interval-ms: ${APP_SECURITY_PERMISSIONS_RETRY_INTERVAL_MS:2000}
+  tenant-db:
+    sslmode: ${TENANT_DB_SSLMODE:verify-full}
+    read-timeout-seconds: ${TENANT_DB_READ_TIMEOUT_SECONDS:60}
+  request-metrics:
+    enabled: ${APP_REQUEST_METRICS_ENABLED:false}
+    port: ${APP_REQUEST_METRICS_PORT:9464}
+    address: ${APP_REQUEST_METRICS_ADDRESS:}
+    max-projects: ${APP_REQUEST_METRICS_MAX_PROJECTS:1000}
+  nats:
+    enabled: false
+    url: nats://localhost:4222
+    stream-name: CDC
+    subject-prefix: cdc
+    tenant-in-subject: false
+    # Local test stacks only: serve a multi-tenant engine with realtime changes shared across projects.
+    allow-untenanted-realtime: ${APP_NATS_ALLOW_UNTENANTED_REALTIME:false}
+    username: ${APP_NATS_USERNAME:}
+    password: ${APP_NATS_PASSWORD:}
+    inbox-prefix: ${APP_NATS_INBOX_PREFIX:}

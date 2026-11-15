@@ -1,15 +1,14 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
 import io.github.excalibase.rls.ProjectSockets;
 import io.github.excalibase.security.JwtClaims;
+import io.micronaut.context.annotation.Value;
 import jakarta.annotation.PreDestroy;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.WebSocketSession;
 import reactor.core.Disposable;
 
 import java.io.IOException;
@@ -31,7 +30,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * subscriptions, the {@code connection_init} deadline, closing at token expiry or when a project's permissions
  * change, and the per-session delivery queues.
  */
-@Component
+@Singleton
 public class WsRuntime implements ProjectSockets {
 
     private static final Logger log = LoggerFactory.getLogger(WsRuntime.class);
@@ -48,11 +47,11 @@ public class WsRuntime implements ProjectSockets {
     private final Map<String, Integer> socketsByProject = new ConcurrentHashMap<>();
     private final Map<String, Integer> socketsByClient = new ConcurrentHashMap<>();
     private final Map<String, Integer> subscriptionsByProject = new ConcurrentHashMap<>();
-    private final Map<String, Set<WebSocketSession>> sessionsByProject = new ConcurrentHashMap<>();
+    private final Map<String, Set<WsSession>> sessionsByProject = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> permissionGenerations = new ConcurrentHashMap<>();
     private final Map<String, Long> announcedVersions = new ConcurrentHashMap<>();
 
-    @Autowired
+    @Inject
     public WsRuntime(
             @Value("${app.overload.max-connections-per-cpu:256}") int connectionsPerCpu,
             @Value("${app.websocket.max-per-project-percent:25}") int projectPercent,
@@ -83,10 +82,14 @@ public class WsRuntime implements ProjectSockets {
                 Runnable::run);
     }
 
+    WsLimits limits() {
+        return limits;
+    }
+
     // -- sockets --
 
     /** Counts a new socket against its project and client; false (nothing counted) when either is at its cap. */
-    boolean admit(WebSocketSession session) {
+    boolean admit(WsSession session) {
         Map<String, Object> attributes = session.getAttributes();
         String project = (String) attributes.get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
         String client = (String) attributes.get(SESSION_CLIENT_KEY);
@@ -105,7 +108,7 @@ public class WsRuntime implements ProjectSockets {
     }
 
     /** Gives back what {@link #admit} counted, stops the session's timers and queue. Safe to call twice. */
-    void release(WebSocketSession session) {
+    void release(WsSession session) {
         Map<String, Object> attributes = session.getAttributes();
         cancelExpiry(attributes);
         Object outbox = attributes.remove(OUTBOX_KEY);
@@ -127,7 +130,7 @@ public class WsRuntime implements ProjectSockets {
     }
 
     /** Closes the session unless its {@code connection_init} has arrived within the deadline. */
-    void expectInit(WebSocketSession session) {
+    void expectInit(WsSession session) {
         scheduler.schedule(() -> {
             if (session.isOpen() && !isInitialised(session)) {
                 close(session, WsClose.INIT_TIMEOUT);
@@ -135,18 +138,18 @@ public class WsRuntime implements ProjectSockets {
         }, limits.initTimeout().toMillis(), TimeUnit.MILLISECONDS);
     }
 
-    void initialised(WebSocketSession session) {
+    void initialised(WsSession session) {
         session.getAttributes().put(INITIALISED_KEY, Boolean.TRUE);
     }
 
-    boolean isInitialised(WebSocketSession session) {
+    boolean isInitialised(WsSession session) {
         return session.getAttributes().containsKey(INITIALISED_KEY);
     }
 
     // -- token expiry --
 
     /** Closes the session when its token's {@code exp} passes; tokens without one are left alone. */
-    void closeAtExpiry(WebSocketSession session) {
+    void closeAtExpiry(WsSession session) {
         Map<String, Object> attributes = session.getAttributes();
         cancelExpiry(attributes);
         Object claims = attributes.get(GraphQLWebSocketHandler.SESSION_CLAIMS_KEY);
@@ -180,7 +183,7 @@ public class WsRuntime implements ProjectSockets {
 
     @Override
     public boolean hasSockets(String projectId) {
-        Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
+        Set<WsSession> sessions = sessionsByProject.get(projectId);
         return sessions != null && !sessions.isEmpty();
     }
 
@@ -188,7 +191,7 @@ public class WsRuntime implements ProjectSockets {
      * Counts the permission changes announced for the session's project; read before a subscription's plan is
      * resolved, so {@link #openedUnder} can tell that one was announced while it was being resolved.
      */
-    long permissionGeneration(WebSocketSession session) {
+    long permissionGeneration(WsSession session) {
         String project = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
         return project == null ? 0 : generationOf(project).get();
     }
@@ -202,7 +205,7 @@ public class WsRuntime implements ProjectSockets {
      * When a change was announced since {@code generationBefore} was read, the plan may be of the old document
      * while the announcement skipped this socket, so the socket closes and false is returned.
      */
-    boolean openedUnder(WebSocketSession session, long permissionsVersion, long generationBefore) {
+    boolean openedUnder(WsSession session, long permissionsVersion, long generationBefore) {
         if (permissionsVersion >= 0) {
             @SuppressWarnings("unchecked")
             Set<Long> versions = (Set<Long>) session.getAttributes()
@@ -231,11 +234,11 @@ public class WsRuntime implements ProjectSockets {
         if (announced == null || announced != version) {
             generationOf(projectId).incrementAndGet();
         }
-        Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
+        Set<WsSession> sessions = sessionsByProject.get(projectId);
         if (sessions == null) {
             return;
         }
-        for (WebSocketSession session : Set.copyOf(sessions)) {
+        for (WsSession session : Set.copyOf(sessions)) {
             if (session.getAttributes().get(VERSIONS_KEY) instanceof Set<?> versions
                     && versions.stream().anyMatch(held -> !Long.valueOf(version).equals(held))) {
                 log.info("Closing WebSocket session {} of project {}: permissions changed", session.getId(), projectId);
@@ -249,12 +252,12 @@ public class WsRuntime implements ProjectSockets {
     public void closeForPermissionChange(String projectId) {
         announcedVersions.remove(projectId);
         generationOf(projectId).incrementAndGet();
-        Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
+        Set<WsSession> sessions = sessionsByProject.get(projectId);
         if (sessions == null) {
             return;
         }
         log.info("Closing {} WebSocket sessions of project {}: permissions changed", sessions.size(), projectId);
-        for (WebSocketSession session : Set.copyOf(sessions)) {
+        for (WsSession session : Set.copyOf(sessions)) {
             close(session, WsClose.PERMISSIONS_CHANGED);
         }
     }
@@ -262,13 +265,13 @@ public class WsRuntime implements ProjectSockets {
     // -- subscriptions --
 
     /** Counts a subscription against the project; false when the project is at its cap. */
-    boolean reserveSubscription(WebSocketSession session) {
+    boolean reserveSubscription(WsSession session) {
         String project = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
         return project == null || acquire(subscriptionsByProject, project, limits.maxSubscriptionsPerProject());
     }
 
     /** Gives back a reservation whose subscription never started. */
-    void cancelReservation(WebSocketSession session) {
+    void cancelReservation(WsSession session) {
         String project = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
         if (project != null) {
             drop(subscriptionsByProject, project);
@@ -276,7 +279,7 @@ public class WsRuntime implements ProjectSockets {
     }
 
     /** Wraps a reserved subscription so that disposing it, once, gives the reservation back. */
-    Disposable counted(WebSocketSession session, Disposable subscription) {
+    Disposable counted(WsSession session, Disposable subscription) {
         String project = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
         AtomicBoolean disposed = new AtomicBoolean();
         return () -> {
@@ -292,21 +295,19 @@ public class WsRuntime implements ProjectSockets {
     }
 
     /** The session's delivery queue, made on first use. */
-    SessionOutbox outbox(WebSocketSession session) {
+    SessionOutbox outbox(WsSession session) {
         return (SessionOutbox) session.getAttributes().computeIfAbsent(OUTBOX_KEY,
                 key -> new SessionOutbox(session, this, delivery, scheduler, limits));
     }
 
     // -- closing --
 
-    /**
-     * Closes the session. Not under the session monitor the senders take: a send stuck on a client that does
-     * not read holds it, and the close is what ends that send.
-     */
-    void close(WebSocketSession session, CloseStatus status) {
+    void close(WsSession session, CloseStatus status) {
         try {
-            if (session.isOpen()) {
-                session.close(status);
+            synchronized (session) {
+                if (session.isOpen()) {
+                    session.close(status);
+                }
             }
         } catch (IOException | RuntimeException failure) {
             log.debug("Closing session {} failed: {}", session.getId(), failure.toString());

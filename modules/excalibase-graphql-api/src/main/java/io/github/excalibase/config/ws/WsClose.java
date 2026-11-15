@@ -1,6 +1,6 @@
 package io.github.excalibase.config.ws;
 
-import org.springframework.web.socket.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
 
 /** The close codes a client can see from the engine's WebSocket limits, with stable reasons. */
 final class WsClose {

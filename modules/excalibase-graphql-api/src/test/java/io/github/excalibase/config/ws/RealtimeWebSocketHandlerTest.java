@@ -1,5 +1,7 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.cdc.CDCEvent;
 import io.github.excalibase.cdc.SubscriptionService;
@@ -13,10 +15,6 @@ import io.github.excalibase.security.Principal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -41,17 +39,18 @@ class RealtimeWebSocketHandlerTest {
     void setUp() {
         subscriptionService = new SubscriptionService();
         mapper = new ObjectMapper();
-        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, provider((JwtService) null),
-                new WebSocketHeartbeat(0), provider((AccessPlans) null),
-                provider((RequestMetrics) null));
+        handler = new RealtimeWebSocketHandler(subscriptionService, mapper, (JwtService) null,
+                new WebSocketHeartbeat(0), (AccessPlans) null,
+                (RequestMetrics) null);
     }
 
-    private WebSocketSession session(List<String> sink) throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
+    private WsSession session(List<String> sink) throws Exception {
+        WsSession session = mock(WsSession.class);
         when(session.getId()).thenReturn("test-session-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
         Map<String, Object> attributes = new ConcurrentHashMap<>();
         attributes.put(WsRuntime.INITIALISED_KEY, Boolean.TRUE);
+        attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
         when(session.getAttributes()).thenReturn(attributes);
         doAnswer(invocation -> {
             TextMessage msg = invocation.getArgument(0);
@@ -65,7 +64,7 @@ class RealtimeWebSocketHandlerTest {
     @DisplayName("INSERT on default schema delivered as {op:insert}")
     void insert_defaultSchema_delivered() throws Exception {
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
+        WsSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -87,7 +86,7 @@ class RealtimeWebSocketHandlerTest {
     @DisplayName("UPDATE and DELETE are mapped to lowercase ops")
     void updateAndDelete_mapped() throws Exception {
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
+        WsSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -107,7 +106,7 @@ class RealtimeWebSocketHandlerTest {
     @DisplayName("explicit schema field routes to {schema}_{collection} key")
     void explicitSchema_routes() throws Exception {
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
+        WsSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -130,7 +129,7 @@ class RealtimeWebSocketHandlerTest {
     @DisplayName("filter rejects non-matching events, accepts matches")
     void filter_matchesOnlyAcceptedRows() throws Exception {
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
+        WsSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -154,7 +153,7 @@ class RealtimeWebSocketHandlerTest {
     @DisplayName("DDL and HEARTBEAT events are filtered out")
     void ddlAndHeartbeat_skipped() throws Exception {
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
+        WsSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -169,14 +168,6 @@ class RealtimeWebSocketHandlerTest {
         assertThat(mapper.readTree(sent.getFirst()).get("op").asText()).isEqualTo("insert");
     }
 
-    private static <T> ObjectProvider<T> provider(T value) {
-        return new ObjectProvider<>() {
-            @Override public T getObject() { return value; }
-            @Override public T getObject(Object... args) { return value; }
-            @Override public T getIfAvailable() { return value; }
-            @Override public T getIfUnique() { return value; }
-        };
-    }
 
     private static final String ROLE = "app_authenticated";
 
@@ -195,16 +186,16 @@ class RealtimeWebSocketHandlerTest {
                 "{\"table\":\"public.notes\",\"role\":\"" + ROLE + "\",\"select\":" + notesSelect + "}",
                 "{\"table\":\"public.things\",\"role\":\"" + ROLE + "\",\"select\":" + thingsSelect + "}");
         AccessPlans plans = StubbedSchemaManager.withDocument(schema, document, (sql, params) -> false);
-        return new RealtimeWebSocketHandler(subscriptionService, mapper, provider((JwtService) null),
-                new WebSocketHeartbeat(0), provider(plans), provider((RequestMetrics) null));
+        return new RealtimeWebSocketHandler(subscriptionService, mapper, (JwtService) null,
+                new WebSocketHeartbeat(0), plans, (RequestMetrics) null);
     }
 
     private static final String OWNED_NOTES = "{\"filter\":{\"owner_id\":{\"_eq\":\"X-Excalibase-User-Id\"}},"
             + "\"columns\":[\"id\",\"owner_id\"]}";
     private static final String THING_NAMES = "{\"filter\":{},\"columns\":[\"id\",\"name\"]}";
 
-    private WebSocketSession userSession(List<String> sink) throws Exception {
-        WebSocketSession session = session(sink);
+    private WsSession userSession(List<String> sink) throws Exception {
+        WsSession session = session(sink);
         session.getAttributes().put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
         JwtClaims claims = new JwtClaims("u-1", "p1", "acme", "demo", "", ROLE, "u@x.com", "authenticated", 0L,
                 Map.of("userId", "u-1"), null);
@@ -219,7 +210,7 @@ class RealtimeWebSocketHandlerTest {
     void columns_onlyTheSelectColumnsAreDelivered() throws Exception {
         var planned = planned(OWNED_NOTES, THING_NAMES);
         var sent = new ArrayList<String>();
-        WebSocketSession session = userSession(sent);
+        WsSession session = userSession(sent);
         planned.afterConnectionEstablished(session);
 
         planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -240,7 +231,7 @@ class RealtimeWebSocketHandlerTest {
     void update_judgedPerImageAndProjected() throws Exception {
         var planned = planned(OWNED_NOTES, THING_NAMES);
         var sent = new ArrayList<String>();
-        WebSocketSession session = userSession(sent);
+        WsSession session = userSession(sent);
         planned.afterConnectionEstablished(session);
         planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "subscribe", "id", "s1", "collection", "notes"))));
@@ -265,7 +256,7 @@ class RealtimeWebSocketHandlerTest {
     void rowFilter_deliversOnlyOwnRows() throws Exception {
         var planned = planned(OWNED_NOTES, THING_NAMES);
         var sent = new ArrayList<String>();
-        WebSocketSession session = userSession(sent);
+        WsSession session = userSession(sent);
         planned.afterConnectionEstablished(session);
 
         planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -286,7 +277,7 @@ class RealtimeWebSocketHandlerTest {
     void clientFilterOnHiddenColumn_neverSteersDelivery() throws Exception {
         var planned = planned(OWNED_NOTES, THING_NAMES);
         var sent = new ArrayList<String>();
-        WebSocketSession session = userSession(sent);
+        WsSession session = userSession(sent);
         planned.afterConnectionEstablished(session);
         planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
                 "type", "subscribe", "id", "s1", "collection", "things", "filter", Map.of("secret", "x")))));
@@ -303,7 +294,7 @@ class RealtimeWebSocketHandlerTest {
     void unselectableCollection_isRefused() throws Exception {
         var planned = planned(OWNED_NOTES, THING_NAMES);
         var sent = new ArrayList<String>();
-        WebSocketSession session = userSession(sent);
+        WsSession session = userSession(sent);
         planned.afterConnectionEstablished(session);
 
         planned.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -317,7 +308,7 @@ class RealtimeWebSocketHandlerTest {
     @DisplayName("subscribe without id or collection returns error")
     void missingFields_error() throws Exception {
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
+        WsSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -333,7 +324,7 @@ class RealtimeWebSocketHandlerTest {
     @DisplayName("complete disposes the subscription — no further events delivered")
     void complete_disposes() throws Exception {
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
+        WsSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -352,7 +343,7 @@ class RealtimeWebSocketHandlerTest {
     @DisplayName("afterConnectionClosed disposes all subscriptions on that session")
     void connectionClosed_disposesAllSubs() throws Exception {
         var sent = new ArrayList<String>();
-        WebSocketSession session = session(sent);
+        WsSession session = session(sent);
         handler.afterConnectionEstablished(session);
 
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(

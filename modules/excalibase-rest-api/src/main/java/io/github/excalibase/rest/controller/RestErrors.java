@@ -6,8 +6,9 @@ import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import io.micronaut.http.HttpStatus;
+import io.micronaut.http.HttpResponse;
+import io.github.excalibase.http.Reply;
 
 import java.util.Arrays;
 import java.util.List;
@@ -34,20 +35,20 @@ final class RestErrors {
      * @param filters the request's filters, to name the column a malformed value was meant for
      * @param serverFault what the 500 says when the failure is the server's own
      */
-    static ResponseEntity<Object> of(Exception failure, SqlDialect dialect,
+    static HttpResponse<Object> of(Exception failure, SqlDialect dialect,
                                      List<RestQueryCompiler.FilterSpec> filters, String serverFault) {
         return DataErrors.describe(failure, dialect)
                 .map(error -> attribute(error, filters))
                 .map(RestErrors::response)
                 .orElseGet(() -> {
                     log.error("rest_request_failed", failure);
-                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    return Reply.status(HttpStatus.INTERNAL_SERVER_ERROR)
                             .body(Map.of("error", serverFault, "code", "internal_error"));
                 });
     }
 
-    static ResponseEntity<Object> response(DataError error) {
-        return ResponseEntity.status(error.status()).body(error.restBody());
+    static HttpResponse<Object> response(DataError error) {
+        return Reply.status(error.status()).body(error.restBody());
     }
 
     /** An invalid value names its column when exactly one filter carried that value. */
