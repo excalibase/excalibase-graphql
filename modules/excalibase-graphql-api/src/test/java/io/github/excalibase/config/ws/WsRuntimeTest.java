@@ -138,14 +138,14 @@ class WsRuntimeTest {
     }
 
     @Test
-    @DisplayName("evicting a project closes its sessions with 1012 and leaves other projects alone")
+    @DisplayName("a permission change closes its sessions with 1012 and leaves other projects alone")
     void evictClosesProjectSessions() throws Exception {
         WsRuntime rt = runtime(limits(10, 10, Duration.ofSeconds(10)));
         WebSocketSession mine = session("p1", "1.1.1.1");
         WebSocketSession other = session("p2", "1.1.1.1");
         rt.admit(mine);
         rt.admit(other);
-        rt.evict("p1");
+        rt.closeForPermissionChange("p1");
         verify(mine).close(new CloseStatus(1012, "permissions_changed"));
         verify(other, never()).close(any(CloseStatus.class));
     }

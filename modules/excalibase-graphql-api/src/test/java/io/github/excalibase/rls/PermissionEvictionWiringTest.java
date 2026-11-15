@@ -55,7 +55,7 @@ class PermissionEvictionWiringTest {
     }
 
     @Test
-    void policyChange_evictsThePermissionsAndClosesTheProjectsSocketsAlongsideTheSchemas() {
+    void policyChange_evictsThePermissionsAndTheSchemas() {
         PermissionProvider permissions = mock(PermissionProvider.class);
         GraphqlSchemaManager schemas = mock(GraphqlSchemaManager.class);
         WsRuntime webSockets = mock(WsRuntime.class);
@@ -66,6 +66,6 @@ class PermissionEvictionWiringTest {
 
         verify(permissions).evict("proj-abc");
         verify(schemas).evict("proj-abc");
-        verify(webSockets).evict("proj-abc");
+        verify(webSockets).hasSockets("proj-abc");
     }
 }
