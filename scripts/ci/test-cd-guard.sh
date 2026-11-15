@@ -36,6 +36,7 @@ for job in docker docker-native; do
   condition=$(awk -v job="  $job:" '$0 == job {f=1; next} f && /^    if:/ {sub(/^    if: */, ""); print; exit}' "$cd_yml" | tr -s ' ')
   check "$job if: is exactly the push-to-own-main condition" "$expected" "$condition"
 done
-[[ $(grep -c 'context: git' "$cd_yml") == 2 ]]; check "both metadata steps label the checked-out commit" "0" "$?"
+[[ $(grep -c 'labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}' "$cd_yml") == 2 ]]; check "both metadata steps set the revision label to the tested commit" "0" "$?"
+grep -q 'context: git' "$cd_yml"; check "metadata steps do not use the git context (fails on a detached checkout)" "1" "$?"
 
 exit "$failures"
