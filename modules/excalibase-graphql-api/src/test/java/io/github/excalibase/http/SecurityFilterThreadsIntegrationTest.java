@@ -8,6 +8,8 @@ import com.nimbusds.jose.crypto.MACSigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import io.github.excalibase.support.EngineIntegrationTest;
+import io.micrometer.core.instrument.MeterRegistry;
+import jakarta.inject.Inject;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.Socket;
@@ -36,7 +38,6 @@ class SecurityFilterThreadsIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "test-proj";
     private static final String SECRET = "test-hmac-secret-0123456789abcdef0123456789";
-    private static final int CPUS = Runtime.getRuntime().availableProcessors();
     private static final AtomicInteger IDS = new AtomicInteger();
 
     @Override
@@ -67,13 +68,30 @@ class SecurityFilterThreadsIntegrationTest extends EngineIntegrationTest {
         return jwt.serialize();
     }
 
+    @Inject
+    MeterRegistry meters;
+
     private String token;
     private final java.util.concurrent.ConcurrentLinkedQueue<String> statuses = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     @BeforeEach
     void fresh() throws Exception {
+        awaitOpenConnections(0);
         SecurityFilterThreadsRecorder.THREADS.clear();
         token = token();
+    }
+
+    /** The connection bound the server itself reports, so the test does not guess it from the CPU count. */
+    private int connectionBound() {
+        return (int) meters.get("tomcat.connections.config.max").gauge().value();
+    }
+
+    private void awaitOpenConnections(int expected) throws InterruptedException {
+        for (int i = 0; i < 200 && (int) meters.get("tomcat.connections.current").gauge().value() != expected; i++) {
+            Thread.sleep(50);
+        }
+        assertThat((int) meters.get("tomcat.connections.current").gauge().value())
+                .as("open connections the server counts").isEqualTo(expected);
     }
 
     private String probe() {
@@ -196,12 +214,15 @@ class SecurityFilterThreadsIntegrationTest extends EngineIntegrationTest {
         List<Socket> held = new ArrayList<>();
         List<Socket> waiting = new ArrayList<>();
         try {
-            for (int i = 0; i < CPUS * 2; i++) {
+            int bound = connectionBound();
+            for (int i = 0; i < bound; i++) {
                 Socket slot = new Socket("localhost", server.getPort());
                 // half a request line: the server keeps waiting for the rest and the connection holds its slot
                 slot.getOutputStream().write(("GET /" + PROJECT + "/api/v1/cus").getBytes(StandardCharsets.UTF_8));
                 held.add(slot);
             }
+            // every slot is taken before the next connection arrives, so arrival order cannot shuffle them
+            awaitOpenConnections(bound);
             int extra = 20;
             for (int i = 0; i < extra; i++) {
                 Socket socket = new Socket("localhost", server.getPort());

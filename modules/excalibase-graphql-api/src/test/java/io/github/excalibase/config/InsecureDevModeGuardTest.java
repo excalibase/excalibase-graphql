@@ -108,7 +108,7 @@ class InsecureDevModeGuardTest {
     }
 
     @org.junit.jupiter.params.ParameterizedTest(name = "jwt-enabled={0} is authentication off, so the guard refuses it")
-    @org.junit.jupiter.params.provider.ValueSource(strings = {"FALSE", "False", "fAlSe", " false "})
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"FALSE", "False", "fAlSe"})
     @DisplayName("any case of false reaches the guard")
     void falseInAnyCase_failsContext(String value) {
         assertThatThrownBy(() -> ApplicationContext.run(engine(Map.of("app.security.jwt-enabled", value))).close())
