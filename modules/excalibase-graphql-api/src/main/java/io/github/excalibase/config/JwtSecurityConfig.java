@@ -119,8 +119,8 @@ public class JwtSecurityConfig {
             @Value("${app.nats.username:}") String natsUsername,
             @Value("${app.nats.password:}") String natsPassword,
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
-        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict, webSockets),
-                natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
+        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict), permissionProvider,
+                webSockets, natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 
     /**

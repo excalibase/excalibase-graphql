@@ -1,6 +1,6 @@
 package io.github.excalibase.config.ws;
 
-import io.github.excalibase.rls.ProjectCacheEvictor;
+import io.github.excalibase.rls.ProjectSockets;
 import io.github.excalibase.security.JwtClaims;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * change, and the per-session delivery queues.
  */
 @Component
-public class WsRuntime implements ProjectCacheEvictor {
+public class WsRuntime implements ProjectSockets {
 
     private static final Logger log = LoggerFactory.getLogger(WsRuntime.class);
     static final String SESSION_CLIENT_KEY = "excalibase.clientAddress";
@@ -174,9 +174,15 @@ public class WsRuntime implements ProjectCacheEvictor {
 
     // -- permissions --
 
-    /** A project's permissions or schema changed: its sockets close so clients subscribe again under the new ones. */
     @Override
-    public void evict(String projectId) {
+    public boolean hasSockets(String projectId) {
+        Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
+        return sessions != null && !sessions.isEmpty();
+    }
+
+    /** A project's permissions changed: its sockets close so clients subscribe again under the new ones. */
+    @Override
+    public void closeForPermissionChange(String projectId) {
         Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
         if (sessions == null) {
             return;
