@@ -8,6 +8,7 @@ import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.MutableHttpRequest;
 import java.net.InetSocketAddress;
+import java.time.Duration;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -240,7 +241,7 @@ class KnownProjectFilterTest {
     @DisplayName("a leading segment of no project-id shape is refused before any provisioning lookup")
     void malformedLeadingSegment_neverReachesProvisioning(String path) {
         DynamicDataSourceManager provisioning = mock(DynamicDataSourceManager.class);
-        KnownProjects tenants = KnownProjects.tenants(provisioning, new UnknownProjectCache(100, java.time.Duration.ofSeconds(30), System::currentTimeMillis),
+        KnownProjects tenants = KnownProjects.tenants(provisioning, new UnknownProjectCache(100, Duration.ofSeconds(30), System::currentTimeMillis),
                 LookupLimiter.perSecond(50));
 
         HttpResponse<?> response = call(tenants, path);

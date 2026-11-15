@@ -75,7 +75,7 @@ class WebSocketHandshakeIntegrationTest extends EngineIntegrationTest {
             assertThat(answer.opcode()).isEqualTo(RawWebSocket.CLOSE);
             assertThat(answer.closeCode()).isEqualTo(1009);
             await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(captured.list)
-                    .filteredOn(event -> event.getFormattedMessage().contains("oversized"))
+                    .filteredOn(event -> event.getFormattedMessage().contains("Max frame length"))
                     .extracting(ILoggingEvent::getLevel).containsExactly(Level.WARN));
         } finally {
             root.detachAppender(captured);

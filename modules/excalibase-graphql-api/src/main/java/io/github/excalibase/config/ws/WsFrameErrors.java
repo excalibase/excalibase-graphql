@@ -7,8 +7,8 @@ import org.slf4j.LoggerFactory;
 
 /**
  * What a WebSocket endpoint does with a failure the framework reports. Without an error handler the framework logs
- * every one at ERROR with a stack trace, so a client sending oversized frames fills the error log; here that one
- * case is a single WARN line, and anything else is still an ERROR with its stack.
+ * every one at ERROR with a stack trace, so a client sending oversized or malformed frames fills the error log; here that
+ * case is a single WARN line carrying the exception's own message, and anything else is still an ERROR with its stack.
  */
 final class WsFrameErrors {
 
@@ -19,8 +19,7 @@ final class WsFrameErrors {
 
     static void report(WebSocketSession session, Throwable failure) {
         if (failure instanceof CorruptedWebSocketFrameException) {
-            log.warn("Closed WebSocket session {}: a frame over {} bytes (oversized)", session.getId(),
-                    WsLimits.MAX_FRAME_BYTES);
+            log.warn("Closed WebSocket session {}: {}", session.getId(), failure.getMessage());
         } else {
             log.error("Unexpected exception in WebSocket session {}", session.getId(), failure);
         }
