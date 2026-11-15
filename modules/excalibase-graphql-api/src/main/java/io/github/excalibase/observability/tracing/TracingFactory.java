@@ -7,11 +7,14 @@ import io.opentelemetry.api.OpenTelemetry;
 import io.opentelemetry.api.common.AttributeKey;
 import io.opentelemetry.api.common.Attributes;
 import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Context;
 import io.opentelemetry.context.propagation.ContextPropagators;
 import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator;
 import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter;
 import io.opentelemetry.sdk.OpenTelemetrySdk;
 import io.opentelemetry.sdk.resources.Resource;
+import io.opentelemetry.sdk.trace.ReadWriteSpan;
+import io.opentelemetry.sdk.trace.ReadableSpan;
 import io.opentelemetry.sdk.trace.SdkTracerProvider;
 import io.opentelemetry.sdk.trace.SdkTracerProviderBuilder;
 import io.opentelemetry.sdk.trace.SpanProcessor;
@@ -41,6 +44,9 @@ class TracingFactory {
                         Resource.create(Attributes.of(AttributeKey.stringKey("service.name"), serviceName))));
         processors.forEach(provider::addSpanProcessor);
         endpoints.traces().map(TracingFactory::otlpProcessor).ifPresent(provider::addSpanProcessor);
+        if (processors.isEmpty() && endpoints.traces().isEmpty()) {
+            provider.addSpanProcessor(new IdOnlySpanProcessor());
+        }
         return OpenTelemetrySdk.builder().setTracerProvider(provider.build())
                 .setPropagators(ContextPropagators.create(W3CTraceContextPropagator.getInstance())).build();
     }
@@ -48,6 +54,32 @@ class TracingFactory {
     @Singleton
     Tracer tracer(OpenTelemetry openTelemetry) {
         return openTelemetry.getTracer(SCOPE);
+    }
+
+    /**
+     * The SDK hands out invalid spans when nothing listens to them, which would drop the trace ids from the logs.
+     * With no collector this processor listens and keeps nothing.
+     */
+    private static final class IdOnlySpanProcessor implements SpanProcessor {
+        @Override
+        public void onStart(Context parentContext, ReadWriteSpan span) {
+            // nothing to record: only the ids are wanted
+        }
+
+        @Override
+        public boolean isStartRequired() {
+            return true;
+        }
+
+        @Override
+        public void onEnd(ReadableSpan span) {
+            // spans leave the process only through an exporter
+        }
+
+        @Override
+        public boolean isEndRequired() {
+            return false;
+        }
     }
 
     private static SpanProcessor otlpProcessor(String endpoint) {
