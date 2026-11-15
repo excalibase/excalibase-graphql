@@ -43,7 +43,7 @@ public record HttpRequestFacts(String method, int status, String uri, String rou
     /** Only the standard methods name a series; anything else is one series, so a client cannot mint more. */
     public static String method(HttpRequest<?> request) {
         String method = request.getMethodName();
-        return method != null && STANDARD_METHODS.contains(method) ? method : UNKNOWN;
+        return STANDARD_METHODS.contains(method) ? method : UNKNOWN;
     }
 
     public String outcome() {

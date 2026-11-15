@@ -126,10 +126,13 @@ const CASES = [
     .some((entry) => entry.logger.startsWith('io.github.excalibase') && entry.level === 'INFO')), false],
   ['LOGGING_LEVEL_IO_GITHUB_EXCALIBASE=DEBUG adds DEBUG lines', runtime({ ...SINGLE_DATABASE_ENV, LOGGING_LEVEL_IO_GITHUB_EXCALIBASE: 'DEBUG' }, READY_APP, async (engine) => {
     const session = openSocket(engine.app, service());   // a connection is logged at DEBUG by the engine's own handler
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const hasDebug = () => engine.logs().filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).log.level).includes('DEBUG');
+    const deadline = Date.now() + 15000;
+    while (!hasDebug() && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
     session.socket.close();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    return engine.logs().filter((line) => line.startsWith('{')).map((line) => JSON.parse(line).log.level).includes('DEBUG');
+    return hasDebug();
   }), true],
   ['JWT_REQUIRE_AUD=false accepts a token with no audience', runtime({ ...SINGLE_DATABASE_ENV, JWT_REQUIRE_AUD: 'false' }, READY_APP, async (engine) => (await graphqlAs(engine, '{ __typename }', bearer(token({ extra: { aud: undefined } })))).status), 200],
   ['the audience is required by default', runtime(SINGLE_DATABASE_ENV, READY_APP, async (engine) => (await graphqlAs(engine, '{ __typename }', bearer(token({ extra: { aud: undefined } })))).status), 401],
