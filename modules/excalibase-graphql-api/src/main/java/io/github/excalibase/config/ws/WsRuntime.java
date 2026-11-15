@@ -50,6 +50,7 @@ public class WsRuntime implements ProjectSockets {
     private final Map<String, Integer> subscriptionsByProject = new ConcurrentHashMap<>();
     private final Map<String, Set<WebSocketSession>> sessionsByProject = new ConcurrentHashMap<>();
     private final Map<String, AtomicLong> permissionGenerations = new ConcurrentHashMap<>();
+    private final Map<String, Long> announcedVersions = new ConcurrentHashMap<>();
 
     @Autowired
     public WsRuntime(
@@ -207,6 +208,10 @@ public class WsRuntime implements ProjectSockets {
             Set<Long> versions = (Set<Long>) session.getAttributes()
                     .computeIfAbsent(VERSIONS_KEY, key -> ConcurrentHashMap.<Long>newKeySet());
             versions.add(permissionsVersion);
+            String project = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
+            if (project != null) {
+                announcedVersions.putIfAbsent(project, permissionsVersion);
+            }
         }
         if (permissionGeneration(session) != generationBefore) {
             close(session, WsClose.PERMISSIONS_CHANGED);
@@ -221,7 +226,11 @@ public class WsRuntime implements ProjectSockets {
      */
     @Override
     public void permissionsAre(String projectId, long version) {
-        generationOf(projectId).incrementAndGet();
+        // An event that finds the document already announced changes nothing for a subscription still resolving.
+        Long announced = announcedVersions.put(projectId, version);
+        if (announced == null || announced != version) {
+            generationOf(projectId).incrementAndGet();
+        }
         Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
         if (sessions == null) {
             return;
@@ -238,6 +247,7 @@ public class WsRuntime implements ProjectSockets {
     /** A project's permissions changed: its sockets close so clients subscribe again under the new ones. */
     @Override
     public void closeForPermissionChange(String projectId) {
+        announcedVersions.remove(projectId);
         generationOf(projectId).incrementAndGet();
         Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
         if (sessions == null) {
