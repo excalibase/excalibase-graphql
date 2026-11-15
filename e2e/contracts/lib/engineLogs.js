@@ -1,7 +1,13 @@
 const LAST_LINES = 60;
 
-const keep = (engine, reason, write) =>
+/** What every thread of the engine was doing when it stopped answering; empty when the engine cannot say. */
+const threadsOf = async (engine) => (engine.threadDump ? engine.threadDump() : []);
+
+async function keep(engine, reason, write) {
   write(`engine log before "${reason}":\n${engine.logs().slice(-LAST_LINES).join('\n')}`);
+  const threads = await threadsOf(engine).catch((error) => [`no thread dump: ${error.message}`]);
+  if (threads.length) write(`engine threads at "${reason}":\n${threads.join('\n')}`);
+}
 
 /**
  * Runs `observe` against a case's engine. When the engine did not answer, whether `observe` returned an error
@@ -12,10 +18,10 @@ async function observeWithLogs(engine, observe, write = console.error) {
   try {
     outcome = await observe(engine);
   } catch (failure) {
-    keep(engine, failure.message, write);
+    await keep(engine, failure.message, write);
     throw failure;
   }
-  if (outcome && outcome.error) keep(engine, outcome.error, write);
+  if (outcome && outcome.error) await keep(engine, outcome.error, write);
   return outcome;
 }
 

@@ -11,6 +11,14 @@ const logsOf = (name) => {
   return `${result.stdout}${result.stderr}`.split('\n').filter(Boolean);
 };
 
+/** Asks the JVM for a thread dump (SIGQUIT) and returns the lines it wrote to the log. */
+async function threadDumpOf(name) {
+  const before = logsOf(name).length;
+  docker('kill', '--signal=QUIT', name);
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  return logsOf(name).slice(before);
+}
+
 const SINGLE_DATABASE_ENV = {
   POSTGRES_URL: 'jdbc:postgresql://postgres:5432/hana',
   POSTGRES_USER: 'app_user',
@@ -43,6 +51,7 @@ async function startEngine(env, { cpus, mounts = [], network = stack.network, re
     app: `http://${address}:${env.SERVER_PORT || 10000}`,
     management: `http://${address}:${env.MANAGEMENT_SERVER_PORT || 8081}`,
     logs: () => logsOf(name),
+    threadDump: () => threadDumpOf(name),
     stop: () => removeContainer(name),
   };
   await waitUntil(async () => readyUntil(await request(`http://${address}:${readyPort}`, readyPath, { headers: readyHeaders() })), { timeoutMs: 90000, label: `${name} ready` })
