@@ -57,6 +57,12 @@ class PatchedDependenciesTest {
         assertAtLeast(StringUtils.class, "commons-lang3", "3.18.0");
     }
 
+    @Test
+    void kotlinStdlibUnderTheOtlpSenderIsPatched() throws ClassNotFoundException {
+        // OkHttp 5 (the OTLP sender) pulls kotlin-stdlib 1.9.x; CVE-2020-29582 is fixed in 2.1.0
+        assertAtLeast(Class.forName("kotlin.Unit"), "kotlin-stdlib", "2.1.0");
+    }
+
     private static void assertAtLeast(Class<?> marker, String artifact, String minimum) {
         String actual = versionOf(marker, artifact);
         assertTrue(compare(actual, minimum) >= 0,

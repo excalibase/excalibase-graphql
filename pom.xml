@@ -64,6 +64,7 @@
         <opentelemetry.version>1.67.0</opentelemetry.version>
         <assertj.version>3.27.7</assertj.version>
         <commons-lang3.version>3.18.0</commons-lang3.version>
+        <kotlin-stdlib.version>2.3.21</kotlin-stdlib.version>
         <mysql.connector.version>9.3.0</mysql.connector.version>
         <!--java graphql-->
         <graphql.java.version>24.0</graphql.java.version>
@@ -113,6 +114,12 @@
                 <groupId>org.apache.commons</groupId>
                 <artifactId>commons-lang3</artifactId>
                 <version>${commons-lang3.version}</version>
+            </dependency>
+            <!-- OkHttp 5 under the OTLP sender pulls kotlin-stdlib 1.9.x (CVE-2020-29582, fixed 2.1.0) -->
+            <dependency>
+                <groupId>org.jetbrains.kotlin</groupId>
+                <artifactId>kotlin-stdlib</artifactId>
+                <version>${kotlin-stdlib.version}</version>
             </dependency>
             <dependency>
                 <groupId>commons-codec</groupId>
