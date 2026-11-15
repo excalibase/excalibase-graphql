@@ -22,7 +22,9 @@ jobs:
   docker:
     name: Build & Push Docker Image
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.workflow_run.conclusion == 'success')
+    # Only CI runs of pushes to this repo's main; a fork PR from a branch
+    # named main must never reach the registry credentials.
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'
     
     steps:
     - name: Checkout code
@@ -86,6 +88,7 @@ jobs:
       uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.DOCKER_IMAGE }}
+        context: git
         tags: |
           type=ref,event=branch
           type=raw,value=main-${{ steps.commit.outputs.short }}
@@ -129,7 +132,7 @@ jobs:
   docker-native:
     name: Build & Push Native Docker Image
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'
 
     steps:
     - name: Checkout code
@@ -175,6 +178,7 @@ jobs:
       uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
       with:
         images: ${{ env.DOCKER_IMAGE }}
+        context: git
         tags: |
           type=raw,value=native-main,enable={{is_default_branch}}
           type=raw,value=native-${{ env.COMMIT_SHA }}
