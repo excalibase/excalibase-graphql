@@ -9,6 +9,9 @@ import java.time.Duration;
 record WsLimits(Duration initTimeout, int maxPerProject, int maxPerClient, int maxSubscriptionsPerSession,
                 int maxSubscriptionsPerProject, int outboxCapacity, Duration slowConsumer) {
 
+    /** The largest frame a client may send: what the servlet container allowed, far over any subscribe message. */
+    static final int MAX_FRAME_BYTES = 8192;
+
     static WsLimits of(int cpus, int connectionsPerCpu, int projectPercent, int clientPercent, int initTimeoutSeconds,
                        int subscriptionsPerSession, int subscriptionsPerProjectPerCpu, int outboxCapacity,
                        int slowConsumerSeconds) {

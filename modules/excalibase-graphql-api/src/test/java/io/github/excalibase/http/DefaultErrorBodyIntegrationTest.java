@@ -35,9 +35,9 @@ class DefaultErrorBodyIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("a path no route serves is a 404 with the default body, query left out of the path")
+    @DisplayName("a path no route serves, under a project, is a 404 with the default body, query left out of the path")
     void noRoute() {
-        assertDefaultBody(http.get("/nothing?x=1"), 404, "Not Found", "/nothing");
+        assertDefaultBody(http.get("/" + PROJECT + "/nothing?x=1"), 404, "Not Found", "/" + PROJECT + "/nothing");
     }
 
     @Test

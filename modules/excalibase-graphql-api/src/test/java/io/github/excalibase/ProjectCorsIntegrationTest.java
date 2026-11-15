@@ -215,8 +215,9 @@ class ProjectCorsIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("non-project routes keep the platform default")
+    @DisplayName("non-project routes keep the platform default, which names the asking origin and never sends *")
     void platformRoutesKeepGlobalDefault() {
-        assertThat(http.get("/actuator/health", "Origin", OTHER).header(ALLOW_ORIGIN)).isEqualTo("*");
+        assertThat(http.get("/actuator/health", "Origin", OTHER).header(ALLOW_ORIGIN)).isEqualTo(OTHER);
+        assertThat(http.get("/actuator/health", "Origin", "null").header(ALLOW_ORIGIN)).isNull();
     }
 }

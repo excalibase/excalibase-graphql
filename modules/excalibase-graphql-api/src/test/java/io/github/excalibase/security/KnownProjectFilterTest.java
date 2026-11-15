@@ -170,6 +170,19 @@ class KnownProjectFilterTest {
         assertThat(call(rejectEverything, "/actuator/health")).isNull();
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"/", "/graphql", "/api/v1/customer", "/health", "/openapi.json", "/graphql/"})
+    @DisplayName("a path with no project is the same 404 as an unknown project, and no lookup is made")
+    void pathWithoutAProject_isNotFound(String path) {
+        KnownProjects pinned = KnownProjects.pinned(PROJECT);
+
+        HttpResponse<?> response = call(pinned, path);
+
+        assertThat(response).isNotNull();
+        assertThat(response.code()).isEqualTo(404);
+        assertThat(body(response)).contains("\"code\":\"project_not_found\"");
+    }
+
     @Test
     @DisplayName("a project lookup that fails (not a 404) is a 503, never a pass-through")
     void lookupFailure_isUnavailable() {

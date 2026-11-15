@@ -9,7 +9,10 @@ import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.TokenFileSource;
 import org.junit.jupiter.api.Test;
 
+import org.mockito.ArgumentCaptor;
+
 import java.lang.reflect.Method;
+import java.util.function.ObjLongConsumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -74,8 +77,7 @@ class PermissionEvictionWiringTest {
 
         new AppConfig().policyChangeSubscriber(permissions, mock(GraphqlSchemaManager.class), webSockets, false,
                 "nats://localhost:4222", "", "", "");
-        org.mockito.ArgumentCaptor<java.util.function.ObjLongConsumer<String>> listener =
-                org.mockito.ArgumentCaptor.forClass(java.util.function.ObjLongConsumer.class);
+        ArgumentCaptor<ObjLongConsumer<String>> listener = ArgumentCaptor.forClass(ObjLongConsumer.class);
         verify(permissions).onChange(listener.capture());
         listener.getValue().accept("proj-abc", 8);
 

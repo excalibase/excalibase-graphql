@@ -15,9 +15,8 @@ public final class ProjectPath {
     private ProjectPath() {}
 
     /**
-     * Project id from a project-scoped URI, or {@code null} for the legacy
-     * unscoped {@code /graphql} / {@code /api/v1/...} and every platform route
-     * (health, actuator). The projectId is a single opaque segment.
+     * Project id from a project-scoped URI, or {@code null} for a path of no project route shape. The projectId is a
+     * single opaque segment.
      */
     public static String fromUri(String uri) {
         if (uri == null) {
@@ -31,6 +30,19 @@ public final class ProjectPath {
             return segment(uri.substring(0, api));
         }
         return null;
+    }
+
+    /**
+     * The first path segment, which is the project on every surface; {@code null} for {@code /} or an empty path.
+     * It is not checked to be a project: the known-projects check does that.
+     */
+    public static String leadingSegment(String uri) {
+        if (uri == null || !uri.startsWith("/")) {
+            return null;
+        }
+        int end = uri.indexOf('/', 1);
+        String segment = end < 0 ? uri.substring(1) : uri.substring(1, end);
+        return segment.isEmpty() ? null : segment;
     }
 
     /** A single non-empty path segment ({@code /proj-abc} → {@code proj-abc}); null otherwise. */

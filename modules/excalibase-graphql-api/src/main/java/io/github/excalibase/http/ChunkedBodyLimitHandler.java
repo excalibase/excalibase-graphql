@@ -2,10 +2,12 @@ package io.github.excalibase.http;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
 import io.netty.handler.codec.http.DefaultHttpRequest;
 import io.netty.handler.codec.http.HttpContent;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
@@ -40,6 +42,11 @@ final class ChunkedBodyLimitHandler extends ChannelInboundHandlerAdapter {
             head = request;
             size = 0;
             state = State.HOLD;
+            if (HttpUtil.is100ContinueExpected(request)) {
+                // The head is not passed on yet, so nothing else would tell the client to send its body.
+                context.writeAndFlush(new DefaultFullHttpResponse(request.protocolVersion(), HttpResponseStatus.CONTINUE));
+                HttpUtil.set100ContinueExpected(request, false);
+            }
             return;
         }
         if (state == State.PASS || !(message instanceof HttpContent content)) {

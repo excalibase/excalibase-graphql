@@ -11,7 +11,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import reactor.core.publisher.Flux;
 
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -19,8 +21,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
@@ -48,7 +53,7 @@ class WsSessionLimitsTest {
         runtime.stop();
     }
 
-    private RealtimeWebSocketHandler realtime(WsLimits limits, java.util.concurrent.Executor executor) {
+    private RealtimeWebSocketHandler realtime(WsLimits limits, Executor executor) {
         runtime = new WsRuntime(limits, executor);
         return new RealtimeWebSocketHandler(subscriptions, mapper, null, new WebSocketHeartbeat(0), null, null,
                 runtime);
@@ -85,7 +90,7 @@ class WsSessionLimitsTest {
     }
 
     private static void set(Object target, String field, boolean value) throws Exception {
-        java.lang.reflect.Field f = target.getClass().getDeclaredField(field);
+        Field f = target.getClass().getDeclaredField(field);
         f.setAccessible(true);
         f.setBoolean(target, value);
     }
@@ -136,7 +141,7 @@ class WsSessionLimitsTest {
         java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean(true);
         subscriptions = new SubscriptionService() {
             @Override
-            public reactor.core.publisher.Flux<CDCEvent> subscribe(String tenantId, String tableName) {
+            public Flux<CDCEvent> subscribe(String tenantId, String tableName) {
                 if (fail.getAndSet(false)) {
                     throw new IllegalStateException("sink unavailable");
                 }
@@ -158,10 +163,10 @@ class WsSessionLimitsTest {
         assertThat(subscriptions.hasSubscribers(null, "public.t1")).isTrue();
     }
 
-    private SubscriptionService closingMidSubscribe(java.util.concurrent.atomic.AtomicReference<Runnable> midSubscribe) {
+    private SubscriptionService closingMidSubscribe(AtomicReference<Runnable> midSubscribe) {
         return new SubscriptionService() {
             @Override
-            public reactor.core.publisher.Flux<CDCEvent> subscribe(String tenantId, String tableName) {
+            public Flux<CDCEvent> subscribe(String tenantId, String tableName) {
                 Runnable hook = midSubscribe.getAndSet(null);
                 if (hook != null) {
                     hook.run();
@@ -174,7 +179,7 @@ class WsSessionLimitsTest {
     @Test
     @DisplayName("realtime: a close that lands during a subscribe gives its project slot back")
     void realtimeCloseDuringSubscribeKeepsNoSlot() throws Exception {
-        java.util.concurrent.atomic.AtomicReference<Runnable> midSubscribe = new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicReference<Runnable> midSubscribe = new AtomicReference<>();
         subscriptions = closingMidSubscribe(midSubscribe);
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 1, 8), Runnable::run);
         WsSession closing = session("p1", "1.1.1.1", new ArrayList<>());
@@ -194,7 +199,7 @@ class WsSessionLimitsTest {
     @Test
     @DisplayName("GraphQL: a close that lands during a subscribe gives its project slot back")
     void graphqlCloseDuringSubscribeKeepsNoSlot() throws Exception {
-        java.util.concurrent.atomic.AtomicReference<Runnable> midSubscribe = new java.util.concurrent.atomic.AtomicReference<>();
+        AtomicReference<Runnable> midSubscribe = new AtomicReference<>();
         subscriptions = closingMidSubscribe(midSubscribe);
         GraphQLWebSocketHandler handler = graphql(limits(10, 10, 5, 1, 8));
         String query = "{\"type\":\"subscribe\",\"id\":\"1\",\"payload\":"
@@ -327,7 +332,7 @@ class WsSessionLimitsTest {
     @DisplayName("one client that never reads, or is slow to render, does not delay another project's events")
     void slowClientDoesNotDelayAnotherProject() throws Exception {
         RealtimeWebSocketHandler handler = realtime(limits(10, 10, 5, 50, 50),
-                java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor());
+                Executors.newVirtualThreadPerTaskExecutor());
         AtomicBoolean stalled = new AtomicBoolean(true);
         CountDownLatch sending = new CountDownLatch(1);
         List<String> slowSent = Collections.synchronizedList(new ArrayList<>());

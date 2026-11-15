@@ -78,16 +78,23 @@ The engine runs on Micronaut. It used to run on Spring Boot, and three things we
 - **Heavy for what it does.** More memory and more CPU for the same traffic.
 - **Lower throughput and higher latency than it needs to be**, which showed first on GraphQL.
 
-Measured with the same harness on both builds: a 1 CPU / 1 GiB container, 3 repetitions each.
+Measured with the same harness on both builds: a 1 CPU / 1 GiB container, 3 repetitions each. The numbers come from two phases of a run, and they are not comparable across phases: a cold start is the first minute after the container starts, on a JVM that has not warmed up; the warm ladder is the load ladder once it has.
+
+Cold start:
 
 | | Spring Boot | Micronaut |
 |---|---|---|
 | Ready time | 13.8 s | 7.8 s |
-| Highest clean rate, REST and GraphQL (errors < 1%, p99 < 100 ms) | 1600 rps | 3200 rps (top of the ladder) |
-| Served when 3200 rps was offered, REST / GraphQL | 1845 / 1616 rps | 3200 / 3200 rps |
+| Time to reach 800 rps after the start | 50-60 s | 10-20 s |
 | GraphQL p95 at 500 rps | 623 ms | 4.9 ms |
 | REST p99 at 500 rps | 5.6 ms | 2.9 ms |
-| Time to reach 800 rps after a cold start | 50-60 s | 10-20 s |
+
+Warm ladder:
+
+| | Spring Boot | Micronaut |
+|---|---|---|
+| Highest clean rate, REST and GraphQL (errors < 1%, p99 < 100 ms) | 1600 rps | 3200 rps (top of the ladder) |
+| Served when 3200 rps was offered, REST / GraphQL | 1845 / 1616 rps | 3200 / 3200 rps |
 | Memory (RSS) after the ladders | 459 MiB | 285 MiB |
 | CPU at 500 rps, REST | 0.46 cores | 0.22 cores |
 

@@ -141,8 +141,10 @@ const CASES = [
     withoutIssuer: (await graphqlAs(engine, '{ __typename }', bearer(token()))).status,
     withIssuer: (await graphqlAs(engine, '{ __typename }', bearer(token({ extra: { iss: 'contract-issuer' } })))).status,
   })), { withoutIssuer: 401, withIssuer: 200 }],
-  ['APP_CORS_ALLOWED_ORIGINS sets the origins for routes with no project', runtime({ ...SINGLE_DATABASE_ENV, APP_CORS_ALLOWED_ORIGINS: 'https://allowed.contract.test' }, READY_APP, async (engine) => {
-    const preflight = (origin) => request(engine.app, '/', { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'GET' } });
+  // No path is served without a project, so the platform default applies to a project's routes only where no
+  // provisioning is configured to say otherwise.
+  ['APP_CORS_ALLOWED_ORIGINS sets the origins where no provisioning says otherwise', runtime({ ...withoutKeys(SINGLE_DATABASE_ENV, 'APP_SECURITY_RLS_POLICY_URL', 'APP_SECURITY_RLS_POLICY_PAT'), APP_CORS_ALLOWED_ORIGINS: 'https://allowed.contract.test' }, READY_APP, async (engine) => {
+    const preflight = (origin) => request(engine.app, `/${P}/graphql`, { method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'POST' } });
     const allowed = await preflight('https://allowed.contract.test');
     const refused = await preflight('https://other.contract.test');
     return { allowed: [allowed.status, allowed.headers['access-control-allow-origin']], refused: refused.status };

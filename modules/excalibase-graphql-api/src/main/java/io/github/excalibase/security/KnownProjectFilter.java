@@ -21,9 +21,9 @@ import org.slf4j.LoggerFactory;
 import io.github.excalibase.observability.requests.RequestMetrics;
 
 /**
- * Refuses a request whose path names a project this deployment does not serve.
- * Runs on every project-scoped route — GraphQL, REST and both WebSocket
- * upgrades — whether or not authentication is on.
+ * Refuses a request whose path names a project this deployment does not serve, and one whose path names no
+ * project at all: the first path segment is the project, on every surface, and nothing is served without one
+ * (the actuator excepted). Both answers are the same 404. Runs whether or not authentication is on.
  */
 @ServerFilter(Filter.MATCH_ALL_PATTERN)
 public class KnownProjectFilter implements Ordered {
@@ -56,9 +56,12 @@ public class KnownProjectFilter implements Ordered {
     @RequestFilter
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request) {
-        String projectId = ProjectPath.fromUri(request.getPath());
-        if (projectId == null) {
+        if (isManagement(request.getPath())) {
             return null;
+        }
+        String projectId = ProjectPath.leadingSegment(request.getPath());
+        if (projectId == null) {
+            return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
         }
         try {
             knownProjects.require(projectId);
@@ -80,6 +83,11 @@ public class KnownProjectFilter implements Ordered {
             request.getAttributes().put(KNOWN_PROJECT_ATTR, projectId);
         }
         return null;
+    }
+
+    /** The actuator is the management surface, not a project's; it is the only path served without a project id. */
+    private static boolean isManagement(String path) {
+        return path.equals("/actuator") || path.startsWith("/actuator/");
     }
 
     private static boolean isPreflight(HttpRequest<?> request) {

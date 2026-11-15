@@ -18,7 +18,7 @@ import java.util.Optional;
 /**
  * Where both websocket handlers get what a subscription may deliver: the role's access plan decides
  * whether the table can be subscribed to at all, then judges and projects each change. A session with
- * no project in its path is the single-tenant path and passes changes through.
+ * no project in its path is refused: the handshake admits no such session, and none is given the unfiltered stream.
  */
 final class RealtimeGate {
 
@@ -93,7 +93,10 @@ final class RealtimeGate {
 
     static Opening open(AccessPlans plans, WsSession session, String subscriptionKey) {
         String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
-        if (plans == null || projectId == null) {
+        if (projectId == null) {
+            return Opening.refused("Unknown project");
+        }
+        if (plans == null) {
             return new Opening(new Delivery(null), null, false);
         }
         Principal principal = GraphQLWebSocketHandler.principalOf(session);

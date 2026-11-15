@@ -36,7 +36,7 @@ public class RealtimeWsEndpoint {
         return Publishers.empty();
     }
 
-    @OnMessage
+    @OnMessage(maxPayloadLength = WsLimits.MAX_FRAME_BYTES)
     @ExecuteOn(TaskExecutors.BLOCKING)
     public void onMessage(String message, WebSocketSession session) throws Exception {
         MicronautWsSession.awaitOpened(session);

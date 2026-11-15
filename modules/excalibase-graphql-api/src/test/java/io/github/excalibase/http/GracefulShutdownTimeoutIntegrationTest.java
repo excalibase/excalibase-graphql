@@ -24,8 +24,13 @@ class GracefulShutdownTimeoutIntegrationTest {
     @DisplayName("shutdown gives up on a request held past the timeout instead of waiting for it")
     void stopsAfterTheTimeout() throws Exception {
         Map<String, Object> properties = new HashMap<>();
-        properties.put("app.security.multi-tenant.provisioning-url", "http://localhost:59998/api");
-        properties.put("app.security.auth.hmac-secret", "shutdown-test-hmac-secret-0123456789abcdef");
+        properties.put("spring.datasource.url", "jdbc:postgresql://localhost:59999/nonexistent");
+        properties.put("spring.datasource.username", "fake");
+        properties.put("spring.datasource.password", "fake");
+        properties.put("app.project-id", "test-proj");
+        properties.put("app.database-type", "postgres");
+        properties.put("app.security.jwt-enabled", "false");
+        properties.put("app.security.insecure-dev-mode", "true");
         properties.put("app.nats.enabled", "false");
         properties.put("micronaut.server.port", "-1");
         properties.put("endpoints.all.port", "-1");

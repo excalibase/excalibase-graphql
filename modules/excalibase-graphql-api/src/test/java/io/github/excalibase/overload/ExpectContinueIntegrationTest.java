@@ -59,4 +59,29 @@ class ExpectContinueIntegrationTest extends EngineIntegrationTest {
             assertThat(new String(answer, StandardCharsets.UTF_8)).isEqualTo("HTTP/1.1 200");
         }
     }
+
+    @Test
+    @DisplayName("a chunked upload that expects 100 Continue is told to go on, and then answered")
+    void chunkedUploadAfterContinue() throws Exception {
+        byte[] body = "{\"query\":\"{ __typename }\"}".getBytes(StandardCharsets.UTF_8);
+        String head = "POST /" + PROJECT + "/graphql HTTP/1.1\r\nHost: localhost\r\nExpect: 100-continue\r\n"
+                + "Content-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n";
+        try (Socket socket = new Socket("localhost", server.getPort())) {
+            socket.setSoTimeout(5000);
+            OutputStream out = socket.getOutputStream();
+            InputStream in = socket.getInputStream();
+            out.write(head.getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            byte[] interim = new byte[25];
+            assertThat(in.readNBytes(interim, 0, interim.length)).isEqualTo(interim.length);
+            assertThat(new String(interim, StandardCharsets.UTF_8)).isEqualTo("HTTP/1.1 100 Continue\r\n\r\n");
+            out.write((Integer.toHexString(body.length) + "\r\n").getBytes(StandardCharsets.UTF_8));
+            out.write(body);
+            out.write("\r\n0\r\n\r\n".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            byte[] answer = new byte[12];
+            assertThat(in.readNBytes(answer, 0, answer.length)).isEqualTo(answer.length);
+            assertThat(new String(answer, StandardCharsets.UTF_8)).isEqualTo("HTTP/1.1 200");
+        }
+    }
 }

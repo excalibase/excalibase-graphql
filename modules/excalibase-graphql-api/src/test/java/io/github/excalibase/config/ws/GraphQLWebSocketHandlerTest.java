@@ -252,8 +252,8 @@ class GraphQLWebSocketHandlerTest {
     }
 
     @Test
-    @DisplayName("a session without a project passes events through (single-tenant)")
-    void noProject_passthrough() throws Exception {
+    @DisplayName("a session without a project is refused and is given no events")
+    void noProject_isRefused() throws Exception {
         var handler = handler();
         var sent = new ArrayList<String>();
         var session = session(sent, null, null);
@@ -263,8 +263,8 @@ class GraphQLWebSocketHandlerTest {
         subscriptionService.publish(null, new CDCEvent(
                 "INSERT", null, "widget", "{\"id\":7}", 0L));
 
-        await().atMost(Duration.ofSeconds(2)).until(() -> !sent.isEmpty());
-        assertThat(deliveredData(sent.getFirst()).get("id").asInt()).isEqualTo(7);
+        assertThat(subscriptionService.hasSubscribers(null, "widget")).isFalse();
+        assertThat(sent).noneMatch(message -> message.contains("\"next\""));
     }
 
     @Test

@@ -113,7 +113,13 @@ public final class RawWebSocket implements AutoCloseable {
         RANDOM.nextBytes(mask);
         ByteArrayOutputStream frame = new ByteArrayOutputStream();
         frame.write(0x80 | opcode);
-        frame.write(0x80 | payload.length);
+        if (payload.length < 126) {
+            frame.write(0x80 | payload.length);
+        } else {
+            frame.write(0x80 | 126);
+            frame.write(payload.length >> 8);
+            frame.write(payload.length & 0xFF);
+        }
         frame.writeBytes(mask);
         for (int i = 0; i < payload.length; i++) {
             frame.write(payload[i] ^ mask[i % 4]);

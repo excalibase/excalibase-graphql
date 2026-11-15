@@ -79,14 +79,14 @@ class ProjectCorsConfigurationSourceTest {
     }
 
     @Test
-    @DisplayName("the wildcard entry allows any origin without credentials")
+    @DisplayName("the wildcard entry allows any valid origin by echoing it, never by sending *, without credentials")
     void wildcardAllowsAnyOrigin() {
         ProjectCorsConfigurationSource source = new ProjectCorsConfigurationSource(
                 providerWith(Map.of(PROJECT, List.of("*"))), GLOBAL);
 
         CorsRules config = source.getCorsConfiguration(request("/" + PROJECT + "/graphql", ORIGIN_EVIL));
 
-        assertThat(config.checkOrigin(ORIGIN_EVIL)).isEqualTo("*");
+        assertThat(config.checkOrigin(ORIGIN_EVIL)).isEqualTo(ORIGIN_EVIL);
         assertThat(config.allowCredentials()).isFalse();
     }
 

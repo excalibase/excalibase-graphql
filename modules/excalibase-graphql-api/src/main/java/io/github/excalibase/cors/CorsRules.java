@@ -1,5 +1,7 @@
 package io.github.excalibase.cors;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -55,17 +57,31 @@ public final class CorsRules {
         if (requestOrigin == null || requestOrigin.isBlank()) {
             return null;
         }
-        if (allowedOrigins.contains(ALL)) {
-            return allowCredentials ? requestOrigin : ALL;
-        }
         String trimmed = requestOrigin.endsWith("/") ? requestOrigin.substring(0, requestOrigin.length() - 1) : requestOrigin;
         for (String allowed : allowedOrigins) {
             String candidate = allowed.endsWith("/") ? allowed.substring(0, allowed.length() - 1) : allowed;
-            if (trimmed.equalsIgnoreCase(candidate)) {
+            if (!ALL.equals(candidate) && trimmed.equalsIgnoreCase(candidate)) {
                 return requestOrigin;
             }
         }
-        return null;
+        // A wildcard grants the asking origin by name, never a literal *: the answer names who may read it, and an
+        // opaque origin (null, file pages, sandboxed frames) is nobody the allowlist can vouch for.
+        return allowedOrigins.contains(ALL) && isValidOrigin(requestOrigin) ? requestOrigin : null;
+    }
+
+    /** Exactly scheme, host and optional port: no user, path, query or fragment, and not the opaque {@code null}. */
+    static boolean isValidOrigin(String origin) {
+        if (origin.chars().anyMatch(c -> c <= ' ' || c >= 0x7f)) {
+            return false;
+        }
+        try {
+            URI uri = new URI(origin);
+            return !uri.isOpaque() && uri.getScheme() != null && uri.getHost() != null
+                    && uri.getRawUserInfo() == null && "".equals(uri.getRawPath())
+                    && uri.getRawQuery() == null && uri.getRawFragment() == null;
+        } catch (URISyntaxException _) {
+            return false;
+        }
     }
 
     /** The methods to grant a preflight asking for {@code requestMethod}, or null when it is not allowed. */

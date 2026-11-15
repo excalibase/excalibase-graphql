@@ -55,7 +55,9 @@ public class WsHandshakeFilter implements Ordered {
         }
         String pathProject = WsProjectPath.projectId(request.getPath());
         if (pathProject == null) {
-            return null;
+            // Routed by the framework though no project parses from it (a trailing slash, an encoded slash): with
+            // no project there is no origin check, no authentication and no permission filter, so it is not served.
+            return WsProjectPath.isWebSocketRoute(request.getPath()) ? HttpResponse.notFound() : null;
         }
         String origin = request.getHeaders().get("Origin");
         if (origin != null && !origin.isBlank() && isWebOrigin(origin) && !webOriginAllowed(request, origin)) {
