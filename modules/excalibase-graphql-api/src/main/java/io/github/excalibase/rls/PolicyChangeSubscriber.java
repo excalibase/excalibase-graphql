@@ -1,10 +1,7 @@
 package io.github.excalibase.rls;
 
 import io.github.excalibase.nats.NatsOptionsFactory;
-import io.github.excalibase.permissions.PermissionProvider;
-import io.github.excalibase.permissions.PermissionSet;
-import io.github.excalibase.permissions.PermissionsUnavailableException;
-import io.github.excalibase.security.UnknownProjectException;
+import io.github.excalibase.permissions.PermissionChangeCheck;
 import io.nats.client.Connection;
 import io.nats.client.Dispatcher;
 import io.nats.client.Message;
@@ -17,7 +14,6 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -40,7 +36,7 @@ public class PolicyChangeSubscriber {
     static final String SUBJECT = "policies.*.changed";
 
     private final List<ProjectCacheEvictor> evictors;
-    private final PermissionProvider permissions;
+    private final PermissionChangeCheck permissionChange;
     private final ProjectSockets sockets;
     private final boolean natsEnabled;
     private final String natsUrl;
@@ -72,14 +68,14 @@ public class PolicyChangeSubscriber {
     }
 
     /**
-     * @param permissions where a project's permission document is read; compared before and after the eviction
+     * @param permissionChange compares the permission document before and after the eviction
      * @param sockets     the project's open sockets, closed only when the document actually changed
      */
-    public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, PermissionProvider permissions,
+    public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, PermissionChangeCheck permissionChange,
                                   ProjectSockets sockets, boolean natsEnabled, String natsUrl,
                                   String natsUsername, String natsPassword, String natsInboxPrefix) {
         this.evictors = List.copyOf(evictors);
-        this.permissions = permissions;
+        this.permissionChange = permissionChange;
         this.sockets = sockets;
         this.natsEnabled = natsEnabled;
         this.natsUrl = natsUrl;
@@ -151,27 +147,14 @@ public class PolicyChangeSubscriber {
         }
         log.info("Policy change for project {} - evicting cached policies and engines", projectId);
         boolean watched = sockets != null && sockets.hasSockets(projectId);
-        Optional<PermissionSet> before = watched ? permissions.cached(projectId) : Optional.empty();
-        evictors.forEach(evictor -> evictor.evict(projectId));
-        if (watched && permissionsChanged(projectId, before)) {
-            sockets.closeForPermissionChange(projectId);
+        if (watched) {
+            permissionChange.remember(projectId);
         }
-    }
-
-    /**
-     * Reads the project's permissions back and compares them with the document its sockets were opened under.
-     * An event that changes nothing (a plain statement run in Studio publishes one too) keeps the sockets open.
-     * When there is nothing to compare with, or the read fails, the answer is yes: the sockets close and their
-     * clients subscribe again, which is what every event did before this comparison.
-     */
-    private boolean permissionsChanged(String projectId, Optional<PermissionSet> before) {
-        try {
-            PermissionSet after = permissions.permissionsFor(projectId);
-            return before.isEmpty() || !before.get().equals(after);
-        } catch (PermissionsUnavailableException | UnknownProjectException e) {
-            log.warn("Permissions of project {} cannot be read back, closing its sockets: {}", projectId,
-                    e.getMessage());
-            return true;
+        evictors.forEach(evictor -> evictor.evict(projectId));
+        // An event that changes nothing (a plain statement run in Studio publishes one too) keeps the sockets
+        // open. When the permissions cannot be compared or read back the sockets close, as every event once did.
+        if (watched && permissionChange.changed(projectId)) {
+            sockets.closeForPermissionChange(projectId);
         }
     }
 

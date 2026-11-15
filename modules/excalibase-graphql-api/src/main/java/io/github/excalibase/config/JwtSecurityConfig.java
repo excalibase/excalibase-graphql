@@ -5,6 +5,7 @@ import io.github.excalibase.config.datasource.TenantDataSourceFactory;
 import io.github.excalibase.config.datasource.TenantDbSslMode;
 import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionCachePolicy;
+import io.github.excalibase.permissions.PermissionChangeCheck;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
 import io.github.excalibase.config.ws.WsRuntime;
@@ -119,7 +120,7 @@ public class JwtSecurityConfig {
             @Value("${app.nats.username:}") String natsUsername,
             @Value("${app.nats.password:}") String natsPassword,
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
-        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict), permissionProvider,
+        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict), new PermissionChangeCheck(permissionProvider),
                 webSockets, natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
     }
 

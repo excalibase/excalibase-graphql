@@ -1,5 +1,6 @@
 package io.github.excalibase.rls;
 
+import io.github.excalibase.permissions.PermissionChangeCheck;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
@@ -39,7 +40,7 @@ class PolicyChangeSocketsTest {
         permissions = mock(PermissionProvider.class);
         sockets = mock(ProjectSockets.class);
         when(sockets.hasSockets(PROJECT)).thenReturn(true);
-        subscriber = new PolicyChangeSubscriber(List.of(permissions), permissions, sockets, false,
+        subscriber = new PolicyChangeSubscriber(List.of(permissions), new PermissionChangeCheck(permissions), sockets, false,
                 "nats://localhost:4222", "", "", "");
     }
 
