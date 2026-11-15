@@ -1,5 +1,6 @@
 package io.github.excalibase.service;
 
+import io.github.excalibase.http.ControlPlaneHttpClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.security.TokenFileSource;
@@ -36,9 +37,7 @@ public class VaultCredentialService {
   public VaultCredentialService(String provisioningUrl, TokenFileSource tokenSource) {
     this.provisioningUrl = provisioningUrl;
     this.tokenSource = tokenSource;
-    this.httpClient = HttpClient.newBuilder()
-        .connectTimeout(TIMEOUT)
-        .build();
+    this.httpClient = ControlPlaneHttpClient.create(TIMEOUT);
   }
 
   /**
