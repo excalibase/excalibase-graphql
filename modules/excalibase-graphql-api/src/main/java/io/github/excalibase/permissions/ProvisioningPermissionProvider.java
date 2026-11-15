@@ -1,5 +1,6 @@
 package io.github.excalibase.permissions;
 
+import io.github.excalibase.http.ControlPlaneHttpClient;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -70,7 +71,7 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .build();
 
-    private final HttpClient http = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
+    private final HttpClient http = ControlPlaneHttpClient.create(TIMEOUT);
     private final String baseUrl;
     private final TokenFileSource tokenSource;
     private final PermissionCachePolicy policy;
