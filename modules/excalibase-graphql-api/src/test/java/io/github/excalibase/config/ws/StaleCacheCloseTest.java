@@ -29,7 +29,7 @@ class StaleCacheCloseTest {
         attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
         when(session.getAttributes()).thenReturn(attributes);
         runtime.admit(session);
-        runtime.openedUnder(session, openedUnder);
+        runtime.openedUnder(session, openedUnder, runtime.permissionGeneration(session));
         return session;
     }
 
@@ -67,7 +67,7 @@ class StaleCacheCloseTest {
     void mixedSubscriptions() throws Exception {
         WsRuntime runtime = WsRuntime.inline();
         WsSession mixed = socket(runtime, 8);
-        runtime.openedUnder(mixed, 7);
+        runtime.openedUnder(mixed, 7, runtime.permissionGeneration(mixed));
         WsSession untracked = socket(runtime, -1);
 
         eventWithTheCacheAt(runtime, 8);

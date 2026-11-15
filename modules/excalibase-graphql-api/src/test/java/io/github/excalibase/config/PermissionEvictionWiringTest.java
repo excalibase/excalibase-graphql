@@ -66,6 +66,22 @@ class PermissionEvictionWiringTest {
         verify(webSockets).hasSockets("proj-abc");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void policyChange_registersTheProvidersRefreshNoticeWithTheSockets() {
+        PermissionProvider permissions = mock(PermissionProvider.class);
+        WsRuntime webSockets = mock(WsRuntime.class);
+
+        new AppConfig().policyChangeSubscriber(permissions, mock(GraphqlSchemaManager.class), webSockets, false,
+                "nats://localhost:4222", "", "", "");
+        org.mockito.ArgumentCaptor<java.util.function.ObjLongConsumer<String>> listener =
+                org.mockito.ArgumentCaptor.forClass(java.util.function.ObjLongConsumer.class);
+        verify(permissions).onChange(listener.capture());
+        listener.getValue().accept("proj-abc", 8);
+
+        verify(webSockets).permissionsAre("proj-abc", 8);
+    }
+
     private static void evictFor(PolicyChangeSubscriber subscriber, String subject) {
         try {
             Method evictFor = PolicyChangeSubscriber.class.getDeclaredMethod("evictFor", String.class);

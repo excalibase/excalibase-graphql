@@ -179,6 +179,7 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
             return;
         }
         // A collection the role cannot select is refused like one that does not exist.
+        long generation = runtime.permissionGeneration(session);
         RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, resource);
         if (opening.delivery() == null) {
             sendError(session, id, opening.unavailable() ? opening.refusal() : "Unknown collection: " + collection);
@@ -188,7 +189,9 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
             return;
         }
         RealtimeGate.Delivery delivery = opening.delivery();
-        runtime.openedUnder(session, delivery.permissionsVersion());
+        if (!runtime.openedUnder(session, delivery.permissionsVersion(), generation)) {
+            return;
+        }
         if (runtime.atSessionCap(sessionSubs.size())) {
             sendError(session, id, "Too many subscriptions on this connection");
             return;
