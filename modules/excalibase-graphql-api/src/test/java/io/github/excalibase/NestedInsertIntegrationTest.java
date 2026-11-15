@@ -132,12 +132,8 @@ class NestedInsertIntegrationTest extends EngineIntegrationTest {
     private JdbcTemplate jdbc;
 
     @BeforeEach
-    void openJdbc() {
+    void openJdbcAndEmpty() {
         jdbc = DatabaseAccess.template(postgres);
-    }
-
-    @BeforeEach
-    void empty() {
         jdbc.execute("TRUNCATE item_notes, order_items, orders, customers RESTART IDENTITY CASCADE");
     }
 

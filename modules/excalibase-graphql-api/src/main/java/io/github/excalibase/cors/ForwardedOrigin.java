@@ -4,7 +4,6 @@ import io.github.excalibase.config.ws.ClientAddress;
 import io.micronaut.http.HttpRequest;
 
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.util.Locale;
 
 /**
@@ -41,8 +40,7 @@ final class ForwardedOrigin {
     }
 
     private static boolean trusted(HttpRequest<?> request) {
-        InetSocketAddress remote = request.getRemoteAddress();
-        InetAddress peer = remote == null ? null : remote.getAddress();
+        InetAddress peer = request.getRemoteAddress().getAddress();
         return peer != null && ClientAddress.isInternal(peer);
     }
 }

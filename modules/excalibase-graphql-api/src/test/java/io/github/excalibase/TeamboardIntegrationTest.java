@@ -116,12 +116,8 @@ class TeamboardIntegrationTest extends EngineIntegrationTest {
     private JdbcTemplate jdbc;
 
     @BeforeEach
-    void openJdbc() {
+    void openJdbcAndPermissions() {
         jdbc = DatabaseAccess.template(postgres);
-    }
-
-    @BeforeEach
-    void permissions() {
         PERMISSIONS.set(PermissionDocs.document(PROJECT, VERSION.incrementAndGet(),
                 entry("public.workspaces", "user", select(IS_MEMBER, ALL), insert("{}", "[\"name\",\"owner_id\"]", "{}"),
                         update(IS_OWNER, "{}", "[\"name\"]", "{}")),
