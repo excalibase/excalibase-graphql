@@ -7,16 +7,16 @@ on:
       - completed
     branches: [ main ]
 
-# One deployment per CI-tested commit. A workflow_run's github.sha is the
-# branch tip when the run starts, not the commit CI tested, so everything
+# One deployment per CI-tested commit. The sha a workflow_run exposes by
+# default is the branch tip when the run starts, not the commit CI tested, so everything
 # below uses the CI run's own head_sha (EXC-745).
 concurrency:
-  group: cd-${{ github.event.workflow_run.head_sha || github.sha }}
+  group: cd-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 env:
   DOCKER_IMAGE: excalibase/excalibase-graphql
-  COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+  COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
 
 jobs:
   docker:
@@ -30,36 +30,15 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
-        ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+        ref: ${{ github.event.workflow_run.head_sha }}
       
-    - name: Set up JDK 21 (if building from scratch)
-      if: github.event_name == 'push'
-      uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
-      with:
-        java-version: '25'
-        distribution: 'corretto'
-        
-    - name: Cache Maven dependencies (if building from scratch)
-      if: github.event_name == 'push'
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-maven-
-      
-    - name: Download JAR artifacts (if from workflow_run)
-      if: github.event_name == 'workflow_run'
+    - name: Download JAR artifacts
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: jar-artifacts
         path: modules/excalibase-graphql-api/target/
         github-token: ${{ secrets.GITHUB_TOKEN }}
         run-id: ${{ github.event.workflow_run.id }}
-        
-    - name: Build JAR with Make (if not from workflow_run)
-      if: github.event_name == 'push'
-      run: make build
         
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
@@ -138,7 +117,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
-        ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+        ref: ${{ github.event.workflow_run.head_sha }}
 
     - name: Download native binary from CI
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

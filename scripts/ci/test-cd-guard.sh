@@ -39,4 +39,7 @@ done
 [[ $(grep -c 'labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}' "$cd_yml") == 2 ]]; check "both metadata steps set the revision label to the tested commit" "0" "$?"
 grep -q 'context: git' "$cd_yml"; check "metadata steps do not use the git context (fails on a detached checkout)" "1" "$?"
 
+grep -q 'github\.sha' "$cd_yml"; check "cd.yml never references the branch-tip sha" "1" "$?"
+grep -q "github.event_name == 'push'" "$cd_yml"; check "cd.yml has no push-only steps" "1" "$?"
+
 exit "$failures"
