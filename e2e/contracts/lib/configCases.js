@@ -8,6 +8,7 @@ const { token, bearer, sign } = require('./tokens');
 const { parseSamples } = require('./prometheus');
 const { startEngine, startFailingEngine, SINGLE_DATABASE_ENV } = require('./containers');
 const { PROFILE, openSocket } = require('./traffic');
+const { observeWithLogs } = require('./engineLogs');
 
 const P = stack.project;
 const service = () => bearer(token({ role: 'service' }));
@@ -20,6 +21,13 @@ const MULTI_TENANT_ENV = {
 };
 const withoutKeys = (env, ...keys) => Object.fromEntries(Object.entries(env).filter(([key]) => !keys.includes(key)));
 const READY_MANAGEMENT = { readyPort: 8081, readyPath: '/actuator/health', readyUntil: (response) => response.status === 200 };
+// Serving, not just listening: the project's own query answers, which is what the first request of a case needs.
+const READY_PROJECT_QUERY = {
+  readyPort: 10000,
+  readyPath: `/${P}/api/v1/customer?customer_id=eq.1&select=customer_id`,
+  readyHeaders: () => ({ ...service(), ...PROFILE }),
+  readyUntil: (response) => response.status === 200,
+};
 const READY_APP = { readyPort: 10000, readyPath: '/', readyUntil: (response) => response.status > 0 };
 
 const ONE_ROW = 'customer_id=eq.1&select=customer_id';
@@ -58,12 +66,7 @@ function runtime(env, opts, observe) {
   return async () => {
     const engine = await startEngine(env, opts);
     try {
-      const outcome = await observe(engine);
-      if (outcome && outcome.error) {
-        // a request that failed to answer: keep the engine's side of it, the container is removed right after
-        console.error(`engine log before "${outcome.error}":\n${engine.logs().slice(-60).join('\n')}`);
-      }
-      return outcome;
+      return await observeWithLogs(engine, observe);
     } finally {
       engine.stop();
     }
@@ -94,11 +97,11 @@ const [multiTenantPat, aliasPat, policyPat, otherPat, literalPat, filePat] = Arr
 const PAT_FILE = patFile(filePat);
 
 const CASES = [
-  ['POSTGRES_URL, POSTGRES_USER and POSTGRES_PASSWORD select the database', runtime(SINGLE_DATABASE_ENV, READY_APP, async (engine) => summary(await rows(engine, ONE_ROW))), { status: 200, rows: 1 }],
+  ['POSTGRES_URL, POSTGRES_USER and POSTGRES_PASSWORD select the database', runtime(SINGLE_DATABASE_ENV, READY_PROJECT_QUERY, async (engine) => summary(await rows(engine, ONE_ROW))), { status: 200, rows: 1 }],
   ['SPRING_DATASOURCE_URL, _USERNAME and _PASSWORD select the database', runtime({
     ...withoutKeys(SINGLE_DATABASE_ENV, 'POSTGRES_URL', 'POSTGRES_USER', 'POSTGRES_PASSWORD'),
     SPRING_DATASOURCE_URL: SINGLE_DATABASE_ENV.POSTGRES_URL, SPRING_DATASOURCE_USERNAME: 'app_user', SPRING_DATASOURCE_PASSWORD: 'password123',
-  }, READY_APP, async (engine) => summary(await rows(engine, ONE_ROW))), { status: 200, rows: 1 }],
+  }, READY_PROJECT_QUERY, async (engine) => summary(await rows(engine, ONE_ROW))), { status: 200, rows: 1 }],
   ['SPRING_DATASOURCE_PASSWORD wins over POSTGRES_PASSWORD', runtime({ ...SINGLE_DATABASE_ENV, SPRING_DATASOURCE_PASSWORD: 'wrong-password' }, READY_APP, async (engine) => (await rows(engine)).status >= 500 || (await request(engine.management, '/actuator/health')).status === 503), true],
   ['a database URL with no credentials refuses to start', refusal(withoutKeys(SINGLE_DATABASE_ENV, 'POSTGRES_USER', 'POSTGRES_PASSWORD'), 'spring.datasource.username'), { refused: true, mentions: true }],
   ['no database URL and no provisioning URL refuses to start', refusal(withoutKeys(SINGLE_DATABASE_ENV, 'POSTGRES_URL', 'POSTGRES_USER', 'POSTGRES_PASSWORD'), 'datasource'), { refused: true, mentions: true }],
