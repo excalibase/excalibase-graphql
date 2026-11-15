@@ -2,7 +2,9 @@ package io.github.excalibase.config.ws;
 
 import io.github.excalibase.cors.ProjectCorsConfigurationSource;
 import io.micronaut.http.HttpRequest;
+import io.github.excalibase.security.FilterErrors;
 import io.micronaut.http.HttpResponse;
+import io.micronaut.http.HttpStatus;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -34,6 +36,19 @@ class WsHandshakeNoProjectTest {
 
         assertThat(answer).isNotNull();
         assertThat(answer.code()).isEqualTo(404);
+        assertThat(String.valueOf(answer.body())).contains("\"code\":\"project_not_found\"");
+    }
+
+    @Test
+    @DisplayName("the refusal is byte for byte the one an HTTP request to an unknown project gets")
+    void sameBodyAsHttp() {
+        HttpResponse<?> http = FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
+
+        HttpResponse<?> answer = upgrade("/p/graphql/");
+
+        assertThat(answer.code()).isEqualTo(http.code());
+        assertThat(answer.body()).isEqualTo(http.body());
+        assertThat(answer.getContentType()).isEqualTo(http.getContentType());
     }
 
     @Test

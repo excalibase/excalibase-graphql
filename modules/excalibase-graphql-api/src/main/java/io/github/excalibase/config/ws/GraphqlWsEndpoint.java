@@ -8,6 +8,7 @@ import io.micronaut.scheduling.annotation.ExecuteOn;
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
 import io.micronaut.websocket.annotation.OnClose;
+import io.micronaut.websocket.annotation.OnError;
 import io.micronaut.websocket.annotation.OnMessage;
 import io.micronaut.websocket.annotation.OnOpen;
 import io.micronaut.websocket.annotation.ServerWebSocket;
@@ -41,6 +42,11 @@ public class GraphqlWsEndpoint {
     public void onMessage(String message, WebSocketSession session) throws Exception {
         MicronautWsSession.awaitOpened(session);
         handler.onMessage(MicronautWsSession.of(session), message);
+    }
+
+    @OnError
+    public void onError(WebSocketSession session, Throwable failure) {
+        WsFrameErrors.report(session, failure);
     }
 
     @OnClose

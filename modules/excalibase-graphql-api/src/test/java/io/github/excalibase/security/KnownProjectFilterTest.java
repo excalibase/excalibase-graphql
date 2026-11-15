@@ -1,15 +1,22 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.service.VaultCredentialException;
+import io.github.excalibase.config.datasource.DynamicDataSourceManager;
+import io.micronaut.core.convert.value.MutableConvertibleValues;
+import io.micronaut.core.convert.value.MutableConvertibleValuesMap;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.MutableHttpRequest;
+import java.net.InetSocketAddress;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class KnownProjectFilterTest {
 
@@ -160,14 +167,88 @@ class KnownProjectFilterTest {
         assertThat(known.getAttribute(KnownProjectFilter.KNOWN_PROJECT_ATTR)).isEmpty();
     }
 
-    @Test
-    @DisplayName("routes without a project (health, actuator) are not project-checked")
-    void projectlessRoute_reachesChain() {
-        KnownProjects rejectEverything = projectId -> {
-            throw new UnknownProjectException(projectId);
-        };
+    private static final int MANAGEMENT_PORT = 8081;
+    private static final KnownProjects REJECT_EVERYTHING = projectId -> {
+        throw new UnknownProjectException(projectId);
+    };
 
-        assertThat(call(rejectEverything, "/actuator/health")).isNull();
+    private static HttpResponse<?> callOnPort(int serverPort, int managementPort, String uri) {
+        HttpRequest<?> request = mock(HttpRequest.class);
+        when(request.getPath()).thenReturn(uri);
+        when(request.getServerAddress()).thenReturn(new InetSocketAddress("localhost", serverPort));
+        when(request.getAttributes()).thenReturn(new MutableConvertibleValuesMap<>());
+        return new KnownProjectFilter(REJECT_EVERYTHING, false, managementPort).filter(request);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/actuator", "/actuator/health", "/actuator/metrics/jvm.memory.used"})
+    @DisplayName("the actuator is served on the management port without a project")
+    void actuator_onTheManagementPort_reachesChain(String path) {
+        assertThat(callOnPort(MANAGEMENT_PORT, MANAGEMENT_PORT, path)).as(path).isNull();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/actuator", "/actuator/health", "/actuator/metrics/jvm.memory.used"})
+    @DisplayName("the same actuator path on the public port is the same 404 as an unknown project")
+    void actuator_onThePublicPort_isNotFound(String path) {
+        HttpResponse<?> response = callOnPort(8080, MANAGEMENT_PORT, path);
+
+        assertThat(response).as(path).isNotNull();
+        assertThat(response.code()).isEqualTo(404);
+        assertThat(body(response)).contains("\"code\":\"project_not_found\"");
+    }
+
+    @Test
+    @DisplayName("the actuator off the management port is refused without asking provisioning, even when it is down")
+    void actuator_onThePublicPort_isNeverLookedUp() {
+        KnownProjects provisioningDown = projectId -> {
+            throw new VaultCredentialException("provisioning unreachable");
+        };
+        HttpRequest<?> request = mock(HttpRequest.class);
+        when(request.getPath()).thenReturn("/actuator/health");
+        when(request.getServerAddress()).thenReturn(new InetSocketAddress("localhost", 8080));
+
+        HttpResponse<?> response = new KnownProjectFilter(provisioningDown, false, MANAGEMENT_PORT).filter(request);
+
+        assertThat(response.code()).isEqualTo(404);
+        assertThat(body(response)).contains("\"code\":\"project_not_found\"");
+    }
+
+    @Test
+    @DisplayName("with no management port configured the actuator is not exempt anywhere")
+    void actuator_withoutAManagementPort_isNotFound() {
+        assertThat(callOnPort(8080, -1, "/actuator/health").code()).isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("a request exempted as management is marked, so no later filter treats it as project-less by accident")
+    void managementRequestIsMarked() {
+        HttpRequest<?> request = mock(HttpRequest.class);
+        MutableConvertibleValues<Object> attributes = new MutableConvertibleValuesMap<>();
+        when(request.getPath()).thenReturn("/actuator/health");
+        when(request.getServerAddress()).thenReturn(new InetSocketAddress("localhost", MANAGEMENT_PORT));
+        when(request.getAttributes()).thenReturn(attributes);
+
+        new KnownProjectFilter(REJECT_EVERYTHING, false, MANAGEMENT_PORT).filter(request);
+
+        assertThat(attributes.contains(KnownProjectFilter.MANAGEMENT_ATTR)).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"/p%2Fq/graphql", "/..%2f/graphql", "/a.b/graphql", "/%00/graphql", "/proj%20id/graphql",
+            "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/graphql", "/;x/graphql"})
+    @DisplayName("a leading segment of no project-id shape is refused before any provisioning lookup")
+    void malformedLeadingSegment_neverReachesProvisioning(String path) {
+        DynamicDataSourceManager provisioning = mock(DynamicDataSourceManager.class);
+        KnownProjects tenants = KnownProjects.tenants(provisioning, new UnknownProjectCache(100, java.time.Duration.ofSeconds(30), System::currentTimeMillis),
+                LookupLimiter.perSecond(50));
+
+        HttpResponse<?> response = call(tenants, path);
+
+        assertThat(response).as(path).isNotNull();
+        assertThat(response.code()).isEqualTo(404);
+        assertThat(body(response)).contains("\"code\":\"project_not_found\"");
+        verifyNoInteractions(provisioning);
     }
 
     @ParameterizedTest

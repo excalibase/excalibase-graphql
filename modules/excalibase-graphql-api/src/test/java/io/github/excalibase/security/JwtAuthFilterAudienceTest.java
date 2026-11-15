@@ -134,8 +134,8 @@ class JwtAuthFilterAudienceTest {
     }
 
     @Test
-    @DisplayName("a route with no project in its path gets no project from the token either")
-    void projectlessPath_doesNotTakeTheTokensProject() throws Exception {
+    @DisplayName("a route with no project in its path is refused, whatever the token says")
+    void projectlessPath_isRefusedAndTakesNothingFromTheToken() throws Exception {
         JwtService service = new JwtService(publicKey).requireAudience(false, AUD_PREFIX);
         MutableHttpRequest<?> request = HttpRequest.GET("/actuator/health");
         request.header("Authorization", "Bearer " + token(AUD_PREFIX + PROJECT, null));
@@ -143,7 +143,32 @@ class JwtAuthFilterAudienceTest {
 
         HttpResponse<?> refusal = new JwtAuthFilter(service, enforcer()).filter(request, context);
 
-        assertThat(refusal).isNull();
+        assertThat(refusal).isNotNull();
+        assertThat(refusal.code()).isEqualTo(404);
+        assertThat(String.valueOf(refusal.body())).contains("\"code\":\"project_not_found\"");
         assertThat(context.getContext().find(RequestContextElement.class)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a project-less path that no project route serves is refused with no token at all")
+    void projectlessPath_withoutAToken_isRefused() {
+        JwtService service = new JwtService(publicKey).requireAudience(false, AUD_PREFIX);
+        MutablePropagatedContext context = MutablePropagatedContext.of(PropagatedContext.empty());
+
+        HttpResponse<?> refusal = new JwtAuthFilter(service, enforcer()).filter(HttpRequest.GET("/proj/other"), context);
+
+        assertThat(refusal).isNotNull();
+        assertThat(refusal.code()).isEqualTo(404);
+    }
+
+    @Test
+    @DisplayName("a request already admitted as management is not this filter's to refuse")
+    void managementRequest_passes() {
+        JwtService service = new JwtService(publicKey).requireAudience(false, AUD_PREFIX);
+        MutableHttpRequest<?> request = HttpRequest.GET("/actuator/health");
+        request.setAttribute(KnownProjectFilter.MANAGEMENT_ATTR, true);
+        MutablePropagatedContext context = MutablePropagatedContext.of(PropagatedContext.empty());
+
+        assertThat(new JwtAuthFilter(service, enforcer()).filter(request, context)).isNull();
     }
 }

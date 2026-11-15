@@ -2,6 +2,7 @@ package io.github.excalibase.security;
 
 import io.github.excalibase.cors.ProjectCorsConfigurationSource;
 import io.github.excalibase.service.VaultCredentialException;
+import io.micronaut.context.annotation.Value;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.order.Ordered;
 import io.micronaut.http.HttpRequest;
@@ -13,6 +14,7 @@ import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.annotation.RequestFilter;
 import io.micronaut.http.annotation.ServerFilter;
 import jakarta.inject.Inject;
+import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Optional;
@@ -23,7 +25,7 @@ import io.github.excalibase.observability.requests.RequestMetrics;
 /**
  * Refuses a request whose path names a project this deployment does not serve, and one whose path names no
  * project at all: the first path segment is the project, on every surface, and nothing is served without one
- * (the actuator excepted). Both answers are the same 404. Runs whether or not authentication is on.
+ * (the management port's actuator excepted). Both answers are the same 404. Runs whether or not authentication is on.
  */
 @ServerFilter(Filter.MATCH_ALL_PATTERN)
 public class KnownProjectFilter implements Ordered {
@@ -32,20 +34,30 @@ public class KnownProjectFilter implements Ordered {
 
     /** The project id, set once it passed the check: request metrics record only these. */
     public static final String KNOWN_PROJECT_ATTR = "excalibase.knownProject";
+    /** Set on a request admitted as management, the one request that carries no project; later filters leave it be. */
+    public static final String MANAGEMENT_ATTR = "excalibase.management";
     public static final int ORDER = -100;
 
     private final KnownProjects knownProjects;
     private final boolean markKnownProjects;
+    private final int managementPort;
 
     @Inject
-    public KnownProjectFilter(KnownProjects knownProjects, @Nullable RequestMetrics requestMetrics) {
-        this(knownProjects, requestMetrics != null);
+    public KnownProjectFilter(KnownProjects knownProjects, @Nullable RequestMetrics requestMetrics,
+                              @Value("${endpoints.all.port:-1}") int managementPort) {
+        this(knownProjects, requestMetrics != null, managementPort);
     }
 
     /** {@code markKnownProjects} only when request metrics are on, so the hot path is unchanged when off. */
-    public KnownProjectFilter(KnownProjects knownProjects, boolean markKnownProjects) {
+    public KnownProjectFilter(KnownProjects knownProjects, boolean markKnownProjects, int managementPort) {
         this.knownProjects = knownProjects;
         this.markKnownProjects = markKnownProjects;
+        this.managementPort = managementPort;
+    }
+
+    /** A filter with no management port: nothing is exempt from the project check. */
+    public KnownProjectFilter(KnownProjects knownProjects, boolean markKnownProjects) {
+        this(knownProjects, markKnownProjects, -1);
     }
 
     @Override
@@ -56,11 +68,14 @@ public class KnownProjectFilter implements Ordered {
     @RequestFilter
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request) {
-        if (isManagement(request.getPath())) {
+        boolean actuator = isActuatorPath(request.getPath());
+        if (actuator && isOnManagementPort(request)) {
+            request.getAttributes().put(MANAGEMENT_ATTR, Boolean.TRUE);
             return null;
         }
         String projectId = ProjectPath.leadingSegment(request.getPath());
-        if (projectId == null) {
+        // "actuator" is not a project: off the management port it is refused, never looked up in provisioning.
+        if (projectId == null || actuator) {
             return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
         }
         try {
@@ -85,9 +100,13 @@ public class KnownProjectFilter implements Ordered {
         return null;
     }
 
-    /** The actuator is the management surface, not a project's; it is the only path served without a project id. */
-    private static boolean isManagement(String path) {
+    private static boolean isActuatorPath(String path) {
         return path.equals("/actuator") || path.startsWith("/actuator/");
+    }
+
+    private boolean isOnManagementPort(HttpRequest<?> request) {
+        InetSocketAddress server = request.getServerAddress();
+        return managementPort > 0 && server != null && server.getPort() == managementPort;
     }
 
     private static boolean isPreflight(HttpRequest<?> request) {

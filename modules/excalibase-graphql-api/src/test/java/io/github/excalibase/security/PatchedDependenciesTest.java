@@ -59,7 +59,8 @@ class PatchedDependenciesTest {
 
     @Test
     void kotlinStdlibUnderTheOtlpSenderIsPatched() throws ClassNotFoundException {
-        // OkHttp 5 (the OTLP sender) pulls kotlin-stdlib 1.9.x; CVE-2020-29582 is fixed in 2.1.0
+        // Micronaut's platform BOM imports kotlin-bom 1.9.25 and downgrades the kotlin-stdlib OkHttp (the OTLP sender)
+        // declares itself (2.1.21); CVE-2020-29582 is fixed in 2.1.0
         assertAtLeast(Class.forName("kotlin.Unit"), "kotlin-stdlib", "2.1.0");
     }
 

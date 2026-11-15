@@ -215,9 +215,12 @@ class ProjectCorsIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("non-project routes keep the platform default, which names the asking origin and never sends *")
-    void platformRoutesKeepGlobalDefault() {
-        assertThat(http.get("/actuator/health", "Origin", OTHER).header(ALLOW_ORIGIN)).isEqualTo(OTHER);
+    @DisplayName("a route with no project is the project 404 on the public port, and names no origin as allowed")
+    void platformRoutesAreNotFound() {
+        HttpAnswer answer = http.get("/actuator/health", "Origin", OTHER);
+
+        assertThat(answer.status()).isEqualTo(404);
+        assertThat(answer.body()).contains("project_not_found");
         assertThat(http.get("/actuator/health", "Origin", "null").header(ALLOW_ORIGIN)).isNull();
     }
 }
