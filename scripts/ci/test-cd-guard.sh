@@ -31,11 +31,10 @@ grep -q 'ref: ${{ github.event.workflow_run.head_sha' "$cd_yml"; check "cd.yml c
 grep -q '^concurrency:' "$cd_yml"; check "cd.yml has a concurrency group" "0" "$?"
 grep -q 'type=sha' "$cd_yml"; check "cd.yml no longer derives tags from the branch head" "1" "$?"
 
+expected="github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'"
 for job in docker docker-native; do
-  condition=$(awk -v job="  $job:" '$0 == job {f=1; next} f && /^    if:/ {print; exit}' "$cd_yml")
-  for required in "workflow_run.event == 'push'" "head_repository.full_name == github.repository" "head_branch == 'main'" "conclusion == 'success'"; do
-    [[ $condition == *"$required"* ]]; check "$job runs only for $required" "0" "$?"
-  done
+  condition=$(awk -v job="  $job:" '$0 == job {f=1; next} f && /^    if:/ {sub(/^    if: */, ""); print; exit}' "$cd_yml" | tr -s ' ')
+  check "$job if: is exactly the push-to-own-main condition" "$expected" "$condition"
 done
 [[ $(grep -c 'context: git' "$cd_yml") == 2 ]]; check "both metadata steps label the checked-out commit" "0" "$?"
 
