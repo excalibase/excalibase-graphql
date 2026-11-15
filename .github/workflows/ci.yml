@@ -23,6 +23,16 @@ env:
   MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
 
 jobs:
+  cd-guard:
+    name: CD tag guard
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+    - name: Check the trunk tag guard
+      run: scripts/ci/test-cd-guard.sh
+
   test:
     name: Run Tests & Coverage
     runs-on: ubuntu-latest
