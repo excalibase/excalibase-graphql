@@ -2,7 +2,7 @@ package io.github.excalibase.permissions;
 
 import io.github.excalibase.rls.ProjectCacheEvictor;
 
-import java.util.Optional;
+import java.util.function.ObjLongConsumer;
 
 /**
  * Supplies a project's permission document (docs/features/permissions.md §8). Implementations never
@@ -17,9 +17,11 @@ public interface PermissionProvider extends ProjectCacheEvictor {
      */
     PermissionSet permissionsFor(String projectId);
 
-    /** The last document read for the project, without asking the control plane; empty when none is held. */
-    default Optional<PermissionSet> cached(String projectId) {
-        return Optional.empty();
+    /**
+     * Asks to be told when a refresh replaces a held document with a different one: the project and the new
+     * version. A refresh that follows an eviction is not reported, the eviction is the signal there.
+     */
+    default void onChange(ObjLongConsumer<String> listener) {
     }
 
     /** False only for the stand-in used when no control plane is configured. */

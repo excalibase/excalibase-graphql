@@ -39,6 +39,7 @@ public class WsRuntime implements ProjectSockets {
     static final String INITIALISED_KEY = "excalibase.ws.initialised";
     private static final String OUTBOX_KEY = "excalibase.ws.outbox";
     private static final String EXPIRY_KEY = "excalibase.ws.expiry";
+    private static final String VERSIONS_KEY = "excalibase.ws.permissionsVersions";
 
     private final WsLimits limits;
     private final ScheduledExecutorService scheduler;
@@ -178,6 +179,36 @@ public class WsRuntime implements ProjectSockets {
     public boolean hasSockets(String projectId) {
         Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
         return sessions != null && !sessions.isEmpty();
+    }
+
+    /** Notes the permission document a subscription of the session was opened under; its plan never changes after. */
+    void openedUnder(WebSocketSession session, long permissionsVersion) {
+        if (permissionsVersion < 0) {
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Set<Long> versions = (Set<Long>) session.getAttributes()
+                .computeIfAbsent(VERSIONS_KEY, key -> ConcurrentHashMap.<Long>newKeySet());
+        versions.add(permissionsVersion);
+    }
+
+    /**
+     * The project's current permission document is {@code version}: every socket that holds a subscription
+     * opened under another one closes, since the change stream filters with the plan worked out when it opened.
+     */
+    @Override
+    public void permissionsAre(String projectId, long version) {
+        Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
+        if (sessions == null) {
+            return;
+        }
+        for (WebSocketSession session : Set.copyOf(sessions)) {
+            if (session.getAttributes().get(VERSIONS_KEY) instanceof Set<?> versions
+                    && versions.stream().anyMatch(held -> !Long.valueOf(version).equals(held))) {
+                log.info("Closing WebSocket session {} of project {}: permissions changed", session.getId(), projectId);
+                close(session, WsClose.PERMISSIONS_CHANGED);
+            }
+        }
     }
 
     /** A project's permissions changed: its sockets close so clients subscribe again under the new ones. */
