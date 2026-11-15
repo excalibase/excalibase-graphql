@@ -249,6 +249,7 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
         String tableName = extracted[0];
         String fieldName = extracted[1];
 
+        long generation = runtime.permissionGeneration(session);
         RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, tableName);
         if (opening.delivery() == null) {
             sendError(session, id, opening.refusal());
@@ -258,7 +259,9 @@ public class GraphQLWebSocketHandler extends TextWebSocketHandler implements Sub
             return;
         }
         RealtimeGate.Delivery delivery = opening.delivery();
-        runtime.openedUnder(session, delivery.permissionsVersion());
+        if (!runtime.openedUnder(session, delivery.permissionsVersion(), generation)) {
+            return;
+        }
 
         if (runtime.atSessionCap(sessionSubs.size())) {
             sendError(session, id, "Too many subscriptions on this connection");

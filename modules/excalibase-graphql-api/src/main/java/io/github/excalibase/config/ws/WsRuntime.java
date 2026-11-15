@@ -24,6 +24,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Everything the two WebSocket handlers share to keep one client from hurting the rest: caps on sockets and
@@ -48,6 +49,7 @@ public class WsRuntime implements ProjectSockets {
     private final Map<String, Integer> socketsByClient = new ConcurrentHashMap<>();
     private final Map<String, Integer> subscriptionsByProject = new ConcurrentHashMap<>();
     private final Map<String, Set<WebSocketSession>> sessionsByProject = new ConcurrentHashMap<>();
+    private final Map<String, AtomicLong> permissionGenerations = new ConcurrentHashMap<>();
 
     @Autowired
     public WsRuntime(
@@ -181,15 +183,36 @@ public class WsRuntime implements ProjectSockets {
         return sessions != null && !sessions.isEmpty();
     }
 
-    /** Notes the permission document a subscription of the session was opened under; its plan never changes after. */
-    void openedUnder(WebSocketSession session, long permissionsVersion) {
-        if (permissionsVersion < 0) {
-            return;
+    /**
+     * Counts the permission changes announced for the session's project; read before a subscription's plan is
+     * resolved, so {@link #openedUnder} can tell that one was announced while it was being resolved.
+     */
+    long permissionGeneration(WebSocketSession session) {
+        String project = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
+        return project == null ? 0 : generationOf(project).get();
+    }
+
+    private AtomicLong generationOf(String projectId) {
+        return permissionGenerations.computeIfAbsent(projectId, key -> new AtomicLong());
+    }
+
+    /**
+     * Notes the permission document a subscription of the session was opened under; its plan never changes after.
+     * When a change was announced since {@code generationBefore} was read, the plan may be of the old document
+     * while the announcement skipped this socket, so the socket closes and false is returned.
+     */
+    boolean openedUnder(WebSocketSession session, long permissionsVersion, long generationBefore) {
+        if (permissionsVersion >= 0) {
+            @SuppressWarnings("unchecked")
+            Set<Long> versions = (Set<Long>) session.getAttributes()
+                    .computeIfAbsent(VERSIONS_KEY, key -> ConcurrentHashMap.<Long>newKeySet());
+            versions.add(permissionsVersion);
         }
-        @SuppressWarnings("unchecked")
-        Set<Long> versions = (Set<Long>) session.getAttributes()
-                .computeIfAbsent(VERSIONS_KEY, key -> ConcurrentHashMap.<Long>newKeySet());
-        versions.add(permissionsVersion);
+        if (permissionGeneration(session) != generationBefore) {
+            close(session, WsClose.PERMISSIONS_CHANGED);
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -198,6 +221,7 @@ public class WsRuntime implements ProjectSockets {
      */
     @Override
     public void permissionsAre(String projectId, long version) {
+        generationOf(projectId).incrementAndGet();
         Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
         if (sessions == null) {
             return;
@@ -214,6 +238,7 @@ public class WsRuntime implements ProjectSockets {
     /** A project's permissions changed: its sockets close so clients subscribe again under the new ones. */
     @Override
     public void closeForPermissionChange(String projectId) {
+        generationOf(projectId).incrementAndGet();
         Set<WebSocketSession> sessions = sessionsByProject.get(projectId);
         if (sessions == null) {
             return;
