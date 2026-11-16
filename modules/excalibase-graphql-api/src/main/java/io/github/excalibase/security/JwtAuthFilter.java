@@ -56,6 +56,11 @@ public class JwtAuthFilter implements Ordered {
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request, MutablePropagatedContext propagated) {
         String pathProjectId = ProjectPath.fromUri(request.getPath());
+        if (pathProjectId == null) {
+            // Only the management port's actuator has no project; every other request names one, or is not served.
+            return request.getAttributes().contains(KnownProjectFilter.MANAGEMENT_ATTR)
+                    ? null : FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
+        }
 
         JwtClaims claims;
         try {
@@ -64,7 +69,7 @@ public class JwtAuthFilter implements Ordered {
             return FilterErrors.write(HttpStatus.UNAUTHORIZED, "Invalid or expired token", e.code());
         }
 
-        if (pathProjectId != null && claims != null && claims.projectId() != null
+        if (claims != null && claims.projectId() != null
                 && !pathProjectId.equals(claims.projectId())) {
             return FilterErrors.write(HttpStatus.FORBIDDEN, "URL project does not match token project",
                     PROJECT_MISMATCH_CODE);
@@ -77,9 +82,6 @@ public class JwtAuthFilter implements Ordered {
             return FilterErrors.write(HttpStatus.FORBIDDEN, "Role not allowed", e.code());
         }
         request.getAttributes().put(SecurityConstants.PRINCIPAL_ATTR, principal);
-        if (pathProjectId == null) {
-            return null;
-        }
         String orgSlug = claims != null ? claims.orgSlug() : null;
         TenantScope scope = new TenantScope(pathProjectId, orgSlug,
                 claims != null ? claims.projectName() : null, claims != null ? claims.orgName() : null);

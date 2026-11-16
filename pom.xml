@@ -115,7 +115,8 @@
                 <artifactId>commons-lang3</artifactId>
                 <version>${commons-lang3.version}</version>
             </dependency>
-            <!-- OkHttp 5 under the OTLP sender pulls kotlin-stdlib 1.9.x (CVE-2020-29582, fixed 2.1.0) -->
+            <!-- Micronaut's platform BOM imports kotlin-bom 1.9.25, which downgrades the kotlin-stdlib OkHttp (the OTLP sender)
+                 declares itself (2.1.21) to a 1.9.x with CVE-2020-29582, fixed in 2.1.0 -->
             <dependency>
                 <groupId>org.jetbrains.kotlin</groupId>
                 <artifactId>kotlin-stdlib</artifactId>

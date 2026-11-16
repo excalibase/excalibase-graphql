@@ -4,6 +4,7 @@ import io.github.excalibase.http.WebSocketUpgrade;
 import io.github.excalibase.cors.CorsFilter;
 import io.github.excalibase.cors.CorsRules;
 import io.github.excalibase.cors.ProjectCorsConfigurationSource;
+import io.github.excalibase.security.FilterErrors;
 import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.RoleNotAllowedException;
 import io.micronaut.core.annotation.Nullable;
@@ -57,7 +58,8 @@ public class WsHandshakeFilter implements Ordered {
         if (pathProject == null) {
             // Routed by the framework though no project parses from it (a trailing slash, an encoded slash): with
             // no project there is no origin check, no authentication and no permission filter, so it is not served.
-            return WsProjectPath.isWebSocketRoute(request.getPath()) ? HttpResponse.notFound() : null;
+            return WsProjectPath.isWebSocketRoute(request.getPath())
+                    ? FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found") : null;
         }
         String origin = request.getHeaders().get("Origin");
         if (origin != null && !origin.isBlank() && isWebOrigin(origin) && !webOriginAllowed(request, origin)) {

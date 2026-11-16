@@ -157,9 +157,12 @@ class ProjectRequiredIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("the actuator is the management surface and is left as it is")
-    void actuatorIsNotAProjectRoute() {
-        assertThat(http.get("/actuator/health").body()).doesNotContain(NOT_FOUND_CODE);
+    @DisplayName("the actuator is served on the management port only; on the public port it is the project 404")
+    void actuatorOnThePublicPortIsNotFound() {
+        HttpAnswer answer = http.get("/actuator/health");
+
+        assertThat(answer.status()).isEqualTo(404);
+        assertThat(answer.body()).contains(NOT_FOUND_CODE);
     }
 
     private static void refused(List<String> served, String what, HttpAnswer answer) {
