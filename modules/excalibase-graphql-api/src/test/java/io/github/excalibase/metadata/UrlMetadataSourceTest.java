@@ -24,7 +24,9 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static io.github.excalibase.metadata.MetadataFixtures.*;
@@ -45,6 +47,7 @@ class UrlMetadataSourceTest {
     private final List<String> authorization = new CopyOnWriteArrayList<>();
     private final List<String> ifNoneMatch = new CopyOnWriteArrayList<>();
 
+    private final CountDownLatch release = new CountDownLatch(1);
     private volatile int status = 200;
     private volatile String body = GOOD_YAML;
     private volatile String etag;
@@ -69,6 +72,7 @@ class UrlMetadataSourceTest {
 
     @AfterEach
     void stop() {
+        release.countDown();
         opened.forEach(ReloadingMetadataSource::close);
         server.stop(0);
         elsewhere.stop(0);
@@ -86,9 +90,10 @@ class UrlMetadataSourceTest {
         reply(exchange, status, body, sent);
     }
 
-    private static void sleep(long millis) {
+    /** Holds a handler for up to {@code millis}, or until the test ends and releases it. */
+    private void sleep(long millis) {
         try {
-            Thread.sleep(millis);
+            release.await(millis, TimeUnit.MILLISECONDS);
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
@@ -347,8 +352,11 @@ class UrlMetadataSourceTest {
         UrlSettings insecure = new UrlSettings("http://config.example.com/p.yaml", "", "", false,
                 Duration.ofHours(1), Duration.ofSeconds(1), Duration.ofSeconds(1));
 
-        assertThatThrownBy(() -> UrlMetadataSource.create(insecure, ReservedSchemas.fromConfig(""), PROJECT,
-                new SimpleMeterRegistry())).isInstanceOf(IllegalStateException.class)
+        ReservedSchemas reserved = ReservedSchemas.fromConfig("");
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
+
+        assertThatThrownBy(() -> UrlMetadataSource.create(insecure, reserved, PROJECT, registry))
+                .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("allow-insecure");
     }
 }
