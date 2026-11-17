@@ -45,7 +45,7 @@ class ReloadingMetadataSourceTest {
             return new ReloadingMetadataSource.Raw(current, "v-" + current.hashCode());
         };
         ReloadingMetadataSource source = new ReloadingMetadataSource("test", loader,
-                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT)::parse, () -> true, interval, meters);
+                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT)::load, () -> true, interval, meters);
         opened.add(source);
         return source;
     }
@@ -287,7 +287,7 @@ class ReloadingMetadataSourceTest {
             return new ReloadingMetadataSource.Raw(content, "v-" + content.hashCode());
         };
         ReloadingMetadataSource source = new ReloadingMetadataSource("test", loader,
-                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT)::parse, () -> true,
+                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT)::load, () -> true,
                 Duration.ofHours(1), meters);
         opened.add(source);
 

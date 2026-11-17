@@ -202,11 +202,4 @@ class MetadataDocumentParserTest {
 
         assertThatThrownBy(() -> parser.parse(deep, 1)).isInstanceOf(MetadataDocumentException.class);
     }
-
-    @Test
-    void aJwtSection_isRefusedUntilItIsApplied_soNobodyThinksItIs() {
-        assertThatThrownBy(() -> parser.parse(WITH_JWT, 1))
-                .isInstanceOf(MetadataDocumentException.class)
-                .hasMessageContaining("jwt settings are not supported yet");
-    }
 }

@@ -67,6 +67,55 @@ presigned URL). The engine fetches it and polls. It is read-only: change the doc
 | `METADATA_URL_POLL_INTERVAL_MS` | Default 5000. |
 | `METADATA_URL_CONNECT_TIMEOUT_MS` / `METADATA_URL_READ_TIMEOUT_MS` | Defaults 3000 and 10000. |
 
+## Tokens from Auth0, Cognito, Keycloak or any OIDC issuer
+
+Put a `jwt:` section in the document. It applies only when `METADATA_SOURCE` is set; without it the engine
+verifies tokens from its own settings (`APP_SECURITY_AUTH_*`), exactly as before. Do not set both: a document
+with a `jwt:` section and `APP_SECURITY_AUTH_JWKS_URL` or `..._HMAC_SECRET` stops the engine at start. A
+change to the section is applied together with the rules, after the keys were fetched; a failed fetch keeps
+the last good version.
+
+```yaml
+jwt:
+  issuer: https://tenant.eu.auth0.com/        # checked against iss; alone, it finds the keys by OIDC discovery
+  jwksUrl: https://tenant.eu.auth0.com/.well-known/jwks.json   # optional; needs issuer
+  audience: https://api.my-app                # a string or a list; required
+  algorithms: [RS256]                         # default RS256 and ES256; never none
+  clockSkew: 30                               # seconds, 0 to 300, default 30
+  claims:
+    role: https://my-app/role                 # a dotted path; a string, or a list of roles
+    defaultRole: user                         # the active role when role is a list
+    userId: sub                               # default sub; fills X-Excalibase-User-Id
+    extra:                                    # each becomes X-Excalibase-<name> in rules
+      org-id: https://my-app/org_id
+```
+
+- **Auth0.** `issuer` is `https://<tenant>.<region>.auth0.com/` (keep the trailing slash), `audience` is the API
+  identifier. Add the role to the token with an Action as a namespaced claim and point `claims.role` at it.
+- **Cognito.** `issuer` is `https://cognito-idp.<region>.amazonaws.com/<userPoolId>`. An **ID token** carries
+  `aud` (the app client id), so use it as `audience`; an access token has no `aud`, which the engine refuses.
+  Groups arrive in `cognito:groups`: `claims.role: cognito:groups` with a `defaultRole`.
+- **Keycloak.** `issuer` is `https://<host>/realms/<realm>`. Roles are in `realm_access.roles`:
+  `claims.role: realm_access.roles` with a `defaultRole`. Entries that are not role names (lower-case letters,
+  digits and `_`) are ignored.
+- **A shared secret** (HS256) is only ever a reference: `secret: env:JWT_SECRET` or `secret: file:/run/secrets/jwt`
+  (at least 32 bytes), with no `jwksUrl`. A literal secret in the document is refused.
+
+How it behaves:
+
+- **Algorithms** come from the document, never from the token. `none` is refused, and HMAC is refused with a
+  key set, so a token signed with the public key as an HMAC secret cannot pass.
+- **Keys** are fetched over `https` (plain `http` only to `localhost`, loopback, `*.svc` and `*.cluster.local`)
+  with timeouts and a 64 KiB cap, cached, and refetched when a token names an unknown `kid`, at most once every
+  10 seconds. A failed refetch keeps the keys held. A token naming a `kid` the provider does not publish is
+  refused. RSA keys under 2048 bits are ignored.
+- **Roles.** When the role claim is a list, the caller may act as any role in it and `defaultRole` is the
+  active one; `X-Excalibase-Role` may pick another role from the list and nothing outside it. The `service` role is
+  never taken from an outside token.
+- **Session variables.** Only the caller's id, `email` and the `extra` names are exposed to rules; other claims
+  of the token are not, so a provider's claim cannot stand in for a variable nobody mapped.
+- `excalibase validate` checks the section without contacting the provider.
+
 ### Check a document before you deploy it
 
 ```

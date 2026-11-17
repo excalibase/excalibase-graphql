@@ -18,6 +18,7 @@ import io.github.excalibase.permissions.PermissionCachePolicy;
 import io.github.excalibase.permissions.PermissionVersions;
 import io.github.excalibase.metadata.MetadataHealth;
 import io.github.excalibase.metadata.MetadataSettings;
+import io.github.excalibase.metadata.MetadataSource;
 import io.github.excalibase.metadata.MetadataSources;
 import io.github.excalibase.metadata.UrlSettings;
 import io.github.excalibase.permissions.PermissionProvider;
@@ -133,9 +134,20 @@ public class AppConfig {
         return value == null || value.isBlank() ? null : value;
     }
 
+    JwtService jwtService(SecurityProperties security, int ttlMinutes) {
+        return jwtService(security, ttlMinutes, null);
+    }
+
+    /**
+     * With {@code metadata.source} set, the token settings may come from the document instead of the engine's own
+     * (EXC-733): the service then asks the served document per token. Both at once is refused at start. With
+     * no metadata source nothing here differs from before.
+     */
     @Context
     @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
-    JwtService jwtService(SecurityProperties security, @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes) {
+    JwtService jwtService(SecurityProperties security, @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes,
+                          @Nullable PermissionProvider permissionSource) {
+        MetadataSource metadata = permissionSource instanceof MetadataSource source ? source : null;
         SecurityProperties.Auth auth = security.auth();
         boolean hasJwks = auth != null && auth.hasJwksUrl();
         boolean hasHmac = auth != null && auth.hasHmacSecret();
@@ -143,12 +155,23 @@ public class AppConfig {
             throw new IllegalStateException("app.security.auth: set either jwks-url or hmac-secret, not both");
         }
         if (!hasJwks && !hasHmac) {
-            throw new IllegalStateException(NO_VERIFIER);
+            if (metadata == null) {
+                throw new IllegalStateException(NO_VERIFIER);
+            }
+            return JwtService.documentOnly().documentVerifier(() -> metadata.tokenVerifier().orElse(null));
         }
         requireAudienceWhenMultiTenant(security.multiTenant() == null ? null : security.multiTenant().provisioningUrl(),
                 auth.requireAudOrDefault());
         JwtService service = hasJwks ? new JwtService(auth.jwksUrl(), ttlMinutes) : new JwtService(auth.hmacSecret());
-        return service.expectedIssuer(auth.issuer()).requireAudience(auth.requireAudOrDefault(), auth.audPrefix());
+        service.expectedIssuer(auth.issuer()).requireAudience(auth.requireAudOrDefault(), auth.audPrefix());
+        if (metadata != null) {
+            if (metadata.tokenVerifier().isPresent()) {
+                throw new IllegalStateException("the metadata document has a jwt section and app.security.auth."
+                        + "jwks-url or hmac-secret is set too: keep the token settings in one place");
+            }
+            service.documentVerifier(() -> metadata.tokenVerifier().orElse(null));
+        }
+        return service;
     }
 
     /**

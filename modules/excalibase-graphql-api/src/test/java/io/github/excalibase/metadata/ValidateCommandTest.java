@@ -115,4 +115,18 @@ class ValidateCommandTest {
         assertThat(run(Map.of(), "validate", file("[".repeat(5000) + "]".repeat(5000)).toString())).isEqualTo(1);
         assertThat(err.toString(StandardCharsets.UTF_8)).doesNotContain("Exception");
     }
+
+    @Test
+    void aDocumentWithJwtSettings_validatesWithoutReachingTheIdentityProvider() throws IOException {
+        assertThat(run(Map.of(), "validate", file(WITH_JWT).toString())).isZero();
+    }
+
+    @Test
+    void aLiteralSecretInTheJwtSection_exitsOne_andNamesThePath() throws IOException {
+        String document = GOOD_YAML.replace("tables:", "jwt:\n  secret: hunter2hunter2hunter2hunter2hunter2\n"
+                + "  audience: a\ntables:");
+
+        assertThat(run(Map.of(), "validate", file(document).toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains("jwt.secret").doesNotContain("hunter2");
+    }
 }

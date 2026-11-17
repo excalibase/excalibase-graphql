@@ -67,10 +67,10 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         Raw load() throws IOException;
     }
 
-    /** Turns text into validated permissions; {@link MetadataDocumentParser#parse} is the engine's. */
+    /** Turns text into a validated document; {@link MetadataDocumentParser#load} is the engine's. */
     @FunctionalInterface
     public interface Reader {
-        PermissionSet parse(String text, long version);
+        MetadataDocument parse(String text, long version);
     }
 
     /** @param category what the status reports; the full reason goes to the log only */
@@ -219,10 +219,11 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
                 current.get() == null ? "nothing (every read is refused)" : "last good version " + counter.get(), reason);
     }
 
-    private void swap(PermissionSet permissions, String sourceVersion) {
+    private void swap(MetadataDocument document, String sourceVersion) {
+        PermissionSet permissions = document.permissions();
         boolean replacing = current.get() != null;
         long version = counter.incrementAndGet();
-        current.set(new Snapshot(permissions, version, sourceVersion, Instant.now()));
+        current.set(new Snapshot(permissions, version, sourceVersion, Instant.now(), document.verifier()));
         refusal.set(null);
         log.info("metadata_swapped source={} version={} source_version={}", name, version, sourceVersion);
         if (replacing) {

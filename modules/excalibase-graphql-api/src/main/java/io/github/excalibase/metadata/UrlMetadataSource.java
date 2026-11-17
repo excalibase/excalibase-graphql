@@ -36,7 +36,7 @@ public final class UrlMetadataSource {
         UrlDocumentFetcher fetcher = new UrlDocumentFetcher(location, token, settings.connectTimeout(),
                 settings.readTimeout());
         return new ReloadingMetadataSource(NAME, fetcher,
-                new MetadataDocumentParser(reserved, expectedProjectId)::parse, () -> false,
+                new MetadataDocumentParser(reserved, expectedProjectId)::load, () -> false,
                 settings.pollInterval(), meters);
     }
 

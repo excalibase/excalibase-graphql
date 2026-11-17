@@ -72,7 +72,7 @@ app:
       require-aud: true               # aud must cover the project in the URL path
 ```
 
-Any OIDC provider that publishes a JWKS endpoint works (excalibase-auth, Auth0, Keycloak, …).
+excalibase-auth's tokens work with these settings. Auth0, Cognito, Keycloak and other OIDC providers sign RS256 with their own audience and claim names; for them use the `jwt:` section of the metadata document (`deploy/standalone/README.md`), which needs `metadata.source`.
 
 ## 2. Session variables
 

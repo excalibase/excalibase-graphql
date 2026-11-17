@@ -15,7 +15,7 @@ helm install my-release ./helm/excalibase-graphql \
 
 ## Multi-Tenant Mode
 
-For JWT verification with a JWKS endpoint (OIDC-compatible — works with Auth0, Keycloak, excalibase-auth, etc.):
+For JWT verification with a JWKS endpoint (ES256 tokens, audience `excalibase:<projectId>`, a top-level `role` claim, as excalibase-auth mints them; for Auth0, Cognito or Keycloak see the `jwt:` section in `deploy/standalone/README.md`):
 
 ```bash
 helm install my-release ./helm/excalibase-graphql \
@@ -127,7 +127,7 @@ Bare metal has no cloud load balancer, so external traffic needs:
 | `app.security.insecureDevMode` | Local development only: required to run with `jwtEnabled=false`; logged at ERROR | `false` |
 | `app.security.auth.publicKey` | Inline EC public key PEM (Mode 1a — local dev) | `""` |
 | `app.security.auth.publicKeyFile` | Path to PEM file (Mode 1b — K8s Secret volume mount) | `""` |
-| `app.security.auth.jwksUrl` | JWKS endpoint URL — Auth0, Keycloak, excalibase-auth, any OIDC provider (Mode 2/3) | `""` |
+| `app.security.auth.jwksUrl` | JWKS endpoint URL of excalibase-auth (ES256) (Mode 2/3) | `""` |
 | `app.security.auth.jwksTtlMinutes` | JWKS key cache TTL in minutes | `60` |
 | `app.security.multiTenant.provisioningUrl` | Provisioning API URL for per-tenant DB credentials (Mode 3 only) | `""` |
 | `app.security.multiTenant.provisioningPat` | PAT for provisioning API (use `multiTenant.existingSecret` in production) | `""` |

@@ -34,7 +34,7 @@ public final class FileMetadataSource {
     public static ReloadingMetadataSource create(Path path, Duration interval, ReservedSchemas reserved,
                                                  String expectedProjectId, MeterRegistry meters) {
         return new ReloadingMetadataSource(NAME, () -> read(path),
-                new MetadataDocumentParser(reserved, expectedProjectId)::parse, () -> writable(path), interval, meters);
+                new MetadataDocumentParser(reserved, expectedProjectId)::load, () -> writable(path), interval, meters);
     }
 
     private static Path resolve(Path path) {

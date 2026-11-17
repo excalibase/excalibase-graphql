@@ -19,6 +19,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Verifies JWTs. Two modes:
@@ -47,6 +48,8 @@ public class JwtService {
 
     // HMAC mode
     private final byte[] hmacSecret;
+
+    private Supplier<TokenVerifier> documentVerifier = () -> null;
 
     // Expected token issuer (iss). null = don't validate (back-compat / standalone).
     // When set, a token whose `iss` claim differs is rejected — stops tokens minted
@@ -98,12 +101,32 @@ public class JwtService {
         log.info("jwt_service_mode=hmac");
     }
 
+    /** No keys of its own: it verifies only through the verifier a metadata document supplies. */
+    public static JwtService documentOnly() {
+        return new JwtService();
+    }
+
+    private JwtService() {
+        this.jwksUrl = null;
+        this.keys = null;
+        this.hmacSecret = null;
+    }
+
     /** Test constructor — inject EC key directly, no remote fetch. */
     public JwtService(ECPublicKey publicKey) {
         this.jwksUrl = "test";
         this.keys = new JwksKeys(() -> List.of(new JwksKeys.Key(null, publicKey)), Duration.ofHours(24),
                 JWKS_MIN_RETRY, System::currentTimeMillis, List.of(new JwksKeys.Key(null, publicKey)));
         this.hmacSecret = null;
+    }
+
+    /**
+     * Defers to the verifier the metadata document's JWT section supplies, read per token so a reload takes
+     * effect at once. While the supplier answers null the keys this service was built with decide, as before.
+     */
+    public JwtService documentVerifier(Supplier<TokenVerifier> verifier) {
+        this.documentVerifier = verifier;
+        return this;
     }
 
     /**
@@ -148,6 +171,13 @@ public class JwtService {
      * in the request path. Pass null when the route carries no project.
      */
     public JwtClaims verify(String token, String expectedProjectId) {
+        TokenVerifier fromDocument = documentVerifier.get();
+        if (fromDocument != null) {
+            return fromDocument.verify(token, expectedProjectId);
+        }
+        if (keys == null && hmacSecret == null) {
+            throw new JwtVerificationException("No JWT verifier is configured: the metadata document has no jwt section");
+        }
         try {
             SignedJWT jwt = SignedJWT.parse(token);
 
@@ -256,7 +286,7 @@ public class JwtService {
             throw new JwtVerificationException("No JWKS verification keys available");
         }
         for (JwksKeys.Key candidate : candidates) {
-            if (jwt.verify(new ECDSAVerifier(candidate.publicKey()))) {
+            if (candidate.publicKey() instanceof ECPublicKey ecKey && jwt.verify(new ECDSAVerifier(ecKey))) {
                 return;
             }
         }
