@@ -1,0 +1,50 @@
+# The engine with its permissions in a file: Postgres + engine, no control plane, no Vault.
+#   docker compose -f docker-compose.file.yml up
+# Edit ./metadata/permissions.yaml; the engine picks the change up within a few seconds.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: app
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: change-me
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      retries: 20
+
+  engine:
+    # Needs an engine build that includes EXC-733 phase 1 (`metadata.source`). `latest` is the last release and may
+    # predate it; use `main` or the first release that includes it, via ENGINE_IMAGE.
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql:main}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "10000:10000"
+    environment:
+      SERVER_PORT: 10000
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/app
+      SPRING_DATASOURCE_USERNAME: app
+      SPRING_DATASOURCE_PASSWORD: change-me
+      APP_DATABASE_TYPE: postgres
+      APP_PROJECT_ID: my-app
+      # Tokens are verified with this shared secret (HS256). Use a long random value.
+      APP_SECURITY_JWT_ENABLED: "true"
+      APP_SECURITY_AUTH_HMAC_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      # The permission source: this file. Mount the folder, not the single file, so edits made with an
+      # editor that replaces the file are seen too.
+      METADATA_SOURCE: file
+      METADATA_FILE_PATH: /etc/excalibase
+      METADATA_FILE_POLL_INTERVAL_MS: 5000
+      # Readiness reports not ready while no valid permissions file is loaded.
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+    volumes:
+      - ./metadata:/etc/excalibase:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/actuator/health/readiness"]
+      interval: 10s
+      retries: 6
+      start_period: 30s

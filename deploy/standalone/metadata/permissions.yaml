@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://excalibase.io/schemas/metadata-v1.json
+#
+# Who may read and write which table. A table with no rule here is not reachable by anyone except the
+# `service` role. Check an edit before you deploy it:
+#   java -jar excalibase-graphql-api.jar validate metadata/permissions.yaml
+format: 1
+projectId: my-app            # must equal APP_PROJECT_ID of the engine
+
+tables:
+  - table: public.todos
+    role: user
+    select:
+      filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}   # a user sees only their own rows
+      columns: "*"
+    insert:
+      check: {}
+      columns: ["title", "done"]
+      set: {"owner_id": "X-Excalibase-User-Id"}               # the owner is always the caller
+    update:
+      filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}
+      check: {}
+      columns: ["title", "done"]
+    delete:
+      filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}

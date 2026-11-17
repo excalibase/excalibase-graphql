@@ -1,6 +1,7 @@
 package io.github.excalibase.config;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.micronaut.context.annotation.Context;
@@ -22,11 +23,19 @@ public class InsecureDevModeGuard {
 
     private final boolean insecureDevMode;
     private final String policyUrl;
+    private final String metadataSource;
 
+    public InsecureDevModeGuard(boolean insecureDevMode, String policyUrl) {
+        this(insecureDevMode, policyUrl, "");
+    }
+
+    @Inject
     public InsecureDevModeGuard(@Value("${app.security.insecure-dev-mode:false}") boolean insecureDevMode,
-                                @Value("${app.security.rls.policy-url:}") String policyUrl) {
+                                @Value("${app.security.rls.policy-url:}") String policyUrl,
+                                @Value("${metadata.source:}") String metadataSource) {
         this.insecureDevMode = insecureDevMode;
         this.policyUrl = policyUrl;
+        this.metadataSource = metadataSource;
     }
 
     @PostConstruct
@@ -35,6 +44,10 @@ public class InsecureDevModeGuard {
             throw new IllegalStateException("app.security.jwt-enabled=false turns off authentication and "
                     + "Row-Level Security. Configure app.security.auth.jwks-url or app.security.auth.hmac-secret "
                     + "instead, or, for local development only, also set app.security.insecure-dev-mode=true.");
+        }
+        if (metadataSource != null && !metadataSource.isBlank()) {
+            log.warn("SECURITY: metadata.source={} is set but authentication is off, so its permissions are NOT "
+                    + "enforced: nothing reads them.", metadataSource);
         }
         boolean policiesConfigured = policyUrl != null && !policyUrl.isBlank();
         log.error("SECURITY: INSECURE DEV MODE. Authentication is off: every request is served without a "

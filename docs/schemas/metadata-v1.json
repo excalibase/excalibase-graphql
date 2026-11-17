@@ -1,0 +1,225 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://excalibase.io/schemas/metadata-v1.json",
+  "title": "Excalibase metadata document, format 1",
+  "description": "Permissions: the Hasura-style rules of docs/features/permissions.md. The engine's parser is the authority: run `excalibase validate <file>` for the full check. This schema is for editor autocomplete and covers the structure, not the filter expressions. JWT settings are not supported yet.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format",
+    "projectId"
+  ],
+  "properties": {
+    "format": {
+      "const": 1
+    },
+    "projectId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Must equal the engine's APP_PROJECT_ID."
+    },
+    "tables": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tableRule"
+      },
+      "default": []
+    },
+    "functions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/trackedFunction"
+      },
+      "default": []
+    },
+    "functionPermissions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/functionPermission"
+      },
+      "default": []
+    }
+  },
+  "$defs": {
+    "qualifiedName": {
+      "type": "string",
+      "pattern": "^[a-z_][a-z0-9_$]{0,62}\\.[a-z_][a-z0-9_$]{0,62}$"
+    },
+    "fieldName": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_$]{0,62}$"
+    },
+    "role": {
+      "type": "string",
+      "minLength": 1,
+      "not": {
+        "const": "service"
+      }
+    },
+    "expression": {
+      "type": "object",
+      "description": "A boolean expression, e.g. {\"owner_id\": {\"_eq\": \"X-Excalibase-User-Id\"}}. {} means every row."
+    },
+    "columns": {
+      "oneOf": [
+        {
+          "const": "*"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          },
+          "uniqueItems": true
+        }
+      ]
+    },
+    "presets": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/fieldName"
+      }
+    },
+    "tableRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "table",
+        "role"
+      ],
+      "properties": {
+        "table": {
+          "$ref": "#/$defs/qualifiedName"
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "select": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filter",
+            "columns"
+          ],
+          "properties": {
+            "filter": {
+              "$ref": "#/$defs/expression"
+            },
+            "columns": {
+              "$ref": "#/$defs/columns"
+            },
+            "limit": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "exclusiveMinimum": 0
+            },
+            "allowAggregations": {
+              "type": "boolean"
+            }
+          }
+        },
+        "insert": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "check",
+            "columns"
+          ],
+          "properties": {
+            "check": {
+              "$ref": "#/$defs/expression"
+            },
+            "columns": {
+              "$ref": "#/$defs/columns"
+            },
+            "set": {
+              "$ref": "#/$defs/presets"
+            }
+          }
+        },
+        "update": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filter",
+            "check",
+            "columns"
+          ],
+          "properties": {
+            "filter": {
+              "$ref": "#/$defs/expression"
+            },
+            "check": {
+              "$ref": "#/$defs/expression"
+            },
+            "columns": {
+              "$ref": "#/$defs/columns"
+            },
+            "set": {
+              "$ref": "#/$defs/presets"
+            }
+          }
+        },
+        "delete": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "filter"
+          ],
+          "properties": {
+            "filter": {
+              "$ref": "#/$defs/expression"
+            }
+          }
+        }
+      }
+    },
+    "trackedFunction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "function",
+        "exposedAs",
+        "inferPermissions"
+      ],
+      "properties": {
+        "function": {
+          "$ref": "#/$defs/qualifiedName"
+        },
+        "exposedAs": {
+          "enum": [
+            "QUERY",
+            "MUTATION"
+          ]
+        },
+        "inferPermissions": {
+          "type": "boolean"
+        },
+        "sessionArgument": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "functionPermission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "function",
+        "role"
+      ],
+      "properties": {
+        "function": {
+          "$ref": "#/$defs/qualifiedName"
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        }
+      }
+    }
+  }
+}
