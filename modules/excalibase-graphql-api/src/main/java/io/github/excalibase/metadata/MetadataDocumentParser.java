@@ -15,17 +15,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.Set;
 
 /**
- * Reads the metadata document: a small header ({@code format}, {@code projectId}, an optional {@code jwt}
- * section) around the permission rules, which go to {@link PermissionSetParser} untouched so the rule grammar
+ * Reads the metadata document: a small header ({@code format}, {@code projectId}) around the permission rules, which go to {@link PermissionSetParser} untouched so the rule grammar
  * exists once. The engine at load and {@code excalibase validate} both come through here, so they cannot
  * disagree. Any problem refuses the whole document.
  */
-public final class MetadataDocumentParser implements DocumentReader {
+public final class MetadataDocumentParser {
 
     public static final int MAX_BYTES = 1024 * 1024;
     static final int FORMAT = 1;
     private static final Set<String> KEYS =
-            Set.of("format", "projectId", "jwt", "tables", "functions", "functionPermissions");
+            Set.of("format", "projectId", "tables", "functions", "functionPermissions");
     private static final Set<String> RULE_KEYS = Set.of("tables", "functions", "functionPermissions");
 
     /** A repeated key would otherwise let the last one silently win. */
@@ -45,8 +44,7 @@ public final class MetadataDocumentParser implements DocumentReader {
     }
 
     /** @param version the engine's local version, given to the rules; a document cannot set its own */
-    @Override
-    public MetadataDocument parse(String text, long version) {
+    public PermissionSet parse(String text, long version) {
         try {
             return read(text, version);
         } catch (MetadataDocumentException e) {
@@ -58,7 +56,7 @@ public final class MetadataDocumentParser implements DocumentReader {
         }
     }
 
-    private MetadataDocument read(String text, long version) {
+    private PermissionSet read(String text, long version) {
         if (text.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) {
             throw new MetadataDocumentException("document is larger than 1 MiB");
         }
@@ -69,24 +67,29 @@ public final class MetadataDocumentParser implements DocumentReader {
         ObjectNode document = (ObjectNode) root;
         document.fieldNames().forEachRemaining(key -> {
             if (!KEYS.contains(key)) {
-                throw new MetadataDocumentException("document: unknown key \"" + key + "\""
-                        + ("version".equals(key) ? " (the version comes from the source)" : ""));
+                throw new MetadataDocumentException(unknownKey(key));
             }
         });
-        int format = format(document);
-        String projectId = projectId(document);
-        var jwt = JwtSectionParser.parse(document.get("jwt"));
-        PermissionSet permissions = rules(document, projectId, version);
+        requireFormat(document);
+        PermissionSet permissions = rules(document, projectId(document), version);
         refuseReserved(permissions);
-        return new MetadataDocument(format, projectId, jwt, permissions);
+        return permissions;
     }
 
-    private static int format(ObjectNode document) {
+    private static String unknownKey(String key) {
+        return switch (key) {
+            case "jwt" -> "jwt: jwt settings are not supported yet; token verification is still configured "
+                    + "through the engine's own settings";
+            case "version" -> "document: unknown key \"version\" (the version comes from the source)";
+            default -> "document: unknown key \"" + key + "\"";
+        };
+    }
+
+    private static void requireFormat(ObjectNode document) {
         JsonNode format = document.get("format");
         if (format == null || !format.isIntegralNumber() || !format.canConvertToInt() || format.intValue() != FORMAT) {
             throw new MetadataDocumentException("format: must be " + FORMAT);
         }
-        return FORMAT;
     }
 
     private String projectId(ObjectNode document) {

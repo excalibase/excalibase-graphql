@@ -1,5 +1,6 @@
 package io.github.excalibase.metadata;
 
+import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.schema.ReservedSchemas;
 
 import java.io.IOException;
@@ -39,7 +40,7 @@ public final class ValidateCommand {
     private static int validate(Path file, String projectId, String reserved, PrintStream out, PrintStream err) {
         String text;
         try {
-            text = DocumentFile.read(file).text();
+            text = FileMetadataSource.read(file).text();
         } catch (CharacterCodingException e) {
             err.println("invalid: " + file + ": the file is not UTF-8 text");
             return 1;
@@ -48,10 +49,10 @@ public final class ValidateCommand {
             return 2;
         }
         try {
-            MetadataDocument document = new MetadataDocumentParser(ReservedSchemas.fromConfig(reserved), projectId)
+            PermissionSet permissions = new MetadataDocumentParser(ReservedSchemas.fromConfig(reserved), projectId)
                     .parse(text, 1);
-            out.println("ok: " + file + " (" + document.permissions().tables().size() + " table rules, "
-                    + document.permissions().functions().size() + " tracked functions)");
+            out.println("ok: " + file + " (" + permissions.tables().size() + " table rules, "
+                    + permissions.functions().size() + " tracked functions)");
             return 0;
         } catch (MetadataDocumentException e) {
             err.println("invalid: " + file + ": " + e.getMessage());

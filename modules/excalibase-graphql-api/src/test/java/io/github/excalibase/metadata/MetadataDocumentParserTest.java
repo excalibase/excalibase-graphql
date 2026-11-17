@@ -2,6 +2,7 @@ package io.github.excalibase.metadata;
 
 import io.github.excalibase.permissions.InsertPermission;
 import io.github.excalibase.permissions.Literal;
+import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.schema.ReservedSchemas;
 import org.junit.jupiter.api.Test;
 
@@ -16,54 +17,22 @@ class MetadataDocumentParserTest {
 
     @Test
     void aYamlDocument_isParsedWithTheVersionTheSourceGives() {
-        MetadataDocument document = parser.parse(GOOD_YAML, 7);
+        PermissionSet permissions = parser.parse(GOOD_YAML, 7);
 
-        assertThat(document.format()).isEqualTo(1);
-        assertThat(document.projectId()).isEqualTo("demo");
-        assertThat(document.jwt()).isEmpty();
-        assertThat(document.permissions().version()).isEqualTo(7);
-        assertThat(document.permissions().tables()).hasSize(1);
-        assertThat(document.permissions().tables().get(0).table()).isEqualTo("public.orders");
+        assertThat(permissions.projectId()).isEqualTo("demo");
+        assertThat(permissions.version()).isEqualTo(7);
+        assertThat(permissions.tables()).hasSize(1);
+        assertThat(permissions.tables().get(0).table()).isEqualTo("public.orders");
     }
 
     @Test
     void aJsonDocument_isParsedTheSame() {
-        MetadataDocument document = parser.parse(GOOD_JSON, 1);
-
-        assertThat(document.permissions().tables()).hasSize(1);
+        assertThat(parser.parse(GOOD_JSON, 1).tables()).hasSize(1);
     }
 
     @Test
     void theFunctionSections_mayBeLeftOut() {
-        assertThat(parser.parse(GOOD_YAML, 1).permissions().functions()).isEmpty();
-    }
-
-    @Test
-    void theJwtSection_isReadAndItsShapeKept() {
-        JwtSection jwt = parser.parse(WITH_JWT, 1).jwt().orElseThrow();
-
-        assertThat(jwt.issuer()).isEqualTo("https://tenant.example.com/");
-        assertThat(jwt.algorithms()).containsExactly("RS256");
-        assertThat(jwt.claims().role()).isEqualTo("https://demo/role");
-        assertThat(jwt.claims().extra()).containsEntry("org-id", "https://demo/org_id");
-    }
-
-    @Test
-    void aSharedSecret_mustBeAReferenceNeverTheValue() {
-        String literal = "format: 1\nprojectId: demo\njwt:\n  sharedSecretFrom: hunter2\ntables: []\n";
-        String reference = "format: 1\nprojectId: demo\njwt:\n  sharedSecretFrom: env:JWT_SECRET\ntables: []\n";
-
-        assertThatThrownBy(() -> parser.parse(literal, 1))
-                .isInstanceOf(MetadataDocumentException.class).hasMessageContaining("jwt.sharedSecretFrom");
-        assertThat(parser.parse(reference, 1).jwt().orElseThrow().sharedSecretFrom()).isEqualTo("env:JWT_SECRET");
-    }
-
-    @Test
-    void aJwtSectionWithBothAKeySetAndASecret_isRefused() {
-        String both = "format: 1\nprojectId: demo\njwt:\n  jwksUrl: https://x/jwks\n"
-                + "  sharedSecretFrom: env:S\ntables: []\n";
-
-        assertThatThrownBy(() -> parser.parse(both, 1)).hasMessageContaining("jwt");
+        assertThat(parser.parse(GOOD_YAML, 1).functions()).isEmpty();
     }
 
     @Test
@@ -173,7 +142,7 @@ class MetadataDocumentParserTest {
         String document = GOOD_YAML + "    insert:\n      check: {}\n      columns: \"*\"\n"
                 + "      set:\n        note: 2024-01-01\n";
 
-        InsertPermission insert = parser.parse(document, 1).permissions().tables().get(0).insert().orElseThrow();
+        InsertPermission insert = parser.parse(document, 1).tables().get(0).insert().orElseThrow();
 
         assertThat(insert.set().get("note")).isEqualTo(new Literal("2024-01-01"));
     }
@@ -222,5 +191,12 @@ class MetadataDocumentParserTest {
         String deep = "a: " + "[".repeat(5000) + "]".repeat(5000);
 
         assertThatThrownBy(() -> parser.parse(deep, 1)).isInstanceOf(MetadataDocumentException.class);
+    }
+
+    @Test
+    void aJwtSection_isRefusedUntilItIsApplied_soNobodyThinksItIs() {
+        assertThatThrownBy(() -> parser.parse(WITH_JWT, 1))
+                .isInstanceOf(MetadataDocumentException.class)
+                .hasMessageContaining("jwt settings are not supported yet");
     }
 }

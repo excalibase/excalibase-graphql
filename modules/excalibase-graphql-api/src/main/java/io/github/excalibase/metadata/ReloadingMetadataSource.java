@@ -28,7 +28,7 @@ import java.util.function.ObjLongConsumer;
  * The reload loop every metadata source shares: load, validate, then swap one reference. Whatever goes wrong
  * (the source cannot be read, the document is refused) the last good version keeps being served and the
  * reason is logged and reported; until a first good load every read is refused, never answered with an empty
- * document. A source only supplies a {@link MetadataLoader}.
+ * document. A source only supplies a {@link Loader}.
  */
 public final class ReloadingMetadataSource implements MetadataSource, AutoCloseable {
 
@@ -37,13 +37,13 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     public static final String REFUSED_METRIC = "excalibase.metadata.refused";
 
     private final String name;
-    private final MetadataLoader loader;
-    private final DocumentReader parser;
+    private final Loader loader;
+    private final Reader parser;
     private final BooleanSupplier writable;
     private final Duration interval;
     private final Duration settle;
     private final MeterRegistry meters;
-    private final AtomicReference<MetadataSnapshot> current = new AtomicReference<>();
+    private final AtomicReference<Snapshot> current = new AtomicReference<>();
     private final AtomicReference<Refusal> refusal = new AtomicReference<>();
     private final AtomicLong counter = new AtomicLong();
     private final List<ObjLongConsumer<String>> listeners = new CopyOnWriteArrayList<>();
@@ -57,13 +57,30 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private String lastReadError;
 
     /** @param category what the status reports; the full reason goes to the log only */
+    /** What a source reads: the text and the version it calls it. */
+    public record Raw(String text, String version) {
+    }
+
+    /** The one thing a source implements: read the current document. */
+    @FunctionalInterface
+    public interface Loader {
+        /** @throws IOException the document cannot be read right now */
+        Raw load() throws IOException;
+    }
+
+    /** Turns text into validated permissions; {@link MetadataDocumentParser#parse} is the engine's. */
+    @FunctionalInterface
+    public interface Reader {
+        PermissionSet parse(String text, long version);
+    }
+
     private record Refusal(String category, Instant at) {
     }
 
     static final int UNSETTLED_WARNING_POLLS = 6;
     public static final Duration DEFAULT_SETTLE = Duration.ofMillis(200);
 
-    public ReloadingMetadataSource(String name, MetadataLoader loader, DocumentReader parser,
+    public ReloadingMetadataSource(String name, Loader loader, Reader parser,
                                    BooleanSupplier writable, Duration interval, MeterRegistry meters) {
         this(name, loader, parser, writable, interval, DEFAULT_SETTLE, meters);
     }
@@ -72,7 +89,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
      * @param settle how long {@link #start()} waits before its second read when the first one found a document,
      *               so a file caught mid-write is not served
      */
-    public ReloadingMetadataSource(String name, MetadataLoader loader, DocumentReader parser,
+    public ReloadingMetadataSource(String name, Loader loader, Reader parser,
                                    BooleanSupplier writable, Duration interval, Duration settle,
                                    MeterRegistry meters) {
         this.settle = Objects.requireNonNull(settle, "settle");
@@ -127,7 +144,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
      * reads the very same content.
      */
     public synchronized void refresh() {
-        RawMetadata raw;
+        Raw raw;
         try {
             raw = loader.load();
         } catch (IOException e) {
@@ -135,7 +152,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
             return;
         }
         lastReadError = null;
-        MetadataSnapshot held = current.get();
+        Snapshot held = current.get();
         if (held != null && held.sourceVersion().equals(raw.version())) {
             lastJudgedVersion = raw.version();
             clearPending();
@@ -154,7 +171,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         judge(raw);
     }
 
-    private void judge(RawMetadata raw) {
+    private void judge(Raw raw) {
         try {
             swap(parser.parse(raw.text(), counter.get() + 1), raw.version());
             judged(raw.version());
@@ -202,14 +219,14 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
                 current.get() == null ? "nothing (every read is refused)" : "last good version " + counter.get(), reason);
     }
 
-    private void swap(MetadataDocument document, String sourceVersion) {
+    private void swap(PermissionSet permissions, String sourceVersion) {
         boolean replacing = current.get() != null;
         long version = counter.incrementAndGet();
-        current.set(new MetadataSnapshot(document, version, sourceVersion, Instant.now()));
+        current.set(new Snapshot(permissions, version, sourceVersion, Instant.now()));
         refusal.set(null);
         log.info("metadata_swapped source={} version={} source_version={}", name, version, sourceVersion);
         if (replacing) {
-            announce(document.projectId(), version);
+            announce(permissions.projectId(), version);
         }
     }
 
@@ -225,15 +242,15 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
 
     @Override
     public PermissionSet permissionsFor(String projectId) {
-        MetadataSnapshot snapshot = current.get();
+        Snapshot snapshot = current.get();
         if (snapshot == null) {
             throw new PermissionsUnavailableException("no valid metadata has been loaded from the " + name
                     + " source, so every read is refused");
         }
-        if (!snapshot.document().projectId().equals(projectId)) {
+        if (!snapshot.permissions().projectId().equals(projectId)) {
             throw new UnknownProjectException(projectId);
         }
-        return snapshot.document().permissions();
+        return snapshot.permissions();
     }
 
     @Override
@@ -242,7 +259,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     }
 
     @Override
-    public Optional<MetadataSnapshot> current() {
+    public Optional<Snapshot> current() {
         return Optional.ofNullable(current.get());
     }
 
@@ -252,10 +269,10 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     }
 
     @Override
-    public MetadataStatus status() {
-        MetadataSnapshot snapshot = current.get();
+    public Status status() {
+        Snapshot snapshot = current.get();
         Refusal last = refusal.get();
-        return new MetadataStatus(name, snapshot == null ? 0 : snapshot.version(),
+        return new Status(name, snapshot == null ? 0 : snapshot.version(),
                 snapshot == null ? null : snapshot.sourceVersion(),
                 last == null ? null : last.category(), last == null ? null : last.at());
     }

@@ -52,7 +52,7 @@ class MetadataSchemaTest {
 
     @Test
     void goodDocuments_areAcceptedByBoth() throws IOException {
-        for (String good : List.of(GOOD_YAML, GOOD_YAML_TWO_RULES, WITH_JWT)) {
+        for (String good : List.of(GOOD_YAML, GOOD_YAML_TWO_RULES)) {
             assertThat(schemaAccepts(good)).as(good).isTrue();
             assertThat(parserAccepts(good)).as(good).isTrue();
         }
@@ -62,6 +62,7 @@ class MetadataSchemaTest {
     void documentsTheStructureForbids_areRefusedByBoth() throws IOException {
         List<String> bad = List.of(
                 BAD_UNKNOWN_KEY,
+                WITH_JWT,
                 BAD_RULE,
                 "projectId: demo\ntables: []\n",
                 "format: 2\nprojectId: demo\ntables: []\n",
@@ -74,6 +75,16 @@ class MetadataSchemaTest {
             assertThat(schemaAccepts(document)).as("schema: " + document).isFalse();
             assertThat(parserAccepts(document)).as("parser: " + document).isFalse();
         }
+    }
+
+    @Test
+    void theSampleInDeployStandalone_isValidToBoth() throws IOException {
+        Path root = schemaFile().getParent().getParent().getParent();
+        String sample = Files.readString(root.resolve("deploy/standalone/metadata/permissions.yaml"));
+
+        assertThat(schemaAccepts(sample)).isTrue();
+        assertThat(new MetadataDocumentParser(ReservedSchemas.fromConfig(""), "my-app").parse(sample, 1).tables())
+                .isNotEmpty();
     }
 
     @Test

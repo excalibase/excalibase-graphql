@@ -37,15 +37,15 @@ class ReloadingMetadataSourceTest {
     }
 
     private ReloadingMetadataSource source(Duration interval) {
-        MetadataLoader loader = () -> {
+        ReloadingMetadataSource.Loader loader = () -> {
             String current = text.get();
             if (current == null) {
                 throw new IOException("the file is gone");
             }
-            return new RawMetadata(current, "v-" + current.hashCode());
+            return new ReloadingMetadataSource.Raw(current, "v-" + current.hashCode());
         };
         ReloadingMetadataSource source = new ReloadingMetadataSource("test", loader,
-                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT), () -> true, interval, meters);
+                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT)::parse, () -> true, interval, meters);
         opened.add(source);
         return source;
     }
@@ -282,12 +282,12 @@ class ReloadingMetadataSourceTest {
     @Test
     void aStartupReadThatIsStillChanging_isNotTrusted() {
         AtomicInteger reads = new AtomicInteger();
-        MetadataLoader loader = () -> {
+        ReloadingMetadataSource.Loader loader = () -> {
             String content = reads.getAndIncrement() == 0 ? "format: 1\nprojectId: demo\ntables: []\n" : GOOD_YAML;
-            return new RawMetadata(content, "v-" + content.hashCode());
+            return new ReloadingMetadataSource.Raw(content, "v-" + content.hashCode());
         };
         ReloadingMetadataSource source = new ReloadingMetadataSource("test", loader,
-                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT), () -> true,
+                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT)::parse, () -> true,
                 Duration.ofHours(1), meters);
         opened.add(source);
 
@@ -302,11 +302,11 @@ class ReloadingMetadataSourceTest {
     /** Whatever goes wrong while reading a document is a refusal, never a crash and never a retry-free skip. */
     @Test
     void anUnexpectedFailureWhileParsing_isARefusal_countedAndRetried() {
-        DocumentReader exploding = (document, version) -> {
+        ReloadingMetadataSource.Reader exploding = (document, version) -> {
             throw new IllegalStateException("boom");
         };
         ReloadingMetadataSource source = new ReloadingMetadataSource("test",
-                () -> new RawMetadata(GOOD_YAML, "same"), exploding, () -> true, Duration.ofHours(1), meters);
+                () -> new ReloadingMetadataSource.Raw(GOOD_YAML, "same"), exploding, () -> true, Duration.ofHours(1), meters);
         opened.add(source);
 
         source.start();
