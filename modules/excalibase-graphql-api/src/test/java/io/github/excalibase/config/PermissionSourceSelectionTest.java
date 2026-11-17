@@ -24,8 +24,12 @@ class PermissionSourceSelectionTest {
     Path dir;
 
     private PermissionProvider pick(String source, String policyUrl, String path) {
-        return new AppConfig().permissionSource(source, policyUrl, path, 5000, "demo", "", TOKEN, 30_000, 300_000,
-                2_000, null);
+        return pickUrl(source, policyUrl, path, "");
+    }
+
+    private PermissionProvider pickUrl(String source, String policyUrl, String path, String urlLocation) {
+        return new AppConfig().permissionSource(source, policyUrl, path, 5000, urlLocation, "", "", false, 5000, 1000,
+                1000, "demo", "", TOKEN, 30_000, 300_000, 2_000, null);
     }
 
     @Test
@@ -53,5 +57,20 @@ class PermissionSourceSelectionTest {
     void aFileSourceAlongsideAPolicyUrl_isRefused() {
         assertThatThrownBy(() -> pick("file", "http://provisioning/api", "/x"))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void withMetadataSourceUrl_theUrlIsTheSource() {
+        PermissionProvider source = pickUrl("url", "", "", "http://127.0.0.1:1/permissions.yaml");
+
+        assertThat(source).isInstanceOf(ReloadingMetadataSource.class);
+        assertThat(((ReloadingMetadataSource) source).name()).isEqualTo("url");
+        ((ReloadingMetadataSource) source).close();
+    }
+
+    @Test
+    void aUrlSourceOverPlainHttpToAnOutsideHost_isRefused() {
+        assertThatThrownBy(() -> pickUrl("url", "", "", "http://config.example.com/p.yaml"))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("allow-insecure");
     }
 }

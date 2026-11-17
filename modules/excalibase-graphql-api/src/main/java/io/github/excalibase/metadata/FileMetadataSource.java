@@ -56,9 +56,13 @@ public final class FileMetadataSource {
             // A swap may remove the old target between resolving the link and opening it; once more is enough.
             bytes = readCapped(file);
         }
-        String text = StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
+        return new ReloadingMetadataSource.Raw(decodeUtf8(bytes), sha256(bytes));
+    }
+
+    /** @throws IOException (a CharacterCodingException) when the bytes are not UTF-8 text */
+    static String decodeUtf8(byte[] bytes) throws IOException {
+        return StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
-        return new ReloadingMetadataSource.Raw(text, sha256(bytes));
     }
 
     private static byte[] readCapped(Path file) throws IOException {
@@ -67,7 +71,7 @@ public final class FileMetadataSource {
         }
     }
 
-    private static String sha256(byte[] content) {
+    static String sha256(byte[] content) {
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
         } catch (NoSuchAlgorithmException e) {
