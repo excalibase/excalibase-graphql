@@ -71,9 +71,9 @@ class JwtServiceDocumentTest {
     @Test
     void aDocumentOnlyService_refusesEverything_untilTheDocumentSuppliesAVerifier() {
         JwtService nothingYet = JwtService.documentOnly().documentVerifier(() -> null);
-        String token = envToken();
+        String envKeyToken = envToken();
 
-        assertThatThrownBy(() -> nothingYet.verify(token, "demo")).isInstanceOf(JwtVerificationException.class);
+        assertThatThrownBy(() -> nothingYet.verify(envKeyToken, "demo")).isInstanceOf(JwtVerificationException.class);
         assertThat(JwtService.documentOnly().documentVerifier(() -> (token, project) -> FROM_DOCUMENT)
                 .verify("x", "demo")).isSameAs(FROM_DOCUMENT);
     }
