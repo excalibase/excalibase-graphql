@@ -4,7 +4,6 @@ import com.zaxxer.hikari.HikariDataSource;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.service.VaultCredentialService;
 import io.github.excalibase.service.VaultCredentials;
-import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import javax.sql.DataSource;
@@ -111,7 +110,6 @@ public class DynamicDataSourceManager {
     return cache.get(cacheKey) != null;
   }
 
-  @PreDestroy
   public void destroy() {
     cache.clear();
     cache.shutdown();
