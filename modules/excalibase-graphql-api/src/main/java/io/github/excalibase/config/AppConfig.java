@@ -16,6 +16,8 @@ import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionCachePolicy;
 import io.github.excalibase.permissions.PermissionVersions;
+import io.github.excalibase.metadata.MetadataHealth;
+import io.github.excalibase.metadata.MetadataSources;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
@@ -158,11 +160,42 @@ public class AppConfig {
     }
 
     /**
-     * Per-project permission documents, read from the control plane with the shared provisioning token. Without a
-     * policy URL there is no source, and every read is refused rather than answered with an empty document.
+     * The permission source. With {@code metadata.source} unset this is exactly the provisioning-or-nothing choice
+     * below; with it set the named metadata source is used instead (EXC-733).
      */
     @Singleton
     @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
+    PermissionProvider permissionSource(
+            @Value("${metadata.source:}") String metadataSource,
+            @Value("${app.security.rls.policy-url:}") String policyUrl,
+            @Value("${metadata.file.path:}") String metadataFilePath,
+            @Value("${metadata.file.poll-interval-ms:5000}") long pollIntervalMs,
+            @Value("${app.project-id:}") String projectId,
+            @Value("${app.reserved-schemas:}") String reservedSchemas,
+            TokenFileSource provisioningTokenSource,
+            @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs,
+            @Value("${app.security.permissions.max-stale-ms:300000}") long maxStaleMs,
+            @Value("${app.security.permissions.retry-interval-ms:2000}") long retryIntervalMs,
+            @Nullable MeterRegistry meterRegistry) {
+        MeterRegistry meters = meterRegistry != null ? meterRegistry : new SimpleMeterRegistry();
+        return MetadataSources.create(metadataSource, policyUrl, metadataFilePath, pollIntervalMs, projectId,
+                        reservedSchemas, meters)
+                .<PermissionProvider>map(source -> source)
+                .orElseGet(() -> permissionProvider(policyUrl, provisioningTokenSource, policyTtlMs, maxStaleMs,
+                        retryIntervalMs, meterRegistry));
+    }
+
+    /** What the actuators report about the permission source when it is a metadata source. */
+    @Singleton
+    @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
+    MetadataHealth metadataHealth(PermissionProvider permissionSource) {
+        return new MetadataHealth(permissionSource);
+    }
+
+    /**
+     * Per-project permission documents, read from the control plane with the shared provisioning token. Without a
+     * policy URL there is no source, and every read is refused rather than answered with an empty document.
+     */
     PermissionProvider permissionProvider(
             @Value("${app.security.rls.policy-url:}") String policyUrl,
             TokenFileSource provisioningTokenSource,

@@ -1,0 +1,51 @@
+# The `file` source on Kubernetes: the permissions live in a ConfigMap, mounted as a folder.
+#   kubectl apply -f configmap-file-source.yaml
+# Edit the ConfigMap and apply it again; the kubelet updates the mounted file within about a minute and
+# the engine swaps it in on its next poll. Validate first:  excalibase validate permissions.yaml
+#
+# Mount the whole folder. A `subPath` mount never receives ConfigMap updates.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: excalibase-metadata
+data:
+  permissions.yaml: |
+    format: 1
+    projectId: my-app
+    tables:
+      - table: public.todos
+        role: user
+        select:
+          filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}
+          columns: "*"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excalibase-engine
+spec:
+  replicas: 2            # every replica polls the same ConfigMap; see /actuator/info for each one's version
+  selector:
+    matchLabels: {app: excalibase-engine}
+  template:
+    metadata:
+      labels: {app: excalibase-engine}
+    spec:
+      containers:
+        - name: engine
+          image: excalibase/excalibase-graphql:latest
+          env:
+            - {name: APP_PROJECT_ID, value: my-app}
+            - {name: APP_DATABASE_TYPE, value: postgres}
+            - {name: METADATA_SOURCE, value: file}
+            - {name: METADATA_FILE_PATH, value: /etc/excalibase}
+            # also needed: SPRING_DATASOURCE_URL/USERNAME/PASSWORD and the token verification settings,
+            # from a Secret (see docker-compose.file.yml for the names)
+          volumeMounts:
+            - name: metadata
+              mountPath: /etc/excalibase      # the folder, never a subPath
+              readOnly: true
+      volumes:
+        - name: metadata
+          configMap:
+            name: excalibase-metadata

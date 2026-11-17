@@ -28,6 +28,7 @@ class PermissionBoundaryTest {
 
     private static final List<String> ALLOWED = List.of(
             "/io/github/excalibase/permissions/",
+            "/io/github/excalibase/metadata/",
             "/io/github/excalibase/access/",
             "/io/github/excalibase/config/AppConfig.java",
             "/io/github/excalibase/schema/GraphqlSchemaManager.java");

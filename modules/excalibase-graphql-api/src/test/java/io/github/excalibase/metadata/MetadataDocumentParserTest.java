@@ -1,0 +1,180 @@
+package io.github.excalibase.metadata;
+
+import io.github.excalibase.permissions.InsertPermission;
+import io.github.excalibase.permissions.Literal;
+import io.github.excalibase.schema.ReservedSchemas;
+import org.junit.jupiter.api.Test;
+
+import static io.github.excalibase.metadata.MetadataFixtures.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class MetadataDocumentParserTest {
+
+    private final MetadataDocumentParser parser =
+            new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT);
+
+    @Test
+    void aYamlDocument_isParsedWithTheVersionTheSourceGives() {
+        MetadataDocument document = parser.parse(GOOD_YAML, 7);
+
+        assertThat(document.format()).isEqualTo(1);
+        assertThat(document.projectId()).isEqualTo("demo");
+        assertThat(document.jwt()).isEmpty();
+        assertThat(document.permissions().version()).isEqualTo(7);
+        assertThat(document.permissions().tables()).hasSize(1);
+        assertThat(document.permissions().tables().get(0).table()).isEqualTo("public.orders");
+    }
+
+    @Test
+    void aJsonDocument_isParsedTheSame() {
+        MetadataDocument document = parser.parse(GOOD_JSON, 1);
+
+        assertThat(document.permissions().tables()).hasSize(1);
+    }
+
+    @Test
+    void theFunctionSections_mayBeLeftOut() {
+        assertThat(parser.parse(GOOD_YAML, 1).permissions().functions()).isEmpty();
+    }
+
+    @Test
+    void theJwtSection_isReadAndItsShapeKept() {
+        JwtSection jwt = parser.parse(WITH_JWT, 1).jwt().orElseThrow();
+
+        assertThat(jwt.issuer()).isEqualTo("https://tenant.example.com/");
+        assertThat(jwt.algorithms()).containsExactly("RS256");
+        assertThat(jwt.claims().role()).isEqualTo("https://demo/role");
+        assertThat(jwt.claims().extra()).containsEntry("org-id", "https://demo/org_id");
+    }
+
+    @Test
+    void aSharedSecret_mustBeAReferenceNeverTheValue() {
+        String literal = "format: 1\nprojectId: demo\njwt:\n  sharedSecretFrom: hunter2\ntables: []\n";
+        String reference = "format: 1\nprojectId: demo\njwt:\n  sharedSecretFrom: env:JWT_SECRET\ntables: []\n";
+
+        assertThatThrownBy(() -> parser.parse(literal, 1))
+                .isInstanceOf(MetadataDocumentException.class).hasMessageContaining("jwt.sharedSecretFrom");
+        assertThat(parser.parse(reference, 1).jwt().orElseThrow().sharedSecretFrom()).isEqualTo("env:JWT_SECRET");
+    }
+
+    @Test
+    void aJwtSectionWithBothAKeySetAndASecret_isRefused() {
+        String both = "format: 1\nprojectId: demo\njwt:\n  jwksUrl: https://x/jwks\n"
+                + "  sharedSecretFrom: env:S\ntables: []\n";
+
+        assertThatThrownBy(() -> parser.parse(both, 1)).hasMessageContaining("jwt");
+    }
+
+    @Test
+    void aMissingOrUnknownFormat_isRefused() {
+        assertThatThrownBy(() -> parser.parse("projectId: demo\ntables: []\n", 1))
+                .hasMessageContaining("format");
+        assertThatThrownBy(() -> parser.parse("format: 2\nprojectId: demo\ntables: []\n", 1))
+                .hasMessageContaining("format");
+    }
+
+    @Test
+    void anUnknownTopLevelKey_isRefused_andSoIsAVersionTheDocumentCannotSet() {
+        assertThatThrownBy(() -> parser.parse(BAD_UNKNOWN_KEY, 1))
+                .isInstanceOf(MetadataDocumentException.class).hasMessageContaining("surprise");
+        assertThatThrownBy(() -> parser.parse(GOOD_YAML + "version: 9\n", 1))
+                .hasMessageContaining("version");
+    }
+
+    @Test
+    void aRuleThatBreaksTheGrammar_isRefusedByTheSameParserWithItsPath() {
+        assertThatThrownBy(() -> parser.parse(BAD_RULE, 1))
+                .isInstanceOf(MetadataDocumentException.class)
+                .hasMessageContaining("tables[0].select.filter");
+    }
+
+    @Test
+    void duplicateKeys_areRefused_inYamlAndInJson() {
+        assertThatThrownBy(() -> parser.parse(GOOD_YAML + "projectId: other\n", 1))
+                .isInstanceOf(MetadataDocumentException.class);
+        assertThatThrownBy(() -> parser.parse("{\"format\":1,\"format\":1,\"projectId\":\"demo\"}", 1))
+                .isInstanceOf(MetadataDocumentException.class);
+    }
+
+    @Test
+    void aDocumentOverOneMiB_isRefused() {
+        String big = GOOD_YAML + "# " + "x".repeat(MetadataDocumentParser.MAX_BYTES) + "\n";
+
+        assertThatThrownBy(() -> parser.parse(big, 1)).hasMessageContaining("1 MiB");
+    }
+
+    @Test
+    void yamlAliasBombs_areRefused() {
+        StringBuilder bomb = new StringBuilder("format: 1\nprojectId: demo\ntables: []\na0: &a0 [x]\n");
+        for (int level = 1; level < 12; level++) {
+            bomb.append("a").append(level).append(": &a").append(level).append(" [");
+            for (int i = 0; i < 10; i++) {
+                bomb.append(i == 0 ? "" : ", ").append("*a").append(level - 1);
+            }
+            bomb.append("]\n");
+        }
+
+        assertThatThrownBy(() -> parser.parse(bomb.toString(), 1)).isInstanceOf(MetadataDocumentException.class);
+    }
+
+    @Test
+    void aSyntaxError_namesTheLine() {
+        assertThatThrownBy(() -> parser.parse(BAD_SYNTAX, 1))
+                .isInstanceOf(MetadataDocumentException.class).hasMessageContaining("line");
+    }
+
+    @Test
+    void aDocumentThatIsNotAnObject_isRefused() {
+        assertThatThrownBy(() -> parser.parse("- a\n- b\n", 1)).hasMessageContaining("object");
+        assertThatThrownBy(() -> parser.parse("", 1)).isInstanceOf(MetadataDocumentException.class);
+    }
+
+    @Test
+    void aRuleNamingAReservedSchema_isRefused() {
+        assertThatThrownBy(() -> parser.parse(BAD_RESERVED, 1))
+                .hasMessageContaining("excalibase_meta").hasMessageContaining("reserved");
+        assertThatThrownBy(() -> parser.parse(GOOD_YAML.replace("public.orders", "auth.users"), 1))
+                .hasMessageContaining("reserved");
+    }
+
+    @Test
+    void aSchemaAddedByConfiguration_isReservedToo() {
+        MetadataDocumentParser configured = new MetadataDocumentParser(ReservedSchemas.fromConfig("legacy"), PROJECT);
+
+        assertThatThrownBy(() -> configured.parse(GOOD_YAML.replace("public.orders", "legacy.t"), 1))
+                .hasMessageContaining("legacy");
+    }
+
+    @Test
+    void aTrackedFunctionInAReservedSchema_isRefused() {
+        String document = "format: 1\nprojectId: demo\ntables: []\nfunctions:\n  - function: auth.login\n"
+                + "    exposedAs: MUTATION\n    inferPermissions: false\n    sessionArgument: null\n"
+                + "functionPermissions: []\n";
+
+        assertThatThrownBy(() -> parser.parse(document, 1)).hasMessageContaining("reserved");
+    }
+
+    @Test
+    void aProjectThatIsNotTheDeployments_isRefused() {
+        assertThatThrownBy(() -> parser.parse(withProject("someone-else"), 1))
+                .hasMessageContaining("someone-else").hasMessageContaining("demo");
+    }
+
+    @Test
+    void withoutAnExpectedProject_anyProjectIsAccepted() {
+        MetadataDocumentParser open = new MetadataDocumentParser(ReservedSchemas.fromConfig(""), null);
+
+        assertThat(open.parse(withProject("anything"), 1).projectId()).isEqualTo("anything");
+    }
+
+    @Test
+    void anUnquotedYamlDate_staysTheTextTheAuthorWrote() {
+        String document = GOOD_YAML + "    insert:\n      check: {}\n      columns: \"*\"\n"
+                + "      set:\n        note: 2024-01-01\n";
+
+        InsertPermission insert = parser.parse(document, 1).permissions().tables().get(0).insert().orElseThrow();
+
+        assertThat(insert.set().get("note")).isEqualTo(new Literal("2024-01-01"));
+    }
+}

@@ -17,9 +17,10 @@ public record ReservedSchemas(Set<String> names) {
 
     /**
      * {@code auth} holds end-user credentials (password hashes, reset tokens);
-     * {@code excalibase} is reserved for control-plane bookkeeping tables.
+     * {@code excalibase} is reserved for control-plane bookkeeping tables;
+     * {@code excalibase_meta} holds the engine's own metadata document (EXC-733).
      */
-    public static final Set<String> BUILT_IN = Set.of("auth", "excalibase");
+    public static final Set<String> BUILT_IN = Set.of("auth", "excalibase", "excalibase_meta");
 
     public ReservedSchemas {
         Set<String> effective = new LinkedHashSet<>(BUILT_IN);
