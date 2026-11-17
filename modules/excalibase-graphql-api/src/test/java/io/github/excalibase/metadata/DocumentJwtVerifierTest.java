@@ -141,8 +141,8 @@ class DocumentJwtVerifierTest {
         assertThat(verify("", token).role()).isEqualTo("user");
         TokenVerifier listed = verifier("issuer: \"" + idp.issuer() + "\"\njwksUrl: " + idp.jwksUrl()
                 + "\naudience: [a, b]\n");
-        assertThatThrownBy(() -> listed.verify(idp.rs256(idp.claims().claim("role", "user").audience("c").build()),
-                "demo")).isInstanceOf(JwtVerificationException.class);
+        String otherAudience = idp.rs256(idp.claims().claim("role", "user").audience("c").build());
+        assertThatThrownBy(() -> listed.verify(otherAudience, "demo")).isInstanceOf(JwtVerificationException.class);
         assertThat(listed.verify(idp.rs256(idp.claims().claim("role", "user").audience("b").build()), "demo").role())
                 .isEqualTo("user");
     }
@@ -161,8 +161,11 @@ class DocumentJwtVerifierTest {
                 .claim("https://hasura.io/jwt/claims", Map.of("x-hasura-default-role", "editor"))
                 .claim("profile", Map.of("id", "p-9")).build());
 
-        JwtClaims claims = verify("claims:\n  role: https://hasura.io/jwt/claims.x-hasura-default-role\n"
-                + "  userId: profile.id\n", token);
+        JwtClaims claims = verify("""
+                claims:
+                  role: https://hasura.io/jwt/claims.x-hasura-default-role
+                  userId: profile.id
+                """, token);
 
         assertThat(claims.role()).isEqualTo("editor");
         assertThat(claims.userId()).isEqualTo("p-9");
@@ -212,8 +215,8 @@ class DocumentJwtVerifierTest {
                 idp.rs256(idp.claims().claim("roles", List.of("editor", "service")).build()));
 
         assertThat(listed.allowedRoles()).containsExactly("editor");
-        assertThatThrownBy(() -> verifier(base() + "claims:\n  role: roles\n  defaultRole: service\n"))
-                .isInstanceOf(MetadataDocumentException.class);
+        String serviceDefault = base() + "claims:\n  role: roles\n  defaultRole: service\n";
+        assertThatThrownBy(() -> verifier(serviceDefault)).isInstanceOf(MetadataDocumentException.class);
     }
 
     @Test
@@ -291,8 +294,8 @@ class DocumentJwtVerifierTest {
 
         assertThat(verifier.verify(JwksStub.hs256(secret, idp.claims().claim("role", "user").build()), "demo").role())
                 .isEqualTo("user");
-        assertThatThrownBy(() -> verifier.verify(idp.rs256(idp.claims().claim("role", "user").build()), "demo"))
-                .isInstanceOf(JwtVerificationException.class);
+        String signedWithAKeySet = idp.rs256(idp.claims().claim("role", "user").build());
+        assertThatThrownBy(() -> verifier.verify(signedWithAKeySet, "demo")).isInstanceOf(JwtVerificationException.class);
     }
 
     @Test

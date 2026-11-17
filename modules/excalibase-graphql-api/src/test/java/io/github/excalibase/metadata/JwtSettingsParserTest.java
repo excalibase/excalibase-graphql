@@ -46,7 +46,9 @@ class JwtSettingsParserTest {
             "huge skew|issuer: https://i/\\njwksUrl: https://i/jwks\\naudience: a\\nclockSkew: 99999|jwt.clockSkew",
             "blank path|issuer: https://i/\\njwksUrl: https://i/jwks\\naudience: a\\nclaims:\\n  role: \" \"|jwt.claims.role"})
     void aBadJwtSection_isRefused_naming_thePath(String name, String jwt, String path) {
-        assertThatThrownBy(() -> parser.parse(document(jwt.replace("\\n", "\n")), 1))
+        String text = document(jwt.replace("\\n", "\n"));
+
+        assertThatThrownBy(() -> parser.parse(text, 1))
                 .isInstanceOf(MetadataDocumentException.class)
                 .hasMessageContaining(path);
     }

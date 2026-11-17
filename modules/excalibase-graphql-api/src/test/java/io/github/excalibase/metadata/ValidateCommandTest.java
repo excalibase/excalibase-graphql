@@ -123,8 +123,11 @@ class ValidateCommandTest {
 
     @Test
     void aLiteralSecretInTheJwtSection_exitsOne_andNamesThePath() throws IOException {
-        String document = GOOD_YAML.replace("tables:", "jwt:\n  secret: hunter2hunter2hunter2hunter2hunter2\n"
-                + "  audience: a\ntables:");
+        String document = GOOD_YAML.replace("tables:", """
+                jwt:
+                  secret: hunter2hunter2hunter2hunter2hunter2
+                  audience: a
+                tables:""");
 
         assertThat(run(Map.of(), "validate", file(document).toString())).isEqualTo(1);
         assertThat(err.toString(StandardCharsets.UTF_8)).contains("jwt.secret").doesNotContain("hunter2");

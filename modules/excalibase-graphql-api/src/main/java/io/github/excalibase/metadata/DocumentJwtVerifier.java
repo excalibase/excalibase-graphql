@@ -17,7 +17,8 @@ import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
-import java.util.Date;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.function.LongSupplier;
@@ -111,17 +112,15 @@ public final class DocumentJwtVerifier implements TokenVerifier {
     }
 
     private void checkTimeWindow(JWTClaimsSet verified) {
-        Date expires = verified.getExpirationTime();
-        if (expires == null) {
+        if (verified.getExpirationTime() == null) {
             throw new JwtVerificationException("JWT missing required 'exp' claim");
         }
-        long now = System.currentTimeMillis();
-        long skew = settings.clockSkew().toMillis();
-        if (now > expires.getTime() + skew) {
+        Instant now = Instant.now();
+        Duration skew = settings.clockSkew();
+        if (now.isAfter(verified.getExpirationTime().toInstant().plus(skew))) {
             throw new JwtVerificationException("JWT token expired");
         }
-        Date notBefore = verified.getNotBeforeTime();
-        if (notBefore != null && now + skew < notBefore.getTime()) {
+        if (verified.getNotBeforeTime() != null && now.plus(skew).isBefore(verified.getNotBeforeTime().toInstant())) {
             throw new JwtVerificationException("JWT token not yet valid");
         }
     }

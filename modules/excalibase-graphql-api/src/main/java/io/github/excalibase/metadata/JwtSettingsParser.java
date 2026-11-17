@@ -23,7 +23,7 @@ final class JwtSettingsParser {
     private static final Set<String> KEYS = Set.of("jwksUrl", "issuer", "secret", "algorithms", "audience",
             "claims", "clockSkew");
     private static final Set<String> CLAIM_KEYS = Set.of("role", "defaultRole", "userId", "extra");
-    private static final Pattern SECRET_REF = Pattern.compile("^(env:[A-Za-z_][A-Za-z0-9_]*|file:\\S.*)$");
+    private static final Pattern SECRET_REF = Pattern.compile("^(env:[A-Za-z_]\\w*|file:\\S.*)$");
     private static final Pattern EXTRA_NAME = Pattern.compile("^[a-z0-9][a-z0-9_-]{0,62}$");
     /** Names the engine fills itself; a document may not map a claim onto them. */
     private static final Set<String> RESERVED_NAMES = Set.of("role", "userid", "user-id", "project-id", "projectid",

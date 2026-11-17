@@ -1,5 +1,6 @@
 package io.github.excalibase.security;
 
+import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.crypto.ECDSASigner;
@@ -35,16 +36,20 @@ class JwtServiceDocumentTest {
         publicKey = (ECPublicKey) pair.getPublic();
     }
 
-    private static String envToken() throws Exception {
+    private static String envToken() {
         JWTClaimsSet claims = new JWTClaimsSet.Builder().subject("env-user").claim("role", "user")
                 .expirationTime(Date.from(Instant.now().plusSeconds(600))).build();
-        SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
-        signed.sign(new ECDSASigner(privateKey));
-        return signed.serialize();
+        try {
+            SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
+            signed.sign(new ECDSASigner(privateKey));
+            return signed.serialize();
+        } catch (JOSEException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Test
-    void withoutADocumentVerifier_theServiceBehavesExactlyAsBefore() throws Exception {
+    void withoutADocumentVerifier_theServiceBehavesExactlyAsBefore() {
         JwtService service = new JwtService(publicKey).requireAudience(false, null);
 
         assertThat(service.verify(envToken()).userId()).isEqualTo("env-user");
@@ -52,7 +57,7 @@ class JwtServiceDocumentTest {
     }
 
     @Test
-    void aDocumentVerifier_whenOneIsServed_decidesInsteadOfTheEnvKeys() throws Exception {
+    void aDocumentVerifier_whenOneIsServed_decidesInsteadOfTheEnvKeys() {
         String[] seen = new String[1];
         JwtService service = new JwtService(publicKey).requireAudience(false, null).documentVerifier(() -> (token, project) -> {
             seen[0] = project;
@@ -64,10 +69,11 @@ class JwtServiceDocumentTest {
     }
 
     @Test
-    void aDocumentOnlyService_refusesEverything_untilTheDocumentSuppliesAVerifier() throws Exception {
+    void aDocumentOnlyService_refusesEverything_untilTheDocumentSuppliesAVerifier() {
         JwtService nothingYet = JwtService.documentOnly().documentVerifier(() -> null);
+        String token = envToken();
 
-        assertThatThrownBy(() -> nothingYet.verify(envToken(), "demo")).isInstanceOf(JwtVerificationException.class);
+        assertThatThrownBy(() -> nothingYet.verify(token, "demo")).isInstanceOf(JwtVerificationException.class);
         assertThat(JwtService.documentOnly().documentVerifier(() -> (token, project) -> FROM_DOCUMENT)
                 .verify("x", "demo")).isSameAs(FROM_DOCUMENT);
     }

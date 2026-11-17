@@ -2,6 +2,7 @@ package io.github.excalibase.metadata;
 
 import io.github.excalibase.schema.ReservedSchemas;
 import io.github.excalibase.security.JwtVerificationException;
+import io.github.excalibase.security.TokenVerifier;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -60,11 +61,12 @@ class JwtReloadTest {
                 .isEqualTo("user");
 
         swapTo(document("https://api.two", "public.secrets"));
+        TokenVerifier verifier = source.tokenVerifier().orElseThrow();
+        String forOldAudience = tokenFor("https://api.one");
 
         assertThat(source.permissionsFor(PROJECT).tables().get(0).table()).isEqualTo("public.secrets");
-        assertThat(source.tokenVerifier().orElseThrow().verify(tokenFor("https://api.two"), PROJECT).role())
-                .isEqualTo("user");
-        assertThatThrownBy(() -> source.tokenVerifier().orElseThrow().verify(tokenFor("https://api.one"), PROJECT))
+        assertThat(verifier.verify(tokenFor("https://api.two"), PROJECT).role()).isEqualTo("user");
+        assertThatThrownBy(() -> verifier.verify(forOldAudience, PROJECT))
                 .isInstanceOf(JwtVerificationException.class);
     }
 
