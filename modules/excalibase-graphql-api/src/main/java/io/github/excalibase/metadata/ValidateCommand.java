@@ -41,7 +41,7 @@ public final class ValidateCommand {
         String text;
         try {
             text = FileMetadataSource.read(file).text();
-        } catch (CharacterCodingException e) {
+        } catch (CharacterCodingException _) {
             err.println("invalid: " + file + ": the file is not UTF-8 text");
             return 1;
         } catch (IOException e) {

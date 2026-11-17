@@ -160,8 +160,8 @@ class FileMetadataIntegrationTest extends EngineIntegrationTest {
         await().atMost(Duration.ofSeconds(10)).until(this::secretsAreServed);
 
         Files.writeString(FILE, document(rule("public.orders", ROLE)) + "surprise: true\n");
-        Thread.sleep(300);
-        assertThat(secretsAreServed()).as("a bad edit keeps the last good version").isTrue();
+        await().during(Duration.ofMillis(500)).atMost(Duration.ofSeconds(5))
+                .until(this::secretsAreServed);
     }
 
     @Test

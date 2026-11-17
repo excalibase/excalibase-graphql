@@ -56,7 +56,6 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private int unsettledPolls;
     private String lastReadError;
 
-    /** @param category what the status reports; the full reason goes to the log only */
     /** What a source reads: the text and the version it calls it. */
     public record Raw(String text, String version) {
     }
@@ -74,6 +73,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         PermissionSet parse(String text, long version);
     }
 
+    /** @param category what the status reports; the full reason goes to the log only */
     private record Refusal(String category, Instant at) {
     }
 
@@ -123,7 +123,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private void settleThenRead() {
         try {
             Thread.sleep(settle.toMillis());
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             return;
         }
@@ -133,7 +133,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private void pollSafely() {
         try {
             refresh();
-        } catch (RuntimeException | Error e) {
+        } catch (RuntimeException e) {
             log.error("metadata_refresh_failed source={}", name, e);
         }
     }

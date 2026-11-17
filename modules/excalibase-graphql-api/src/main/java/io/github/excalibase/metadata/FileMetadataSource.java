@@ -6,7 +6,6 @@ import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -47,13 +46,13 @@ public final class FileMetadataSource {
         return folder != null && Files.isDirectory(folder) && Files.isWritable(folder);
     }
 
-    /** At most one byte over the limit is read. @throws CharacterCodingException the file is not UTF-8 text */
+    /** At most one byte over the limit is read. A file that is not UTF-8 text fails with a character-coding IOException. */
     static ReloadingMetadataSource.Raw read(Path path) throws IOException {
         Path file = resolve(path);
         byte[] bytes;
         try {
             bytes = readCapped(file);
-        } catch (NoSuchFileException e) {
+        } catch (NoSuchFileException _) {
             // A swap may remove the old target between resolving the link and opening it; once more is enough.
             bytes = readCapped(file);
         }

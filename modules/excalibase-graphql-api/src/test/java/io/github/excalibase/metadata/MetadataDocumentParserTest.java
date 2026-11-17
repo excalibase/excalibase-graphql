@@ -84,7 +84,9 @@ class MetadataDocumentParserTest {
             bomb.append("]\n");
         }
 
-        assertThatThrownBy(() -> parser.parse(bomb.toString(), 1)).isInstanceOf(MetadataDocumentException.class);
+        String document = bomb.toString();
+
+        assertThatThrownBy(() -> parser.parse(document, 1)).isInstanceOf(MetadataDocumentException.class);
     }
 
     @Test
@@ -117,9 +119,17 @@ class MetadataDocumentParserTest {
 
     @Test
     void aTrackedFunctionInAReservedSchema_isRefused() {
-        String document = "format: 1\nprojectId: demo\ntables: []\nfunctions:\n  - function: auth.login\n"
-                + "    exposedAs: MUTATION\n    inferPermissions: false\n    sessionArgument: null\n"
-                + "functionPermissions: []\n";
+        String document = """
+                format: 1
+                projectId: demo
+                tables: []
+                functions:
+                  - function: auth.login
+                    exposedAs: MUTATION
+                    inferPermissions: false
+                    sessionArgument: null
+                functionPermissions: []
+                """;
 
         assertThatThrownBy(() -> parser.parse(document, 1)).hasMessageContaining("reserved");
     }
@@ -144,7 +154,7 @@ class MetadataDocumentParserTest {
 
         InsertPermission insert = parser.parse(document, 1).tables().get(0).insert().orElseThrow();
 
-        assertThat(insert.set().get("note")).isEqualTo(new Literal("2024-01-01"));
+        assertThat(insert.set()).containsEntry("note", new Literal("2024-01-01"));
     }
 
     @Test

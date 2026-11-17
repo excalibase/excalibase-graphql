@@ -45,7 +45,7 @@ class MetadataSchemaTest {
         try {
             parser.parse(text, 1);
             return true;
-        } catch (MetadataDocumentException e) {
+        } catch (MetadataDocumentException _) {
             return false;
         }
     }

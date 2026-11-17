@@ -23,9 +23,12 @@ public final class MetadataDocumentParser {
 
     public static final int MAX_BYTES = 1024 * 1024;
     static final int FORMAT = 1;
-    private static final Set<String> KEYS =
-            Set.of("format", "projectId", "tables", "functions", "functionPermissions");
-    private static final Set<String> RULE_KEYS = Set.of("tables", "functions", "functionPermissions");
+    private static final String PROJECT_ID = "projectId";
+    private static final String TABLES = "tables";
+    private static final String FUNCTIONS = "functions";
+    private static final String FUNCTION_PERMISSIONS = "functionPermissions";
+    private static final Set<String> KEYS = Set.of("format", PROJECT_ID, TABLES, FUNCTIONS, FUNCTION_PERMISSIONS);
+    private static final Set<String> RULE_KEYS = Set.of(TABLES, FUNCTIONS, FUNCTION_PERMISSIONS);
 
     /** A repeated key would otherwise let the last one silently win. */
     private static final ObjectMapper JSON = JsonMapper.builder()
@@ -49,7 +52,7 @@ public final class MetadataDocumentParser {
             return read(text, version);
         } catch (MetadataDocumentException e) {
             throw e;
-        } catch (StackOverflowError e) {
+        } catch (StackOverflowError _) {
             throw new MetadataDocumentException("document: is nested too deeply");
         } catch (RuntimeException e) {
             throw new MetadataDocumentException("document: cannot be read (" + e.getClass().getSimpleName() + ")", e);
@@ -93,7 +96,7 @@ public final class MetadataDocumentParser {
     }
 
     private String projectId(ObjectNode document) {
-        JsonNode node = document.get("projectId");
+        JsonNode node = document.get(PROJECT_ID);
         if (node == null || !node.isTextual() || node.asText().isBlank()) {
             throw new MetadataDocumentException("projectId: must be a non-empty string");
         }
@@ -106,7 +109,7 @@ public final class MetadataDocumentParser {
 
     private static PermissionSet rules(ObjectNode document, String projectId, long version) {
         ObjectNode rules = JSON.createObjectNode();
-        rules.put("projectId", projectId);
+        rules.put(PROJECT_ID, projectId);
         rules.put("version", version);
         for (String key : RULE_KEYS) {
             rules.set(key, document.has(key) ? document.get(key) : JSON.createArrayNode());
@@ -119,9 +122,9 @@ public final class MetadataDocumentParser {
     }
 
     private void refuseReserved(PermissionSet permissions) {
-        permissions.tables().forEach(rule -> refuseIfReserved(rule.table(), "tables"));
-        permissions.functions().forEach(function -> refuseIfReserved(function.function(), "functions"));
-        permissions.functionPermissions().forEach(grant -> refuseIfReserved(grant.function(), "functionPermissions"));
+        permissions.tables().forEach(rule -> refuseIfReserved(rule.table(), TABLES));
+        permissions.functions().forEach(function -> refuseIfReserved(function.function(), FUNCTIONS));
+        permissions.functionPermissions().forEach(grant -> refuseIfReserved(grant.function(), FUNCTION_PERMISSIONS));
     }
 
     private void refuseIfReserved(String qualifiedName, String section) {
