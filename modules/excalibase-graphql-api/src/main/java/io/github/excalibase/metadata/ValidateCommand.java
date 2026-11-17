@@ -4,10 +4,7 @@ import io.github.excalibase.schema.ReservedSchemas;
 
 import java.io.IOException;
 import java.io.PrintStream;
-import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 
@@ -42,7 +39,7 @@ public final class ValidateCommand {
     private static int validate(Path file, String projectId, String reserved, PrintStream out, PrintStream err) {
         String text;
         try {
-            text = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(Files.readAllBytes(file))).toString();
+            text = DocumentFile.read(file).text();
         } catch (CharacterCodingException e) {
             err.println("invalid: " + file + ": the file is not UTF-8 text");
             return 1;

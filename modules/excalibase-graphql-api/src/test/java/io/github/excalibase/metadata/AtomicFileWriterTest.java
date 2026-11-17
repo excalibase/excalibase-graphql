@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -26,7 +27,7 @@ class AtomicFileWriterTest {
         String version = AtomicFileWriter.write(target, "hello", null);
 
         assertThat(Files.readString(target)).isEqualTo("hello");
-        assertThat(version).isEqualTo(ContentHash.of("hello".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        assertThat(version).isEqualTo(ContentHash.of("hello".getBytes(StandardCharsets.UTF_8)));
         try (Stream<Path> files = Files.list(dir)) {
             assertThat(files.map(path -> path.getFileName().toString())).containsExactly("permissions.yaml");
         }

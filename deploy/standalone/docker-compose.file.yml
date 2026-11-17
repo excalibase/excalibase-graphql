@@ -16,7 +16,9 @@ services:
       retries: 20
 
   engine:
-    image: excalibase/excalibase-graphql:latest
+    # Needs an engine build that includes EXC-733 phase 1 (`metadata.source`). `latest` is the last release and may
+    # predate it; use `main` or the first release that includes it, via ENGINE_IMAGE.
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql:main}
     depends_on:
       postgres:
         condition: service_healthy
@@ -37,5 +39,12 @@ services:
       METADATA_SOURCE: file
       METADATA_FILE_PATH: /etc/excalibase
       METADATA_FILE_POLL_INTERVAL_MS: 5000
+      # Readiness reports not ready while no valid permissions file is loaded.
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
     volumes:
       - ./metadata:/etc/excalibase:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/actuator/health/readiness"]
+      interval: 10s
+      retries: 6
+      start_period: 30s

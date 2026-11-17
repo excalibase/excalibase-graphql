@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.excalibase.metadata.MetadataFixtures.*;
@@ -44,6 +45,12 @@ class ReloadingMetadataSourceTest {
         return source;
     }
 
+    /** A changed document is judged only once seen unchanged on two polls in a row. */
+    private static void settle(ReloadingMetadataSource source) {
+        source.refresh();
+        source.refresh();
+    }
+
     private ReloadingMetadataSource started() {
         ReloadingMetadataSource source = source(Duration.ofHours(1));
         source.start();
@@ -68,7 +75,7 @@ class ReloadingMetadataSourceTest {
         source.onChange((project, version) -> announced.add(project + "@" + version));
 
         text.set(GOOD_YAML_TWO_RULES);
-        source.refresh();
+        settle(source);
 
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(2);
         assertThat(source.permissionsFor(PROJECT).version()).isEqualTo(2);
@@ -80,8 +87,8 @@ class ReloadingMetadataSourceTest {
     void anUnchangedDocument_doesNotSwap() {
         ReloadingMetadataSource source = started();
 
-        source.refresh();
-        source.refresh();
+        settle(source);
+        settle(source);
 
         assertThat(source.status().version()).isEqualTo(1);
     }
@@ -91,11 +98,11 @@ class ReloadingMetadataSourceTest {
         ReloadingMetadataSource source = started();
 
         text.set(BAD_RULE);
-        source.refresh();
+        settle(source);
 
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
         assertThat(source.status().version()).isEqualTo(1);
-        assertThat(source.status().lastRefusal()).contains("tables[0].select.filter");
+        assertThat(source.status().lastRefusal()).isEqualTo("invalid_document");
         assertThat(meters.get("excalibase.metadata.refused").tag("source", "test").counter().count())
                 .isEqualTo(1.0);
     }
@@ -105,9 +112,9 @@ class ReloadingMetadataSourceTest {
         ReloadingMetadataSource source = started();
 
         text.set(BAD_RULE);
-        source.refresh();
-        source.refresh();
-        source.refresh();
+        settle(source);
+        settle(source);
+        settle(source);
 
         assertThat(meters.get("excalibase.metadata.refused").tag("source", "test").counter().count())
                 .isEqualTo(1.0);
@@ -118,20 +125,20 @@ class ReloadingMetadataSourceTest {
         ReloadingMetadataSource source = started();
 
         text.set(null);
-        source.refresh();
+        settle(source);
 
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
-        assertThat(source.status().lastRefusal()).contains("the file is gone");
+        assertThat(source.status().lastRefusal()).isEqualTo("unreadable");
     }
 
     @Test
     void aFileThatComesBackUnchanged_clearsTheRefusalWithoutASwap() {
         ReloadingMetadataSource source = started();
         text.set(null);
-        source.refresh();
+        settle(source);
 
         text.set(GOOD_YAML);
-        source.refresh();
+        settle(source);
 
         assertThat(source.status().lastRefusal()).isNull();
         assertThat(source.status().version()).isEqualTo(1);
@@ -141,10 +148,10 @@ class ReloadingMetadataSourceTest {
     void aFixAfterABadDocument_swapsInTheNewVersion() {
         ReloadingMetadataSource source = started();
         text.set(BAD_RULE);
-        source.refresh();
+        settle(source);
 
         text.set(GOOD_YAML_TWO_RULES);
-        source.refresh();
+        settle(source);
 
         assertThat(source.status().version()).isEqualTo(2);
         assertThat(source.status().lastRefusal()).isNull();
@@ -160,7 +167,7 @@ class ReloadingMetadataSourceTest {
         assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
 
         text.set(GOOD_YAML);
-        source.refresh();
+        settle(source);
 
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
     }
@@ -191,7 +198,7 @@ class ReloadingMetadataSourceTest {
     void theVersionIsAGauge() {
         ReloadingMetadataSource source = started();
         text.set(GOOD_YAML_TWO_RULES);
-        source.refresh();
+        settle(source);
 
         assertThat(meters.get("excalibase.metadata.version").tag("source", "test").gauge().value()).isEqualTo(2.0);
     }
@@ -215,8 +222,98 @@ class ReloadingMetadataSourceTest {
         });
 
         text.set(GOOD_YAML_TWO_RULES);
-        source.refresh();
+        settle(source);
 
         assertThat(source.status().version()).isEqualTo(2);
+    }
+
+    @Test
+    void aStatusReportsOnlyACategory_neverTheDocumentsOwnWords() {
+        ReloadingMetadataSource source = started();
+
+        text.set(BAD_UNKNOWN_KEY);
+        settle(source);
+
+        assertThat(source.status().lastRefusal()).isEqualTo("invalid_document").doesNotContain("surprise");
+        assertThat(source.status().lastRefusalAt()).isNotNull();
+    }
+
+    /** A writer that has not finished must not be believed: a cut-off line can read as a wider rule. */
+    @Test
+    void aHalfWrittenDocument_isNeverSwappedIn() {
+        ReloadingMetadataSource source = started();
+        List<Long> announced = new ArrayList<>();
+        source.onChange((project, version) -> announced.add(version));
+        String partial = GOOD_YAML_TWO_RULES.substring(0, GOOD_YAML_TWO_RULES.indexOf("role: admin") + 4);
+
+        text.set(partial);
+        source.refresh();
+        assertThat(source.status().version()).isEqualTo(1);
+
+        text.set(GOOD_YAML_TWO_RULES);
+        source.refresh();
+        assertThat(source.status().version()).as("the complete text has been seen once").isEqualTo(1);
+        assertThat(announced).isEmpty();
+
+        source.refresh();
+        assertThat(source.permissionsFor(PROJECT).tables()).hasSize(2);
+        assertThat(source.permissionsFor(PROJECT).tables().get(1).role()).isEqualTo("admin");
+    }
+
+    @Test
+    void aPartialReadThatGoesBackToWhatWasServed_changesNothing() {
+        ReloadingMetadataSource source = started();
+
+        text.set(GOOD_YAML_TWO_RULES.substring(0, GOOD_YAML_TWO_RULES.indexOf("role: admin") + 4));
+        source.refresh();
+        text.set(GOOD_YAML);
+        source.refresh();
+
+        assertThat(source.status().version()).isEqualTo(1);
+        assertThat(source.status().lastRefusal()).isNull();
+        assertThat(meters.find("excalibase.metadata.refused").counter()).isNull();
+    }
+
+    @Test
+    void aStartupReadThatIsStillChanging_isNotTrusted() {
+        text.set(GOOD_YAML);
+        AtomicInteger reads = new AtomicInteger();
+        MetadataLoader loader = () -> {
+            String content = reads.getAndIncrement() == 0 ? "format: 1\nprojectId: demo\ntables: []\n" : GOOD_YAML;
+            return new RawMetadata(content, "v-" + content.hashCode());
+        };
+        ReloadingMetadataSource source = new ReloadingMetadataSource("test", loader,
+                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT), () -> true,
+                Duration.ofHours(1), meters);
+        opened.add(source);
+
+        source.start();
+
+        assertThat(source.current()).isEmpty();
+        source.refresh();
+        assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
+    }
+
+    /** Whatever goes wrong while reading a document is a refusal, never a crash and never a retry-free skip. */
+    @Test
+    void anUnexpectedFailureWhileParsing_isARefusal_countedAndRetried() {
+        MetadataDocumentParser exploding = new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT) {
+            @Override
+            public MetadataDocument parse(String document, long version) {
+                throw new IllegalStateException("boom");
+            }
+        };
+        ReloadingMetadataSource source = new ReloadingMetadataSource("test",
+                () -> new RawMetadata(GOOD_YAML, "same"), exploding, () -> true, Duration.ofHours(1), meters);
+        opened.add(source);
+
+        source.start();
+        source.refresh();
+        source.refresh();
+
+        assertThat(source.current()).isEmpty();
+        assertThat(source.status().lastRefusal()).isEqualTo("unexpected_error");
+        assertThat(meters.get("excalibase.metadata.refused").tag("source", "test").counter().count())
+                .as("retried on every poll, because the content was never judged").isGreaterThanOrEqualTo(2.0);
     }
 }

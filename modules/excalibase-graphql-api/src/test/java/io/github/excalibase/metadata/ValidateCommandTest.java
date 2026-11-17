@@ -91,4 +91,28 @@ class ValidateCommandTest {
         assertThat(run(Map.of(), "validate", file.toString())).isZero();
         assertThat(run(Map.of("APP_RESERVED_SCHEMAS", "legacy"), "validate", file.toString())).isEqualTo(1);
     }
+
+    @Test
+    void aFolderHoldingPermissionsYaml_isAccepted_asTheEngineAcceptsIt() throws IOException {
+        file(GOOD_YAML);
+
+        assertThat(run(Map.of(), "validate", dir.toString())).isZero();
+    }
+
+    @Test
+    void aFileOverOneMiB_isInvalid_withoutBeingReadWhole() throws IOException {
+        Path file = file(GOOD_YAML + "# " + "x".repeat(MetadataDocumentParser.MAX_BYTES * 2) + "\n");
+
+        assertThat(run(Map.of(), "validate", file.toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains("1 MiB");
+    }
+
+    @Test
+    void inputsThatUsedToEscapeAsExceptions_exitOneCleanly() throws IOException {
+        assertThat(run(Map.of(), "validate", file(GOOD_YAML + "~: x\n").toString())).isEqualTo(1);
+        assertThat(run(Map.of(), "validate",
+                file("format: 4294967297\nprojectId: demo\ntables: []\n").toString())).isEqualTo(1);
+        assertThat(run(Map.of(), "validate", file("[".repeat(5000) + "]".repeat(5000)).toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).doesNotContain("Exception");
+    }
 }

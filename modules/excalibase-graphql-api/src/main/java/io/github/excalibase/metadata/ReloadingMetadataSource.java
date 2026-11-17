@@ -41,6 +41,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private final MetadataDocumentParser parser;
     private final BooleanSupplier writable;
     private final Duration interval;
+    private final Duration settle;
     private final MeterRegistry meters;
     private final AtomicReference<MetadataSnapshot> current = new AtomicReference<>();
     private final AtomicReference<Refusal> refusal = new AtomicReference<>();
@@ -49,13 +50,29 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private ScheduledExecutorService poller;
     /** The last content judged, good or bad; the same content is not judged, logged or counted again. */
     private String lastJudgedVersion;
+    /** A changed document seen once; it is judged only when the next poll sees the same content. */
+    private String pendingVersion;
     private String lastReadError;
 
-    private record Refusal(String reason, Instant at) {
+    /** @param category what the status reports; the full reason goes to the log only */
+    private record Refusal(String category, Instant at) {
     }
+
+    public static final Duration DEFAULT_SETTLE = Duration.ofMillis(200);
 
     public ReloadingMetadataSource(String name, MetadataLoader loader, MetadataDocumentParser parser,
                                    BooleanSupplier writable, Duration interval, MeterRegistry meters) {
+        this(name, loader, parser, writable, interval, DEFAULT_SETTLE, meters);
+    }
+
+    /**
+     * @param settle how long {@link #start()} waits before its second read when the first one found a document,
+     *               so a file caught mid-write is not served
+     */
+    public ReloadingMetadataSource(String name, MetadataLoader loader, MetadataDocumentParser parser,
+                                   BooleanSupplier writable, Duration interval, Duration settle,
+                                   MeterRegistry meters) {
+        this.settle = Objects.requireNonNull(settle, "settle");
         this.name = Objects.requireNonNull(name, "name");
         this.loader = Objects.requireNonNull(loader, "loader");
         this.parser = Objects.requireNonNull(parser, "parser");
@@ -69,6 +86,9 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         Gauge.builder(VERSION_METRIC, counter, AtomicLong::get).tag("source", name)
                 .strongReference(true).register(meters);
         refresh();
+        if (current.get() == null && pendingVersion != null) {
+            settleThenRead();
+        }
         if (poller == null) {
             poller = Executors.newSingleThreadScheduledExecutor(task -> {
                 Thread thread = new Thread(task, "metadata-" + name + "-poll");
@@ -80,6 +100,16 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         }
     }
 
+    private void settleThenRead() {
+        try {
+            Thread.sleep(settle.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return;
+        }
+        refresh();
+    }
+
     private void pollSafely() {
         try {
             refresh();
@@ -88,7 +118,11 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         }
     }
 
-    /** One load, validate and swap. */
+    /**
+     * One poll. A document that differs from what is served is not believed on first sight: a writer that has
+     * not finished can leave a cut-off line that parses as a wider rule. It is judged only once a following poll
+     * reads the very same content.
+     */
     public synchronized void refresh() {
         RawMetadata raw;
         try {
@@ -101,31 +135,50 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         MetadataSnapshot held = current.get();
         if (held != null && held.sourceVersion().equals(raw.version())) {
             lastJudgedVersion = raw.version();
+            pendingVersion = null;
             refusal.set(null);
             return;
         }
         if (raw.version().equals(lastJudgedVersion)) {
             return;
         }
-        lastJudgedVersion = raw.version();
+        if (!raw.version().equals(pendingVersion)) {
+            pendingVersion = raw.version();
+            return;
+        }
+        judge(raw);
+    }
+
+    private void judge(RawMetadata raw) {
         try {
             swap(parser.parse(raw.text(), counter.get() + 1), raw.version());
+            judged(raw.version());
         } catch (MetadataDocumentException e) {
-            refuse(raw.version(), e.getMessage());
+            judged(raw.version());
+            refuse("invalid_document", raw.version(), e.getMessage());
+        } catch (RuntimeException e) {
+            // Not judged: the same content is tried again on the next poll.
+            refuse("unexpected_error", raw.version(), e.toString());
         }
+    }
+
+    private void judged(String version) {
+        lastJudgedVersion = version;
+        pendingVersion = null;
     }
 
     private void readFailed(IOException error) {
         lastJudgedVersion = null;
+        pendingVersion = null;
         String reason = "cannot read the document: " + error;
         if (!reason.equals(lastReadError)) {
             lastReadError = reason;
-            refuse("unreadable", reason);
+            refuse("unreadable", "unreadable", reason);
         }
     }
 
-    private void refuse(String version, String reason) {
-        refusal.set(new Refusal(reason, Instant.now()));
+    private void refuse(String category, String version, String reason) {
+        refusal.set(new Refusal(category, Instant.now()));
         Counter.builder(REFUSED_METRIC).tag("source", name).register(meters).increment();
         log.error("metadata_refused source={} version={} serving={} error={}", name, version,
                 current.get() == null ? "nothing (every read is refused)" : "last good version " + counter.get(), reason);
@@ -186,7 +239,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         Refusal last = refusal.get();
         return new MetadataStatus(name, snapshot == null ? 0 : snapshot.version(),
                 snapshot == null ? null : snapshot.sourceVersion(),
-                last == null ? null : last.reason(), last == null ? null : last.at());
+                last == null ? null : last.category(), last == null ? null : last.at());
     }
 
     @Override

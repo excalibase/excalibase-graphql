@@ -20,7 +20,7 @@ import java.util.Set;
  * exists once. The engine at load and {@code excalibase validate} both come through here, so they cannot
  * disagree. Any problem refuses the whole document.
  */
-public final class MetadataDocumentParser {
+public class MetadataDocumentParser {
 
     public static final int MAX_BYTES = 1024 * 1024;
     static final int FORMAT = 1;
@@ -46,6 +46,18 @@ public final class MetadataDocumentParser {
 
     /** @param version the engine's local version, given to the rules; a document cannot set its own */
     public MetadataDocument parse(String text, long version) {
+        try {
+            return read(text, version);
+        } catch (MetadataDocumentException e) {
+            throw e;
+        } catch (StackOverflowError e) {
+            throw new MetadataDocumentException("document: is nested too deeply");
+        } catch (RuntimeException e) {
+            throw new MetadataDocumentException("document: cannot be read (" + e.getClass().getSimpleName() + ")", e);
+        }
+    }
+
+    private MetadataDocument read(String text, long version) {
         if (text.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) {
             throw new MetadataDocumentException("document is larger than 1 MiB");
         }
@@ -70,7 +82,7 @@ public final class MetadataDocumentParser {
 
     private static int format(ObjectNode document) {
         JsonNode format = document.get("format");
-        if (format == null || !format.isIntegralNumber() || format.intValue() != FORMAT) {
+        if (format == null || !format.isIntegralNumber() || !format.canConvertToInt() || format.intValue() != FORMAT) {
             throw new MetadataDocumentException("format: must be " + FORMAT);
         }
         return FORMAT;

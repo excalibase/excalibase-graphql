@@ -33,14 +33,23 @@ spec:
     spec:
       containers:
         - name: engine
-          image: excalibase/excalibase-graphql:latest
+          # Needs a build that includes EXC-733 phase 1 (`metadata.source`); `latest` may predate it.
+          image: excalibase/excalibase-graphql:main
           env:
             - {name: APP_PROJECT_ID, value: my-app}
             - {name: APP_DATABASE_TYPE, value: postgres}
             - {name: METADATA_SOURCE, value: file}
             - {name: METADATA_FILE_PATH, value: /etc/excalibase}
+            - {name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED, value: "true"}
             # also needed: SPRING_DATASOURCE_URL/USERNAME/PASSWORD and the token verification settings,
             # from a Secret (see docker-compose.file.yml for the names)
+          # Not ready while no valid permissions document is loaded, so no traffic is routed here.
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: 8081}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: 8081}
+            periodSeconds: 20
           volumeMounts:
             - name: metadata
               mountPath: /etc/excalibase      # the folder, never a subPath

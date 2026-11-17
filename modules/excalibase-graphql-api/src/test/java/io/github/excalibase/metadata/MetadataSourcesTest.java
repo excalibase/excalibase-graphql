@@ -72,4 +72,15 @@ class MetadataSourcesTest {
         assertThatThrownBy(() -> create("file", "", "/x", 0, PROJECT))
                 .hasMessageContaining("poll-interval-ms");
     }
+
+    @Test
+    void aDocumentThatMakesTheParserThrow_doesNotCrashStartup_andRefusesAll() throws IOException {
+        Path file = Files.writeString(dir.resolve("permissions.yaml"), GOOD_YAML + "~: x\n");
+
+        try (ReloadingMetadataSource source = create("file", "", file.toString(), 5000, PROJECT).orElseThrow()) {
+            assertThatThrownBy(() -> source.permissionsFor(PROJECT))
+                    .isInstanceOf(PermissionsUnavailableException.class);
+            assertThat(source.status().lastRefusal()).isEqualTo("invalid_document");
+        }
+    }
 }

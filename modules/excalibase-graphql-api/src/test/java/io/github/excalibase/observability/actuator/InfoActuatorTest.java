@@ -38,11 +38,13 @@ class InfoActuatorTest {
             source.start();
             Files.writeString(file, "format: 1\nprojectId: demo\nsurprise: 1\n");
             source.refresh();
+            source.refresh();
 
             Map<String, Object> metadata = (Map<String, Object>) new InfoActuator(new MetadataHealth(source)).info().get("metadata");
 
             assertThat(metadata).containsEntry("source", "file").containsEntry("version", 1L);
-            assertThat((String) metadata.get("lastRefusal")).contains("surprise");
+            assertThat(metadata.get("lastRefusal")).isEqualTo("invalid_document");
+            assertThat(metadata.toString()).doesNotContain("surprise");
             assertThat((String) metadata.get("sourceVersion")).hasSize(64);
         }
     }

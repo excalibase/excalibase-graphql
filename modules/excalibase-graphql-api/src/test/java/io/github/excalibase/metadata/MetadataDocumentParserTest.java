@@ -177,4 +177,50 @@ class MetadataDocumentParserTest {
 
         assertThat(insert.set().get("note")).isEqualTo(new Literal("2024-01-01"));
     }
+
+    @Test
+    void aFormatThatOnlyFitsAnIntAfterOverflow_isRefused() {
+        assertThatThrownBy(() -> parser.parse("format: 4294967297\nprojectId: demo\ntables: []\n", 1))
+                .isInstanceOf(MetadataDocumentException.class).hasMessageContaining("format");
+    }
+
+    @Test
+    void yamlMergeKeys_areRefused_soNoFilterIsSilentlyLost() {
+        String merged = GOOD_YAML.replace("      filter: {}\n",
+                "      <<: {filter: {\"owner_id\": {\"_eq\": \"X-Excalibase-User-Id\"}}}\n      filter: {}\n");
+
+        assertThatThrownBy(() -> parser.parse(merged, 1))
+                .isInstanceOf(MetadataDocumentException.class).hasMessageContaining("merge");
+    }
+
+    @Test
+    void yamlAnchorsAndAliases_areRefused() {
+        String anchored = GOOD_YAML.replace("filter: {}", "filter: &all {}")
+                + "  - table: public.secrets\n    role: user\n    select:\n      filter: *all\n      columns: \"*\"\n";
+
+        assertThatThrownBy(() -> parser.parse(anchored, 1))
+                .isInstanceOf(MetadataDocumentException.class).hasMessageContaining("anchor");
+    }
+
+    @Test
+    void aNullKey_isARefusal_notAnException() {
+        assertThatThrownBy(() -> parser.parse(GOOD_YAML + "~: x\n", 1))
+                .isInstanceOf(MetadataDocumentException.class);
+    }
+
+    @Test
+    void jsonNestedThousandsDeep_isARefusal_notANullPointer() {
+        String deep = "[".repeat(5000) + "]".repeat(5000);
+
+        assertThatThrownBy(() -> parser.parse(deep, 1)).isInstanceOf(MetadataDocumentException.class);
+        assertThatThrownBy(() -> parser.parse("{\"a\":" + deep + "}", 1))
+                .isInstanceOf(MetadataDocumentException.class);
+    }
+
+    @Test
+    void yamlNestedThousandsDeep_isARefusal() {
+        String deep = "a: " + "[".repeat(5000) + "]".repeat(5000);
+
+        assertThatThrownBy(() -> parser.parse(deep, 1)).isInstanceOf(MetadataDocumentException.class);
+    }
 }

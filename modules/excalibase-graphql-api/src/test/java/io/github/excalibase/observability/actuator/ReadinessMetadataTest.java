@@ -44,9 +44,11 @@ class ReadinessMetadataTest {
 
             Files.writeString(file, "format: 1\nprojectId: demo\ntables: []\n");
             source.refresh();
+            source.refresh();
             assertThat(readiness.status()).isEqualTo(HealthStatus.UP);
 
             Files.writeString(file, "format: 1\nprojectId: demo\nbogus: 1\n");
+            source.refresh();
             source.refresh();
             assertThat(readiness.status()).as("last good version still served").isEqualTo(HealthStatus.UP);
         }

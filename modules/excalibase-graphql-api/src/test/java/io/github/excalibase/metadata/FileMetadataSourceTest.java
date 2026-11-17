@@ -41,6 +41,11 @@ class FileMetadataSourceTest {
         return source;
     }
 
+    private static void settle(ReloadingMetadataSource source) {
+        source.refresh();
+        source.refresh();
+    }
+
     private Path write(String name, String content) throws IOException {
         return Files.writeString(dir.resolve(name), content);
     }
@@ -82,7 +87,7 @@ class FileMetadataSourceTest {
         ReloadingMetadataSource source = open(file, Duration.ofHours(1));
 
         Files.writeString(file, BAD_RULE);
-        source.refresh();
+        settle(source);
 
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
         assertThat(source.status().lastRefusal()).isNotNull();
@@ -94,12 +99,12 @@ class FileMetadataSourceTest {
         ReloadingMetadataSource source = open(file, Duration.ofHours(1));
 
         Files.delete(file);
-        source.refresh();
+        settle(source);
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
         assertThat(source.status().lastRefusal()).isNotNull();
 
         Files.writeString(file, GOOD_YAML_TWO_RULES);
-        source.refresh();
+        settle(source);
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(2);
     }
 
@@ -120,7 +125,7 @@ class FileMetadataSourceTest {
         assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
 
         Files.writeString(file, GOOD_YAML);
-        source.refresh();
+        settle(source);
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
     }
 
@@ -130,7 +135,7 @@ class FileMetadataSourceTest {
 
         ReloadingMetadataSource source = open(file, Duration.ofHours(1));
 
-        assertThat(source.status().lastRefusal()).contains("1 MiB");
+        assertThat(source.status().lastRefusal()).isEqualTo("invalid_document");
     }
 
     /** A Kubernetes ConfigMap volume: the file is a link to ..data/file, and ..data is swapped by a rename. */
@@ -167,5 +172,20 @@ class FileMetadataSourceTest {
         } finally {
             dir.toFile().setWritable(true);
         }
+    }
+
+    @Test
+    void aFileCaughtHalfWritten_isNotSwappedIn_untilItHasStoppedChanging() throws IOException {
+        Path file = write("permissions.yaml", GOOD_YAML);
+        ReloadingMetadataSource source = open(file, Duration.ofHours(1));
+
+        Files.writeString(file, GOOD_YAML_TWO_RULES.substring(0, GOOD_YAML_TWO_RULES.indexOf("role: admin") + 4));
+        source.refresh();
+        Files.writeString(file, GOOD_YAML_TWO_RULES);
+        source.refresh();
+        assertThat(source.status().version()).isEqualTo(1);
+
+        source.refresh();
+        assertThat(source.permissionsFor(PROJECT).tables()).hasSize(2);
     }
 }

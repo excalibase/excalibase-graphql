@@ -6,6 +6,11 @@ Today there is one: a file. More are added as they ship.
 
 ## The file source
 
+> The compose and Kubernetes examples need an engine image that includes EXC-733 phase 1 (the
+> `metadata.source` setting). The `latest` tag is the last release and may not have it, so the examples use
+> the `main` tag (set `ENGINE_IMAGE` in compose to pin another). Use the first release that includes it once
+> there is one.
+
 1. `docker compose -f docker-compose.file.yml up`
 2. Open `http://localhost:10000/my-app/graphql` with a token whose `role` claim is `user`.
 3. Edit `metadata/permissions.yaml`. The engine re-reads it every `METADATA_FILE_POLL_INTERVAL_MS`
@@ -22,8 +27,11 @@ Today there is one: a file. More are added as they ship.
   `MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED=true`), so Kubernetes does not route to it.
 - **A rule for a table that no longer exists** is logged (`permission_invalid ... no such table`) and
   skipped. The rest of the document still applies.
+- **A file caught half-written is not served.** A changed file is judged only when a following poll reads the
+  same content, so a cut-off line cannot become a wider rule. A change takes two polls to apply.
 - **Each replica reports the version it serves** at `/actuator/info` (`metadata.version`,
-  `metadata.sourceVersion`, `metadata.lastRefusal`) and as the metric `excalibase_metadata_version`.
+  `metadata.sourceVersion`, and `metadata.lastRefusal`, which is only a category such as `invalid_document`;
+  the full reason is in the log) and as the metric `excalibase_metadata_version`.
 - The document is limited to 1 MiB.
 
 ### Check a document before you deploy it

@@ -145,4 +145,13 @@ class InsecureDevModeGuardTest {
             assertThat(context.containsBean(io.github.excalibase.security.JwtAuthFilter.class)).isTrue();
         }
     }
+
+    @Test
+    @DisplayName("a metadata source set while authentication is off is warned about, like a policy URL")
+    void metadataSourceWithAuthOff_isWarnedAbout() {
+        new InsecureDevModeGuard(true, "", "file").check();
+
+        assertThat(appender.list).anyMatch(event -> event.getFormattedMessage().contains("metadata.source=file")
+                && event.getFormattedMessage().contains("NOT enforced"));
+    }
 }
