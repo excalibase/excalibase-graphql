@@ -38,7 +38,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
 
     private final String name;
     private final MetadataLoader loader;
-    private final MetadataDocumentParser parser;
+    private final DocumentReader parser;
     private final BooleanSupplier writable;
     private final Duration interval;
     private final Duration settle;
@@ -52,15 +52,18 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private String lastJudgedVersion;
     /** A changed document seen once; it is judged only when the next poll sees the same content. */
     private String pendingVersion;
+    /** Consecutive polls that saw a changed document they could not yet believe. */
+    private int unsettledPolls;
     private String lastReadError;
 
     /** @param category what the status reports; the full reason goes to the log only */
     private record Refusal(String category, Instant at) {
     }
 
+    static final int UNSETTLED_WARNING_POLLS = 6;
     public static final Duration DEFAULT_SETTLE = Duration.ofMillis(200);
 
-    public ReloadingMetadataSource(String name, MetadataLoader loader, MetadataDocumentParser parser,
+    public ReloadingMetadataSource(String name, MetadataLoader loader, DocumentReader parser,
                                    BooleanSupplier writable, Duration interval, MeterRegistry meters) {
         this(name, loader, parser, writable, interval, DEFAULT_SETTLE, meters);
     }
@@ -69,7 +72,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
      * @param settle how long {@link #start()} waits before its second read when the first one found a document,
      *               so a file caught mid-write is not served
      */
-    public ReloadingMetadataSource(String name, MetadataLoader loader, MetadataDocumentParser parser,
+    public ReloadingMetadataSource(String name, MetadataLoader loader, DocumentReader parser,
                                    BooleanSupplier writable, Duration interval, Duration settle,
                                    MeterRegistry meters) {
         this.settle = Objects.requireNonNull(settle, "settle");
@@ -135,15 +138,17 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         MetadataSnapshot held = current.get();
         if (held != null && held.sourceVersion().equals(raw.version())) {
             lastJudgedVersion = raw.version();
-            pendingVersion = null;
+            clearPending();
             refusal.set(null);
             return;
         }
         if (raw.version().equals(lastJudgedVersion)) {
+            clearPending();
             return;
         }
         if (!raw.version().equals(pendingVersion)) {
             pendingVersion = raw.version();
+            warnWhenNotSettling();
             return;
         }
         judge(raw);
@@ -164,12 +169,25 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
 
     private void judged(String version) {
         lastJudgedVersion = version;
+        clearPending();
+    }
+
+    private void clearPending() {
         pendingVersion = null;
+        unsettledPolls = 0;
+    }
+
+    /** A document that keeps changing is never served; say so once, or a starved replica stays invisible. */
+    private void warnWhenNotSettling() {
+        if (++unsettledPolls == UNSETTLED_WARNING_POLLS) {
+            log.warn("metadata_change_not_settling source={} polls={} serving={}", name, unsettledPolls,
+                    current.get() == null ? "nothing (every read is refused)" : "version " + counter.get());
+        }
     }
 
     private void readFailed(IOException error) {
         lastJudgedVersion = null;
-        pendingVersion = null;
+        clearPending();
         String reason = "cannot read the document: " + error;
         if (!reason.equals(lastReadError)) {
             lastReadError = reason;

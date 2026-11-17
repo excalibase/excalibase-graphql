@@ -1,11 +1,16 @@
 package io.github.excalibase.metadata;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.ReservedSchemas;
 import io.github.excalibase.security.UnknownProjectException;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -276,7 +281,6 @@ class ReloadingMetadataSourceTest {
 
     @Test
     void aStartupReadThatIsStillChanging_isNotTrusted() {
-        text.set(GOOD_YAML);
         AtomicInteger reads = new AtomicInteger();
         MetadataLoader loader = () -> {
             String content = reads.getAndIncrement() == 0 ? "format: 1\nprojectId: demo\ntables: []\n" : GOOD_YAML;
@@ -289,6 +293,7 @@ class ReloadingMetadataSourceTest {
 
         source.start();
 
+        assertThat(reads.get()).as("start reads twice before it believes anything").isEqualTo(2);
         assertThat(source.current()).isEmpty();
         source.refresh();
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
@@ -297,11 +302,8 @@ class ReloadingMetadataSourceTest {
     /** Whatever goes wrong while reading a document is a refusal, never a crash and never a retry-free skip. */
     @Test
     void anUnexpectedFailureWhileParsing_isARefusal_countedAndRetried() {
-        MetadataDocumentParser exploding = new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT) {
-            @Override
-            public MetadataDocument parse(String document, long version) {
-                throw new IllegalStateException("boom");
-            }
+        DocumentReader exploding = (document, version) -> {
+            throw new IllegalStateException("boom");
         };
         ReloadingMetadataSource source = new ReloadingMetadataSource("test",
                 () -> new RawMetadata(GOOD_YAML, "same"), exploding, () -> true, Duration.ofHours(1), meters);
@@ -315,5 +317,64 @@ class ReloadingMetadataSourceTest {
         assertThat(source.status().lastRefusal()).isEqualTo("unexpected_error");
         assertThat(meters.get("excalibase.metadata.refused").tag("source", "test").counter().count())
                 .as("retried on every poll, because the content was never judged").isGreaterThanOrEqualTo(2.0);
+    }
+
+    /** bad, C, bad, C: C was never seen on two polls in a row, so it must not be swapped in. */
+    @Test
+    void aDocumentSeenTwiceButNotBackToBack_isNotSwappedIn() {
+        ReloadingMetadataSource source = started();
+        text.set(BAD_RULE);
+        settle(source);
+        assertThat(source.status().lastRefusal()).isEqualTo("invalid_document");
+
+        text.set(GOOD_YAML_TWO_RULES);
+        source.refresh();
+        text.set(BAD_RULE);
+        source.refresh();
+        text.set(GOOD_YAML_TWO_RULES);
+        source.refresh();
+
+        assertThat(source.status().version()).isEqualTo(1);
+        source.refresh();
+        assertThat(source.status().version()).isEqualTo(2);
+    }
+
+    @Test
+    void aChangeThatNeverSettles_isWarnedAboutOnce() {
+        Logger logger = (Logger) LoggerFactory.getLogger(ReloadingMetadataSource.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            ReloadingMetadataSource source = started();
+            for (int poll = 0; poll < ReloadingMetadataSource.UNSETTLED_WARNING_POLLS + 4; poll++) {
+                text.set(GOOD_YAML + "# " + poll + "\n");
+                source.refresh();
+            }
+
+            assertThat(source.status().version()).isEqualTo(1);
+            assertThat(appender.list.stream().filter(event -> event.getLevel() == Level.WARN
+                    && event.getFormattedMessage().contains("metadata_change_not_settling"))).hasSize(1);
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    void aChangeThatSettles_isNotWarnedAbout() {
+        Logger logger = (Logger) LoggerFactory.getLogger(ReloadingMetadataSource.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            ReloadingMetadataSource source = started();
+            text.set(GOOD_YAML_TWO_RULES);
+            settle(source);
+
+            assertThat(appender.list).noneMatch(event -> event.getFormattedMessage()
+                    .contains("metadata_change_not_settling"));
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 }

@@ -20,7 +20,7 @@ import java.util.Set;
  * exists once. The engine at load and {@code excalibase validate} both come through here, so they cannot
  * disagree. Any problem refuses the whole document.
  */
-public class MetadataDocumentParser {
+public final class MetadataDocumentParser implements DocumentReader {
 
     public static final int MAX_BYTES = 1024 * 1024;
     static final int FORMAT = 1;
@@ -45,6 +45,7 @@ public class MetadataDocumentParser {
     }
 
     /** @param version the engine's local version, given to the rules; a document cannot set its own */
+    @Override
     public MetadataDocument parse(String text, long version) {
         try {
             return read(text, version);
