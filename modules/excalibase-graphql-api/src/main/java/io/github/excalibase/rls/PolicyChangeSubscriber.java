@@ -7,8 +7,6 @@ import io.nats.client.Dispatcher;
 import io.nats.client.Message;
 import io.nats.client.Nats;
 import io.nats.client.Options;
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,7 +83,6 @@ public class PolicyChangeSubscriber {
         this.natsInboxPrefix = natsInboxPrefix;
     }
 
-    @PostConstruct
     public void start() {
         if (!natsEnabled) {
             log.info("Policy-change subscriber disabled (app.nats.enabled=false); "
@@ -109,7 +106,6 @@ public class PolicyChangeSubscriber {
         }
     }
 
-    @PreDestroy
     public void stop() {
         try {
             if (connection != null) {

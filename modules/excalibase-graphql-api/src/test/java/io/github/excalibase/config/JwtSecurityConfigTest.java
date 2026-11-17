@@ -3,12 +3,16 @@ package io.github.excalibase.config;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.micronaut.context.ApplicationContext;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 class JwtSecurityConfigTest {
 
@@ -71,6 +75,26 @@ class JwtSecurityConfigTest {
         multiTenant.keySet().removeIf(key -> key.startsWith("spring.datasource."));   // every project has its own database
         try (ApplicationContext configured = ApplicationContext.run(multiTenant)) {
             assertThat(configured.containsBean(DynamicDataSourceManager.class)).isTrue();
+        }
+    }
+
+    @Test
+    @DisplayName("closing the context destroys the tenant pools, a factory-built bean gets no @PreDestroy")
+    void tenantRouting_closedWithTheContext() {
+        Map<String, Object> multiTenant = engine(Map.of(
+                "app.security.auth.hmac-secret", SECRET,
+                "app.security.multi-tenant.provisioning-url", "http://provisioning/api"));
+        multiTenant.keySet().removeIf(key -> key.startsWith("spring.datasource."));
+        Logger managerLog = (Logger) LoggerFactory.getLogger(DynamicDataSourceManager.class);
+        ListAppender<ILoggingEvent> logs = new ListAppender<>();
+        logs.start();
+        managerLog.addAppender(logs);
+        try {
+            ApplicationContext.run(multiTenant).close();
+            assertThat(logs.list).extracting(ILoggingEvent::getFormattedMessage)
+                    .contains("tenant_datasource_manager_destroyed");
+        } finally {
+            managerLog.detachAppender(logs);
         }
     }
 

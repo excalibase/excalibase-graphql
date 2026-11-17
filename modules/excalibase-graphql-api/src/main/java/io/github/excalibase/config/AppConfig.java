@@ -32,6 +32,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.micrometer.core.instrument.observation.DefaultMeterObservationHandler;
 import io.micrometer.observation.ObservationRegistry;
+import io.micronaut.context.annotation.Bean;
 import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.context.annotation.Requires;
@@ -213,6 +214,7 @@ public class AppConfig {
 
     /** Invalidates a project's cached permissions and engines on a NATS {@code policies.{id}.changed} signal. */
     @Context
+    @Bean(preDestroy = "stop")
     @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
     PolicyChangeSubscriber policyChangeSubscriber(
             PermissionProvider permissionProvider,
@@ -224,8 +226,10 @@ public class AppConfig {
             @Value("${app.nats.password:}") String natsPassword,
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
         permissionProvider.onChange(webSockets::permissionsAre);
-        return new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict),
+        PolicyChangeSubscriber subscriber = new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict),
                 new PermissionVersions(permissionProvider), webSockets, natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
+        subscriber.start();   // Micronaut runs no @PostConstruct on a factory-built bean
+        return subscriber;
     }
 
     /** The tenant TLS mode, read at start in every mode so a weaker one is refused even when no tenant is served. */
@@ -236,6 +240,7 @@ public class AppConfig {
 
     /** Per-project database routing, present only when a provisioning URL is set. */
     @Singleton
+    @Bean(preDestroy = "destroy")
     @Requires(property = "app.security.multi-tenant.provisioning-url", pattern = ".+")
     DynamicDataSourceManager dynamicDataSourceManager(SecurityProperties security,
             TokenFileSource provisioningTokenSource,
