@@ -17,7 +17,9 @@ import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionCachePolicy;
 import io.github.excalibase.permissions.PermissionVersions;
 import io.github.excalibase.metadata.MetadataHealth;
+import io.github.excalibase.metadata.MetadataSettings;
 import io.github.excalibase.metadata.MetadataSources;
+import io.github.excalibase.metadata.UrlSettings;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
@@ -171,6 +173,13 @@ public class AppConfig {
             @Value("${app.security.rls.policy-url:}") String policyUrl,
             @Value("${metadata.file.path:}") String metadataFilePath,
             @Value("${metadata.file.poll-interval-ms:5000}") long pollIntervalMs,
+            @Value("${metadata.url.location:}") String urlLocation,
+            @Value("${metadata.url.token:}") String urlToken,
+            @Value("${metadata.url.token-file:}") String urlTokenFile,
+            @Value("${metadata.url.allow-insecure:false}") boolean urlAllowInsecure,
+            @Value("${metadata.url.poll-interval-ms:5000}") long urlPollIntervalMs,
+            @Value("${metadata.url.connect-timeout-ms:3000}") long urlConnectTimeoutMs,
+            @Value("${metadata.url.read-timeout-ms:10000}") long urlReadTimeoutMs,
             @Value("${app.project-id:}") String projectId,
             @Value("${app.reserved-schemas:}") String reservedSchemas,
             TokenFileSource provisioningTokenSource,
@@ -179,8 +188,12 @@ public class AppConfig {
             @Value("${app.security.permissions.retry-interval-ms:2000}") long retryIntervalMs,
             @Nullable MeterRegistry meterRegistry) {
         MeterRegistry meters = meterRegistry != null ? meterRegistry : new SimpleMeterRegistry();
-        return MetadataSources.create(metadataSource, policyUrl, metadataFilePath, pollIntervalMs, projectId,
-                        reservedSchemas, meters)
+        UrlSettings url = new UrlSettings(urlLocation, urlToken, urlTokenFile, urlAllowInsecure,
+                Duration.ofMillis(urlPollIntervalMs), Duration.ofMillis(urlConnectTimeoutMs),
+                Duration.ofMillis(urlReadTimeoutMs));
+        MetadataSettings settings = new MetadataSettings(metadataSource, policyUrl, projectId, reservedSchemas,
+                new MetadataSettings.FileSettings(metadataFilePath, pollIntervalMs), url);
+        return MetadataSources.create(settings, meters)
                 .<PermissionProvider>map(source -> source)
                 .orElseGet(() -> permissionProvider(policyUrl, provisioningTokenSource, policyTtlMs, maxStaleMs,
                         retryIntervalMs, meterRegistry));

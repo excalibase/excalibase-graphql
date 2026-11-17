@@ -2,7 +2,7 @@
 
 The engine can run with only a Postgres database: no control plane, no Vault, no NATS. Permissions come
 from a **metadata document** that you keep where you like. This folder holds a guide per way to keep it.
-Today there is one: a file. More are added as they ship.
+Today there are two: a file, and an HTTP(S) URL. More are added as they ship.
 
 ## The file source
 
@@ -33,6 +33,37 @@ Today there is one: a file. More are added as they ship.
   `metadata.sourceVersion`, and `metadata.lastRefusal`, which is only a category such as `invalid_document`;
   the full reason is in the log) and as the metric `excalibase_metadata_version`.
 - The document is limited to 1 MiB.
+
+## The url source
+
+The document is served by your own service (or a static host, a git raw URL, an object store's public or
+presigned URL). The engine fetches it and polls. It is read-only: change the document where it is served.
+
+1. `docker compose -f docker-compose.url.yml up` (it serves `metadata/permissions.yaml` from a small nginx).
+2. Open `http://localhost:10000/my-app/graphql` with a token whose `role` claim is `user`.
+
+- **Version.** If the server sends an `ETag`, the engine asks with `If-None-Match` and an unchanged document
+  costs a `304`. Without an `ETag` it compares a hash of the body.
+- **Same loop as the file source.** A timeout, a 5xx, a redirect to another host, an oversized body or a bad
+  document keeps the last good version and logs `metadata_refused source=url ...`. Until the first good load
+  every request is refused and the readiness probe says not ready. A changed version is applied when a
+  following poll sees it again (one more poll, about `METADATA_URL_POLL_INTERVAL_MS`): for HTTP that second
+  look is a `304` or the same hash, and it means a document replaced mid-flight is not believed on first sight.
+- **Safety.** `https` is required, except for `localhost`, `*.svc`, `*.cluster.local` and single-word service
+  names such as `http://permissions/...`; anything else over plain http needs `METADATA_URL_ALLOW_INSECURE=true`.
+  The body is cut off at 1 MiB while it streams. Connect and read timeouts apply. A redirect is followed only
+  within the same scheme, host and port.
+- **Auth.** An optional bearer token: `METADATA_URL_TOKEN`, or `METADATA_URL_TOKEN_FILE` (re-read, so a
+  mounted Secret can rotate). It is sent only to the configured host and never logged.
+
+| Setting | Meaning |
+|---|---|
+| `METADATA_SOURCE=url` | Use the url source. |
+| `METADATA_URL_LOCATION` | The URL. `{projectId}` is replaced by `APP_PROJECT_ID`. |
+| `METADATA_URL_TOKEN` / `METADATA_URL_TOKEN_FILE` | Optional bearer token. |
+| `METADATA_URL_ALLOW_INSECURE` | Accept plain http to an outside host. Default false. |
+| `METADATA_URL_POLL_INTERVAL_MS` | Default 5000. |
+| `METADATA_URL_CONNECT_TIMEOUT_MS` / `METADATA_URL_READ_TIMEOUT_MS` | Defaults 3000 and 10000. |
 
 ### Check a document before you deploy it
 
