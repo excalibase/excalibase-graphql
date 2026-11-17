@@ -42,9 +42,11 @@ services:
       # Tokens are verified with this shared secret (HS256). Use a long random value.
       APP_SECURITY_JWT_ENABLED: "true"
       APP_SECURITY_AUTH_HMAC_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
-      # The permission source: this URL. A single-word host is cluster-internal, so plain http is accepted.
+      # The permission source: this URL. Plain http is only accepted for localhost and *.svc / *.cluster.local
+      # names; this compose service name is none of those, so it is accepted explicitly. Use https in real life.
       METADATA_SOURCE: url
       METADATA_URL_LOCATION: http://documents/permissions.yaml
+      METADATA_URL_ALLOW_INSECURE: "true"
       # METADATA_URL_TOKEN: change-me
       METADATA_URL_POLL_INTERVAL_MS: 5000
       # Readiness reports not ready while no valid permissions file is loaded.

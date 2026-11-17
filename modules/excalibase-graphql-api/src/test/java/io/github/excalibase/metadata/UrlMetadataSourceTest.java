@@ -16,7 +16,10 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,6 +31,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static io.github.excalibase.metadata.MetadataFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -154,17 +158,61 @@ class UrlMetadataSourceTest {
     }
 
     @Test
-    void withAnEtag_thePollSendsIfNoneMatch_andA304ChangesNothing() {
+    void theVersionIsTheBodyHash_andNoPollAsksForANotModified() {
         etag = "\"v1\"";
         ReloadingMetadataSource source = open();
-        long version = source.status().version();
 
         settle(source);
 
-        assertThat(ifNoneMatch).contains("\"v1\"");
-        assertThat(source.status().version()).isEqualTo(version).isEqualTo(1);
-        assertThat(source.status().sourceVersion()).isEqualTo("etag:\"v1\"");
+        assertThat(ifNoneMatch).containsOnly("null");
+        assertThat(source.status().sourceVersion()).startsWith("sha256:");
+        assertThat(source.status().version()).isEqualTo(1);
+    }
+
+    @Test
+    void aSameEtagWithAChangedBody_isStillApplied() {
+        etag = "\"same\"";
+        ReloadingMetadataSource source = open();
+
+        body = GOOD_YAML_TWO_RULES;
+        settle(source);
+
+        assertThat(source.permissionsFor(PROJECT).tables()).hasSize(2);
+    }
+
+    @Test
+    void aNewEtagOnEveryPoll_forTheSameBody_doesNotStarveTheSource() {
+        AtomicInteger counter = new AtomicInteger();
+        server.createContext("/churn", exchange -> reply(exchange, 200, GOOD_YAML, "\"e" + counter.incrementAndGet() + "\""));
+
+        ReloadingMetadataSource source = open(settings("/churn", "", "", Duration.ofSeconds(5)));
+
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
+        assertThat(source.status().version()).isEqualTo(1);
+    }
+
+    @Test
+    void aTruncatedBodyFollowedByA304_isNotSettled() {
+        ReloadingMetadataSource source = open();
+
+        body = GOOD_YAML_TWO_RULES;
+        etag = "\"t\"";
+        source.refresh();
+        status = 304;
+        source.refresh();
+
+        assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
+        assertThat(source.status().version()).isEqualTo(1);
+    }
+
+    @Test
+    void aNotModifiedNobodyAskedFor_isRefused_andServesNothingBeforeTheFirstLoad() {
+        status = 304;
+
+        ReloadingMetadataSource source = open();
+
+        assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
+        assertThat(source.status().lastRefusal()).isEqualTo("unreadable");
     }
 
     @Test
@@ -306,11 +354,98 @@ class UrlMetadataSourceTest {
     @Test
     void theTokenFile_isReadOnEveryPoll_soARotationIsPickedUp() throws IOException {
         Path tokenFile = Files.writeString(dir.resolve("token"), "first\n");
-        ReloadingMetadataSource source = open(settings("/permissions.yaml", "", tokenFile.toString(),
-                Duration.ofSeconds(5)));
-
+        AtomicLong now = new AtomicLong(1_000);
+        ReloadingMetadataSource source = UrlMetadataSource.create(settings("/permissions.yaml", "", tokenFile.toString(),
+                Duration.ofSeconds(5)), ReservedSchemas.fromConfig(""), PROJECT, new SimpleMeterRegistry(), now::get);
+        opened.add(source);
+        source.start();
         assertThat(authorization).contains("Bearer first");
-        assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
+
+        Files.writeString(tokenFile, "second-token\n");
+        now.addAndGet(60_000);
+        body = GOOD_YAML_TWO_RULES;
+        settle(source);
+
+        assertThat(authorization).contains("Bearer second-token");
+        assertThat(source.permissionsFor(PROJECT).tables()).hasSize(2);
+    }
+
+    @Test
+    void aTokenWithANewline_isRefusedWithoutEverBeingSent_orLogged() {
+        Logger logger = (Logger) LoggerFactory.getLogger(ReloadingMetadataSource.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            ReloadingMetadataSource source = open(settings("/permissions.yaml", "abc\ndef-secret", "",
+                    Duration.ofSeconds(5)));
+            source.refresh();
+
+            assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
+            assertThat(source.status().lastRefusal()).isEqualTo("unreadable");
+            assertThat(authorization).isEmpty();
+            assertThat(appender.list).isNotEmpty().noneMatch(event -> event.getFormattedMessage().contains("def-secret")
+                    || String.valueOf(event.getThrowableProxy()).contains("def-secret"));
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    void aTokenWithATrailingNewline_isTrimmedAndSent() {
+        open(settings("/permissions.yaml", "  padded-token\n", "", Duration.ofSeconds(5)));
+
+        assertThat(authorization).contains("Bearer padded-token");
+    }
+
+    @Test
+    void aMissingTokenFile_isReportedAsTheUrlSourcesToken_notTheProvisioningOne() {
+        Logger logger = (Logger) LoggerFactory.getLogger(ReloadingMetadataSource.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            open(settings("/permissions.yaml", "", dir.resolve("absent").toString(), Duration.ofSeconds(5)));
+
+            assertThat(appender.list).anyMatch(event -> event.getFormattedMessage().contains("metadata.url.token")
+                    && !event.getFormattedMessage().contains("provisioning"));
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    void aBadLocationHeader_isARefusal_notACrash() {
+        server.createContext("/badlocation", exchange -> redirect(exchange, "http://[bad host/x"));
+
+        ReloadingMetadataSource source = open(settings("/badlocation", "", "", Duration.ofSeconds(5)));
+
+        assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
+        assertThat(source.status().lastRefusal()).isEqualTo("unreadable");
+    }
+
+    @Test
+    void aNonNumericContentLength_isARefusal_notACrash() throws IOException {
+        try (ServerSocket raw = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            Thread.startVirtualThread(() -> answerRaw(raw));
+            UrlSettings settings = new UrlSettings("http://127.0.0.1:" + raw.getLocalPort() + "/p", "", "", false,
+                    Duration.ofHours(1), Duration.ofSeconds(2), Duration.ofSeconds(2));
+
+            ReloadingMetadataSource source = open(settings);
+
+            assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
+            assertThat(source.status().lastRefusal()).isEqualTo("unreadable");
+        }
+    }
+
+    private static void answerRaw(ServerSocket raw) {
+        try (Socket socket = raw.accept()) {
+            socket.getInputStream().read(new byte[4096]);
+            socket.getOutputStream().write(("HTTP/1.1 200 OK\r\nContent-Length: abc\r\n\r\n" + GOOD_YAML)
+                    .getBytes(StandardCharsets.UTF_8));
+        } catch (IOException _) {
+            // the client may hang up as soon as it reads the bad header
+        }
     }
 
     @Test

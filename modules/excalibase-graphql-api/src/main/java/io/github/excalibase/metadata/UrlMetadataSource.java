@@ -5,13 +5,14 @@ import io.github.excalibase.security.TokenFileSource;
 import io.micrometer.core.instrument.MeterRegistry;
 
 import java.net.URI;
+import java.util.function.LongSupplier;
 
 /**
  * The {@code url} source: one document served over HTTP(S), polled. It is read-only, so the console can only
  * export it. It runs on the same reload loop as the file source: the last good version survives timeouts, 5xx and
- * bad documents, nothing is served before a first good load, and a changed version (ETag, else a body hash) is
- * judged only when a following poll sees it again. For HTTP that second look is cheap (a 304 or a repeated hash)
- * and it also stops a document that is being replaced mid-flight from being believed on first sight.
+ * bad documents, nothing is served before a first good load, and a changed version (the hash of the body; ETag
+ * and 304 are not used, see {@link UrlDocumentFetcher}) is judged only when a following poll reads the same body
+ * again, so a document being replaced mid-flight is not believed on first sight.
  */
 public final class UrlMetadataSource {
 
@@ -23,9 +24,15 @@ public final class UrlMetadataSource {
     /** @return the source, not yet started; @throws IllegalStateException when the location is unusable */
     public static ReloadingMetadataSource create(UrlSettings settings, ReservedSchemas reserved,
                                                  String expectedProjectId, MeterRegistry meters) {
+        return create(settings, reserved, expectedProjectId, meters, System::currentTimeMillis);
+    }
+
+    /** The clock drives the token file's re-read throttle; a test moves it instead of waiting. */
+    static ReloadingMetadataSource create(UrlSettings settings, ReservedSchemas reserved, String expectedProjectId,
+                                          MeterRegistry meters, LongSupplier clock) {
         URI location = UrlLocation.require(settings.location(), expectedProjectId, settings.allowInsecure());
         TokenFileSource token = hasToken(settings)
-                ? new TokenFileSource(settings.tokenFile(), settings.token()) : null;
+                ? new TokenFileSource(settings.tokenFile(), settings.token(), clock) : null;
         UrlDocumentFetcher fetcher = new UrlDocumentFetcher(location, token, settings.connectTimeout(),
                 settings.readTimeout());
         return new ReloadingMetadataSource(NAME, fetcher,

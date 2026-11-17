@@ -19,10 +19,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Reads the metadata document over HTTP(S), read-only. The version is the server's {@code ETag} when it sends
- * one (and the next poll asks with {@code If-None-Match}, so an unchanged document costs a 304), otherwise a hash
- * of the body. Nothing here decides what is good: any failure is an {@link IOException} and the reload loop keeps
- * the last good version. The token is sent only to the configured origin and is never part of a message.
+ * Reads the metadata document over HTTP(S), read-only. Every poll is a plain full GET (the 1 MiB cap keeps it
+ * cheap) and the version is the hash of the body, never the server's {@code ETag} and never a {@code 304}: an ETag
+ * can stay the same while the body changes (a same-second edit) or change while the body does not, and a 304 would
+ * settle a body the engine has not read twice. The reload loop therefore sees exactly the bytes it judges.
+ * Nothing here decides what is good: any failure, including a malformed response header, is an
+ * {@link IOException} and the loop keeps the last good version. The token is sent only to the configured origin
+ * and is never part of a message.
  */
 final class UrlDocumentFetcher implements ReloadingMetadataSource.Loader {
 
@@ -32,8 +35,6 @@ final class UrlDocumentFetcher implements ReloadingMetadataSource.Loader {
     private final URI location;
     private final TokenFileSource token;
     private final Duration readTimeout;
-    private ReloadingMetadataSource.Raw last;
-    private String lastEtag;
 
     UrlDocumentFetcher(URI location, TokenFileSource token, Duration connectTimeout, Duration readTimeout) {
         this.http = ControlPlaneHttpClient.create(connectTimeout);
@@ -42,8 +43,17 @@ final class UrlDocumentFetcher implements ReloadingMetadataSource.Loader {
         this.readTimeout = readTimeout;
     }
 
+    /** Any failure surfaces as an IOException with no response or token text in it. */
     @Override
     public ReloadingMetadataSource.Raw load() throws IOException {
+        try {
+            return fetch();
+        } catch (RuntimeException e) {
+            throw new IOException("the response or request was malformed (" + e.getClass().getSimpleName() + ")");
+        }
+    }
+
+    private ReloadingMetadataSource.Raw fetch() throws IOException {
         URI target = location;
         for (int hop = 0; hop <= MAX_REDIRECTS; hop++) {
             HttpResponse<InputStream> response = send(target);
@@ -59,9 +69,6 @@ final class UrlDocumentFetcher implements ReloadingMetadataSource.Loader {
 
     private HttpResponse<InputStream> send(URI target) throws IOException {
         HttpRequest.Builder request = HttpRequest.newBuilder(target).timeout(readTimeout).GET();
-        if (lastEtag != null) {
-            request.header("If-None-Match", lastEtag);
-        }
         String bearer = bearerToken();
         if (bearer != null) {
             request.header("Authorization", "Bearer " + bearer);
@@ -78,11 +85,16 @@ final class UrlDocumentFetcher implements ReloadingMetadataSource.Loader {
         if (token == null) {
             return null;
         }
+        String value;
         try {
-            return token.require();
-        } catch (TokenUnavailableException e) {
-            throw new IOException("the token is not available: " + e.getMessage());
+            value = token.require().trim();
+        } catch (TokenUnavailableException _) {
+            throw new IOException("no bearer token is available: set metadata.url.token or metadata.url.token-file");
         }
+        if (value.chars().anyMatch(Character::isISOControl)) {
+            throw new IOException("the bearer token contains a control character (such as a newline in the middle)");
+        }
+        return value;
     }
 
     /** A redirect is followed only within the same scheme, host and port; the document never moves the token elsewhere. */
@@ -113,10 +125,6 @@ final class UrlDocumentFetcher implements ReloadingMetadataSource.Loader {
 
     private ReloadingMetadataSource.Raw interpret(HttpResponse<InputStream> response) throws IOException {
         int status = response.statusCode();
-        if (status == 304 && last != null) {
-            response.body().close();
-            return last;
-        }
         if (status != 200) {
             response.body().close();
             throw new IOException("the server answered HTTP " + status);
@@ -127,11 +135,8 @@ final class UrlDocumentFetcher implements ReloadingMetadataSource.Loader {
             throw new IOException("the document is larger than " + MetadataDocumentParser.MAX_BYTES + " bytes");
         }
         byte[] bytes = readCapped(response.body());
-        String etag = response.headers().firstValue("ETag").orElse(null);
-        last = new ReloadingMetadataSource.Raw(FileMetadataSource.decodeUtf8(bytes),
-                etag == null ? "sha256:" + FileMetadataSource.sha256(bytes) : "etag:" + etag);
-        lastEtag = etag;
-        return last;
+        return new ReloadingMetadataSource.Raw(FileMetadataSource.decodeUtf8(bytes),
+                "sha256:" + FileMetadataSource.sha256(bytes));
     }
 
     /**

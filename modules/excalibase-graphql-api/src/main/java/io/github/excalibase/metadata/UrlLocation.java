@@ -3,6 +3,7 @@ package io.github.excalibase.metadata;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Checks where the {@code url} source fetches from, once at start. The message never repeats the value: a
@@ -10,6 +11,7 @@ import java.util.Locale;
  */
 final class UrlLocation {
 
+    private static final Pattern LOOPBACK_V4 = Pattern.compile("127(\\.(25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}");
     private static final String SETTING = "metadata.url.location";
 
     private UrlLocation() {
@@ -44,13 +46,13 @@ final class UrlLocation {
     }
 
     /**
-     * Loopback, and names that only resolve inside a cluster or a compose network: {@code *.svc},
-     * {@code *.cluster.local} and a bare single-label service name.
+     * Loopback literals and the names Kubernetes DNS owns ({@code *.svc}, {@code *.cluster.local}). A bare
+     * single-word name is not trusted: a search domain can resolve it outside, and a number such as
+     * {@code 134744072} is an address. Those need {@code metadata.url.allow-insecure=true}.
      */
     static boolean isLocalOrClusterInternal(String host) {
         String name = host.toLowerCase(Locale.ROOT);
         return name.equals("localhost") || name.endsWith(".localhost") || name.equals("[::1]")
-                || name.startsWith("127.") || name.endsWith(".svc") || name.endsWith(".cluster.local")
-                || (!name.contains(".") && !name.contains(":"));
+                || LOOPBACK_V4.matcher(name).matches() || name.endsWith(".svc") || name.endsWith(".cluster.local");
     }
 }

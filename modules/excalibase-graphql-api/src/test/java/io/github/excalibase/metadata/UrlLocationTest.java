@@ -17,13 +17,15 @@ class UrlLocationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"http://localhost:8080/p", "http://127.0.0.1/p", "http://[::1]:9/p",
-            "http://permissions/p", "http://perms.team.svc/p", "http://perms.team.svc.cluster.local/p"})
+            "http://perms.team.svc/p", "http://perms.team.svc.cluster.local/p"})
     void http_isAcceptedForLocalAndClusterInternalHosts(String location) {
         assertThat(UrlLocation.require(location, "demo", false)).isNotNull();
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"http://example.com/p", "http://10.1.2.3/p", "http://perms.example.org:8080/p"})
+    @ValueSource(strings = {"http://example.com/p", "http://10.1.2.3/p", "http://perms.example.org:8080/p",
+            "http://127.evil.example.com/p", "http://127.0.0.1.evil.example.com/p", "http://134744072/p",
+            "http://permissions/p"})
     void http_isRefusedForOtherHosts_withoutAllowInsecure(String location) {
         assertThatThrownBy(() -> UrlLocation.require(location, "demo", false))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("allow-insecure");
@@ -36,7 +38,7 @@ class UrlLocationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"", "  ", "ftp://example.com/p", "file:///etc/passwd", "not a url", "https:///p",
-            "https://user:secret@example.com/p"})
+            "https://user:secret@example.com/p", "http://127.0.0.256/p"})
     void otherLocations_areRefused(String location) {
         assertThatThrownBy(() -> UrlLocation.require(location, "demo", true))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("metadata.url.location")
