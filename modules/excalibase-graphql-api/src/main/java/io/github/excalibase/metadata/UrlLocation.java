@@ -52,7 +52,7 @@ final class UrlLocation {
      */
     static boolean isLocalOrClusterInternal(String host) {
         String name = host.toLowerCase(Locale.ROOT);
-        return name.equals("localhost") || name.endsWith(".localhost") || name.equals("[::1]")
+        return name.equals("localhost") || name.equals("[::1]")
                 || LOOPBACK_V4.matcher(name).matches() || name.endsWith(".svc") || name.endsWith(".cluster.local");
     }
 }

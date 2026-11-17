@@ -25,7 +25,7 @@ class UrlLocationTest {
     @ParameterizedTest
     @ValueSource(strings = {"http://example.com/p", "http://10.1.2.3/p", "http://perms.example.org:8080/p",
             "http://127.evil.example.com/p", "http://127.0.0.1.evil.example.com/p", "http://134744072/p",
-            "http://permissions/p"})
+            "http://permissions/p", "http://docs.localhost/p"})
     void http_isRefusedForOtherHosts_withoutAllowInsecure(String location) {
         assertThatThrownBy(() -> UrlLocation.require(location, "demo", false))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("allow-insecure");
