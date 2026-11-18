@@ -3,6 +3,7 @@ package io.github.excalibase.admin;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -13,8 +14,8 @@ import java.util.Optional;
  */
 final class ConsoleAssets {
 
-    /** One file: its bytes and the type it is served as. */
-    record Asset(byte[] body, String contentType) {
+    /** One file: its text and the type it is served as. */
+    record Asset(String body, String contentType) {
     }
 
     private static final String HTML = "text/html; charset=utf-8";
@@ -42,12 +43,12 @@ final class ConsoleAssets {
         return Optional.ofNullable(assets.get(name));
     }
 
-    private static byte[] read(String name) {
+    private static String read(String name) {
         try (InputStream in = ConsoleAssets.class.getResourceAsStream("/console/" + name)) {
             if (in == null) {
                 throw new IllegalStateException("the console file console/" + name + " is missing from the build");
             }
-            return in.readAllBytes();
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

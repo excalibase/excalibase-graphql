@@ -39,6 +39,6 @@ class ConsoleSourceTest {
         String api = read("api.js");
 
         assertThat(api).contains("X-Excalibase-Admin-Secret", "sessionStorage");
-        assertThat(api).doesNotContain("?secret").doesNotContain("location.");
+        assertThat(api).doesNotContain("?secret", "location.");
     }
 }

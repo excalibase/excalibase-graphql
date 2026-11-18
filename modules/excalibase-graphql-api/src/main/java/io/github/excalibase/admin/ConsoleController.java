@@ -23,11 +23,11 @@ public class ConsoleController {
 
     /** The page at {@code /console} (a trailing slash is a 404 on every route of this engine), and any one of the listed files by name. */
     @Get("{/file}")
-    public HttpResponse<byte[]> file(@Nullable String file) {
+    public HttpResponse<String> file(@Nullable String file) {
         return serve(file == null || file.isEmpty() ? "index.html" : file);
     }
 
-    private HttpResponse<byte[]> serve(String name) {
+    private HttpResponse<String> serve(String name) {
         return assets.find(name)
                 .map(asset -> HttpResponse.ok(asset.body())
                         .contentType(asset.contentType())
