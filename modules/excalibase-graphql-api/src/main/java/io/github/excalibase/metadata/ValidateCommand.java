@@ -8,6 +8,7 @@ import java.io.PrintStream;
 import java.nio.charset.CharacterCodingException;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 /**
  * {@code excalibase validate <file> [--project-id ID]}: loads a document exactly as the engine does at start
@@ -36,11 +37,11 @@ public final class ValidateCommand {
         }
         boolean envJwt = !env.getOrDefault("APP_SECURITY_AUTH_JWKS_URL", "").isBlank()
                 || !env.getOrDefault("APP_SECURITY_AUTH_HMAC_SECRET", "").isBlank();
-        return validate(Path.of(args[1]), projectId, env.get("APP_RESERVED_SCHEMAS"), envJwt, out, err);
+        return validate(Path.of(args[1]), projectId, env.get("APP_RESERVED_SCHEMAS"), envJwt, env::get, out, err);
     }
 
-    private static int validate(Path file, String projectId, String reserved, boolean envJwt, PrintStream out,
-                                PrintStream err) {
+    private static int validate(Path file, String projectId, String reserved, boolean envJwt,
+                                UnaryOperator<String> environment, PrintStream out, PrintStream err) {
         String text;
         try {
             text = FileMetadataSource.read(file).text();
@@ -53,7 +54,7 @@ public final class ValidateCommand {
         }
         try {
             PermissionSet permissions = new MetadataDocumentParser(ReservedSchemas.fromConfig(reserved), projectId, envJwt)
-                    .parse(text, 1);
+                    .check(text, 1, environment);
             out.println("ok: " + file + " (" + permissions.tables().size() + " table rules, "
                     + permissions.functions().size() + " tracked functions)");
             return 0;

@@ -132,4 +132,46 @@ class ValidateCommandTest {
         assertThat(run(Map.of(), "validate", file(document).toString())).isEqualTo(1);
         assertThat(err.toString(StandardCharsets.UTF_8)).contains("jwt.secret").doesNotContain("hunter2");
     }
+
+    private static final String SECRET_REFUSAL = "jwt: the signing keys or the secret cannot be loaded";
+    private static final String LONG_SECRET = "s3cr3t-".repeat(6);
+
+    private String withSecret(String reference) {
+        return GOOD_YAML.replace("tables:", "jwt:\n  secret: " + reference + "\n  audience: a\ntables:");
+    }
+
+    @Test
+    void aSecretVariableThatIsNotSet_exitsOne_withTheEnginesMessage() throws IOException {
+        assertThat(run(Map.of(), "validate", file(withSecret("env:JWT_SECRET")).toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains(SECRET_REFUSAL);
+    }
+
+    @Test
+    void aSecretVariableThatIsSet_passes_andTheValueIsNeverPrinted() throws IOException {
+        Path file = file(withSecret("env:JWT_SECRET"));
+
+        assertThat(run(Map.of("JWT_SECRET", LONG_SECRET), "validate", file.toString())).isZero();
+        assertThat(out.toString(StandardCharsets.UTF_8) + err.toString(StandardCharsets.UTF_8))
+                .doesNotContain(LONG_SECRET);
+    }
+
+    @Test
+    void aSecretVariableThatIsTooShort_exitsOne_withoutPrintingIt() throws IOException {
+        assertThat(run(Map.of("JWT_SECRET", "tooshort"), "validate", file(withSecret("env:JWT_SECRET")).toString()))
+                .isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains(SECRET_REFUSAL).doesNotContain("tooshort");
+    }
+
+    @Test
+    void aSecretFileThatIsMissing_orTooShort_exitsOne_andALongOnePasses() throws IOException {
+        Path missing = dir.resolve("none.key");
+        Path shortKey = Files.writeString(dir.resolve("short.key"), "tooshort");
+        Path longKey = Files.writeString(dir.resolve("long.key"), LONG_SECRET + "\n");
+
+        assertThat(run(Map.of(), "validate", file(withSecret("file:" + missing)).toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains(SECRET_REFUSAL);
+        assertThat(run(Map.of(), "validate", file(withSecret("file:" + shortKey)).toString())).isEqualTo(1);
+        assertThat(run(Map.of(), "validate", file(withSecret("file:" + longKey)).toString())).isZero();
+        assertThat(err.toString(StandardCharsets.UTF_8)).doesNotContain("tooshort").doesNotContain(LONG_SECRET);
+    }
 }
