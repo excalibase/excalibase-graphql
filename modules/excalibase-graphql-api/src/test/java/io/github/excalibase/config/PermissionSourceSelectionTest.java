@@ -29,7 +29,7 @@ class PermissionSourceSelectionTest {
 
     private PermissionProvider pickUrl(String source, String policyUrl, String path, String urlLocation) {
         return new AppConfig().permissionSource(source, policyUrl, path, 5000, urlLocation, "", "", false, 5000, 1000,
-                1000, "demo", "", TOKEN, 30_000, 300_000, 2_000, null);
+                1000, "demo", "", "", "", TOKEN, 30_000, 300_000, 2_000, null);
     }
 
     @Test

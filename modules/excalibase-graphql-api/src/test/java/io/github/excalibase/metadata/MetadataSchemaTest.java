@@ -52,7 +52,7 @@ class MetadataSchemaTest {
 
     @Test
     void goodDocuments_areAcceptedByBoth() throws IOException {
-        for (String good : List.of(GOOD_YAML, GOOD_YAML_TWO_RULES)) {
+        for (String good : List.of(GOOD_YAML, GOOD_YAML_TWO_RULES, WITH_JWT)) {
             assertThat(schemaAccepts(good)).as(good).isTrue();
             assertThat(parserAccepts(good)).as(good).isTrue();
         }
@@ -62,13 +62,15 @@ class MetadataSchemaTest {
     void documentsTheStructureForbids_areRefusedByBoth() throws IOException {
         List<String> bad = List.of(
                 BAD_UNKNOWN_KEY,
-                WITH_JWT,
                 BAD_RULE,
                 "projectId: demo\ntables: []\n",
                 "format: 2\nprojectId: demo\ntables: []\n",
                 GOOD_YAML + "version: 3\n",
                 "format: 1\nprojectId: demo\njwt:\n  sharedSecretFrom: hunter2\ntables: []\n",
                 "format: 1\nprojectId: demo\njwt:\n  algorithms: [none]\ntables: []\n",
+                "format: 1\nprojectId: demo\njwt:\n  secret: hunter2hunter2hunter2hunter2hunter2\n  audience: a\ntables: []\n",
+                "format: 1\nprojectId: demo\njwt:\n  issuer: https://i/\n  jwksUrl: https://i/jwks\ntables: []\n",
+                "format: 1\nprojectId: demo\njwt:\n  issuer: https://i/\n  audience: a\n  algorithms: [none]\ntables: []\n",
                 GOOD_YAML.replace("role: user", "role: service"),
                 GOOD_YAML.replace("public.orders", "Orders"));
         for (String document : bad) {

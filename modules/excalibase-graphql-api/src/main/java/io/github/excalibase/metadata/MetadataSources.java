@@ -32,7 +32,7 @@ public final class MetadataSources {
         ReloadingMetadataSource created = switch (source.trim()) {
             case FileMetadataSource.NAME -> file(settings, reserved, meters);
             case UrlMetadataSource.NAME -> UrlMetadataSource.create(positive(settings.url()), reserved,
-                    settings.projectId(), meters);
+                    settings.projectId(), meters, settings.envJwtConfigured());
             default -> throw new IllegalStateException("metadata.source must be \"file\" or \"url\" (db and s3 are "
                     + "not available yet) but was \"" + source + "\"");
         };
@@ -48,7 +48,7 @@ public final class MetadataSources {
             throw new IllegalStateException("metadata.file.poll-interval-ms must be positive");
         }
         return FileMetadataSource.create(Path.of(file.path()), Duration.ofMillis(file.pollIntervalMs()), reserved,
-                settings.projectId(), meters);
+                settings.projectId(), meters, settings.envJwtConfigured());
     }
 
     private static UrlSettings positive(UrlSettings url) {

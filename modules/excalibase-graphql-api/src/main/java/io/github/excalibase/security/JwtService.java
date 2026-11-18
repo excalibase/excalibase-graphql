@@ -1,8 +1,6 @@
 package io.github.excalibase.security;
 
 import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.MACVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -19,6 +17,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Verifies JWTs. Two modes:
@@ -35,9 +34,6 @@ import java.util.Set;
 public class JwtService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
-    /** The auth service gets this long to answer, and its answer this many bytes (a JWKS is a few hundred). */
-    private static final int JWKS_TIMEOUT_MILLIS = 3_000;
-    private static final int JWKS_SIZE_LIMIT_BYTES = 64 * 1024;
     /** A failed fetch, and a token naming a key we do not hold, wait this long before reaching the auth service again. */
     private static final Duration JWKS_MIN_RETRY = Duration.ofSeconds(10);
 
@@ -47,6 +43,8 @@ public class JwtService {
 
     // HMAC mode
     private final byte[] hmacSecret;
+
+    private Supplier<TokenVerifier> documentVerifier = () -> null;
 
     // Expected token issuer (iss). null = don't validate (back-compat / standalone).
     // When set, a token whose `iss` claim differs is rejected — stops tokens minted
@@ -79,8 +77,8 @@ public class JwtService {
         this.hmacSecret = null;
 
         try {
-            this.keys = new JwksKeys(() -> fetchKeys(jwksUrl), Duration.ofMinutes(ttlMinutes), JWKS_MIN_RETRY,
-                    System::currentTimeMillis, fetchKeys(jwksUrl));
+            this.keys = new JwksKeys(() -> JwksKeys.fetchEcKeys(jwksUrl), Duration.ofMinutes(ttlMinutes), JWKS_MIN_RETRY,
+                    System::currentTimeMillis, JwksKeys.fetchEcKeys(jwksUrl));
             log.info("jwt_keys_loaded jwks_url={}", jwksUrl);
         } catch (Exception e) {
             throw new IllegalStateException("Cannot start with jwt-enabled=true — failed to load JWKS from: " + jwksUrl, e);
@@ -98,12 +96,32 @@ public class JwtService {
         log.info("jwt_service_mode=hmac");
     }
 
+    /** No keys of its own: it verifies only through the verifier a metadata document supplies. */
+    public static JwtService documentOnly() {
+        return new JwtService();
+    }
+
+    private JwtService() {
+        this.jwksUrl = null;
+        this.keys = null;
+        this.hmacSecret = null;
+    }
+
     /** Test constructor — inject EC key directly, no remote fetch. */
     public JwtService(ECPublicKey publicKey) {
         this.jwksUrl = "test";
         this.keys = new JwksKeys(() -> List.of(new JwksKeys.Key(null, publicKey)), Duration.ofHours(24),
                 JWKS_MIN_RETRY, System::currentTimeMillis, List.of(new JwksKeys.Key(null, publicKey)));
         this.hmacSecret = null;
+    }
+
+    /**
+     * Defers to the verifier the metadata document's JWT section supplies, read per token so a reload takes
+     * effect at once. While the supplier answers null the keys this service was built with decide, as before.
+     */
+    public JwtService documentVerifier(Supplier<TokenVerifier> verifier) {
+        this.documentVerifier = verifier;
+        return this;
     }
 
     /**
@@ -148,6 +166,13 @@ public class JwtService {
      * in the request path. Pass null when the route carries no project.
      */
     public JwtClaims verify(String token, String expectedProjectId) {
+        TokenVerifier fromDocument = documentVerifier.get();
+        if (fromDocument != null) {
+            return fromDocument.verify(token, expectedProjectId);
+        }
+        if (keys == null && hmacSecret == null) {
+            throw new JwtVerificationException("No JWT verifier is configured: the metadata document has no jwt section");
+        }
         try {
             SignedJWT jwt = SignedJWT.parse(token);
 
@@ -256,7 +281,7 @@ public class JwtService {
             throw new JwtVerificationException("No JWKS verification keys available");
         }
         for (JwksKeys.Key candidate : candidates) {
-            if (jwt.verify(new ECDSAVerifier(candidate.publicKey()))) {
+            if (candidate.publicKey() instanceof ECPublicKey ecKey && jwt.verify(new ECDSAVerifier(ecKey))) {
                 return;
             }
         }
@@ -360,25 +385,5 @@ public class JwtService {
             return sub;
         }
         throw new JwtVerificationException("Missing required claim: userId or sub");
-    }
-
-    private static List<JwksKeys.Key> fetchKeys(String jwksUrl)
-            throws java.io.IOException, java.text.ParseException, java.net.URISyntaxException {
-        JWKSet jwkSet = JWKSet.load(new java.net.URI(jwksUrl).toURL(), JWKS_TIMEOUT_MILLIS, JWKS_TIMEOUT_MILLIS,
-                JWKS_SIZE_LIMIT_BYTES);
-        List<JwksKeys.Key> ecKeys = jwkSet.getKeys().stream()
-                .filter(ECKey.class::isInstance)
-                .map(k -> {
-                    try {
-                        return new JwksKeys.Key(k.getKeyID(), ((ECKey) k).toECPublicKey());
-                    } catch (com.nimbusds.jose.JOSEException e) {
-                        throw new JwtVerificationException("Failed to parse EC key from JWKS", e);
-                    }
-                })
-                .toList();
-        if (ecKeys.isEmpty()) {
-            throw new IllegalStateException("No EC keys found in JWKS at: " + jwksUrl);
-        }
-        return ecKeys;
     }
 }

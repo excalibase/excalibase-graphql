@@ -1,10 +1,19 @@
 package io.github.excalibase.security;
 
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.security.interfaces.ECPublicKey;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.security.PublicKey;
+import java.text.ParseException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
@@ -17,15 +26,18 @@ import java.util.function.LongSupplier;
  * bounds how often a stream of unknown key ids can reach the auth service. A rotated key is picked up by the
  * first token that names it, not when the cache runs out.
  */
-final class JwksKeys {
+public final class JwksKeys {
 
     private static final Logger log = LoggerFactory.getLogger(JwksKeys.class);
+    /** The auth service gets this long to answer, and its answer this many bytes (a JWKS is a few hundred). */
+    private static final int FETCH_TIMEOUT_MILLIS = 3_000;
+    private static final int FETCH_SIZE_LIMIT_BYTES = 64 * 1024;
 
-    record Key(String keyId, ECPublicKey publicKey) {
+    public record Key(String keyId, PublicKey publicKey) {
     }
 
     @FunctionalInterface
-    interface Fetcher {
+    public interface Fetcher {
         List<Key> fetch() throws Exception;
     }
 
@@ -40,7 +52,7 @@ final class JwksKeys {
     private final AtomicReference<Snapshot> snapshot;
     private volatile long lastAttemptMillis;
 
-    JwksKeys(Fetcher fetcher, Duration ttl, Duration minRetry, LongSupplier millisClock, List<Key> initial) {
+    public JwksKeys(Fetcher fetcher, Duration ttl, Duration minRetry, LongSupplier millisClock, List<Key> initial) {
         this.fetcher = fetcher;
         this.ttlMillis = ttl.toMillis();
         this.minRetryMillis = minRetry.toMillis();
@@ -50,7 +62,7 @@ final class JwksKeys {
     }
 
     /** The keys a token with {@code keyId} (null when it names none) may be verified with. */
-    List<Key> keysFor(String keyId) {
+    public List<Key> keysFor(String keyId) {
         if (clock.getAsLong() - snapshot.get().fetchedAtMillis() >= ttlMillis) {
             refresh();
         }
@@ -80,5 +92,25 @@ final class JwksKeys {
         } finally {
             refreshing.unlock();
         }
+    }
+
+    /** The EC keys of a key set served at {@code jwksUrl}: what excalibase-auth publishes. */
+    static List<Key> fetchEcKeys(String jwksUrl) throws IOException, ParseException, URISyntaxException {
+        JWKSet jwkSet = JWKSet.load(new URI(jwksUrl).toURL(), FETCH_TIMEOUT_MILLIS, FETCH_TIMEOUT_MILLIS,
+                FETCH_SIZE_LIMIT_BYTES);
+        List<Key> ecKeys = new ArrayList<>();
+        for (JWK jwk : jwkSet.getKeys()) {
+            if (jwk instanceof ECKey ec) {
+                try {
+                    ecKeys.add(new Key(ec.getKeyID(), ec.toECPublicKey()));
+                } catch (JOSEException e) {
+                    throw new JwtVerificationException("Failed to parse EC key from JWKS", e);
+                }
+            }
+        }
+        if (ecKeys.isEmpty()) {
+            throw new IllegalStateException("No EC keys found in JWKS at: " + jwksUrl);
+        }
+        return ecKeys;
     }
 }

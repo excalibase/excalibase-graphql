@@ -34,10 +34,13 @@ public final class ValidateCommand {
             err.println(USAGE);
             return 2;
         }
-        return validate(Path.of(args[1]), projectId, env.get("APP_RESERVED_SCHEMAS"), out, err);
+        boolean envJwt = !env.getOrDefault("APP_SECURITY_AUTH_JWKS_URL", "").isBlank()
+                || !env.getOrDefault("APP_SECURITY_AUTH_HMAC_SECRET", "").isBlank();
+        return validate(Path.of(args[1]), projectId, env.get("APP_RESERVED_SCHEMAS"), envJwt, out, err);
     }
 
-    private static int validate(Path file, String projectId, String reserved, PrintStream out, PrintStream err) {
+    private static int validate(Path file, String projectId, String reserved, boolean envJwt, PrintStream out,
+                                PrintStream err) {
         String text;
         try {
             text = FileMetadataSource.read(file).text();
@@ -49,7 +52,7 @@ public final class ValidateCommand {
             return 2;
         }
         try {
-            PermissionSet permissions = new MetadataDocumentParser(ReservedSchemas.fromConfig(reserved), projectId)
+            PermissionSet permissions = new MetadataDocumentParser(ReservedSchemas.fromConfig(reserved), projectId, envJwt)
                     .parse(text, 1);
             out.println("ok: " + file + " (" + permissions.tables().size() + " table rules, "
                     + permissions.functions().size() + " tracked functions)");

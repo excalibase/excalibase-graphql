@@ -35,7 +35,7 @@ class FileMetadataSourceTest {
 
     private ReloadingMetadataSource open(Path path, Duration interval) {
         ReloadingMetadataSource source = FileMetadataSource.create(path, interval, ReservedSchemas.fromConfig(""),
-                PROJECT, new SimpleMeterRegistry());
+                PROJECT, new SimpleMeterRegistry(), false);
         opened.add(source);
         source.start();
         return source;

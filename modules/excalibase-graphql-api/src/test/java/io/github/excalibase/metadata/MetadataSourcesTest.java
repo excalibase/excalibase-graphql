@@ -25,7 +25,7 @@ class MetadataSourcesTest {
     private Optional<ReloadingMetadataSource> create(String source, String policyUrl, String path, long pollMs,
                                                      String projectId) {
         return MetadataSources.create(new MetadataSettings(source, policyUrl, projectId, "",
-                new MetadataSettings.FileSettings(path, pollMs), noUrl()), meters);
+                new MetadataSettings.FileSettings(path, pollMs), noUrl(), false), meters);
     }
 
     private static UrlSettings noUrl() {
@@ -36,7 +36,7 @@ class MetadataSourcesTest {
     private Optional<ReloadingMetadataSource> createUrl(String location, boolean allowInsecure) {
         return MetadataSources.create(new MetadataSettings("url", "", PROJECT, "", new MetadataSettings.FileSettings("", 5000),
                 new UrlSettings(location, "", "", allowInsecure, Duration.ofHours(1), Duration.ofSeconds(1),
-                        Duration.ofSeconds(1))), meters);
+                        Duration.ofSeconds(1)), false), meters);
     }
 
     @Test
@@ -105,7 +105,7 @@ class MetadataSourcesTest {
     @Test
     void aUrlSourceAlongsideAPolicyUrl_isRefused() {
         MetadataSettings both = new MetadataSettings("url", "http://provisioning/api", PROJECT, "",
-                new MetadataSettings.FileSettings("", 5000), noUrl());
+                new MetadataSettings.FileSettings("", 5000), noUrl(), false);
 
         assertThatThrownBy(() -> MetadataSources.create(both, meters)).hasMessageContaining("policy-url");
     }

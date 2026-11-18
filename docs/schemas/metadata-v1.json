@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://excalibase.io/schemas/metadata-v1.json",
   "title": "Excalibase metadata document, format 1",
-  "description": "Permissions: the Hasura-style rules of docs/features/permissions.md. The engine's parser is the authority: run `excalibase validate <file>` for the full check. This schema is for editor autocomplete and covers the structure, not the filter expressions. JWT settings are not supported yet.",
+  "description": "Permissions: the Hasura-style rules of docs/features/permissions.md. The engine's parser is the authority: run `excalibase validate <file>` for the full check. This schema is for editor autocomplete and covers the structure, not the filter expressions. The `jwt` section applies only when the engine runs with a metadata source.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -17,6 +17,138 @@
       "type": "string",
       "minLength": 1,
       "description": "Must equal the engine's APP_PROJECT_ID."
+    },
+    "jwt": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Token verification for a standalone engine: Auth0, Cognito, Keycloak or any OIDC issuer. Absent means the engine's own settings apply. Secrets are never written here.",
+      "required": [
+        "audience"
+      ],
+      "properties": {
+        "jwksUrl": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://|^http://(localhost|127\\.|\\[::1\\]|[^/]*\\.svc|[^/]*\\.cluster\\.local)",
+          "description": "The provider's key set. https only (plain http to localhost, loopback, *.svc or *.cluster.local). Needs `issuer`."
+        },
+        "issuer": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Checked against the token's `iss`. Alone (without jwksUrl or secret) it also finds the keys through OIDC discovery."
+        },
+        "secret": {
+          "type": "string",
+          "pattern": "^(env:[A-Za-z_][A-Za-z0-9_]*|file:\\S.*)$",
+          "description": "HMAC shared secret as a reference, env:NAME or file:/path, never the secret itself. At least 32 bytes."
+        },
+        "algorithms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "RS256",
+              "RS384",
+              "RS512",
+              "ES256",
+              "ES384",
+              "ES512",
+              "PS256",
+              "PS384",
+              "PS512",
+              "HS256",
+              "HS384",
+              "HS512"
+            ]
+          },
+          "description": "The only algorithms accepted. Default RS256 and ES256 (HS256 with a secret). HS* only with `secret`, the others only with a key set."
+        },
+        "audience": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ],
+          "description": "The token's `aud` must contain this (or one of these)."
+        },
+        "claims": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "role": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Path to the role: a string, or a list of the roles the caller may act as. Default `role`. Dotted, e.g. realm_access.roles or https://hasura.io/jwt/claims.x-hasura-default-role."
+            },
+            "defaultRole": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,62}$",
+              "not": {
+                "const": "service"
+              },
+              "description": "The active role when `role` is a list; the X-Excalibase-Role header may pick another one from the list."
+            },
+            "userId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Path to the caller's id. Default `sub`. It fills X-Excalibase-User-Id."
+            },
+            "extra": {
+              "type": "object",
+              "propertyNames": {
+                "pattern": "^[a-z0-9][a-z0-9_-]{0,62}$"
+              },
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 256
+              },
+              "description": "Session-variable name to claim path; each becomes X-Excalibase-<name> in rules."
+            }
+          }
+        },
+        "clockSkew": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300,
+          "default": 30,
+          "description": "Seconds of clock difference tolerated on exp and nbf."
+        }
+      },
+      "anyOf": [
+        {
+          "required": [
+            "issuer"
+          ]
+        },
+        {
+          "required": [
+            "secret"
+          ]
+        }
+      ],
+      "dependentRequired": {
+        "jwksUrl": [
+          "issuer"
+        ]
+      },
+      "not": {
+        "required": [
+          "secret",
+          "jwksUrl"
+        ]
+      }
     },
     "tables": {
       "type": "array",

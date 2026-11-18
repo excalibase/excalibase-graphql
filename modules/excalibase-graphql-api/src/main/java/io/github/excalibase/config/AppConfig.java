@@ -18,6 +18,7 @@ import io.github.excalibase.permissions.PermissionCachePolicy;
 import io.github.excalibase.permissions.PermissionVersions;
 import io.github.excalibase.metadata.MetadataHealth;
 import io.github.excalibase.metadata.MetadataSettings;
+import io.github.excalibase.metadata.MetadataSource;
 import io.github.excalibase.metadata.MetadataSources;
 import io.github.excalibase.metadata.UrlSettings;
 import io.github.excalibase.permissions.PermissionProvider;
@@ -133,9 +134,16 @@ public class AppConfig {
         return value == null || value.isBlank() ? null : value;
     }
 
+    /**
+     * With {@code metadata.source} set, the token settings may come from the document instead of the engine's own
+     * (EXC-733): the service then asks the served document per token. The parser refuses a document that adds a
+     * {@code jwt:} section while the engine has settings of its own. With no metadata source nothing here differs.
+     */
     @Context
     @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
-    JwtService jwtService(SecurityProperties security, @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes) {
+    JwtService jwtService(SecurityProperties security, @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes,
+                          @Nullable PermissionProvider permissionSource) {
+        MetadataSource metadata = permissionSource instanceof MetadataSource source ? source : null;
         SecurityProperties.Auth auth = security.auth();
         boolean hasJwks = auth != null && auth.hasJwksUrl();
         boolean hasHmac = auth != null && auth.hasHmacSecret();
@@ -143,12 +151,19 @@ public class AppConfig {
             throw new IllegalStateException("app.security.auth: set either jwks-url or hmac-secret, not both");
         }
         if (!hasJwks && !hasHmac) {
-            throw new IllegalStateException(NO_VERIFIER);
+            if (metadata == null) {
+                throw new IllegalStateException(NO_VERIFIER);
+            }
+            return JwtService.documentOnly().documentVerifier(() -> metadata.tokenVerifier().orElse(null));
         }
         requireAudienceWhenMultiTenant(security.multiTenant() == null ? null : security.multiTenant().provisioningUrl(),
                 auth.requireAudOrDefault());
         JwtService service = hasJwks ? new JwtService(auth.jwksUrl(), ttlMinutes) : new JwtService(auth.hmacSecret());
-        return service.expectedIssuer(auth.issuer()).requireAudience(auth.requireAudOrDefault(), auth.audPrefix());
+        service.expectedIssuer(auth.issuer()).requireAudience(auth.requireAudOrDefault(), auth.audPrefix());
+        if (metadata != null) {
+            service.documentVerifier(() -> metadata.tokenVerifier().orElse(null));
+        }
+        return service;
     }
 
     /**
@@ -182,6 +197,8 @@ public class AppConfig {
             @Value("${metadata.url.read-timeout-ms:10000}") long urlReadTimeoutMs,
             @Value("${app.project-id:}") String projectId,
             @Value("${app.reserved-schemas:}") String reservedSchemas,
+            @Value("${app.security.auth.jwks-url:}") String authJwksUrl,
+            @Value("${app.security.auth.hmac-secret:}") String authHmacSecret,
             TokenFileSource provisioningTokenSource,
             @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs,
             @Value("${app.security.permissions.max-stale-ms:300000}") long maxStaleMs,
@@ -192,7 +209,8 @@ public class AppConfig {
                 Duration.ofMillis(urlPollIntervalMs), Duration.ofMillis(urlConnectTimeoutMs),
                 Duration.ofMillis(urlReadTimeoutMs));
         MetadataSettings settings = new MetadataSettings(metadataSource, policyUrl, projectId, reservedSchemas,
-                new MetadataSettings.FileSettings(metadataFilePath, pollIntervalMs), url);
+                new MetadataSettings.FileSettings(metadataFilePath, pollIntervalMs), url,
+                !authJwksUrl.isBlank() || !authHmacSecret.isBlank());
         return MetadataSources.create(settings, meters)
                 .<PermissionProvider>map(source -> source)
                 .orElseGet(() -> permissionProvider(policyUrl, provisioningTokenSource, policyTtlMs, maxStaleMs,

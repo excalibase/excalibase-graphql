@@ -44,7 +44,7 @@ class UrlMetadataSourceHardeningTest extends UrlSourceFixture {
         Path tokenFile = Files.writeString(dir.resolve("token"), "first\n");
         AtomicLong now = new AtomicLong(1_000);
         ReloadingMetadataSource source = UrlMetadataSource.create(settings("/permissions.yaml", "", tokenFile.toString(),
-                Duration.ofSeconds(5)), ReservedSchemas.fromConfig(""), PROJECT, new SimpleMeterRegistry(), now::get);
+                Duration.ofSeconds(5)), ReservedSchemas.fromConfig(""), PROJECT, new SimpleMeterRegistry(), now::get, false);
         opened.add(source);
         source.start();
         assertThat(authorization).contains("Bearer first");

@@ -34,7 +34,7 @@ class InfoActuatorTest {
         Path file = Files.writeString(dir.resolve("permissions.yaml"),
                 "format: 1\nprojectId: demo\ntables: []\n");
         try (ReloadingMetadataSource source = FileMetadataSource.create(file, Duration.ofHours(1),
-                ReservedSchemas.fromConfig(""), "demo", new SimpleMeterRegistry())) {
+                ReservedSchemas.fromConfig(""), "demo", new SimpleMeterRegistry(), false)) {
             source.start();
             Files.writeString(file, "format: 1\nprojectId: demo\nsurprise: 1\n");
             source.refresh();

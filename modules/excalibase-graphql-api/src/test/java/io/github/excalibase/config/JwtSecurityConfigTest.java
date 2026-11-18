@@ -44,7 +44,7 @@ class JwtSecurityConfigTest {
         SecurityProperties props = new SecurityProperties(true,
                 new SecurityProperties.Auth(null, " ", null, null, null, null), null);
 
-        assertThatThrownBy(() -> new AppConfig().jwtService(props, 30))
+        assertThatThrownBy(() -> new AppConfig().jwtService(props, 30, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("app.security.auth.jwks-url")
                 .hasMessageContaining("app.security.auth.hmac-secret")
@@ -57,7 +57,7 @@ class JwtSecurityConfigTest {
         SecurityProperties props = new SecurityProperties(true,
                 new SecurityProperties.Auth("http://auth/jwks.json", SECRET, null, null, null, null), null);
 
-        assertThatThrownBy(() -> new AppConfig().jwtService(props, 30))
+        assertThatThrownBy(() -> new AppConfig().jwtService(props, 30, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("not both");
     }

@@ -2,6 +2,7 @@ package io.github.excalibase.metadata;
 
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.PermissionSet;
+import io.github.excalibase.security.TokenVerifier;
 
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -21,6 +22,11 @@ public interface MetadataSource extends PermissionProvider {
     /** The version being served, empty until the first good load. */
     Optional<Snapshot> current();
 
+    /** The verifier the served document's JWT section describes; empty when there is no document or no section. */
+    default Optional<TokenVerifier> tokenVerifier() {
+        return current().map(Snapshot::verifier);
+    }
+
     /** Whether a save through this source can succeed. */
     boolean writable();
 
@@ -31,8 +37,10 @@ public interface MetadataSource extends PermissionProvider {
      *
      * @param version       the local counter, up by one on every accepted swap; it feeds the engine's change detection
      * @param sourceVersion what the source calls this version (a content hash for the file source)
+     * @param verifier      built from the document's {@code jwt:} section; null when it has none
      */
-    record Snapshot(PermissionSet permissions, long version, String sourceVersion, Instant loadedAt) {
+    record Snapshot(PermissionSet permissions, long version, String sourceVersion, Instant loadedAt,
+                    TokenVerifier verifier) {
     }
 
     /**

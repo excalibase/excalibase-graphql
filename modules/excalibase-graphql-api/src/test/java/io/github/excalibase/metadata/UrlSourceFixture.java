@@ -117,7 +117,7 @@ abstract class UrlSourceFixture {
 
     ReloadingMetadataSource open(UrlSettings settings) {
         ReloadingMetadataSource source = UrlMetadataSource.create(settings, ReservedSchemas.fromConfig(""), PROJECT,
-                new SimpleMeterRegistry());
+                new SimpleMeterRegistry(), false);
         opened.add(source);
         source.start();
         return source;
