@@ -8,6 +8,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.Optional;
 import java.util.Properties;
 
 /**
@@ -34,7 +35,19 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
     private final long queryTimeoutMillis;
     private volatile boolean migrated;
 
+    /** Opens the connection a read uses; a test supplies one it can inspect afterwards. */
+    @FunctionalInterface
+    interface Connector {
+        Connection open() throws SQLException;
+    }
+
+    private final Connector connector;
+
     DbDocumentLoader(DbSettings settings) {
+        this(settings, null);
+    }
+
+    DbDocumentLoader(DbSettings settings, Connector connector) {
         if (settings.url() == null || !settings.url().startsWith(POSTGRES_URL)) {
             throw new IllegalStateException("metadata.source=db supports Postgres only: the metadata database URL "
                     + "must start with " + POSTGRES_URL);
@@ -46,9 +59,11 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
         put("user", settings.username());
         put("password", settings.password());
         credentials.setProperty("connectTimeout", Long.toString(Math.max(1, settings.connectTimeout().toSeconds())));
-        credentials.setProperty("socketTimeout",
-                Long.toString(settings.queryTimeout().toSeconds() + SOCKET_GRACE_SECONDS));
+        String giveUpAfter = Long.toString(settings.queryTimeout().toSeconds() + SOCKET_GRACE_SECONDS);
+        credentials.setProperty("socketTimeout", giveUpAfter);
+        credentials.setProperty("loginTimeout", giveUpAfter);
         credentials.setProperty("ApplicationName", "excalibase-metadata");
+        this.connector = connector != null ? connector : () -> DriverManager.getConnection(url, credentials);
     }
 
     private void put(String key, String value) {
@@ -57,15 +72,26 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
         }
     }
 
+    /**
+     * One transaction: the timeouts are {@code SET LOCAL}, so they end with it. A plain {@code SET} would be a
+     * transaction of its own, and behind a transaction-mode pooler the read could land on another backend, with no
+     * bound, while the timeout stuck to a backend other clients reuse. The table is created in the same
+     * transaction as the read, and an empty table is reported only after the commit, so the creation is kept.
+     */
     @Override
     public ReloadingMetadataSource.Raw load() throws IOException {
-        try (Connection connection = DriverManager.getConnection(url, credentials)) {
+        try (Connection connection = connector.open()) {
+            connection.setAutoCommit(false);
+            boolean creating = migrate && !migrated;
             bound(connection);
-            if (migrate && !migrated) {
+            if (creating) {
                 createTable(connection);
-                migrated = true;
             }
-            return newest(connection);
+            Optional<ReloadingMetadataSource.Raw> newest = newest(connection);
+            connection.commit();
+            migrated = migrated || creating;
+            return newest.orElseThrow(() -> new IOException("no document has been saved yet: " + TABLE
+                    + " has no row"));
         } catch (SQLException e) {
             throw new IOException(describe(e));
         }
@@ -73,13 +99,12 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
 
     /**
      * The server cancels a statement, or a wait for a lock, after the timeout. The socket timeout alone would only
-     * make the client give up, leaving the backend waiting. Set per session, not as a startup option, which
-     * connection poolers refuse.
+     * make the client give up, leaving the backend waiting.
      */
     private void bound(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
-            statement.execute("SET statement_timeout = " + queryTimeoutMillis);
-            statement.execute("SET lock_timeout = " + queryTimeoutMillis);
+            statement.execute("SET LOCAL statement_timeout = " + queryTimeoutMillis);
+            statement.execute("SET LOCAL lock_timeout = " + queryTimeoutMillis);
         }
     }
 
@@ -92,20 +117,21 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
         }
     }
 
-    private static ReloadingMetadataSource.Raw newest(Connection connection) throws SQLException, IOException {
+    private static Optional<ReloadingMetadataSource.Raw> newest(Connection connection)
+            throws SQLException, IOException {
         try (PreparedStatement statement = connection.prepareStatement(NEWEST)) {
             statement.setInt(1, MetadataDocumentParser.MAX_BYTES);
             try (ResultSet rows = statement.executeQuery()) {
                 if (!rows.next()) {
-                    throw new IOException("no document has been saved yet: " + TABLE + " has no row");
+                    return Optional.empty();
                 }
                 String text = rows.getString(2);
                 if (text == null) {
                     throw new IOException("the document is larger than " + MetadataDocumentParser.MAX_BYTES
                             + " bytes");
                 }
-                return new ReloadingMetadataSource.Raw(text,
-                        FileMetadataSource.sha256(text.getBytes(StandardCharsets.UTF_8)));
+                return Optional.of(new ReloadingMetadataSource.Raw(text,
+                        FileMetadataSource.sha256(text.getBytes(StandardCharsets.UTF_8))));
             }
         }
     }
