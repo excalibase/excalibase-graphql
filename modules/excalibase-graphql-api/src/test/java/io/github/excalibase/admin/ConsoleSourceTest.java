@@ -50,8 +50,8 @@ class ConsoleSourceTest {
         }
         String dom = read("dom.js");
         assertThat(dom).contains("createElement(tag)", "createTextNode(String(child))")
-                .doesNotContain("textContent");
-        assertThat(dom).doesNotContainPattern("\\]\\s*=[^=]").doesNotContainPattern("\\.[A-Za-z_]\\w*\\s*=[^=]")
+                .doesNotContain("textContent")
+                .doesNotContainPattern("\\]\\s*=[^=]").doesNotContainPattern("\\.[A-Za-z_]\\w*\\s*=[^=]")
                 .doesNotContain("Object.assign", "defineProperty", "setAttributeNS", "setAttributeNode");
         assertThat(count(dom, "setAttribute(")).isEqualTo(1);
         assertThat(count(dom, "document.")).isEqualTo(3);
