@@ -23,6 +23,7 @@ class S3ConditionalProbeTest {
     private ReloadingMetadataSource source;
     private final List<String> requests = new CopyOnWriteArrayList<>();
     private volatile int failingPut;
+    private volatile boolean honoursIfNoneMatch = true;
 
     @AfterEach
     void stop() {
@@ -48,7 +49,8 @@ class S3ConditionalProbeTest {
     private void answer(HttpExchange exchange, boolean honoursIfMatch, boolean refusesAllPuts) throws IOException {
         String method = exchange.getRequestMethod();
         requests.add(method + " " + exchange.getRequestURI().getPath()
-                + (exchange.getRequestHeaders().containsKey("If-Match") ? " if-match" : ""));
+                + (exchange.getRequestHeaders().containsKey("If-Match") ? " if-match" : "")
+                + (exchange.getRequestHeaders().containsKey("If-None-Match") ? " if-none-match" : ""));
         exchange.getRequestBody().readAllBytes();
         if ("GET".equals(method) && exchange.getRequestURI().getPath().endsWith("/permissions.yaml")) {
             byte[] body = GOOD_YAML.getBytes(StandardCharsets.UTF_8);
@@ -58,6 +60,9 @@ class S3ConditionalProbeTest {
         } else if ("PUT".equals(method) && (refusesAllPuts || failingPut != 0)) {
             exchange.sendResponseHeaders(refusesAllPuts ? 403 : failingPut, -1);
         } else if ("PUT".equals(method) && exchange.getRequestHeaders().containsKey("If-Match") && honoursIfMatch) {
+            exchange.sendResponseHeaders(412, -1);
+        } else if ("PUT".equals(method) && exchange.getRequestHeaders().containsKey("If-None-Match")
+                && honoursIfNoneMatch) {
             exchange.sendResponseHeaders(412, -1);
         } else if ("PUT".equals(method)) {
             exchange.sendResponseHeaders(200, -1);
@@ -70,6 +75,20 @@ class S3ConditionalProbeTest {
     @Test
     void aStoreThatIgnoresIfMatch_isNotWritable_andASaveWritesNothing() throws IOException {
         ReloadingMetadataSource served = open(false, false);
+        served.refresh();
+
+        assertThat(served.writable()).isFalse();
+        requests.clear();
+        assertThat(served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion()))
+                .isInstanceOf(SaveOutcome.ReadOnly.class);
+        assertThat(requests).noneMatch(request -> request.startsWith("PUT"));
+    }
+
+    @Test
+    void aStoreThatHonoursIfMatchButIgnoresIfNoneMatch_isNotWritable_becauseAFirstSaveCouldOverwrite()
+            throws IOException {
+        honoursIfNoneMatch = false;
+        ReloadingMetadataSource served = open(true, false);
         served.refresh();
 
         assertThat(served.writable()).isFalse();

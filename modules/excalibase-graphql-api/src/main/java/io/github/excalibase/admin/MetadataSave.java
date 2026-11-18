@@ -43,17 +43,14 @@ final class MetadataSave {
         return answer(metadata.save(new String(document, StandardCharsets.UTF_8), version(ifMatch)));
     }
 
-    /** An ETag as a client quotes it: {@code "abc"} or {@code W/"abc"} name the version {@code abc}. */
+    /** An ETag as a client quotes it: {@code "abc"} names the version {@code abc}. A weak tag names none (RFC 9110). */
     static String version(String ifMatch) {
         String value = ifMatch.strip();
-        if (value.startsWith("W/")) {
-            value = value.substring(2);
-        }
         return value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")
                 ? value.substring(1, value.length() - 1) : value;
     }
 
-    private static HttpResponse<Map<String, Object>> answer(SaveOutcome outcome) {
+    static HttpResponse<Map<String, Object>> answer(SaveOutcome outcome) {
         return switch (outcome) {
             case SaveOutcome.Saved(long version, String sourceVersion) -> {
                 Map<String, Object> body = new LinkedHashMap<>();

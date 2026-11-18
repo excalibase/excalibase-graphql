@@ -192,4 +192,18 @@ class FileMetadataSaveTest {
         assertThat(Files.readString(path)).isEqualTo(GOOD_YAML);
         assertThat(strayFiles()).isEmpty();
     }
+
+    @Test
+    void aSecretReferenceThatDoesNotResolve_isADocumentError_andNeverWritten() throws IOException {
+        Path path = file();
+        ReloadingMetadataSource served = open(path);
+        String unresolved = GOOD_YAML.replace("tables:", "jwt:\n  secret: env:EXCALIBASE_SURELY_NOT_SET\n"
+                + "  audience: a\ntables:");
+
+        SaveOutcome outcome = served.save(unresolved, served.current().orElseThrow().sourceVersion());
+
+        assertThat(outcome).isInstanceOfSatisfying(SaveOutcome.Invalid.class, invalid ->
+                assertThat(invalid.errors().getFirst()).startsWith("jwt:"));
+        assertThat(Files.readString(path)).isEqualTo(GOOD_YAML);
+    }
 }

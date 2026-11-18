@@ -9,16 +9,17 @@ import java.sql.SQLException;
 
 /**
  * Saves the {@code db} source as a compare-and-set in one bounded transaction (the same {@code SET LOCAL} timeouts
- * as a read). The newest row is locked and its hash compared with the version the writer started from; the new
- * document is then added as row {@code version + 1}. The primary key is the last guard: of two writers that saw the
- * same newest row, one commits and the other gets a duplicate key, which is a conflict. Rows are added, not
- * updated, so older documents stay as history. No column is added to the table.
+ * as a read). The newest row's hash is compared with the version the writer started from; the new document is then
+ * added as row {@code version + 1}. The primary key is the guard: of two writers that saw the same newest row, one
+ * commits and the other waits on the duplicate key and gets it, which is a conflict. No row is locked, so a user
+ * with SELECT and INSERT on the table can save; UPDATE is not needed. Rows are added, not updated, so older
+ * documents stay as history. No column is added to the table.
  */
 final class DbDocumentWriter implements MetadataWriter {
 
     private static final String UNIQUE_VIOLATION = "23505";
     private static final String NEWEST = "SELECT version, document FROM " + DbDocumentLoader.TABLE
-            + " ORDER BY version DESC LIMIT 1 FOR UPDATE";
+            + " ORDER BY version DESC LIMIT 1";
     private static final String ADD = "INSERT INTO " + DbDocumentLoader.TABLE + " (version, document) VALUES (?, ?)";
 
     private final DbDocumentLoader loader;

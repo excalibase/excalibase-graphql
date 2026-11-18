@@ -154,7 +154,7 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
         return switch (state) {
             case "42P01", "3F000" -> TABLE + " does not exist: create it, or set metadata.db.migrate=true";
             case "57014", "55P03" -> "the metadata database did not answer in time (the read was cancelled)";
-            case "42501" -> "the metadata database user may not read " + TABLE;
+            case "42501" -> "the metadata database user lacks a privilege on " + TABLE + " (reading needs SELECT, saving needs INSERT)";
             default -> otherFailure(state);
         };
     }

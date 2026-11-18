@@ -71,4 +71,12 @@ class AdminMetadataWriteUrlIntegrationTest extends EngineIntegrationTest {
         assertThat(answer.status()).isEqualTo(405);
         assertThat(answer.<String>jsonPath("$.error")).isEqualTo("source_read_only");
     }
+
+    @Test
+    void aReadOnlySourceAnswers405_beforeItAsksForIfMatch() {
+        HttpAnswer answer = admin.send("PUT", "/_admin/v1/metadata", DOCUMENT, HEADER, SECRET, "Content-Type",
+                "text/plain");
+
+        assertThat(answer.status()).isEqualTo(405);
+    }
 }

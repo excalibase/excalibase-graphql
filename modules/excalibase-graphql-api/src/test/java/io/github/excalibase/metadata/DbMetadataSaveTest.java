@@ -11,6 +11,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
+import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -18,9 +23,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static io.github.excalibase.metadata.MetadataFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /** Saving to the {@code db} source against a real Postgres: a compare-and-set inside the bounded transaction. */
 class DbMetadataSaveTest {
@@ -55,8 +62,12 @@ class DbMetadataSaveTest {
     }
 
     private ReloadingMetadataSource open() {
-        DbSettings settings = new DbSettings(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword(),
-                true, Duration.ofHours(1), Duration.ofSeconds(3));
+        return openAs(postgres.getUsername(), postgres.getPassword(), true);
+    }
+
+    private ReloadingMetadataSource openAs(String user, String password, boolean migrate) {
+        DbSettings settings = new DbSettings(postgres.getJdbcUrl(), user, password, migrate, Duration.ofHours(1),
+                Duration.ofSeconds(3));
         source = DbMetadataSource.create(settings, ReservedSchemas.fromConfig(""), PROJECT,
                 new SimpleMeterRegistry(), false);
         source.start();
@@ -178,5 +189,62 @@ class DbMetadataSaveTest {
         assertThat(served.save(GOOD_YAML, MetadataWriter.NO_DOCUMENT)).isInstanceOf(SaveOutcome.Saved.class);
         assertThat(served.permissionsFor(PROJECT).tables()).hasSize(1);
         assertThat(served.save(GOOD_YAML_TWO_RULES, MetadataWriter.NO_DOCUMENT)).isInstanceOf(SaveOutcome.Conflict.class);
+    }
+
+    @Test
+    void aRowCommittedWhileTheWriterWaits_isAConflict_notAFailedWrite() throws Exception {
+        ReloadingMetadataSource served = openWithDocument();
+        String expected = served.current().orElseThrow().sourceVersion();
+        String raced = GOOD_YAML + "# raced\n";
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try (Connection other = DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(),
+                postgres.getPassword())) {
+            other.setAutoCommit(false);
+            insertUncommitted(other, raced);
+            Future<SaveOutcome> save = pool.submit(() -> served.save(GOOD_YAML_TWO_RULES, expected));
+            await().atMost(Duration.ofSeconds(10)).until(() -> sql.queryForObject(
+                    "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'excalibase-metadata' "
+                            + "AND wait_event_type = 'Lock'", Integer.class) > 0);
+
+            other.commit();
+
+            assertThat(save.get(10, TimeUnit.SECONDS)).isInstanceOfSatisfying(SaveOutcome.Conflict.class,
+                    conflict -> assertThat(conflict.currentVersion())
+                            .isEqualTo(FileMetadataSource.sha256(raced.getBytes(StandardCharsets.UTF_8))));
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(sql.queryForObject("SELECT count(*) FROM " + TABLE, Integer.class)).isEqualTo(2);
+    }
+
+    private static void insertUncommitted(Connection connection, String document) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("INSERT INTO " + TABLE + " (version, document) VALUES (2, '"
+                    + document.replace("'", "''") + "')");
+        }
+    }
+
+    @Test
+    void aUserThatCanOnlySelectAndInsert_canSave() {
+        openWithDocument();
+        source.close();
+        sql.execute("DROP ROLE IF EXISTS meta_writer");
+        sql.execute("CREATE ROLE meta_writer LOGIN PASSWORD 'meta-writer-password'");
+        sql.execute("GRANT USAGE ON SCHEMA excalibase_meta TO meta_writer");
+        sql.execute("GRANT SELECT, INSERT ON " + TABLE + " TO meta_writer");
+        ReloadingMetadataSource restricted = openAs("meta_writer", "meta-writer-password", false);
+        restricted.refresh();
+        restricted.refresh();
+
+        SaveOutcome outcome = restricted.save(GOOD_YAML_TWO_RULES, restricted.current().orElseThrow().sourceVersion());
+
+        assertThat(outcome).isInstanceOf(SaveOutcome.Saved.class);
+        assertThat(sql.queryForObject("SELECT count(*) FROM " + TABLE, Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void aUserWithoutTheRightToWrite_getsAMessageAboutThePrivilege_notAboutReading() {
+        assertThat(DbDocumentLoader.describe(new SQLException("denied", "42501")))
+                .doesNotContain("may not read").contains("privilege");
     }
 }

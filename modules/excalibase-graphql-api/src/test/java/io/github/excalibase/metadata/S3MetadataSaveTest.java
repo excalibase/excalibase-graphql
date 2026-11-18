@@ -169,4 +169,29 @@ class S3MetadataSaveTest {
         assertThat(served.permissionsFor(PROJECT).tables()).hasSize(1);
         assertThat(served.save(GOOD_YAML_TWO_RULES, MetadataWriter.NO_DOCUMENT)).isInstanceOf(SaveOutcome.Conflict.class);
     }
+
+    @Test
+    void twoFirstDocumentWriters_exactlyOneWins() throws Exception {
+        ReloadingMetadataSource served = open(MinioFixture.SECRET_KEY);
+        assertThat(served.current()).isEmpty();
+        CountDownLatch go = new CountDownLatch(1);
+        ExecutorService pool = Executors.newFixedThreadPool(4);
+        try {
+            List<Future<SaveOutcome>> running = List.of(
+                    pool.submit(contend(go, served, GOOD_YAML, MetadataWriter.NO_DOCUMENT)),
+                    pool.submit(contend(go, served, GOOD_YAML_TWO_RULES, MetadataWriter.NO_DOCUMENT)),
+                    pool.submit(contend(go, served, GOOD_YAML + "# c\n", MetadataWriter.NO_DOCUMENT)),
+                    pool.submit(contend(go, served, GOOD_YAML + "# d\n", MetadataWriter.NO_DOCUMENT)));
+            go.countDown();
+            int saved = 0;
+            for (Future<SaveOutcome> run : running) {
+                SaveOutcome outcome = run.get();
+                saved += outcome instanceof SaveOutcome.Saved ? 1 : 0;
+                assertThat(outcome).isNotInstanceOf(SaveOutcome.Failed.class);
+            }
+            assertThat(saved).isEqualTo(1);
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 }

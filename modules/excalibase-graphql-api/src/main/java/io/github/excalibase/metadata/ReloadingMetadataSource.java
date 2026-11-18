@@ -290,6 +290,10 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
             parser.parse(text, counter.get() + 1);
         } catch (MetadataDocumentException e) {
             return new SaveOutcome.Invalid(List.of(e.getMessage()));
+        } catch (IllegalStateException e) {
+            log.warn("metadata_save_keys_unavailable source={} error={}", name, e.getMessage());
+            return new SaveOutcome.Invalid(List.of("jwt: the signing keys or the secret cannot be loaded; check the "
+                    + "secret reference, or the JWKS and discovery URLs"));
         } catch (RuntimeException e) {
             log.error("metadata_save_not_validated source={}", name, e);
             return new SaveOutcome.Failed("validation_failed");
