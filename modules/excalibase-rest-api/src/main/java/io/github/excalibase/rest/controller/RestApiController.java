@@ -603,12 +603,7 @@ public class RestApiController {
     }
 
     private String resolveSchema(String header, Principal principal) {
-        if (header == null || header.isBlank()) return schemaProvider.resolveDefaultSchema(principal);
-        String trimmed = header.trim();
-        if (!trimmed.matches(IDENT_REGEX)) {
-            throw new IllegalArgumentException("Invalid Content-Profile");
-        }
-        return schemaProvider.isReserved(trimmed) ? null : trimmed;
+        return RequestedSchema.resolve(schemaProvider, header, principal);
     }
 
     private boolean preferContains(String prefer, String token) {
