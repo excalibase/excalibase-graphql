@@ -2,6 +2,7 @@ package io.github.excalibase.http;
 
 import io.github.excalibase.admin.AdminGuard;
 import io.github.excalibase.admin.AdminSettings;
+import io.github.excalibase.admin.ConsoleAssets;
 import io.github.excalibase.config.ws.ClientAddress;
 import io.github.excalibase.security.KnownProjectFilter;
 import io.micronaut.core.annotation.Nullable;
@@ -18,8 +19,10 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 /**
- * Keeps the admin API on the admin port and nothing else on it. {@code /_admin/**} is a 404 on every other port, and
- * with the console off on all of them; the admin port serves {@code /_admin/**} only, to a caller holding the secret.
+ * Keeps the admin API and the console on the admin port and nothing else on it. {@code /_admin/**} is a 404 on every
+ * other port, and with the console off on all of them; the console's paths exist on the admin port only, so on
+ * any other port they are left to the project filters like every unknown path, and a project may be named console.
+ * The admin port serves {@code /_admin/**} to a caller holding the secret, and the secret-free {@code /console/**} page and assets.
  * A request let through is marked, so the project, token and CORS filters leave it alone: it names no project.
  * The address that counts failures is the TCP peer, never a forwarded header, so a client cannot pick its own.
  */
@@ -30,6 +33,7 @@ public class AdminPortFilter implements Ordered {
     public static final int ORDER = -945;
 
     private static final String ADMIN = "/_admin";
+    private static final String CONSOLE = "/console";
     private static final String UNAUTHORIZED = "{\"error\":\"unauthorized\"}";
     private static final String TOO_MANY = "{\"error\":\"too_many_failed_attempts\"}";
 
@@ -53,10 +57,22 @@ public class AdminPortFilter implements Ordered {
         if (!onAdminPort(request)) {
             return isAdmin(target) ? notFound(request) : null;
         }
+        if (isConsole(target)) {
+            return page(request, target);
+        }
         if (!isAdmin(target)) {
             return notFound(request);
         }
         return authorize(request);
+    }
+
+    /** The page and its listed files are marked and passed on; any other console path is a 404, never a project's. */
+    private static HttpResponse<Object> page(HttpRequest<?> request, String target) {
+        if (!ConsoleAssets.isServed(target)) {
+            return notFound(request);
+        }
+        request.getAttributes().put(KnownProjectFilter.ADMIN_ATTR, Boolean.TRUE);
+        return null;
     }
 
     private HttpResponse<Object> authorize(HttpRequest<?> request) {
@@ -90,6 +106,11 @@ public class AdminPortFilter implements Ordered {
 
     private static boolean isAdmin(String path) {
         return path != null && (path.equals(ADMIN) || path.startsWith(ADMIN + "/"));
+    }
+
+    /** The console's page and assets hold no secret and no data, so they are served without one. */
+    private static boolean isConsole(String path) {
+        return path != null && (path.equals(CONSOLE) || path.startsWith(CONSOLE + "/"));
     }
 
     private static String peer(HttpRequest<?> request) {

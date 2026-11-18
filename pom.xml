@@ -102,6 +102,8 @@
             **/config/**,
             **/model/**
         </sonar.exclusions>
+        <!-- The console's browser scripts are not measured by JaCoCo -->
+        <sonar.coverage.exclusions>**/resources/console/**</sonar.coverage.exclusions>
     </properties>
 
     <dependencyManagement>

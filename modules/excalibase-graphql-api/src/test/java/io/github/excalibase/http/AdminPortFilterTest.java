@@ -93,4 +93,30 @@ class AdminPortFilterTest {
         assertThat(new AdminPortFilter(on, guard).filter(request("/_admin/v1/metadata", ADMIN, "nope")).code()).isEqualTo(401);
         assertThat(new AdminPortFilter(on, guard).filter(request("/_admin/v1/metadata", ADMIN, null)).code()).isEqualTo(401);
     }
+
+    @Test
+    @DisplayName("a console path off the admin port is left to the other filters, so a project named console works")
+    void consolePathOffTheAdminPortPasses() {
+        for (int port : new int[] {10000, 8081}) {
+            assertThat(new AdminPortFilter(on, guard).filter(request("/console/graphql", port, null))).isNull();
+        }
+    }
+
+    @Test
+    @DisplayName("on the admin port only the page and the listed assets are marked; any other console path is a 404")
+    void onlyListedAssetsAreMarked() {
+        for (String path : new String[] {"/console", "/console/index.html", "/console/app.js", "/console/api.js",
+                "/console/dom.js", "/console/views.js", "/console/style.css"}) {
+            HttpRequest<?> asset = request(path, ADMIN, null);
+
+            assertThat(new AdminPortFilter(on, guard).filter(asset)).as(path).isNull();
+            assertThat(asset.getAttributes().contains(KnownProjectFilter.ADMIN_ATTR)).as(path).isTrue();
+        }
+        for (String path : new String[] {"/console/graphql", "/console/nothing", "/console/app.js/x", "/console/"}) {
+            HttpRequest<?> other = request(path, ADMIN, null);
+
+            assertThat(new AdminPortFilter(on, guard).filter(other).code()).as(path).isEqualTo(404);
+            assertThat(other.getAttributes().contains(KnownProjectFilter.ADMIN_ATTR)).as(path).isFalse();
+        }
+    }
 }
