@@ -67,7 +67,7 @@ class AdminSettingsTest {
     @Test
     void onWithAShortSecretRefusesToStartWithoutEchoingIt() {
         String shortSecret = "only-thirty-one-characters-long";
-        assertThat(shortSecret).hasSize(AdminSecret.MIN_LENGTH - 1);
+        assertThat(shortSecret).hasSize(AdminGuard.Secret.MIN_LENGTH - 1);
 
         assertThat(refusal(on(shortSecret, ""))).contains("at least 32").doesNotContain(shortSecret);
     }

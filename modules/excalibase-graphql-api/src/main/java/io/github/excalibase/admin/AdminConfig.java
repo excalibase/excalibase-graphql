@@ -69,7 +69,7 @@ public class AdminConfig {
                           @Value("${excalibase.admin.max-failures:10}") int maxFailures,
                           @Value("${excalibase.admin.failure-window-seconds:60}") long windowSeconds) {
         return new AdminGuard(settings.secret(),
-                new FailedAttempts(maxFailures, Duration.ofSeconds(windowSeconds), MAX_TRACKED_ADDRESSES, System::nanoTime));
+                new AdminGuard.FailedAttempts(maxFailures, Duration.ofSeconds(windowSeconds), MAX_TRACKED_ADDRESSES, System::nanoTime));
     }
 
     @Singleton

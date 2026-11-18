@@ -9,7 +9,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class AdminSchemaViewTest {
+class AdminControllerSchemaViewTest {
 
     private static SchemaInfo reflected() {
         SchemaInfo info = new SchemaInfo();
@@ -50,7 +50,7 @@ class AdminSchemaViewTest {
 
     @Test
     void listsTheTablesWithTheirColumnsAndKeys() {
-        Map<String, Object> view = AdminSchemaView.of(reflected(), ReservedSchemas.fromConfig(null));
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig(null));
 
         Map<String, Object> orders = list(view, "tables").stream()
                 .filter(table -> "orders".equals(table.get("name"))).findFirst().orElseThrow();
@@ -62,7 +62,7 @@ class AdminSchemaViewTest {
 
     @Test
     void marksViews() {
-        Map<String, Object> view = AdminSchemaView.of(reflected(), ReservedSchemas.fromConfig(null));
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig(null));
 
         assertThat(list(view, "tables")).anySatisfy(table -> assertThat(table)
                 .containsEntry("name", "t").containsEntry("kind", "view"));
@@ -70,7 +70,7 @@ class AdminSchemaViewTest {
 
     @Test
     void neverListsATableOfAReservedSchemaEvenIfReflectionHandedItOver() {
-        Map<String, Object> view = AdminSchemaView.of(reflected(), ReservedSchemas.fromConfig(null));
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig(null));
 
         assertThat(list(view, "tables")).extracting(table -> table.get("schema"))
                 .doesNotContain("excalibase_meta", "auth", "excalibase");
@@ -79,21 +79,21 @@ class AdminSchemaViewTest {
 
     @Test
     void neverListsAFunctionOfAReservedSchemaOrOneReturningOrTakingARowOfAReservedTable() {
-        Map<String, Object> view = AdminSchemaView.of(reflected(), ReservedSchemas.fromConfig(null));
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig(null));
 
         assertThat(list(view, "functions")).extracting(function -> function.get("name")).containsExactly("plain_items");
     }
 
     @Test
     void aSchemaTheDeploymentReservesIsHiddenToo() {
-        Map<String, Object> view = AdminSchemaView.of(reflected(), ReservedSchemas.fromConfig("internal"));
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig("internal"));
 
         assertThat(list(view, "tables")).extracting(table -> table.get("schema")).doesNotContain("internal");
     }
 
     @Test
     void anEmptySchemaIsAnEmptyView() {
-        Map<String, Object> view = AdminSchemaView.of(new SchemaInfo(), ReservedSchemas.fromConfig(null));
+        Map<String, Object> view = AdminController.schemaView(new SchemaInfo(), ReservedSchemas.fromConfig(null));
 
         assertThat(list(view, "tables")).isEmpty();
         assertThat(list(view, "functions")).isEmpty();

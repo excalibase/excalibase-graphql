@@ -55,7 +55,7 @@ public class OverloadConfig {
                 @Value("${excalibase.console.enabled:false}") String console,
                 @Value("${excalibase.admin.port:10001}") int adminPort) {
             this.customizer = new ConnectionBoundCustomizer(gate, bound, firstRequestMillis,
-                    internalPorts(managementPort, "true".equalsIgnoreCase(console), adminPort));
+                    "true".equalsIgnoreCase(console) ? Set.of(managementPort, adminPort) : Set.of(managementPort));
         }
 
         @Override
@@ -63,11 +63,6 @@ public class OverloadConfig {
             event.getBean().register(customizer);
             return event.getBean();
         }
-    }
-
-    /** The ports the bound leaves alone: the management port, and the admin port while the console is on. */
-    static Set<Integer> internalPorts(int managementPort, boolean consoleEnabled, int adminPort) {
-        return consoleEnabled ? Set.of(managementPort, adminPort) : Set.of(managementPort);
     }
 
     @Singleton

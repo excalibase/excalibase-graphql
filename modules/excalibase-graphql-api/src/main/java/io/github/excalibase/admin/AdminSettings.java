@@ -11,7 +11,7 @@ import java.nio.file.Path;
  *
  * @param secret null while the console is off
  */
-public record AdminSettings(boolean enabled, int port, AdminSecret secret) {
+public record AdminSettings(boolean enabled, int port, AdminGuard.Secret secret) {
 
     private static final String SECRET_VARIABLE = "EXCALIBASE_ADMIN_SECRET";
     private static final String SECRET_FILE_VARIABLE = "EXCALIBASE_ADMIN_SECRET_FILE";
@@ -60,7 +60,7 @@ public record AdminSettings(boolean enabled, int port, AdminSecret secret) {
         }
     }
 
-    private static AdminSecret secretOf(Raw raw) {
+    private static AdminGuard.Secret secretOf(Raw raw) {
         boolean inline = raw.secret() != null && !raw.secret().isBlank();
         boolean file = raw.secretFile() != null && !raw.secretFile().isBlank();
         if (inline && file) {
@@ -72,7 +72,7 @@ public record AdminSettings(boolean enabled, int port, AdminSecret secret) {
         }
         String name = inline ? SECRET_VARIABLE : SECRET_FILE_VARIABLE;
         try {
-            return AdminSecret.of(inline ? raw.secret() : read(raw.secretFile()));
+            return AdminGuard.Secret.of(inline ? raw.secret() : read(raw.secretFile()));
         } catch (IllegalArgumentException e) {
             throw new IllegalStateException(name + " " + e.getMessage());
         }
