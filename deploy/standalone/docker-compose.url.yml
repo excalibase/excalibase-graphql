@@ -39,9 +39,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: change-me
       APP_DATABASE_TYPE: postgres
       APP_PROJECT_ID: my-app
-      # Tokens are verified with this shared secret (HS256). Use a long random value.
+      # The metadata document's `jwt:` section reads this shared secret (HS256). Use a long random value.
       APP_SECURITY_JWT_ENABLED: "true"
-      APP_SECURITY_AUTH_HMAC_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      JWT_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
       # The permission source: this URL. Plain http is only accepted for localhost and *.svc / *.cluster.local
       # names; this compose service name is none of those, so it is accepted explicitly. Use https in real life.
       METADATA_SOURCE: url

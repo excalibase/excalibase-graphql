@@ -27,6 +27,7 @@ function engine({ name, port, adminPort, managementPort, source }) {
       EXCALIBASE_CONSOLE_ENABLED: "true",
       EXCALIBASE_ADMIN_SECRET: SECRET,
       EXCALIBASE_ADMIN_PORT: String(adminPort),
+      JWT_SECRET: "e2e-token-secret-0123456789-abcdefghijklmnop",
       E2E_JWT_SECRET: "e2e-token-secret-0123456789-abcdefghijklmnop",
       ...source
     }

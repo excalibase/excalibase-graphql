@@ -4,6 +4,9 @@ The engine can run with only a Postgres database: no control plane, no Vault, no
 from a **metadata document** that you keep where you like. This folder holds a guide per way to keep it.
 Today there are four: a file, an HTTP(S) URL, a database table, and an object in S3 or an S3-compatible store. More are added as they ship.
 
+Step-by-step guides, with the admin console, the security checklist and the known limits, are in the docs:
+[Docker and compose](../../docs/deploy/standalone-docker.md) and [Kubernetes](../../docs/deploy/standalone-kubernetes.md).
+
 ## The file source
 
 > The compose and Kubernetes examples need an engine image that includes EXC-733 phase 1 (the
@@ -72,8 +75,8 @@ presigned URL). The engine fetches it and polls. It is read-only: change the doc
 The document is a row in a table, `excalibase_meta.metadata_documents(version, document, created_at)`. The
 engine reads the row with the highest `version` and polls it. It lives in the served database, or in another
 one when `METADATA_DATABASE_URL` is set (then the engine uses only that connection for it, with its own
-`METADATA_DATABASE_USERNAME` and `METADATA_DATABASE_PASSWORD`). Postgres only. It is read-only for now: save a
-new document with an `INSERT` of the next version.
+`METADATA_DATABASE_USERNAME` and `METADATA_DATABASE_PASSWORD`). Postgres only. The console saves by inserting the next version; by hand,
+do the same with an `INSERT` of the next version.
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS excalibase_meta;
@@ -110,7 +113,7 @@ INSERT INTO excalibase_meta.metadata_documents (version, document) VALUES (1, $d
 ## The s3 source
 
 The document is one object in AWS S3 or an S3-compatible store (MinIO, Cloudflare R2, and other stores that speak
-the S3 API). The engine reads it with a signed GET and polls. It is read-only for now: change the object, for
+the S3 API). The engine reads it with a signed GET and polls. The console can save to it when the store enforces `If-Match` (the engine checks this at start with a scratch object, so the key also needs `s3:PutObject` and `s3:DeleteObject`). You can also change the object yourself, for
 example `aws s3 cp permissions.yaml s3://my-bucket/permissions.yaml`, or `mc cp` for MinIO.
 
 - **How it talks to S3.** One SigV4-signed `GET` of one object over the JDK's HTTP client. There is no AWS SDK, so

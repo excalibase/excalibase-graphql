@@ -31,9 +31,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: change-me
       APP_DATABASE_TYPE: postgres
       APP_PROJECT_ID: my-app
-      # Tokens are verified with this shared secret (HS256). Use a long random value.
+      # The metadata document's `jwt:` section reads this shared secret (HS256). Use a long random value.
       APP_SECURITY_JWT_ENABLED: "true"
-      APP_SECURITY_AUTH_HMAC_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      JWT_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
       # The permission source: this file. Mount the folder, not the single file, so edits made with an
       # editor that replaces the file are seen too.
       METADATA_SOURCE: file
