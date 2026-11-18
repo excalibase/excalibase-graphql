@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import io.github.excalibase.compiler.ParsedQueries;
+import io.github.excalibase.config.datasource.DataSourceConfig;
 import io.github.excalibase.config.datasource.DynamicDataSourceManager;
 import io.github.excalibase.config.ws.WsRuntime;
 import io.github.excalibase.config.datasource.TenantDataSourceFactory;
@@ -16,6 +17,7 @@ import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionCachePolicy;
 import io.github.excalibase.permissions.PermissionVersions;
+import io.github.excalibase.metadata.DbSettings;
 import io.github.excalibase.metadata.MetadataHealth;
 import io.github.excalibase.metadata.MetadataSettings;
 import io.github.excalibase.metadata.MetadataSource;
@@ -195,6 +197,13 @@ public class AppConfig {
             @Value("${metadata.url.poll-interval-ms:5000}") long urlPollIntervalMs,
             @Value("${metadata.url.connect-timeout-ms:3000}") long urlConnectTimeoutMs,
             @Value("${metadata.url.read-timeout-ms:10000}") long urlReadTimeoutMs,
+            @Value("${metadata.database.url:}") String dbUrl,
+            @Value("${metadata.database.username:}") String dbUsername,
+            @Value("${metadata.database.password:}") String dbPassword,
+            @Value("${metadata.db.migrate:false}") boolean dbMigrate,
+            @Value("${metadata.db.poll-interval-ms:5000}") long dbPollIntervalMs,
+            @Value("${metadata.db.connect-timeout-ms:3000}") long dbConnectTimeoutMs,
+            DataSourceConfig.DataSourceSettings servedDatabase,
             @Value("${app.project-id:}") String projectId,
             @Value("${app.reserved-schemas:}") String reservedSchemas,
             @Value("${app.security.auth.jwks-url:}") String authJwksUrl,
@@ -210,11 +219,23 @@ public class AppConfig {
                 Duration.ofMillis(urlReadTimeoutMs));
         MetadataSettings settings = new MetadataSettings(metadataSource, policyUrl, projectId, reservedSchemas,
                 new MetadataSettings.FileSettings(metadataFilePath, pollIntervalMs), url,
+                metadataDatabase(dbUrl, dbUsername, dbPassword, dbMigrate, dbPollIntervalMs, dbConnectTimeoutMs,
+                        servedDatabase),
                 !authJwksUrl.isBlank() || !authHmacSecret.isBlank());
         return MetadataSources.create(settings, meters)
                 .<PermissionProvider>map(source -> source)
                 .orElseGet(() -> permissionProvider(policyUrl, provisioningTokenSource, policyTtlMs, maxStaleMs,
                         retryIntervalMs, meterRegistry));
+    }
+
+    /** {@code METADATA_DATABASE_URL} with its own credentials, or else the served database and its credentials. */
+    static DbSettings metadataDatabase(String url, String username, String password, boolean migrate,
+                                       long pollIntervalMs, long connectTimeoutMs,
+                                       DataSourceConfig.DataSourceSettings served) {
+        boolean separate = url != null && !url.isBlank();
+        return new DbSettings(separate ? url : served.url(), separate ? username : served.username(),
+                separate ? password : served.password(), migrate, Duration.ofMillis(pollIntervalMs),
+                Duration.ofMillis(connectTimeoutMs));
     }
 
     /** What the actuators report about the permission source when it is a metadata source. */

@@ -2,7 +2,7 @@
 
 The engine can run with only a Postgres database: no control plane, no Vault, no NATS. Permissions come
 from a **metadata document** that you keep where you like. This folder holds a guide per way to keep it.
-Today there are two: a file, and an HTTP(S) URL. More are added as they ship.
+Today there are three: a file, an HTTP(S) URL, and a database table. More are added as they ship.
 
 ## The file source
 
@@ -66,6 +66,46 @@ presigned URL). The engine fetches it and polls. It is read-only: change the doc
 | `METADATA_URL_ALLOW_INSECURE` | Accept plain http to an outside host. Default false. |
 | `METADATA_URL_POLL_INTERVAL_MS` | Default 5000. |
 | `METADATA_URL_CONNECT_TIMEOUT_MS` / `METADATA_URL_READ_TIMEOUT_MS` | Defaults 3000 and 10000. |
+
+## The db source
+
+The document is a row in a table, `excalibase_meta.metadata_documents(version, document, created_at)`. The
+engine reads the row with the highest `version` and polls it. It lives in the served database, or in another
+one when `METADATA_DATABASE_URL` is set (then the engine uses only that connection for it, with its own
+`METADATA_DATABASE_USERNAME` and `METADATA_DATABASE_PASSWORD`). Postgres only. It is read-only for now: save a
+new document with an `INSERT` of the next version.
+
+```sql
+CREATE SCHEMA IF NOT EXISTS excalibase_meta;
+CREATE TABLE IF NOT EXISTS excalibase_meta.metadata_documents (
+  version bigint PRIMARY KEY, document text NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+INSERT INTO excalibase_meta.metadata_documents (version, document) VALUES (1, $doc$ ...the YAML... $doc$);
+```
+
+- **The table is yours unless you opt in.** The engine creates the schema and table only with
+  `METADATA_DB_MIGRATE=true`; otherwise it expects them to exist, and says so in the log when they do not.
+- **Same rules as the other sources.** An invalid new row keeps the last good version and logs
+  `metadata_refused source=db ...`. A changed row is believed on the poll after the one that saw it. With no
+  table, no row or no database at start, every request is answered 503 and readiness reports not ready until a
+  good row is read.
+- **Never reachable through the API.** `excalibase_meta` is never served over GraphQL or REST. That does not
+  stop a user's own view or function from reading the table, because every request runs as the application's
+  database role and, by default, that same role reads the document (and, with `METADATA_DB_MIGRATE=true`, owns
+  the table). So the role's grant cannot be revoked in the default mode. To close this, set
+  `METADATA_DATABASE_URL` to the same database (or another one) with a separate, read-only
+  `METADATA_DATABASE_USERNAME`, and give the application role no grant on `excalibase_meta`. We recommend this
+  for anything beyond a trial.
+- **A stuck read is cancelled on the server** after 10 seconds, so a locked table cannot pile up backends.
+- **Credentials stay out of logs.** A failure is logged as a fixed sentence and the SQLState only.
+
+| Setting | Meaning |
+|---|---|
+| `METADATA_SOURCE=db` | Use the db source. |
+| `METADATA_DATABASE_URL` | JDBC URL of a separate metadata database. Default: the served database. |
+| `METADATA_DATABASE_USERNAME` / `METADATA_DATABASE_PASSWORD` | Its credentials. |
+| `METADATA_DB_MIGRATE` | Let the engine create the schema and table. Default false. |
+| `METADATA_DB_POLL_INTERVAL_MS` | Default 5000. |
+| `METADATA_DB_CONNECT_TIMEOUT_MS` | Default 3000. |
 
 ## Tokens from Auth0, Cognito, Keycloak or any OIDC issuer
 
