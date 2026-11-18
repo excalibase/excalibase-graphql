@@ -1,7 +1,8 @@
 // Builds elements from text only. Server data reaches the page through text nodes, never as markup.
 
 const ATTRIBUTES = new Set(["class", "type", "id", "for", "rows", "placeholder", "autocomplete", "disabled",
-  "role", "aria-selected", "aria-live", "spellcheck", "name"]);
+  "role", "aria-selected", "aria-live", "aria-label", "aria-pressed", "spellcheck", "name", "checked", "value",
+  "title", "colspan"]);
 
 export function h(tag, props = {}, ...children) {
   const element = document.createElement(tag);
@@ -32,4 +33,19 @@ export function rootElement() {
 export function mount(root, ...children) {
   root.replaceChildren();
   append(root, children);
+}
+
+/**
+ * Hands the browser a file. The text becomes a Blob and the link points at that Blob's own URL, so no address from
+ * the server is ever used and nothing is navigated to. The file name is chosen by the console, never by the data.
+ */
+export function saveAs(filename, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const link = document.createElement("a");
+  link.setAttribute("href", url);
+  link.setAttribute("download", filename);
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }

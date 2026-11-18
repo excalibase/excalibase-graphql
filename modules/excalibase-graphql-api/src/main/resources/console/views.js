@@ -4,7 +4,8 @@ const MESSAGES = {
   unauthorized: "That secret was not accepted.",
   too_many_failed_attempts: "Too many failed attempts. Wait a minute and try again.",
   no_metadata_source: "This engine has no permissions text.",
-  schema_unavailable: "The schema is not loaded yet."
+  schema_unavailable: "The schema is not loaded yet.",
+  invalid_document: "The document is not valid."
 };
 
 export function describe(failure) {
@@ -26,16 +27,13 @@ export function loginView(onSubmit, error) {
   return form;
 }
 
-export function metadataView(meta) {
-  return h("section", {},
-    h("dl", { class: "fields" },
-      field("Source", meta.source),
-      field("Version", meta.version),
-      field("Source version", meta.sourceVersion),
-      field("Mode", meta.writable ? "writable" : "read-only"),
-      field("Last refusal", meta.lastRefusal ? meta.lastRefusal + " (" + meta.lastRefusalAt + ")" : null)),
-    h("h2", {}, "Current permissions"),
-    h("pre", { class: "current-text" }, meta.text == null ? "Nothing is served." : meta.text));
+export function metaFields(meta) {
+  return h("dl", { class: "fields" },
+    field("Source", meta.source),
+    field("Version", meta.version),
+    field("Source version", meta.sourceVersion),
+    field("Mode", meta.writable ? "writable" : "read-only"),
+    field("Last refusal", meta.lastRefusal ? meta.lastRefusal + " (" + meta.lastRefusalAt + ")" : null));
 }
 
 function columnList(table) {

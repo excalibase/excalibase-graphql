@@ -37,15 +37,23 @@ export function signOut() {
 }
 
 export class ApiError extends Error {
-  constructor(status, code) {
+  constructor(status, code, body) {
     super(code);
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 }
 
-async function call(method, path, body, contentType) {
-  const headers = { [HEADER]: secret };
+function codeOf(status, parsed) {
+  if (parsed && parsed.error) {
+    return String(parsed.error);
+  }
+  return parsed && Array.isArray(parsed.errors) ? "invalid_document" : "error_" + status;
+}
+
+async function call(method, path, body, contentType, extraHeaders = {}) {
+  const headers = { ...extraHeaders, [HEADER]: secret };
   if (body !== undefined) {
     headers["Content-Type"] = contentType;
   }
@@ -56,7 +64,7 @@ async function call(method, path, body, contentType) {
     signOut();
   }
   if (!response.ok) {
-    throw new ApiError(response.status, parsed && parsed.error ? String(parsed.error) : "error_" + response.status);
+    throw new ApiError(response.status, codeOf(response.status, parsed), parsed);
   }
   return parsed;
 }
@@ -80,14 +88,16 @@ export async function signIn(candidate) {
   }
 }
 
-// The server names the served text with a field this source check bans as a bare word, so it is built here.
-const TEXT_FIELD = "docu" + "ment";
-
 export async function getMetadata() {
-  const { [TEXT_FIELD]: text, ...rest } = await call("GET", "/metadata");
-  return { ...rest, text };
+  const reply = await call("GET", "/metadata");
+  return { ...reply, text: reply.document };
 }
+
+/** Saves the text if the source still holds the version it was loaded at (the quoted tag of If-Match). */
+export const putMetadata = (text, sourceVersion) =>
+  call("PUT", "/metadata", text, "text/plain", { "If-Match": '"' + sourceVersion + '"' });
 
 export const getSchema = () => call("GET", "/schema");
 export const getReplicas = () => call("GET", "/replicas");
 export const validateText = (text) => call("POST", "/validate", text, "text/plain");
+export const parseText = (text) => call("POST", "/parse", text, "text/plain");

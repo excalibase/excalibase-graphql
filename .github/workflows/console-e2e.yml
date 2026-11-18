@@ -1,0 +1,104 @@
+name: Console browser test
+
+# One Playwright spec against a real engine: sign in, view, edit, save, a stale save, errors, markup as text,
+# export, and a read-only source. Separate from the Maven build; it only needs the engine jar and Postgres.
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements.txt'
+      - '*.md'
+      - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements.txt'
+      - '*.md'
+      - '.github/workflows/docs.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  console:
+    name: Console browser test
+    timeout-minutes: 20
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: app
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: change-me
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d app"
+          --health-interval 5s
+          --health-retries 20
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+    - name: Set up JDK 25
+      uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
+      with:
+        java-version: '25'
+        distribution: 'corretto'
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-console-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Build the engine jar
+      run: mvn --batch-mode -q -pl modules/excalibase-graphql-api -am package -DskipTests
+
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      with:
+        node-version: '20'
+        cache: npm
+        cache-dependency-path: console-e2e/package-lock.json
+
+    - name: Install the test toolchain
+      working-directory: console-e2e
+      run: npm ci --ignore-scripts
+
+    - name: Cache the browser
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ hashFiles('console-e2e/package-lock.json') }}
+
+    - name: Install the browser
+      working-directory: console-e2e
+      run: npm run browsers
+
+    - name: Create the example table
+      run: PGPASSWORD=change-me psql -h localhost -U app -d app -f deploy/standalone/init.sql
+
+    - name: Run the console test
+      working-directory: console-e2e
+      env:
+        CI: "true"
+        E2E_DATABASE_URL: jdbc:postgresql://localhost:5432/app
+      run: npm test
+
+    - name: Upload the report on failure
+      if: failure()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      with:
+        name: console-e2e-report
+        path: |
+          console-e2e/playwright-report
+          console-e2e/test-results
