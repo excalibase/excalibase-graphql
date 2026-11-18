@@ -35,8 +35,10 @@ public final class MetadataSources {
                     settings.projectId(), meters, settings.envJwtConfigured());
             case DbMetadataSource.NAME -> DbMetadataSource.create(db(settings.db()), reserved, settings.projectId(),
                     meters, settings.envJwtConfigured());
-            default -> throw new IllegalStateException("metadata.source must be \"file\", \"url\" or \"db\" (s3 is "
-                    + "not available yet) but was \"" + source + "\"");
+            case S3MetadataSource.NAME -> S3MetadataSource.create(positive(settings.s3()), reserved,
+                    settings.projectId(), meters, settings.envJwtConfigured());
+            default -> throw new IllegalStateException("metadata.source must be \"file\", \"url\", \"db\" or "
+                    + "\"s3\" but was \"" + source + "\"");
         };
         created.start();
         return Optional.of(created);
@@ -60,6 +62,15 @@ public final class MetadataSources {
                     + "must be positive");
         }
         return url;
+    }
+
+    private static S3Settings positive(S3Settings s3) {
+        if (s3.pollInterval().isZero() || s3.pollInterval().isNegative() || s3.connectTimeout().isZero()
+                || s3.connectTimeout().isNegative() || s3.readTimeout().isZero() || s3.readTimeout().isNegative()) {
+            throw new IllegalStateException("metadata.s3.poll-interval-ms, connect-timeout-ms and read-timeout-ms "
+                    + "must be positive");
+        }
+        return s3;
     }
 
     private static DbSettings db(DbSettings db) {

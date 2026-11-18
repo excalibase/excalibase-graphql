@@ -6,17 +6,12 @@ import io.github.excalibase.security.TokenUnavailableException;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 /**
  * Reads the metadata document over HTTP(S), read-only. Every poll is a plain full GET (the 1 MiB cap keeps it
@@ -132,45 +127,10 @@ final class UrlDocumentFetcher implements ReloadingMetadataSource.Loader {
         long declared = response.headers().firstValueAsLong("Content-Length").orElse(0);
         if (declared > MetadataDocumentParser.MAX_BYTES) {
             response.body().close();
-            throw new IOException("the document is larger than " + MetadataDocumentParser.MAX_BYTES + " bytes");
+            throw new IOException(BoundedBody.tooLarge());
         }
-        byte[] bytes = readCapped(response.body());
+        byte[] bytes = BoundedBody.read(response.body(), readTimeout);
         return new ReloadingMetadataSource.Raw(FileMetadataSource.decodeUtf8(bytes),
                 "sha256:" + FileMetadataSource.sha256(bytes));
-    }
-
-    /**
-     * Reads at most one byte over the limit and then stops, so an endless body costs the limit and not the
-     * server's whole answer. The read runs against a deadline because the request timeout ends at the headers.
-     */
-    private byte[] readCapped(InputStream body) throws IOException {
-        CompletableFuture<byte[]> read = new CompletableFuture<>();
-        Thread.startVirtualThread(() -> {
-            try (body) {
-                read.complete(body.readNBytes(MetadataDocumentParser.MAX_BYTES + 1));
-            } catch (IOException | RuntimeException e) {
-                read.completeExceptionally(e);
-            }
-        });
-        byte[] bytes = awaitBody(read, body);
-        if (bytes.length > MetadataDocumentParser.MAX_BYTES) {
-            throw new IOException("the document is larger than " + MetadataDocumentParser.MAX_BYTES + " bytes");
-        }
-        return bytes;
-    }
-
-    private byte[] awaitBody(CompletableFuture<byte[]> read, InputStream body) throws IOException {
-        try {
-            return read.get(readTimeout.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (TimeoutException _) {
-            body.close();
-            throw new SocketTimeoutException("reading the document timed out");
-        } catch (InterruptedException _) {
-            body.close();
-            Thread.currentThread().interrupt();
-            throw new IOException("interrupted while reading the document");
-        } catch (ExecutionException e) {
-            throw new IOException("reading the document failed: " + e.getCause().getClass().getSimpleName());
-        }
     }
 }
