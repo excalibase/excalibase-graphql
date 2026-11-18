@@ -116,8 +116,8 @@ class ConsoleSourceTest {
     void apiReadsTheDocumentField() throws IOException {
         String api = read("api.js");
 
-        assertThat(api).contains("document").doesNotContain("TEXT_FIELD", "\"docu\"", "+ \"ment\"");
-        assertThat(api).doesNotContainPattern(DOCUMENT_IDENTIFIER.pattern());
+        assertThat(api).contains("document").doesNotContain("TEXT_FIELD", "\"docu\"", "+ \"ment\"")
+                .doesNotContainPattern(DOCUMENT_IDENTIFIER.pattern());
     }
 
     @Test

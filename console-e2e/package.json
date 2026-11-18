@@ -3,6 +3,7 @@
   "private": true,
   "description": "Browser test of the engine's admin console. Not part of the Maven build.",
   "scripts": {
+    "browsers": "playwright install --with-deps chromium",
     "test": "node prepare.js && playwright test"
   },
   "devDependencies": {

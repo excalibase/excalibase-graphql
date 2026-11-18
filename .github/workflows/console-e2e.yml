@@ -69,7 +69,7 @@ jobs:
 
     - name: Install the test toolchain
       working-directory: console-e2e
-      run: npm ci
+      run: npm ci --ignore-scripts
 
     - name: Cache the browser
       uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -79,7 +79,7 @@ jobs:
 
     - name: Install the browser
       working-directory: console-e2e
-      run: npx playwright install --with-deps chromium
+      run: npm run browsers
 
     - name: Create the example table
       run: PGPASSWORD=change-me psql -h localhost -U app -d app -f deploy/standalone/init.sql
