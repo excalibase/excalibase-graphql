@@ -58,6 +58,15 @@ class AdminConsoleOffIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("/console is a 404 on every port, and nothing is served")
+    void consoleIsNotFound() {
+        assertThat(http.get("/console").status()).isEqualTo(404);
+        assertThat(http.get("/console/app.js").status()).isEqualTo(404);
+        assertThat(management.get("/console").status()).isEqualTo(404);
+        assertThat(management.get("/console/app.js", HEADER, SECRET).status()).isEqualTo(404);
+    }
+
+    @Test
     @DisplayName("the ordinary surfaces are unaffected")
     void restOfTheEngineIsUnchanged() {
         assertThat(management.get("/actuator/health").status()).isIn(200, 503);
