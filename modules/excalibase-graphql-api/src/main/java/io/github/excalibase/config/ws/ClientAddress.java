@@ -34,7 +34,7 @@ public final class ClientAddress {
      * An IPv6 client is counted by its /64, the smallest block one subscriber is given: a host can pick any
      * address inside it, so counting each address would let it take as many sockets as it likes.
      */
-    static String byPrefix(String address) {
+    public static String byPrefix(String address) {
         if (address.indexOf(':') < 0) {
             return address;
         }

@@ -36,6 +36,8 @@ public class KnownProjectFilter implements Ordered {
     public static final String KNOWN_PROJECT_ATTR = "excalibase.knownProject";
     /** Set on a request admitted as management, the one request that carries no project; later filters leave it be. */
     public static final String MANAGEMENT_ATTR = "excalibase.management";
+    /** Set on a request the admin guard let through on the admin port: it names no project, and later filters leave it be. */
+    public static final String ADMIN_ATTR = "excalibase.admin";
     public static final int ORDER = -100;
 
     private final KnownProjects knownProjects;
@@ -68,6 +70,9 @@ public class KnownProjectFilter implements Ordered {
     @RequestFilter
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request) {
+        if (request.getAttributes().contains(ADMIN_ATTR)) {
+            return null;
+        }
         boolean actuator = isActuatorPath(request.getPath());
         if (actuator && isOnManagementPort(request)) {
             request.getAttributes().put(MANAGEMENT_ATTR, Boolean.TRUE);

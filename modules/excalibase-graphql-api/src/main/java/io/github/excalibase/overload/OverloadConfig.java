@@ -51,9 +51,11 @@ public class OverloadConfig {
 
         BoundRegistration(ConnectionGate gate, ConnectionBound bound,
                 @Value("${server.tomcat.connection-timeout:20000}") long firstRequestMillis,
-                @Value("${endpoints.all.port:-1}") int managementPort) {
-            this.customizer = new ConnectionBoundCustomizer(gate, bound, firstRequestMillis,
-                    Set.of(managementPort));
+                @Value("${endpoints.all.port:-1}") int managementPort,
+                @Value("${excalibase.console.enabled:false}") String console,
+                @Value("${excalibase.admin.port:10001}") int adminPort) {
+            this.customizer = new ConnectionBoundCustomizer(gate, bound, firstRequestMillis, Set.of(managementPort),
+                    "true".equalsIgnoreCase(console) ? adminPort : -1);
         }
 
         @Override

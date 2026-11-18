@@ -38,9 +38,10 @@ public interface MetadataSource extends PermissionProvider {
      * @param version       the local counter, up by one on every accepted swap; it feeds the engine's change detection
      * @param sourceVersion what the source calls this version (a content hash for the file source)
      * @param verifier      built from the document's {@code jwt:} section; null when it has none
+     * @param text          the document as read, which the admin API shows
      */
     record Snapshot(PermissionSet permissions, long version, String sourceVersion, Instant loadedAt,
-                    TokenVerifier verifier) {
+                    TokenVerifier verifier, String text) {
     }
 
     /**

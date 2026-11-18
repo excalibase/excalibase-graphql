@@ -208,11 +208,27 @@ class KnownProjectFilterTest {
         HttpRequest<?> request = mock(HttpRequest.class);
         when(request.getPath()).thenReturn("/actuator/health");
         when(request.getServerAddress()).thenReturn(new InetSocketAddress("localhost", 8080));
+        when(request.getAttributes()).thenReturn(new MutableConvertibleValuesMap<>());
 
         HttpResponse<?> response = new KnownProjectFilter(provisioningDown, false, MANAGEMENT_PORT).filter(request);
 
         assertThat(response.code()).isEqualTo(404);
         assertThat(body(response)).contains("\"code\":\"project_not_found\"");
+    }
+
+    @Test
+    @DisplayName("a request the admin guard admitted names no project and is not looked up")
+    void adminRequest_isNotLookedUp() {
+        KnownProjects provisioningDown = projectId -> {
+            throw new VaultCredentialException("provisioning unreachable");
+        };
+        MutableConvertibleValuesMap<Object> attributes = new MutableConvertibleValuesMap<>();
+        attributes.put(KnownProjectFilter.ADMIN_ATTR, Boolean.TRUE);
+        HttpRequest<?> request = mock(HttpRequest.class);
+        when(request.getPath()).thenReturn("/_admin/v1/metadata");
+        when(request.getAttributes()).thenReturn(attributes);
+
+        assertThat(new KnownProjectFilter(provisioningDown, false, MANAGEMENT_PORT).filter(request)).isNull();
     }
 
     @Test
