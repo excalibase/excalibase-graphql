@@ -36,13 +36,27 @@ class MultiSchemaLoaderTest {
                     SchemaInfo.Volatility.STABLE, false, true, returnTable, List.of(), 1);
         }
 
-        @Override public void loadColumns(JdbcTemplate jdbc, String schema, SchemaInfo info) { }
-        @Override public void loadForeignKeys(JdbcTemplate jdbc, String schema, SchemaInfo info) { }
-        @Override public void loadViews(JdbcTemplate jdbc, String schema, SchemaInfo info) { }
-        @Override public void loadFunctions(JdbcTemplate jdbc, String schema, SchemaInfo info) { }
-        @Override public void loadEnums(JdbcTemplate jdbc, String schema, SchemaInfo info) { }
-        @Override public void loadCompositeTypes(JdbcTemplate jdbc, String schema, SchemaInfo info) { }
-        @Override public void loadComputedFields(JdbcTemplate jdbc, String schema, SchemaInfo info) { }
+        @Override public void loadColumns(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+            // not read: loadAll hands everything over
+        }
+        @Override public void loadForeignKeys(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+            // not read: loadAll hands everything over
+        }
+        @Override public void loadViews(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+            // not read: loadAll hands everything over
+        }
+        @Override public void loadFunctions(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+            // not read: loadAll hands everything over
+        }
+        @Override public void loadEnums(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+            // not read: loadAll hands everything over
+        }
+        @Override public void loadCompositeTypes(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+            // not read: loadAll hands everything over
+        }
+        @Override public void loadComputedFields(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+            // not read: loadAll hands everything over
+        }
     }
 
     private SchemaInfo merged() {

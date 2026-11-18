@@ -44,7 +44,9 @@ class RequestedSchemaTest {
 
     @Test
     void aMalformedProfile_isRefused() {
-        assertThatThrownBy(() -> RequestedSchema.resolve(PROVIDER, "a;b", Principal.anonymous()))
+        Principal caller = Principal.anonymous();
+
+        assertThatThrownBy(() -> RequestedSchema.resolve(PROVIDER, "a;b", caller))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }
