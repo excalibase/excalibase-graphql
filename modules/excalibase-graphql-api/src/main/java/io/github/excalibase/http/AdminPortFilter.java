@@ -2,6 +2,7 @@ package io.github.excalibase.http;
 
 import io.github.excalibase.admin.AdminGuard;
 import io.github.excalibase.admin.AdminSettings;
+import io.github.excalibase.admin.ConsoleAssets;
 import io.github.excalibase.config.ws.ClientAddress;
 import io.github.excalibase.security.KnownProjectFilter;
 import io.micronaut.core.annotation.Nullable;
@@ -19,9 +20,9 @@ import java.net.InetSocketAddress;
 
 /**
  * Keeps the admin API and the console on the admin port and nothing else on it. {@code /_admin/**} is a 404 on every
- * other port, and with the console off on all of them; {@code /console/**} is a 404 on every other port while the
- * console is on, and with it off falls to the project filters like any unknown path. The admin port serves
- * {@code /_admin/**} to a caller holding the secret, and the secret-free {@code /console/**} page and assets.
+ * other port, and with the console off on all of them; the console's paths exist on the admin port only, so on
+ * any other port they are left to the project filters like every unknown path, and a project may be named console.
+ * The admin port serves {@code /_admin/**} to a caller holding the secret, and the secret-free {@code /console/**} page and assets.
  * A request let through is marked, so the project, token and CORS filters leave it alone: it names no project.
  * The address that counts failures is the TCP peer, never a forwarded header, so a client cannot pick its own.
  */
@@ -54,16 +55,24 @@ public class AdminPortFilter implements Ordered {
     public HttpResponse<Object> filter(HttpRequest<?> request) {
         String target = RequestTarget.rawPath(request);
         if (!onAdminPort(request)) {
-            return isAdmin(target) || (settings.enabled() && isConsole(target)) ? notFound(request) : null;
+            return isAdmin(target) ? notFound(request) : null;
         }
         if (isConsole(target)) {
-            request.getAttributes().put(KnownProjectFilter.ADMIN_ATTR, Boolean.TRUE);
-            return null;
+            return page(request, target);
         }
         if (!isAdmin(target)) {
             return notFound(request);
         }
         return authorize(request);
+    }
+
+    /** The page and its listed files are marked and passed on; any other console path is a 404, never a project's. */
+    private static HttpResponse<Object> page(HttpRequest<?> request, String target) {
+        if (!ConsoleAssets.isServed(target)) {
+            return notFound(request);
+        }
+        request.getAttributes().put(KnownProjectFilter.ADMIN_ATTR, Boolean.TRUE);
+        return null;
     }
 
     private HttpResponse<Object> authorize(HttpRequest<?> request) {

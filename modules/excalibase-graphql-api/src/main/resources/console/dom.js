@@ -25,6 +25,10 @@ function append(parent, children) {
   }
 }
 
+export function rootElement() {
+  return document.getElementById("root");
+}
+
 export function mount(root, ...children) {
   root.replaceChildren();
   append(root, children);

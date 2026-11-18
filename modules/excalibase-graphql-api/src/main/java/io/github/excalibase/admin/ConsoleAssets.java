@@ -12,7 +12,7 @@ import java.util.Optional;
  * The console's files, read from the classpath once. Only the names listed here are ever served, so a request can
  * never name a path: there is nothing to traverse. The same resources are registered for the native image.
  */
-final class ConsoleAssets {
+public final class ConsoleAssets {
 
     /** One file: its text and the type it is served as. */
     record Asset(String body, String contentType) {
@@ -29,7 +29,18 @@ final class ConsoleAssets {
             "views.js", SCRIPT,
             "style.css", STYLE);
 
+    private static final String BASE = "/console";
+
     private final Map<String, Asset> assets;
+
+    /** Whether the path is the page itself or one of the files served under it: the only console paths there are. */
+    public static boolean isServed(String path) {
+        if (path == null) {
+            return false;
+        }
+        return BASE.equals(path)
+                || (path.startsWith(BASE + "/") && TYPES.containsKey(path.substring(BASE.length() + 1)));
+    }
 
     ConsoleAssets() {
         Map<String, Asset> loaded = new HashMap<>();

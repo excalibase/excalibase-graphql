@@ -1,8 +1,8 @@
 import { ApiError, getMetadata, getReplicas, getSchema, signIn, signOut, signedIn, validateDocument } from "/console/api.js";
-import { h, mount } from "/console/dom.js";
+import { h, mount, rootElement } from "/console/dom.js";
 import { describe, documentView, loginView, replicasView, tablesView, validateView } from "/console/views.js";
 
-const root = document.getElementById("root");
+const root = rootElement();
 const TABS = [
   { id: "document", label: "Document", load: async () => documentView(await getMetadata()) },
   { id: "tables", label: "Tables", load: async () => tablesView(await getSchema()) },
