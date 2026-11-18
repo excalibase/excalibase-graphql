@@ -54,8 +54,8 @@ public class OverloadConfig {
                 @Value("${endpoints.all.port:-1}") int managementPort,
                 @Value("${excalibase.console.enabled:false}") String console,
                 @Value("${excalibase.admin.port:10001}") int adminPort) {
-            this.customizer = new ConnectionBoundCustomizer(gate, bound, firstRequestMillis,
-                    "true".equalsIgnoreCase(console) ? Set.of(managementPort, adminPort) : Set.of(managementPort));
+            this.customizer = new ConnectionBoundCustomizer(gate, bound, firstRequestMillis, Set.of(managementPort),
+                    "true".equalsIgnoreCase(console) ? adminPort : -1);
         }
 
         @Override

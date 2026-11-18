@@ -49,6 +49,7 @@ class AdminApiIntegrationTest extends EngineIntegrationTest {
             "/_admin/v1/nothing"})
     @DisplayName("admin paths are a 404 on the public port, secret or not")
     void adminPathsOnThePublicPort(String path) {
+        assertThat(http.get(path).body()).doesNotContain("project_not_found").contains("\"status\":404");
         assertThat(http.get(path).status()).isEqualTo(404);
         assertThat(http.get(path, HEADER, SECRET).status()).isEqualTo(404);
     }
@@ -151,6 +152,27 @@ class AdminApiIntegrationTest extends EngineIntegrationTest {
         HttpAnswer answer = validate(DOCUMENT.replace(PROJECT, "someone-else"), TEXT);
 
         assertThat(answer.<Boolean>jsonPath("$.valid")).isFalse();
+    }
+
+    @Test
+    @DisplayName("POST validate refuses a jwt: section while the engine has token settings of its own")
+    void validateRefusesJwtSectionBesideEnvJwt() {
+        String withJwt = DOCUMENT.replace("tables:", """
+                jwt:
+                  issuer: https://idp.example.com/
+                  audience: a
+                  jwksUrl: https://idp.example.com/jwks.json
+                  algorithms: [RS256]
+                  claims:
+                    role: role
+                    defaultRole: user
+                    userId: sub
+                tables:""");
+
+        HttpAnswer answer = validate(withJwt, TEXT);
+
+        assertThat(answer.<Boolean>jsonPath("$.valid")).isFalse();
+        assertThat(answer.json().path("errors")).isNotEmpty();
     }
 
     @Test

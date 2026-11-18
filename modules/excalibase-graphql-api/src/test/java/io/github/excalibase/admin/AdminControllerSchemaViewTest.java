@@ -26,6 +26,7 @@ class AdminControllerSchemaViewTest {
         info.addFunction("public.meta_label", new SchemaInfo.FunctionInfo("public", "meta_label",
                 SchemaInfo.RoutineKind.FUNCTION, SchemaInfo.Volatility.STABLE, false, false, null,
                 List.of(new SchemaInfo.FunctionArg("row_", "excalibase_meta.t", "i", false)), 1));
+        info.addFunction("auth.helper", function("auth", "helper", "public.orders"));
         info.addFunction("auth.read_users", function("auth", "read_users", "auth.users"));
         info.addFunction("excalibase_meta.read_t", function("excalibase_meta", "read_t", "excalibase_meta.t"));
         return info;
