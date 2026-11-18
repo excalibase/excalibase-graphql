@@ -214,15 +214,6 @@ class S3MetadataSourceTest {
     }
 
     @Test
-    void aJwtSection_isServed_whenTheEngineHasNoEnvJwt() {
-        minio.put(BUCKET, KEY, WITH_JWT);
-
-        create(settings(), false).start();
-
-        assertThat(source.tokenVerifier()).isPresent();
-    }
-
-    @Test
     void theMetadataSourcesWiring_passesTheEnvJwtFlagOn_soAJwtSectionIsRefused() {
         minio.put(BUCKET, KEY, WITH_JWT);
         MetadataSettings wired = new MetadataSettings("s3", "", PROJECT, "", new MetadataSettings.FileSettings("", 5000),

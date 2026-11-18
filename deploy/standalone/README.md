@@ -2,7 +2,7 @@
 
 The engine can run with only a Postgres database: no control plane, no Vault, no NATS. Permissions come
 from a **metadata document** that you keep where you like. This folder holds a guide per way to keep it.
-Today there are three: a file, an HTTP(S) URL, and a database table. More are added as they ship.
+Today there are four: a file, an HTTP(S) URL, a database table, and an object in S3 or an S3-compatible store. More are added as they ship.
 
 ## The file source
 
@@ -106,6 +106,47 @@ INSERT INTO excalibase_meta.metadata_documents (version, document) VALUES (1, $d
 | `METADATA_DB_MIGRATE` | Let the engine create the schema and table. Default false. |
 | `METADATA_DB_POLL_INTERVAL_MS` | Default 5000. |
 | `METADATA_DB_CONNECT_TIMEOUT_MS` | Default 3000. |
+
+## The s3 source
+
+The document is one object in AWS S3 or an S3-compatible store (MinIO, Cloudflare R2, and other stores that speak
+the S3 API). The engine reads it with a signed GET and polls. It is read-only for now: change the object, for
+example `aws s3 cp permissions.yaml s3://my-bucket/permissions.yaml`, or `mc cp` for MinIO.
+
+- **How it talks to S3.** One SigV4-signed `GET` of one object over the JDK's HTTP client. There is no AWS SDK, so
+  the image does not grow and the native image is unaffected. The signer is checked against the example AWS
+  publishes and against a real MinIO in the tests.
+- **Version.** The hash of the body, as for the url source (an ETag is not trusted to change exactly when the bytes
+  do). Every poll is a full GET, capped at 1 MiB, so it costs one request per poll (about $0.20 a month at the
+  default 5 s on S3; inside R2's free tier).
+- **Same loop as the other sources.** A missing bucket or object, a 403, a timeout, an oversized object or a bad
+  document keeps the last good version and logs `metadata_refused source=s3 ...`. Until the first good load every
+  request is refused and the readiness probe says not ready. A changed version is applied when a following poll
+  reads the same body again.
+- **Bounded.** Connect, headers and the whole body are under timeouts, and the body is cut off at 1 MiB.
+  Redirects are not followed, so the signature goes only to the configured endpoint.
+- **Credentials.** Static keys only: `METADATA_S3_ACCESS_KEY_ID` and `METADATA_S3_SECRET_ACCESS_KEY`, or the
+  standard `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN`. Each also has a `..._FILE` form
+  for a mounted secret, which is re-read on every poll so a rotation needs no restart. They are never logged, and
+  the store's error text is never read, because it can name the access key. Give the key read access to that one
+  object (`s3:GetObject`) and nothing else.
+- **Not supported yet:** web-identity (IRSA, EKS pod identity), instance-profile and `~/.aws` profile
+  credentials. On AWS use an IAM user's key with a read-only policy, or put the object behind a presigned URL and
+  use the url source.
+- **Safety.** `https` is required for an endpoint outside this machine or cluster (loopback, `*.svc`,
+  `*.cluster.local`); anything else over plain http needs `METADATA_S3_ALLOW_INSECURE=true`.
+
+| Setting | Meaning |
+|---|---|
+| `METADATA_SOURCE=s3` | Use the s3 source. |
+| `METADATA_S3_BUCKET`, `METADATA_S3_KEY` | The object. `{projectId}` in the key is replaced by `APP_PROJECT_ID`. |
+| `METADATA_S3_ENDPOINT` | Scheme, host and optional port of an S3-compatible store. Blank means AWS. |
+| `METADATA_S3_REGION` | Default `us-east-1`. R2 uses `auto`. |
+| `METADATA_S3_PATH_STYLE` | `true` or `false`. Default: path style for a custom endpoint, virtual-hosted for AWS. |
+| `METADATA_S3_ACCESS_KEY_ID`, `METADATA_S3_SECRET_ACCESS_KEY`, `METADATA_S3_SESSION_TOKEN` | Keys; the AWS names work too. |
+| `METADATA_S3_ALLOW_INSECURE` | Accept plain http to an outside host. Default false. |
+| `METADATA_S3_POLL_INTERVAL_MS` | Default 5000. |
+| `METADATA_S3_CONNECT_TIMEOUT_MS` / `METADATA_S3_READ_TIMEOUT_MS` | Defaults 3000 and 10000. |
 
 ## Tokens from Auth0, Cognito, Keycloak or any OIDC issuer
 

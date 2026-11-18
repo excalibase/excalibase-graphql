@@ -55,8 +55,12 @@ class S3MetadataTransportTest {
             return "http://127.0.0.1:" + listener.getLocalPort();
         }
 
-        void mode(Mode mode) {
+        /** Existing connections are dropped too: the client keeps its connection alive and would reuse a working one. */
+        void mode(Mode mode) throws IOException {
             this.mode = mode;
+            for (Socket socket : open) {
+                socket.close();
+            }
         }
 
         private void acceptLoop() {

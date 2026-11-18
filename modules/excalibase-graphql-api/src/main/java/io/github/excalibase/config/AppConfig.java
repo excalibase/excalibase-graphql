@@ -22,6 +22,7 @@ import io.github.excalibase.metadata.MetadataHealth;
 import io.github.excalibase.metadata.MetadataSettings;
 import io.github.excalibase.metadata.MetadataSource;
 import io.github.excalibase.metadata.MetadataSources;
+import io.github.excalibase.metadata.S3Settings;
 import io.github.excalibase.metadata.UrlSettings;
 import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.ProvisioningPermissionProvider;
@@ -204,6 +205,7 @@ public class AppConfig {
             @Value("${metadata.db.poll-interval-ms:5000}") long dbPollIntervalMs,
             @Value("${metadata.db.connect-timeout-ms:3000}") long dbConnectTimeoutMs,
             DataSourceConfig.DataSourceSettings servedDatabase,
+            S3Settings s3Settings,
             @Value("${app.project-id:}") String projectId,
             @Value("${app.reserved-schemas:}") String reservedSchemas,
             @Value("${app.security.auth.jwks-url:}") String authJwksUrl,
@@ -221,6 +223,7 @@ public class AppConfig {
                 new MetadataSettings.FileSettings(metadataFilePath, pollIntervalMs), url,
                 metadataDatabase(dbUrl, dbUsername, dbPassword, dbMigrate, dbPollIntervalMs, dbConnectTimeoutMs,
                         servedDatabase),
+                s3Settings,
                 !authJwksUrl.isBlank() || !authHmacSecret.isBlank());
         return MetadataSources.create(settings, meters)
                 .<PermissionProvider>map(source -> source)
