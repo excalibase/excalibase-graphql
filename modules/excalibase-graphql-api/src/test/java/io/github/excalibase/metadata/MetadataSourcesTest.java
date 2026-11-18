@@ -138,4 +138,49 @@ class MetadataSourcesTest {
         assertThatThrownBy(() -> createDb("jdbc:postgresql://h/db", Duration.ZERO)).hasMessageContaining("poll-interval-ms");
         assertThatThrownBy(() -> createDb("jdbc:mysql://h/db", Duration.ofSeconds(5))).hasMessageContaining("Postgres only");
     }
+
+    private static S3Settings s3(String endpoint, String bucket, Duration interval, S3Settings.Credentials credentials) {
+        return new S3Settings(endpoint, bucket, "permissions.yaml", "us-east-1", null, false, credentials, interval,
+                Duration.ofSeconds(1), Duration.ofSeconds(1));
+    }
+
+    private Optional<ReloadingMetadataSource> createS3(S3Settings s3) {
+        return MetadataSources.create(new MetadataSettings("s3", "", PROJECT, "", new MetadataSettings.FileSettings("", 5000),
+                noUrl(), DbSettings.NONE, s3, false), meters);
+    }
+
+    private static final S3Settings.Credentials KEYS = S3Settings.Credentials.literal("id", "secret");
+
+    @Test
+    void anS3Source_withNoReachableStore_startsAndRefusesAll() {
+        try (ReloadingMetadataSource source = createS3(s3("http://127.0.0.1:1", "meta", Duration.ofHours(1), KEYS))
+                .orElseThrow()) {
+            assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
+            assertThat(source.name()).isEqualTo("s3");
+        }
+    }
+
+    @Test
+    void anS3Source_withoutABucket_credentials_orAPositiveInterval_isRefusedAtStart() {
+        assertThatThrownBy(() -> createS3(s3("http://127.0.0.1:1", "", Duration.ofHours(1), KEYS)))
+                .hasMessageContaining("metadata.s3.bucket");
+        assertThatThrownBy(() -> createS3(s3("http://127.0.0.1:1", "meta", Duration.ofHours(1), S3Settings.Credentials.NONE)))
+                .hasMessageContaining("metadata.s3.access-key-id").hasMessageContaining("AWS_ACCESS_KEY_ID");
+        assertThatThrownBy(() -> createS3(s3("http://127.0.0.1:1", "meta", Duration.ZERO, KEYS)))
+                .hasMessageContaining("poll-interval-ms");
+    }
+
+    @Test
+    void anS3SourceAlongsideAPolicyUrl_isRefused() {
+        MetadataSettings both = new MetadataSettings("s3", "http://provisioning/api", PROJECT, "",
+                new MetadataSettings.FileSettings("", 5000), noUrl(), DbSettings.NONE,
+                s3("http://127.0.0.1:1", "meta", Duration.ofHours(1), KEYS), false);
+
+        assertThatThrownBy(() -> MetadataSources.create(both, meters)).hasMessageContaining("policy-url");
+    }
+
+    @Test
+    void anUnknownSource_namesTheFourThatExist() {
+        assertThatThrownBy(() -> create("gcs", "", "", 5000, PROJECT)).hasMessageContaining("\"s3\"");
+    }
 }
