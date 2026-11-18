@@ -58,6 +58,8 @@
         <micronaut.platform.version>4.10.24</micronaut.platform.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
         <jackson.version>2.21.7</jackson.version>
+        <!-- A test fork that hangs is killed after 40 minutes; the slowest module takes about 15 -->
+        <surefire.timeout>2400</surefire.timeout>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
         <!-- databases -->
         <postgresql.version>42.7.12</postgresql.version>

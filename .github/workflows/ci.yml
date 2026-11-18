@@ -35,6 +35,7 @@ jobs:
 
   test:
     name: Run Tests & Coverage
+    timeout-minutes: 45
     runs-on: ubuntu-24.04
     permissions:
       pull-requests: write
@@ -81,6 +82,7 @@ jobs:
 
   build:
     name: Build & Package
+    timeout-minutes: 20
     needs: test
     runs-on: ubuntu-24.04
     
@@ -115,6 +117,7 @@ jobs:
 
   build-native:
     name: Build Native Image
+    timeout-minutes: 40
     needs: test
     runs-on: ubuntu-24.04
     # Only on push to main — native compile takes ~10 min, skip on PRs

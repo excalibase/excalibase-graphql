@@ -15,6 +15,7 @@ import java.lang.reflect.Proxy;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -82,10 +83,10 @@ class DbMetadataTransportTest {
         }
     }
 
-    private enum Mode { FORWARD, REFUSE_TO_ANSWER, STALL_AFTER_LOGIN }
+    private enum Mode { FORWARD, REFUSE_TO_ANSWER, STALL_AFTER_FIRST_REQUEST }
 
-    /** The server's "ready for query" message: the last thing it sends when a login completes. */
-    private static final byte[] READY = {'Z', 0, 0, 0, 5};
+    /** In the read's first statement, which is sent after the connection is fully set up. */
+    private static final byte[] TIMEOUT_SETTING = "statement_timeout".getBytes(StandardCharsets.US_ASCII);
 
     /** Forwards to Postgres; in the other modes it accepts connections and then stops answering. */
     private static final class Forwarder implements AutoCloseable {
@@ -114,9 +115,9 @@ class DbMetadataTransportTest {
                     if (mode != Mode.REFUSE_TO_ANSWER) {
                         Socket server = new Socket(postgres.getHost(), postgres.getFirstMappedPort());
                         open.add(server);
-                        boolean stall = mode == Mode.STALL_AFTER_LOGIN;
-                        Thread.ofVirtual().start(() -> pipe(client, server, false));
-                        Thread.ofVirtual().start(() -> pipe(server, client, stall));
+                        Session session = new Session(mode == Mode.STALL_AFTER_FIRST_REQUEST);
+                        Thread.ofVirtual().start(() -> pipeToServer(client, server, session));
+                        Thread.ofVirtual().start(() -> pipeToClient(server, client, session));
                     }
                 }
             } catch (IOException _) {
@@ -124,34 +125,49 @@ class DbMetadataTransportTest {
             }
         }
 
-        /** With {@code stallAfterLogin}, nothing the server sends after its first ready-for-query is passed on. */
-        private void pipe(Socket from, Socket to, boolean stallAfterLogin) {
+        /** One proxied connection: once logged in, the first thing the client sends is relayed and then silences the server. */
+        private static final class Session {
+            private final boolean stallAfterFirstRequest;
+            private volatile boolean stalled;
+
+            Session(boolean stallAfterFirstRequest) {
+                this.stallAfterFirstRequest = stallAfterFirstRequest;
+            }
+        }
+
+        private void pipeToServer(Socket client, Socket server, Session session) {
             byte[] buffer = new byte[8192];
-            boolean stalled = false;
             try {
                 int read;
-                while ((read = from.getInputStream().read(buffer)) >= 0) {
-                    if (stalled) {
-                        continue;
+                while ((read = client.getInputStream().read(buffer)) >= 0) {
+                    if (session.stallAfterFirstRequest && indexOf(buffer, read, TIMEOUT_SETTING) >= 0) {
+                        session.stalled = true;
                     }
-                    int end = read;
-                    if (stallAfterLogin) {
-                        int at = indexOf(buffer, read);
-                        if (at >= 0) {
-                            end = at + READY.length + 1;
-                            stalled = true;
-                        }
-                    }
-                    to.getOutputStream().write(buffer, 0, end);
+                    server.getOutputStream().write(buffer, 0, read);
                 }
             } catch (IOException _) {
                 // the other side went away
             }
         }
 
-        private static int indexOf(byte[] buffer, int length) {
-            for (int i = 0; i + READY.length <= length; i++) {
-                if (Arrays.equals(buffer, i, i + READY.length, READY, 0, READY.length)) {
+        private void pipeToClient(Socket server, Socket client, Session session) {
+            byte[] buffer = new byte[8192];
+            try {
+                int read;
+                while ((read = server.getInputStream().read(buffer)) >= 0) {
+                    if (session.stalled) {
+                        continue;
+                    }
+                    client.getOutputStream().write(buffer, 0, read);
+                }
+            } catch (IOException _) {
+                // the other side went away
+            }
+        }
+
+        private static int indexOf(byte[] buffer, int length, byte[] pattern) {
+            for (int i = 0; i + pattern.length <= length; i++) {
+                if (Arrays.equals(buffer, i, i + pattern.length, pattern, 0, pattern.length)) {
                     return i;
                 }
             }
@@ -167,10 +183,12 @@ class DbMetadataTransportTest {
         }
     }
 
+    /** The forwarder is closed before the source: a stuck read holds the source's lock, which close() needs. */
     private void assertGivenUpOn(Mode mode) throws Exception {
-        try (Forwarder forwarder = new Forwarder();
-             ReloadingMetadataSource source = DbMetadataSource.create(settings(forwarder.url(), Duration.ofSeconds(1)),
-                     ReservedSchemas.fromConfig(""), PROJECT, new SimpleMeterRegistry(), false)) {
+        Forwarder forwarder = new Forwarder();
+        ReloadingMetadataSource source = DbMetadataSource.create(settings(forwarder.url(), Duration.ofSeconds(1)),
+                ReservedSchemas.fromConfig(""), PROJECT, new SimpleMeterRegistry(), false);
+        try {
             source.start();
             assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
 
@@ -182,6 +200,9 @@ class DbMetadataTransportTest {
             assertThat(took).as("one poll: the query timeout plus the grace").isLessThan(Duration.ofSeconds(10));
             assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
             assertThat(source.status().lastRefusal()).isEqualTo("unreadable");
+        } finally {
+            forwarder.close();
+            source.close();
         }
     }
 
@@ -191,8 +212,8 @@ class DbMetadataTransportTest {
     }
 
     @Test
-    void aServerThatStallsAfterLogin_isGivenUpOnWithinTheBound_keepingTheLastGoodVersion() throws Exception {
-        assertGivenUpOn(Mode.STALL_AFTER_LOGIN);
+    void aServerThatStallsMidRead_isGivenUpOnWithinTheBound_keepingTheLastGoodVersion() throws Exception {
+        assertGivenUpOn(Mode.STALL_AFTER_FIRST_REQUEST);
     }
 
     @Test
