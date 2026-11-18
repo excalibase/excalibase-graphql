@@ -24,11 +24,11 @@ class SigV4Test {
         Map<String, String> headers = SigV4.sign("GET", URI.create("https://examplebucket.s3.amazonaws.com/test.txt"),
                 EMPTY_BODY, AWS_EXAMPLE, "us-east-1", WHEN, range);
 
-        assertThat(headers.get("Authorization")).isEqualTo("AWS4-HMAC-SHA256 "
+        assertThat(headers).containsEntry("Authorization", "AWS4-HMAC-SHA256 "
                 + "Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,"
                 + "SignedHeaders=host;range;x-amz-content-sha256;x-amz-date,"
-                + "Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41");
-        assertThat(headers).containsEntry("x-amz-date", "20130524T000000Z")
+                + "Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41")
+                .containsEntry("x-amz-date", "20130524T000000Z")
                 .containsEntry("x-amz-content-sha256", EMPTY_BODY);
     }
 
