@@ -111,7 +111,7 @@ public final class AdminGuard {
 
         private static final class Failures {
             private final long firstAt;
-            private int failures;
+            private int count;
 
             private Failures(long firstAt) {
                 this.firstAt = firstAt;
@@ -141,7 +141,7 @@ public final class AdminGuard {
         /** How long the address stays blocked; zero when it is not. */
         public synchronized Duration blockedFor(String address) {
             Failures seen = live(address);
-            if (seen == null || seen.failures < maxFailures) {
+            if (seen == null || seen.count < maxFailures) {
                 return Duration.ZERO;
             }
             return Duration.ofNanos(Math.max(1, seen.firstAt + windowNanos - nanoClock.getAsLong()));
@@ -157,7 +157,7 @@ public final class AdminGuard {
                 seen = new Failures(nanoClock.getAsLong());
                 records.put(address, seen);
             }
-            seen.failures++;
+            seen.count++;
         }
 
         public synchronized void success(String address) {
