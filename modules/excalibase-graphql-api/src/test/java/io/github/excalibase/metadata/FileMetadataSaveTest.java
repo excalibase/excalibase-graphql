@@ -197,8 +197,11 @@ class FileMetadataSaveTest {
     void aSecretReferenceThatDoesNotResolve_isADocumentError_andNeverWritten() throws IOException {
         Path path = file();
         ReloadingMetadataSource served = open(path);
-        String unresolved = GOOD_YAML.replace("tables:", "jwt:\n  secret: env:EXCALIBASE_SURELY_NOT_SET\n"
-                + "  audience: a\ntables:");
+        String unresolved = GOOD_YAML.replace("tables:", """
+                jwt:
+                  secret: env:EXCALIBASE_SURELY_NOT_SET
+                  audience: a
+                tables:""");
 
         SaveOutcome outcome = served.save(unresolved, served.current().orElseThrow().sourceVersion());
 
