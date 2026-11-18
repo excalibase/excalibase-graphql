@@ -128,6 +128,10 @@ nav:
       - Permission Enforcement: features/rls-architecture.md
       - CORS (per-project origins): features/cors.md
       - Monitoring Level: features/monitoring-level.md
+  - Deploy:
+      - Run the Engine on Your Own: deploy/standalone.md
+      - Docker and Compose: deploy/standalone-docker.md
+      - Kubernetes: deploy/standalone-kubernetes.md
   - Database Compatibility: database-compatibility.md
   - SDK (TypeScript): sdk.md
   - Testing: testing.md

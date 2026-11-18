@@ -1,0 +1,94 @@
+# The engine on Kubernetes with several replicas. The permissions live in the database (the `db` source), so
+# every replica reads the same row and the console can save safely.
+#
+# Before you apply it, create the Secret. Do not put these values in a file in git:
+#   kubectl create secret generic excalibase-engine \
+#     --from-literal=database-url='jdbc:postgresql://postgres.example:5432/app' \
+#     --from-literal=database-username=app \
+#     --from-literal=database-password='...' \
+#     --from-literal=jwt-secret="$(openssl rand -hex 32)" \
+#     --from-literal=admin-secret="$(openssl rand -hex 32)"
+# Reach the console with:  kubectl port-forward deploy/excalibase-engine 10001:10001
+# then open http://localhost:10001/console
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excalibase-engine
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: excalibase-engine}
+  template:
+    metadata:
+      labels: {app: excalibase-engine}
+    spec:
+      containers:
+        - name: engine
+          image: excalibase/excalibase-graphql:main   # pin a release tag once one includes EXC-733
+          ports:
+            - {name: http, containerPort: 10000}
+            - {name: admin, containerPort: 10001}     # no Service points here
+            - {name: management, containerPort: 8081}
+          env:
+            - {name: APP_PROJECT_ID, value: my-app}
+            - {name: APP_DATABASE_TYPE, value: postgres}
+            - name: SPRING_DATASOURCE_URL
+              valueFrom: {secretKeyRef: {name: excalibase-engine, key: database-url}}
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom: {secretKeyRef: {name: excalibase-engine, key: database-username}}
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom: {secretKeyRef: {name: excalibase-engine, key: database-password}}
+            # Tokens: the document's `jwt:` section says `secret: env:JWT_SECRET`. For Auth0, Cognito, Keycloak
+            # or OIDC, put `issuer:` in that section instead and drop this variable.
+            - name: JWT_SECRET
+              valueFrom: {secretKeyRef: {name: excalibase-engine, key: jwt-secret}}
+            # Permissions: a row in excalibase_meta.metadata_documents.
+            - {name: METADATA_SOURCE, value: db}
+            - {name: METADATA_DB_POLL_INTERVAL_MS, value: "5000"}
+            - {name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED, value: "true"}
+            # The console: on its own port, behind a secret mounted as a file.
+            - {name: EXCALIBASE_CONSOLE_ENABLED, value: "true"}
+            - {name: EXCALIBASE_ADMIN_PORT, value: "10001"}
+            - {name: EXCALIBASE_ADMIN_SECRET_FILE, value: /run/secrets/excalibase/admin-secret}
+          volumeMounts:
+            - {name: secrets, mountPath: /run/secrets/excalibase, readOnly: true}
+          # Not ready until a valid permissions document is loaded, so no traffic is routed here.
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: management}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: management}
+            periodSeconds: 20
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1Gi}
+      volumes:
+        - name: secrets
+          secret:
+            secretName: excalibase-engine
+            items:
+              - {key: admin-secret, path: admin-secret}
+---
+# Only the public port. The admin port (10001) and the management port (8081) have no Service and no Ingress.
+apiVersion: v1
+kind: Service
+metadata:
+  name: excalibase-engine
+spec:
+  selector: {app: excalibase-engine}
+  ports:
+    - {name: http, port: 80, targetPort: http}
+---
+# Belt and braces: pods in the namespace may reach the engine's public port only. Needs a CNI that enforces
+# NetworkPolicy; without one this object does nothing. Allow your ingress controller's namespace as well.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: excalibase-engine-public-only
+spec:
+  podSelector:
+    matchLabels: {app: excalibase-engine}
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - {port: 10000, protocol: TCP}

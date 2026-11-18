@@ -12,6 +12,11 @@ data:
   permissions.yaml: |
     format: 1
     projectId: my-app
+    jwt:
+      secret: env:JWT_SECRET
+      algorithms: [HS256]
+      audience: my-app-api
+      claims: {role: role, userId: sub}
     tables:
       - table: public.todos
         role: user
@@ -41,7 +46,7 @@ spec:
             - {name: METADATA_SOURCE, value: file}
             - {name: METADATA_FILE_PATH, value: /etc/excalibase}
             - {name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED, value: "true"}
-            # also needed: SPRING_DATASOURCE_URL/USERNAME/PASSWORD and the token verification settings,
+            # also needed: SPRING_DATASOURCE_URL/USERNAME/PASSWORD and JWT_SECRET (the document's `jwt:` section reads it),
             # from a Secret (see docker-compose.file.yml for the names)
           # Not ready while no valid permissions document is loaded, so no traffic is routed here.
           readinessProbe:

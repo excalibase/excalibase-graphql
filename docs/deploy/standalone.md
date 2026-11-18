@@ -1,0 +1,122 @@
+# Run the engine on your own
+
+The engine can run with only a Postgres database. There is no control plane, no Vault and no NATS. Your
+permissions come from a **metadata document**: one YAML file that says who may read and write which table, and
+how tokens are checked. You choose where that document lives.
+
+Two guides cover the common setups:
+
+- [Docker and compose](standalone-docker.md): one replica, the document in a file.
+- [Kubernetes](standalone-kubernetes.md): several replicas, the document in the database (or in S3).
+
+The sources, the settings and the token providers are listed in full in the
+[deploy folder README](https://github.com/excalibase/excalibase-graphql/blob/main/deploy/standalone/README.md).
+This page covers what is the same for every setup.
+
+## Which rule source to pick
+
+| Source | Setting | Replicas | Saving from the console | Pick it when |
+|---|---|---|---|---|
+| `file` | `METADATA_SOURCE=file` | One | Yes, one replica only | One container, edited by hand or in git. |
+| `url` | `METADATA_SOURCE=url` | Many | No, read-only | Your own service or a static host serves the document. |
+| `db` | `METADATA_SOURCE=db` | Many | Yes | You already run Postgres and want one place for everything. |
+| `s3` | `METADATA_SOURCE=s3` | Many | Yes, if the store checks `If-Match` | You keep config in S3, MinIO or R2. |
+
+With several replicas use `db` or `s3`. Each replica polls the source on its own, so for one poll interval
+they can serve different versions. `/actuator/info` on each replica shows the version it serves.
+
+## What the engine never exposes
+
+These rules need no setting and cannot be turned off.
+
+- The schemas `auth`, `excalibase` and `excalibase_meta` are never served over GraphQL, REST, the OpenAPI
+  document or subscriptions. This includes foreign-key links and functions that return rows of those tables.
+  You can add more names to the list with `APP_RESERVED_SCHEMAS` (comma separated). You can never remove the
+  built-in ones.
+- A table with no rule in the document is not reachable by anyone except the `service` role.
+- With no valid document the engine answers every request with 503, reports not ready, and keeps polling. It
+  never falls back to "allow".
+- `/_admin/**` is a 404 on every port except the admin port, and a 404 everywhere when the console is off.
+
+One limit to know: a view or function that *you* create can still read `excalibase_meta`, because the engine
+runs requests as its own database role. See "The db source" in the folder README for how to close that with a
+separate read-only role.
+
+## Tokens
+
+Put a `jwt:` section in the metadata document to accept tokens from Auth0, Cognito, Keycloak or any OIDC issuer.
+Without a `jwt:` section the engine uses `APP_SECURITY_AUTH_HMAC_SECRET` or `APP_SECURITY_AUTH_JWKS_URL`. Do not
+set both: a document with a `jwt:` section is refused while either of those is set.
+
+```yaml
+jwt:
+  issuer: https://tenant.eu.auth0.com/
+  audience: https://api.my-app
+  claims:
+    role: https://my-app/role
+```
+
+Provider details (Auth0 trailing slash, Cognito ID tokens, Keycloak `realm_access.roles`) are in the folder
+README.
+
+## The admin console
+
+The console is a page and a small API for editing the document. It is off by default.
+
+| Setting | Meaning |
+|---|---|
+| `EXCALIBASE_CONSOLE_ENABLED` | `true` or `false`. Anything else refuses the start. Default `false`. |
+| `EXCALIBASE_ADMIN_PORT` | The admin listener. Default `10001`. Must differ from the public and management ports. |
+| `EXCALIBASE_ADMIN_SECRET` or `EXCALIBASE_ADMIN_SECRET_FILE` | Required when the console is on. At least 32 printable ASCII characters. Set one, not both. |
+| `EXCALIBASE_ADMIN_MAX_FAILURES` | Wrong or missing secrets allowed per client address. Default `10`. |
+| `EXCALIBASE_ADMIN_FAILURE_WINDOW_SECONDS` | How long an address stays blocked after that. Default `60`. |
+
+- The console is at `/console` on the admin port only. The admin API is `/_admin/v1` on the same port, and
+  needs the secret in the `X-Excalibase-Admin-Secret` header.
+- The admin listener accepts at most 32 connections at once.
+- Failed attempts are counted per TCP peer address. A blocked address gets `429` with `Retry-After`.
+- Hosted mode (a policy URL or a provisioning URL is set) refuses to start with the console on.
+- The engine refuses to start if the console is on and the secret is missing, too short, or the port clashes.
+
+### Saving
+
+`PUT /_admin/v1/metadata` needs an `If-Match` header with the version you started from (the `ETag` of the
+document you read). Without it the answer is `428`. If someone else saved first, the answer is `409` with the
+current version. A document that does not pass the engine's own checks is refused with `422` and nothing is
+written. Each source writes in its own way:
+
+| Source | How it saves |
+|---|---|
+| `file` | Writes a temporary file in the same folder, then renames it over `permissions.yaml`. The folder must be writable. |
+| `db` | Inserts a new row with version + 1. The primary key makes two racing saves conflict. Old rows stay as history. |
+| `s3` | A conditional `PUT` with `If-Match`. Offered only after a start-up probe shows the store enforces it. |
+| `url` | Not writable. Change the document where it is served. |
+
+## Security checklist
+
+- [ ] The admin port (`10001`) has no public route: no published port, no Service, no Ingress.
+- [ ] The management port (`8081`) has no public route either.
+- [ ] The admin secret is random, at least 32 characters, and comes from a file or a Secret object, not from a
+      literal in a compose file or manifest.
+- [ ] The console is off (`EXCALIBASE_CONSOLE_ENABLED=false`, or unset) whenever nobody is editing.
+- [ ] The metadata database user has only what it needs. For reading and saving that is `SELECT` and `INSERT` on
+      `excalibase_meta.metadata_documents`, plus `USAGE` on the schema. It needs no `UPDATE`, `DELETE` or
+      `CREATE`, unless you set `METADATA_DB_MIGRATE=true`.
+- [ ] S3 keys are scoped to one bucket and one key prefix. Reading needs `s3:GetObject`. Saving needs
+      `s3:PutObject` and `s3:DeleteObject` as well, because the start-up probe writes and deletes a scratch object
+      next to the document.
+- [ ] The JWT secret or the issuer settings come from a Secret, not from the image.
+- [ ] You ran `validate` on the document before deploying it.
+
+## Known limits
+
+- **File saves are not safe across replicas.** The check and the rename happen under a lock in one process.
+  Two replicas sharing a writable file can overwrite each other. Use `db` or `s3` with more than one replica.
+- **No IRSA or AWS role credentials yet.** The s3 source takes static keys only. On AWS, use an IAM user with a
+  narrow policy, or serve the object through a presigned URL with the `url` source.
+- **Saving from the grid writes JSON and drops YAML comments.** If you keep comments in the file, edit the file
+  yourself and let the engine pick it up.
+- **The explorer and history views are not built yet.** The console has the rules grid, a sample token and
+  export.
+- **A change takes time to apply.** The engine applies a change after the poll that saw it and one more poll that
+  reads the same content, so about two poll intervals.

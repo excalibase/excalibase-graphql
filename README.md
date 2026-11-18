@@ -26,6 +26,7 @@ This is the API engine of [Excalibase](https://github.com/excalibase/excalibase)
 | 🧭 | **Vector k-NN search** — pgvector-backed, cosine/L2/IP distance, HNSW indexes | [Search & Vector](docs/features/search-and-vector.md) |
 | 📡 | **Realtime subscriptions** — WebSocket, backed by WAL (Postgres) or binlog (MySQL) via NATS CDC, filtered by the subscriber's permissions | [Subscriptions](docs/features/subscriptions.md) |
 | 🔐 | **API permissions** — Hasura-style, one object per table, role and operation: rows, columns and write checks | [Permissions](docs/features/permissions.md) |
+| 🚀 | **Run it on your own** — one Postgres, permissions in a file, database or S3, an admin console on a private port | [Deploy guides](docs/deploy/standalone.md) |
 | 🗄️ | **Tracked functions** — Postgres functions returning table rows, per-role, results filtered by the return table's permissions | [Functions](docs/features/functions.md) |
 | 🔑 | **Composite keys, FK relations, views** — forward + reverse FK fields auto-wired | [GraphQL](docs/graphql/index.md) |
 | 📄 | **Cursor pagination** — Relay-spec GraphQL connections + PostgREST-style REST | [GraphQL](docs/graphql/index.md) · [REST](docs/rest/index.md) |
