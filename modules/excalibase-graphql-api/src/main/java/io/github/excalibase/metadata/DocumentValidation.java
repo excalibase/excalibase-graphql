@@ -3,7 +3,12 @@ package io.github.excalibase.metadata;
 import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.schema.ReservedSchemas;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +19,8 @@ import java.util.Map;
  * swapped in or written, so what the engine serves is the same before and after.
  */
 public final class DocumentValidation {
+
+    private static final ObjectMapper TREE_MAPPER = new ObjectMapper();
 
     private DocumentValidation() {
     }
@@ -53,6 +60,21 @@ public final class DocumentValidation {
         } catch (MetadataDocumentException e) {
             return refused(e.getMessage());
         }
+    }
+
+    /**
+     * The document as a tree of maps, lists and scalars, so a client that cannot read YAML edits the same shape the
+     * engine does. Only a document that validates has one; an invalid one answers with its errors, as {@code validate}.
+     */
+    public static Map<String, Object> tree(byte[] body, ReservedSchemas reserved, String projectId,
+                                           boolean envJwtConfigured) {
+        Result checked = validate(body, reserved, projectId, envJwtConfigured);
+        Map<String, Object> answer = checked.toMap();
+        if (checked.valid()) {
+            JsonNode root = ConfigText.read(new String(body, StandardCharsets.UTF_8), TREE_MAPPER);
+            answer.put("tree", TREE_MAPPER.convertValue(root, new TypeReference<Map<String, Object>>() { }));
+        }
+        return answer;
     }
 
     private static Result refused(String error) {

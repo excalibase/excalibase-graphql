@@ -74,6 +74,14 @@ public class AdminController {
                 validation.envJwtConfigured()).toMap();
     }
 
+    /** The posted document as a tree, for a client that edits it: a YAML document is read here, never in the browser. */
+    @Post("/parse")
+    @Consumes(MediaType.ALL)
+    public Map<String, Object> parse(@Body byte[] document) {
+        return DocumentValidation.tree(document, validation.reserved(), validation.projectId(),
+                validation.envJwtConfigured());
+    }
+
     /** This replica only: the others are visible through the actuator and the metrics. */
     @Get("/replicas")
     public Map<String, Object> replicas() {

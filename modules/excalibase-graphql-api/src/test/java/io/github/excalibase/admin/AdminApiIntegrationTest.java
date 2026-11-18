@@ -31,6 +31,7 @@ class AdminApiIntegrationTest extends EngineIntegrationTest {
     private static final Path FILE = AdminTestEngine.documentFile(DOCUMENT);
     private static final String ADMIN_METADATA = "/_admin/v1/metadata";
     private static final String VALIDATE = "/_admin/v1/validate";
+    private static final String PARSE = "/_admin/v1/parse";
     private static final String TEXT = "text/plain";
     private static final String PING = "{ __typename }";
 
@@ -45,7 +46,7 @@ class AdminApiIntegrationTest extends EngineIntegrationTest {
     // --- port isolation, every direction ---
 
     @ParameterizedTest
-    @ValueSource(strings = {"/_admin/v1/metadata", "/_admin/v1/replicas", "/_admin/v1/schema", "/_admin", "/_admin/",
+    @ValueSource(strings = {"/_admin/v1/metadata", "/_admin/v1/replicas", "/_admin/v1/schema", "/_admin/v1/parse", "/_admin", "/_admin/",
             "/_admin/v1/nothing"})
     @DisplayName("admin paths are a 404 on the public port, secret or not")
     void adminPathsOnThePublicPort(String path) {
@@ -195,6 +196,49 @@ class AdminApiIntegrationTest extends EngineIntegrationTest {
         assertThat(after.<String>jsonPath("$.document")).isEqualTo(before.<String>jsonPath("$.document"));
         assertThat(after.<Integer>jsonPath("$.version")).isEqualTo(before.<Integer>jsonPath("$.version"));
         assertThat(after.<String>jsonPath("$.sourceVersion")).isEqualTo(before.<String>jsonPath("$.sourceVersion"));
+        assertThat(Files.readString(FILE)).isEqualTo(DOCUMENT);
+    }
+
+    // --- POST parse ---
+
+    @Test
+    @DisplayName("POST parse turns a valid YAML document into its tree, so the console edits one shape")
+    void parseGood() {
+        HttpAnswer answer = admin.post(PARSE, DOCUMENT, HEADER, SECRET, "Content-Type", TEXT);
+
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(answer.<Boolean>jsonPath("$.valid")).isTrue();
+        assertThat(answer.<Integer>jsonPath("$.tree.format")).isEqualTo(1);
+        assertThat(answer.<String>jsonPath("$.tree.tables[0].table")).isEqualTo("public.orders");
+        assertThat(answer.<String>jsonPath("$.tree.tables[0].select.columns")).isEqualTo("*");
+    }
+
+    @Test
+    @DisplayName("POST parse returns the tree of a JSON document too, and never a tree for an invalid one")
+    void parseJsonAndBad() {
+        String json = "{\"format\":1,\"projectId\":\"" + PROJECT + "\",\"tables\":[]}";
+
+        HttpAnswer parsed = admin.post(PARSE, json, HEADER, SECRET, "Content-Type", "application/json");
+        HttpAnswer bad = admin.post(PARSE, "format: 1\nprojectId: nope\n", HEADER, SECRET, "Content-Type", TEXT);
+
+        assertThat(parsed.<Boolean>jsonPath("$.valid")).isTrue();
+        assertThat(parsed.json().path("tree").path("tables")).isEmpty();
+        assertThat(bad.status()).isEqualTo(200);
+        assertThat(bad.<Boolean>jsonPath("$.valid")).isFalse();
+        assertThat(bad.json().has("tree")).isFalse();
+        assertThat(bad.json().path("errors")).isNotEmpty();
+    }
+
+    @Test
+    @DisplayName("POST parse wants the secret and changes nothing")
+    void parseGuardedAndReadOnly() throws IOException {
+        HttpAnswer before = admin.get(ADMIN_METADATA, HEADER, SECRET);
+
+        assertThat(admin.post(PARSE, DOCUMENT, "Content-Type", TEXT).status()).isEqualTo(401);
+        admin.post(PARSE, DOCUMENT + "  - table: public.x\n", HEADER, SECRET, "Content-Type", TEXT);
+
+        assertThat(admin.get(ADMIN_METADATA, HEADER, SECRET).<Integer>jsonPath("$.version"))
+                .isEqualTo(before.<Integer>jsonPath("$.version"));
         assertThat(Files.readString(FILE)).isEqualTo(DOCUMENT);
     }
 

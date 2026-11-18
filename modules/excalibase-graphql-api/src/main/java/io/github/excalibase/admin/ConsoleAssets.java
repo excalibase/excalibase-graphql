@@ -27,6 +27,10 @@ public final class ConsoleAssets {
             "api.js", SCRIPT,
             "dom.js", SCRIPT,
             "views.js", SCRIPT,
+            "editor.js", SCRIPT,
+            "grid.js", SCRIPT,
+            "jwt.js", SCRIPT,
+            "docmodel.js", SCRIPT,
             "style.css", STYLE);
 
     private static final String BASE = "/console";

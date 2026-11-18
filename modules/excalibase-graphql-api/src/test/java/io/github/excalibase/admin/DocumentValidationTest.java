@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -113,5 +115,24 @@ class DocumentValidationTest {
     void theAnswerIsAMapForTheApi() {
         assertThat(validate(GOOD, false).toMap()).containsEntry("valid", true).containsEntry("tables", 1);
         assertThat(validate("not: [", false).toMap()).containsEntry("valid", false).containsKey("errors");
+    }
+
+    @Test
+    void aValidDocumentComesBackAsItsTree() {
+        Map<String, Object> answer = DocumentValidation.tree(bytes(GOOD), RESERVED, "demo", false);
+
+        assertThat(answer).containsEntry("valid", true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> tree = (Map<String, Object>) answer.get("tree");
+        assertThat(tree).containsEntry("format", 1).containsEntry("projectId", "demo");
+        assertThat((List<?>) tree.get("tables")).hasSize(1);
+    }
+
+    @Test
+    void anInvalidDocumentHasErrorsAndNoTree() {
+        Map<String, Object> answer = DocumentValidation.tree(bytes(GOOD.replace("demo", "other")), RESERVED, "demo", false);
+
+        assertThat(answer).containsEntry("valid", false).doesNotContainKey("tree");
+        assertThat((List<?>) answer.get("errors")).isNotEmpty();
     }
 }
