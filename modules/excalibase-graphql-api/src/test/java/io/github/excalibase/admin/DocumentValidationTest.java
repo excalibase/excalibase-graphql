@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assumptions.assumeThat;
 
 class DocumentValidationTest {
 
@@ -175,5 +176,14 @@ class DocumentValidationTest {
                 .isFalse();
         assertThat(DocumentValidation.validate(bytes(document), RESERVED, "demo", false,
                 name -> "k".repeat(32)).valid()).isTrue();
+    }
+
+    @Test
+    void theFourArgumentOverloadReadsTheProcessEnvironment() {
+        String path = System.getenv("PATH");
+        assumeThat(path).isNotNull();
+        assumeThat(path.strip().length()).isGreaterThanOrEqualTo(32);
+
+        assertThat(validate(withSecret("env:PATH"), false).valid()).isTrue();
     }
 }

@@ -10,6 +10,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.Map;
 
 import static io.github.excalibase.metadata.MetadataFixtures.*;
@@ -178,7 +179,7 @@ class ValidateCommandTest {
     }
 
     @Test
-    @Timeout(20)
+    @Timeout(value = 20, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void aSecretFileThatIsNotARegularFile_isRefused_withoutBlocking() throws Exception {
         Path fifo = dir.resolve("pipe.key");
         assumeThat(new ProcessBuilder("mkfifo", fifo.toString()).start().waitFor()).isZero();
@@ -188,7 +189,7 @@ class ValidateCommandTest {
     }
 
     @Test
-    @Timeout(20)
+    @Timeout(value = 20, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
     void aDeviceAsSecretFile_isRefused_withoutBeingRead() throws IOException {
         assumeThat(Files.exists(Path.of("/dev/zero"))).isTrue();
 
@@ -204,5 +205,23 @@ class ValidateCommandTest {
         assertThat(run(Map.of(), "validate", file(withSecret("file:" + big)).toString())).isEqualTo(1);
         assertThat(err.toString(StandardCharsets.UTF_8)).contains(SECRET_REFUSAL);
         assertThat(run(Map.of(), "validate", file(withSecret("file:" + ok)).toString())).isZero();
+    }
+
+    @Test
+    void aBinaryKeyFile_isRefused_asBeforeBoundedReads() throws IOException {
+        byte[] notText = new byte[64];
+        Arrays.fill(notText, (byte) 0xFF);
+        Path binary = Files.write(dir.resolve("binary.key"), notText);
+
+        assertThat(run(Map.of(), "validate", file(withSecret("file:" + binary)).toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains(SECRET_REFUSAL);
+    }
+
+    @Test
+    void aSymlinkToAKeyFile_isFollowed_asAKubernetesSecretMountNeeds() throws IOException {
+        Path key = Files.writeString(dir.resolve("real.key"), "k".repeat(64));
+        Path link = Files.createSymbolicLink(dir.resolve("link.key"), key);
+
+        assertThat(run(Map.of(), "validate", file(withSecret("file:" + link)).toString())).isZero();
     }
 }
