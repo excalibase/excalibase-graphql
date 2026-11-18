@@ -170,7 +170,8 @@ async function fetchTheirs() {
 
 /** Their version becomes the base, and the person's text stays: the next save replaces theirs, by choice. */
 async function overwrite() {
-  state.meta = { ...state.meta, sourceVersion: state.theirs.sourceVersion, text: state.theirs.text };
+  const theirs = state.theirs;
+  state.meta = { ...state.meta, sourceVersion: state.outcome.currentVersion, text: theirs ? theirs.text : state.meta.text };
   state.outcome = null;
   state.theirs = null;
   await showTab(active);

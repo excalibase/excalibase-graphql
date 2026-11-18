@@ -225,3 +225,65 @@ for (const [status, error, expected] of [
     await expect(page.locator("#draft")).toHaveValue(edited);
   });
 }
+
+async function stageConflict(page, currentVersion) {
+  let first = true;
+  const puts = [];
+  await page.route("**/_admin/v1/metadata", (route) => {
+    const method = route.request().method();
+    if (method !== "PUT") {
+      return route.fallback();
+    }
+    puts.push(route.request().headers()["if-match"]);
+    if (first) {
+      first = false;
+      return route.fulfill({ status: 409, contentType: "application/json",
+        body: JSON.stringify({ error: "version_conflict", currentVersion }) });
+    }
+    return route.fallback();
+  });
+  return puts;
+}
+
+test("a 409 whose other version cannot be fetched still offers a working overwrite", async ({ page, request }) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await signIn(page);
+  const { sourceVersion } = await metadata(request);
+  const puts = await stageConflict(page, sourceVersion);
+  let aborted = false;
+  await page.route("**/_admin/v1/metadata", (route) => {
+    if (route.request().method() === "GET" && !aborted) {
+      aborted = true;
+      return route.abort();
+    }
+    return route.fallback();
+  });
+  const mine = EXAMPLE + "# mine\n";
+  await editDraft(page, mine);
+  await page.locator("#save").click();
+
+  await expect(page.getByRole("alert")).toContainText("Someone else saved first");
+  await expect(page.getByRole("alert")).toContainText("could not be shown");
+  await page.getByRole("button", { name: "Keep mine and overwrite theirs" }).click();
+  await page.locator("#save").click();
+
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+  expect((await metadata(request)).document).toBe(mine);
+  expect(puts[1]).toBe(`"${sourceVersion}"`);
+  expect(errors).toEqual([]);
+});
+
+test("a replica that has not caught up is named, and the overwrite uses the version the 409 gave", async ({ page, request }) => {
+  await signIn(page);
+  const puts = await stageConflict(page, "newer-than-this-replica");
+  await editDraft(page, EXAMPLE + "# mine\n");
+  await page.locator("#save").click();
+
+  await expect(page.getByRole("alert")).toContainText("not caught up");
+  await page.getByRole("button", { name: "Keep mine and overwrite theirs" }).click();
+  await page.locator("#save").click();
+
+  await expect.poll(() => puts.length).toBe(2);
+  expect(puts[1]).toBe('"newer-than-this-replica"');
+});

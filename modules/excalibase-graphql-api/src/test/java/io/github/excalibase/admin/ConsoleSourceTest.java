@@ -121,6 +121,15 @@ class ConsoleSourceTest {
     }
 
     @Test
+    @DisplayName("a download's name is only ever what exportName chose, never server data")
+    void downloadNameIsFixed() throws IOException {
+        String app = read("app.js");
+
+        assertThat(app).contains("const { filename, type } = exportName(state.draft);", "saveAs(filename, state.draft, type);");
+        assertThat(count(app, "saveAs(")).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("the secret goes out in the request header and nowhere else")
     void secretOnlyInTheHeader() throws IOException {
         String api = read("api.js");

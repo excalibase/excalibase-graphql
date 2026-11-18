@@ -34,10 +34,18 @@ function errorList(errors) {
   return h("ul", {}, errors.map((message) => h("li", {}, message)));
 }
 
+function conflictNote(outcome, theirs) {
+  if (!theirs) {
+    return "Their version could not be shown right now. ";
+  }
+  return theirs.sourceVersion === outcome.currentVersion ? ""
+    : "This replica has not caught up with their save yet, so the text below is older than theirs. ";
+}
+
 function conflictView(outcome, theirs, handlers) {
   return h("div", { class: "error", role: "alert" },
-    h("p", {}, "Someone else saved first (their version is " + (theirs ? theirs.sourceVersion : outcome.currentVersion)
-      + "). Your edits were not saved."),
+    h("p", {}, "Someone else saved first (the source is now at version " + outcome.currentVersion + "). "
+      + conflictNote(outcome, theirs) + "Your edits were not saved."),
     theirs ? h("pre", { class: "current-text", id: "theirs" }, theirs.text == null ? "Nothing is served." : theirs.text) : null,
     h("div", { class: "actions" },
       h("button", { type: "button", onclick: handlers.onTakeTheirs }, "Use their version"),

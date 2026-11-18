@@ -20,6 +20,9 @@ on:
       - '*.md'
       - '.github/workflows/docs.yml'
 
+permissions:
+  contents: read
+
 jobs:
   console:
     name: Console browser test
