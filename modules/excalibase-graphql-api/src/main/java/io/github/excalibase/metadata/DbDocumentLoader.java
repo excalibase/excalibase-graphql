@@ -26,11 +26,12 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
     private static final String NEWEST = "SELECT octet_length(document), "
             + "CASE WHEN octet_length(document) > ? THEN NULL ELSE document END FROM " + TABLE
             + " ORDER BY version DESC LIMIT 1";
-    private static final int SOCKET_TIMEOUT_SECONDS = 10;
+    private static final int SOCKET_GRACE_SECONDS = 5;
 
     private final String url;
     private final Properties credentials;
     private final boolean migrate;
+    private final long queryTimeoutMillis;
     private volatile boolean migrated;
 
     DbDocumentLoader(DbSettings settings) {
@@ -40,11 +41,13 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
         }
         this.url = settings.url();
         this.migrate = settings.migrate();
+        this.queryTimeoutMillis = Math.max(1, settings.queryTimeout().toMillis());
         this.credentials = new Properties();
         put("user", settings.username());
         put("password", settings.password());
         credentials.setProperty("connectTimeout", Long.toString(Math.max(1, settings.connectTimeout().toSeconds())));
-        credentials.setProperty("socketTimeout", Integer.toString(SOCKET_TIMEOUT_SECONDS));
+        credentials.setProperty("socketTimeout",
+                Long.toString(settings.queryTimeout().toSeconds() + SOCKET_GRACE_SECONDS));
         credentials.setProperty("ApplicationName", "excalibase-metadata");
     }
 
@@ -57,6 +60,7 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
     @Override
     public ReloadingMetadataSource.Raw load() throws IOException {
         try (Connection connection = DriverManager.getConnection(url, credentials)) {
+            bound(connection);
             if (migrate && !migrated) {
                 createTable(connection);
                 migrated = true;
@@ -64,6 +68,18 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
             return newest(connection);
         } catch (SQLException e) {
             throw new IOException(describe(e));
+        }
+    }
+
+    /**
+     * The server cancels a statement, or a wait for a lock, after the timeout. The socket timeout alone would only
+     * make the client give up, leaving the backend waiting. Set per session, not as a startup option, which
+     * connection poolers refuse.
+     */
+    private void bound(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SET statement_timeout = " + queryTimeoutMillis);
+            statement.execute("SET lock_timeout = " + queryTimeoutMillis);
         }
     }
 
@@ -103,6 +119,7 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
         }
         return switch (state) {
             case "42P01", "3F000" -> TABLE + " does not exist: create it, or set metadata.db.migrate=true";
+            case "57014", "55P03" -> "the metadata database did not answer in time (the read was cancelled)";
             case "42501" -> "the metadata database user may not read " + TABLE;
             default -> otherFailure(state);
         };

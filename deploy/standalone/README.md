@@ -88,8 +88,14 @@ INSERT INTO excalibase_meta.metadata_documents (version, document) VALUES (1, $d
   `metadata_refused source=db ...`. A changed row is believed on the poll after the one that saw it. With no
   table, no row or no database at start, every request is answered 503 and readiness reports not ready until a
   good row is read.
-- **Never reachable through the API.** `excalibase_meta` is never served over GraphQL or REST. Also give the
-  application's own database role no grant on it.
+- **Never reachable through the API.** `excalibase_meta` is never served over GraphQL or REST. That does not
+  stop a user's own view or function from reading the table, because every request runs as the application's
+  database role and, by default, that same role reads the document (and, with `METADATA_DB_MIGRATE=true`, owns
+  the table). So the role's grant cannot be revoked in the default mode. To close this, set
+  `METADATA_DATABASE_URL` to the same database (or another one) with a separate, read-only
+  `METADATA_DATABASE_USERNAME`, and give the application role no grant on `excalibase_meta`. We recommend this
+  for anything beyond a trial.
+- **A stuck read is cancelled on the server** after 10 seconds, so a locked table cannot pile up backends.
 - **Credentials stay out of logs.** A failure is logged as a fixed sentence and the SQLState only.
 
 | Setting | Meaning |

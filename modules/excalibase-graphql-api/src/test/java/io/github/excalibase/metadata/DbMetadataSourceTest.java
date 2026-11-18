@@ -17,6 +17,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -25,6 +27,7 @@ import java.util.stream.Collectors;
 
 import static io.github.excalibase.metadata.MetadataFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** The {@code db} source against a real Postgres: boot, live edits, refusals, outages and what never reaches a log. */
@@ -234,10 +237,77 @@ class DbMetadataSourceTest {
             source.close();
         }
 
-        String everything = logs.list.stream().map(event -> event.getFormattedMessage()
+        String everything = logText();
+        assertThat(everything).contains("metadata_refused").doesNotContain(urlSecret, passwordSecret);
+    }
+
+    @Test
+    void aReadHeldUpByALock_isCancelledOnTheServer_keepsTheLastGoodVersion_andLeavesNoBackend() throws Exception {
+        createTable();
+        save(1, GOOD_YAML);
+        create(new DbSettings(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword(), false,
+                Duration.ofHours(1), Duration.ofSeconds(2), Duration.ofSeconds(1)), false).start();
+
+        try (Connection holder = DriverManager.getConnection(postgres.getJdbcUrl(), postgres.getUsername(),
+                postgres.getPassword())) {
+            holder.setAutoCommit(false);
+            holder.createStatement().execute("LOCK TABLE " + TABLE + " IN ACCESS EXCLUSIVE MODE");
+            long started = System.nanoTime();
+            poll(source);
+            Duration took = Duration.ofNanos(System.nanoTime() - started);
+
+            assertThat(took).as("two polls, each bounded by the one second timeout").isLessThan(Duration.ofSeconds(5));
+            assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
+            assertThat(source.status().lastRefusal()).isEqualTo("unreadable");
+            await().atMost(Duration.ofSeconds(3)).untilAsserted(() -> assertThat(sql.queryForObject(
+                    "SELECT count(*) FROM pg_stat_activity WHERE application_name = 'excalibase-metadata'",
+                    Integer.class)).as("backends left behind").isZero());
+        }
+    }
+
+    @Test
+    void anUnparseableUrl_carryingASecret_isNeverEchoedInTheErrorTheLogOrTheStatus() {
+        String secret = "SECRETX";
+        create(new DbSettings("jdbc:postgresql://h:notaport/db?password=" + secret, "u", "p", false,
+                Duration.ofHours(1), Duration.ofSeconds(1)), false).start();
+
+        assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class)
+                .satisfies(error -> assertThat(error.toString()).doesNotContain(secret));
+        assertThat(new MetadataHealth(source).report().orElseThrow().toString()).doesNotContain(secret);
+        assertThat(logText()).contains("metadata_refused").doesNotContain(secret);
+    }
+
+    @Test
+    void theEnvJwtFlag_reachesTheParserThroughMetadataSources() {
+        createTable();
+        save(1, WITH_JWT);
+        MetadataSettings settings = new MetadataSettings("db", "", PROJECT, "",
+                new MetadataSettings.FileSettings("", 5000),
+                new UrlSettings("", "", "", false, Duration.ofSeconds(5), Duration.ofSeconds(3), Duration.ofSeconds(10)),
+                settings(false), true);
+
+        source = MetadataSources.create(settings, meters).orElseThrow();
+
+        assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
+        assertThat(source.status().lastRefusal()).isEqualTo("invalid_document");
+    }
+
+    @Test
+    void aDocumentOverOneMebibyte_isRefused_andNothingIsServed() {
+        createTable();
+        save(1, GOOD_YAML + "# " + "x".repeat(MetadataDocumentParser.MAX_BYTES) + "\n");
+
+        create(settings(false), false).start();
+
+        assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
+        assertThat(source.status().lastRefusal()).isEqualTo("unreadable");
+        assertThat(logText()).contains("larger than");
+    }
+
+    private String logText() {
+        return logs.list.stream().map(event -> event.getFormattedMessage()
                 + (event.getThrowableProxy() == null ? "" : ThrowableProxyUtil.asString(event.getThrowableProxy())))
                 .collect(Collectors.joining("\n"));
-        assertThat(everything).contains("metadata_refused").doesNotContain(urlSecret, passwordSecret);
     }
 
     private static boolean tableExists() {
