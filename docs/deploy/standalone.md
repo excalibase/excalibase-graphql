@@ -80,8 +80,19 @@ The console is a page and a small API for editing the document. It is off by def
 
 ### Saving
 
-`PUT /_admin/v1/metadata` needs an `If-Match` header with the version you started from (the `ETag` of the
-document you read). Without it the answer is `428`. If someone else saved first, the answer is `409` with the
+`PUT /_admin/v1/metadata` needs an `If-Match` header with the version you started from. `GET /_admin/v1/metadata`
+sends no `ETag` header. Use the `sourceVersion` field of its JSON body, in quotes. The `version` field is a
+different number and gets a `409`.
+
+```bash
+SEC=$(cat secrets/admin-secret)
+V=$(curl -s -H "X-Excalibase-Admin-Secret: $SEC" http://localhost:10001/_admin/v1/metadata \
+  | python3 -c 'import sys,json; print(json.load(sys.stdin)["sourceVersion"])')
+curl -X PUT -H "X-Excalibase-Admin-Secret: $SEC" -H "If-Match: \"$V\"" \
+  --data-binary @permissions.yaml http://localhost:10001/_admin/v1/metadata
+```
+
+Without the header the answer is `428`. If someone else saved first, the answer is `409` with the
 current version. A document that does not pass the engine's own checks is refused with `422` and nothing is
 written. Each source writes in its own way:
 

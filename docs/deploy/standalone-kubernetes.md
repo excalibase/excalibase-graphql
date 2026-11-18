@@ -21,8 +21,8 @@ This guide uses `db`. The manifest is
 
 ## Prepare the database
 
-The engine reads and saves the document in `excalibase_meta.metadata_documents`. Create it yourself and give
-the engine a limited user. This is the recommended setup, because the engine's own user then has no grant on
+The engine reads and saves the document in `excalibase_meta.metadata_documents`. Run the SQL below as a database
+admin, not as the application user. This is the recommended setup, because the engine's own user then has no grant on
 the schema it serves from.
 
 ```sql
@@ -56,14 +56,8 @@ $doc$);
 `SELECT` and `INSERT` are enough, including for saves from the console. A save adds a row with the next
 version; it never updates or deletes one.
 
-To use this user for the document and a different user for your data, add these to the Deployment:
-
-```yaml
-- {name: METADATA_DATABASE_URL, value: "jdbc:postgresql://postgres.example:5432/app"}
-- {name: METADATA_DATABASE_USERNAME, value: excalibase_meta_rw}
-- name: METADATA_DATABASE_PASSWORD
-  valueFrom: {secretKeyRef: {name: excalibase-engine, key: metadata-password}}
-```
+The manifest already points the engine at this user through `METADATA_DATABASE_URL`, `METADATA_DATABASE_USERNAME`
+and `METADATA_DATABASE_PASSWORD`, so the application user needs no grant on `excalibase_meta`.
 
 If you would rather let the engine create the table, set `METADATA_DB_MIGRATE=true`. Then the engine's user
 needs `CREATE` on the database, and it owns the table.
@@ -75,6 +69,8 @@ kubectl create secret generic excalibase-engine \
   --from-literal=database-url='jdbc:postgresql://postgres.example:5432/app' \
   --from-literal=database-username=app \
   --from-literal=database-password='...' \
+  --from-literal=metadata-username=excalibase_meta_rw \
+  --from-literal=metadata-password='...' \
   --from-literal=jwt-secret="$(openssl rand -hex 32)" \
   --from-literal=admin-secret="$(openssl rand -hex 32)"
 ```
@@ -101,8 +97,8 @@ The manifest has a Deployment (2 replicas), a Service and a NetworkPolicy. The s
 The Service exposes port 10000 only. There is no Service, Ingress or LoadBalancer for `10001` or `8081`.
 Point your Ingress at the `excalibase-engine` Service for the public API, and nothing else.
 
-The NetworkPolicy allows ingress to port 10000 only. It has an effect only when your CNI enforces
-NetworkPolicy, and you need to allow your ingress controller's namespace if you add selectors.
+The NetworkPolicy allows ingress to port 10000 only. It has no `from`, so any source can reach that port and
+nothing needs allowing. It has an effect only when your CNI enforces NetworkPolicy.
 
 ## Tokens
 

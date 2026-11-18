@@ -6,6 +6,8 @@
 #     --from-literal=database-url='jdbc:postgresql://postgres.example:5432/app' \
 #     --from-literal=database-username=app \
 #     --from-literal=database-password='...' \
+#     --from-literal=metadata-username=excalibase_meta_rw \
+#     --from-literal=metadata-password='...' \
 #     --from-literal=jwt-secret="$(openssl rand -hex 32)" \
 #     --from-literal=admin-secret="$(openssl rand -hex 32)"
 # Reach the console with:  kubectl port-forward deploy/excalibase-engine 10001:10001
@@ -44,6 +46,14 @@ spec:
               valueFrom: {secretKeyRef: {name: excalibase-engine, key: jwt-secret}}
             # Permissions: a row in excalibase_meta.metadata_documents.
             - {name: METADATA_SOURCE, value: db}
+            # The document is read and saved as a separate user that has SELECT and INSERT on the table only
+            # (see the guide for the SQL). Without these three the engine uses the application user above.
+            - name: METADATA_DATABASE_URL
+              valueFrom: {secretKeyRef: {name: excalibase-engine, key: database-url}}
+            - name: METADATA_DATABASE_USERNAME
+              valueFrom: {secretKeyRef: {name: excalibase-engine, key: metadata-username}}
+            - name: METADATA_DATABASE_PASSWORD
+              valueFrom: {secretKeyRef: {name: excalibase-engine, key: metadata-password}}
             - {name: METADATA_DB_POLL_INTERVAL_MS, value: "5000"}
             - {name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED, value: "true"}
             # The console: on its own port, behind a secret mounted as a file.
@@ -79,8 +89,9 @@ spec:
   ports:
     - {name: http, port: 80, targetPort: http}
 ---
-# Belt and braces: pods in the namespace may reach the engine's public port only. Needs a CNI that enforces
-# NetworkPolicy; without one this object does nothing. Allow your ingress controller's namespace as well.
+# Ingress to the pods is limited to port 10000. The rule has no `from`, so any source may reach that port and
+# nothing needs allowing; the admin and management ports are closed to other pods. Needs a CNI that enforces
+# NetworkPolicy; without one this object does nothing.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
