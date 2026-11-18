@@ -79,7 +79,8 @@ class ConsoleServedIntegrationTest extends EngineIntegrationTest {
             String csp = answer.header("Content-Security-Policy");
 
             assertThat(csp).as(path).contains("default-src 'none'", "script-src 'self'", "connect-src 'self'",
-                    "frame-ancestors 'none'", "base-uri 'none'", "form-action 'none'");
+                    "frame-ancestors 'none'", "base-uri 'none'", "form-action 'none'",
+                    "require-trusted-types-for 'script'");
             assertThat(csp).as(path).doesNotContain("unsafe-inline", "unsafe-eval", "http:", "https:", "*");
             assertThat(answer.header("X-Content-Type-Options")).as(path).isEqualTo("nosniff");
             assertThat(answer.header("Referrer-Policy")).as(path).isEqualTo("no-referrer");

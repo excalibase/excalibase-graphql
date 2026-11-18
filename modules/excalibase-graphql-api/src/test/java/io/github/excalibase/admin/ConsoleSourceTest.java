@@ -42,7 +42,7 @@ class ConsoleSourceTest {
     void onlyDomJsTouchesTheDom() throws IOException {
         for (String name : List.of("app.js", "api.js", "views.js")) {
             assertThat(read(name)).as(name)
-                    .doesNotContainPattern("\\bdocument\\s*(\\.\\s*[A-Za-z]|\\[)")
+                    .doesNotContainPattern("\\bdocument\\b")
                     .doesNotContain("createElement", "createTextNode", "setAttribute", "appendChild",
                             "replaceChildren", "textContent", "addEventListener", ".append(", ".prepend(", ".after(",
                             ".before(", ".replaceWith(", "Range", "Node")
@@ -51,6 +51,8 @@ class ConsoleSourceTest {
         String dom = read("dom.js");
         assertThat(dom).contains("createElement(tag)", "createTextNode(String(child))")
                 .doesNotContain("textContent");
+        assertThat(dom).doesNotContainPattern("\\]\\s*=[^=]").doesNotContainPattern("\\.[A-Za-z_]\\w*\\s*=[^=]")
+                .doesNotContain("Object.assign", "defineProperty", "setAttributeNS", "setAttributeNode");
         assertThat(count(dom, "setAttribute(")).isEqualTo(1);
         assertThat(count(dom, "document.")).isEqualTo(3);
     }

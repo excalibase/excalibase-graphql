@@ -15,7 +15,7 @@ button { padding: 8px 14px; border: 1px solid var(--accent); background: var(--a
 .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin: 0 0 16px; }
 .field dt { font-size: 12px; opacity: .7; }
 .field dd { margin: 0; overflow-wrap: anywhere; }
-.document { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; }
+.current-text { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
 .error { color: var(--bad); }

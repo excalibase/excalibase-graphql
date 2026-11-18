@@ -17,7 +17,7 @@ import io.micronaut.http.annotation.Get;
 public class ConsoleController {
 
     static final String POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
-            + "img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+            + "img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'";
 
     private final ConsoleAssets assets = new ConsoleAssets();
 

@@ -1,16 +1,16 @@
-import { ApiError, getMetadata, getReplicas, getSchema, signIn, signOut, signedIn, validateDocument } from "/console/api.js";
+import { ApiError, getMetadata, getReplicas, getSchema, signIn, signOut, signedIn, validateText } from "/console/api.js";
 import { h, mount, rootElement } from "/console/dom.js";
-import { describe, documentView, loginView, replicasView, tablesView, validateView } from "/console/views.js";
+import { describe, metadataView, loginView, replicasView, tablesView, validateView } from "/console/views.js";
 
 const root = rootElement();
 const TABS = [
-  { id: "document", label: "Document", load: async () => documentView(await getMetadata()) },
+  { id: "current", label: "Current", load: async () => metadataView(await getMetadata()) },
   { id: "tables", label: "Tables", load: async () => tablesView(await getSchema()) },
   { id: "replicas", label: "Replicas", load: async () => replicasView(await getReplicas()) },
   { id: "validate", label: "Validate", load: async () => validateView(runValidation, null) }
 ];
 
-let active = "document";
+let active = "current";
 
 function showLogin(error) {
   mount(root, loginView(async (secret) => {
@@ -51,7 +51,7 @@ function handleFailure(failure) {
 
 async function runValidation(text) {
   try {
-    shell(validateView(runValidation, await validateDocument(text), text));
+    shell(validateView(runValidation, await validateText(text), text));
   } catch (failure) {
     handleFailure(failure);
   }

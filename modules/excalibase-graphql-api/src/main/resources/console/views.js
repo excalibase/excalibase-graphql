@@ -3,7 +3,7 @@ import { h } from "/console/dom.js";
 const MESSAGES = {
   unauthorized: "That secret was not accepted.",
   too_many_failed_attempts: "Too many failed attempts. Wait a minute and try again.",
-  no_metadata_source: "This engine has no metadata document.",
+  no_metadata_source: "This engine has no permissions text.",
   schema_unavailable: "The schema is not loaded yet."
 };
 
@@ -26,7 +26,7 @@ export function loginView(onSubmit, error) {
   return form;
 }
 
-export function documentView(meta) {
+export function metadataView(meta) {
   return h("section", {},
     h("dl", { class: "fields" },
       field("Source", meta.source),
@@ -34,8 +34,8 @@ export function documentView(meta) {
       field("Source version", meta.sourceVersion),
       field("Mode", meta.writable ? "writable" : "read-only"),
       field("Last refusal", meta.lastRefusal ? meta.lastRefusal + " (" + meta.lastRefusalAt + ")" : null)),
-    h("h2", {}, "Current document"),
-    h("pre", { class: "document" }, meta.document == null ? "No document is served." : meta.document));
+    h("h2", {}, "Current permissions"),
+    h("pre", { class: "current-text" }, meta.text == null ? "Nothing is served." : meta.text));
 }
 
 function columnList(table) {
@@ -66,10 +66,10 @@ export function replicasView(body) {
 
 export function validateView(onValidate, outcome, text = "") {
   const input = h("textarea", { id: "candidate", rows: 14, spellcheck: "false",
-    placeholder: "Paste a permissions document" });
+    placeholder: "Paste permissions YAML" });
   input.value = text;
   return h("section", {},
-    h("label", { for: "candidate" }, "Document to check"),
+    h("label", { for: "candidate" }, "Text to check"),
     input,
     h("button", { type: "button", onclick: () => onValidate(input.value) }, "Validate"),
     outcomeView(outcome));
