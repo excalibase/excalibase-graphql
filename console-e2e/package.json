@@ -1,0 +1,11 @@
+{
+  "name": "excalibase-console-e2e",
+  "private": true,
+  "description": "Browser test of the engine's admin console. Not part of the Maven build.",
+  "scripts": {
+    "test": "node prepare.js && playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}
