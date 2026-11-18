@@ -12,7 +12,8 @@ import java.net.URI;
  * bucket, an unreachable store and an invalid edit all keep the last good version. Before a first good load every
  * read is refused and the engine reports not ready.
  *
- * <p>Read-only for now, so the console can only export it. Credentials are static (settings, files or the AWS
+ * <p>A save is a conditional PUT (see {@link S3DocumentWriter}); the source is writable only on a store that has been
+ * shown to enforce {@code If-Match}, and read-only otherwise. Credentials are static (settings, files or the AWS
  * environment variables); web-identity and instance-profile credentials are not supported.
  */
 public final class S3MetadataSource {
@@ -31,8 +32,12 @@ public final class S3MetadataSource {
             throw new IllegalStateException("metadata.s3.access-key-id and metadata.s3.secret-access-key are required "
                     + "with metadata.source=s3 (or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY, or a _FILE of each)");
         }
-        return new ReloadingMetadataSource(NAME, new S3DocumentFetcher(object, settings),
-                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load, () -> false,
+        S3DocumentFetcher fetcher = new S3DocumentFetcher(object, settings);
+        S3Http http = new S3Http(settings);
+        MetadataWriter writer = new S3DocumentWriter(fetcher, http, object,
+                new S3ConditionalProbe(http, object, System::currentTimeMillis));
+        return new ReloadingMetadataSource(NAME, fetcher,
+                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load, writer,
                 settings.pollInterval(), meters);
     }
 }

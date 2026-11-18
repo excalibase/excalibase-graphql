@@ -30,6 +30,14 @@ public interface MetadataSource extends PermissionProvider {
     /** Whether a save through this source can succeed. */
     boolean writable();
 
+    /**
+     * Saves a new document if the source still holds {@code expectedVersion}, then reloads it through the ordinary
+     * path. Never writes a document that does not load, and never replaces a version the writer did not start from.
+     */
+    default SaveOutcome save(String text, String expectedVersion) {
+        return new SaveOutcome.ReadOnly();
+    }
+
     Status status();
 
     /**

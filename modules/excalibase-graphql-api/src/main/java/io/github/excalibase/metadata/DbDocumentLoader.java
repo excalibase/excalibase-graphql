@@ -67,6 +67,11 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
         this.connector = connector != null ? connector : () -> DriverManager.getConnection(url, credentials);
     }
 
+    /** A new connection, as a read uses; the caller owns it and the transaction. */
+    Connection open() throws SQLException {
+        return connector.open();
+    }
+
     private void put(String key, String value) {
         if (value != null && !value.isBlank()) {
             credentials.setProperty(key, value);
@@ -104,7 +109,7 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
      * The server cancels a statement, or a wait for a lock, after the timeout. The socket timeout alone would only
      * make the client give up, leaving the backend waiting.
      */
-    private void bound(Connection connection) throws SQLException {
+    void bound(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
             statement.execute("SET LOCAL statement_timeout = " + queryTimeoutMillis);
             statement.execute("SET LOCAL lock_timeout = " + queryTimeoutMillis);

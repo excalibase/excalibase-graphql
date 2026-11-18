@@ -39,7 +39,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private final String name;
     private final Loader loader;
     private final Reader parser;
-    private final BooleanSupplier writable;
+    private final MetadataWriter writer;
     private final Duration interval;
     private final Duration settle;
     private final MeterRegistry meters;
@@ -82,7 +82,18 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
 
     public ReloadingMetadataSource(String name, Loader loader, Reader parser,
                                    BooleanSupplier writable, Duration interval, MeterRegistry meters) {
-        this(name, loader, parser, writable, interval, DEFAULT_SETTLE, meters);
+        this(name, loader, parser, MetadataWriter.readOnly(writable), interval, DEFAULT_SETTLE, meters);
+    }
+
+    public ReloadingMetadataSource(String name, Loader loader, Reader parser,
+                                   MetadataWriter writer, Duration interval, MeterRegistry meters) {
+        this(name, loader, parser, writer, interval, DEFAULT_SETTLE, meters);
+    }
+
+    public ReloadingMetadataSource(String name, Loader loader, Reader parser,
+                                   BooleanSupplier writable, Duration interval, Duration settle,
+                                   MeterRegistry meters) {
+        this(name, loader, parser, MetadataWriter.readOnly(writable), interval, settle, meters);
     }
 
     /**
@@ -90,13 +101,13 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
      *               so a file caught mid-write is not served
      */
     public ReloadingMetadataSource(String name, Loader loader, Reader parser,
-                                   BooleanSupplier writable, Duration interval, Duration settle,
+                                   MetadataWriter writer, Duration interval, Duration settle,
                                    MeterRegistry meters) {
         this.settle = Objects.requireNonNull(settle, "settle");
         this.name = Objects.requireNonNull(name, "name");
         this.loader = Objects.requireNonNull(loader, "loader");
         this.parser = Objects.requireNonNull(parser, "parser");
-        this.writable = Objects.requireNonNull(writable, "writable");
+        this.writer = Objects.requireNonNull(writer, "writer");
         this.interval = Objects.requireNonNull(interval, "interval");
         this.meters = Objects.requireNonNull(meters, "meters");
     }
@@ -266,7 +277,50 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
 
     @Override
     public boolean writable() {
-        return writable.getAsBoolean();
+        return writer.writable();
+    }
+
+    @Override
+    public SaveOutcome save(String text, String expectedVersion) {
+        if (!writer.writable()) {
+            return new SaveOutcome.ReadOnly();
+        }
+        try {
+            parser.parse(text, counter.get() + 1);
+        } catch (MetadataDocumentException e) {
+            return new SaveOutcome.Invalid(List.of(e.getMessage()));
+        } catch (RuntimeException e) {
+            log.error("metadata_save_not_validated source={}", name, e);
+            return new SaveOutcome.Failed("validation_failed");
+        }
+        try {
+            return reloaded(writer.write(text, expectedVersion));
+        } catch (WriteConflictException e) {
+            return new SaveOutcome.Conflict(e.currentVersion());
+        } catch (IOException | RuntimeException e) {
+            log.error("metadata_save_failed source={} serving={} error={}", name, "last good version " + counter.get(),
+                    e.getMessage());
+            return new SaveOutcome.Failed("write_failed");
+        }
+    }
+
+    /**
+     * Takes the saved document up through the ordinary reload: parse, validate, swap. A save is complete when it is
+     * written, so the settle read is not waited for; a second read stands in for the poll that would see it again.
+     */
+    private synchronized SaveOutcome reloaded(String writtenVersion) {
+        refresh();
+        Snapshot served = current.get();
+        if (served == null || !served.sourceVersion().equals(writtenVersion)) {
+            refresh();
+            served = current.get();
+        }
+        if (served != null && served.sourceVersion().equals(writtenVersion)) {
+            return new SaveOutcome.Saved(served.version(), writtenVersion);
+        }
+        log.error("metadata_saved_not_applied source={} serving={}", name,
+                served == null ? "nothing (every read is refused)" : "last good version " + counter.get());
+        return new SaveOutcome.NotApplied("reload_refused");
     }
 
     @Override

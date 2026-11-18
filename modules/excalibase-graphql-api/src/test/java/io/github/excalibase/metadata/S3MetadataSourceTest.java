@@ -91,7 +91,7 @@ class S3MetadataSourceTest {
         assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
         assertThat(source.name()).isEqualTo("s3");
         assertThat(source.status().sourceVersion()).isEqualTo("sha256:" + MinioFixture.hex(GOOD_YAML.getBytes()));
-        assertThat(source.writable()).isFalse();
+        assertThat(source.writable()).isTrue();
     }
 
     @Test
