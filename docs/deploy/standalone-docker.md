@@ -96,7 +96,9 @@ Then remove `JWT_SECRET`. Do not set `APP_SECURITY_AUTH_JWKS_URL` or `APP_SECURI
 same time: the document is refused while either is set. The other providers are in the
 [folder README](https://github.com/excalibase/excalibase-graphql/blob/main/deploy/standalone/README.md).
 
-Check the document before you start the engine:
+Check the document before you start the engine. A `jwt: secret: env:NAME` or `file:` reference is resolved where you
+run `validate`, so export that variable (or have the file) first; a missing or short secret fails here as it does in
+the engine:
 
 ```bash
 java -jar excalibase-graphql-api.jar validate metadata/permissions.yaml --project-id my-app

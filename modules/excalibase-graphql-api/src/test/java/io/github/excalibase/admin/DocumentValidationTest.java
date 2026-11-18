@@ -166,4 +166,14 @@ class DocumentValidationTest {
 
         assertThat(validate(withSecret("file:" + key), false).valid()).isTrue();
     }
+
+    @Test
+    void theGivenEnvironmentIsWhatAnEnvSecretIsReadFrom() {
+        String document = withSecret("env:JWT_SECRET");
+
+        assertThat(DocumentValidation.validate(bytes(document), RESERVED, "demo", false, name -> null).valid())
+                .isFalse();
+        assertThat(DocumentValidation.validate(bytes(document), RESERVED, "demo", false,
+                name -> "k".repeat(32)).valid()).isTrue();
+    }
 }

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://excalibase.io/schemas/metadata-v1.json
 #
 # Who may read and write which table. A table with no rule here is not reachable by anyone except the
-# `service` role. Check an edit before you deploy it:
+# `service` role. Check an edit before you deploy it (export JWT_SECRET first: validate resolves the secret):
 #   java -jar excalibase-graphql-api.jar validate metadata/permissions.yaml
 format: 1
 projectId: my-app            # must equal APP_PROJECT_ID of the engine

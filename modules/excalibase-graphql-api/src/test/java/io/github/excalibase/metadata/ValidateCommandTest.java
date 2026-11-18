@@ -1,6 +1,7 @@
 package io.github.excalibase.metadata;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
@@ -13,6 +14,7 @@ import java.util.Map;
 
 import static io.github.excalibase.metadata.MetadataFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assumptions.assumeThat;
 
 class ValidateCommandTest {
 
@@ -173,5 +175,34 @@ class ValidateCommandTest {
         assertThat(run(Map.of(), "validate", file(withSecret("file:" + shortKey)).toString())).isEqualTo(1);
         assertThat(run(Map.of(), "validate", file(withSecret("file:" + longKey)).toString())).isZero();
         assertThat(err.toString(StandardCharsets.UTF_8)).doesNotContain("tooshort").doesNotContain(LONG_SECRET);
+    }
+
+    @Test
+    @Timeout(20)
+    void aSecretFileThatIsNotARegularFile_isRefused_withoutBlocking() throws Exception {
+        Path fifo = dir.resolve("pipe.key");
+        assumeThat(new ProcessBuilder("mkfifo", fifo.toString()).start().waitFor()).isZero();
+
+        assertThat(run(Map.of(), "validate", file(withSecret("file:" + fifo)).toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains(SECRET_REFUSAL).doesNotContain(fifo.toString());
+    }
+
+    @Test
+    @Timeout(20)
+    void aDeviceAsSecretFile_isRefused_withoutBeingRead() throws IOException {
+        assumeThat(Files.exists(Path.of("/dev/zero"))).isTrue();
+
+        assertThat(run(Map.of(), "validate", file(withSecret("file:/dev/zero")).toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains(SECRET_REFUSAL);
+    }
+
+    @Test
+    void aSecretFileOverTheLimit_isRefused_andOneInsideItPasses() throws IOException {
+        Path big = Files.writeString(dir.resolve("big.key"), "k".repeat(64 * 1024 + 1));
+        Path ok = Files.writeString(dir.resolve("ok.key"), "k".repeat(64));
+
+        assertThat(run(Map.of(), "validate", file(withSecret("file:" + big)).toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains(SECRET_REFUSAL);
+        assertThat(run(Map.of(), "validate", file(withSecret("file:" + ok)).toString())).isZero();
     }
 }
