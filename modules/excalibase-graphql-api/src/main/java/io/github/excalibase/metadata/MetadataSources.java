@@ -33,7 +33,9 @@ public final class MetadataSources {
             case FileMetadataSource.NAME -> file(settings, reserved, meters);
             case UrlMetadataSource.NAME -> UrlMetadataSource.create(positive(settings.url()), reserved,
                     settings.projectId(), meters, settings.envJwtConfigured());
-            default -> throw new IllegalStateException("metadata.source must be \"file\" or \"url\" (db and s3 are "
+            case DbMetadataSource.NAME -> DbMetadataSource.create(db(settings.db()), reserved, settings.projectId(),
+                    meters, settings.envJwtConfigured());
+            default -> throw new IllegalStateException("metadata.source must be \"file\", \"url\" or \"db\" (s3 is "
                     + "not available yet) but was \"" + source + "\"");
         };
         created.start();
@@ -58,6 +60,15 @@ public final class MetadataSources {
                     + "must be positive");
         }
         return url;
+    }
+
+    private static DbSettings db(DbSettings db) {
+        require(db.url(), "spring.datasource.url or metadata.database.url", "db", "the database holding the document");
+        if (db.pollInterval().isZero() || db.pollInterval().isNegative() || db.connectTimeout().isZero()
+                || db.connectTimeout().isNegative()) {
+            throw new IllegalStateException("metadata.db.poll-interval-ms and connect-timeout-ms must be positive");
+        }
+        return db;
     }
 
     private static void require(String value, String property, String source, String meaning) {

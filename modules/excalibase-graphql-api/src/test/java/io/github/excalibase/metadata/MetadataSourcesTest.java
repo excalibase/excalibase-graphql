@@ -72,7 +72,7 @@ class MetadataSourcesTest {
 
     @Test
     void anUnsupportedSource_isRefusedAtStart() {
-        assertThatThrownBy(() -> create("db", "", "/x", 5000, PROJECT))
+        assertThatThrownBy(() -> create("s3", "", "/x", 5000, PROJECT))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("metadata.source");
     }
 
@@ -116,5 +116,26 @@ class MetadataSourcesTest {
             assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
             assertThat(source.name()).isEqualTo("url");
         }
+    }
+
+    private Optional<ReloadingMetadataSource> createDb(String url, Duration interval) {
+        return MetadataSources.create(new MetadataSettings("db", "", PROJECT, "", new MetadataSettings.FileSettings("", 5000),
+                noUrl(), new DbSettings(url, "u", "p", false, interval, Duration.ofSeconds(1)), false), meters);
+    }
+
+    @Test
+    void aDbSource_withNoReachableDatabase_startsAndRefusesAll() {
+        try (ReloadingMetadataSource source = createDb("jdbc:postgresql://127.0.0.1:1/db", Duration.ofHours(1))
+                .orElseThrow()) {
+            assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
+            assertThat(source.name()).isEqualTo("db");
+        }
+    }
+
+    @Test
+    void aDbSource_withoutADatabase_aPositiveInterval_orPostgres_isRefusedAtStart() {
+        assertThatThrownBy(() -> createDb("", Duration.ofSeconds(5))).hasMessageContaining("spring.datasource.url");
+        assertThatThrownBy(() -> createDb("jdbc:postgresql://h/db", Duration.ZERO)).hasMessageContaining("poll-interval-ms");
+        assertThatThrownBy(() -> createDb("jdbc:mysql://h/db", Duration.ofSeconds(5))).hasMessageContaining("Postgres only");
     }
 }
