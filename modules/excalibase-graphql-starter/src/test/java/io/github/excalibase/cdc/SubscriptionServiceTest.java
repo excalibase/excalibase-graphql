@@ -96,6 +96,31 @@ class SubscriptionServiceTest {
         }
     }
 
+    @Test
+    @DisplayName("an event of a reserved schema is dropped, even for a subscriber named on it")
+    void publish_dropsEventsOfReservedSchemas() {
+        List<CDCEvent> internal = new ArrayList<>();
+        List<CDCEvent> ordinary = new ArrayList<>();
+        Disposable meta = service.subscribe(null, "excalibase_meta.t").subscribe(internal::add);
+        Disposable auth = service.subscribe(null, "auth.users").subscribe(internal::add);
+        Disposable plain = service.subscribe(null, "public.t").subscribe(ordinary::add);
+        try {
+            awaitTrue(() -> service.hasSubscribers(null, "excalibase_meta.t")
+                    && service.hasSubscribers(null, "auth.users") && service.hasSubscribers(null, "public.t"));
+
+            service.publish(null, new CDCEvent("INSERT", "excalibase_meta", "t", "{\"id\":1}", 1L));
+            service.publish(null, new CDCEvent("INSERT", "AUTH", "users", "{\"id\":1}", 2L));
+            service.publish(null, new CDCEvent("INSERT", "public", "t", "{\"id\":2}", 3L));
+
+            awaitTrue(() -> ordinary.size() == 1);
+            assertThat(internal).isEmpty();
+        } finally {
+            meta.dispose();
+            auth.dispose();
+            plain.dispose();
+        }
+    }
+
     private static void awaitTrue(BooleanSupplier cond) {
         await().atMost(Duration.ofSeconds(2)).until(cond::getAsBoolean);
     }

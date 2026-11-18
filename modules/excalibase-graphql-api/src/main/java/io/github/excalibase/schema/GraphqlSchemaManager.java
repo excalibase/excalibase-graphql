@@ -33,7 +33,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import java.time.Duration;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import io.micronaut.core.propagation.MutablePropagatedContext;
@@ -296,8 +295,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * source, every other role is served nothing — unless authentication is off, where the whole
      * schema is served — and no function is tracked.
      */
-    private EngineState build(Reflection reflection, String projectId, String role, PermissionSet permissions) {
+    private EngineState build(Reflection reflection, String projectId, String role, PermissionSet document) {
         PermissionDialect dialect = permissionDialect(reflection, projectId, role);
+        PermissionSet permissions = document == null ? null : document.excluding(reservedSchemas::isReservedObject);
         AccessPlan plan;
         if (Principal.SERVICE.equals(role)) {
             plan = AccessPlan.allAccess(dialect, reflection.schema(),
@@ -370,7 +370,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         if (state == null) {
             return Optional.empty();
         }
-        return tableFor(state, subscriptionKey).flatMap(table ->
+        return tableFor(state, subscriptionKey).filter(table -> !reservedSchemas.isReservedObject(table)).flatMap(table ->
                 state.plan().changes(table, sessionVariables(principal, projectId))
                         .map(filter -> new RealtimeAccess(table, filter, state.probes(), state.plan().view(),
                                 state.permissionsVersion())));
@@ -403,6 +403,11 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         }
         reflections.remove(projectId);
         tenantEngineStates.removeIf(key -> projectId.equals(key.projectId()));
+    }
+
+    @Override
+    public boolean isReserved(String schema) {
+        return reservedSchemas.isReserved(schema);
     }
 
     @Override
@@ -499,19 +504,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         loadMultiSchema(schemaInfo, schemaList, loader, jdbcTemplate);
     }
 
-    private String findCompoundKey(SchemaInfo schemaInfo, String rawTable, List<String> allSchemas, String preferredSchema) {
-        if (preferredSchema != null) {
-            String candidate = preferredSchema + "." + rawTable;
-            if (schemaInfo.hasTable(candidate)) return candidate;
-        }
-        for (String schema : allSchemas) {
-            if (schema.equals(preferredSchema)) continue;
-            String candidate = schema + "." + rawTable;
-            if (schemaInfo.hasTable(candidate)) return candidate;
-        }
-        return null;
-    }
-
     /**
      * A project is reflected with the engine its own vault record names; {@code app.database-type} is not
      * consulted. A database that cannot be read fails the request and nothing is cached: an empty schema
@@ -550,59 +542,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     private void loadMultiSchema(SchemaInfo schemaInfo, List<String> schemaList,
                                  SchemaLoader loader, JdbcTemplate jdbc) {
-        Map<String, SchemaInfo> perSchema = new LinkedHashMap<>();
-        loader.loadAll(jdbc, schemaList, perSchema);
-
-        SchemaMerger merger = new SchemaMerger();
-        for (var schemaEntry : perSchema.entrySet()) {
-            String schema = schemaEntry.getKey();
-            SchemaInfo temp = schemaEntry.getValue();
-            merger.merge(schemaInfo, schema, temp);
-            mergeEnumsProcsAndComposites(schemaInfo, schema, temp);
-            // Extensions are global to the database, so every per-schema temp
-            // carries the same set. Copying once onto the target is enough —
-            // duplicates are harmless since addExtension uses a map put.
-            for (var ext : temp.getExtensions().entrySet()) {
-                schemaInfo.addExtension(ext.getKey(), ext.getValue());
-            }
-        }
-        mergeForeignKeys(schemaInfo, perSchema, schemaList);
-    }
-
-    private void mergeEnumsProcsAndComposites(SchemaInfo target, String schema, SchemaInfo source) {
-        for (var entry : source.getEnumTypes().entrySet()) {
-            for (String label : entry.getValue()) {
-                target.addEnumValue(schema + "." + entry.getKey(), label);
-            }
-        }
-        for (var entry : source.getFunctions().entrySet()) {
-            target.addFunction(schema + "." + entry.getKey(), entry.getValue());
-        }
-        for (var entry : source.getCompositeTypes().entrySet()) {
-            for (var field : entry.getValue()) {
-                target.addCompositeTypeField(schema + "." + entry.getKey(), field.name(), field.type());
-            }
-        }
-    }
-
-    private void mergeForeignKeys(SchemaInfo target, Map<String, SchemaInfo> perSchema, List<String> schemaList) {
-        for (var schemaEntry : perSchema.entrySet()) {
-            String schema = schemaEntry.getKey();
-            SchemaInfo temp = schemaEntry.getValue();
-            for (var entry : temp.getAllForwardFks().entrySet()) {
-                String fkKey = entry.getKey();
-                String fromTable = fkKey.substring(0, fkKey.lastIndexOf('.'));
-                SchemaInfo.FkInfo fk = entry.getValue();
-                String compoundFrom = schema + "." + fromTable;
-                String compoundTo = findCompoundKey(target, fk.refTable(), schemaList, schema);
-                if (compoundTo != null && target.hasTable(compoundFrom)) {
-                    if (fk.isComposite()) {
-                        target.addCompositeForeignKey(compoundFrom, fk.fkColumns(), compoundTo, fk.refColumns());
-                    } else {
-                        target.addForeignKey(compoundFrom, fk.fkColumn(), compoundTo, fk.refColumn());
-                    }
-                }
-            }
-        }
+        new MultiSchemaLoader(reservedSchemas).load(schemaInfo, schemaList, loader, jdbc);
     }
 }

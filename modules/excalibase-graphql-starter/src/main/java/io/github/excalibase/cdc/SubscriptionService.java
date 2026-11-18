@@ -1,7 +1,10 @@
 package io.github.excalibase.cdc;
 
+import io.github.excalibase.schema.ReservedSchemas;
+import io.micronaut.context.annotation.Value;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
@@ -28,6 +31,16 @@ public class SubscriptionService {
 
     private final Map<String, Sinks.Many<CDCEvent>> tableSinks = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> subscriberCounts = new ConcurrentHashMap<>();
+    private final ReservedSchemas reservedSchemas;
+
+    @Inject
+    public SubscriptionService(@Value("${app.reserved-schemas:}") String reservedSchemasConfig) {
+        this.reservedSchemas = ReservedSchemas.fromConfig(reservedSchemasConfig);
+    }
+
+    public SubscriptionService() {
+        this("");
+    }
 
     /**
      * Check if a (tenant, table) pair has active subscribers.
@@ -67,7 +80,7 @@ public class SubscriptionService {
      * Publish a CDC event to subscribers scoped to ({@code tenantId}, event.schema.event.table).
      */
     public void publish(String tenantId, CDCEvent event) {
-        if (event.table() == null) {
+        if (event.table() == null || reservedSchemas.isReserved(event.schema())) {
             return;
         }
         String tableKey = (event.schema() != null ? event.schema() + "." : "") + event.table();

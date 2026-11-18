@@ -34,6 +34,25 @@ class PermissionSetTest {
     }
 
     @Test
+    void excluding_dropsEveryRuleFunctionAndGrantThatNamesAReservedObject() {
+        TrackedFunction internal = new TrackedFunction("excalibase_meta.read_t", TrackedFunction.ExposedAs.QUERY, true,
+                null);
+        PermissionSet document = new PermissionSet("proj", 3,
+                List.of(readable("public.orders", "user"), readable("excalibase_meta.t", "user"),
+                        readable("auth.users", "editor")),
+                List.of(SEARCH, internal),
+                List.of(new FunctionPermission("excalibase_meta.read_t", "user"),
+                        new FunctionPermission("public.search_orders", "user")));
+
+        PermissionSet served = document.excluding(name -> name.startsWith("excalibase_meta.") || name.startsWith("auth."));
+
+        assertThat(served.version()).isEqualTo(3);
+        assertThat(served.tables()).containsExactly(readable("public.orders", "user"));
+        assertThat(served.functions()).containsExactly(SEARCH);
+        assertThat(served.functionPermissions()).containsExactly(new FunctionPermission("public.search_orders", "user"));
+    }
+
+    @Test
     void forRole_keysTheRolesTablesByName() {
         RolePermissions user = permissions().forRole("user");
 

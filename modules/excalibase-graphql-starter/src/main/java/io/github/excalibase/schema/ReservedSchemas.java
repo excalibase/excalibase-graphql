@@ -50,6 +50,16 @@ public record ReservedSchemas(Set<String> names) {
         return schemaName != null && names.contains(normalize(schemaName));
     }
 
+    /**
+     * Whether a schema-qualified name ({@code schema.object}) lives in a reserved schema. A name with no
+     * schema is not qualified, so it is never reserved here. This is the one decision every entry point
+     * applies: discovery, relationships, functions, permission rules, REST and realtime.
+     */
+    public boolean isReservedObject(String qualifiedName) {
+        int dot = qualifiedName == null ? -1 : qualifiedName.indexOf('.');
+        return dot > 0 && isReserved(qualifiedName.substring(0, dot));
+    }
+
     /** Drop reserved schemas from a discovered list, keeping the original order. */
     public List<String> filter(List<String> discovered) {
         return discovered.stream().filter(schema -> !isReserved(schema)).toList();

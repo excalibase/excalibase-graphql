@@ -81,12 +81,13 @@ public class PostgresSchemaLoader implements SchemaLoader {
                 SELECT 'fk' as kind, n.nspname as table_schema, cl.relname as table_name, NULL as column_name,
                        NULL as data_type, NULL as udt_name, NULL::int as character_maximum_length,
                        c.conname as constraint_name, a.attname as from_column,
-                       clf.relname as to_table, af.attname as to_column,
+                       clf.relname as to_table, nf.nspname as to_schema, af.attname as to_column,
                        u.ord as ordinal, NULL as enum_label, NULL::double precision as sort_order,
                        NULL as proc_name, NULL as args_signature, NULL as return_type, NULL as function_name
                 FROM pg_constraint c
                 JOIN pg_class cl ON c.conrelid = cl.oid
                 JOIN pg_class clf ON c.confrelid = clf.oid
+                JOIN pg_namespace nf ON clf.relnamespace = nf.oid
                 JOIN pg_namespace n ON c.connamespace = n.oid
                 CROSS JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS u(from_attnum, to_attnum, ord)
                 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.from_attnum
@@ -238,7 +239,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             switch (kind) {
                 case "column", "matview_col" -> handleColumnKind(kind, node, schema, info);
                 case "pk" -> info.addPrimaryKey(node.get(COL_TABLE_NAME).asText(), node.get(COL_COLUMN_NAME).asText());
-                case "fk" -> handleForeignKeyRow(node, schema, fkTables, fkColumns);
+                case "fk" -> handleForeignKeyRow(node, schema, schemaArray, fkTables, fkColumns);
                 case "view", "matview" -> handleViewKind(kind, node, info);
                 case "enum" -> info.addEnumValue(node.get(COL_UDT_NAME).asText(), node.get("enum_label").asText());
                 case "composite" -> info.addCompositeTypeField(
@@ -302,9 +303,17 @@ public class PostgresSchemaLoader implements SchemaLoader {
         return type;
     }
 
-    private void handleForeignKeyRow(JsonNode node, String schema,
+    /**
+     * A foreign key is kept only when the table it points at is in a loaded schema. Its target is named by
+     * table alone further on, so a key into a schema that was not loaded (an internal one) would otherwise
+     * bind to a same-named table of a loaded schema.
+     */
+    private void handleForeignKeyRow(JsonNode node, String schema, String[] loadedSchemas,
                                      Map<String, String[]> fkTables,
                                      Map<String, List<String[]>> fkColumns) {
+        if (!Arrays.asList(loadedSchemas).contains(node.path("to_schema").asText())) {
+            return;
+        }
         String constraintKey = schema + "." + node.get("constraint_name").asText();
         String fromTable = node.get(COL_TABLE_NAME).asText();
         String fromCol = node.get("from_column").asText();
@@ -437,7 +446,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             CROSS JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS u(from_attnum, to_attnum, ord)
             JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.from_attnum
             JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = u.to_attnum
-            WHERE c.contype = 'f' AND n.nspname = ?
+            WHERE c.contype = 'f' AND n.nspname = ? AND clf.relnamespace = c.connamespace
             ORDER BY c.conname, u.ord
             """, rs -> {
             String constraintName = rs.getString("constraint_name");
