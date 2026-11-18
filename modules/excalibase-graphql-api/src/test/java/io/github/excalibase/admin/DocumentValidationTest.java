@@ -4,6 +4,11 @@ import io.github.excalibase.metadata.DocumentValidation;
 import io.github.excalibase.metadata.MetadataDocumentParser;
 import io.github.excalibase.schema.ReservedSchemas;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -11,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assumptions.assumeThat;
 
 class DocumentValidationTest {
 
@@ -134,5 +140,50 @@ class DocumentValidationTest {
 
         assertThat(answer).containsEntry("valid", false).doesNotContainKey("tree");
         assertThat((List<?>) answer.get("errors")).isNotEmpty();
+    }
+
+    private static String withSecret(String reference) {
+        return GOOD.replace("tables:", "jwt:\n  secret: " + reference + "\n  audience: a\ntables:");
+    }
+
+    @Test
+    void aSecretReferenceThatCannotBeLoadedIsRefusedWithTheEnginesMessage(@TempDir Path dir) throws IOException {
+        Path shortKey = Files.writeString(dir.resolve("short.key"), "tooshort");
+
+        for (String reference : List.of("env:EXCALIBASE_SURELY_NOT_SET", "file:" + dir.resolve("none.key"),
+                "file:" + shortKey)) {
+            DocumentValidation.Result result = validate(withSecret(reference), false);
+
+            assertThat(result.valid()).as(reference).isFalse();
+            assertThat(result.errors()).singleElement().asString()
+                    .startsWith("jwt: the signing keys or the secret cannot be loaded")
+                    .doesNotContain("tooshort");
+        }
+    }
+
+    @Test
+    void aSecretFileOfEnoughCharactersIsValid(@TempDir Path dir) throws IOException {
+        Path key = Files.writeString(dir.resolve("long.key"), "k".repeat(32) + "\n");
+
+        assertThat(validate(withSecret("file:" + key), false).valid()).isTrue();
+    }
+
+    @Test
+    void theGivenEnvironmentIsWhatAnEnvSecretIsReadFrom() {
+        String document = withSecret("env:JWT_SECRET");
+
+        assertThat(DocumentValidation.validate(bytes(document), RESERVED, "demo", false, name -> null).valid())
+                .isFalse();
+        assertThat(DocumentValidation.validate(bytes(document), RESERVED, "demo", false,
+                name -> "k".repeat(32)).valid()).isTrue();
+    }
+
+    @Test
+    void theFourArgumentOverloadReadsTheProcessEnvironment() {
+        String path = System.getenv("PATH");
+        assumeThat(path).isNotNull();
+        assumeThat(path.strip().length()).isGreaterThanOrEqualTo(32);
+
+        assertThat(validate(withSecret("env:PATH"), false).valid()).isTrue();
     }
 }

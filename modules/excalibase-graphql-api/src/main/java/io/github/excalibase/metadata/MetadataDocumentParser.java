@@ -14,6 +14,7 @@ import io.github.excalibase.security.TokenVerifier;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 
 /**
  * Reads the metadata document: a small header ({@code format}, {@code projectId}) around the permission rules, which go to {@link PermissionSetParser} untouched so the rule grammar
@@ -38,6 +39,10 @@ public final class MetadataDocumentParser {
             .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .build();
+
+    /** What a document is refused with when its keys or secret cannot be loaded, on a save and in {@link #check}. */
+    public static final String KEYS_UNAVAILABLE = "jwt: the signing keys or the secret cannot be loaded; check the "
+            + "secret reference, or the JWKS and discovery URLs";
 
     private final ReservedSchemas reserved;
     private final String expectedProjectId;
@@ -73,6 +78,25 @@ public final class MetadataDocumentParser {
      */
     public PermissionSet parse(String text, long version) {
         return validated(text, version).permissions();
+    }
+
+    /**
+     * {@link #parse} plus the one check of the {@code jwt:} section that needs the outside: a secret reference must
+     * resolve to a long enough secret, the same read the engine makes. A key set is still not fetched.
+     *
+     * @param environment where an {@code env:} reference is read from
+     * @throws MetadataDocumentException the document is invalid or its secret cannot be loaded; never holds the secret
+     */
+    public PermissionSet check(String text, long version, UnaryOperator<String> environment) {
+        Parsed parsed = validated(text, version);
+        if (parsed.jwt() != null && parsed.jwt().secretRef() != null) {
+            try {
+                JwtKeyLoader.secret(parsed.jwt().secretRef(), environment);
+            } catch (IllegalStateException e) {
+                throw new MetadataDocumentException(KEYS_UNAVAILABLE, e);
+            }
+        }
+        return parsed.permissions();
     }
 
     /**

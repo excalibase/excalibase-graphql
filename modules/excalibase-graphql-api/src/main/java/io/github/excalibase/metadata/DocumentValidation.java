@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 /**
  * Checks a posted document with the parser the engine loads with, the same reserved schemas and project, and the same
@@ -42,6 +43,12 @@ public final class DocumentValidation {
     }
 
     public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured) {
+        return validate(body, reserved, projectId, envJwtConfigured, System::getenv);
+    }
+
+    /** @param environment where an {@code env:} secret reference is read, as the engine reads it */
+    public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured,
+                                  UnaryOperator<String> environment) {
         if (body == null || body.length == 0) {
             return refused("the document is empty");
         }
@@ -55,7 +62,8 @@ public final class DocumentValidation {
             return refused("the document is not UTF-8 text");
         }
         try {
-            PermissionSet permissions = new MetadataDocumentParser(reserved, projectId, envJwtConfigured).parse(text, 1);
+            PermissionSet permissions = new MetadataDocumentParser(reserved, projectId, envJwtConfigured)
+                    .check(text, 1, environment);
             return new Result(true, List.of(), permissions.tables().size(), permissions.functions().size());
         } catch (MetadataDocumentException e) {
             return refused(e.getMessage());

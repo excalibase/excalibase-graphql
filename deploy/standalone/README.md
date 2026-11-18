@@ -201,7 +201,8 @@ How it behaves:
   never taken from an outside token.
 - **Session variables.** Only the caller's id and the `extra` names are exposed to rules; other claims
   of the token are not, so a provider's claim cannot stand in for a variable nobody mapped.
-- `excalibase validate` checks the section without contacting the provider.
+- `excalibase validate` checks the section without contacting the provider. It does read a `secret: env:`/`file:`
+  reference, so export that variable (or have the file) where you run it.
 
 ### Check a document before you deploy it
 

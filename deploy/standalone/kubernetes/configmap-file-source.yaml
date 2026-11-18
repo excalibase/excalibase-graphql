@@ -1,7 +1,7 @@
 # The `file` source on Kubernetes: the permissions live in a ConfigMap, mounted as a folder.
 #   kubectl apply -f configmap-file-source.yaml
 # Edit the ConfigMap and apply it again; the kubelet updates the mounted file within about a minute and
-# the engine swaps it in on its next poll. Validate first:  excalibase validate permissions.yaml
+# the engine swaps it in on its next poll. Validate first (export JWT_SECRET, which validate resolves):  excalibase validate permissions.yaml
 #
 # Mount the whole folder. A `subPath` mount never receives ConfigMap updates.
 apiVersion: v1

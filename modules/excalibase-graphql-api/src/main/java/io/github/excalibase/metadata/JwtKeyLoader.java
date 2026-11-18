@@ -16,6 +16,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -187,8 +188,15 @@ final class JwtKeyLoader {
     }
 
     private static String readSecretFile(Path file) {
-        try {
-            return Files.readString(file, StandardCharsets.UTF_8);
+        if (!Files.isRegularFile(file)) {
+            throw new IllegalStateException("the jwt secret file is not a regular file");
+        }
+        try (InputStream in = Files.newInputStream(file)) {
+            byte[] bytes = in.readNBytes(SIZE_LIMIT_BYTES + 1);
+            if (bytes.length > SIZE_LIMIT_BYTES) {
+                throw new IllegalStateException("the jwt secret file is larger than " + SIZE_LIMIT_BYTES + " bytes");
+            }
+            return StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString();
         } catch (IOException e) {
             throw new IllegalStateException("cannot read the jwt secret file: " + e.getClass().getSimpleName(), e);
         }
