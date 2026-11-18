@@ -120,7 +120,7 @@ class MetadataSourcesTest {
 
     private Optional<ReloadingMetadataSource> createDb(String url, Duration interval) {
         return MetadataSources.create(new MetadataSettings("db", "", PROJECT, "", new MetadataSettings.FileSettings("", 5000),
-                noUrl(), new DbSettings(url, "u", "p", false, interval, Duration.ofSeconds(1)), false), meters);
+                noUrl(), new DbSettings(url, "u", "p", false, interval, Duration.ofSeconds(1)), S3Settings.NONE, false), meters);
     }
 
     @Test

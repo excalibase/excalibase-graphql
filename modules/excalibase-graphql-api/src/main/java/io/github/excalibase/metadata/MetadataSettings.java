@@ -20,11 +20,6 @@ public record MetadataSettings(String source, String policyUrl, String projectId
                 envJwtConfigured);
     }
 
-    public MetadataSettings(String source, String policyUrl, String projectId, String reservedSchemas,
-                            FileSettings file, UrlSettings url, DbSettings db, boolean envJwtConfigured) {
-        this(source, policyUrl, projectId, reservedSchemas, file, url, db, S3Settings.NONE, envJwtConfigured);
-    }
-
     /** @param pollIntervalMs how often the file's content hash is checked */
     public record FileSettings(String path, long pollIntervalMs) {
     }

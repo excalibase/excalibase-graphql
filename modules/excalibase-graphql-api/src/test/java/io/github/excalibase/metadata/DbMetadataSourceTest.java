@@ -284,7 +284,7 @@ class DbMetadataSourceTest {
         MetadataSettings settings = new MetadataSettings("db", "", PROJECT, "",
                 new MetadataSettings.FileSettings("", 5000),
                 new UrlSettings("", "", "", false, Duration.ofSeconds(5), Duration.ofSeconds(3), Duration.ofSeconds(10)),
-                settings(false), true);
+                settings(false), S3Settings.NONE, true);
 
         source = MetadataSources.create(settings, meters).orElseThrow();
 

@@ -73,4 +73,36 @@ class S3CredentialsTest {
         assertThat(ours.accessKeyId()).isEqualTo("own-id");
         assertThat(ours.secretAccessKey()).isEqualTo("own-secret");
     }
+
+    @Test
+    void anOwnFileSetting_isNotOverriddenByAmbientAwsVariables() {
+        Map<String, String> ambient = Map.of("AWS_ACCESS_KEY_ID", "ambient-id", "AWS_SECRET_ACCESS_KEY", "ambient-secret");
+
+        S3Settings.Credentials chosen = S3Credentials.fromEnvironment(ambient, "", "", "", "/run/id", "/run/secret", "");
+
+        assertThat(chosen.accessKeyId()).isEmpty();
+        assertThat(chosen.secretAccessKey()).isEmpty();
+        assertThat(chosen.accessKeyIdFile()).isEqualTo("/run/id");
+        assertThat(chosen.secretAccessKeyFile()).isEqualTo("/run/secret");
+    }
+
+    @Test
+    void aStrayAwsSessionToken_isNotAttachedToStaticKeysOfOurOwn() {
+        Map<String, String> ambient = Map.of("AWS_SESSION_TOKEN", "stray", "AWS_SESSION_TOKEN_FILE", "/stray");
+
+        S3Settings.Credentials chosen = S3Credentials.fromEnvironment(ambient, "own-id", "own-secret", "", "", "", "");
+
+        assertThat(chosen.sessionToken()).isEmpty();
+        assertThat(chosen.sessionTokenFile()).isEmpty();
+        assertThat(chosen.accessKeyId()).isEqualTo("own-id");
+    }
+
+    @Test
+    void withNoSettingOfOurOwn_theWholeSetComesFromAws() {
+        S3Settings.Credentials chosen = S3Credentials.fromEnvironment(Map.of("AWS_ACCESS_KEY_ID_FILE", "/aws/id",
+                "AWS_SECRET_ACCESS_KEY_FILE", "/aws/secret"), "", "", "", "", "", "");
+
+        assertThat(chosen.accessKeyIdFile()).isEqualTo("/aws/id");
+        assertThat(chosen.secretAccessKeyFile()).isEqualTo("/aws/secret");
+    }
 }

@@ -204,25 +204,27 @@ class S3MetadataSourceTest {
     }
 
     @Test
-    void aJwtSection_isRefused_whenTheEngineHasEnvJwt() {
-        minio.put(BUCKET, KEY, WITH_JWT);
+    void keysWithSpacesPlusSignsAndUnicode_areSignedAndFetched() {
+        for (String key : new String[] {"my docs/a+b.yaml", "unicod\u00e9/\u65e5\u672c/\u00fc.yaml", "a~b/c*d(e).yaml"}) {
+            minio.put(BUCKET, key, GOOD_YAML);
 
-        create(settings(), true).start();
+            try (ReloadingMetadataSource served = S3MetadataSource.create(
+                    settings(minio.endpoint(), BUCKET, key, MinioFixture.ACCESS_KEY, MinioFixture.SECRET_KEY),
+                    ReservedSchemas.fromConfig(""), PROJECT, meters, false)) {
+                served.start();
 
-        assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
-        assertThat(source.status().lastRefusal()).isEqualTo("invalid_document");
+                assertThat(served.permissionsFor(PROJECT).tables()).as(key).hasSize(1);
+            }
+        }
     }
 
     @Test
-    void theMetadataSourcesWiring_passesTheEnvJwtFlagOn_soAJwtSectionIsRefused() {
-        minio.put(BUCKET, KEY, WITH_JWT);
-        MetadataSettings wired = new MetadataSettings("s3", "", PROJECT, "", new MetadataSettings.FileSettings("", 5000),
-                new UrlSettings("", "", "", false, Duration.ofSeconds(5), Duration.ofSeconds(3), Duration.ofSeconds(10)),
-                DbSettings.NONE, settings(), true);
+    void anUpperCaseEndpointHost_isSignedAsTheLowerCaseOneTheClientSends() {
+        minio.put(BUCKET, KEY, GOOD_YAML);
 
-        source = MetadataSources.create(wired, meters).orElseThrow();
+        create(settings("http://LOCALHOST:" + minio.port(), BUCKET, KEY, MinioFixture.ACCESS_KEY,
+                MinioFixture.SECRET_KEY), false).start();
 
-        assertThatThrownBy(() -> source.permissionsFor(PROJECT)).isInstanceOf(PermissionsUnavailableException.class);
-        assertThat(source.status().lastRefusal()).isEqualTo("invalid_document");
+        assertThat(source.permissionsFor(PROJECT).tables()).hasSize(1);
     }
 }

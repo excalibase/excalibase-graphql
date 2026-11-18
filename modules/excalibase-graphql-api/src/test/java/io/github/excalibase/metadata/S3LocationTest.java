@@ -54,6 +54,12 @@ class S3LocationTest {
     }
 
     @Test
+    void anUpperCaseHost_isLowerCased_soTheSignedHostMatchesTheSentOne() {
+        assertThat(uri("http://LOCALHOST:9000", "p.yaml", null)).hasToString("http://localhost:9000/meta/p.yaml");
+        assertThat(uri("https://S3.Example.COM", "p.yaml", false)).hasToString("https://meta.s3.example.com/p.yaml");
+    }
+
+    @Test
     void plainHttpOutsideTheMachineOrCluster_needsAnExplicitOptIn() {
         assertThatThrownBy(() -> S3Location.require(settings("http://storage.example.com", "meta", "p.yaml", null, false), "demo"))
                 .hasMessageContaining("allow-insecure");
