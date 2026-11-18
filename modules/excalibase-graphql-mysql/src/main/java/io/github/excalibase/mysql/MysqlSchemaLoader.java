@@ -66,6 +66,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
                 FROM information_schema.KEY_COLUMN_USAGE kcu
                 WHERE kcu.TABLE_SCHEMA IN """ + inClause + """
                   AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+                  AND kcu.REFERENCED_TABLE_SCHEMA IN """ + inClause + """
               ),
               views AS (
                 SELECT 'view' as kind, table_schema, table_name, NULL as column_name, NULL as data_type,
@@ -107,7 +108,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
         if (schemas.isEmpty()) return;
         String[] schemaArray = schemas.toArray(new String[0]);
         String sql = buildMysqlBulkQuery(schemas.size());
-        int cteCount = 5; // cols, pkeys, fkeys, views, full_text_columns
+        int cteCount = 6; // cols, pkeys, fkeys (two lists: the table's and its target's), views, full_text_columns
         List<KeyColumn> keyColumns = new ArrayList<>();
 
         jdbc.query(sql, ps -> {
@@ -224,9 +225,10 @@ public class MysqlSchemaLoader implements SchemaLoader {
                    kcu.REFERENCED_TABLE_NAME AS to_table, kcu.REFERENCED_COLUMN_NAME AS to_column
             FROM information_schema.KEY_COLUMN_USAGE kcu
             WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+              AND kcu.REFERENCED_TABLE_SCHEMA = ?
             """, (RowCallbackHandler) rs -> keyColumns.add(new KeyColumn(schema, rs.getString("from_table"),
                     rs.getString("constraint_name"), rs.getInt("position"), rs.getString("from_column"),
-                    rs.getString("to_table"), rs.getString("to_column"))), schema);
+                    rs.getString("to_table"), rs.getString("to_column"))), schema, schema);
         addForeignKeys(keyColumns, ignored -> info);
     }
 

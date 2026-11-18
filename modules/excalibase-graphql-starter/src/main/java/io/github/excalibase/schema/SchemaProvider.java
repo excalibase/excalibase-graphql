@@ -28,6 +28,11 @@ public interface SchemaProvider {
         return ExposedFunctions.NONE;
     }
 
+    /** Whether {@code schema} is one the engine never serves; no request may name it. */
+    default boolean isReserved(String schema) {
+        return ReservedSchemas.fromConfig(null).isReserved(schema);
+    }
+
     /**
      * The schema a request without {@code Accept-Profile} addresses: the default
      * schema of the database serving the caller's project, never of another one.

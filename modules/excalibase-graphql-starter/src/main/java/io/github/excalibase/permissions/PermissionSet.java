@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Predicate;
 
 /**
  * One project's whole permission document, as the control plane serves it (spec §8).
@@ -25,6 +26,17 @@ public record PermissionSet(String projectId,
         tables = List.copyOf(tables);
         functions = List.copyOf(functions);
         functionPermissions = List.copyOf(functionPermissions);
+    }
+
+    /**
+     * The same document without every rule, tracked function and function permission whose object
+     * {@code reserved} names: a rule about an object the engine never serves grants nothing.
+     */
+    public PermissionSet excluding(Predicate<String> reserved) {
+        return new PermissionSet(projectId, version,
+                tables.stream().filter(rule -> !reserved.test(rule.table())).toList(),
+                functions.stream().filter(function -> !reserved.test(function.function())).toList(),
+                functionPermissions.stream().filter(grant -> !reserved.test(grant.function())).toList());
     }
 
     /**

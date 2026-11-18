@@ -296,8 +296,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * source, every other role is served nothing — unless authentication is off, where the whole
      * schema is served — and no function is tracked.
      */
-    private EngineState build(Reflection reflection, String projectId, String role, PermissionSet permissions) {
+    private EngineState build(Reflection reflection, String projectId, String role, PermissionSet document) {
         PermissionDialect dialect = permissionDialect(reflection, projectId, role);
+        PermissionSet permissions = document == null ? null : document.excluding(reservedSchemas::isReservedObject);
         AccessPlan plan;
         if (Principal.SERVICE.equals(role)) {
             plan = AccessPlan.allAccess(dialect, reflection.schema(),
@@ -370,7 +371,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         if (state == null) {
             return Optional.empty();
         }
-        return tableFor(state, subscriptionKey).flatMap(table ->
+        return tableFor(state, subscriptionKey).filter(table -> !reservedSchemas.isReservedObject(table)).flatMap(table ->
                 state.plan().changes(table, sessionVariables(principal, projectId))
                         .map(filter -> new RealtimeAccess(table, filter, state.probes(), state.plan().view(),
                                 state.permissionsVersion())));
@@ -403,6 +404,11 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         }
         reflections.remove(projectId);
         tenantEngineStates.removeIf(key -> projectId.equals(key.projectId()));
+    }
+
+    @Override
+    public boolean isReserved(String schema) {
+        return reservedSchemas.isReserved(schema);
     }
 
     @Override
@@ -557,6 +563,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         for (var schemaEntry : perSchema.entrySet()) {
             String schema = schemaEntry.getKey();
             SchemaInfo temp = schemaEntry.getValue();
+            if (reservedSchemas.isReserved(schema)) {
+                continue;
+            }
             merger.merge(schemaInfo, schema, temp);
             mergeEnumsProcsAndComposites(schemaInfo, schema, temp);
             // Extensions are global to the database, so every per-schema temp
@@ -576,7 +585,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             }
         }
         for (var entry : source.getFunctions().entrySet()) {
-            target.addFunction(schema + "." + entry.getKey(), entry.getValue());
+            if (!reservedSchemas.isReservedObject(entry.getValue().returnTable())) {
+                target.addFunction(schema + "." + entry.getKey(), entry.getValue());
+            }
         }
         for (var entry : source.getCompositeTypes().entrySet()) {
             for (var field : entry.getValue()) {

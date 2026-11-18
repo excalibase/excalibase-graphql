@@ -608,7 +608,7 @@ public class RestApiController {
         if (!trimmed.matches(IDENT_REGEX)) {
             throw new IllegalArgumentException("Invalid Content-Profile");
         }
-        return trimmed;
+        return schemaProvider.isReserved(trimmed) ? null : trimmed;
     }
 
     private boolean preferContains(String prefer, String token) {
