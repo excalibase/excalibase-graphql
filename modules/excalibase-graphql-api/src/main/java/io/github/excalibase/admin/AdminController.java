@@ -13,8 +13,11 @@ import io.micronaut.http.annotation.Body;
 import io.micronaut.http.annotation.Consumes;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.Get;
+import io.micronaut.http.annotation.Header;
 import io.micronaut.http.annotation.Post;
 import io.micronaut.http.annotation.Produces;
+import io.micronaut.http.annotation.Put;
+import io.micronaut.core.annotation.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,9 +28,9 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * The read-only admin API. It is mounted on the admin port only (the framework gives that port its own listener,
- * as it does the management port), and {@code AdminPortFilter} has already checked the secret by the time a request
- * gets here. It reads: nothing a caller posts is applied.
+ * The admin API. It is mounted on the admin port only (the framework gives that port its own listener, as it does
+ * the management port), and {@code AdminPortFilter} has already checked the secret by the time a request gets here.
+ * It reads, except {@code PUT /metadata}, the one call that saves: see {@link MetadataSave}.
  */
 @Controller(value = "/_admin/v1", port = "${excalibase.admin.port:10001}")
 @Requires(property = "excalibase.console.enabled", pattern = AdminSettings.ON_PATTERN)
@@ -53,6 +56,14 @@ public class AdminController {
             return HttpResponse.notFound(Map.<String, Object>of("error", "no_metadata_source"));
         }
         return HttpResponse.ok(document.get());
+    }
+
+    /** Saves the document the source holds, if the caller started from the version it still holds. */
+    @Put("/metadata")
+    @Consumes(MediaType.ALL)
+    public HttpResponse<Map<String, Object>> save(@Header(MetadataSave.IF_MATCH) @Nullable String ifMatch,
+                                                  @Body byte[] document) {
+        return MetadataSave.respond(metadata, validation, ifMatch, document);
     }
 
     /** Checks a posted document and answers what is wrong with it. Nothing is applied. */

@@ -21,6 +21,7 @@ import java.util.HexFormat;
  * not inotify, because a Kubernetes ConfigMap mount changes by swapping the {@code ..data} symlink, which
  * inotify on the file misses. The file is opened by its configured path on every poll, so the link is
  * resolved afresh and a swap is seen as ordinary new content. {@code excalibase validate} reads files the same way.
+ * A save (see {@link FileDocumentWriter}) is a conditional atomic replace; a read-only folder makes the source read-only.
  */
 public final class FileMetadataSource {
 
@@ -34,17 +35,20 @@ public final class FileMetadataSource {
     public static ReloadingMetadataSource create(Path path, Duration interval, ReservedSchemas reserved,
                                                  String expectedProjectId, MeterRegistry meters,
                                                  boolean envJwtConfigured) {
+        return create(path, interval, reserved, expectedProjectId, meters, envJwtConfigured,
+                new FileDocumentWriter(path));
+    }
+
+    static ReloadingMetadataSource create(Path path, Duration interval, ReservedSchemas reserved,
+                                          String expectedProjectId, MeterRegistry meters, boolean envJwtConfigured,
+                                          FileDocumentWriter writer) {
         return new ReloadingMetadataSource(NAME, () -> read(path),
-                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load, () -> writable(path), interval, meters);
+                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load, writer,
+                interval, ReloadingMetadataSource.DEFAULT_SETTLE, meters);
     }
 
-    private static Path resolve(Path path) {
+    static Path resolve(Path path) {
         return Files.isDirectory(path) ? path.resolve(FILE_NAME) : path;
-    }
-
-    private static boolean writable(Path path) {
-        Path folder = resolve(path).toAbsolutePath().getParent();
-        return folder != null && Files.isDirectory(folder) && Files.isWritable(folder);
     }
 
     /** At most one byte over the limit is read. A file that is not UTF-8 text fails with a character-coding IOException. */

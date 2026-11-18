@@ -26,7 +26,7 @@ public final class AdminMetadataView {
     }
 
     /**
-     * The document as served and its version. Not writable and with no history yet: saving comes with a later change.
+     * The document as served and its version, and whether the source can be saved to right now (no history yet).
      * The document is null while no valid one has been loaded.
      */
     public Optional<Map<String, Object>> document() {
@@ -40,11 +40,21 @@ public final class AdminMetadataView {
         body.put("version", status.version());
         body.put("sourceVersion", status.sourceVersion());
         body.put("document", served == null ? null : served.text());
-        body.put("writable", false);
+        body.put("writable", source.writable());
         body.put("history", List.of());
         body.put("lastRefusal", status.lastRefusal());
         body.put("lastRefusalAt", status.lastRefusalAt() == null ? null : status.lastRefusalAt().toString());
         return Optional.of(body);
+    }
+
+    /** Saves through the source: conditional on the version, validated, then reloaded. */
+    public SaveOutcome save(String text, String expectedVersion) {
+        return source == null ? new SaveOutcome.ReadOnly() : source.save(text, expectedVersion);
+    }
+
+    /** Whether there is a source and it can be saved to right now. */
+    public boolean writable() {
+        return source != null && source.writable();
     }
 
     /** This replica: its version, and whether it holds a good document. */

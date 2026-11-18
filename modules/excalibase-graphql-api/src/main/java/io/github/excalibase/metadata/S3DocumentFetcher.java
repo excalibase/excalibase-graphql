@@ -10,6 +10,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 
 /**
  * Reads the metadata object with one SigV4-signed GET per poll: no listing, no multipart, no SDK. The version is
@@ -35,8 +36,17 @@ final class S3DocumentFetcher implements ReloadingMetadataSource.Loader {
         this.readTimeout = settings.readTimeout();
     }
 
+    /** The document and the ETag the store gave it, which a conditional write quotes back. */
+    record Fetched(ReloadingMetadataSource.Raw raw, String etag) {
+    }
+
     @Override
     public ReloadingMetadataSource.Raw load() throws IOException {
+        return fetch().orElseThrow(() -> new IOException(describe(404))).raw();
+    }
+
+    /** @return empty when the object does not exist (a 404) */
+    Optional<Fetched> fetch() throws IOException {
         S3Credentials.Resolved keys = S3Credentials.load(settings.credentials());
         try {
             return interpret(send(keys));
@@ -59,8 +69,12 @@ final class S3DocumentFetcher implements ReloadingMetadataSource.Loader {
         }
     }
 
-    private ReloadingMetadataSource.Raw interpret(HttpResponse<InputStream> response) throws IOException {
+    private Optional<Fetched> interpret(HttpResponse<InputStream> response) throws IOException {
         int status = response.statusCode();
+        if (status == 404) {
+            response.body().close();
+            return Optional.empty();
+        }
         if (status != 200) {
             response.body().close();
             throw new IOException(describe(status));
@@ -71,8 +85,8 @@ final class S3DocumentFetcher implements ReloadingMetadataSource.Loader {
             throw new IOException(BoundedBody.tooLarge());
         }
         byte[] bytes = BoundedBody.read(response.body(), readTimeout);
-        return new ReloadingMetadataSource.Raw(FileMetadataSource.decodeUtf8(bytes),
-                "sha256:" + FileMetadataSource.sha256(bytes));
+        return Optional.of(new Fetched(new ReloadingMetadataSource.Raw(FileMetadataSource.decodeUtf8(bytes),
+                "sha256:" + FileMetadataSource.sha256(bytes)), response.headers().firstValue("ETag").orElse(null)));
     }
 
     private static String describe(int status) {

@@ -11,7 +11,8 @@ import io.micrometer.core.instrument.MeterRegistry;
  * table or row, an unreachable database and an invalid edit all keep the last good version, and before a first
  * good one every read is refused and the engine reports not ready.
  *
- * <p>Read-only for now, so the console can only export it. Postgres only.
+ * <p>A save is a compare-and-set that adds the next row (see {@link DbDocumentWriter}), so the history stays.
+ * Postgres only.
  */
 public final class DbMetadataSource {
 
@@ -26,7 +27,7 @@ public final class DbMetadataSource {
                                                  boolean envJwtConfigured) {
         DbDocumentLoader loader = new DbDocumentLoader(settings);
         return new ReloadingMetadataSource(NAME, loader,
-                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load, () -> false,
-                settings.pollInterval(), meters);
+                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load,
+                new DbDocumentWriter(loader), settings.pollInterval(), meters);
     }
 }

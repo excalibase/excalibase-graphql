@@ -106,7 +106,7 @@ class AdminApiIntegrationTest extends EngineIntegrationTest {
     // --- GET metadata ---
 
     @Test
-    @DisplayName("GET metadata returns the document, version, source and that it is not writable yet")
+    @DisplayName("GET metadata returns the document, version, source and writable")
     void metadata() {
         HttpAnswer answer = admin.get(ADMIN_METADATA, HEADER, SECRET);
 
@@ -115,7 +115,7 @@ class AdminApiIntegrationTest extends EngineIntegrationTest {
         assertThat(answer.<String>jsonPath("$.document")).isEqualTo(DOCUMENT);
         assertThat(answer.<Integer>jsonPath("$.version")).isEqualTo(1);
         assertThat(answer.<String>jsonPath("$.sourceVersion")).isNotBlank();
-        assertThat(answer.<Boolean>jsonPath("$.writable")).isFalse();
+        assertThat(answer.<Boolean>jsonPath("$.writable")).isTrue();
         assertThat(answer.json().path("history")).isEmpty();
         assertThat(answer.json().path("history").isArray()).isTrue();
     }
@@ -213,12 +213,12 @@ class AdminApiIntegrationTest extends EngineIntegrationTest {
         assertThat(answer.<String>jsonPath("$.replicas[0].source")).isEqualTo("file");
     }
 
-    // --- the writes of a later change are not here ---
+    // --- the explorer is a later change ---
 
     @Test
-    @DisplayName("there is no write endpoint yet: PUT metadata and POST try are not routes")
-    void noWritesYet() {
-        assertThat(admin.send("PUT", ADMIN_METADATA, DOCUMENT, HEADER, SECRET).status()).isIn(404, 405);
+    @DisplayName("PUT metadata needs If-Match, and POST try is not a route yet")
+    void noExplorerYet() {
+        assertThat(admin.send("PUT", ADMIN_METADATA, DOCUMENT, HEADER, SECRET).status()).isEqualTo(428);
         assertThat(admin.post("/_admin/v1/try", "{}", HEADER, SECRET, "Content-Type", "application/json").status())
                 .isIn(404, 405);
     }
