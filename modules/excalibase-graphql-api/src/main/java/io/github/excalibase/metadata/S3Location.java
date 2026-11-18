@@ -68,7 +68,7 @@ final class S3Location {
     private static URI withoutDefaultPort(URI uri, String scheme) {
         int port = uri.getPort();
         boolean standard = (scheme.equals("http") && port == 80) || (scheme.equals("https") && port == 443);
-        return parse(scheme + "://" + uri.getHost() + (port == -1 || standard ? "" : ":" + port));
+        return parse(scheme + "://" + uri.getHost().toLowerCase(Locale.ROOT) + (port == -1 || standard ? "" : ":" + port));
     }
 
     private static URI parse(String text) {

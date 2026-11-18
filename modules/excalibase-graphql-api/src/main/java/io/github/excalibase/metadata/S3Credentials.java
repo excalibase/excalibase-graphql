@@ -45,25 +45,28 @@ public final class S3Credentials {
     }
 
     /**
-     * The engine's own settings first, then the standard AWS variable names (and a {@code _FILE} variant of each
-     * for mounted secrets). Web-identity (IRSA) and instance-profile credentials are not supported.
+     * The whole key set comes from one place: the engine's own settings when any of them is present (a literal or a
+     * {@code _FILE}), otherwise the standard AWS variable names (and a {@code _FILE} of each for mounted secrets).
+     * Never a mix, so an ambient {@code AWS_SESSION_TOKEN} cannot ride on our static keys and an ambient key cannot
+     * beat a mounted file of ours. Web-identity (IRSA) and instance-profile credentials are not supported.
      */
-    public static S3Settings.Credentials fromEnvironment(Map<String, String> env, String accessKeyId, String secretAccessKey,
-                                                  String sessionToken, String accessKeyIdFile,
-                                                  String secretAccessKeyFile, String sessionTokenFile) {
-        return new S3Settings.Credentials(
-                first(accessKeyId, env.get("AWS_ACCESS_KEY_ID")),
-                first(secretAccessKey, env.get("AWS_SECRET_ACCESS_KEY")),
-                first(sessionToken, env.get("AWS_SESSION_TOKEN")),
-                first(accessKeyIdFile, env.get("AWS_ACCESS_KEY_ID_FILE")),
-                first(secretAccessKeyFile, env.get("AWS_SECRET_ACCESS_KEY_FILE")),
-                first(sessionTokenFile, env.get("AWS_SESSION_TOKEN_FILE")));
+    public static S3Settings.Credentials fromEnvironment(Map<String, String> env, String accessKeyId,
+                                                         String secretAccessKey, String sessionToken,
+                                                         String accessKeyIdFile, String secretAccessKeyFile,
+                                                         String sessionTokenFile) {
+        S3Settings.Credentials own = new S3Settings.Credentials(blankToEmpty(accessKeyId),
+                blankToEmpty(secretAccessKey), blankToEmpty(sessionToken), blankToEmpty(accessKeyIdFile),
+                blankToEmpty(secretAccessKeyFile), blankToEmpty(sessionTokenFile));
+        if (own.anySet()) {
+            return own;
+        }
+        return new S3Settings.Credentials(blankToEmpty(env.get("AWS_ACCESS_KEY_ID")),
+                blankToEmpty(env.get("AWS_SECRET_ACCESS_KEY")), blankToEmpty(env.get("AWS_SESSION_TOKEN")),
+                blankToEmpty(env.get("AWS_ACCESS_KEY_ID_FILE")), blankToEmpty(env.get("AWS_SECRET_ACCESS_KEY_FILE")),
+                blankToEmpty(env.get("AWS_SESSION_TOKEN_FILE")));
     }
 
-    private static String first(String preferred, String fallback) {
-        if (preferred != null && !preferred.isBlank()) {
-            return preferred;
-        }
-        return fallback == null ? "" : fallback;
+    private static String blankToEmpty(String value) {
+        return value == null || value.isBlank() ? "" : value;
     }
 }

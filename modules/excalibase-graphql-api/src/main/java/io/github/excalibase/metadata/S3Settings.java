@@ -40,6 +40,12 @@ public record S3Settings(String endpoint, String bucket, String key, String regi
             return (has(accessKeyId) || has(accessKeyIdFile)) && (has(secretAccessKey) || has(secretAccessKeyFile));
         }
 
+        /** Whether any of the six is set: that decides whether these settings, and not the AWS variables, apply. */
+        boolean anySet() {
+            return has(accessKeyId) || has(secretAccessKey) || has(sessionToken) || has(accessKeyIdFile)
+                    || has(secretAccessKeyFile) || has(sessionTokenFile);
+        }
+
         private static boolean has(String value) {
             return value != null && !value.isBlank();
         }

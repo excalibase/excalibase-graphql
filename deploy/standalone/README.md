@@ -127,7 +127,9 @@ example `aws s3 cp permissions.yaml s3://my-bucket/permissions.yaml`, or `mc cp`
   Redirects are not followed, so the signature goes only to the configured endpoint.
 - **Credentials.** Static keys only: `METADATA_S3_ACCESS_KEY_ID` and `METADATA_S3_SECRET_ACCESS_KEY`, or the
   standard `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN`. Each also has a `..._FILE` form
-  for a mounted secret, which is re-read on every poll so a rotation needs no restart. They are never logged, and
+  for a mounted secret, which is re-read on every poll so a rotation needs no restart. The whole set comes from one
+  place: if any `METADATA_S3_*` key setting is present only those are used, otherwise only the `AWS_*` ones (so an
+  ambient `AWS_SESSION_TOKEN` never rides on your static keys). They are never logged, and
   the store's error text is never read, because it can name the access key. Give the key read access to that one
   object (`s3:GetObject`) and nothing else.
 - **Not supported yet:** web-identity (IRSA, EKS pod identity), instance-profile and `~/.aws` profile
