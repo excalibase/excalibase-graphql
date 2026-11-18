@@ -104,8 +104,14 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
         return switch (state) {
             case "42P01", "3F000" -> TABLE + " does not exist: create it, or set metadata.db.migrate=true";
             case "42501" -> "the metadata database user may not read " + TABLE;
-            default -> state.startsWith("28") ? "the metadata database refused the credentials"
-                    : "cannot read the metadata database (SQLState " + (state.isEmpty() ? "unknown" : state) + ")";
+            default -> otherFailure(state);
         };
+    }
+
+    private static String otherFailure(String state) {
+        if (state.startsWith("28")) {
+            return "the metadata database refused the credentials";
+        }
+        return "cannot read the metadata database (SQLState " + (state.isEmpty() ? "unknown" : state) + ")";
     }
 }
