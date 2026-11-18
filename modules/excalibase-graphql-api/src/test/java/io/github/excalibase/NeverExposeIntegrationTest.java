@@ -37,6 +37,7 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.Map;
 
 import static io.github.excalibase.PermissionDocs.callable;
@@ -250,6 +251,9 @@ class NeverExposeIntegrationTest extends EngineIntegrationTest {
         assertThat(restSession.await("error").path("id").asText()).isEqualTo("users");
         graphqlSession.send("{\"type\":\"ping\"}");
         graphqlSession.await("pong");
+        restSession.sendJson(Map.of("type", "subscribe", "id", "fence", "collection", "no_such_table", "schema", "public"));
+        assertThat(restSession.await("error").path("id").asText()).isEqualTo("fence");
+        awaitSubscribers("public.t");
 
         publish(META_SCHEMA, "t", "{\"id\": 1, \"secret\": \"document-secret\"}");
         publish("auth", "users", "{\"id\": 1, \"password_hash\": \"hash-secret\"}");
@@ -257,6 +261,15 @@ class NeverExposeIntegrationTest extends EngineIntegrationTest {
 
         assertThat(graphqlSession.await("next").toString()).contains("plain").doesNotContain("secret");
         assertThat(restSession.await("next").toString()).contains("plain").doesNotContain("secret");
+    }
+
+    /** An event published before its subscribers are attached is lost, so the test waits for them. */
+    private void awaitSubscribers(String table) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (!subscriptionService.hasSubscribers(PROJECT, table) && System.nanoTime() < deadline) {
+            Thread.sleep(50);
+        }
+        assertThat(subscriptionService.hasSubscribers(PROJECT, table)).isTrue();
     }
 
     private void publish(String schema, String table, String data) {
