@@ -1,6 +1,7 @@
 package io.github.excalibase.cors;
 
 import io.github.excalibase.http.UntypedText;
+import io.github.excalibase.security.KnownProjectFilter;
 import io.micronaut.context.annotation.Replaces;
 import io.micronaut.core.annotation.Nullable;
 import io.micronaut.core.order.Ordered;
@@ -50,6 +51,9 @@ public class CorsFilter implements Ordered {
     @RequestFilter
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request) {
+        if (request.getAttributes().contains(KnownProjectFilter.ADMIN_ATTR)) {
+            return null;
+        }
         // Looked up for every request, as the servlet filter did, so the project's origins are fetched (and a
         // failed fetch is logged) whether or not this request carries an Origin.
         CorsRules rules = source.getCorsConfiguration(request);

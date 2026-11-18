@@ -40,6 +40,16 @@ endpoints:
     path: /actuator
     port: ${MANAGEMENT_SERVER_PORT:8081}   # actuator (health probes) on its own port; never expose it publicly
 
+excalibase:
+  console:
+    enabled: ${EXCALIBASE_CONSOLE_ENABLED:false}   # the admin API and console; off by default, refused in hosted mode
+  admin:
+    port: ${EXCALIBASE_ADMIN_PORT:10001}   # its own listener; never expose it publicly
+    secret: ${EXCALIBASE_ADMIN_SECRET:}   # at least 32 characters when the console is on
+    secret-file: ${EXCALIBASE_ADMIN_SECRET_FILE:}   # the same, read from a mounted file
+    max-failures: ${EXCALIBASE_ADMIN_MAX_FAILURES:10}   # failed attempts per address before it is refused for the window
+    failure-window-seconds: ${EXCALIBASE_ADMIN_FAILURE_WINDOW_SECONDS:60}
+
 # Same property names as the engine's earlier build read
 management:
   endpoints:

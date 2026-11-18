@@ -159,4 +159,17 @@ class RoleResolverTest {
 
         assertThat(principal.impersonationHeaders()).containsOnly(Map.entry("x-excalibase-user-id", "5"));
     }
+
+    @Test
+    void theAdminSecretHeaderNeverBecomesASessionVariable() {
+        Map<String, String> headers = Map.of("X-Excalibase-Role", "user", "X-Excalibase-User-Id", "77",
+                "X-Excalibase-Admin-Secret", "an-admin-secret-that-must-not-travel-0123");
+
+        Principal principal = RoleResolver.resolve(SERVICE, "user", headers);
+
+        assertThat(principal.sessionVariables("proj-a").toString())
+                .doesNotContain("an-admin-secret-that-must-not-travel-0123")
+                .doesNotContain("admin-secret");
+        assertThat(principal.sessionVariables("proj-a").values()).contains("77");
+    }
 }

@@ -55,6 +55,9 @@ public class JwtAuthFilter implements Ordered {
     @RequestFilter
     @Nullable
     public HttpResponse<?> filter(HttpRequest<?> request, MutablePropagatedContext propagated) {
+        if (request.getAttributes().contains(KnownProjectFilter.ADMIN_ATTR)) {
+            return null;
+        }
         String pathProjectId = ProjectPath.fromUri(request.getPath());
         if (pathProjectId == null) {
             // Only the management port's actuator has no project; every other request names one, or is not served.

@@ -173,7 +173,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
 
     private void judge(Raw raw) {
         try {
-            swap(parser.parse(raw.text(), counter.get() + 1), raw.version());
+            swap(parser.parse(raw.text(), counter.get() + 1), raw);
             judged(raw.version());
         } catch (MetadataDocumentException e) {
             judged(raw.version());
@@ -219,13 +219,13 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
                 current.get() == null ? "nothing (every read is refused)" : "last good version " + counter.get(), reason);
     }
 
-    private void swap(MetadataDocument document, String sourceVersion) {
+    private void swap(MetadataDocument document, Raw raw) {
         PermissionSet permissions = document.permissions();
         boolean replacing = current.get() != null;
         long version = counter.incrementAndGet();
-        current.set(new Snapshot(permissions, version, sourceVersion, Instant.now(), document.verifier()));
+        current.set(new Snapshot(permissions, version, raw.version(), Instant.now(), document.verifier(), raw.text()));
         refusal.set(null);
-        log.info("metadata_swapped source={} version={} source_version={}", name, version, sourceVersion);
+        log.info("metadata_swapped source={} version={} source_version={}", name, version, raw.version());
         if (replacing) {
             announce(permissions.projectId(), version);
         }
