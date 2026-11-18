@@ -21,6 +21,14 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.ParseException;
 import java.time.Duration;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.LongSupplier;
@@ -43,6 +51,11 @@ final class JwtKeyLoader {
     private static final int MIN_SECRET_BYTES = 32;
     private static final String DISCOVERY_PATH = "/.well-known/openid-configuration";
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final ScheduledExecutorService WATCHDOG = Executors.newSingleThreadScheduledExecutor(task -> {
+        Thread thread = new Thread(task, "jwt-keys-deadline");
+        thread.setDaemon(true);
+        return thread;
+    });
     private static final HttpClient HTTP = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
             .connectTimeout(Duration.ofMillis(TIMEOUT_MILLIS)).build();
 
@@ -69,24 +82,60 @@ final class JwtKeyLoader {
         return uri;
     }
 
-    /** A plain GET that follows no redirect: a provider that moves its keys says so in the document. */
+    /**
+     * A plain GET that follows no redirect, and that is over {@value #TIMEOUT_MILLIS} ms after it started, body
+     * included: a server that sends headers and then stalls or trickles is cut off, not waited for.
+     */
     private static String get(URI uri) throws IOException {
-        HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofMillis(TIMEOUT_MILLIS)).GET().build();
-        try {
-            HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            try (InputStream body = response.body()) {
-                if (response.statusCode() != 200) {
-                    throw new IOException("the provider answered HTTP " + response.statusCode());
-                }
-                byte[] bytes = body.readNBytes(SIZE_LIMIT_BYTES + 1);
-                if (bytes.length > SIZE_LIMIT_BYTES) {
-                    throw new IOException("the answer is larger than " + SIZE_LIMIT_BYTES + " bytes");
-                }
-                return new String(bytes, StandardCharsets.UTF_8);
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(TIMEOUT_MILLIS);
+        HttpRequest request = HttpRequest.newBuilder(uri).GET().build();
+        CompletableFuture<HttpResponse<InputStream>> exchange =
+                HTTP.sendAsync(request, HttpResponse.BodyHandlers.ofInputStream());
+        try (InputStream body = exchange.get(TIMEOUT_MILLIS, TimeUnit.MILLISECONDS).body()) {
+            AtomicBoolean timedOut = new AtomicBoolean();
+            ScheduledFuture<?> cutOff = WATCHDOG.schedule(() -> closeAfterTimeout(body, timedOut),
+                    Math.max(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+            try {
+                return readBody(exchange.get().statusCode(), body, timedOut);
+            } finally {
+                cutOff.cancel(false);
             }
+        } catch (TimeoutException e) {
+            exchange.cancel(true);
+            throw new IOException("the provider did not answer in time", e);
+        } catch (ExecutionException e) {
+            throw new IOException("the provider could not be reached: " + e.getCause(), e);
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted while reading from the provider");
+        }
+    }
+
+    private static String readBody(int status, InputStream body, AtomicBoolean timedOut) throws IOException {
+        if (status != 200) {
+            throw new IOException("the provider answered HTTP " + status);
+        }
+        byte[] bytes;
+        try {
+            bytes = body.readNBytes(SIZE_LIMIT_BYTES + 1);
+        } catch (IOException e) {
+            throw timedOut.get() ? new IOException("the provider did not finish its answer in time", e) : e;
+        }
+        if (timedOut.get()) {
+            throw new IOException("the provider did not finish its answer in time");
+        }
+        if (bytes.length > SIZE_LIMIT_BYTES) {
+            throw new IOException("the answer is larger than " + SIZE_LIMIT_BYTES + " bytes");
+        }
+        return new String(bytes, StandardCharsets.UTF_8);
+    }
+
+    private static void closeAfterTimeout(InputStream body, AtomicBoolean timedOut) {
+        timedOut.set(true);
+        try {
+            body.close();
+        } catch (IOException _) {
+            // closing is only how the blocked read is woken; the reader reports the timeout
         }
     }
 

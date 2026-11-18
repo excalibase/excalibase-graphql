@@ -41,6 +41,9 @@ final class JwksStub implements AutoCloseable {
     private volatile String discoveryIssuer;
     private volatile String discoveryJwksUri;
     private volatile String redirectTarget;
+    private volatile int keySetStatus = 200;
+    private volatile int keySetPadding;
+    private volatile boolean stallingAfterOneByte;
 
     JwksStub() {
         try {
@@ -52,8 +55,12 @@ final class JwksStub implements AutoCloseable {
                 jwksHits.incrementAndGet();
                 if (failing) {
                     exchange.sendResponseHeaders(500, -1);
+                } else if (stallingAfterOneByte) {
+                    stall(exchange);
                 } else {
-                    reply(exchange, new JWKSet(served).toString());
+                    String keySet = new JWKSet(served).toString();
+                    reply(exchange, keySetStatus,
+                            keySet.replaceFirst("\\{", "{\"pad\":\"" + "a".repeat(keySetPadding) + "\","));
                 }
                 exchange.close();
             });
@@ -77,10 +84,26 @@ final class JwksStub implements AutoCloseable {
         }
     }
 
+    /** Sends the headers and one byte of a long body, then says nothing more until the test ends. */
+    private static void stall(HttpExchange exchange) throws IOException {
+        exchange.sendResponseHeaders(200, 10_000);
+        exchange.getResponseBody().write('{');
+        exchange.getResponseBody().flush();
+        try {
+            Thread.sleep(30_000);
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private static void reply(HttpExchange exchange, String body) throws IOException {
+        reply(exchange, 200, body);
+    }
+
+    private static void reply(HttpExchange exchange, int status, String body) throws IOException {
         byte[] payload = body.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.sendResponseHeaders(200, payload.length);
+        exchange.sendResponseHeaders(status, payload.length);
         exchange.getResponseBody().write(payload);
     }
 
@@ -113,6 +136,20 @@ final class JwksStub implements AutoCloseable {
 
     void serve(JWK... keys) {
         served = List.of(keys);
+    }
+
+    /** The key set is valid but answered with this status, so only a status check can refuse it. */
+    void answerKeySetWith(int status) {
+        keySetStatus = status;
+    }
+
+    /** The key set is valid but this many characters longer than a key set should ever be. */
+    void padKeySetBy(int characters) {
+        keySetPadding = characters;
+    }
+
+    void stallAfterOneByte() {
+        stallingAfterOneByte = true;
     }
 
     void failFromNowOn() {

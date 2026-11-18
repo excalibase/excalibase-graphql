@@ -74,7 +74,7 @@ verifies tokens from its own settings (`APP_SECURITY_AUTH_*`), exactly as before
 with a `jwt:` section is refused (at start and on every reload) while `APP_SECURITY_AUTH_JWKS_URL` or
 `..._HMAC_SECRET` is set. A
 change to the section is applied together with the rules, after the keys were fetched; a failed fetch keeps
-the last good version. An edit that leaves the section unchanged does not fetch again.
+the last good version. An edit that leaves the section unchanged does not fetch again. A rotated secret file is re-read when the `jwt:` section changes.
 
 ```yaml
 jwt:

@@ -23,12 +23,14 @@ import java.nio.file.Path;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 /** Each check the verifier and the key loader make is pinned: take one away and one of these fails. */
 class DocumentJwtChecksTest {
@@ -152,6 +154,30 @@ class DocumentJwtChecksTest {
 
             assertThatThrownBy(() -> verifier(jwt)).isInstanceOf(IllegalStateException.class);
         }
+    }
+
+    @Test
+    void aKeySetAnsweredWithANon200Status_isRefused_whateverItsBody() {
+        idp.answerKeySetWith(404);
+
+        assertThatThrownBy(() -> verifier(settings())).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("404");
+    }
+
+    @Test
+    void aKeySetOver64KiB_isRefused() {
+        idp.padKeySetBy(70_000);
+
+        assertThatThrownBy(() -> verifier(settings())).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("larger");
+    }
+
+    @Test
+    void aServerThatSendsTheHeadersAndOneByteAndStalls_isGivenUpOnWithinTheTimeout() {
+        idp.stallAfterOneByte();
+
+        assertTimeoutPreemptively(Duration.ofSeconds(7), () ->
+                assertThatThrownBy(() -> verifier(settings())).isInstanceOf(IllegalStateException.class));
     }
 
     @Test
