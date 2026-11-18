@@ -37,19 +37,24 @@ final class DbDocumentWriter implements MetadataWriter {
         try (Connection connection = loader.open()) {
             connection.setAutoCommit(false);
             loader.bound(connection);
-            try {
-                String version = add(connection, text, expectedVersion);
-                connection.commit();
-                return version;
-            } catch (WriteConflictException e) {
-                connection.rollback();
-                throw e;
-            }
+            return committed(connection, text, expectedVersion);
         } catch (SQLException e) {
             if (UNIQUE_VIOLATION.equals(e.getSQLState())) {
                 throw new WriteConflictException(currentVersion());
             }
             throw new IOException(DbDocumentLoader.describe(e));
+        }
+    }
+
+    private static String committed(Connection connection, String text, String expectedVersion)
+            throws SQLException, WriteConflictException {
+        try {
+            String version = add(connection, text, expectedVersion);
+            connection.commit();
+            return version;
+        } catch (WriteConflictException e) {
+            connection.rollback();
+            throw e;
         }
     }
 

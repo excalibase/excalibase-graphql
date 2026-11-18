@@ -8,6 +8,7 @@ import io.micronaut.http.HttpStatus;
 
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -54,19 +55,19 @@ final class MetadataSave {
 
     private static HttpResponse<Map<String, Object>> answer(SaveOutcome outcome) {
         return switch (outcome) {
-            case SaveOutcome.Saved saved -> {
+            case SaveOutcome.Saved(long version, String sourceVersion) -> {
                 Map<String, Object> body = new LinkedHashMap<>();
-                body.put("version", saved.version());
-                body.put("sourceVersion", saved.sourceVersion());
+                body.put("version", version);
+                body.put("sourceVersion", sourceVersion);
                 yield HttpResponse.ok(body);
             }
-            case SaveOutcome.Conflict conflict -> HttpResponse.<Map<String, Object>>status(HttpStatus.CONFLICT)
-                    .body(Map.of("error", "version_conflict", "currentVersion", conflict.currentVersion()));
+            case SaveOutcome.Conflict(String currentVersion) -> HttpResponse.<Map<String, Object>>status(HttpStatus.CONFLICT)
+                    .body(Map.of("error", "version_conflict", "currentVersion", currentVersion));
             case SaveOutcome.ReadOnly _ -> failure(HttpStatus.METHOD_NOT_ALLOWED, "source_read_only");
-            case SaveOutcome.Invalid invalid -> HttpResponse.<Map<String, Object>>status(HttpStatus.UNPROCESSABLE_ENTITY)
-                    .body(Map.of("valid", false, "errors", invalid.errors()));
-            case SaveOutcome.Failed failed -> failure(HttpStatus.BAD_GATEWAY, failed.category());
-            case SaveOutcome.NotApplied notApplied -> failure(HttpStatus.INTERNAL_SERVER_ERROR, notApplied.category());
+            case SaveOutcome.Invalid(List<String> errors) -> HttpResponse.<Map<String, Object>>status(HttpStatus.UNPROCESSABLE_ENTITY)
+                    .body(Map.of("valid", false, "errors", errors));
+            case SaveOutcome.Failed(String category) -> failure(HttpStatus.BAD_GATEWAY, category);
+            case SaveOutcome.NotApplied(String category) -> failure(HttpStatus.INTERNAL_SERVER_ERROR, category);
         };
     }
 

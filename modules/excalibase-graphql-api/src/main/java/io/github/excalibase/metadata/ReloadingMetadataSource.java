@@ -77,6 +77,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private record Refusal(String category, Instant at) {
     }
 
+    private static final String NOTHING_SERVED = "nothing (every read is refused)";
     static final int UNSETTLED_WARNING_POLLS = 6;
     public static final Duration DEFAULT_SETTLE = Duration.ofMillis(200);
 
@@ -209,7 +210,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     private void warnWhenNotSettling() {
         if (++unsettledPolls == UNSETTLED_WARNING_POLLS) {
             log.warn("metadata_change_not_settling source={} polls={} serving={}", name, unsettledPolls,
-                    current.get() == null ? "nothing (every read is refused)" : "version " + counter.get());
+                    current.get() == null ? NOTHING_SERVED : "version " + counter.get());
         }
     }
 
@@ -227,7 +228,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
         refusal.set(new Refusal(category, Instant.now()));
         Counter.builder(REFUSED_METRIC).tag("source", name).register(meters).increment();
         log.error("metadata_refused source={} version={} serving={} error={}", name, version,
-                current.get() == null ? "nothing (every read is refused)" : "last good version " + counter.get(), reason);
+                current.get() == null ? NOTHING_SERVED : "last good version " + counter.get(), reason);
     }
 
     private void swap(MetadataDocument document, Raw raw) {
@@ -319,7 +320,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
             return new SaveOutcome.Saved(served.version(), writtenVersion);
         }
         log.error("metadata_saved_not_applied source={} serving={}", name,
-                served == null ? "nothing (every read is refused)" : "last good version " + counter.get());
+                served == null ? NOTHING_SERVED : "last good version " + counter.get());
         return new SaveOutcome.NotApplied("reload_refused");
     }
 
