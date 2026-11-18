@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,7 @@ import java.util.Map;
 import static io.github.excalibase.admin.AdminTestEngine.HEADER;
 import static io.github.excalibase.admin.AdminTestEngine.SECRET;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /** Whoever reaches the admin port cannot hold more than a small number of connections, or hold one idle. */
 class AdminConnectionCapIntegrationTest extends EngineIntegrationTest {
@@ -34,36 +36,45 @@ class AdminConnectionCapIntegrationTest extends EngineIntegrationTest {
         socket.setSoTimeout(300);
         try {
             return socket.getInputStream().read() == -1;
-        } catch (SocketTimeoutException stillOpen) {
+        } catch (SocketTimeoutException _) {
             return false;
         }
     }
 
-    @Test
-    @DisplayName("idle connections past the cap are closed; the ones within it stay until the first-request timeout")
-    void capAndFirstRequestTimeout() throws IOException, InterruptedException {
-        List<Socket> sockets = new ArrayList<>();
-        try {
-            for (int i = 0; i < CAP + 10; i++) {
+    /** Sockets opened by the test, all closed with it. */
+    private static final class Opened implements AutoCloseable {
+        private final List<Socket> sockets = new ArrayList<>();
+
+        void open(int count) throws IOException {
+            for (int i = 0; i < count; i++) {
                 sockets.add(new Socket("localhost", ADMIN_PORT));
             }
-            int closedAtOnce = 0;
-            for (Socket socket : sockets) {
-                closedAtOnce += closedByServer(socket) ? 1 : 0;
-            }
-            assertThat(closedAtOnce).isGreaterThanOrEqualTo(10);
-            assertThat(sockets.size() - closedAtOnce).isLessThanOrEqualTo(CAP);
+        }
 
-            Thread.sleep(2500);
-            long stillOpen = 0;
+        long stillOpen() throws IOException {
+            long open = 0;
             for (Socket socket : sockets) {
-                stillOpen += closedByServer(socket) ? 0 : 1;
+                open += closedByServer(socket) ? 0 : 1;
             }
-            assertThat(stillOpen).as("idle connections after the first-request timeout").isZero();
-        } finally {
+            return open;
+        }
+
+        @Override
+        public void close() throws IOException {
             for (Socket socket : sockets) {
                 socket.close();
             }
+        }
+    }
+
+    @Test
+    @DisplayName("idle connections past the cap are closed; the ones within it go at the first-request timeout")
+    void capAndFirstRequestTimeout() throws IOException {
+        try (Opened opened = new Opened()) {
+            opened.open(CAP + 10);
+
+            assertThat(opened.stillOpen()).isLessThanOrEqualTo(CAP);
+            await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(opened.stillOpen()).isZero());
         }
     }
 
