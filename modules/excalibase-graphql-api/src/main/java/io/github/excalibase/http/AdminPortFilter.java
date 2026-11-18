@@ -51,7 +51,7 @@ public class AdminPortFilter implements Ordered {
     public HttpResponse<Object> filter(HttpRequest<?> request) {
         String target = RequestTarget.rawPath(request);
         if (!onAdminPort(request)) {
-            return isAdmin(target) || isAdmin(request.getPath()) ? notFound(request) : null;
+            return isAdmin(target) ? notFound(request) : null;
         }
         if (!isAdmin(target)) {
             return notFound(request);

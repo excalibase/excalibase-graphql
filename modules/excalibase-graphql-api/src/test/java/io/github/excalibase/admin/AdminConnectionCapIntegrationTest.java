@@ -28,12 +28,12 @@ class AdminConnectionCapIntegrationTest extends EngineIntegrationTest {
     public Map<String, String> getProperties() {
         Map<String, String> properties = AdminTestEngine.consoleOn(
                 AdminTestEngine.documentFile(AdminTestEngine.DOCUMENT), -1, ADMIN_PORT);
-        properties.put("server.tomcat.connection-timeout", "1500");
+        properties.put("server.tomcat.connection-timeout", "5000");
         return properties;
     }
 
     private static boolean closedByServer(Socket socket) throws IOException {
-        socket.setSoTimeout(300);
+        socket.setSoTimeout(30);
         try {
             return socket.getInputStream().read() == -1;
         } catch (SocketTimeoutException _) {
@@ -49,6 +49,10 @@ class AdminConnectionCapIntegrationTest extends EngineIntegrationTest {
             for (int i = 0; i < count; i++) {
                 sockets.add(new Socket("localhost", ADMIN_PORT));
             }
+        }
+
+        long total() {
+            return sockets.size();
         }
 
         long stillOpen() throws IOException {
@@ -67,14 +71,29 @@ class AdminConnectionCapIntegrationTest extends EngineIntegrationTest {
         }
     }
 
+    private long closed(Opened opened) throws IOException {
+        return opened.total() - opened.stillOpen();
+    }
+
     @Test
-    @DisplayName("idle connections past the cap are closed; the ones within it go at the first-request timeout")
-    void capAndFirstRequestTimeout() throws IOException {
+    @DisplayName("exactly the connections over the cap are closed at once, and the ones within it stay open")
+    void capIsEnforced() throws IOException {
         try (Opened opened = new Opened()) {
             opened.open(CAP + 10);
 
-            assertThat(opened.stillOpen()).isLessThanOrEqualTo(CAP);
-            await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(opened.stillOpen()).isZero());
+            await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(closed(opened)).isEqualTo(10));
+            assertThat(opened.stillOpen()).isEqualTo(CAP);
+        }
+    }
+
+    @Test
+    @DisplayName("an idle connection within the cap is closed at the first-request timeout")
+    void firstRequestTimeoutStillApplies() throws IOException {
+        try (Opened opened = new Opened()) {
+            opened.open(1);
+
+            assertThat(opened.stillOpen()).isEqualTo(1);
+            await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> assertThat(opened.stillOpen()).isZero());
         }
     }
 
