@@ -1,6 +1,7 @@
 package io.github.excalibase.support;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -20,8 +21,8 @@ public final class InternalSchemaProbe {
     }
 
     public static void assertNothingInternal(String text) {
-        String lower = text.toLowerCase();
-        assertThat(INTERNAL_WORDS).allSatisfy(word -> assertThat(lower).doesNotContain(word));
+        String lower = text.toLowerCase(Locale.ROOT);
+        assertThat(lower).doesNotContain(INTERNAL_WORDS);
     }
 
     /** The field names of every type that has {@code field}, from an {@link #INTROSPECTION} answer. */

@@ -75,7 +75,7 @@ class MysqlNeverExposeIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    void restOnAnInternalDatabase_answers404ForEveryMethod() throws Exception {
+    void restOnAnInternalDatabase_answers404ForEveryMethod() {
         for (String[] target : List.of(new String[] {"/t?id=eq.1", "excalibase_meta"},
                 new String[] {"/users?id=eq.1", "auth"})) {
             for (String method : List.of("GET", "POST", "PATCH", "DELETE")) {
@@ -90,7 +90,7 @@ class MysqlNeverExposeIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    void theOpenApiDocument_describesNoInternalPath() throws Exception {
+    void theOpenApiDocument_describesNoInternalPath() {
         HttpAnswer answer = http.get("/" + PROJECT + "/api/v1", "Accept", "application/openapi+json");
 
         assertThat(answer.status()).isEqualTo(200);
