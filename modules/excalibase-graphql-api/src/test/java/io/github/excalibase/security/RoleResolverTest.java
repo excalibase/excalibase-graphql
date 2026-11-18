@@ -170,6 +170,6 @@ class RoleResolverTest {
         assertThat(principal.sessionVariables("proj-a").toString())
                 .doesNotContain("an-admin-secret-that-must-not-travel-0123")
                 .doesNotContain("admin-secret");
-        assertThat(principal.sessionVariables("proj-a").values()).contains("77");
+        assertThat(principal.sessionVariables("proj-a")).containsValue("77");
     }
 }

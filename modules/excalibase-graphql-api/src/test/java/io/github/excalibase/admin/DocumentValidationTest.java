@@ -68,9 +68,17 @@ class DocumentValidationTest {
 
     @Test
     void aJwtSectionIsRefusedWhenTheEngineHasTokenSettingsOfItsOwn() {
-        String withJwt = GOOD.replace("tables:", "jwt:\n  issuer: https://idp.example.com/\n  audience: a\n"
-                + "  jwksUrl: https://idp.example.com/jwks.json\n  algorithms: [RS256]\n  claims:\n"
-                + "    role: role\n    defaultRole: user\n    userId: sub\ntables:");
+        String withJwt = GOOD.replace("tables:", """
+                jwt:
+                  issuer: https://idp.example.com/
+                  audience: a
+                  jwksUrl: https://idp.example.com/jwks.json
+                  algorithms: [RS256]
+                  claims:
+                    role: role
+                    defaultRole: user
+                    userId: sub
+                tables:""");
 
         assertThat(validate(withJwt, true).valid()).isFalse();
         assertThat(validate(withJwt, false).valid()).isTrue();

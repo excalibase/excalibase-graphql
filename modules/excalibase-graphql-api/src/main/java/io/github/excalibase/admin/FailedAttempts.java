@@ -13,11 +13,11 @@ import java.util.function.LongSupplier;
  */
 public final class FailedAttempts {
 
-    private static final class Record {
+    private static final class Failures {
         private final long firstAt;
         private int failures;
 
-        private Record(long firstAt) {
+        private Failures(long firstAt) {
             this.firstAt = firstAt;
         }
     }
@@ -25,7 +25,7 @@ public final class FailedAttempts {
     private final int maxFailures;
     private final long windowNanos;
     private final LongSupplier nanoClock;
-    private final Map<String, Record> records;
+    private final Map<String, Failures> records;
 
     public FailedAttempts(int maxFailures, Duration window, int maxTracked, LongSupplier nanoClock) {
         if (maxFailures < 1 || maxTracked < 1 || window.isZero() || window.isNegative()) {
@@ -36,7 +36,7 @@ public final class FailedAttempts {
         this.nanoClock = nanoClock;
         this.records = new LinkedHashMap<>(16, 0.75f, true) {
             @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Record> eldest) {
+            protected boolean removeEldestEntry(Map.Entry<String, Failures> eldest) {
                 return size() > maxTracked;
             }
         };
@@ -44,11 +44,11 @@ public final class FailedAttempts {
 
     /** How long the address stays blocked; zero when it is not. */
     public synchronized Duration blockedFor(String address) {
-        Record record = live(address);
-        if (record == null || record.failures < maxFailures) {
+        Failures seen = live(address);
+        if (seen == null || seen.failures < maxFailures) {
             return Duration.ZERO;
         }
-        return Duration.ofNanos(Math.max(1, record.firstAt + windowNanos - nanoClock.getAsLong()));
+        return Duration.ofNanos(Math.max(1, seen.firstAt + windowNanos - nanoClock.getAsLong()));
     }
 
     public boolean blocked(String address) {
@@ -56,12 +56,12 @@ public final class FailedAttempts {
     }
 
     public synchronized void failure(String address) {
-        Record record = live(address);
-        if (record == null) {
-            record = new Record(nanoClock.getAsLong());
-            records.put(address, record);
+        Failures seen = live(address);
+        if (seen == null) {
+            seen = new Failures(nanoClock.getAsLong());
+            records.put(address, seen);
         }
-        record.failures++;
+        seen.failures++;
     }
 
     public synchronized void success(String address) {
@@ -73,12 +73,12 @@ public final class FailedAttempts {
     }
 
     /** The address's record while its window is open; an expired one is dropped. */
-    private Record live(String address) {
-        Record record = records.get(address);
-        if (record != null && nanoClock.getAsLong() - record.firstAt > windowNanos) {
+    private Failures live(String address) {
+        Failures seen = records.get(address);
+        if (seen != null && nanoClock.getAsLong() - seen.firstAt > windowNanos) {
             records.remove(address);
             return null;
         }
-        return record;
+        return seen;
     }
 }

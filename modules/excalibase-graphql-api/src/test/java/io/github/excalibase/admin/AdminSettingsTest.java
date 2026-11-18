@@ -8,19 +8,35 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class AdminSettingsTest {
 
     private static final String SECRET = "settings-secret-0123456789-abcdefghijklm";
+    private static final int PUBLIC_PORT = 10000;
+    private static final int MANAGEMENT_PORT = 8081;
 
     private static AdminSettings.Raw on(String secret, String secretFile) {
-        return new AdminSettings.Raw(true, 10001, secret, secretFile, 10000, 8081, false);
+        return new AdminSettings.Raw(true, 10001, secret, secretFile, PUBLIC_PORT, MANAGEMENT_PORT, false);
+    }
+
+    private static AdminSettings.Raw onPort(int port) {
+        return new AdminSettings.Raw(true, port, SECRET, "", PUBLIC_PORT, MANAGEMENT_PORT, false);
+    }
+
+    /** The message the engine stops with; fails when it does not refuse. */
+    private static String refusal(AdminSettings.Raw raw) {
+        try {
+            AdminSettings.resolve(raw);
+        } catch (IllegalStateException refused) {
+            return refused.getMessage();
+        }
+        throw new AssertionError("the settings were accepted");
     }
 
     @Test
     void theConsoleIsOffByDefaultAndNeedsNoSecret() {
-        AdminSettings settings = AdminSettings.resolve(new AdminSettings.Raw(false, 10001, "", "", 10000, 8081, false));
+        AdminSettings settings = AdminSettings.resolve(
+                new AdminSettings.Raw(false, 10001, "", "", PUBLIC_PORT, MANAGEMENT_PORT, false));
 
         assertThat(settings.enabled()).isFalse();
         assertThat(settings.secret()).isNull();
@@ -28,7 +44,8 @@ class AdminSettingsTest {
 
     @Test
     void offStaysOffWhateverElseIsSet() {
-        AdminSettings settings = AdminSettings.resolve(new AdminSettings.Raw(false, 0, "short", "", 10000, 8081, true));
+        AdminSettings settings = AdminSettings.resolve(
+                new AdminSettings.Raw(false, 0, "short", "", PUBLIC_PORT, MANAGEMENT_PORT, true));
 
         assertThat(settings.enabled()).isFalse();
     }
@@ -44,9 +61,7 @@ class AdminSettingsTest {
 
     @Test
     void onWithoutASecretRefusesToStart() {
-        assertThatThrownBy(() -> AdminSettings.resolve(on("", "")))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("EXCALIBASE_ADMIN_SECRET");
+        assertThat(refusal(on("", ""))).contains("EXCALIBASE_ADMIN_SECRET");
     }
 
     @Test
@@ -54,10 +69,7 @@ class AdminSettingsTest {
         String shortSecret = "only-thirty-one-characters-long";
         assertThat(shortSecret).hasSize(AdminSecret.MIN_LENGTH - 1);
 
-        assertThatThrownBy(() -> AdminSettings.resolve(on(shortSecret, "")))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("at least 32")
-                .hasMessageNotContaining(shortSecret);
+        assertThat(refusal(on(shortSecret, ""))).contains("at least 32").doesNotContain(shortSecret);
     }
 
     @Test
@@ -73,50 +85,41 @@ class AdminSettingsTest {
     void aShortSecretInAFileRefusesToStart(@TempDir Path directory) throws IOException {
         Path file = Files.writeString(directory.resolve("admin-secret"), "tiny\n");
 
-        assertThatThrownBy(() -> AdminSettings.resolve(on("", file.toString())))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("at least 32");
+        assertThat(refusal(on("", file.toString()))).contains("at least 32");
     }
 
     @Test
     void anUnreadableSecretFileRefusesToStartAndNamesTheFile(@TempDir Path directory) {
         Path missing = directory.resolve("nope");
 
-        assertThatThrownBy(() -> AdminSettings.resolve(on("", missing.toString())))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("EXCALIBASE_ADMIN_SECRET_FILE")
-                .hasMessageContaining(missing.toString());
+        assertThat(refusal(on("", missing.toString())))
+                .contains("EXCALIBASE_ADMIN_SECRET_FILE").contains(missing.toString());
     }
 
     @Test
     void aSecretAndASecretFileTogetherAreRefused(@TempDir Path directory) throws IOException {
         Path file = Files.writeString(directory.resolve("admin-secret"), SECRET);
 
-        assertThatThrownBy(() -> AdminSettings.resolve(on(SECRET, file.toString())))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("not both")
-                .hasMessageNotContaining(SECRET);
+        assertThat(refusal(on(SECRET, file.toString()))).contains("not both").doesNotContain(SECRET);
     }
 
     @Test
     void hostedModeRefusesTheConsole() {
-        assertThatThrownBy(() -> AdminSettings.resolve(new AdminSettings.Raw(true, 10001, SECRET, "", 10000, 8081, true)))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("EXCALIBASE_CONSOLE_ENABLED")
-                .hasMessageContaining("hosted")
-                .hasMessageNotContaining(SECRET);
+        AdminSettings.Raw hosted = new AdminSettings.Raw(true, 10001, SECRET, "", PUBLIC_PORT, MANAGEMENT_PORT, true);
+
+        assertThat(refusal(hosted)).contains("EXCALIBASE_CONSOLE_ENABLED").contains("hosted").doesNotContain(SECRET);
     }
 
     @Test
-    void thePortMustBeUsableAndDistinctFromTheOtherListeners() {
-        assertThatThrownBy(() -> AdminSettings.resolve(new AdminSettings.Raw(true, 0, SECRET, "", 10000, 8081, false)))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("EXCALIBASE_ADMIN_PORT");
-        assertThatThrownBy(() -> AdminSettings.resolve(new AdminSettings.Raw(true, 70000, SECRET, "", 10000, 8081, false)))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("EXCALIBASE_ADMIN_PORT");
-        assertThatThrownBy(() -> AdminSettings.resolve(new AdminSettings.Raw(true, 10000, SECRET, "", 10000, 8081, false)))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("public port");
-        assertThatThrownBy(() -> AdminSettings.resolve(new AdminSettings.Raw(true, 8081, SECRET, "", 10000, 8081, false)))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("management port");
+    void thePortMustBeUsable() {
+        assertThat(refusal(onPort(0))).contains("EXCALIBASE_ADMIN_PORT");
+        assertThat(refusal(onPort(70000))).contains("EXCALIBASE_ADMIN_PORT");
+    }
+
+    @Test
+    void thePortMustDifferFromThePublicAndManagementPorts() {
+        assertThat(refusal(onPort(PUBLIC_PORT))).contains("public port");
+        assertThat(refusal(onPort(MANAGEMENT_PORT))).contains("management port");
     }
 
     @Test

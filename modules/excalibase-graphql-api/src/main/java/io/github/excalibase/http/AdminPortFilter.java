@@ -14,6 +14,7 @@ import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.annotation.RequestFilter;
 import io.micronaut.http.annotation.ServerFilter;
 
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 
 /**
@@ -47,18 +48,18 @@ public class AdminPortFilter implements Ordered {
 
     @RequestFilter
     @Nullable
-    public HttpResponse<?> filter(HttpRequest<?> request) {
+    public HttpResponse<Object> filter(HttpRequest<?> request) {
         String target = RequestTarget.rawPath(request);
         if (!onAdminPort(request)) {
-            return isAdmin(target) || isAdmin(request.getPath()) ? DefaultErrorBody.response(request, HttpStatus.NOT_FOUND) : null;
+            return isAdmin(target) || isAdmin(request.getPath()) ? notFound(request) : null;
         }
         if (!isAdmin(target)) {
-            return DefaultErrorBody.response(request, HttpStatus.NOT_FOUND);
+            return notFound(request);
         }
         return authorize(request);
     }
 
-    private HttpResponse<?> authorize(HttpRequest<?> request) {
+    private HttpResponse<Object> authorize(HttpRequest<?> request) {
         String address = peer(request);
         switch (guard.check(address, request.getHeaders().get(AdminGuard.SECRET_HEADER))) {
             case ALLOWED -> {
@@ -66,15 +67,20 @@ public class AdminPortFilter implements Ordered {
                 return null;
             }
             case LIMITED -> {
-                return HttpResponse.status(HttpStatus.TOO_MANY_REQUESTS)
+                return HttpResponse.<Object>status(HttpStatus.TOO_MANY_REQUESTS)
                         .header("Retry-After", Long.toString(guard.retryAfterSeconds(address)))
                         .contentType(MediaType.APPLICATION_JSON_TYPE).body(TOO_MANY);
             }
             default -> {
-                return HttpResponse.status(HttpStatus.UNAUTHORIZED)
+                return HttpResponse.<Object>status(HttpStatus.UNAUTHORIZED)
                         .contentType(MediaType.APPLICATION_JSON_TYPE).body(UNAUTHORIZED);
             }
         }
+    }
+
+    private static HttpResponse<Object> notFound(HttpRequest<?> request) {
+        return HttpResponse.<Object>status(HttpStatus.NOT_FOUND).contentType(MediaType.APPLICATION_JSON_TYPE)
+                .body(DefaultErrorBody.of(request, HttpStatus.NOT_FOUND));
     }
 
     private boolean onAdminPort(HttpRequest<?> request) {
@@ -87,8 +93,7 @@ public class AdminPortFilter implements Ordered {
     }
 
     private static String peer(HttpRequest<?> request) {
-        InetSocketAddress remote = request.getRemoteAddress();
-        return remote == null || remote.getAddress() == null ? "unknown"
-                : ClientAddress.byPrefix(remote.getAddress().getHostAddress());
+        InetAddress address = request.getRemoteAddress().getAddress();
+        return address == null ? "unknown" : ClientAddress.byPrefix(address.getHostAddress());
     }
 }

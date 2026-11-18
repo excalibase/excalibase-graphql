@@ -26,6 +26,16 @@ public class AdminConfig {
     public record ValidationSettings(ReservedSchemas reserved, String projectId, boolean envJwtConfigured) {
     }
 
+    /** Whether this deployment serves the hosted platform: a policy URL or a provisioning URL is set. */
+    record Hosted(boolean active) {
+    }
+
+    @Singleton
+    Hosted hosted(@Value("${app.security.rls.policy-url:}") String policyUrl,
+                  @Value("${app.security.multi-tenant.provisioning-url:}") String provisioningUrl) {
+        return new Hosted(!policyUrl.isBlank() || !provisioningUrl.isBlank());
+    }
+
     @Context
     AdminSettings adminSettings(
             @Value("${excalibase.console.enabled:false}") String enabled,
@@ -34,11 +44,9 @@ public class AdminConfig {
             @Value("${excalibase.admin.secret-file:}") String secretFile,
             @Value("${micronaut.server.port:-1}") int serverPort,
             @Value("${endpoints.all.port:-1}") int managementPort,
-            @Value("${app.security.rls.policy-url:}") String policyUrl,
-            @Value("${app.security.multi-tenant.provisioning-url:}") String provisioningUrl) {
-        boolean hosted = !policyUrl.isBlank() || !provisioningUrl.isBlank();
+            Hosted hosted) {
         AdminSettings settings = AdminSettings.resolve(new AdminSettings.Raw(parse(enabled), port, secret, secretFile,
-                serverPort, managementPort, hosted));
+                serverPort, managementPort, hosted.active()));
         if (settings.enabled()) {
             log.info("admin_console_enabled port={}", settings.port());
         }
