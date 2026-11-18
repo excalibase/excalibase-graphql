@@ -134,14 +134,10 @@ public class AppConfig {
         return value == null || value.isBlank() ? null : value;
     }
 
-    JwtService jwtService(SecurityProperties security, int ttlMinutes) {
-        return jwtService(security, ttlMinutes, null);
-    }
-
     /**
      * With {@code metadata.source} set, the token settings may come from the document instead of the engine's own
-     * (EXC-733): the service then asks the served document per token. Both at once is refused at start. With
-     * no metadata source nothing here differs from before.
+     * (EXC-733): the service then asks the served document per token. The parser refuses a document that adds a
+     * {@code jwt:} section while the engine has settings of its own. With no metadata source nothing here differs.
      */
     @Context
     @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
@@ -165,10 +161,6 @@ public class AppConfig {
         JwtService service = hasJwks ? new JwtService(auth.jwksUrl(), ttlMinutes) : new JwtService(auth.hmacSecret());
         service.expectedIssuer(auth.issuer()).requireAudience(auth.requireAudOrDefault(), auth.audPrefix());
         if (metadata != null) {
-            if (metadata.tokenVerifier().isPresent()) {
-                throw new IllegalStateException("the metadata document has a jwt section and app.security.auth."
-                        + "jwks-url or hmac-secret is set too: keep the token settings in one place");
-            }
             service.documentVerifier(() -> metadata.tokenVerifier().orElse(null));
         }
         return service;
@@ -205,6 +197,8 @@ public class AppConfig {
             @Value("${metadata.url.read-timeout-ms:10000}") long urlReadTimeoutMs,
             @Value("${app.project-id:}") String projectId,
             @Value("${app.reserved-schemas:}") String reservedSchemas,
+            @Value("${app.security.auth.jwks-url:}") String authJwksUrl,
+            @Value("${app.security.auth.hmac-secret:}") String authHmacSecret,
             TokenFileSource provisioningTokenSource,
             @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs,
             @Value("${app.security.permissions.max-stale-ms:300000}") long maxStaleMs,
@@ -215,7 +209,8 @@ public class AppConfig {
                 Duration.ofMillis(urlPollIntervalMs), Duration.ofMillis(urlConnectTimeoutMs),
                 Duration.ofMillis(urlReadTimeoutMs));
         MetadataSettings settings = new MetadataSettings(metadataSource, policyUrl, projectId, reservedSchemas,
-                new MetadataSettings.FileSettings(metadataFilePath, pollIntervalMs), url);
+                new MetadataSettings.FileSettings(metadataFilePath, pollIntervalMs), url,
+                !authJwksUrl.isBlank() || !authHmacSecret.isBlank());
         return MetadataSources.create(settings, meters)
                 .<PermissionProvider>map(source -> source)
                 .orElseGet(() -> permissionProvider(policyUrl, provisioningTokenSource, policyTtlMs, maxStaleMs,

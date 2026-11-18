@@ -16,6 +16,7 @@ import java.util.Map;
 import static io.github.excalibase.support.Expect.jsonPath;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
+import static org.hamcrest.Matchers.is;
 
 /**
  * A standalone engine started with no JWT settings of its own accepts an RS256 token from an outside identity
@@ -92,9 +93,9 @@ class JwtSettingsIntegrationTest extends EngineIntegrationTest {
     @Test
     void anRs256TokenFromTheOutsideProvider_runsAsTheCallerInTheSubClaim() throws Exception {
         orders(token("alice", JwksStub.AUDIENCE)).expect(jsonPath("$.data.publicOrders", hasSize(1)))
-                .expect(jsonPath("$.data.publicOrders[0].customer", org.hamcrest.Matchers.is("alice")));
+                .expect(jsonPath("$.data.publicOrders[0].customer", is("alice")));
         orders(token("bob", JwksStub.AUDIENCE)).expect(jsonPath("$.data.publicOrders[0].id",
-                org.hamcrest.Matchers.is(2)));
+                is(2)));
     }
 
     @Test

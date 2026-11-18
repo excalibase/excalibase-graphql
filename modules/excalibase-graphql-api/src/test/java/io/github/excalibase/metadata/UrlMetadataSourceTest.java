@@ -229,7 +229,7 @@ class UrlMetadataSourceTest extends UrlSourceFixture {
         ReservedSchemas reserved = ReservedSchemas.fromConfig("");
         SimpleMeterRegistry registry = new SimpleMeterRegistry();
 
-        assertThatThrownBy(() -> UrlMetadataSource.create(insecure, reserved, PROJECT, registry))
+        assertThatThrownBy(() -> UrlMetadataSource.create(insecure, reserved, PROJECT, registry, false))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("allow-insecure");
     }

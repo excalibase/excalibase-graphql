@@ -38,6 +38,9 @@ final class JwksStub implements AutoCloseable {
     private final HttpServer server;
     private volatile List<JWK> served;
     private volatile boolean failing;
+    private volatile String discoveryIssuer;
+    private volatile String discoveryJwksUri;
+    private volatile String redirectTarget;
 
     JwksStub() {
         try {
@@ -55,7 +58,17 @@ final class JwksStub implements AutoCloseable {
                 exchange.close();
             });
             server.createContext("/.well-known/openid-configuration", exchange -> {
-                reply(exchange, "{\"issuer\":\"" + issuer() + "\",\"jwks_uri\":\"" + jwksUrl() + "\"}");
+                if (redirectTarget != null) {
+                    redirect(exchange);
+                } else {
+                    reply(exchange, "{\"issuer\":\"" + (discoveryIssuer == null ? issuer() : discoveryIssuer)
+                            + "\",\"jwks_uri\":\"" + (discoveryJwksUri == null ? jwksUrl() : discoveryJwksUri)
+                            + "\"}");
+                }
+                exchange.close();
+            });
+            server.createContext("/moved", exchange -> {
+                redirect(exchange);
                 exchange.close();
             });
             server.start();
@@ -69,6 +82,25 @@ final class JwksStub implements AutoCloseable {
         exchange.getResponseHeaders().set("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, payload.length);
         exchange.getResponseBody().write(payload);
+    }
+
+    private void redirect(HttpExchange exchange) throws IOException {
+        exchange.getResponseHeaders().set("Location", redirectTarget);
+        exchange.sendResponseHeaders(302, -1);
+    }
+
+    /** Answers /moved (the key set) and the discovery document with a redirect to {@code target}. */
+    void redirectTo(String target) {
+        redirectTarget = target;
+    }
+
+    String movedUrl() {
+        return "http://127.0.0.1:" + server.getAddress().getPort() + "/moved";
+    }
+
+    void discoveryNames(String issuerName, String jwksUri) {
+        discoveryIssuer = issuerName;
+        discoveryJwksUri = jwksUri;
     }
 
     String issuer() {

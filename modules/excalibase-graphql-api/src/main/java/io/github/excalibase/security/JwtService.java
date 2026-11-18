@@ -1,8 +1,6 @@
 package io.github.excalibase.security;
 
 import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.MACVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
@@ -36,9 +34,6 @@ import java.util.function.Supplier;
 public class JwtService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
-    /** The auth service gets this long to answer, and its answer this many bytes (a JWKS is a few hundred). */
-    private static final int JWKS_TIMEOUT_MILLIS = 3_000;
-    private static final int JWKS_SIZE_LIMIT_BYTES = 64 * 1024;
     /** A failed fetch, and a token naming a key we do not hold, wait this long before reaching the auth service again. */
     private static final Duration JWKS_MIN_RETRY = Duration.ofSeconds(10);
 
@@ -82,8 +77,8 @@ public class JwtService {
         this.hmacSecret = null;
 
         try {
-            this.keys = new JwksKeys(() -> fetchKeys(jwksUrl), Duration.ofMinutes(ttlMinutes), JWKS_MIN_RETRY,
-                    System::currentTimeMillis, fetchKeys(jwksUrl));
+            this.keys = new JwksKeys(() -> JwksKeys.fetchEcKeys(jwksUrl), Duration.ofMinutes(ttlMinutes), JWKS_MIN_RETRY,
+                    System::currentTimeMillis, JwksKeys.fetchEcKeys(jwksUrl));
             log.info("jwt_keys_loaded jwks_url={}", jwksUrl);
         } catch (Exception e) {
             throw new IllegalStateException("Cannot start with jwt-enabled=true — failed to load JWKS from: " + jwksUrl, e);
@@ -390,25 +385,5 @@ public class JwtService {
             return sub;
         }
         throw new JwtVerificationException("Missing required claim: userId or sub");
-    }
-
-    private static List<JwksKeys.Key> fetchKeys(String jwksUrl)
-            throws java.io.IOException, java.text.ParseException, java.net.URISyntaxException {
-        JWKSet jwkSet = JWKSet.load(new java.net.URI(jwksUrl).toURL(), JWKS_TIMEOUT_MILLIS, JWKS_TIMEOUT_MILLIS,
-                JWKS_SIZE_LIMIT_BYTES);
-        List<JwksKeys.Key> ecKeys = jwkSet.getKeys().stream()
-                .filter(ECKey.class::isInstance)
-                .map(k -> {
-                    try {
-                        return new JwksKeys.Key(k.getKeyID(), ((ECKey) k).toECPublicKey());
-                    } catch (com.nimbusds.jose.JOSEException e) {
-                        throw new JwtVerificationException("Failed to parse EC key from JWKS", e);
-                    }
-                })
-                .toList();
-        if (ecKeys.isEmpty()) {
-            throw new IllegalStateException("No EC keys found in JWKS at: " + jwksUrl);
-        }
-        return ecKeys;
     }
 }

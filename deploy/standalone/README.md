@@ -71,9 +71,10 @@ presigned URL). The engine fetches it and polls. It is read-only: change the doc
 
 Put a `jwt:` section in the document. It applies only when `METADATA_SOURCE` is set; without it the engine
 verifies tokens from its own settings (`APP_SECURITY_AUTH_*`), exactly as before. Do not set both: a document
-with a `jwt:` section and `APP_SECURITY_AUTH_JWKS_URL` or `..._HMAC_SECRET` stops the engine at start. A
+with a `jwt:` section is refused (at start and on every reload) while `APP_SECURITY_AUTH_JWKS_URL` or
+`..._HMAC_SECRET` is set. A
 change to the section is applied together with the rules, after the keys were fetched; a failed fetch keeps
-the last good version.
+the last good version. An edit that leaves the section unchanged does not fetch again.
 
 ```yaml
 jwt:
@@ -106,13 +107,13 @@ How it behaves:
 - **Algorithms** come from the document, never from the token. `none` is refused, and HMAC is refused with a
   key set, so a token signed with the public key as an HMAC secret cannot pass.
 - **Keys** are fetched over `https` (plain `http` only to `localhost`, loopback, `*.svc` and `*.cluster.local`)
-  with timeouts and a 64 KiB cap, cached, and refetched when a token names an unknown `kid`, at most once every
+  with timeouts and a 64 KiB cap, never following a redirect, cached, and refetched when a token names an unknown `kid`, at most once every
   10 seconds. A failed refetch keeps the keys held. A token naming a `kid` the provider does not publish is
   refused. RSA keys under 2048 bits are ignored.
 - **Roles.** When the role claim is a list, the caller may act as any role in it and `defaultRole` is the
   active one; `X-Excalibase-Role` may pick another role from the list and nothing outside it. The `service` role is
   never taken from an outside token.
-- **Session variables.** Only the caller's id, `email` and the `extra` names are exposed to rules; other claims
+- **Session variables.** Only the caller's id and the `extra` names are exposed to rules; other claims
   of the token are not, so a provider's claim cannot stand in for a variable nobody mapped.
 - `excalibase validate` checks the section without contacting the provider.
 

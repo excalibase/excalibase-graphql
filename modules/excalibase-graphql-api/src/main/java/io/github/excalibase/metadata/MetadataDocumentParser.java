@@ -10,6 +10,7 @@ import io.github.excalibase.permissions.PermissionDocumentException;
 import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.permissions.PermissionSetParser;
 import io.github.excalibase.schema.ReservedSchemas;
+import io.github.excalibase.security.TokenVerifier;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Set;
@@ -41,8 +42,22 @@ public final class MetadataDocumentParser {
     private final ReservedSchemas reserved;
     private final String expectedProjectId;
 
+    /** The verifier last built and the settings it came from; a rules-only edit reuses it instead of refetching. */
+    private JwtSettings builtFor;
+    private TokenVerifier built;
+    private final boolean envJwtConfigured;
+
     /** @param expectedProjectId the deployment's project, or null to accept any (the CLI without a project) */
     public MetadataDocumentParser(ReservedSchemas reserved, String expectedProjectId) {
+        this(reserved, expectedProjectId, false);
+    }
+
+    /**
+     * @param envJwtConfigured the engine has token settings of its own; a document {@code jwt:} section is then
+     *                         refused, so start-up and every reload agree whatever the provider is doing
+     */
+    public MetadataDocumentParser(ReservedSchemas reserved, String expectedProjectId, boolean envJwtConfigured) {
+        this.envJwtConfigured = envJwtConfigured;
         this.reserved = reserved;
         this.expectedProjectId = expectedProjectId == null || expectedProjectId.isBlank() ? null : expectedProjectId;
     }
@@ -66,10 +81,21 @@ public final class MetadataDocumentParser {
      *
      * @throws IllegalStateException the document is valid but the keys or secret cannot be had right now
      */
-    public MetadataDocument load(String text, long version) {
+    public synchronized MetadataDocument load(String text, long version) {
         Parsed parsed = validated(text, version);
-        return new MetadataDocument(parsed.permissions(),
-                parsed.jwt() == null ? null : DocumentJwtVerifier.create(parsed.jwt()));
+        return new MetadataDocument(parsed.permissions(), verifierFor(parsed.jwt()));
+    }
+
+    /** Unchanged settings keep the served verifier (a rotated secret is picked up when the section changes). */
+    private TokenVerifier verifierFor(JwtSettings jwt) {
+        if (jwt == null) {
+            builtFor = null;
+            built = null;
+        } else if (!jwt.equals(builtFor)) {
+            built = DocumentJwtVerifier.create(jwt);
+            builtFor = jwt;
+        }
+        return built;
     }
 
     private Parsed validated(String text, long version) {
@@ -101,6 +127,10 @@ public final class MetadataDocumentParser {
         requireFormat(document);
         PermissionSet permissions = rules(document, projectId(document), version);
         refuseReserved(permissions);
+        if (document.has(JWT) && envJwtConfigured) {
+            throw new MetadataDocumentException("jwt: the engine already has token settings of its own "
+                    + "(app.security.auth.*); keep them in one place, there or in the document");
+        }
         return new Parsed(permissions, document.has(JWT) ? JwtSettingsParser.parse(document.get(JWT)) : null);
     }
 

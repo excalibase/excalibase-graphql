@@ -32,9 +32,10 @@ public final class FileMetadataSource {
 
     /** @param path the document, or a folder holding {@value #FILE_NAME} (a mounted ConfigMap) */
     public static ReloadingMetadataSource create(Path path, Duration interval, ReservedSchemas reserved,
-                                                 String expectedProjectId, MeterRegistry meters) {
+                                                 String expectedProjectId, MeterRegistry meters,
+                                                 boolean envJwtConfigured) {
         return new ReloadingMetadataSource(NAME, () -> read(path),
-                new MetadataDocumentParser(reserved, expectedProjectId)::load, () -> writable(path), interval, meters);
+                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load, () -> writable(path), interval, meters);
     }
 
     private static Path resolve(Path path) {

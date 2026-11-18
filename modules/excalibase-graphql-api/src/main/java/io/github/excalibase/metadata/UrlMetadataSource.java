@@ -23,20 +23,21 @@ public final class UrlMetadataSource {
 
     /** @return the source, not yet started; @throws IllegalStateException when the location is unusable */
     public static ReloadingMetadataSource create(UrlSettings settings, ReservedSchemas reserved,
-                                                 String expectedProjectId, MeterRegistry meters) {
-        return create(settings, reserved, expectedProjectId, meters, System::currentTimeMillis);
+                                                 String expectedProjectId, MeterRegistry meters,
+                                                 boolean envJwtConfigured) {
+        return create(settings, reserved, expectedProjectId, meters, System::currentTimeMillis, envJwtConfigured);
     }
 
     /** The clock drives the token file's re-read throttle; a test moves it instead of waiting. */
     static ReloadingMetadataSource create(UrlSettings settings, ReservedSchemas reserved, String expectedProjectId,
-                                          MeterRegistry meters, LongSupplier clock) {
+                                          MeterRegistry meters, LongSupplier clock, boolean envJwtConfigured) {
         URI location = UrlLocation.require(settings.location(), expectedProjectId, settings.allowInsecure());
         TokenFileSource token = hasToken(settings)
                 ? new TokenFileSource(settings.tokenFile(), settings.token(), clock) : null;
         UrlDocumentFetcher fetcher = new UrlDocumentFetcher(location, token, settings.connectTimeout(),
                 settings.readTimeout());
         return new ReloadingMetadataSource(NAME, fetcher,
-                new MetadataDocumentParser(reserved, expectedProjectId)::load, () -> false,
+                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load, () -> false,
                 settings.pollInterval(), meters);
     }
 

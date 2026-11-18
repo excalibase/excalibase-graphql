@@ -8,11 +8,14 @@ import com.nimbusds.jose.jwk.JWK;
 import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.RSAKey;
-import com.nimbusds.jose.util.DefaultResourceRetriever;
 import io.github.excalibase.security.JwksKeys;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,6 +43,8 @@ final class JwtKeyLoader {
     private static final int MIN_SECRET_BYTES = 32;
     private static final String DISCOVERY_PATH = "/.well-known/openid-configuration";
     private static final ObjectMapper JSON = new ObjectMapper();
+    private static final HttpClient HTTP = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER)
+            .connectTimeout(Duration.ofMillis(TIMEOUT_MILLIS)).build();
 
     private JwtKeyLoader() {
     }
@@ -55,23 +60,51 @@ final class JwtKeyLoader {
         }
     }
 
+    /** The key set a discovery document names must be as secure as the issuer that named it. */
+    static URI checkedJwksUri(String issuer, String jwksUri) {
+        URI uri = JwtSettingsParser.requireHttpsUrl(jwksUri, "discovered jwks_uri");
+        if (issuer.regionMatches(true, 0, "https:", 0, "https:".length()) && !"https".equalsIgnoreCase(uri.getScheme())) {
+            throw new IllegalStateException("the discovered jwks_uri is plain http although the issuer is https");
+        }
+        return uri;
+    }
+
+    /** A plain GET that follows no redirect: a provider that moves its keys says so in the document. */
+    private static String get(URI uri) throws IOException {
+        HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofMillis(TIMEOUT_MILLIS)).GET().build();
+        try {
+            HttpResponse<InputStream> response = HTTP.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            try (InputStream body = response.body()) {
+                if (response.statusCode() != 200) {
+                    throw new IOException("the provider answered HTTP " + response.statusCode());
+                }
+                byte[] bytes = body.readNBytes(SIZE_LIMIT_BYTES + 1);
+                if (bytes.length > SIZE_LIMIT_BYTES) {
+                    throw new IOException("the answer is larger than " + SIZE_LIMIT_BYTES + " bytes");
+                }
+                return new String(bytes, StandardCharsets.UTF_8);
+            }
+        } catch (InterruptedException _) {
+            Thread.currentThread().interrupt();
+            throw new IOException("interrupted while reading from the provider");
+        }
+    }
+
     private static URI discover(String issuer) {
         String base = issuer.endsWith("/") ? issuer.substring(0, issuer.length() - 1) : issuer;
         try {
-            String body = new DefaultResourceRetriever(TIMEOUT_MILLIS, TIMEOUT_MILLIS, SIZE_LIMIT_BYTES)
-                    .retrieveResource(URI.create(base + DISCOVERY_PATH).toURL()).getContent();
-            JsonNode metadata = JSON.readTree(body);
+            JsonNode metadata = JSON.readTree(get(URI.create(base + DISCOVERY_PATH)));
             if (!issuer.equals(metadata.path("issuer").asText())) {
                 throw new IllegalStateException("the discovery document names another issuer than the jwt settings");
             }
-            return JwtSettingsParser.requireHttpsUrl(metadata.path("jwks_uri").asText(""), "discovered jwks_uri");
+            return checkedJwksUri(issuer, metadata.path("jwks_uri").asText(""));
         } catch (IOException e) {
             throw new IllegalStateException("cannot read the issuer's OIDC discovery document: " + e, e);
         }
     }
 
     private static List<JwksKeys.Key> fetch(URI jwks) throws IOException, ParseException, JOSEException {
-        JWKSet set = JWKSet.load(jwks.toURL(), TIMEOUT_MILLIS, TIMEOUT_MILLIS, SIZE_LIMIT_BYTES);
+        JWKSet set = JWKSet.parse(get(jwks));
         List<JwksKeys.Key> keys = new ArrayList<>();
         for (JWK jwk : set.getKeys()) {
             if (jwk.getKeyUse() == KeyUse.ENCRYPTION) {

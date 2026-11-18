@@ -24,7 +24,7 @@ class ReadinessMetadataTest {
 
     private ReloadingMetadataSource open(Path file) {
         ReloadingMetadataSource source = FileMetadataSource.create(file, Duration.ofHours(1),
-                ReservedSchemas.fromConfig(""), "demo", new SimpleMeterRegistry());
+                ReservedSchemas.fromConfig(""), "demo", new SimpleMeterRegistry(), false);
         source.start();
         return source;
     }

@@ -9,6 +9,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static io.github.excalibase.metadata.MetadataFixtures.PROJECT;
@@ -21,21 +23,28 @@ class JwtReloadTest {
     private final AtomicReference<String> text = new AtomicReference<>();
     private JwksStub idp;
     private ReloadingMetadataSource source;
+    private final List<ReloadingMetadataSource> opened = new ArrayList<>();
 
     @BeforeEach
     void start() {
         idp = new JwksStub();
         text.set(document("https://api.one", "public.orders"));
-        source = new ReloadingMetadataSource("test",
+        source = started(false);
+    }
+
+    private ReloadingMetadataSource started(boolean envJwtConfigured) {
+        ReloadingMetadataSource created = new ReloadingMetadataSource("test",
                 () -> new ReloadingMetadataSource.Raw(text.get(), "v-" + text.get().hashCode()),
-                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT)::load, () -> true,
-                Duration.ofHours(1), Duration.ofMillis(1), new SimpleMeterRegistry());
-        source.start();
+                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT, envJwtConfigured)::load,
+                () -> true, Duration.ofHours(1), Duration.ofMillis(1), new SimpleMeterRegistry());
+        opened.add(created);
+        created.start();
+        return created;
     }
 
     @AfterEach
     void stop() {
-        source.close();
+        opened.forEach(ReloadingMetadataSource::close);
         idp.close();
     }
 
@@ -86,5 +95,49 @@ class JwtReloadTest {
         swapTo("format: 1\nprojectId: demo\ntables: []\n");
 
         assertThat(source.tokenVerifier()).isEmpty();
+    }
+
+    @Test
+    void withTheEnginesOwnJwtSettings_aJwtSectionIsRefused_whetherTheProviderIsDownOrUp() {
+        idp.failFromNowOn();
+        ReloadingMetadataSource down = started(true);
+        assertThat(down.current()).isEmpty();
+        assertThat(down.status().lastRefusal()).as("refused as a document, not as a provider outage")
+                .isEqualTo("invalid_document");
+
+        try (JwksStub up = new JwksStub()) {
+            text.set("format: 1\nprojectId: demo\njwt:\n  issuer: \"" + up.issuer() + "\"\n  jwksUrl: "
+                    + up.jwksUrl() + "\n  audience: a\ntables: []\n");
+            ReloadingMetadataSource reachable = started(true);
+
+            assertThat(reachable.current()).isEmpty();
+            assertThat(reachable.status().lastRefusal()).isEqualTo("invalid_document");
+        }
+    }
+
+    @Test
+    void aReloadThatAddsAJwtSection_whileTheEngineHasItsOwn_isRefused_andNothingChanges() {
+        text.set("format: 1\nprojectId: demo\ntables: []\n");
+        ReloadingMetadataSource running = started(true);
+
+        text.set(document("https://api.two", "public.secrets"));
+        running.refresh();
+        running.refresh();
+
+        assertThat(running.status().version()).isEqualTo(1);
+        assertThat(running.tokenVerifier()).isEmpty();
+        assertThat(running.status().lastRefusal()).isEqualTo("invalid_document");
+    }
+
+    @Test
+    void aRulesOnlyEdit_swapsInWithTheProviderDown_andKeepsTheServedVerifier() {
+        TokenVerifier before = source.tokenVerifier().orElseThrow();
+        idp.failFromNowOn();
+
+        swapTo(document("https://api.one", "public.secrets"));
+
+        assertThat(source.permissionsFor(PROJECT).tables().get(0).table()).isEqualTo("public.secrets");
+        assertThat(source.status().version()).isEqualTo(2);
+        assertThat(source.tokenVerifier().orElseThrow()).isSameAs(before);
     }
 }

@@ -13,7 +13,7 @@ import java.util.Set;
 
 /**
  * Turns a verified token into the engine's {@link JwtClaims} using the document's claim paths. Only what the
- * document maps becomes a session variable: the caller's id, the email address and the named extras. Other
+ * document maps becomes a session variable: the caller's id and the named extras. Other
  * claims of the token are not exposed, so a provider's claim cannot pose as a variable no one mapped.
  */
 final class DocumentClaims {

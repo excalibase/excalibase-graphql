@@ -1,10 +1,19 @@
 package io.github.excalibase.security;
 
+import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.jwk.ECKey;
+import com.nimbusds.jose.jwk.JWK;
+import com.nimbusds.jose.jwk.JWKSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.security.PublicKey;
+import java.text.ParseException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
@@ -20,6 +29,9 @@ import java.util.function.LongSupplier;
 public final class JwksKeys {
 
     private static final Logger log = LoggerFactory.getLogger(JwksKeys.class);
+    /** The auth service gets this long to answer, and its answer this many bytes (a JWKS is a few hundred). */
+    private static final int FETCH_TIMEOUT_MILLIS = 3_000;
+    private static final int FETCH_SIZE_LIMIT_BYTES = 64 * 1024;
 
     public record Key(String keyId, PublicKey publicKey) {
     }
@@ -80,5 +92,25 @@ public final class JwksKeys {
         } finally {
             refreshing.unlock();
         }
+    }
+
+    /** The EC keys of a key set served at {@code jwksUrl}: what excalibase-auth publishes. */
+    static List<Key> fetchEcKeys(String jwksUrl) throws IOException, ParseException, URISyntaxException {
+        JWKSet jwkSet = JWKSet.load(new URI(jwksUrl).toURL(), FETCH_TIMEOUT_MILLIS, FETCH_TIMEOUT_MILLIS,
+                FETCH_SIZE_LIMIT_BYTES);
+        List<Key> ecKeys = new ArrayList<>();
+        for (JWK jwk : jwkSet.getKeys()) {
+            if (jwk instanceof ECKey ec) {
+                try {
+                    ecKeys.add(new Key(ec.getKeyID(), ec.toECPublicKey()));
+                } catch (JOSEException e) {
+                    throw new JwtVerificationException("Failed to parse EC key from JWKS", e);
+                }
+            }
+        }
+        if (ecKeys.isEmpty()) {
+            throw new IllegalStateException("No EC keys found in JWKS at: " + jwksUrl);
+        }
+        return ecKeys;
     }
 }

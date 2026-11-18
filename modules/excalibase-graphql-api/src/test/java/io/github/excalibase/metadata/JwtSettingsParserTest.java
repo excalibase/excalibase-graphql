@@ -24,6 +24,15 @@ class JwtSettingsParserTest {
         assertThat(parser.parse(WITH_JWT, 1).tables()).isEmpty();
     }
 
+    @Test
+    void aJwtSection_isRefused_whenTheEngineHasItsOwnJwtSettings() {
+        MetadataDocumentParser withEnv = new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT, true);
+
+        assertThatThrownBy(() -> withEnv.parse(WITH_JWT, 1)).isInstanceOf(MetadataDocumentException.class)
+                .hasMessageContaining("jwt").hasMessageContaining("one place");
+        assertThat(withEnv.parse(MetadataFixtures.GOOD_YAML, 1)).isNotNull();
+    }
+
     @ParameterizedTest(name = "{0}")
     @CsvSource(delimiter = '|', value = {
             "no audience|issuer: https://i/\\njwksUrl: https://i/jwks|jwt.audience",
