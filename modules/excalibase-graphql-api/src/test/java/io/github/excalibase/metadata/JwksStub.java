@@ -25,6 +25,8 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** A local identity provider: serves a JWKS and an OIDC discovery document, and signs tokens with its keys. */
@@ -34,6 +36,7 @@ final class JwksStub implements AutoCloseable {
 
     final RSAKey rsa;
     final ECKey ec;
+    private final CountDownLatch release = new CountDownLatch(1);
     final AtomicInteger jwksHits = new AtomicInteger();
     private final HttpServer server;
     private volatile List<JWK> served;
@@ -85,12 +88,12 @@ final class JwksStub implements AutoCloseable {
     }
 
     /** Sends the headers and one byte of a long body, then says nothing more until the test ends. */
-    private static void stall(HttpExchange exchange) throws IOException {
+    private void stall(HttpExchange exchange) throws IOException {
         exchange.sendResponseHeaders(200, 10_000);
         exchange.getResponseBody().write('{');
         exchange.getResponseBody().flush();
         try {
-            Thread.sleep(30_000);
+            release.await(30, TimeUnit.SECONDS);
         } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
@@ -203,6 +206,7 @@ final class JwksStub implements AutoCloseable {
 
     @Override
     public void close() {
+        release.countDown();
         server.stop(0);
     }
 }

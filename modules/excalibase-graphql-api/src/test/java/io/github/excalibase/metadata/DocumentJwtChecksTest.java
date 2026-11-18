@@ -11,6 +11,7 @@ import io.github.excalibase.security.JwtClaims;
 import io.github.excalibase.security.JwtVerificationException;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.TokenVerifier;
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -159,25 +160,29 @@ class DocumentJwtChecksTest {
     @Test
     void aKeySetAnsweredWithANon200Status_isRefused_whateverItsBody() {
         idp.answerKeySetWith(404);
+        String jwt = settings();
 
-        assertThatThrownBy(() -> verifier(settings())).isInstanceOf(IllegalStateException.class)
+        assertThatThrownBy(() -> verifier(jwt)).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("404");
     }
 
     @Test
     void aKeySetOver64KiB_isRefused() {
         idp.padKeySetBy(70_000);
+        String jwt = settings();
 
-        assertThatThrownBy(() -> verifier(settings())).isInstanceOf(IllegalStateException.class)
+        assertThatThrownBy(() -> verifier(jwt)).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("larger");
     }
 
     @Test
     void aServerThatSendsTheHeadersAndOneByteAndStalls_isGivenUpOnWithinTheTimeout() {
         idp.stallAfterOneByte();
+        String jwt = settings();
+        ThrowingCallable fetch = () -> verifier(jwt);
 
         assertTimeoutPreemptively(Duration.ofSeconds(7), () ->
-                assertThatThrownBy(() -> verifier(settings())).isInstanceOf(IllegalStateException.class));
+                assertThatThrownBy(fetch).isInstanceOf(IllegalStateException.class));
     }
 
     @Test
