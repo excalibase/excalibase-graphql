@@ -32,12 +32,13 @@ import java.security.KeyPairGenerator;
 import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
+
 import java.util.Map;
 
 import static io.github.excalibase.PermissionDocs.callable;
@@ -48,6 +49,7 @@ import static io.github.excalibase.support.InternalSchemaProbe.INTROSPECTION;
 import static io.github.excalibase.support.InternalSchemaProbe.assertNothingInternal;
 import static io.github.excalibase.support.InternalSchemaProbe.fieldsOfTypeWith;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * The engine never exposes its internal schemas (EXC-733): not through GraphQL, REST, the OpenAPI document or
@@ -264,12 +266,8 @@ class NeverExposeIntegrationTest extends EngineIntegrationTest {
     }
 
     /** An event published before its subscribers are attached is lost, so the test waits for them. */
-    private void awaitSubscribers(String table) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
-        while (!subscriptionService.hasSubscribers(PROJECT, table) && System.nanoTime() < deadline) {
-            Thread.sleep(50);
-        }
-        assertThat(subscriptionService.hasSubscribers(PROJECT, table)).isTrue();
+    private void awaitSubscribers(String table) {
+        await().atMost(Duration.ofSeconds(10)).until(() -> subscriptionService.hasSubscribers(PROJECT, table));
     }
 
     private void publish(String schema, String table, String data) {
