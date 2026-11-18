@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Reads the newest document row. A connection is opened per poll, so a restarted database or a pooler that
@@ -33,7 +34,7 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
     private final Properties credentials;
     private final boolean migrate;
     private final long queryTimeoutMillis;
-    private volatile boolean migrated;
+    private final AtomicBoolean migrated = new AtomicBoolean();
 
     /** Opens the connection a read uses; a test supplies one it can inspect afterwards. */
     @FunctionalInterface
@@ -82,14 +83,16 @@ final class DbDocumentLoader implements ReloadingMetadataSource.Loader {
     public ReloadingMetadataSource.Raw load() throws IOException {
         try (Connection connection = connector.open()) {
             connection.setAutoCommit(false);
-            boolean creating = migrate && !migrated;
+            boolean creating = migrate && !migrated.get();
             bound(connection);
             if (creating) {
                 createTable(connection);
             }
             Optional<ReloadingMetadataSource.Raw> newest = newest(connection);
             connection.commit();
-            migrated = migrated || creating;
+            if (creating) {
+                migrated.set(true);
+            }
             return newest.orElseThrow(() -> new IOException("no document has been saved yet: " + TABLE
                     + " has no row"));
         } catch (SQLException e) {

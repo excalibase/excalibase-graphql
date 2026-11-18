@@ -1,6 +1,5 @@
 package io.github.excalibase.metadata;
 
-import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.ReservedSchemas;
 import io.github.excalibase.support.DatabaseAccess;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
