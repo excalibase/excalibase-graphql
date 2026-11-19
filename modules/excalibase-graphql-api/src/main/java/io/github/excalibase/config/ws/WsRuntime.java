@@ -304,7 +304,7 @@ public class WsRuntime implements ProjectSockets {
 
     void close(WsSession session, CloseStatus status) {
         try {
-            synchronized (session) {
+            synchronized (WsSession.lockOf(session)) {
                 if (session.isOpen()) {
                     session.close(status);
                 }

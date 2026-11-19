@@ -426,10 +426,10 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
     /** True when the message went out. */
     private boolean sendMessage(WsSession session, String message) {
         try {
-            // Serialise on the session monitor: subscription results fan out from
+            // Serialise on the session send lock: subscription results fan out from
             // multiple Reactor threads onto one session, and the heartbeat pings on
             // another — a raw WsSession is not safe for concurrent sends.
-            synchronized (session) {
+            synchronized (WsSession.lockOf(session)) {
                 if (session.isOpen()) {
                     session.sendMessage(new TextMessage(message));
                     return true;

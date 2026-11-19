@@ -81,13 +81,13 @@ public class WebSocketHeartbeat {
     }
 
     /**
-     * Sends one PING, serialising on the session monitor so it never races a
-     * concurrent data send. Handlers that write to the session must synchronise
-     * on the same monitor for this to hold.
+     * Sends one PING, serialising on the session send lock so it never races a
+     * concurrent data send. Handlers that write to the session must hold
+     * the same {@link WsSession#sendLock()} for this to hold.
      */
     private void ping(WsSession session) {
         try {
-            synchronized (session) {
+            synchronized (WsSession.lockOf(session)) {
                 if (session.isOpen()) {
                     session.sendPing();
                 }

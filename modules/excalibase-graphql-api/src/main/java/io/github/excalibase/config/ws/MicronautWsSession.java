@@ -22,6 +22,9 @@ final class MicronautWsSession implements WsSession {
     private static final String OPENED = "excalibase.wsOpened";
     private static final Duration OPEN_WAIT = Duration.ofSeconds(10);
 
+    private static final Object OPENED_LOCK = new Object();
+
+    private final Object sendLock = new Object();
     private final WebSocketSession delegate;
     private final Map<String, Object> attributes;
 
@@ -67,7 +70,7 @@ final class MicronautWsSession implements WsSession {
     }
 
     private static CompletableFuture<Void> opened(WebSocketSession session) {
-        synchronized (session) {
+        synchronized (OPENED_LOCK) {
             @SuppressWarnings("unchecked")
             CompletableFuture<Void> opened = session.get(OPENED, CompletableFuture.class)
                     .orElse(null);
@@ -93,6 +96,11 @@ final class MicronautWsSession implements WsSession {
     @Override
     public Map<String, Object> getAttributes() {
         return attributes;
+    }
+
+    @Override
+    public Object sendLock() {
+        return sendLock;
     }
 
     @Override
