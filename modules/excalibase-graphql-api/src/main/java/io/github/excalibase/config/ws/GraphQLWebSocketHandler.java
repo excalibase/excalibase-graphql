@@ -124,6 +124,7 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
     public void afterConnectionEstablished(WsSession session) {
         log.debug("WebSocket connection established: {}", session.getId());
         if (!runtime.admit(session)) {
+            log.info("WS session {} refused: {}", session.getId(), WsClose.LIMIT.reason());
             runtime.close(session, WsClose.LIMIT);
             return;
         }

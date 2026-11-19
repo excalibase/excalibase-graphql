@@ -82,9 +82,14 @@ class WsRefusalLogTest {
     }
 
     private GraphQLWebSocketHandler handler(boolean jwtEnabled, boolean tokenRequired) throws Exception {
+        return handler(jwtEnabled, tokenRequired, null, WsRuntime.inline());
+    }
+
+    private GraphQLWebSocketHandler handler(boolean jwtEnabled, boolean tokenRequired, JwtService jwtService,
+                                            WsRuntime runtime) throws Exception {
         GraphQLWebSocketHandler handler = new GraphQLWebSocketHandler(new SubscriptionService(), mapper,
-                (JwtService) null, new WebSocketHeartbeat(0), null, null,
-                new ParsedQueries(1_000_000, Parser::parse));
+                jwtService, new WebSocketHeartbeat(0), null, null,
+                new ParsedQueries(1_000_000, Parser::parse), runtime);
         set(handler, "jwtEnabled", jwtEnabled);
         set(handler, "wsAuthRequired", tokenRequired);
         return handler;
@@ -119,11 +124,26 @@ class WsRefusalLogTest {
     @Test
     @DisplayName("a refusal never logs the token the client sent")
     void refusalNeverLogsTheToken() throws Exception {
-        handler(true, true).onMessage(session("sess-token"), mapper.writeValueAsString(Map.of("type", "connection_init",
+        JwtService verifier = new JwtService("0123456789abcdef0123456789abcdef");
+        handler(true, true, verifier, WsRuntime.inline()).onMessage(session("sess-token"), mapper.writeValueAsString(Map.of("type", "connection_init",
                 "payload", Map.of("Authorization", "Bearer " + SECRET_TOKEN))));
 
         assertThat(logged(Level.INFO)).anyMatch(event -> event.getFormattedMessage().contains("refused"));
         assertThat(appender.list).noneMatch(event -> event.getFormattedMessage().contains("super-secret-payload"));
+    }
+
+    @Test
+    @DisplayName("a connection refused for the socket limit is logged with the session id and reason")
+    void limitRefusalIsLogged() throws Exception {
+        WsRuntime full = mock(WsRuntime.class);
+        when(full.admit(any())).thenReturn(false);
+
+        handler(false, false, null, full).afterConnectionEstablished(session("sess-limit"));
+
+        assertThat(logged(Level.INFO)).anyMatch(event ->
+                event.getFormattedMessage().contains("sess-limit")
+                        && event.getFormattedMessage().contains("refused")
+                        && event.getFormattedMessage().contains(WsClose.LIMIT.reason()));
     }
 
     private static WebSocketSession micronautSession(String id) {
@@ -170,7 +190,7 @@ class WsRefusalLogTest {
     @Test
     @DisplayName("a frame that gives up waiting for the open handler is logged as dropped")
     void droppedFrameIsLogged() {
-        WebSocketSession session = micronautSession("sess-dropped");
+        WebSocketSession session = micronautSession("sess-gave-up");
 
         Duration limit = Duration.ofMillis(100);
 
@@ -178,6 +198,7 @@ class WsRefusalLogTest {
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(logged(Level.WARN)).anyMatch(event ->
-                event.getFormattedMessage().contains("sess-dropped") && event.getFormattedMessage().contains("dropped"));
+                event.getFormattedMessage().contains("sess-gave-up")
+                        && event.getFormattedMessage().contains("did not finish within"));
     }
 }
