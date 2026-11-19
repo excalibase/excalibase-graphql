@@ -13,7 +13,6 @@ import reactor.core.Disposable;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.Date;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -168,10 +167,10 @@ public class WsRuntime implements ProjectSockets {
         }
     }
 
+    @SuppressWarnings("java:S2143") // the JWT library hands back the exp claim as a java.util.Date
     static Instant expiryOf(JwtClaims claims) {
         Object exp = claims.extraClaims().get("exp");
-        // the JWT library hands back the exp claim as a Date
-        if (exp instanceof Date date) { // NOSONAR
+        if (exp instanceof java.util.Date date) {
             return date.toInstant();
         }
         if (exp instanceof Instant instant) {
