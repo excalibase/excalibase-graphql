@@ -2,6 +2,7 @@ package io.github.excalibase.config.ws;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.awaitility.Awaitility.await;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
@@ -140,11 +141,11 @@ class WsRefusalLogTest {
 
     @Test
     @DisplayName("a frame that arrives before the open handler has run is logged as waiting")
-    void earlyFrameIsLogged() throws Exception {
+    void earlyFrameIsLogged() {
         WebSocketSession session = micronautSession("sess-early");
         try (var other = Executors.newSingleThreadExecutor()) {
             other.submit(() -> {
-                Thread.sleep(150);
+                await().until(() -> !logged(Level.WARN).isEmpty());
                 MicronautWsSession.markOpened(session);
                 return null;
             });
@@ -171,7 +172,9 @@ class WsRefusalLogTest {
     void droppedFrameIsLogged() {
         WebSocketSession session = micronautSession("sess-dropped");
 
-        assertThatThrownBy(() -> MicronautWsSession.awaitOpened(session, Duration.ofMillis(100)))
+        Duration limit = Duration.ofMillis(100);
+
+        assertThatThrownBy(() -> MicronautWsSession.awaitOpened(session, limit))
                 .isInstanceOf(IllegalStateException.class);
 
         assertThat(logged(Level.WARN)).anyMatch(event ->
