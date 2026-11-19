@@ -3,6 +3,10 @@ package io.github.excalibase.config.ws;
 import io.micronaut.websocket.CloseReason;
 import io.micronaut.websocket.WebSocketSession;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -13,9 +17,10 @@ import java.util.concurrent.TimeoutException;
 /** A Micronaut WebSocket session seen through {@link WsSession}. */
 final class MicronautWsSession implements WsSession {
 
+    private static final Logger log = LoggerFactory.getLogger(MicronautWsSession.class);
     private static final String KEY = "excalibase.wsSession";
     private static final String OPENED = "excalibase.wsOpened";
-    private static final long OPEN_WAIT_SECONDS = 10;
+    private static final Duration OPEN_WAIT = Duration.ofSeconds(10);
 
     private final WebSocketSession delegate;
     private final Map<String, Object> attributes;
@@ -41,11 +46,22 @@ final class MicronautWsSession implements WsSession {
 
     /** Waits until the open handler has run, so a frame is never handled on a session that is not set up. */
     static void awaitOpened(WebSocketSession session) {
+        awaitOpened(session, OPEN_WAIT);
+    }
+
+    static void awaitOpened(WebSocketSession session, Duration limit) {
+        CompletableFuture<Void> opened = opened(session);
+        if (!opened.isDone()) {
+            log.warn("WebSocket frame for session {} arrived before the open handler finished; waiting up to {} ms",
+                    session.getId(), limit.toMillis());
+        }
         try {
-            opened(session).get(OPEN_WAIT_SECONDS, TimeUnit.SECONDS);
+            opened.get(limit.toMillis(), TimeUnit.MILLISECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException | TimeoutException failure) {
+            log.warn("WebSocket frame for session {} dropped: the open handler did not finish within {} ms",
+                    session.getId(), limit.toMillis());
             throw new IllegalStateException("WebSocket session " + session.getId() + " was not opened", failure);
         }
     }
