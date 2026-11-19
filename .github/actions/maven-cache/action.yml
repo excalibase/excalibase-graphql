@@ -2,8 +2,9 @@ name: Shared Maven cache
 description: >
   Restores the one ~/.m2/repository cache every Maven job shares. On a miss it
   warms the cache (dependencies, plugins, annotation processors, surefire
-  provider, Sonar plugin), drops partial downloads and saves it, so a normal
-  run never goes back to Maven Central.
+  provider, native plugins, Sonar plugin), drops partial downloads and saves
+  it, so a normal run never goes back to Maven Central.
+  Bump v1 in the two keys below to throw the cache away.
 
 runs:
   using: composite
@@ -13,30 +14,32 @@ runs:
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.m2/repository
-        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+        key: maven-v1-${{ runner.os }}-${{ hashFiles('**/pom.xml', '.mvn/maven.config', '.github/actions/maven-cache/action.yml', '.github/workflows/sonar.yml') }}
         restore-keys: |
-          maven-${{ runner.os }}-
+          maven-v1-${{ runner.os }}-
 
     - name: Warm Maven cache
       if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        # Central answers a cold-cache burst with 429s and bogus "not found"s: retry whole goals too
-        mvn_retry() {
-          for attempt in 1 2 3 4; do
-            mvn --batch-mode "$@" && return 0
-            echo "mvn $* failed (attempt $attempt), retrying in $((attempt * 30))s"
-            sleep $((attempt * 30))
-          done
-          return 1
-        }
+        source scripts/ci/mvn-retry.sh
+        # one source of truth for the Sonar plugin version: the workflow that runs it
+        sonar_plugin=$(grep -o 'sonar-maven-plugin:[0-9.]*' .github/workflows/sonar.yml | head -1)
         mvn_retry -Pnative dependency:go-offline
         mvn_retry verify -DskipTests
         # the surefire provider is only resolved when a test actually runs
         mvn_retry verify -pl modules/excalibase-rls-core
-        mvn_retry dependency:get -Dartifact=org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211
+        # native: the micronaut-graal annotation processor and the reachability metadata
+        mvn_retry -Pnative -pl modules/excalibase-graphql-api -am compile
+        mvn_retry dependency:get -Dartifact=org.graalvm.buildtools:graalvm-reachability-metadata:0.10.6:zip:repository
+        mvn_retry dependency:get -Dartifact=org.sonarsource.scanner.maven:${sonar_plugin}
         # a half-downloaded file must never be cached
         find ~/.m2/repository \( -name '*.lastUpdated' -o -name '*.part' -o -name '*.part.lock' \) -delete
+
+    # the job's own Maven run is compared against this by scripts/ci/m2-files.sh report
+    - name: Record Maven cache contents
+      shell: bash
+      run: scripts/ci/m2-files.sh snapshot
 
     - name: Save Maven cache
       if: steps.restore.outputs.cache-hit != 'true'
@@ -44,4 +47,4 @@ runs:
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.m2/repository
-        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+        key: maven-v1-${{ runner.os }}-${{ hashFiles('**/pom.xml', '.mvn/maven.config', '.github/actions/maven-cache/action.yml', '.github/workflows/sonar.yml') }}

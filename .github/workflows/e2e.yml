@@ -86,6 +86,10 @@ jobs:
         if-no-files-found: ignore
 
   # The binary is compiled once per run; every native job below packages this one.
+
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report
   native-build:
     name: Build Native Binary
     runs-on: ubuntu-24.04
@@ -116,6 +120,10 @@ jobs:
         path: modules/excalibase-graphql-api/target/excalibase-graphql-api
         retention-days: 1
         if-no-files-found: error
+
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report
 
   postgres-e2e-native:
     name: Postgres E2E Tests (Native)
@@ -361,6 +369,10 @@ jobs:
         retention-days: 3
         if-no-files-found: ignore
 
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report
+
   study-cases-e2e:
     name: Study-Cases E2E Tests
     runs-on: ubuntu-24.04
@@ -399,6 +411,10 @@ jobs:
         path: app-logs.txt
         retention-days: 3
         if-no-files-found: ignore
+
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report
 
   mysql-e2e:
     name: MySQL E2E Tests
@@ -445,6 +461,10 @@ jobs:
         retention-days: 3
         if-no-files-found: ignore
 
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report
+
   contracts-e2e:
     name: Engine Contracts
     runs-on: ubuntu-24.04
@@ -478,3 +498,7 @@ jobs:
         path: e2e/contracts/engine.log
         retention-days: 3
         if-no-files-found: ignore
+
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report

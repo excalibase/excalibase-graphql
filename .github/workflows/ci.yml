@@ -33,6 +33,9 @@ jobs:
     - name: Check the trunk tag guard
       run: scripts/ci/test-cd-guard.sh
 
+    - name: Check the Maven retry loop
+      run: scripts/ci/test-mvn-retry.sh
+
   test:
     name: Run Tests & Coverage
     timeout-minutes: 45
@@ -75,6 +78,10 @@ jobs:
         path: modules/excalibase-graphql-api/target/site/jacoco-aggregate/
         retention-days: 7
 
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report
+
   build:
     name: Build & Package
     timeout-minutes: 20
@@ -103,6 +110,10 @@ jobs:
         path: modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar
         if-no-files-found: error
         retention-days: 7
+
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report
 
   build-native:
     name: Build Native Image
@@ -137,3 +148,7 @@ jobs:
         name: native-binary
         path: modules/excalibase-graphql-api/target/excalibase-graphql-api
         retention-days: 7
+
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report

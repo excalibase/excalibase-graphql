@@ -97,3 +97,7 @@ jobs:
         path: |
           console-e2e/playwright-report
           console-e2e/test-results
+
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report

@@ -55,3 +55,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: mvn verify org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211:sonar ${{ env.MAVEN_CLI_OPTS }}
+
+      - name: Maven downloads in this job
+        if: always()
+        run: scripts/ci/m2-files.sh report
