@@ -21,11 +21,20 @@ runs:
       if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        mvn --batch-mode -Pnative dependency:go-offline
-        mvn --batch-mode verify -DskipTests
+        # Central answers a cold-cache burst with 429s and bogus "not found"s: retry whole goals too
+        mvn_retry() {
+          for attempt in 1 2 3 4; do
+            mvn --batch-mode "$@" && return 0
+            echo "mvn $* failed (attempt $attempt), retrying in $((attempt * 30))s"
+            sleep $((attempt * 30))
+          done
+          return 1
+        }
+        mvn_retry -Pnative dependency:go-offline
+        mvn_retry verify -DskipTests
         # the surefire provider is only resolved when a test actually runs
-        mvn --batch-mode verify -pl modules/excalibase-rls-core
-        mvn --batch-mode dependency:get -Dartifact=org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211
+        mvn_retry verify -pl modules/excalibase-rls-core
+        mvn_retry dependency:get -Dartifact=org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211
         # a half-downloaded file must never be cached
         find ~/.m2/repository \( -name '*.lastUpdated' -o -name '*.part' -o -name '*.part.lock' \) -delete
 
