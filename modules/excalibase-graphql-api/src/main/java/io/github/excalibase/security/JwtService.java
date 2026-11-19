@@ -97,7 +97,6 @@ public class JwtService {
         log.info("jwt_service_mode=hmac");
     }
 
-    /** No keys of its own: it verifies only through the verifier a metadata document supplies. */
     /** When the token expires, from a claims map that holds {@code exp} as the library's Date, an Instant or epoch seconds. */
     public static Instant expiresAt(JwtClaims claims) {
         Object exp = claims.extraClaims().get("exp");
@@ -110,6 +109,7 @@ public class JwtService {
         return exp instanceof Number seconds ? Instant.ofEpochSecond(seconds.longValue()) : null;
     }
 
+    /** No keys of its own: it verifies only through the verifier a metadata document supplies. */
     public static JwtService documentOnly() {
         return new JwtService();
     }
