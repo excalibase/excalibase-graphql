@@ -22,6 +22,9 @@ final class MicronautWsSession implements WsSession {
     private static final String OPENED = "excalibase.wsOpened";
     private static final Duration OPEN_WAIT = Duration.ofSeconds(10);
 
+    private static final Object OPENED_LOCK = new Object();
+
+    private final Object sendLock = new Object();
     private final WebSocketSession delegate;
     private final Map<String, Object> attributes;
 
@@ -57,7 +60,7 @@ final class MicronautWsSession implements WsSession {
         }
         try {
             opened.get(limit.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException interrupted) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException | TimeoutException failure) {
             log.warn("WebSocket frame for session {} dropped: the open handler did not finish within {} ms",
@@ -67,16 +70,23 @@ final class MicronautWsSession implements WsSession {
     }
 
     private static CompletableFuture<Void> opened(WebSocketSession session) {
-        synchronized (session) {
-            @SuppressWarnings("unchecked")
-            CompletableFuture<Void> opened = session.get(OPENED, CompletableFuture.class)
-                    .orElse(null);
+        CompletableFuture<Void> existing = openedOf(session);
+        if (existing != null) {
+            return existing;
+        }
+        synchronized (OPENED_LOCK) {
+            CompletableFuture<Void> opened = openedOf(session);
             if (opened == null) {
                 opened = new CompletableFuture<>();
                 session.put(OPENED, opened);
             }
             return opened;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static CompletableFuture<Void> openedOf(WebSocketSession session) {
+        return session.get(OPENED, CompletableFuture.class).orElse(null);
     }
 
     static MicronautWsSession open(WebSocketSession session, Map<String, Object> attributes) {
@@ -93,6 +103,11 @@ final class MicronautWsSession implements WsSession {
     @Override
     public Map<String, Object> getAttributes() {
         return attributes;
+    }
+
+    @Override
+    public Object sendLock() {
+        return sendLock;
     }
 
     @Override

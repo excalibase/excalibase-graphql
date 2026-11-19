@@ -3,6 +3,7 @@ package io.github.excalibase.config.ws;
 import io.github.excalibase.config.ws.WsSession.CloseStatus;
 import io.github.excalibase.rls.ProjectSockets;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.JwtService;
 import io.micronaut.context.annotation.Value;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
@@ -13,7 +14,6 @@ import reactor.core.Disposable;
 
 import java.io.IOException;
 import java.time.Instant;
-import java.util.Date;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -169,14 +169,7 @@ public class WsRuntime implements ProjectSockets {
     }
 
     static Instant expiryOf(JwtClaims claims) {
-        Object exp = claims.extraClaims().get("exp");
-        if (exp instanceof Date date) {
-            return date.toInstant();
-        }
-        if (exp instanceof Instant instant) {
-            return instant;
-        }
-        return exp instanceof Number seconds ? Instant.ofEpochSecond(seconds.longValue()) : null;
+        return JwtService.expiresAt(claims);
     }
 
     // -- permissions --
@@ -304,7 +297,7 @@ public class WsRuntime implements ProjectSockets {
 
     void close(WsSession session, CloseStatus status) {
         try {
-            synchronized (session) {
+            synchronized (WsSession.lockOf(session)) {
                 if (session.isOpen()) {
                     session.close(status);
                 }

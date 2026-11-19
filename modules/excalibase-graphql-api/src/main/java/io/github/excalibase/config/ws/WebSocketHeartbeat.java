@@ -5,9 +5,6 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.micronaut.context.annotation.Value;
-import io.micronaut.core.annotation.Nullable;
-import io.github.excalibase.config.ws.WsSession.CloseStatus;
-import io.github.excalibase.config.ws.WsSession.TextMessage;
 import jakarta.inject.Singleton;
 
 import java.util.Set;
@@ -81,13 +78,13 @@ public class WebSocketHeartbeat {
     }
 
     /**
-     * Sends one PING, serialising on the session monitor so it never races a
-     * concurrent data send. Handlers that write to the session must synchronise
-     * on the same monitor for this to hold.
+     * Sends one PING, serialising on the session send lock so it never races a
+     * concurrent data send. Handlers that write to the session must hold
+     * the same {@link WsSession#sendLock()} for this to hold.
      */
     private void ping(WsSession session) {
         try {
-            synchronized (session) {
+            synchronized (WsSession.lockOf(session)) {
                 if (session.isOpen()) {
                     session.sendPing();
                 }

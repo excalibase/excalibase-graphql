@@ -5,7 +5,7 @@ import static org.awaitility.Awaitility.await;
 
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import io.github.excalibase.support.CapturedLogs;
 import io.micronaut.context.ApplicationContext;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
@@ -25,7 +25,7 @@ class PolicyChangeSubscriberLifecycleTest {
     private static final String SECRET = "test-hmac-secret-0123456789abcdef0123456789";
 
     private GenericContainer<?> nats;
-    private ListAppender<ILoggingEvent> logs;
+    private CapturedLogs logs;
     private Logger subscriberLog;
 
     @BeforeEach
@@ -35,7 +35,7 @@ class PolicyChangeSubscriberLifecycleTest {
                 .waitingFor(Wait.forLogMessage(".*Server is ready.*", 1));
         nats.start();
         subscriberLog = (Logger) LoggerFactory.getLogger(PolicyChangeSubscriber.class);
-        logs = new ListAppender<>();
+        logs = new CapturedLogs();
         logs.start();
         subscriberLog.addAppender(logs);
     }
@@ -71,7 +71,7 @@ class PolicyChangeSubscriberLifecycleTest {
                 publisher.publish("policies.proj-lifecycle.changed", new byte[0]);
                 publisher.flush(Duration.ofSeconds(5));
             }
-            await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(logs.list)
+            await().atMost(Duration.ofSeconds(10)).untilAsserted(() -> assertThat(logs.events())
                     .extracting(ILoggingEvent::getFormattedMessage)
                     .anyMatch(message -> message.contains("Policy change for project proj-lifecycle")));
         }
@@ -83,7 +83,7 @@ class PolicyChangeSubscriberLifecycleTest {
     void natsOff_startStillRuns() {
         try (ApplicationContext context = engine(false)) {
             assertThat(context.getBean(PolicyChangeSubscriber.class)).isNotNull();
-            assertThat(logs.list).extracting(ILoggingEvent::getFormattedMessage)
+            assertThat(logs.events()).extracting(ILoggingEvent::getFormattedMessage)
                     .anyMatch(message -> message.startsWith("Policy-change subscriber disabled"));
         }
     }

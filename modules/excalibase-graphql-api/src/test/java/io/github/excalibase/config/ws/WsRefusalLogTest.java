@@ -12,7 +12,7 @@ import static org.mockito.Mockito.when;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
+import io.github.excalibase.support.CapturedLogs;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import graphql.parser.Parser;
 import io.github.excalibase.cdc.SubscriptionService;
@@ -42,7 +42,7 @@ class WsRefusalLogTest {
     private static final String SECRET_TOKEN = "eyJhbGciOiJFUzI1NiJ9.super-secret-payload.signature";
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+    private final CapturedLogs appender = new CapturedLogs();
     private final Logger handlerLog = (Logger) LoggerFactory.getLogger(GraphQLWebSocketHandler.class);
     private final Logger sessionLog = (Logger) LoggerFactory.getLogger(MicronautWsSession.class);
     private Level handlerLevel;
@@ -68,7 +68,7 @@ class WsRefusalLogTest {
     }
 
     private List<ILoggingEvent> logged(Level level) {
-        return appender.list.stream().filter(event -> event.getLevel() == level).toList();
+        return appender.events().stream().filter(event -> event.getLevel() == level).toList();
     }
 
     private static WsSession session(String id) throws Exception {
@@ -129,7 +129,7 @@ class WsRefusalLogTest {
                 "payload", Map.of("Authorization", "Bearer " + SECRET_TOKEN))));
 
         assertThat(logged(Level.INFO)).anyMatch(event -> event.getFormattedMessage().contains("refused"));
-        assertThat(appender.list).noneMatch(event -> event.getFormattedMessage().contains("super-secret-payload"));
+        assertThat(appender.events()).noneMatch(event -> event.getFormattedMessage().contains("super-secret-payload"));
     }
 
     @Test

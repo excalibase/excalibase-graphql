@@ -4,6 +4,9 @@ import io.micronaut.http.HttpRequest;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.net.UnknownHostException;
+import java.util.List;
+import java.util.Optional;
 
 /**
  * The address a WebSocket client is counted under. Behind the edge proxy every peer is the proxy, so the last
@@ -19,8 +22,8 @@ public final class ClientAddress {
     }
 
     static String of(HttpRequest<?> request) {
-        InetSocketAddress remote = request.getRemoteAddress();
-        InetAddress peer = remote == null ? null : remote.getAddress();
+        InetAddress peer = Optional.ofNullable(request.getRemoteAddress())
+                .map(InetSocketAddress::getAddress).orElse(null);
         if (peer != null && isInternal(peer)) {
             String forwarded = lastForwarded(request.getHeaders().getAll(FORWARDED_FOR));
             if (forwarded != null) {
@@ -48,13 +51,13 @@ public final class ClientAddress {
                 prefix.append(String.format("%02x", bytes[i] & 0xff)).append(i % 2 == 1 && i < 7 ? ":" : "");
             }
             return prefix.append("::/64").toString();
-        } catch (java.net.UnknownHostException malformed) {
+        } catch (UnknownHostException _) {
             return address;
         }
     }
 
     /** The last entry of the last header line: a proxy adds its own line, and the first line is the client's. */
-    public static String lastForwarded(java.util.List<String> lines) {
+    public static String lastForwarded(List<String> lines) {
         return lines == null || lines.isEmpty() ? null : lastForwarded(lines.get(lines.size() - 1));
     }
 

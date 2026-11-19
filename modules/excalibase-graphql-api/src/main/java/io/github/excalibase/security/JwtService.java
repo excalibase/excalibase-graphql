@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.ECPublicKey;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -94,6 +95,18 @@ public class JwtService {
         this.jwksUrl = null;
         this.keys = null;
         log.info("jwt_service_mode=hmac");
+    }
+
+    /** When the token expires, from a claims map that holds {@code exp} as the library's Date, an Instant or epoch seconds. */
+    public static Instant expiresAt(JwtClaims claims) {
+        Object exp = claims.extraClaims().get("exp");
+        if (exp instanceof Date date) {
+            return date.toInstant();
+        }
+        if (exp instanceof Instant instant) {
+            return instant;
+        }
+        return exp instanceof Number seconds ? Instant.ofEpochSecond(seconds.longValue()) : null;
     }
 
     /** No keys of its own: it verifies only through the verifier a metadata document supplies. */

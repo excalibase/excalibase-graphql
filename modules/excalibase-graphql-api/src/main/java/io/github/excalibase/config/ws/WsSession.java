@@ -17,6 +17,20 @@ public interface WsSession {
         return false;
     }
 
+    /**
+     * The one monitor every send, ping and close on this session holds, so two threads never write a frame at the
+     * same time. Implementations hand out the same object for the life of the session.
+     */
+    default Object sendLock() {
+        return this;
+    }
+
+    /** {@link #sendLock()}, or the session itself for an implementation that has none. */
+    static Object lockOf(WsSession session) {
+        Object lock = session.sendLock();
+        return lock == null ? session : lock;
+    }
+
     void sendMessage(TextMessage message) throws IOException;
 
     void sendPing() throws IOException;

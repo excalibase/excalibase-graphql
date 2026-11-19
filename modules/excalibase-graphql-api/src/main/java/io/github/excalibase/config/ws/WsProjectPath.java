@@ -18,9 +18,13 @@ final class WsProjectPath {
 
     /** The {@code projectId} in {@code /{projectId}{suffix}}, or {@code null} if the path isn't that shape. */
     static String projectId(String uri, String suffix) {
-        if (uri == null || !uri.endsWith(suffix)) return null;
+        if (uri == null || !uri.endsWith(suffix)) {
+            return null;
+        }
         String head = uri.substring(0, uri.length() - suffix.length()); // "/{projectId}"
-        if (head.length() < 2 || head.charAt(0) != '/') return null;
+        if (head.length() < 2 || head.charAt(0) != '/') {
+            return null;
+        }
         String projectId = head.substring(1);
         // One segment of the shape every project id has: an encoded slash or dot segment is not one.
         return KnownProjects.PROJECT_ID.matcher(projectId).matches() ? projectId : null;
@@ -28,7 +32,9 @@ final class WsProjectPath {
 
     /** True when the path is, or with a trailing slash would be, one of the two WebSocket routes of some project. */
     static boolean isWebSocketRoute(String uri) {
-        if (uri == null) return false;
+        if (uri == null) {
+            return false;
+        }
         String path = uri.endsWith("/") ? uri.substring(0, uri.length() - 1) : uri;
         return path.endsWith(GRAPHQL_SUFFIX) || path.endsWith(REALTIME_SUFFIX);
     }
