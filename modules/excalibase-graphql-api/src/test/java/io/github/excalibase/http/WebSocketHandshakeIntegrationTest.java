@@ -3,13 +3,13 @@ package io.github.excalibase.http;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
+import io.github.excalibase.support.CapturedLogs;
 import io.github.excalibase.support.EngineIntegrationTest;
 import io.github.excalibase.support.EngineProperties;
 import io.github.excalibase.support.RawWebSocket;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
-import ch.qos.logback.core.read.ListAppender;
 import java.io.IOException;
 import java.time.Duration;
 import org.slf4j.LoggerFactory;
@@ -63,7 +63,7 @@ class WebSocketHandshakeIntegrationTest extends EngineIntegrationTest {
     @DisplayName("a frame over the size limit closes the session with 1009 and is logged at WARN")
     void oversizedFrameIsLoggedAtWarn() throws IOException {
         Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
-        ListAppender<ILoggingEvent> captured = new ListAppender<>();
+        CapturedLogs captured = new CapturedLogs();
         captured.start();
         root.addAppender(captured);
         try (RawWebSocket socket = RawWebSocket.connect(http.base(), PATH, CONNECTION_INIT)) {
@@ -74,7 +74,7 @@ class WebSocketHandshakeIntegrationTest extends EngineIntegrationTest {
             RawWebSocket.Frame answer = socket.readFrame();
             assertThat(answer.opcode()).isEqualTo(RawWebSocket.CLOSE);
             assertThat(answer.closeCode()).isEqualTo(1009);
-            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(captured.list)
+            await().atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertThat(captured.events())
                     .filteredOn(event -> event.getFormattedMessage().contains("Max frame length"))
                     .extracting(ILoggingEvent::getLevel).containsExactly(Level.WARN));
         } finally {
