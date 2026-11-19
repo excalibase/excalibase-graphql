@@ -14,7 +14,7 @@ class CapturedLogsTest {
 
     @Test
     @DisplayName("reading the captured events while another thread logs never fails")
-    void readWhileLogging() throws Exception {
+    void readWhileLogging() {
         Logger logger = (Logger) LoggerFactory.getLogger("captured-logs-test");
         logger.setLevel(Level.INFO);
         CapturedLogs captured = new CapturedLogs();
