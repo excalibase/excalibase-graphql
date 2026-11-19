@@ -33,6 +33,9 @@ jobs:
     - name: Check the trunk tag guard
       run: scripts/ci/test-cd-guard.sh
 
+    - name: Check the Maven retry loop
+      run: scripts/ci/test-mvn-retry.sh
+
   test:
     name: Run Tests & Coverage
     timeout-minutes: 45
@@ -51,13 +54,8 @@ jobs:
         java-version: '25'
         distribution: 'corretto'
 
-    - name: Cache Maven dependencies
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-maven-
+    - name: Shared Maven cache
+      uses: ./.github/actions/maven-cache
 
     - name: Run tests with coverage
       run: mvn clean verify ${{ env.MAVEN_CLI_OPTS }}
@@ -80,6 +78,10 @@ jobs:
         path: modules/excalibase-graphql-api/target/site/jacoco-aggregate/
         retention-days: 7
 
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report
+
   build:
     name: Build & Package
     timeout-minutes: 20
@@ -96,14 +98,8 @@ jobs:
         java-version: '25'
         distribution: 'corretto'
         
-    - name: Cache Maven dependencies
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-maven-
-          
+    - name: Shared Maven cache
+      uses: ./.github/actions/maven-cache
     - name: Build with Make
       run: make build
       
@@ -114,6 +110,10 @@ jobs:
         path: modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar
         if-no-files-found: error
         retention-days: 7
+
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report
 
   build-native:
     name: Build Native Image
@@ -133,14 +133,8 @@ jobs:
         java-version: '25'
         distribution: 'graalvm'
 
-    - name: Cache Maven dependencies
-      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-      with:
-        path: ~/.m2/repository
-        key: ${{ runner.os }}-maven-native-${{ hashFiles('**/pom.xml') }}
-        restore-keys: |
-          ${{ runner.os }}-maven-native-
-          ${{ runner.os }}-maven-
+    - name: Shared Maven cache
+      uses: ./.github/actions/maven-cache
 
     - name: Install native-image prerequisites
       run: sudo apt-get update && sudo apt-get install -y gcc zlib1g-dev
@@ -154,3 +148,7 @@ jobs:
         name: native-binary
         path: modules/excalibase-graphql-api/target/excalibase-graphql-api
         retention-days: 7
+
+    - name: Maven downloads in this job
+      if: always()
+      run: scripts/ci/m2-files.sh report

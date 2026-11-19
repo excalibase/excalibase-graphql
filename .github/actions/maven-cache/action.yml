@@ -1,0 +1,50 @@
+name: Shared Maven cache
+description: >
+  Restores the one ~/.m2/repository cache every Maven job shares. On a miss it
+  warms the cache (dependencies, plugins, annotation processors, surefire
+  provider, native plugins, Sonar plugin), drops partial downloads and saves
+  it, so a normal run never goes back to Maven Central.
+  Bump v1 in the two keys below to throw the cache away.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore Maven cache
+      id: restore
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.m2/repository
+        key: maven-v1-${{ runner.os }}-${{ hashFiles('**/pom.xml', '.mvn/maven.config', '.github/actions/maven-cache/action.yml', '.github/workflows/sonar.yml') }}
+        restore-keys: |
+          maven-v1-${{ runner.os }}-
+
+    - name: Warm Maven cache
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        source scripts/ci/mvn-retry.sh
+        # one source of truth for the Sonar plugin version: the workflow that runs it
+        sonar_plugin=$(grep -o 'sonar-maven-plugin:[0-9.]*' .github/workflows/sonar.yml | head -1)
+        mvn_retry -Pnative dependency:go-offline
+        mvn_retry verify -DskipTests
+        # the surefire provider is only resolved when a test actually runs
+        mvn_retry verify -pl modules/excalibase-rls-core
+        # native: the micronaut-graal annotation processor and the reachability metadata
+        mvn_retry -Pnative -pl modules/excalibase-graphql-api -am compile
+        mvn_retry dependency:get -Dartifact=org.graalvm.buildtools:graalvm-reachability-metadata:0.10.6:zip:repository
+        mvn_retry dependency:get -Dartifact=org.sonarsource.scanner.maven:${sonar_plugin}
+        # a half-downloaded file must never be cached
+        find ~/.m2/repository \( -name '*.lastUpdated' -o -name '*.part' -o -name '*.part.lock' \) -delete
+
+    # the job's own Maven run is compared against this by scripts/ci/m2-files.sh report
+    - name: Record Maven cache contents
+      shell: bash
+      run: scripts/ci/m2-files.sh snapshot
+
+    - name: Save Maven cache
+      if: steps.restore.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.m2/repository
+        key: maven-v1-${{ runner.os }}-${{ hashFiles('**/pom.xml', '.mvn/maven.config', '.github/actions/maven-cache/action.yml', '.github/workflows/sonar.yml') }}
