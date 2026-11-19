@@ -12,6 +12,8 @@ list() { find "$repo" -type f | sort; }
 case ${1:-} in
   snapshot) list >"$before" ;;
   report)
+    # the job may have failed before the cache action ran
+    [[ -f $before ]] || { echo "No Maven cache snapshot in this job, nothing to report"; exit 0; }
     added=$(comm -13 "$before" <(list))
     echo "Maven added $(grep -c . <<<"$added" || true) file(s) to ~/.m2 during this job"
     [[ -z $added ]] || head -20 <<<"$added"

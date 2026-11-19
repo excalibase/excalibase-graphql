@@ -6,6 +6,7 @@
 # MVN_CMD, M2_REPO and RETRY_UNIT (seconds) can be overridden in tests.
 mvn_retry() {
   local attempt unit=${RETRY_UNIT:-30} repo=${M2_REPO:-$HOME/.m2/repository}
+  mkdir -p "$repo" # a first failure can leave no repository, and find would then fail under set -e
   for attempt in 1 2 3 4; do
     "${MVN_CMD:-mvn}" --batch-mode "$@" && return 0
     echo "mvn $* failed (attempt $attempt), retrying in $((attempt * unit))s"

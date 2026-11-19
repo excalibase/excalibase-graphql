@@ -20,6 +20,8 @@ cached_failure="$M2_REPO/org/example/lib/1.0/lib-1.0.jar.lastUpdated"
 cat >"$work/mvn" <<'STUB'
 #!/usr/bin/env bash
 echo x >>"$CALLS"
+[[ -n ${STUB_ARGS_FILE:-} ]] && printf '%s|%s\n' "$#" "$3" >"$STUB_ARGS_FILE"
+if [[ -f ${STUB_FAIL_ONCE:-} ]]; then rm -f "$STUB_FAIL_ONCE"; exit 1; fi
 [[ -n ${STUB_ALWAYS_FAIL:-} ]] && exit 1
 [[ -z $(find "$M2_REPO" -name '*.lastUpdated' 2>/dev/null) ]]
 STUB
@@ -43,9 +45,21 @@ rm -f "$CALLS"
 STUB_ALWAYS_FAIL=1 mvn_retry verify >/dev/null; check "a goal that never succeeds fails" "1" "$?"
 check "after four attempts" "4" "$(calls | tr -d ' ')"
 
+# mvn gets --batch-mode first, so it must see 3 arguments and the spaced one as $3
 args=(dependency:get "-Dartifact=g:a:1 with space")
-rm -f "$CALLS"; mvn_retry "${args[@]}" >/dev/null; check "arguments with spaces pass through as one" "0" "$?"
+rm -f "$CALLS"; STUB_ARGS_FILE="$work/args" mvn_retry "${args[@]}" >/dev/null
+check "arguments reach mvn intact, spaces kept" "3|-Dartifact=g:a:1 with space" "$(cat "$work/args")"
+
+# a repository dir that does not exist yet must not end the warm step under set -e
+M2_REPO="$work/absent/repo"; touch "$work/once"; rm -f "$CALLS"
+(set -e; STUB_FAIL_ONCE="$work/once" mvn_retry verify >/dev/null); check "a missing repository dir still retries" "0" "$?"
+check "and retried once" "2" "$(calls | tr -d ' ')"
+
+# the always() report step must not fail a job that died before the cache action ran
+RUNNER_TEMP="$work/no-snapshot" "$root/scripts/ci/m2-files.sh" report >/dev/null 2>&1; check "report without a snapshot exits 0" "0" "$?"
 
 grep -q 'mvn-retry.sh' "$root/.github/actions/maven-cache/action.yml"; check "the cache action uses the tested loop" "0" "$?"
+
+grep -q 'graalvm-reachability-metadata:${graalvm_buildtools}' "$root/.github/actions/maven-cache/action.yml"; check "reachability metadata version comes from the pom" "0" "$?"
 
 exit $((failures > 0))
