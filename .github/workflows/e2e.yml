@@ -85,11 +85,11 @@ jobs:
         retention-days: 3
         if-no-files-found: ignore
 
-  # The binary is compiled once per run; every native job below packages this one.
-
     - name: Maven downloads in this job
       if: always()
       run: scripts/ci/m2-files.sh report
+
+  # The binary is compiled once per run; every native job below packages this one.
   native-build:
     name: Build Native Binary
     runs-on: ubuntu-24.04
