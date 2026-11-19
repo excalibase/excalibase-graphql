@@ -1,0 +1,38 @@
+name: Shared Maven cache
+description: >
+  Restores the one ~/.m2/repository cache every Maven job shares. On a miss it
+  warms the cache (dependencies, plugins, annotation processors, surefire
+  provider, Sonar plugin), drops partial downloads and saves it, so a normal
+  run never goes back to Maven Central.
+
+runs:
+  using: composite
+  steps:
+    - name: Restore Maven cache
+      id: restore
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.m2/repository
+        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          maven-${{ runner.os }}-
+
+    - name: Warm Maven cache
+      if: steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        mvn --batch-mode -Pnative dependency:go-offline
+        mvn --batch-mode verify -DskipTests
+        # the surefire provider is only resolved when a test actually runs
+        mvn --batch-mode verify -pl modules/excalibase-rls-core
+        mvn --batch-mode dependency:get -Dartifact=org.sonarsource.scanner.maven:sonar-maven-plugin:5.8.0.7211
+        # a half-downloaded file must never be cached
+        find ~/.m2/repository \( -name '*.lastUpdated' -o -name '*.part' -o -name '*.part.lock' \) -delete
+
+    - name: Save Maven cache
+      if: steps.restore.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.m2/repository
+        key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
