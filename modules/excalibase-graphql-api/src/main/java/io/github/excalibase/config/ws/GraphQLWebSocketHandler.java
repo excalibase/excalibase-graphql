@@ -124,6 +124,7 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
     public void afterConnectionEstablished(WsSession session) {
         log.debug("WebSocket connection established: {}", session.getId());
         if (!runtime.admit(session)) {
+            log.info("WS session {} refused: {}", session.getId(), WsClose.LIMIT.reason());
             runtime.close(session, WsClose.LIMIT);
             return;
         }
@@ -181,13 +182,14 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
      */
     @SuppressWarnings("unchecked")
     private void handleConnectionInit(WsSession session, Map<String, Object> msg) {
+        log.info("WS session {} received connection_init", session.getId());
         if (jwtEnabled) {
             Map<String, Object> payload = msg.get(PAYLOAD) instanceof Map<?, ?> map
                     ? (Map<String, Object>) map : Map.of();
             try {
                 WsSessionAuth.onConnectionInit(jwtService, wsAuthRequired, payload, session.getAttributes());
             } catch (WsSessionAuth.Failure failure) {
-                closeWithAuthError(session, failure.getMessage());
+                closeWithAuthError(session, failure.getMessage(), failure.code());
                 return;
             }
             log.info("WS session {} runs as role '{}' for tenant '{}'", session.getId(),
@@ -202,7 +204,8 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
         return (Principal) session.getAttributes().get(SESSION_PRINCIPAL_KEY);
     }
 
-    private void closeWithAuthError(WsSession session, String reason) {
+    private void closeWithAuthError(WsSession session, String reason, String category) {
+        log.info("WS session {} refused: {}", session.getId(), category);
         try {
             sendMessage(session, objectMapper.writeValueAsString(Map.of(
                     "type", "connection_error",
