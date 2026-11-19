@@ -170,7 +170,8 @@ public class WsRuntime implements ProjectSockets {
 
     static Instant expiryOf(JwtClaims claims) {
         Object exp = claims.extraClaims().get("exp");
-        if (exp instanceof Date date) {
+        // the JWT library hands back the exp claim as a Date
+        if (exp instanceof Date date) { // NOSONAR
             return date.toInstant();
         }
         if (exp instanceof Instant instant) {

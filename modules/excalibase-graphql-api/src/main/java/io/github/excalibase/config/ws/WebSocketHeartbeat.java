@@ -5,9 +5,6 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.micronaut.context.annotation.Value;
-import io.micronaut.core.annotation.Nullable;
-import io.github.excalibase.config.ws.WsSession.CloseStatus;
-import io.github.excalibase.config.ws.WsSession.TextMessage;
 import jakarta.inject.Singleton;
 
 import java.util.Set;

@@ -6,6 +6,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * The address a WebSocket client is counted under. Behind the edge proxy every peer is the proxy, so the last
@@ -21,8 +22,8 @@ public final class ClientAddress {
     }
 
     static String of(HttpRequest<?> request) {
-        InetSocketAddress remote = request.getRemoteAddress();
-        InetAddress peer = remote == null ? null : remote.getAddress();
+        InetAddress peer = Optional.ofNullable(request.getRemoteAddress())
+                .map(InetSocketAddress::getAddress).orElse(null);
         if (peer != null && isInternal(peer)) {
             String forwarded = lastForwarded(request.getHeaders().getAll(FORWARDED_FOR));
             if (forwarded != null) {
@@ -50,7 +51,7 @@ public final class ClientAddress {
                 prefix.append(String.format("%02x", bytes[i] & 0xff)).append(i % 2 == 1 && i < 7 ? ":" : "");
             }
             return prefix.append("::/64").toString();
-        } catch (UnknownHostException malformed) {
+        } catch (UnknownHostException _) {
             return address;
         }
     }

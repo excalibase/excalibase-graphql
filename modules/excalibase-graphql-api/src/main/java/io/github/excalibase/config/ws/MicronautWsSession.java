@@ -60,7 +60,7 @@ final class MicronautWsSession implements WsSession {
         }
         try {
             opened.get(limit.toMillis(), TimeUnit.MILLISECONDS);
-        } catch (InterruptedException interrupted) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         } catch (ExecutionException | TimeoutException failure) {
             log.warn("WebSocket frame for session {} dropped: the open handler did not finish within {} ms",

@@ -173,42 +173,19 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
         if (existing != null) existing.dispose();
 
         String tenantId = RealtimeGate.sinkTenant(session, wsAuthRequired);
-        boolean hasToken = session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY) != null;
-        if (jwtEnabled && wsAuthRequired && !hasToken) {
-            sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
+        if (unauthenticated(session, id)) {
             return;
         }
         // A collection the role cannot select is refused like one that does not exist.
         long generation = runtime.permissionGeneration(session);
-        RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, resource);
-        if (opening.delivery() == null) {
-            sendError(session, id, opening.unavailable() ? opening.refusal() : "Unknown collection: " + collection);
-            if (opening.unavailable()) {
-                closeUnavailable(session);
-            }
+        RealtimeGate.Delivery delivery = openDelivery(session, id, resource, collection);
+        if (delivery == null || !runtime.openedUnder(session, delivery.permissionsVersion(), generation)) {
             return;
         }
-        RealtimeGate.Delivery delivery = opening.delivery();
-        if (!runtime.openedUnder(session, delivery.permissionsVersion(), generation)) {
+        if (overSubscriptionCap(session, id, sessionSubs.size())) {
             return;
         }
-        if (runtime.atSessionCap(sessionSubs.size())) {
-            sendError(session, id, "Too many subscriptions on this connection");
-            return;
-        }
-        if (!runtime.reserveSubscription(session)) {
-            sendError(session, id, "Too many subscriptions for this project");
-            return;
-        }
-        Disposable disposable;
-        try {
-            SessionOutbox outbox = runtime.outbox(session);
-            disposable = runtime.counted(session, subscriptionService.subscribe(tenantId, resource)
-                    .subscribe(event -> outbox.submit(() -> dispatchEvent(session, id, filter, delivery, event))));
-        } catch (RuntimeException failure) {
-            runtime.cancelReservation(session);
-            throw failure;
-        }
+        Disposable disposable = startDelivery(session, id, filter, delivery, tenantId, resource);
         sessionSubs.put(id, disposable);
         // A close that ran during the subscribe has already emptied and unregistered the map: this one is
         // nobody's, so it is disposed here, which also gives its project slot back.
@@ -216,6 +193,52 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
             disposable.dispose();
         }
         log.debug("Realtime subscribe: session={} id={} key={}", session.getId(), id, resource);
+    }
+
+    private boolean unauthenticated(WsSession session, String id) {
+        boolean hasToken = session.getAttributes().get(GraphQLWebSocketHandler.SESSION_TENANT_KEY) != null;
+        if (jwtEnabled && wsAuthRequired && !hasToken) {
+            sendError(session, id, "Unauthenticated: send connection_init with Authorization first");
+            return true;
+        }
+        return false;
+    }
+
+    /** The plan for the collection, or {@code null} once the refusal has been sent. */
+    private RealtimeGate.Delivery openDelivery(WsSession session, String id, String resource, String collection) {
+        RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, resource);
+        if (opening.delivery() != null) {
+            return opening.delivery();
+        }
+        sendError(session, id, opening.unavailable() ? opening.refusal() : "Unknown collection: " + collection);
+        if (opening.unavailable()) {
+            closeUnavailable(session);
+        }
+        return null;
+    }
+
+    private boolean overSubscriptionCap(WsSession session, String id, int sessionCount) {
+        if (runtime.atSessionCap(sessionCount)) {
+            sendError(session, id, "Too many subscriptions on this connection");
+            return true;
+        }
+        if (!runtime.reserveSubscription(session)) {
+            sendError(session, id, "Too many subscriptions for this project");
+            return true;
+        }
+        return false;
+    }
+
+    private Disposable startDelivery(WsSession session, String id, Map<String, Object> filter,
+                                     RealtimeGate.Delivery delivery, String tenantId, String resource) {
+        try {
+            SessionOutbox outbox = runtime.outbox(session);
+            return runtime.counted(session, subscriptionService.subscribe(tenantId, resource)
+                    .subscribe(event -> outbox.submit(() -> dispatchEvent(session, id, filter, delivery, event))));
+        } catch (RuntimeException failure) {
+            runtime.cancelReservation(session);
+            throw failure;
+        }
     }
 
     private void handleComplete(WsSession session, Map<String, Object> msg) {
