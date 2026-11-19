@@ -70,16 +70,23 @@ final class MicronautWsSession implements WsSession {
     }
 
     private static CompletableFuture<Void> opened(WebSocketSession session) {
+        CompletableFuture<Void> existing = openedOf(session);
+        if (existing != null) {
+            return existing;
+        }
         synchronized (OPENED_LOCK) {
-            @SuppressWarnings("unchecked")
-            CompletableFuture<Void> opened = session.get(OPENED, CompletableFuture.class)
-                    .orElse(null);
+            CompletableFuture<Void> opened = openedOf(session);
             if (opened == null) {
                 opened = new CompletableFuture<>();
                 session.put(OPENED, opened);
             }
             return opened;
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static CompletableFuture<Void> openedOf(WebSocketSession session) {
+        return session.get(OPENED, CompletableFuture.class).orElse(null);
     }
 
     static MicronautWsSession open(WebSocketSession session, Map<String, Object> attributes) {

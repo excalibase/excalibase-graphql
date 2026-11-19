@@ -3,6 +3,7 @@ package io.github.excalibase.config.ws;
 import io.github.excalibase.config.ws.WsSession.CloseStatus;
 import io.github.excalibase.rls.ProjectSockets;
 import io.github.excalibase.security.JwtClaims;
+import io.github.excalibase.security.JwtService;
 import io.micronaut.context.annotation.Value;
 import jakarta.annotation.PreDestroy;
 import jakarta.inject.Inject;
@@ -167,16 +168,8 @@ public class WsRuntime implements ProjectSockets {
         }
     }
 
-    @SuppressWarnings("java:S2143") // the JWT library hands back the exp claim as a java.util.Date
     static Instant expiryOf(JwtClaims claims) {
-        Object exp = claims.extraClaims().get("exp");
-        if (exp instanceof java.util.Date date) {
-            return date.toInstant();
-        }
-        if (exp instanceof Instant instant) {
-            return instant;
-        }
-        return exp instanceof Number seconds ? Instant.ofEpochSecond(seconds.longValue()) : null;
+        return JwtService.expiresAt(claims);
     }
 
     // -- permissions --

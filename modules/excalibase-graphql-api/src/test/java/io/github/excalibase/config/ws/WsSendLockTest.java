@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -131,14 +132,29 @@ class WsSendLockTest {
         verify(session, timeout(2000).atLeastOnce()).sendMessage(any(TextMessage.class));
     }
 
+    /** A session that keeps what is put on it, like a real one. */
+    private static WebSocketSession storingSession() {
+        Map<String, Object> stored = new ConcurrentHashMap<>();
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.put(any(), any())).thenAnswer(call -> {
+            stored.put(call.getArgument(0), call.getArgument(1));
+            return session;
+        });
+        when(session.get(any(CharSequence.class), any(Class.class))).thenAnswer(call ->
+                Optional.ofNullable(stored.get(call.getArgument(0).toString())));
+        return session;
+    }
+
     @Test
     @DisplayName("every call for one Micronaut session hands back the same lock, and sessions do not share one")
     void micronautSessionLockIsStable() {
-        WebSocketSession first = mock(WebSocketSession.class);
-        WebSocketSession second = mock(WebSocketSession.class);
+        WebSocketSession first = storingSession();
+        WebSocketSession second = storingSession();
         MicronautWsSession a = MicronautWsSession.open(first, new ConcurrentHashMap<>());
         MicronautWsSession b = MicronautWsSession.open(second, new ConcurrentHashMap<>());
 
+        assertThat(MicronautWsSession.of(first)).isSameAs(a);
+        assertThat(MicronautWsSession.of(first).sendLock()).isSameAs(a.sendLock());
         assertThat(a.sendLock()).isSameAs(a.sendLock()).isNotSameAs(a).isNotSameAs(b.sendLock());
         assertThat(WsSession.lockOf(a)).isSameAs(a.sendLock());
     }
