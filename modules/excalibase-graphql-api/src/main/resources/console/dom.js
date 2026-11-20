@@ -30,6 +30,12 @@ export function rootElement() {
   return document.getElementById("root");
 }
 
+/** Puts a built <dialog> on the page and opens it as a modal. */
+export function showModal(root, dialog) {
+  root.append(dialog);
+  dialog.showModal();
+}
+
 export function mount(root, ...children) {
   root.replaceChildren();
   append(root, children);

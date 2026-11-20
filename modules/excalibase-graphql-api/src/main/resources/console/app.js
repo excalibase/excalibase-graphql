@@ -1,7 +1,7 @@
 import { ApiError, getMetadata, getReplicas, getSchema, parseText, putMetadata, signIn, signOut, signedIn,
   validateText } from "/console/api.js";
 import { exportName, rewriteLosesText, serialize, setOperation, withJwt } from "/console/docmodel.js";
-import { h, mount, rootElement, saveAs } from "/console/dom.js";
+import { h, mount, rootElement, saveAs, showModal } from "/console/dom.js";
 import { classify, documentView, rewriteDialog, saveBar } from "/console/editor.js";
 import { gridView, roleProblem, columnRoles } from "/console/grid.js";
 import { jwtView } from "/console/jwt.js";
@@ -159,8 +159,7 @@ async function wouldLoseText() {
 async function save() {
   try {
     if (await wouldLoseText()) {
-      root.append(rewriteDialog({ onConfirm: (remember) => { state.skipRewriteWarning ||= remember; commitSave(); } }));
-      root.querySelector("#rewrite-warning").showModal();
+      showModal(root, rewriteDialog({ onConfirm: (remember) => { state.skipRewriteWarning ||= remember; commitSave(); } }));
       return;
     }
   } catch (failure) {
