@@ -203,14 +203,17 @@ async function changesOfSave() {
   return changesBetween(state.meta.text, state.draft);
 }
 
-/** The list, or null when it could not be built (an error, a timeout); invalid when the engine refuses a text. */
+/** The list, or null when it could not be built (an error, a timeout, a served text the engine now refuses); invalid when it refuses the draft. */
 async function changesBetween(fromText, toText) {
   const signal = AbortSignal.timeout(CHANGE_LIST_TIMEOUT_MS);
   try {
     const [from, to] = await Promise.all([
       fromText == null ? { valid: true, tree: { tables: [] } } : parseText(fromText, signal), parseText(toText, signal)]);
-    if (!from.valid || !to.valid) {
+    if (!to.valid) {
       return { changes: null, invalid: true };
+    }
+    if (!from.valid) {
+      return { changes: null, invalid: false };
     }
     return { changes: describeChanges(from.tree, to.tree), invalid: false };
   } catch {

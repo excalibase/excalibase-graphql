@@ -328,4 +328,19 @@ class FileVersionHistoryTest {
 
         assertThat(asides()).hasSize(2);
     }
+
+    @Test
+    void theCopyOfADamagedFile_hasTheRulesFilesMode_notTheDefault() throws IOException {
+        Files.setPosixFilePermissions(rules(), PosixFilePermissions.fromString("rw-------"));
+        FileVersionHistory history = open();
+        history.append("a\n", T0);
+        byte[] bytes = Files.readAllBytes(history());
+        bytes[bytes.length - 3] = (byte) 0xff;
+        Files.write(history(), bytes);
+
+        history.append("b\n", T0.plusSeconds(1));
+
+        assertThat(asides()).singleElement().satisfies(aside ->
+                assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(aside))).isEqualTo("rw-------"));
+    }
 }

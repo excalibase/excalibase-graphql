@@ -1,5 +1,6 @@
 import { h } from "/console/dom.js";
 import { changeList, historyWarning } from "/console/editor.js";
+import { widens } from "/console/docmodel.js";
 import { lineDiff, withContext } from "/console/diff.js";
 
 const MAX_DRAWN = 5000;
@@ -95,6 +96,8 @@ export function restoreDialog(entry, dirty, changes, handlers) {
   return h("dialog", { id: "restore-confirm", "aria-describedby": "restore-text" },
     h("p", { id: "restore-text" }, "Restore this version, replaced at " + shortTime(entry.at) + "? The text served now is added to "
       + "the history, so you can undo this."),
+    changes === null || widens(changes)
+      ? h("p", { class: "warn" }, "This restore changes who can access your data. Check the list before you restore.") : null,
     changeList(changes, "restore-changes"),
     dirty ? h("p", { class: "error" }, "Your unsaved edits in the editor will be discarded.") : null,
     h("div", { class: "actions" },

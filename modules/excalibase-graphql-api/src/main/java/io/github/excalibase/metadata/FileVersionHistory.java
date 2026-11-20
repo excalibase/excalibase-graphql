@@ -196,9 +196,22 @@ final class FileVersionHistory implements DocumentHistory {
         if (nothingUsable) {
             Files.move(file, aside, StandardCopyOption.ATOMIC_MOVE);
         } else {
-            Files.copy(file, aside, StandardCopyOption.REPLACE_EXISTING);
+            copyOwnerOnly(aside);
         }
         log.warn("metadata_history_kept_aside file={} aside={}", file.getFileName(), aside.getFileName());
+    }
+
+    /** A copy of the file that only its owner can read from the first byte, then the rules file's mode where it has one. */
+    private void copyOwnerOnly(Path aside) throws IOException {
+        byte[] content = Files.readAllBytes(file);
+        try (FileChannel channel = FilePermissions.createOwnerOnly(aside)) {
+            ByteBuffer buffer = ByteBuffer.wrap(content);
+            while (buffer.hasRemaining()) {
+                channel.write(buffer);
+            }
+            channel.force(true);
+            FilePermissions.copyBestEffort(FilePermissions::copy, rules, aside);
+        }
     }
 
     private static Optional<Entry> entryOf(byte[] bytes, int start, int end) {

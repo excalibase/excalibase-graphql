@@ -798,6 +798,7 @@ test.describe("a save that widens access always asks", () => {
     await page.locator("#restore").click();
 
     await expect(page.locator("#restore-changes li", { hasText: "anon · public.todos: + select" })).toHaveCSS("color", RED);
+    await expect(page.locator("#restore-confirm")).toContainText("changes who can access your data");
     await page.locator("#restore-no").click();
   });
 });
@@ -858,6 +859,27 @@ test.describe("the change list fails closed", () => {
     await page.locator("#save").click();
 
     await expect(page.locator(ACCESS)).toBeVisible({ timeout: 12_000 });
+    await expect(page.locator("#rewrite-changes")).toContainText("could not be built");
+    await page.locator("#rewrite-cancel").click();
+  });
+
+  test("a served text the engine now refuses does not hide a widening: the save asks", async ({ page, request }) => {
+    await replaceDocument(request, JSON.stringify({ format: 1, projectId: "my-app",
+      jwt: { secret: "env:JWT_SECRET", algorithms: ["HS256"], audience: "my-app-api" }, tables: [] }, null, 2) + "\n");
+    await signIn(page);
+    await editDraft(page, anonRule("select"));
+    // As if the served text's secret file had become unreadable: the engine refuses that text, and only that one.
+    await page.route("**/_admin/v1/parse", async (route) => {
+      if (route.request().postData().includes('"jwt"')) {
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ valid: false, errors: ["jwt: unreadable"] }) });
+      } else {
+        await route.continue();
+      }
+    });
+
+    await page.locator("#save").click();
+
+    await expect(page.locator(ACCESS)).toBeVisible();
     await expect(page.locator("#rewrite-changes")).toContainText("could not be built");
     await page.locator("#rewrite-cancel").click();
   });
