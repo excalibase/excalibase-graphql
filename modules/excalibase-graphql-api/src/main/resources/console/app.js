@@ -20,7 +20,7 @@ const TABS = [
 // What the person is working on: the document as served (meta), their edits (draft), the tree the grid edits, and
 // what the last save came to. A tree is read from the draft by the engine, so a YAML document is understood there.
 const state = { meta: null, draft: "", tree: null, roles: [], outcome: null, theirs: null, grid: null,
-  rewriteBase: null, skipRewriteWarning: false, busy: false };
+  rewriteLoses: false, skipRewriteWarning: false, busy: false };
 let active = "document";
 
 function showLogin(error) {
@@ -57,7 +57,7 @@ async function loadMetadata() {
   state.meta = await getMetadata();
   state.draft = state.meta.text == null ? "" : state.meta.text;
   state.tree = null;
-  state.rewriteBase = null;
+  state.rewriteLoses = false;
 }
 
 async function showTab(id) {
@@ -117,9 +117,12 @@ async function gridTab(message = null) {
   return gridView(tree, schema.tables, state.roles, { onToggle: toggle, onAddRole: addRole }, message);
 }
 
-/** The grid and the token form write the document anew; the text they started from is what that loses. */
+/**
+ * The grid and the token form write the document anew. Each rewrite checks the text it replaces, so a comment typed
+ * between two of them is counted; a tree that cannot be had counts as a loss.
+ */
 function rewriteFrom(tree) {
-  state.rewriteBase ??= state.draft;
+  state.rewriteLoses ||= state.tree === null || rewriteLosesText(state.draft, state.tree);
   state.tree = tree;
   state.draft = serialize(tree);
   state.outcome = null;
@@ -149,34 +152,20 @@ async function tokenTab() {
   });
 }
 
-/** True when the text a grid or token edit started from has comments or layout that the rewrite drops. */
-async function wouldLoseText() {
-  const base = state.rewriteBase;
-  if (base === null || base.trim() === "" || state.skipRewriteWarning) {
-    return false;
-  }
-  const current = await parseText(base);
-  return !current.valid || rewriteLosesText(base, current.tree);
-}
-
-/** One save at a time: a second click while the check or the warning is pending does nothing. */
+/** One save at a time: a second click while the warning or the write is pending does nothing. */
 async function save() {
   if (state.busy) {
     return;
   }
   state.busy = true;
-  let asking = false;
+  if (state.rewriteLoses && !state.skipRewriteWarning) {
+    askBeforeRewrite();
+    return;
+  }
   try {
-    asking = await wouldLoseText();
-    if (asking) {
-      askBeforeRewrite();
-    } else {
-      await commitSave();
-    }
-  } catch (failure) {
-    handleFailure(failure);
+    await commitSave();
   } finally {
-    state.busy = asking;
+    state.busy = false;
   }
 }
 
@@ -243,7 +232,7 @@ function exportDocument() {
 function discard() {
   state.draft = state.meta.text == null ? "" : state.meta.text;
   state.tree = null;
-  state.rewriteBase = null;
+  state.rewriteLoses = false;
   state.outcome = null;
   showTab(active);
 }

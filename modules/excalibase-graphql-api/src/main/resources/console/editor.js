@@ -102,7 +102,7 @@ export function rewriteDialog(handlers) {
   const remember = h("input", { type: "checkbox", id: "rewrite-remember" });
   return h("dialog", { id: "rewrite-warning", "aria-describedby": "rewrite-text" },
     h("p", { id: "rewrite-text" },
-      "Saving from the grid rewrites permissions.yaml. Comments and your own layout will be lost."),
+      "This save rewrites permissions.yaml. Comments and your own layout will be lost."),
     h("label", { class: "op", for: "rewrite-remember" }, remember, "Don't ask again this session"),
     h("div", { class: "actions" },
       h("button", { type: "button", id: "rewrite-save", class: "danger",

@@ -290,7 +290,7 @@ test("a replica that has not caught up is named, and the overwrite uses the vers
   expect(puts[1]).toBe('"newer-than-this-replica"');
 });
 
-const WARNING = "Saving from the grid rewrites permissions.yaml. Comments and your own layout will be lost.";
+const WARNING = "This save rewrites permissions.yaml. Comments and your own layout will be lost.";
 
 async function tickAnonSelect(page) {
   await page.getByRole("tab", { name: "Grid" }).click();
@@ -397,8 +397,7 @@ test("typing on the Document tab after a token edit still warns", async ({ page,
 });
 
 test("comments pasted on the Document tab before a grid edit are warned about too", async ({ page, request }) => {
-  const plain = JSON.stringify({ format: 1, projectId: "my-app", tables: [] }, null, 2) + "\n";
-  await replaceDocument(request, plain);
+  await replaceDocument(request, PLAIN);
   await signIn(page);
   await editDraft(page, EXAMPLE);
   await tickAnonSelect(page);
@@ -445,4 +444,56 @@ test("the warning starts on Cancel, is described by its text, and Escape cancels
   expect((await metadata(request)).document).toBe(EXAMPLE);
   await page.locator("#save").click();
   await expect(page.locator("#rewrite-warning")).toBeVisible();
+});
+
+const PLAIN = JSON.stringify({ format: 1, projectId: "my-app", tables: [] }, null, 2) + "\n";
+// A JSON-looking text is read as JSON, which has no comments, so the typed text is YAML.
+const addComment = (page) => editDraft(page, "# keep me\nformat: 1\nprojectId: my-app\ntables: []\n");
+
+test("a comment typed between two grid edits is warned about before the save", async ({ page, request }) => {
+  await replaceDocument(request, PLAIN);
+  await signIn(page);
+  await tickAnonSelect(page);
+  await page.getByRole("tab", { name: "Document" }).click();
+  await addComment(page);
+  await page.getByRole("tab", { name: "Grid" }).click();
+  await page.getByLabel("insert public.todos anon").check();
+
+  await page.locator("#save").click();
+
+  await expect(page.locator("#rewrite-warning")).toBeVisible();
+  await page.locator("#rewrite-cancel").click();
+  expect((await metadata(request)).document).toBe(PLAIN);
+});
+
+test("a comment typed between two token edits is warned about before the save", async ({ page, request }) => {
+  await replaceDocument(request, PLAIN);
+  await signIn(page);
+  await page.getByRole("tab", { name: "Sample token" }).click();
+  await page.locator("#jwt-audience").fill("first");
+  await page.locator("#apply-jwt").click();
+  await expect(page.locator("#draft")).toBeVisible();
+  await addComment(page);
+  await page.getByRole("tab", { name: "Sample token" }).click();
+  await page.locator("#jwt-audience").fill("second");
+  await page.locator("#apply-jwt").click();
+  await expect(page.locator("#draft")).toBeVisible();
+
+  await page.locator("#save").click();
+
+  await expect(page.locator("#rewrite-warning")).toBeVisible();
+  await page.locator("#rewrite-cancel").click();
+  expect((await metadata(request)).document).toBe(PLAIN);
+});
+
+test("grid edits on a plain file, with no comment typed in between, save without a warning", async ({ page, request }) => {
+  await replaceDocument(request, PLAIN);
+  await signIn(page);
+  await tickAnonSelect(page);
+  await page.getByLabel("insert public.todos anon").check();
+
+  await page.locator("#save").click();
+
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+  await expect(page.locator("#rewrite-warning")).toHaveCount(0);
 });
