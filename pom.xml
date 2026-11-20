@@ -361,6 +361,48 @@
     </profiles>
 
     <build>
+        <pluginManagement>
+            <plugins>
+                <!-- The engine's shared modules (starter, rest-api, rls-*) must not carry a database plugin or driver outside
+                     tests: a slim engine image would otherwise drag the other database in through them (EXC-799). Each of
+                     those modules lists this plugin; the plugin modules themselves and the app module do not. -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-enforcer-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>no-database-plugins</id>
+                            <phase>validate</phase>
+                            <goals>
+                                <goal>enforce</goal>
+                            </goals>
+                            <configuration>
+                                <rules>
+                                    <bannedDependencies>
+                                        <searchTransitive>true</searchTransitive>
+                                        <message>A shared engine module must reach a database only through SqlEngineProvider; keep the plugin and its driver at test scope (EXC-799).</message>
+                                        <excludes>
+                                            <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:compile</exclude>
+                                            <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:runtime</exclude>
+                                            <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:provided</exclude>
+                                            <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:compile</exclude>
+                                            <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:runtime</exclude>
+                                            <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:provided</exclude>
+                                            <exclude>org.postgresql:postgresql:*:*:compile</exclude>
+                                            <exclude>org.postgresql:postgresql:*:*:runtime</exclude>
+                                            <exclude>org.postgresql:postgresql:*:*:provided</exclude>
+                                            <exclude>com.mysql:mysql-connector-j:*:*:compile</exclude>
+                                            <exclude>com.mysql:mysql-connector-j:*:*:runtime</exclude>
+                                            <exclude>com.mysql:mysql-connector-j:*:*:provided</exclude>
+                                        </excludes>
+                                    </bannedDependencies>
+                                </rules>
+                            </configuration>
+                        </execution>
+                    </executions>
+                </plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
