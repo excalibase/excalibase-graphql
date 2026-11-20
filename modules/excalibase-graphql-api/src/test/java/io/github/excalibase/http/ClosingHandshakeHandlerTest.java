@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.netty.bootstrap.Bootstrap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.DefaultEventLoopGroup;
@@ -28,9 +30,11 @@ import org.junit.jupiter.api.Test;
  */
 class ClosingHandshakeHandlerTest {
 
-    private static final Duration SHORT_GRACE = Duration.ofMillis(300);
+    private static final Duration SHORT_GRACE = Duration.ofMillis(400);
 
-    private final EmbeddedChannel channel = new EmbeddedChannel(new ClosingHandshakeHandler(SHORT_GRACE));
+    private boolean connectionsFull;
+
+    private final EmbeddedChannel channel = new EmbeddedChannel(new ClosingHandshakeHandler(SHORT_GRACE, () -> connectionsFull));
 
     private void sendClose() {
         channel.writeOutbound(new CloseWebSocketFrame(1008, "refused"));
@@ -63,7 +67,7 @@ class ClosingHandshakeHandlerTest {
                     .childHandler(new ChannelInitializer<LocalChannel>() {
                         @Override
                         protected void initChannel(LocalChannel child) {
-                            child.pipeline().addLast(new ClosingHandshakeHandler(SHORT_GRACE));
+                            child.pipeline().addLast(new ClosingHandshakeHandler(SHORT_GRACE, () -> false));
                             accepted.complete(child);
                         }
                     }).bind(address).sync();
@@ -74,9 +78,8 @@ class ClosingHandshakeHandlerTest {
 
             server.close();
 
-            assertThat(server.isOpen()).isTrue();
-            server.closeFuture().await(5, TimeUnit.SECONDS);
-            assertThat(server.isOpen()).isFalse();
+            assertThat(server.closeFuture().await(SHORT_GRACE.toMillis() / 2)).as("closed within half the grace").isFalse();
+            assertThat(server.closeFuture().await(5, TimeUnit.SECONDS)).as("closed after the grace").isTrue();
         }
     }
 
@@ -123,5 +126,41 @@ class ClosingHandshakeHandlerTest {
         channel.writeInbound(new CloseWebSocketFrame(1000, ""));
 
         assertThat((Object) channel.readInbound()).isInstanceOf(CloseWebSocketFrame.class);
+    }
+
+    @Test
+    @DisplayName("a full connection gate means no waiting: the close goes through at once")
+    void fullGateClosesAtOnce() {
+        sendClose();
+        connectionsFull = true;
+
+        channel.close();
+
+        assertThat(channel.isOpen()).isFalse();
+    }
+
+    @Test
+    @DisplayName("a reset while waiting completes the close and leaves no timer behind")
+    void resetWhileWaitingCompletesTheClose() {
+        sendClose();
+        ChannelFuture closed = channel.close();
+        assertThat(closed.isDone()).isFalse();
+
+        channel.pipeline().fireChannelInactive();
+
+        assertThat(closed.isDone()).isTrue();
+        assertThat(channel.runScheduledPendingTasks()).isEqualTo(-1);
+    }
+
+    @Test
+    @DisplayName("a close frame whose write failed does not make the close wait")
+    void failedCloseFrameWriteDoesNotWait() {
+        ChannelPromise failed = channel.newPromise();
+        channel.write(new CloseWebSocketFrame(1008, "refused"), failed);
+        failed.tryFailure(new IllegalStateException("write failed"));
+
+        channel.close();
+
+        assertThat(channel.isOpen()).isFalse();
     }
 }
