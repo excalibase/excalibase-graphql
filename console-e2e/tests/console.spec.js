@@ -327,8 +327,9 @@ test("a grid save over a file already in the grid's own form does not warn", asy
   await page.getByLabel("insert public.todos anon").check();
   await page.locator("#save").click();
 
-  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
   await expect(page.locator("#rewrite-warning")).toHaveCount(0);
+  await page.locator("#rewrite-save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
 });
 
 test("a plain text edit never shows the grid warning", async ({ page }) => {
@@ -343,7 +344,7 @@ test("Don't ask again skips the warning for the session, and signing out brings 
   await signIn(page);
   await tickAnonSelect(page);
   await page.locator("#save").click();
-  await page.getByLabel("Don't ask again this session").check();
+  await page.getByLabel("Don't ask again about comments this session").check();
   await page.locator("#rewrite-save").click();
   await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
 
@@ -352,8 +353,9 @@ test("Don't ask again skips the warning for the session, and signing out brings 
   await page.getByRole("tab", { name: "Grid" }).click();
   await page.getByLabel("delete public.todos anon").check();
   await page.locator("#save").click();
-  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
   await expect(page.locator("#rewrite-warning")).toHaveCount(0);
+  await page.locator("#rewrite-save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
 
   await page.getByRole("button", { name: "Sign out" }).click();
   await page.locator("#secret").fill(SECRET);
@@ -552,8 +554,9 @@ test("grid edits on a plain file, with no comment typed in between, save without
 
   await page.locator("#save").click();
 
-  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
   await expect(page.locator("#rewrite-warning")).toHaveCount(0);
+  await page.locator("#rewrite-save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
 });
 
 const HISTORY_FILE = path.join(__dirname, "..", ".work", "permissions.history");
@@ -682,5 +685,157 @@ test.describe("the list of what a save changes", () => {
     await page.locator("#save").click();
 
     await expect(page.locator("#rewrite-changes")).toContainText("token settings");
+  });
+});
+
+const AMBER = "rgb(181, 71, 8)";
+const RED = "rgb(180, 35, 24)";
+const ACCESS = "#access-confirm";
+const SHAPES = { select: { filter: {}, columns: "*" }, insert: { check: {}, columns: "*" },
+  update: { filter: {}, check: {}, columns: "*" }, delete: { filter: {} } };
+const anonRule = (...operations) => JSON.stringify({ format: 1, projectId: "my-app", tables: [{ table: "public.todos", role: "anon",
+  ...Object.fromEntries(operations.map((operation) => [operation, SHAPES[operation]])) }] }, null, 2) + "\n";
+
+test.describe("a save that widens access always asks", () => {
+  test("a grid save giving anon delete on a plain file confirms first; cancel writes nothing", async ({ page, request }) => {
+    await replaceDocument(request, PLAIN);
+    await signIn(page);
+    await tickAnonSelect(page);
+    await page.getByLabel("delete public.todos anon").check();
+
+    await page.locator("#save").click();
+
+    await expect(page.locator(ACCESS)).toBeVisible();
+    await expect(page.locator("#rewrite-warning")).toHaveCount(0);
+    const gain = page.locator("#rewrite-changes li", { hasText: "anon · public.todos: + select, + delete" });
+    await expect(gain).toHaveCSS("color", RED);
+    await expect(page.locator("#rewrite-remember")).toHaveCount(0);
+    await page.locator("#rewrite-cancel").click();
+    expect((await metadata(request)).document).toBe(PLAIN);
+
+    await page.locator("#save").click();
+    await page.locator("#rewrite-save").click();
+    await expect(savedMessage(page)).toBeVisible();
+    expect(JSON.parse((await metadata(request)).document).tables[0].delete).toBeTruthy();
+  });
+
+  test("a Document-tab edit that gives anon access confirms too", async ({ page, request }) => {
+    await replaceDocument(request, PLAIN);
+    await signIn(page);
+    await editDraft(page, anonRule("select"));
+
+    await page.locator("#save").click();
+
+    await expect(page.locator(ACCESS)).toBeVisible();
+    await expect(page.locator("#rewrite-changes li").first()).toHaveClass(/gain/);
+    await page.locator("#rewrite-cancel").click();
+    expect((await metadata(request)).document).toBe(PLAIN);
+  });
+
+  test("Don't ask again hides the comment notice only, never a widening", async ({ page, request }) => {
+    await signIn(page);
+    await tickAnonSelect(page);
+    await page.locator("#save").click();
+    await page.locator("#rewrite-remember").check();
+    await page.locator("#rewrite-save").click();
+    await expect(savedMessage(page)).toBeVisible();
+
+    await page.getByLabel("insert public.todos anon").check();
+    await page.locator("#save").click();
+
+    await expect(page.locator(ACCESS)).toBeVisible();
+    await page.locator("#rewrite-cancel").click();
+    expect(JSON.parse((await metadata(request)).document).tables.find((rule) => rule.role === "anon").insert).toBeUndefined();
+  });
+
+  test("a loosened filter is listed in amber and asks", async ({ page, request }) => {
+    await signIn(page);
+    await editDraft(page, EXAMPLE.replace('filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}', "filter: {}"));
+
+    await page.locator("#save").click();
+
+    const changed = page.locator("#rewrite-changes li", { hasText: "user · public.todos: ~ select" });
+    await expect(changed).toHaveCSS("color", AMBER);
+    await page.locator("#rewrite-cancel").click();
+    expect((await metadata(request)).document).toBe(EXAMPLE);
+  });
+
+  test("a token change is listed in amber and asks", async ({ page, request }) => {
+    await replaceDocument(request, JSON.stringify({ format: 1, projectId: "my-app",
+      jwt: { secret: "env:JWT_SECRET", algorithms: ["HS256"], audience: "my-app-api" }, tables: [] }, null, 2) + "\n");
+    await signIn(page);
+    await page.getByRole("tab", { name: "Sample token" }).click();
+    await page.locator("#jwt-audience").fill("another-api");
+    await page.locator("#apply-jwt").click();
+    await expect(page.locator("#draft")).toBeVisible();
+
+    await page.locator("#save").click();
+
+    await expect(page.locator("#rewrite-changes li", { hasText: "token settings" })).toHaveCSS("color", AMBER);
+    await page.locator("#rewrite-cancel").click();
+  });
+
+  test("an edit that only removes access saves without asking", async ({ page, request }) => {
+    await replaceDocument(request, anonRule("select", "delete"));
+    await signIn(page);
+    await page.getByRole("tab", { name: "Grid" }).click();
+    await page.getByLabel("delete public.todos anon").uncheck();
+
+    await page.locator("#save").click();
+
+    await expect(savedMessage(page)).toBeVisible();
+    await expect(page.locator("dialog")).toHaveCount(0);
+  });
+
+  test("restoring a version that re-grants access shows the grant in red", async ({ page, request }) => {
+    fs.rmSync(HISTORY_FILE, { force: true, recursive: true });
+    await replaceDocument(request, anonRule("select"));
+    await replaceDocument(request, PLAIN);
+    await signIn(page);
+    await page.getByRole("tab", { name: "History" }).click();
+    await page.locator("#history-list tbody tr").first().getByRole("button", { name: "View" }).click();
+
+    await page.locator("#restore").click();
+
+    await expect(page.locator("#restore-changes li", { hasText: "anon · public.todos: + select" })).toHaveCSS("color", RED);
+    await page.locator("#restore-no").click();
+  });
+});
+
+test.describe("History that missed a save", () => {
+  test.afterEach(() => fs.rmSync(HISTORY_FILE, { force: true, recursive: true }));
+
+  test("the save goes ahead and the page says the version could not be added to History", async ({ page, request }) => {
+    fs.rmSync(HISTORY_FILE, { force: true, recursive: true });
+    fs.mkdirSync(HISTORY_FILE);
+    await signIn(page);
+    await editDraft(page, EXAMPLE + "# note\n");
+
+    await page.locator("#save").click();
+
+    await expect(savedMessage(page)).toBeVisible();
+    await expect(page.getByRole("alert").filter({ hasText: "could not be added to History" })).toBeVisible();
+    expect((await metadata(request)).document).toBe(EXAMPLE + "# note\n");
+  });
+});
+
+test.describe("a very large history entry", () => {
+  test.beforeEach(() => fs.rmSync(HISTORY_FILE, { force: true, recursive: true }));
+
+  test("is not drawn: the page stays responsive and offers both versions as files", async ({ page }) => {
+    const big = Array.from({ length: 40_000 }, (_, i) => "# line " + i).join("\n") + "\n";
+    const hash = require("node:crypto").createHash("sha256").update(big).digest("hex");
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify({ id: Date.now(), at: "2026-11-20T10:00:00Z", hash, text: big }) + "\n");
+    await signIn(page);
+    await page.getByRole("tab", { name: "History" }).click();
+
+    await page.locator("#history-list tbody tr").first().getByRole("button", { name: "View" }).click();
+
+    await expect(page.getByText("This diff is too large to show here")).toBeVisible({ timeout: 5000 });
+    await expect(page.locator("#diff .line")).toHaveCount(0);
+    const [file] = await Promise.all([page.waitForEvent("download"), page.locator("#save-old").click()]);
+    expect(file.suggestedFilename()).toMatch(/^permissions-old\.(yaml|json)$/);
+    await page.getByRole("tab", { name: "Document" }).click();
+    await expect(page.locator("#draft")).toBeVisible({ timeout: 2000 });
   });
 });

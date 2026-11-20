@@ -94,3 +94,22 @@ test.describe("describeChanges", () => {
       .toEqual([{ role: null, table: null, gained: [], lost: [], changed: [], text: "token settings change" }]);
   });
 });
+
+test.describe("widens and exportName", () => {
+  test("only a gain, a rewritten rule or a token change widens", async () => {
+    const { describeChanges, widens } = await modelModule();
+    const base = { tables: [rule("public.a", "user", "select", "delete")] };
+    expect(widens(describeChanges(base, { tables: [rule("public.a", "user", "select")] }))).toBe(false);
+    expect(widens(describeChanges(base, base))).toBe(false);
+    expect(widens(describeChanges(base, { tables: [...base.tables, rule("public.a", "anon", "select")] }))).toBe(true);
+    const loosened = { tables: [{ ...rule("public.a", "user", "select", "delete"), select: { filter: { id: 1 }, columns: "*" } }] };
+    expect(widens(describeChanges(loosened, base))).toBe(true);
+    expect(widens(describeChanges({ tables: [] }, { tables: [], jwt: { audience: "x" } }))).toBe(true);
+  });
+
+  test("a label tells two files apart and the kind follows the text", async () => {
+    const { exportName } = await modelModule();
+    expect(exportName("{}", "old")).toEqual({ filename: "permissions-old.json", type: "application/json" });
+    expect(exportName("a: 1", "")).toEqual({ filename: "permissions.yaml", type: "text/yaml" });
+  });
+});

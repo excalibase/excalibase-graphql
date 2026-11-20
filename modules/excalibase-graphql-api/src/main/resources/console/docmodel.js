@@ -94,6 +94,11 @@ export function describeChanges(before, after) {
   return lines;
 }
 
+/** True when a save gives a role more than it had: a gained operation, a rewritten rule or other token settings. */
+export function widens(changes) {
+  return changes.some((change) => change.gained.length > 0 || change.changed.length > 0 || change.role === null);
+}
+
 export function serialize(tree) {
   return JSON.stringify(tree, null, 2) + "\n";
 }
@@ -103,9 +108,10 @@ export function rewriteLosesText(text, tree) {
   return text.trim() !== serialize(tree).trim();
 }
 
-/** The file name and type an export carries: a JSON document stays JSON, anything else is YAML text. */
-export function exportName(text) {
+/** The file name and type an export carries: a JSON text stays JSON, anything else is YAML. A label tells two files apart. */
+export function exportName(text, label = "") {
+  const stem = label === "" ? "permissions" : "permissions-" + label;
   return text.trimStart().startsWith("{")
-    ? { filename: "permissions.json", type: "application/json" }
-    : { filename: "permissions.yaml", type: "text/yaml" };
+    ? { filename: stem + ".json", type: "application/json" }
+    : { filename: stem + ".yaml", type: "text/yaml" };
 }

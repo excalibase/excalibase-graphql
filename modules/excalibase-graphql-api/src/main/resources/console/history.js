@@ -1,6 +1,8 @@
 import { h } from "/console/dom.js";
+import { changeList, historyWarning } from "/console/editor.js";
 import { lineDiff, withContext } from "/console/diff.js";
 
+const MAX_DRAWN = 5000;
 const MARKS = { add: "+ ", del: "- ", same: "  " };
 
 /** The time as the engine saved it, in UTC, so two people read the same list. */
@@ -15,21 +17,31 @@ function diffLine(entry) {
   return h("div", { class: "line " + entry.type }, MARKS[entry.type] + entry.text);
 }
 
-/** The old version against the document the engine serves now. */
-function diffView(entry, current) {
+/** The old version against the text served now. A diff that would draw too many lines is not drawn. */
+function diffView(entry, current, handlers) {
   const lines = lineDiff(entry.text, current);
   if (lines.every((line) => line.type === "same")) {
     return h("p", { id: "diff-same" }, "This version is the same as the text served now.");
   }
+  const shown = withContext(lines);
+  if (shown.length > MAX_DRAWN) {
+    return h("div", { id: "diff-large" },
+      h("p", {}, "This diff is too large to show here. Save both versions as files and compare them there."),
+      h("div", { class: "actions" },
+        h("button", { type: "button", id: "save-old", class: "secondary", onclick: () => handlers.onSaveFile("old", entry.text) },
+          "Save this version as a file"),
+        h("button", { type: "button", id: "save-current", class: "secondary", onclick: () => handlers.onSaveFile("current", current) },
+          "Save the served text as a file")));
+  }
   return h("div", {},
     h("p", { class: "hint" }, "Lines marked - are only in this old version. Lines marked + are only in the text served now."),
-    h("pre", { id: "diff", class: "diff" }, withContext(lines).map(diffLine)));
+    h("pre", { id: "diff", class: "diff" }, shown.map(diffLine)));
 }
 
 function selectedView(selected, handlers) {
   return h("section", { id: "history-entry" },
     h("h2", {}, "Version replaced at " + shortTime(selected.entry.at)),
-    diffView(selected.entry, selected.current),
+    diffView(selected.entry, selected.current, handlers),
     h("div", { class: "actions" },
       h("button", { type: "button", id: "restore", onclick: () => handlers.onRestore(selected.entry) }, "Restore this version")));
 }
@@ -39,7 +51,7 @@ function noteView(note) {
     return null;
   }
   if (note.kind === "ok") {
-    return h("p", { class: "ok", role: "status" }, note.text);
+    return h("div", {}, h("p", { class: "ok", role: "status" }, note.text), note.historyMissed ? historyWarning() : null);
   }
   return h("div", { class: "error", role: "alert" }, h("p", {}, note.text),
     note.errors ? h("ul", {}, note.errors.map((message) => h("li", {}, message))) : null);
@@ -74,11 +86,12 @@ export function historyView(model, handlers) {
     model.selected ? selectedView(model.selected, handlers) : null);
 }
 
-/** Asks before a version replaces the text served now. The caller closes it and restores. */
-export function restoreDialog(entry, dirty, handlers) {
+/** Asks before a version replaces the text served now, and lists what that changes: a re-granted access is red. */
+export function restoreDialog(entry, dirty, changes, handlers) {
   return h("dialog", { id: "restore-confirm", "aria-describedby": "restore-text" },
-    h("p", { id: "restore-text" }, "Restore this version, replaced at " + shortTime(entry.at) + "? The document served now is added to "
+    h("p", { id: "restore-text" }, "Restore this version, replaced at " + shortTime(entry.at) + "? The text served now is added to "
       + "the history, so you can undo this."),
+    changeList(changes, "restore-changes"),
     dirty ? h("p", { class: "error" }, "Your unsaved edits in the editor will be discarded.") : null,
     h("div", { class: "actions" },
       h("button", { type: "button", id: "restore-yes", class: "danger", onclick: handlers.onConfirm }, "Restore"),

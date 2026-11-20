@@ -116,8 +116,14 @@ Every save through the console or the admin API adds the text it replaces to `pe
 - **Hand edits are not recorded.** Only saves that go through the engine are. A file you edit yourself, or
   replace with a deploy, leaves no entry. Keep `permissions.yaml` in git; the history is a safety net for console
   saves, not a replacement for it.
-- **It never blocks a save.** If the history cannot be written, or is damaged, the save still goes ahead and the
-  engine logs `metadata_history_not_written` or `metadata_history_corrupt`. A damaged history starts afresh.
+- **To purge it, delete the file.** A literal secret you rotated out of `permissions.yaml` stays in the old
+  versions until you delete `permissions.history` (and any `permissions.history.corrupt-*` beside it).
+- **It never blocks a save.** If the history cannot be written, the save still goes ahead, the engine logs
+  `metadata_history_not_written`, the answer carries `"historyRecorded": false` and the console says the version
+  could not be added to History. A line in the file that is damaged is dropped on its own; a file that cannot be
+  read is left untouched; a damaged one is kept as `permissions.history.corrupt-<time>` before a fresh one starts.
+- **Do not name the rules file `*.history`.** It would share a file with its own history; the engine refuses to
+  start.
 - **Restore is a normal save.** The History tab shows each version against the current document and puts one
   back. The restored text is checked like any save (an old version that no longer passes is refused with the
   reason), it needs the version you started from, and the text it replaces goes into the history, so a restore can
@@ -151,8 +157,9 @@ Every save through the console or the admin API adds the text it replaces to `pe
   narrow policy, or serve the object through a presigned URL with the `url` source.
 - **Saving from the grid or the sample-token form writes JSON and drops YAML comments and your own layout.** The
   console asks before such a save when the text it started from has comments or layout to lose: you confirm or
-  cancel, and cancel writes nothing. The warning lists what the save changes, and a line that gives a role an
-  operation is red. The text you replace stays in the history. To keep comments in the live file, edit it yourself
+  cancel, and cancel writes nothing. The warning lists what the save changes. A save that gives a role an operation
+  (red), rewrites a rule or changes the token settings (amber) always asks first, comments or not, and "Don't ask
+  again" never hides that; a save that only removes access does not ask. Restore shows the same list. The text you replace stays in the history. To keep comments in the live file, edit it yourself
   and let the engine pick it up.
 - **The explorer is not built yet.** The console has the rules grid, a sample token, the history of a file source
   and export.

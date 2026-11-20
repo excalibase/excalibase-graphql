@@ -1,8 +1,8 @@
 import { ApiError, getHistory, getHistoryEntry, getMetadata, getReplicas, getSchema, parseText, putMetadata,
   restoreHistory, signIn, signOut, signedIn, validateText } from "/console/api.js";
-import { describeChanges, exportName, rewriteLosesText, serialize, setOperation, withJwt } from "/console/docmodel.js";
+import { describeChanges, exportName, rewriteLosesText, serialize, setOperation, widens, withJwt } from "/console/docmodel.js";
 import { h, mount, rootElement, saveAs, showModal } from "/console/dom.js";
-import { classify, documentView, rewriteDialog, saveBar } from "/console/editor.js";
+import { classify, documentView, saveBar, saveDialog } from "/console/editor.js";
 import { gridView, roleProblem, columnRoles } from "/console/grid.js";
 import { historyView, restoreDialog, restoreFailure } from "/console/history.js";
 import { jwtView } from "/console/jwt.js";
@@ -181,33 +181,41 @@ async function save() {
     return;
   }
   state.busy = true;
-  if (state.rewriteLoses && !state.skipRewriteWarning) {
-    await askBeforeRewrite();
-    return;
-  }
   try {
+    const changes = await changesOfSave();
+    const comment = state.rewriteLoses && !state.skipRewriteWarning;
+    const wider = changes !== null && widens(changes);
+    if (comment || wider) {
+      askBeforeSave(changes, comment, wider);
+      return;
+    }
     await commitSave();
-  } finally {
-    state.busy = false;
+  } catch (failure) {
+    handleFailure(failure);
   }
+  state.busy = false;
 }
 
 /** The saved text and the draft, read by the engine, as the list of what the save changes; null if either cannot be. */
 async function changesOfSave() {
+  return changesBetween(state.meta.text, state.draft);
+}
+
+async function changesBetween(fromText, toText) {
   try {
-    const [saved, drafted] = await Promise.all([
-      state.meta.text == null ? { valid: true, tree: { tables: [] } } : parseText(state.meta.text), parseText(state.draft)]);
-    return saved.valid && drafted.valid ? describeChanges(saved.tree, drafted.tree) : null;
+    const [from, to] = await Promise.all([
+      fromText == null ? { valid: true, tree: { tables: [] } } : parseText(fromText), parseText(toText)]);
+    return from.valid && to.valid ? describeChanges(from.tree, to.tree) : null;
   } catch {
     return null;
   }
 }
 
-async function askBeforeRewrite() {
-  const changes = await changesOfSave();
+/** A comment notice can be silenced for the session; a list that widens access cannot. */
+function askBeforeSave(changes, comment, wider) {
   let confirmed = false;
-  const close = showModal(root, rewriteDialog({
-    changes,
+  const close = showModal(root, saveDialog({
+    changes, comment, widens: wider,
     onCancel: () => close(),
     onConfirm: (remember) => {
       confirmed = true;
@@ -222,7 +230,7 @@ async function historyTab() {
   const list = await getHistory();
   const note = state.historyNote;
   state.historyNote = null;
-  return historyView({ list, selected: state.historySelected, note }, { onSelect: selectVersion, onRestore: askRestore });
+  return historyView({ list, selected: state.historySelected, note }, { onSelect: selectVersion, onRestore: askRestore, onSaveFile: saveVersionFile });
 }
 
 async function selectVersion(id) {
@@ -235,13 +243,14 @@ async function selectVersion(id) {
   }
 }
 
-function askRestore(entry) {
+async function askRestore(entry) {
   if (state.busy) {
     return;
   }
   state.busy = true;
+  const changes = await changesBetween(state.meta.text, entry.text);
   let confirmed = false;
-  const close = showModal(root, restoreDialog(entry, state.draft !== state.meta.text, {
+  const close = showModal(root, restoreDialog(entry, state.draft !== (state.meta.text ?? ""), changes, {
     onCancel: () => close(),
     onConfirm: () => {
       confirmed = true;
@@ -255,7 +264,8 @@ async function restore(entry) {
   try {
     const restored = await restoreHistory(entry.id, state.meta.sourceVersion);
     await loadMetadata();
-    state.historyNote = { kind: "ok", text: "Restored. The engine now serves version " + restored.version + "." };
+    state.historyNote = { kind: "ok", text: "Restored. The engine now serves version " + restored.version + ".",
+      historyMissed: restored.historyRecorded === false };
     state.historySelected = null;
     state.outcome = null;
   } catch (failure) {
@@ -273,7 +283,7 @@ async function commitSave() {
   try {
     const saved = await putMetadata(state.draft, state.meta.sourceVersion);
     await loadMetadata();
-    state.outcome = { kind: "saved", version: saved.version };
+    state.outcome = { kind: "saved", version: saved.version, historyMissed: saved.historyRecorded === false };
     state.theirs = null;
   } catch (failure) {
     if (failure instanceof ApiError && failure.status === 401) {
@@ -312,8 +322,17 @@ async function takeTheirs() {
 }
 
 function exportDocument() {
-  const { filename, type } = exportName(state.draft);
-  saveAs(filename, state.draft, type);
+  offerFile(state.draft, "");
+}
+
+/** The two texts of a diff too large to show, as files named by this page and never by the engine. */
+function saveVersionFile(which, text) {
+  offerFile(text, which);
+}
+
+function offerFile(text, label) {
+  const { filename, type } = exportName(text, label);
+  saveAs(filename, text, type);
 }
 
 function discard() {

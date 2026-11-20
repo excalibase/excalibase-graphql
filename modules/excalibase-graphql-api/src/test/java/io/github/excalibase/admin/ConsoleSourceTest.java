@@ -125,7 +125,7 @@ class ConsoleSourceTest {
     void downloadNameIsFixed() throws IOException {
         String app = read("app.js");
 
-        assertThat(app).contains("const { filename, type } = exportName(state.draft);", "saveAs(filename, state.draft, type);");
+        assertThat(app).contains("const { filename, type } = exportName(text, label);", "saveAs(filename, text, type);");
         assertThat(count(app, "saveAs(")).isEqualTo(1);
     }
 
