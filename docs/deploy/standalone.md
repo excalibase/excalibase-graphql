@@ -13,6 +13,11 @@ The sources, the settings and the token providers are listed in full in the
 [deploy folder README](https://github.com/excalibase/excalibase-graphql/blob/main/deploy/standalone/README.md).
 This page covers what is the same for every setup.
 
+## Which engine image?
+
+There is one image per database next to the all-in-one image: `-postgres`, `-mysql` and their `-native`
+variants. See [Which engine image?](engine-images.md) to pick, and what a one-database image refuses.
+
 ## Which rule source to pick
 
 | Source | Setting | Replicas | Saving from the console | Pick it when |

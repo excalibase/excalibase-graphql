@@ -132,6 +132,7 @@ nav:
       - Run the Engine on Your Own: deploy/standalone.md
       - Docker and Compose: deploy/standalone-docker.md
       - Kubernetes: deploy/standalone-kubernetes.md
+      - Which Engine Image?: deploy/engine-images.md
   - Database Compatibility: database-compatibility.md
   - SDK (TypeScript): sdk.md
   - Testing: testing.md
