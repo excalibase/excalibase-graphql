@@ -89,6 +89,11 @@ check "strict checksums stay on in maven.config" "0" "$(grep -qx -- '--strict-ch
 # the always() report step must not fail a job that died before the cache action ran
 RUNNER_TEMP="$work/no-snapshot" "$root/scripts/ci/m2-files.sh" report >/dev/null 2>&1; check "report without a snapshot exits 0" "0" "$?"
 
+# a cold run takes its snapshot before anything created ~/.m2/repository
+M2_REPO="$work/cold/repo" RUNNER_TEMP="$work" "$root/scripts/ci/m2-files.sh" snapshot >/dev/null 2>&1; check "snapshot of a missing repository exits 0" "0" "$?"
+mkdir -p "$work/cold/repo/a" && touch "$work/cold/repo/a/x.jar" "$work/cold/repo/a/y.pom"
+check "and the report then counts every file as added" "Maven added 2 file(s) to ~/.m2 during this job" "$(M2_REPO="$work/cold/repo" RUNNER_TEMP="$work" "$root/scripts/ci/m2-files.sh" report | head -1)"
+
 grep -q 'mvn-retry.sh' "$root/.github/actions/maven-cache/action.yml"; check "the cache action uses the tested loop" "0" "$?"
 
 grep -q 'graalvm-reachability-metadata:${graalvm_buildtools}' "$root/.github/actions/maven-cache/action.yml"; check "reachability metadata version comes from the pom" "0" "$?"

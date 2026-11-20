@@ -7,7 +7,7 @@ set -euo pipefail
 
 repo=${M2_REPO:-$HOME/.m2/repository}
 before="${RUNNER_TEMP:-/tmp}/m2-files-before.txt"
-list() { find "$repo" -type f | sort; }
+list() { [[ -d $repo ]] && find "$repo" -type f | sort; true; } # a cold run snapshots before the repository exists
 
 case ${1:-} in
   snapshot) list >"$before" ;;
