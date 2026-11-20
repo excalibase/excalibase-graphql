@@ -389,9 +389,10 @@ class FileMetadataSaveTest {
     @Test
     void aRulesFileNamedHistory_isRefusedAtStartup() {
         Path rules = dir.resolve("rules.history");
+        Duration hour = Duration.ofHours(1);
         ReservedSchemas reserved = ReservedSchemas.fromConfig("");
         SimpleMeterRegistry meters = new SimpleMeterRegistry();
-        assertThatThrownBy(() -> FileMetadataSource.create(rules, Duration.ofHours(1), reserved, PROJECT, meters, false))
+        assertThatThrownBy(() -> FileMetadataSource.create(rules, hour, reserved, PROJECT, meters, false))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(".history");
     }
 }
