@@ -1,4 +1,10 @@
-FROM eclipse-temurin:25-jre-alpine
+# ENGINE picks the image: "all" (default) carries every database plugin, "postgres" or "mysql" carries one (EXC-799).
+#   docker build .                          the all-in-one image
+#   docker build --build-arg ENGINE=mysql . the MySQL-only image
+# The slim jars come from `mvn -Pslim-<engine> package`; the all-in-one jar from a plain `mvn package`.
+ARG ENGINE=all
+
+FROM eclipse-temurin:25-jre-alpine AS runtime
 
 # Non-root runtime user so the pod can run under runAsNonRoot (SEC-H4). The
 # app listens on a non-privileged port and only writes to /tmp.
@@ -7,7 +13,21 @@ RUN apk upgrade --no-cache && apk add --no-cache curl \
 
 VOLUME /tmp
 
+FROM runtime AS engine-all
 ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar /app.jar
+
+# A slim image names its own database, so it needs no APP_DATABASE_TYPE or driver setting.
+FROM runtime AS engine-postgres
+ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT-postgres.jar /app.jar
+ENV APP_DATABASE_TYPE=postgres \
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+
+FROM runtime AS engine-mysql
+ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT-mysql.jar /app.jar
+ENV APP_DATABASE_TYPE=mysql \
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver
+
+FROM engine-${ENGINE}
 
 USER app
 
