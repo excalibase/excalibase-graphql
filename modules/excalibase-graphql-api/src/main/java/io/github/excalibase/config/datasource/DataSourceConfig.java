@@ -2,6 +2,7 @@ package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory;
+import io.github.excalibase.config.EngineAvailabilityGuard;
 import io.github.excalibase.service.DatabaseEngine;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micronaut.context.annotation.Context;
@@ -44,7 +45,9 @@ public class DataSourceConfig {
     @Context
     DataSource dataSource(DataSourceSettings properties,
                           @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
-                          @Nullable DynamicDataSourceManager dataSourceManager, MeterRegistry meters) {
+                          @Nullable DynamicDataSourceManager dataSourceManager, MeterRegistry meters,
+                          EngineAvailabilityGuard engineGuard) {
+        engineGuard.check();
         boolean multiTenant = tenantProvisioningUrl != null && !tenantProvisioningUrl.isBlank();
         DataSource configured = null;
         if (registersDefault(properties.url(), properties.username(), properties.password(), multiTenant)) {
