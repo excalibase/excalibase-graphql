@@ -82,6 +82,7 @@ class AdminHistoryIntegrationTest extends EngineIntegrationTest {
 
         assertThat(answer.status()).isEqualTo(200);
         assertThat(answer.<Boolean>jsonPath("$.available")).isTrue();
+        assertThat(answer.<Boolean>jsonPath("$.readable")).isTrue();
         JsonNode newest = answer.json().path("entries").get(0);
         assertThat(newest.path("hash").asText()).isEqualTo(sha(COMMENTED));
         assertThat(newest.path("size").asInt()).isEqualTo(COMMENTED.getBytes(StandardCharsets.UTF_8).length);

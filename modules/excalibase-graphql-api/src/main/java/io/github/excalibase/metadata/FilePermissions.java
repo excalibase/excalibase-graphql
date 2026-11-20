@@ -9,12 +9,26 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.PosixFilePermission;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Set;
 
 /** What the file source's writers do to the files they replace: keep their access rights, make a rename durable. */
 final class FilePermissions {
 
     private FilePermissions() {
+    }
+
+    /**
+     * A new file open for writing that only its owner can read, so a mode that is then not copied errs on the safe side.
+     * A platform without POSIX permissions makes it an ordinary new file.
+     */
+    static FileChannel createOwnerOnly(Path file) throws IOException {
+        Set<StandardOpenOption> options = Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        try {
+            return FileChannel.open(file, options, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+        } catch (UnsupportedOperationException _) {
+            return FileChannel.open(file, options);
+        }
     }
 
     /** How a writer gives a new file the permissions of the one it replaces; a test swaps it for one that fails. */

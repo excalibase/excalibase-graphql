@@ -77,6 +77,10 @@ export function historyView(model, handlers) {
   if (!model.list.available) {
     return h("p", { id: "history-unavailable" }, "History is available for the file source.");
   }
+  if (model.list.readable === false) {
+    return h("p", { id: "history-unreadable", class: "error", role: "alert" },
+      "The history could not be read, so no versions are listed. Saves still go ahead; check the file next to permissions.yaml.");
+  }
   const entries = model.list.entries;
   return h("section", {},
     h("p", { class: "hint" }, "Each save adds the text it replaced, comments included. The last 20 versions are kept. "

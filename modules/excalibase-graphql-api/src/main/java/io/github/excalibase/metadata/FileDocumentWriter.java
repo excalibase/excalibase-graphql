@@ -149,8 +149,7 @@ final class FileDocumentWriter implements MetadataWriter {
     }
 
     private void flushed(Path temporary, byte[] content, Path target) throws IOException {
-        try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE_NEW,
-                StandardOpenOption.WRITE)) {
+        try (FileChannel channel = FilePermissions.createOwnerOnly(temporary)) {
             FilePermissions.copyBestEffort(permissions, target, temporary);
             ByteBuffer buffer = ByteBuffer.wrap(content);
             while (buffer.hasRemaining()) {

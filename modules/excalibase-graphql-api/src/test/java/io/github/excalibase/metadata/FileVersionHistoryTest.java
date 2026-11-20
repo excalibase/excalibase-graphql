@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** The history file: one JSON Lines file holding the last versions of the document, replaced whole and atomically. */
@@ -258,6 +259,7 @@ class FileVersionHistoryTest {
 
     @Test
     void anUnreadableHistory_isNeverOverwritten_theAppendFails() throws IOException {
+        assumeFalse("root".equals(System.getProperty("user.name")), "root reads a file with no permissions");
         FileVersionHistory history = open();
         history.append("one\n", T0);
         history.append("two\n", T0.plusSeconds(1));
@@ -298,5 +300,32 @@ class FileVersionHistoryTest {
         Path rules = dir.resolve("rules.history");
         assertThatThrownBy(() -> FileVersionHistory.beside(rules))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(".history");
+    }
+
+    @Test
+    void aHistoryThatCannotBeRead_saysSo_insteadOfLookingEmpty() throws IOException {
+        Files.createDirectory(history());
+
+        assertThat(open().readable()).isFalse();
+        assertThat(open().list()).isEmpty();
+    }
+
+    @Test
+    void anAbsentOrReadableHistory_isReadable() throws IOException {
+        assertThat(open().readable()).isTrue();
+        FileVersionHistory history = open();
+        history.append("a\n", T0);
+        assertThat(history.readable()).isTrue();
+    }
+
+    @Test
+    void twoDamagedFilesKeptAsideInTheSameInstant_doNotOverwriteEachOther() throws IOException {
+        FileVersionHistory history = open();
+        Files.writeString(history(), "garbage one\n");
+        history.append("a\n", T0);
+        Files.writeString(history(), "garbage two\n");
+        history.append("b\n", T0);
+
+        assertThat(asides()).hasSize(2);
     }
 }

@@ -21,6 +21,7 @@ final class HistoryAnswers {
         history.ifPresent(kept -> kept.list().forEach(entry -> entries.add(summary(entry))));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("available", history.isPresent());
+        body.put("readable", history.map(DocumentHistory::readable).orElse(true));
         body.put("entries", entries);
         return body;
     }

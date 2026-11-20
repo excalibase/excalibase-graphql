@@ -23,6 +23,7 @@ const TABS = [
 // what the last save came to. A tree is read from the draft by the engine, so a YAML document is understood there.
 const state = { meta: null, draft: "", tree: null, roles: [], outcome: null, theirs: null, grid: null,
   rewriteLoses: false, skipRewriteWarning: false, busy: false, historySelected: null, historyNote: null };
+const CHANGE_LIST_TIMEOUT_MS = 5000;
 let active = "document";
 
 function showLogin(error) {
@@ -182,9 +183,10 @@ async function save() {
   }
   state.busy = true;
   try {
-    const changes = await changesOfSave();
+    const { changes, invalid } = await changesOfSave();
     const comment = state.rewriteLoses && !state.skipRewriteWarning;
-    const wider = changes !== null && widens(changes);
+    // Fails closed: a list that could not be built asks. A text the engine refuses goes on, and its errors are shown.
+    const wider = !invalid && (changes === null || widens(changes));
     if (comment || wider) {
       askBeforeSave(changes, comment, wider);
       return;
@@ -201,13 +203,18 @@ async function changesOfSave() {
   return changesBetween(state.meta.text, state.draft);
 }
 
+/** The list, or null when it could not be built (an error, a timeout); invalid when the engine refuses a text. */
 async function changesBetween(fromText, toText) {
+  const signal = AbortSignal.timeout(CHANGE_LIST_TIMEOUT_MS);
   try {
     const [from, to] = await Promise.all([
-      fromText == null ? { valid: true, tree: { tables: [] } } : parseText(fromText), parseText(toText)]);
-    return from.valid && to.valid ? describeChanges(from.tree, to.tree) : null;
+      fromText == null ? { valid: true, tree: { tables: [] } } : parseText(fromText, signal), parseText(toText, signal)]);
+    if (!from.valid || !to.valid) {
+      return { changes: null, invalid: true };
+    }
+    return { changes: describeChanges(from.tree, to.tree), invalid: false };
   } catch {
-    return null;
+    return { changes: null, invalid: false };
   }
 }
 
@@ -248,7 +255,7 @@ async function askRestore(entry) {
     return;
   }
   state.busy = true;
-  const changes = await changesBetween(state.meta.text, entry.text);
+  const { changes } = await changesBetween(state.meta.text, entry.text);
   let confirmed = false;
   const close = showModal(root, restoreDialog(entry, state.draft !== (state.meta.text ?? ""), changes, {
     onCancel: () => close(),

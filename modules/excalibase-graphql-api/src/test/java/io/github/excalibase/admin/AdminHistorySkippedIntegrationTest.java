@@ -55,4 +55,15 @@ class AdminHistorySkippedIntegrationTest extends EngineIntegrationTest {
         assertThat(answer.<Boolean>jsonPath("$.historyRecorded")).isFalse();
         assertThat(Files.readString(FILE)).isEqualTo(bigger);
     }
+
+    @Test
+    @DisplayName("the history list says it cannot be read, rather than looking empty")
+    void listSaysUnreadable() {
+        HttpAnswer answer = admin.get("/_admin/v1/history", HEADER, SECRET);
+
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(answer.<Boolean>jsonPath("$.available")).isTrue();
+        assertThat(answer.<Boolean>jsonPath("$.readable")).isFalse();
+        assertThat(answer.json().path("entries")).isEmpty();
+    }
 }

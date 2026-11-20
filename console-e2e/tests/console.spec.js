@@ -802,6 +802,77 @@ test.describe("a save that widens access always asks", () => {
   });
 });
 
+test.describe("the change list fails closed", () => {
+  const WIPE = JSON.stringify({ format: 1, projectId: "my-app", tables: [],
+    functions: [{ function: "public.wipe_all", exposedAs: "MUTATION", inferPermissions: false }],
+    functionPermissions: [{ function: "public.wipe_all", role: "anon" }] }, null, 2) + "\n";
+
+  test("a function exposed to anon asks, in red and amber, though no table changes", async ({ page, request }) => {
+    await replaceDocument(request, PLAIN);
+    await signIn(page);
+    await editDraft(page, WIPE);
+
+    await page.locator("#save").click();
+
+    await expect(page.locator(ACCESS)).toBeVisible();
+    await expect(page.locator("#rewrite-changes li", { hasText: "anon · public.wipe_all: + execute" })).toHaveCSS("color", RED);
+    await expect(page.locator("#rewrite-changes li", { hasText: "function public.wipe_all: added" })).toHaveCSS("color", AMBER);
+    await page.locator("#rewrite-cancel").click();
+    expect((await metadata(request)).document).toBe(PLAIN);
+  });
+
+  test("restoring a version that exposes a function shows the grant in red", async ({ page, request }) => {
+    fs.rmSync(HISTORY_FILE, { force: true, recursive: true });
+    await replaceDocument(request, WIPE);
+    await replaceDocument(request, PLAIN);
+    await signIn(page);
+    await page.getByRole("tab", { name: "History" }).click();
+    await page.locator("#history-list tbody tr").first().getByRole("button", { name: "View" }).click();
+
+    await page.locator("#restore").click();
+
+    await expect(page.locator("#restore-changes li", { hasText: "anon · public.wipe_all: + execute" })).toHaveCSS("color", RED);
+    await page.locator("#restore-no").click();
+  });
+
+  test("when the engine cannot read the texts, the save asks and says the list could not be built", async ({ page, request }) => {
+    await replaceDocument(request, PLAIN);
+    await signIn(page);
+    await editDraft(page, anonRule("select"));
+    await page.route("**/_admin/v1/parse", (route) => route.fulfill({ status: 500, contentType: "application/json", body: "{}" }));
+
+    await page.locator("#save").click();
+
+    await expect(page.locator(ACCESS)).toBeVisible();
+    await expect(page.locator("#rewrite-changes")).toContainText("could not be built");
+    await page.locator("#rewrite-cancel").click();
+    expect((await metadata(request)).document).toBe(PLAIN);
+  });
+
+  test("when reading the texts never answers, the save asks after a few seconds", async ({ page, request }) => {
+    await replaceDocument(request, PLAIN);
+    await signIn(page);
+    await editDraft(page, anonRule("select"));
+    await page.route("**/_admin/v1/parse", () => new Promise(() => {}));
+
+    await page.locator("#save").click();
+
+    await expect(page.locator(ACCESS)).toBeVisible({ timeout: 12_000 });
+    await expect(page.locator("#rewrite-changes")).toContainText("could not be built");
+    await page.locator("#rewrite-cancel").click();
+  });
+
+  test("a text the engine refuses is not held back by a dialog: the engine's errors are shown", async ({ page }) => {
+    await signIn(page);
+    await editDraft(page, EXAMPLE + "surprise: true\n");
+
+    await page.locator("#save").click();
+
+    await expect(page.getByRole("alert")).toContainText("surprise");
+    await expect(page.locator("dialog")).toHaveCount(0);
+  });
+});
+
 test.describe("History that missed a save", () => {
   test.afterEach(() => fs.rmSync(HISTORY_FILE, { force: true, recursive: true }));
 
@@ -816,6 +887,16 @@ test.describe("History that missed a save", () => {
     await expect(savedMessage(page)).toBeVisible();
     await expect(page.getByRole("alert").filter({ hasText: "could not be added to History" })).toBeVisible();
     expect((await metadata(request)).document).toBe(EXAMPLE + "# note\n");
+  });
+
+  test("a history that cannot be read says so instead of showing an empty list", async ({ page }) => {
+    fs.rmSync(HISTORY_FILE, { force: true, recursive: true });
+    fs.mkdirSync(HISTORY_FILE);
+    await signIn(page);
+    await page.getByRole("tab", { name: "History" }).click();
+
+    await expect(page.getByText("The history could not be read")).toBeVisible();
+    await expect(page.getByText("Nothing has been replaced yet.")).toHaveCount(0);
   });
 });
 

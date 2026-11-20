@@ -27,4 +27,9 @@ public interface DocumentHistory {
     List<Entry> list();
 
     Optional<Entry> get(long id);
+
+    /** False when the history exists but cannot be read, so an empty {@link #list} does not mean "nothing kept". */
+    default boolean readable() {
+        return true;
+    }
 }

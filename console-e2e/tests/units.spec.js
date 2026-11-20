@@ -91,7 +91,7 @@ test.describe("describeChanges", () => {
   test("a changed jwt section is listed as token settings, and is not a gain", async () => {
     const { describeChanges } = await modelModule();
     expect(describeChanges({ tables: [], jwt: { audience: "a" } }, { tables: [], jwt: { audience: "b" } }))
-      .toEqual([{ role: null, table: null, gained: [], lost: [], changed: [], text: "token settings change" }]);
+      .toEqual([{ role: null, table: null, gained: [], lost: [], changed: [], other: true, text: "token settings change" }]);
   });
 });
 
@@ -111,5 +111,48 @@ test.describe("widens and exportName", () => {
     const { exportName } = await modelModule();
     expect(exportName("{}", "old")).toEqual({ filename: "permissions-old.json", type: "application/json" });
     expect(exportName("a: 1", "")).toEqual({ filename: "permissions.yaml", type: "text/yaml" });
+  });
+});
+
+const fn = (name, extra = {}) => ({ function: name, exposedAs: "MUTATION", inferPermissions: false, sessionArgument: null, ...extra });
+
+test.describe("functions and other top-level keys", () => {
+  test("a new function permission is a gain, a removed one is a removal", async () => {
+    const { describeChanges, widens } = await modelModule();
+    const before = { tables: [], functions: [fn("public.wipe_all")], functionPermissions: [{ function: "public.wipe_all", role: "user" }] };
+    const after = { ...before, functionPermissions: [{ function: "public.wipe_all", role: "anon" }] };
+    const lines = describeChanges(before, after);
+    expect(lines).toEqual([
+      { role: "anon", table: "public.wipe_all", gained: ["execute"], lost: [], changed: [], text: "anon · public.wipe_all: + execute" },
+      { role: "user", table: "public.wipe_all", gained: [], lost: ["execute"], changed: [], text: "user · public.wipe_all: - execute" }]);
+    expect(widens(lines)).toBe(true);
+    expect(widens(describeChanges(after, before))).toBe(true);
+    expect(widens(describeChanges(before, { ...before, functionPermissions: [] }))).toBe(false);
+  });
+
+  test("an added or changed function entry is a changed rule; a removed one is not", async () => {
+    const { describeChanges, widens } = await modelModule();
+    const none = { tables: [] };
+    const added = describeChanges(none, { tables: [], functions: [fn("public.wipe_all")] });
+    expect(added).toMatchObject([{ table: "public.wipe_all", changed: ["function"], other: true, text: "function public.wipe_all: added" }]);
+    expect(widens(added)).toBe(true);
+    const base = { tables: [], functions: [fn("public.wipe_all")] };
+    for (const edit of [{ inferPermissions: true }, { exposedAs: "QUERY" }, { sessionArgument: "session" }]) {
+      const lines = describeChanges(base, { tables: [], functions: [fn("public.wipe_all", edit)] });
+      expect(lines).toMatchObject([{ changed: ["function"], text: "function public.wipe_all: changed" }]);
+      expect(widens(lines)).toBe(true);
+    }
+    const removed = describeChanges(base, none);
+    expect(removed).toMatchObject([{ lost: ["function"], text: "function public.wipe_all: removed" }]);
+    expect(widens(removed)).toBe(false);
+  });
+
+  test("any other top-level key that changes is a changed rule, so a grammar that grows still asks", async () => {
+    const { describeChanges, widens } = await modelModule();
+    const lines = describeChanges({ tables: [], format: 1, future: { a: 1 } }, { tables: [], format: 1, future: { a: 2 } });
+    expect(lines).toMatchObject([{ changed: ["future"], other: true, text: "future changes" }]);
+    expect(widens(lines)).toBe(true);
+    expect(describeChanges({ tables: [], projectId: "a" }, { tables: [], projectId: "b" })).toHaveLength(1);
+    expect(describeChanges({ tables: [], format: 1 }, { tables: [], format: 1 })).toEqual([]);
   });
 });

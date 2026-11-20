@@ -120,6 +120,11 @@ final class FileVersionHistory implements DocumentHistory {
     }
 
     @Override
+    public synchronized boolean readable() {
+        return load().unreadable() == null;
+    }
+
+    @Override
     public synchronized Optional<Entry> get(long id) {
         return load().entries().stream().filter(entry -> entry.id() == id).findFirst();
     }
@@ -188,7 +193,7 @@ final class FileVersionHistory implements DocumentHistory {
 
     /** Keeps what was on disk before it is rewritten: moved when nothing in it could be used, copied otherwise. */
     private void keepAside(Instant at, boolean nothingUsable) throws IOException {
-        Path aside = file.resolveSibling(file.getFileName() + ".corrupt-" + at.toEpochMilli());
+        Path aside = file.resolveSibling(file.getFileName() + ".corrupt-" + at.toEpochMilli() + "-" + randomSuffix());
         if (nothingUsable) {
             Files.move(file, aside, StandardCopyOption.ATOMIC_MOVE);
         } else {
@@ -257,8 +262,7 @@ final class FileVersionHistory implements DocumentHistory {
     }
 
     private void flushed(Path temporary, byte[] content) throws IOException {
-        try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE_NEW,
-                StandardOpenOption.WRITE)) {
+        try (FileChannel channel = FilePermissions.createOwnerOnly(temporary)) {
             FilePermissions.copyBestEffort(FilePermissions::copy, rules, temporary);
             ByteBuffer buffer = ByteBuffer.wrap(content);
             while (buffer.hasRemaining()) {

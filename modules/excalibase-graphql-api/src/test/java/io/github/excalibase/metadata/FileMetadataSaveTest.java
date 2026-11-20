@@ -384,6 +384,8 @@ class FileMetadataSaveTest {
                 .isInstanceOf(SaveOutcome.Saved.class);
         assertThat(Files.readString(path)).isEqualTo(GOOD_YAML_TWO_RULES);
         assertThat(strayFiles()).isEmpty();
+        assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(path))).as("falls back to owner-only")
+                .isEqualTo("rw-------");
     }
 
     @Test

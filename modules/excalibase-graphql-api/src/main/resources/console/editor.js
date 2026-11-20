@@ -112,7 +112,7 @@ export function changeList(changes, id) {
     return h("p", { class: "hint", id }, "No role or table gets or loses an operation.");
   }
   return h("ul", { id, "aria-label": "What this changes" }, changes.map((change) =>
-    h("li", { class: "change" + (change.gained.length > 0 ? " gain" : (change.changed.length > 0 || change.role === null ? " modify" : "")) },
+    h("li", { class: "change" + (change.gained.length > 0 ? " gain" : (change.changed.length > 0 || change.other === true ? " modify" : "")) },
       change.text)));
 }
 

@@ -52,13 +52,13 @@ function codeOf(status, parsed) {
   return parsed && Array.isArray(parsed.errors) ? "invalid_document" : "error_" + status;
 }
 
-async function call(method, path, body, contentType, extraHeaders = {}) {
+async function call(method, path, body, contentType, extraHeaders = {}, signal = undefined) {
   const headers = { ...extraHeaders, [HEADER]: secret };
   if (body !== undefined) {
     headers["Content-Type"] = contentType;
   }
   const response = await fetch(BASE + path, { method, headers, body, credentials: "omit", cache: "no-store",
-    referrerPolicy: "no-referrer" });
+    referrerPolicy: "no-referrer", signal });
   const parsed = await parse(response);
   if (response.status === 401) {
     signOut();
@@ -100,7 +100,8 @@ export const putMetadata = (text, sourceVersion) =>
 export const getSchema = () => call("GET", "/schema");
 export const getReplicas = () => call("GET", "/replicas");
 export const validateText = (text) => call("POST", "/validate", text, "text/plain");
-export const parseText = (text) => call("POST", "/parse", text, "text/plain");
+/** @param signal optional AbortSignal: a read that must not wait for ever */
+export const parseText = (text, signal = undefined) => call("POST", "/parse", text, "text/plain", {}, signal);
 
 export const getHistory = () => call("GET", "/history");
 export const getHistoryEntry = (id) => call("GET", "/history/" + encodeURIComponent(id));
