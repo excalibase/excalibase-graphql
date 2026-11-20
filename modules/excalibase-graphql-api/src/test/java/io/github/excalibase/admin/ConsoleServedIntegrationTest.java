@@ -37,7 +37,7 @@ class ConsoleServedIntegrationTest extends EngineIntegrationTest {
     @ParameterizedTest
     @ValueSource(strings = {"/console", "/console/index.html", "/console/app.js", "/console/style.css",
             "/console/api.js", "/console/dom.js", "/console/views.js", "/console/editor.js", "/console/grid.js",
-            "/console/jwt.js", "/console/docmodel.js"})
+            "/console/jwt.js", "/console/docmodel.js", "/console/diff.js", "/console/history.js"})
     @DisplayName("the admin port serves the page and its assets without the secret: they hold none")
     void servedOnTheAdminPort(String path) {
         HttpAnswer answer = admin.get(path);
@@ -48,7 +48,7 @@ class ConsoleServedIntegrationTest extends EngineIntegrationTest {
 
     @ParameterizedTest
     @ValueSource(strings = {"/console", "/console/app.js", "/console/style.css", "/console/editor.js",
-            "/console/grid.js", "/console/jwt.js", "/console/docmodel.js", "/console/nothing"})
+            "/console/grid.js", "/console/jwt.js", "/console/docmodel.js", "/console/diff.js", "/console/history.js", "/console/nothing"})
     @DisplayName("the console is a 404 on the public port and on the management port, secret or not")
     void notFoundOffTheAdminPort(String path) {
         for (EngineClient other : List.of(http, management)) {
@@ -78,7 +78,7 @@ class ConsoleServedIntegrationTest extends EngineIntegrationTest {
     @DisplayName("every module the scripts import is a listed asset: a missing one would leave a blank page")
     void importsResolve() {
         Pattern imports = Pattern.compile("from \"(/console/[^\"]+)\"");
-        for (String script : List.of("app.js", "api.js", "views.js", "editor.js", "grid.js", "jwt.js", "docmodel.js")) {
+        for (String script : List.of("app.js", "api.js", "views.js", "editor.js", "grid.js", "jwt.js", "docmodel.js", "diff.js", "history.js")) {
             Matcher named = imports.matcher(admin.get("/console/" + script).body());
             while (named.find()) {
                 assertThat(admin.get(named.group(1)).status()).as(script + " imports " + named.group(1)).isEqualTo(200);
@@ -90,7 +90,7 @@ class ConsoleServedIntegrationTest extends EngineIntegrationTest {
     @DisplayName("the page and every asset carry the strict CSP and the other browser headers")
     void securityHeaders() {
         for (String path : List.of("/console", "/console/app.js", "/console/style.css", "/console/editor.js",
-                "/console/grid.js", "/console/jwt.js", "/console/docmodel.js")) {
+                "/console/grid.js", "/console/jwt.js", "/console/docmodel.js", "/console/diff.js", "/console/history.js")) {
             HttpAnswer answer = admin.get(path);
             String csp = answer.header("Content-Security-Policy");
 

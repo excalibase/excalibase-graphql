@@ -26,7 +26,8 @@ public final class AdminMetadataView {
     }
 
     /**
-     * The document as served and its version, and whether the source can be saved to right now (no history yet).
+     * The document as served and its version, whether the source can be saved to right now, and whether it keeps a
+     * version history.
      * The document is null while no valid one has been loaded.
      */
     public Optional<Map<String, Object>> document() {
@@ -42,9 +43,15 @@ public final class AdminMetadataView {
         body.put("document", served == null ? null : served.text());
         body.put("writable", source.writable());
         body.put("history", List.of());
+        body.put("historyAvailable", history().isPresent());
         body.put("lastRefusal", status.lastRefusal());
         body.put("lastRefusalAt", status.lastRefusalAt() == null ? null : status.lastRefusalAt().toString());
         return Optional.of(body);
+    }
+
+    /** The versions the source has replaced; empty when it keeps none (only the file source does). */
+    public Optional<DocumentHistory> history() {
+        return source == null ? Optional.empty() : source.history();
     }
 
     /** Saves through the source: conditional on the version, validated, then reloaded. */

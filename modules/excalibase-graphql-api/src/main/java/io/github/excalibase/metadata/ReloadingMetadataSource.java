@@ -282,6 +282,11 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
     }
 
     @Override
+    public Optional<DocumentHistory> history() {
+        return writer.history();
+    }
+
+    @Override
     public SaveOutcome save(String text, String expectedVersion) {
         if (!writer.writable()) {
             return new SaveOutcome.ReadOnly();

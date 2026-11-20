@@ -1,6 +1,7 @@
 package io.github.excalibase.metadata;
 
 import java.io.IOException;
+import java.util.Optional;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -25,6 +26,11 @@ public interface MetadataWriter {
      * @throws IOException            the write failed; nothing was replaced
      */
     String write(String text, String expectedVersion) throws IOException, WriteConflictException;
+
+    /** The versions this writer has replaced, for a source that keeps them; none by default. */
+    default Optional<DocumentHistory> history() {
+        return Optional.empty();
+    }
 
     /** A source that is not saved to, such as {@code url}; {@code writable} lets a test still say otherwise. */
     static MetadataWriter readOnly(BooleanSupplier writable) {

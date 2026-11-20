@@ -54,7 +54,7 @@ class FileMetadataSaveTest {
 
     private List<String> strayFiles() throws IOException {
         try (Stream<Path> all = Files.list(dir)) {
-            return all.map(path -> path.getFileName().toString()).filter(name -> !name.equals("permissions.yaml"))
+            return all.map(path -> path.getFileName().toString()).filter(name -> !name.equals("permissions.yaml") && !name.equals("permissions.history"))
                     .toList();
         }
     }
@@ -208,5 +208,125 @@ class FileMetadataSaveTest {
         assertThat(outcome).isInstanceOfSatisfying(SaveOutcome.Invalid.class, invalid ->
                 assertThat(invalid.errors().getFirst()).startsWith("jwt:"));
         assertThat(Files.readString(path)).isEqualTo(GOOD_YAML);
+    }
+
+    private List<String> historyTexts() {
+        return new FileVersionHistory(dir.resolve("permissions.history"), dir.resolve("permissions.yaml"), 20, 1 << 20,
+                _ -> { }).list().stream().map(DocumentHistory.Entry::text).toList();
+    }
+
+    @Test
+    void aSave_putsTheTextItReplacedIntoTheHistory_beforeTheSwap() throws IOException {
+        ReloadingMetadataSource served = open(file());
+
+        served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion());
+        served.save(GOOD_YAML + "# third\n", served.current().orElseThrow().sourceVersion());
+
+        assertThat(historyTexts()).containsExactly(GOOD_YAML_TWO_RULES, GOOD_YAML);
+        assertThat(served.history().orElseThrow().list()).hasSize(2);
+    }
+
+    @Test
+    void aSaveThatFails_leavesNothingInTheHistory() throws IOException {
+        Path path = file();
+        ReloadingMetadataSource served = open(path, new FileDocumentWriter(path, _ -> {
+            throw new IOException("simulated crash");
+        }));
+
+        assertThat(served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion()))
+                .isInstanceOf(SaveOutcome.Failed.class);
+
+        assertThat(historyTexts()).isEmpty();
+    }
+
+    @Test
+    void aConflictOrAnInvalidDocument_leavesNothingInTheHistory() throws IOException {
+        ReloadingMetadataSource served = open(file());
+
+        served.save(GOOD_YAML_TWO_RULES, "stale");
+        served.save(BAD_UNKNOWN_KEY, served.current().orElseThrow().sourceVersion());
+
+        assertThat(historyTexts()).isEmpty();
+    }
+
+    @Test
+    void aSaveOfTheSameText_isNotARecordedChange() throws IOException {
+        ReloadingMetadataSource served = open(file());
+
+        served.save(GOOD_YAML, served.current().orElseThrow().sourceVersion());
+
+        assertThat(historyTexts()).isEmpty();
+    }
+
+    @Test
+    void theFirstDocument_hasNothingToRecord() {
+        Path path = dir.resolve("permissions.yaml");
+        ReloadingMetadataSource served = open(path);
+
+        assertThat(served.save(GOOD_YAML, MetadataWriter.NO_DOCUMENT)).isInstanceOf(SaveOutcome.Saved.class);
+
+        assertThat(historyTexts()).isEmpty();
+    }
+
+    @Test
+    void ifTheHistoryCannotBeWritten_theSaveStillGoesAhead() throws IOException {
+        Path path = file();
+        Files.createDirectory(dir.resolve("permissions.history"));
+        ReloadingMetadataSource served = open(path);
+
+        SaveOutcome outcome = served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion());
+
+        assertThat(outcome).isInstanceOf(SaveOutcome.Saved.class);
+        assertThat(Files.readString(path)).isEqualTo(GOOD_YAML_TWO_RULES);
+    }
+
+    @Test
+    void aCorruptHistoryFile_doesNotBlockASave() throws IOException {
+        Path path = file();
+        Files.writeString(dir.resolve("permissions.history"), "garbage\n{{{");
+        ReloadingMetadataSource served = open(path);
+
+        assertThat(served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion()))
+                .isInstanceOf(SaveOutcome.Saved.class);
+
+        assertThat(historyTexts()).containsExactly(GOOD_YAML);
+    }
+
+    @Test
+    void aSaveThroughAWriterWhoseHistoryCrashes_stillWritesTheRules_andLeavesNoStrayFile() throws IOException {
+        Path path = file();
+        FileVersionHistory crashing = new FileVersionHistory(dir.resolve("permissions.history"), path, 20, 1 << 20,
+                _ -> { throw new IOException("simulated crash"); });
+        ReloadingMetadataSource served = open(path, new FileDocumentWriter(path, _ -> { }, crashing));
+
+        assertThat(served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion()))
+                .isInstanceOf(SaveOutcome.Saved.class);
+
+        assertThat(Files.readString(path)).isEqualTo(GOOD_YAML_TWO_RULES);
+        assertThat(strayFiles()).isEmpty();
+    }
+
+    @Test
+    void aReadOnlyFolder_hasNoHistoryToWrite_andASaveIsRefusedBeforeAnything() throws IOException {
+        Path path = file();
+        ReloadingMetadataSource served = open(path);
+        served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion());
+        byte[] before = Files.readAllBytes(dir.resolve("permissions.history"));
+        assertThat(dir.toFile().setWritable(false)).isTrue();
+
+        assertThat(served.save(GOOD_YAML, served.current().orElseThrow().sourceVersion()))
+                .isInstanceOf(SaveOutcome.ReadOnly.class);
+
+        assertThat(Files.readAllBytes(dir.resolve("permissions.history"))).isEqualTo(before);
+    }
+
+    @Test
+    void aSourceThatIsNotTheFileSource_keepsNoHistory() throws IOException {
+        Path path = file();
+        source = new ReloadingMetadataSource("url", () -> FileMetadataSource.read(path),
+                new MetadataDocumentParser(ReservedSchemas.fromConfig(""), PROJECT, false)::load, () -> false,
+                Duration.ofHours(1), new SimpleMeterRegistry());
+
+        assertThat(source.history()).isEmpty();
     }
 }
