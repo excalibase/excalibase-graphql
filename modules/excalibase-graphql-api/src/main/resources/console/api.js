@@ -101,3 +101,10 @@ export const getSchema = () => call("GET", "/schema");
 export const getReplicas = () => call("GET", "/replicas");
 export const validateText = (text) => call("POST", "/validate", text, "text/plain");
 export const parseText = (text) => call("POST", "/parse", text, "text/plain");
+
+export const getHistory = () => call("GET", "/history");
+export const getHistoryEntry = (id) => call("GET", "/history/" + encodeURIComponent(id));
+
+/** Puts an earlier version back: a save of its text, conditional on the version the page started from. */
+export const restoreHistory = (id, sourceVersion) =>
+  call("POST", "/history/" + encodeURIComponent(id) + "/restore", undefined, undefined, { "If-Match": '"' + sourceVersion + '"' });

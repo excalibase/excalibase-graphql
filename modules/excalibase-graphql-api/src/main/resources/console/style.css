@@ -35,3 +35,11 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 h2 { font-size: 16px; margin: 20px 0 8px; }
 dialog { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; max-width: 460px; }
 dialog::backdrop { background: rgba(0, 0, 0, .5); }
+.change { list-style: none; }
+.gain { color: var(--bad); font-weight: 600; }
+.diff { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 8px 0; overflow: auto; white-space: pre; }
+.line { padding: 0 12px; }
+.line.add { background: rgba(6, 118, 71, .16); }
+.line.del { background: rgba(180, 35, 24, .16); }
+.line.gap { opacity: .6; }
+tr.selected { background: rgba(36, 87, 214, .1); }

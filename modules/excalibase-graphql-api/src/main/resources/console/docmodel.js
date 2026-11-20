@@ -65,6 +65,35 @@ export function withJwt(tree, jwt) {
   return jwt ? { ...omit(tree, "jwt"), jwt } : omit(tree, "jwt");
 }
 
+const OPERATION_MARKS = [["gained", "+"], ["lost", "-"], ["changed", "~"]];
+
+function operationChanges(before, after, table, role) {
+  const gained = OPERATIONS.filter((operation) => !allows(before, table, role, operation) && allows(after, table, role, operation));
+  const lost = OPERATIONS.filter((operation) => allows(before, table, role, operation) && !allows(after, table, role, operation));
+  const changed = OPERATIONS.filter((operation) => allows(before, table, role, operation) && allows(after, table, role, operation)
+    && JSON.stringify(ruleOf(before, table, role)[operation]) !== JSON.stringify(ruleOf(after, table, role)[operation]));
+  return { gained, lost, changed };
+}
+
+/**
+ * What a save changes, as lines a person can read: per role and table, the operations gained (+), lost (-) and
+ * rewritten (~), and a line when the token settings differ. Only a line with a gain widens access.
+ */
+export function describeChanges(before, after) {
+  const pairs = new Map();
+  [...rulesOf(before), ...rulesOf(after)].forEach((rule) => pairs.set(rule.table + "\u0000" + rule.role, rule));
+  const lines = [...pairs.values()]
+    .sort((left, right) => left.table.localeCompare(right.table) || left.role.localeCompare(right.role))
+    .map((rule) => ({ role: rule.role, table: rule.table, ...operationChanges(before, after, rule.table, rule.role) }))
+    .filter((change) => change.gained.length + change.lost.length + change.changed.length > 0)
+    .map((change) => ({ ...change, text: change.role + " \u00b7 " + change.table + ": "
+      + OPERATION_MARKS.flatMap(([key, mark]) => change[key].map((operation) => mark + " " + operation)).join(", ") }));
+  if (JSON.stringify(before.jwt ?? null) !== JSON.stringify(after.jwt ?? null)) {
+    lines.push({ role: null, table: null, gained: [], lost: [], changed: [], text: "token settings change" });
+  }
+  return lines;
+}
+
 export function serialize(tree) {
   return JSON.stringify(tree, null, 2) + "\n";
 }

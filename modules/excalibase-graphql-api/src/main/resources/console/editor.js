@@ -97,12 +97,27 @@ export function documentView(state, onEdit) {
     input);
 }
 
-/** Asks before a save rewrites a file that has comments or hand-written layout. The caller closes it and writes. */
+function changeList(changes) {
+  if (changes === null) {
+    return h("p", { class: "hint", id: "rewrite-changes" }, "The list of changes could not be built.");
+  }
+  if (changes.length === 0) {
+    return h("p", { class: "hint", id: "rewrite-changes" }, "No role or table gets or loses an operation.");
+  }
+  return h("ul", { id: "rewrite-changes", "aria-label": "What this save changes" }, changes.map((change) =>
+    h("li", { class: change.gained.length > 0 ? "change gain" : "change" }, change.text)));
+}
+
+/**
+ * Asks before a save rewrites a file that has comments or hand-written layout, and lists what the save changes.
+ * A line that gives a role an operation is red. The caller closes it and writes.
+ */
 export function rewriteDialog(handlers) {
   const remember = h("input", { type: "checkbox", id: "rewrite-remember" });
   return h("dialog", { id: "rewrite-warning", "aria-describedby": "rewrite-text" },
     h("p", { id: "rewrite-text" },
       "This save rewrites permissions.yaml. Comments and your own layout will be lost."),
+    changeList(handlers.changes),
     h("label", { class: "op", for: "rewrite-remember" }, remember, "Don't ask again this session"),
     h("div", { class: "actions" },
       h("button", { type: "button", id: "rewrite-save", class: "danger",

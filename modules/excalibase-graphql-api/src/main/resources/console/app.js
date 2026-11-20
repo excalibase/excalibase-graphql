@@ -1,9 +1,10 @@
-import { ApiError, getMetadata, getReplicas, getSchema, parseText, putMetadata, signIn, signOut, signedIn,
-  validateText } from "/console/api.js";
-import { exportName, rewriteLosesText, serialize, setOperation, withJwt } from "/console/docmodel.js";
+import { ApiError, getHistory, getHistoryEntry, getMetadata, getReplicas, getSchema, parseText, putMetadata,
+  restoreHistory, signIn, signOut, signedIn, validateText } from "/console/api.js";
+import { describeChanges, exportName, rewriteLosesText, serialize, setOperation, withJwt } from "/console/docmodel.js";
 import { h, mount, rootElement, saveAs, showModal } from "/console/dom.js";
 import { classify, documentView, rewriteDialog, saveBar } from "/console/editor.js";
 import { gridView, roleProblem, columnRoles } from "/console/grid.js";
+import { historyView, restoreDialog, restoreFailure } from "/console/history.js";
 import { jwtView } from "/console/jwt.js";
 import { describe, loginView, metaFields, replicasView, tablesView, validateView } from "/console/views.js";
 
@@ -12,6 +13,7 @@ const TABS = [
   { id: "document", label: "Document", load: async () => documentView(state, edit) },
   { id: "grid", label: "Grid", load: gridTab },
   { id: "token", label: "Sample token", load: tokenTab },
+  { id: "history", label: "History", load: historyTab },
   { id: "tables", label: "Tables", load: async () => tablesView(await getSchema()) },
   { id: "replicas", label: "Replicas", load: async () => replicasView(await getReplicas()) },
   { id: "validate", label: "Validate", load: async () => validateView(runValidation, null) }
@@ -20,7 +22,7 @@ const TABS = [
 // What the person is working on: the document as served (meta), their edits (draft), the tree the grid edits, and
 // what the last save came to. A tree is read from the draft by the engine, so a YAML document is understood there.
 const state = { meta: null, draft: "", tree: null, roles: [], outcome: null, theirs: null, grid: null,
-  rewriteLoses: false, skipRewriteWarning: false, busy: false };
+  rewriteLoses: false, skipRewriteWarning: false, busy: false, historySelected: null, historyNote: null };
 let active = "document";
 
 function showLogin(error) {
@@ -58,6 +60,7 @@ async function loadMetadata() {
   state.draft = state.meta.text == null ? "" : state.meta.text;
   state.tree = null;
   state.rewriteLoses = false;
+  state.historySelected = null;
 }
 
 async function showTab(id) {
@@ -93,11 +96,16 @@ function refreshBar() {
   }
 }
 
+/** The tree of the draft. Text typed while the engine was reading is not overwritten by the older answer: read again. */
 async function readTree() {
   if (state.tree) {
     return state.tree;
   }
-  const answer = await parseText(state.draft);
+  const read = state.draft;
+  const answer = await parseText(read);
+  if (state.draft !== read) {
+    return readTree();
+  }
   state.tree = answer.valid ? answer.tree : null;
   state.treeErrors = answer.valid ? [] : answer.errors;
   return state.tree;
@@ -128,7 +136,19 @@ function rewriteFrom(tree) {
   state.outcome = null;
 }
 
+/** A grid or token form drawn before the tree was dropped (a save drops it) has nothing to edit: draw it afresh. */
+function treeLost() {
+  if (state.tree) {
+    return false;
+  }
+  showTab(active);
+  return true;
+}
+
 function toggle(table, role, operation, on) {
+  if (treeLost()) {
+    return;
+  }
   rewriteFrom(setOperation(state.tree, table, role, operation, on));
   refreshBar();
 }
@@ -147,6 +167,9 @@ async function tokenTab() {
     return invalidDraft();
   }
   return jwtView(tree.jwt, (section) => {
+    if (treeLost()) {
+      return;
+    }
     rewriteFrom(withJwt(state.tree, Object.keys(section).length > 0 ? section : null));
     showTab("document");
   });
@@ -159,7 +182,7 @@ async function save() {
   }
   state.busy = true;
   if (state.rewriteLoses && !state.skipRewriteWarning) {
-    askBeforeRewrite();
+    await askBeforeRewrite();
     return;
   }
   try {
@@ -169,9 +192,22 @@ async function save() {
   }
 }
 
-function askBeforeRewrite() {
+/** The saved text and the draft, read by the engine, as the list of what the save changes; null if either cannot be. */
+async function changesOfSave() {
+  try {
+    const [saved, drafted] = await Promise.all([
+      state.meta.text == null ? { valid: true, tree: { tables: [] } } : parseText(state.meta.text), parseText(state.draft)]);
+    return saved.valid && drafted.valid ? describeChanges(saved.tree, drafted.tree) : null;
+  } catch {
+    return null;
+  }
+}
+
+async function askBeforeRewrite() {
+  const changes = await changesOfSave();
   let confirmed = false;
   const close = showModal(root, rewriteDialog({
+    changes,
     onCancel: () => close(),
     onConfirm: (remember) => {
       confirmed = true;
@@ -180,6 +216,57 @@ function askBeforeRewrite() {
       commitSave().finally(() => { state.busy = false; });
     }
   }), () => { state.busy = confirmed; });
+}
+
+async function historyTab() {
+  const list = await getHistory();
+  const note = state.historyNote;
+  state.historyNote = null;
+  return historyView({ list, selected: state.historySelected, note }, { onSelect: selectVersion, onRestore: askRestore });
+}
+
+async function selectVersion(id) {
+  try {
+    const entry = await getHistoryEntry(id);
+    state.historySelected = { entry, current: state.meta.text == null ? "" : state.meta.text };
+    await showTab("history");
+  } catch (failure) {
+    handleFailure(failure);
+  }
+}
+
+function askRestore(entry) {
+  if (state.busy) {
+    return;
+  }
+  state.busy = true;
+  let confirmed = false;
+  const close = showModal(root, restoreDialog(entry, state.draft !== state.meta.text, {
+    onCancel: () => close(),
+    onConfirm: () => {
+      confirmed = true;
+      close();
+      restore(entry).finally(() => { state.busy = false; });
+    }
+  }), () => { state.busy = confirmed; });
+}
+
+async function restore(entry) {
+  try {
+    const restored = await restoreHistory(entry.id, state.meta.sourceVersion);
+    await loadMetadata();
+    state.historyNote = { kind: "ok", text: "Restored. The engine now serves version " + restored.version + "." };
+    state.historySelected = null;
+    state.outcome = null;
+  } catch (failure) {
+    if (failure instanceof ApiError && failure.status === 401) {
+      handleFailure(failure);
+      return;
+    }
+    state.historyNote = failure instanceof ApiError ? restoreFailure(failure)
+      : { kind: "error", text: "The engine could not be reached." };
+  }
+  await showTab("history");
 }
 
 async function commitSave() {
