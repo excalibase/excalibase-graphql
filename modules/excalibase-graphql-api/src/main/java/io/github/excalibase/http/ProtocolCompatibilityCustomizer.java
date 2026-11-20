@@ -22,6 +22,7 @@ public class ProtocolCompatibilityCustomizer implements BeanCreatedEventListener
     private static final String UNDECODABLE = "excalibase-undecodable-request";
     private static final String PIPELINED_UPGRADE = "excalibase-pipelined-upgrade";
     private static final String EMPTY_CLOSE = "excalibase-empty-close-frame";
+    private static final String CLOSING_HANDSHAKE = "excalibase-closing-handshake";
     private static final String CHUNKED_LIMIT = "excalibase-chunked-body-limit";
 
     private final BeanProvider<HttpServerConfiguration> server;
@@ -52,6 +53,8 @@ public class ProtocolCompatibilityCustomizer implements BeanCreatedEventListener
             channel.pipeline().addFirst(PIPELINED_UPGRADE, new PipelinedUpgradeHandler());
             channel.pipeline().addAfter(ChannelPipelineCustomizer.HANDLER_HTTP_SERVER_CODEC, EMPTY_CLOSE,
                     new EmptyCloseFrameHandler());
+            channel.pipeline().addAfter(ChannelPipelineCustomizer.HANDLER_HTTP_SERVER_CODEC, CLOSING_HANDSHAKE,
+                    new ClosingHandshakeHandler());
             channel.pipeline().addAfter(ChannelPipelineCustomizer.HANDLER_HTTP_SERVER_CODEC, CHUNKED_LIMIT,
                     new ChunkedBodyLimitHandler(maxRequestSize));
             channel.pipeline().addAfter(ChannelPipelineCustomizer.HANDLER_HTTP_SERVER_CODEC, UNDECODABLE,

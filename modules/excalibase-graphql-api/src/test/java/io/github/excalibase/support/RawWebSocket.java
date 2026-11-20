@@ -5,6 +5,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.Socket;
+import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -33,6 +35,7 @@ public final class RawWebSocket implements AutoCloseable {
         }
     }
 
+    private static final int READ_TIMEOUT_MILLIS = 8000;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final Socket socket;
@@ -48,7 +51,7 @@ public final class RawWebSocket implements AutoCloseable {
     /** Upgrades {@code path}; {@code firstText}, when not null, goes out in the same write as the upgrade request. */
     public static RawWebSocket connect(URI base, String path, String firstText) throws IOException {
         Socket socket = new Socket(base.getHost(), base.getPort());
-        socket.setSoTimeout(8000);
+        socket.setSoTimeout(READ_TIMEOUT_MILLIS);
         byte[] key = new byte[16];
         RANDOM.nextBytes(key);
         String request = "GET " + path + " HTTP/1.1\r\nHost: " + base.getHost() + ":" + base.getPort()
@@ -79,6 +82,26 @@ public final class RawWebSocket implements AutoCloseable {
     public void sendEmptyClose() throws IOException {
         socket.getOutputStream().write(maskedFrame(CLOSE, new byte[0]));
         socket.getOutputStream().flush();
+    }
+
+    /** A close frame with a status code, the client's answer to the server's close. */
+    public void sendClose(int code) throws IOException {
+        socket.getOutputStream().write(maskedFrame(CLOSE, new byte[] {(byte) (code >> 8), (byte) code}));
+        socket.getOutputStream().flush();
+    }
+
+    /** True when the server ended the TCP connection within {@code millis}; false when it is still open after. */
+    public boolean serverClosedWithin(int millis) throws IOException {
+        socket.setSoTimeout(millis);
+        try {
+            return in.read() < 0;
+        } catch (SocketTimeoutException stillOpen) {
+            return false;
+        } catch (SocketException reset) {
+            return true;
+        } finally {
+            socket.setSoTimeout(READ_TIMEOUT_MILLIS);
+        }
     }
 
     /** The next frame; fails with a read timeout when the server sends none. */
