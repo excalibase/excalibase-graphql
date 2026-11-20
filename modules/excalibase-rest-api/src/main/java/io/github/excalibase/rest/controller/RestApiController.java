@@ -214,9 +214,7 @@ public class RestApiController {
         var ctx = resolved.context();
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
         RestQueryCompiler.Conflict resolution = resolution(prefer);
-        // Ignoring may name no columns (any conflict is skipped); merging falls back to the primary key.
-        List<String> conflictColumns = resolution == RestQueryCompiler.Conflict.IGNORE
-                ? namedConflictColumns(ctx, onConflict) : conflictColumns(ctx, onConflict);
+        List<String> conflictColumns = conflictColumns(ctx, onConflict);
 
         RestQueryCompiler.CompiledResult compiled = switch (body) {
             case List<?> list -> resolution == null
@@ -237,13 +235,7 @@ public class RestApiController {
 
     /** The columns an upsert merges on: {@code on_conflict}'s, each a column of the table, else the primary key. */
     private static List<String> conflictColumns(RequestContext ctx, String onConflict) {
-        List<String> named = namedConflictColumns(ctx, onConflict);
-        return named.isEmpty() ? ctx.schemaInfo().getPrimaryKeys(ctx.tableKey()) : named;
-    }
-
-    /** {@code on_conflict}'s columns, each a column of the table; none when it is absent. */
-    private static List<String> namedConflictColumns(RequestContext ctx, String onConflict) {
-        if (onConflict == null || onConflict.isBlank()) return List.of();
+        if (onConflict == null || onConflict.isBlank()) return ctx.schemaInfo().getPrimaryKeys(ctx.tableKey());
         List<String> columns = Arrays.stream(onConflict.split(",")).map(String::trim).toList();
         Set<String> known = ctx.schemaInfo().getColumns(ctx.tableKey());
         columns.stream().filter(column -> !known.contains(column)).findFirst().ifPresent(column -> {
@@ -514,6 +506,10 @@ public class RestApiController {
                                                     String table, boolean rollback, List<String> keys) {
         List<String> applied = new ArrayList<>();
         if (rollback) applied.add(PREFER_TX_ROLLBACK);
+        if (successStatus == HttpStatus.CREATED) {
+            if (preferContains(prefer, PREFER_MERGE_DUPLICATES)) applied.add(PREFER_MERGE_DUPLICATES);
+            if (preferContains(prefer, PREFER_IGNORE_DUPLICATES)) applied.add(PREFER_IGNORE_DUPLICATES);
+        }
         boolean returnRepresentation = preferContains(prefer, PREFER_REPRESENTATION);
         HttpResponse<Object> resp;
         if (returnRepresentation) {

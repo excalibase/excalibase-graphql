@@ -385,6 +385,25 @@ class MysqlPermissionsIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    void restBulkMerge_neverOverwritesARowTheUpdateFilterHides_andRollsBackWhenACheckFails() throws Exception {
+        insertNote(95, BOB, "bobs", "open");
+        insertNote(96, ALICE, "alices", "open");
+
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes",
+                "[{\"id\":95,\"title\":\"hijacked\"},{\"id\":96,\"title\":\"renamed\"}]")
+                .expect(status().is2xxSuccessful())
+                .expect(jsonPath("$.data.length()").value(1));
+        assertThat(count("id = 95 AND title = 'bobs' AND owner_id = '" + BOB + "'")).isOne();
+        assertThat(count("id = 96 AND title = 'renamed'")).isOne();
+
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes",
+                "[{\"id\":96,\"title\":\"again\",\"status\":\"open\"},{\"id\":97,\"title\":\"locked\",\"status\":\"locked\"}]")
+                .expect(status().isForbidden());
+        assertThat(count("id = 96 AND title = 'renamed'")).isOne();
+        assertThat(count("id = 97")).isZero();
+    }
+
+    @Test
     void aFilterReadingTheTableItWrites_worksOnBothSurfaces() throws Exception {
         rest(ALICE, "PATCH", "/" + PROJECT + "/api/v1/boards?id=eq.1", "{\"name\":\"alice-was-here\"}")
                 .expect(status().isOk())

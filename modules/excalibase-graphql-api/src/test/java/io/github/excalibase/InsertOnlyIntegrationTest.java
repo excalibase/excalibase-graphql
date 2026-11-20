@@ -244,6 +244,14 @@ class InsertOnlyIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    void rest_post_bulkUpsert_isForbidden() throws Exception {
+        restPost("[{\"id\":1,\"email\":\"r@test.com\",\"body\":\"rest-bulk-upsert\"}]", "resolution=merge-duplicates")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_denied"));
+        assertThat(rowsWithBody("rest-bulk-upsert")).isZero();
+    }
+
+    @Test
     void rest_readsAndOtherWrites_areNotFound() throws Exception {
         rest("GET", "/" + PROJECT + "/api/v1/messages", null).expect(status().isNotFound());
         rest("PATCH", "/" + PROJECT + "/api/v1/messages?id=eq.1", "{\"body\":\"changed\"}",

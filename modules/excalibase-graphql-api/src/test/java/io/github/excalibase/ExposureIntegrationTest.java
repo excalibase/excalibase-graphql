@@ -331,6 +331,58 @@ class ExposureIntegrationTest extends EngineIntegrationTest {
                 .expect(jsonPath("$.data.publicOrders[1].customer").value("bob-renamed"));
     }
 
+    private HttpAnswer restPost(String body, String prefer) throws Exception {
+        return http.post("/" + PROJECT + "/api/v1/orders", body, "Authorization", "Bearer " + jwt(ROLE, "authenticated"),
+                "Content-Profile", "public", "Prefer", prefer, "Content-Type", "application/json");
+    }
+
+    private String customerOf(int id) throws Exception {
+        return rest("orders?select=customer&id=eq." + id).json().get("data").get(0).get("customer").asText();
+    }
+
+    @Test
+    void rest_bulkMerge_withoutTheUpdatePermission_isForbidden() throws Exception {
+        permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}")));
+
+        restPost("[{\"id\":1,\"customer\":\"mallory\",\"total\":1},{\"id\":320,\"customer\":\"x\",\"total\":1}]",
+                "return=representation, resolution=merge-duplicates")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_denied"));
+        restPost("[{\"id\":1,\"customer\":\"mallory\",\"total\":1}]", "resolution=ignore-duplicates")
+                .expect(status().isCreated());
+    }
+
+    @Test
+    void rest_bulkMerge_reachesOnlyRowsTheUpdateFilterPasses() throws Exception {
+        permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}"),
+                update("{\"customer\":{\"_eq\":\"bob\"}}", "{}", ALL, "{}")));
+        restPost("[{\"id\":310,\"customer\":\"bob\",\"total\":1},{\"id\":311,\"customer\":\"alice\",\"total\":1}]",
+                "return=representation").expect(status().isCreated());
+
+        restPost("[{\"id\":310,\"customer\":\"bob\",\"total\":2},{\"id\":311,\"customer\":\"hijacked\",\"total\":2}]",
+                "return=representation, resolution=merge-duplicates")
+                .expect(status().isCreated())
+                .expect(jsonPath("$.data.length()").value(1))
+                .expect(jsonPath("$.data[0].id").value(310));
+
+        org.assertj.core.api.Assertions.assertThat(customerOf(311)).isEqualTo("alice");
+    }
+
+    @Test
+    void rest_bulkMerge_whoseResultFailsTheUpdateCheck_isRefusedWhole() throws Exception {
+        permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}"),
+                update("{\"customer\":{\"_eq\":\"bob\"}}", "{\"customer\":{\"_eq\":\"bob\"}}", ALL, "{}")));
+        restPost("[{\"id\":330,\"customer\":\"bob\",\"total\":1}]", "return=representation").expect(status().isCreated());
+
+        restPost("[{\"id\":330,\"customer\":\"carol\",\"total\":2},{\"id\":331,\"customer\":\"bob\",\"total\":2}]",
+                "return=representation, resolution=merge-duplicates")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_check_failed"));
+
+        org.assertj.core.api.Assertions.assertThat(customerOf(330)).isEqualTo("bob");
+        rest("orders?id=eq.331").expect(jsonPath("$.data.length()").value(0));
+    }
+
     @Test
     void rest_aMethodTheRoleDoesNotHold_isForbidden() throws Exception {
         permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}")));

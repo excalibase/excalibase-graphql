@@ -335,7 +335,7 @@ class RestMysqlIntegrationTest {
         @Test
         void bulkInsertReadsEveryRowBack() throws Exception {
             String json = write(compiler.compileBulkInsert("test.customer",
-                    List.of(Map.of("first_name", "Erin"), Map.of("first_name", "Finn", "score", 5))), true);
+                    List.of(Map.of("first_name", "Erin", "score", 4), Map.of("first_name", "Finn", "score", 5))), true);
             List<Map<String, Object>> rows = MAPPER.readValue(json, new TypeReference<>() {});
             assertEquals(List.of(5, 6), column(rows, "customer_id"));
             assertEquals(List.of("Erin", "Finn"), column(rows, "first_name"));

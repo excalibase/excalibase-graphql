@@ -926,13 +926,67 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
     @DisplayName("a failing row rolls the whole merge back")
     void failingRowRollsBack() throws Exception {
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Changed\",\"email\":\"alice@test.com\"},"
-              + "{\"id\":60,\"email\":\"nameless@test.com\"}]", "Content-Type", "application/json", "Prefer", MERGE)
+              + "{\"id\":60,\"name\":null,\"email\":\"nameless@test.com\"}]", "Content-Type", "application/json", "Prefer", MERGE)
           .expect(status().is4xxClientError());
       assertUser(1, "Alicia");
       http.get(BASE + "/users?id=eq.60").expect(jsonPath("$.data", hasSize(0)));
     }
 
-    @Test @Order(11)
+    @Test @Order(12)
+    @DisplayName("an array whose objects have different keys is refused, and merges nothing (no NULL overwrite)")
+    void differingKeysAreRefused() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Changed\",\"email\":\"alice@test.com\"},{\"id\":2,\"name\":\"Bobby\"}]",
+              "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().isBadRequest())
+          .expect(content().string(containsString("All object keys must match")));
+      http.post(BASE + "/users", "[{\"name\":\"p\",\"email\":\"p@test.com\"},{\"name\":\"q\"}]",
+              "Content-Type", "application/json", "Prefer", "return=representation")
+          .expect(status().isBadRequest());
+      assertUser(1, "Alicia");
+    }
+
+    @Test @Order(13)
+    @DisplayName("ignore-duplicates targets the primary key: a clash on another unique key is still a 409")
+    void ignoreDuplicatesDoesNotSwallowOtherUniqueClashes() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":70,\"name\":\"Dupe\",\"email\":\"alice@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", IGNORE)
+          .expect(status().isConflict());
+      http.get(BASE + "/users?id=eq.70").expect(jsonPath("$.data", hasSize(0)));
+    }
+
+    @Test @Order(14)
+    @DisplayName("Preference-Applied lists the resolution that was honoured")
+    void preferenceAppliedNamesTheResolution() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Alicia\",\"email\":\"alice@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().isCreated())
+          .expect(header().string("Preference-Applied", allOf(containsString("return=representation"),
+              containsString("resolution=merge-duplicates"))));
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Alicia\",\"email\":\"alice@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", IGNORE)
+          .expect(header().string("Preference-Applied", containsString("resolution=ignore-duplicates")));
+    }
+
+    @Test @Order(15)
+    @DisplayName("on_conflict naming a column with no unique constraint is a 400, not a 500")
+    void onConflictWithoutUniqueConstraint() throws Exception {
+      http.post(BASE + "/users?on_conflict=name", "[{\"name\":\"Alicia\",\"email\":\"z@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().isBadRequest())
+          .expect(content().string(containsString("ON CONFLICT")));
+    }
+
+    @Test @Order(16)
+    @DisplayName("the same key twice in one merge is a 400, not a 500")
+    void sameKeyTwiceInOneMerge() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"a\",\"email\":\"alice@test.com\"},"
+              + "{\"id\":1,\"name\":\"b\",\"email\":\"alice@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().isBadRequest());
+      assertUser(1, "Alicia");
+    }
+
+    @Test @Order(20)
     @DisplayName("values are bound, never spliced into the statement")
     void valuesAreParameters() {
       String hostile = "x'); DROP TABLE users;--";

@@ -33,6 +33,8 @@ final class PostgresErrors {
             case "23P01" -> DataError.badRequest(DataError.EXCLUSION_VIOLATION, message, constraint, null);
             case "P0001" -> DataError.badRequest(DataError.RAISED_EXCEPTION, message);
             case "42501" -> DataError.forbidden(message, null);
+            // The request named a conflict target the table cannot satisfy, or the same key twice in one merge.
+            case "42P10", "21000" -> message.contains("ON CONFLICT") ? DataError.badRequest(DataError.INVALID_VALUE, message) : null;
             default -> byClass(state, message, constraint, server.getColumn());
         });
     }

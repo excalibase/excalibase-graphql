@@ -346,11 +346,14 @@ class RestQueryCompilerTest {
           () -> compiler.compileBulkUpsert("public.products", noRows, key, RestQueryCompiler.Conflict.MERGE));
     }
 
-    @Test @DisplayName("compileBulkUpsert unions the columns of every row; a column a row omits is NULL, as in a bulk insert")
-    void bulkUpsertUnionsColumns() {
-      var rows = List.of(Map.<String, Object>of("id", 1, "name", "A"), Map.<String, Object>of("id", 2, "price", 5.0));
-      String sql = compiler.compileBulkUpsert("public.products", rows, List.of("id"), RestQueryCompiler.Conflict.MERGE).sql();
-      assertTrue(sql.contains("\"name\" = EXCLUDED.\"name\"") && sql.contains("\"price\" = EXCLUDED.\"price\""), sql);
+    @Test @DisplayName("an array whose objects have different keys is refused, for inserts and upserts alike")
+    void bulkRowsMustShareKeys() {
+      List<Map<String, Object>> rows = List.of(Map.of("id", 1, "name", "A"), Map.of("id", 2, "price", 5.0));
+      List<String> key = List.of("id");
+      var upsert = assertThrows(IllegalArgumentException.class,
+          () -> compiler.compileBulkUpsert("public.products", rows, key, RestQueryCompiler.Conflict.MERGE));
+      assertEquals("All object keys must match", upsert.getMessage());
+      assertThrows(IllegalArgumentException.class, () -> compiler.compileBulkInsert("public.products", rows));
     }
 
     @Test @DisplayName("compileBulkUpsert gates DO UPDATE with the RLS UPDATE predicate, as the single-row upsert does")

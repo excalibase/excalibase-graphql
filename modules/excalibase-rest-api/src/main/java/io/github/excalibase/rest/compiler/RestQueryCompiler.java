@@ -288,6 +288,11 @@ public class RestQueryCompiler {
     private static void requireBulkSize(List<Map<String, Object>> rows) {
         if (rows == null || rows.isEmpty()) throw new IllegalArgumentException("Empty bulk insert");
         if (rows.size() > MAX_BULK_ROWS) throw new IllegalArgumentException("Bulk insert exceeds maximum of " + MAX_BULK_ROWS);
+        // As PostgREST: rows of differing keys would turn a row's missing column into NULL, overwriting a merged row.
+        Set<String> keys = rows.getFirst().keySet();
+        if (rows.stream().anyMatch(row -> !row.keySet().equals(keys))) {
+            throw new IllegalArgumentException("All object keys must match");
+        }
     }
 
     /** Every column any row names, in first-seen order. */
