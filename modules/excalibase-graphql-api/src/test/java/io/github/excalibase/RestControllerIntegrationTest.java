@@ -814,4 +814,132 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
           .expect(jsonPath("$.data[0].value").exists());
     }
   }
+  /** PostgREST semantics for a JSON-array POST with a resolution preference (EXC-738); runs last, it rewrites users. */
+  @Nested
+  @Order(40)
+  @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+  class BulkResolution {
+
+    private static final String MERGE = "return=representation, resolution=merge-duplicates";
+    private static final String IGNORE = "return=representation, resolution=ignore-duplicates";
+
+    private void assertUser(int id, String name) throws Exception {
+      http.get(BASE + "/users?id=eq." + id)
+          .expect(status().isOk())
+          .expect(jsonPath("$.data[0].name", is(name)));
+    }
+
+    @Test @Order(1)
+    @DisplayName("merge-duplicates on an array updates the rows that exist, inserts the rest, answers every row")
+    void bulkMergeDuplicates() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Alicia\",\"email\":\"alice@test.com\"},"
+              + "{\"id\":50,\"name\":\"Cara\",\"email\":\"cara@test.com\"}]", "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().isCreated())
+          .expect(header().string("Preference-Applied", containsString("return=representation")))
+          .expect(jsonPath("$.data", hasSize(2)))
+          .expect(jsonPath("$.data[0].id", is(1)))
+          .expect(jsonPath("$.data[0].name", is("Alicia")))
+          .expect(jsonPath("$.data[1].id", is(50)));
+      assertUser(1, "Alicia");
+      assertUser(50, "Cara");
+    }
+
+    @Test @Order(2)
+    @DisplayName("merge-duplicates without return=representation answers 201 and no body")
+    void bulkMergeWithoutRepresentation() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":50,\"name\":\"Clara\",\"email\":\"cara@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", "resolution=merge-duplicates")
+          .expect(status().isCreated())
+          .expect(content().string(""));
+      assertUser(50, "Clara");
+    }
+
+    @Test @Order(3)
+    @DisplayName("ignore-duplicates on an array inserts only the new rows and answers only those")
+    void bulkIgnoreDuplicates() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Ignored\",\"email\":\"alice@test.com\"},"
+              + "{\"id\":51,\"name\":\"Dan\",\"email\":\"dan@test.com\"}]", "Content-Type", "application/json", "Prefer", IGNORE)
+          .expect(status().isCreated())
+          .expect(jsonPath("$.data", hasSize(1)))
+          .expect(jsonPath("$.data[0].id", is(51)));
+      assertUser(1, "Alicia");
+    }
+
+    @Test @Order(4)
+    @DisplayName("on_conflict names the columns the rows merge on")
+    void bulkMergeOnConflictColumns() throws Exception {
+      http.post(BASE + "/users?on_conflict=email", "[{\"name\":\"Bobby\",\"email\":\"bob@test.com\"},"
+              + "{\"name\":\"Eve\",\"email\":\"eve@test.com\"}]", "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().isCreated())
+          .expect(jsonPath("$.data", hasSize(2)))
+          .expect(jsonPath("$.data[0].id", is(2)))
+          .expect(jsonPath("$.data[0].name", is("Bobby")))
+          .expect(jsonPath("$.data[1].name", is("Eve")));
+      assertUser(2, "Bobby");
+    }
+
+    @Test @Order(5)
+    @DisplayName("on_conflict with ignore-duplicates skips a row that matches on those columns")
+    void bulkIgnoreOnConflictColumns() throws Exception {
+      http.post(BASE + "/users?on_conflict=email", "[{\"name\":\"Nobody\",\"email\":\"bob@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", IGNORE)
+          .expect(status().isCreated())
+          .expect(jsonPath("$.data", hasSize(0)));
+      assertUser(2, "Bobby");
+    }
+
+    @Test @Order(6)
+    @DisplayName("ignore-duplicates on a single object is honoured too, not run as a plain insert")
+    void singleIgnoreDuplicates() throws Exception {
+      http.post(BASE + "/users", "{\"id\":1,\"name\":\"Ignored\",\"email\":\"alice@test.com\"}",
+              "Content-Type", "application/json", "Prefer", IGNORE)
+          .expect(status().isCreated());
+      assertUser(1, "Alicia");
+    }
+
+    @Test @Order(7)
+    @DisplayName("an unknown on_conflict column is a 400")
+    void unknownOnConflictColumn() throws Exception {
+      http.post(BASE + "/users?on_conflict=nope", "[{\"id\":1,\"name\":\"x\",\"email\":\"alice@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().isBadRequest())
+          .expect(content().string(containsString("nope")));
+    }
+
+    @Test @Order(8)
+    @DisplayName("merge-duplicates together with ignore-duplicates is refused, not guessed")
+    void conflictingResolutions() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"x\",\"email\":\"alice@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", "resolution=merge-duplicates, resolution=ignore-duplicates")
+          .expect(status().isBadRequest());
+    }
+
+    @Test @Order(9)
+    @DisplayName("a plain array with a duplicate key is still a 409")
+    void plainBulkInsertStillConflicts() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"x\",\"email\":\"other@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", "return=representation")
+          .expect(status().isConflict());
+    }
+
+    @Test @Order(10)
+    @DisplayName("a failing row rolls the whole merge back")
+    void failingRowRollsBack() throws Exception {
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Changed\",\"email\":\"alice@test.com\"},"
+              + "{\"id\":60,\"email\":\"nameless@test.com\"}]", "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().is4xxClientError());
+      assertUser(1, "Alicia");
+      http.get(BASE + "/users?id=eq.60").expect(jsonPath("$.data", hasSize(0)));
+    }
+
+    @Test @Order(11)
+    @DisplayName("values are bound, never spliced into the statement")
+    void valuesAreParameters() throws Exception {
+      String hostile = "x'); DROP TABLE users;--";
+      http.post(BASE + "/users", "[{\"id\":1,\"name\":\"" + hostile + "\",\"email\":\"alice@test.com\"}]",
+              "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().isCreated())
+          .expect(jsonPath("$.data[0].name", is(hostile)));
+    }
+  }
 }

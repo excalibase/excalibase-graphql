@@ -273,19 +273,33 @@ public class RestQueryCompiler {
     }
 
     public CompiledResult compileBulkInsert(String table, List<Map<String, Object>> rows) {
-        if (rows == null || rows.isEmpty()) throw new IllegalArgumentException("Empty bulk insert");
-        if (rows.size() > MAX_BULK_ROWS) throw new IllegalArgumentException("Bulk insert exceeds maximum of " + MAX_BULK_ROWS);
+        requireBulkSize(rows);
         String quotedTable = resolveTable(table);
-        Map<String, Object> params = new LinkedHashMap<>();
         List<Map<String, Object>> written = rows.stream().map(row -> writable(table, RlsOp.INSERT, row)).toList();
-
-        Set<String> allCols = new LinkedHashSet<>();
-        written.forEach(row -> allCols.addAll(row.keySet()));
-        List<String> colNames = allCols.stream().toList();
+        List<String> colNames = columnsOf(written);
         if (keyedWrites()) {
             return keyedBulkInsert(table, quotedTable, written, colNames);
         }
+        Map<String, Object> params = new LinkedHashMap<>();
+        String cte = WITH + CTE_INS + AS_OPEN + bulkInsertSql(table, quotedTable, written, colNames, params) + RETURNING_ALL;
+        return new CompiledResult(cte + SPACE + output(table, CTE_INS, true, List.of(RlsOp.INSERT), params), params);
+    }
 
+    private static void requireBulkSize(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) throw new IllegalArgumentException("Empty bulk insert");
+        if (rows.size() > MAX_BULK_ROWS) throw new IllegalArgumentException("Bulk insert exceeds maximum of " + MAX_BULK_ROWS);
+    }
+
+    /** Every column any row names, in first-seen order. */
+    private static List<String> columnsOf(List<Map<String, Object>> rows) {
+        Set<String> columns = new LinkedHashSet<>();
+        rows.forEach(row -> columns.addAll(row.keySet()));
+        return List.copyOf(columns);
+    }
+
+    /** One multi-row {@code INSERT … VALUES}, every value bound in {@code params}; a column a row omits is NULL. */
+    private String bulkInsertSql(String table, String quotedTable, List<Map<String, Object>> written,
+                                 List<String> colNames, Map<String, Object> params) {
         List<String> valueRows = new ArrayList<>();
         for (int rowIndex = 0; rowIndex < written.size(); rowIndex++) {
             List<String> vals = new ArrayList<>();
@@ -298,10 +312,8 @@ public class RestQueryCompiler {
             valueRows.add(parens(String.join(COMMA_SEP, vals)));
         }
         List<String> quotedCols = colNames.stream().map(dialect::quoteIdentifier).toList();
-        String cte = WITH + CTE_INS + AS_OPEN + INSERT_INTO + quotedTable
-                + parens(joinCols(new ArrayList<>(quotedCols))) + VALUES + String.join(COMMA_SEP, valueRows)
-                + RETURNING_ALL;
-        return new CompiledResult(cte + SPACE + output(table, CTE_INS, true, List.of(RlsOp.INSERT), params), params);
+        return INSERT_INTO + quotedTable + parens(joinCols(new ArrayList<>(quotedCols))) + VALUES
+                + String.join(COMMA_SEP, valueRows);
     }
 
     /** One statement per row, so each row's generated key is known; a column a row omits is NULL, as in one VALUES. */
@@ -321,24 +333,92 @@ public class RestQueryCompiler {
         return new CompiledResult(inserts.getFirst().sql(), allParams, keyed.insert(inserts, true));
     }
 
-    /**
-     * INSERT … ON CONFLICT DO UPDATE: the insert half obeys the insert permission, the update half the
-     * update permission's columns, presets and filter, and every written row must pass both checks.
-     */
+    /** What an insert does with a row whose key exists: update it ({@code merge-duplicates}) or leave it ({@code ignore-duplicates}). */
+    public enum Conflict { MERGE, IGNORE }
+
     public CompiledResult compileUpsert(String table, Map<String, Object> input, List<String> conflictCols) {
+        return compileUpsert(table, input, conflictCols, Conflict.MERGE);
+    }
+
+    /**
+     * INSERT … ON CONFLICT DO UPDATE (or DO NOTHING when ignoring): the insert half obeys the insert permission,
+     * the update half the update permission's columns, presets and filter, and every written row must pass both checks.
+     */
+    public CompiledResult compileUpsert(String table, Map<String, Object> input, List<String> conflictCols, Conflict mode) {
+        requireConflictTarget(table, conflictCols, mode);
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
         Map<String, Object> row = writable(table, RlsOp.INSERT, input);
         if (keyedWrites()) {
-            return keyedUpsert(table, quotedTable, input, row, conflictCols);
+            return keyedUpsert(table, quotedTable, input, row, conflictCols, mode);
         }
         String insert = insertSql(table, quotedTable, row, params, new LinkedHashMap<>());
-        String onConflict = ON_CONFLICT + parens(String.join(COMMA_SEP,
-                conflictCols.stream().map(dialect::quoteIdentifier).toList()))
-                + doUpdate(table, input, conflictCols, params);
-        String cte = WITH + CTE_INS + AS_OPEN + insert + onConflict + RETURNING_ALL;
-        return new CompiledResult(cte + SPACE
-                + output(table, CTE_INS, false, List.of(RlsOp.INSERT, RlsOp.UPDATE), params), params);
+        String cte = WITH + CTE_INS + AS_OPEN + insert + conflictClause(table, input, conflictCols, mode, params) + RETURNING_ALL;
+        return new CompiledResult(cte + SPACE + output(table, CTE_INS, false, checksOf(mode), params), params);
+    }
+
+    /**
+     * A JSON array of rows, each merged into (or, when ignoring, skipped over) the row holding its key, in one
+     * statement and one transaction: any row that fails rolls all back. The answer is the rows written, as for a
+     * bulk insert; an ignored duplicate is not among them.
+     */
+    public CompiledResult compileBulkUpsert(String table, List<Map<String, Object>> rows, List<String> conflictCols,
+                                            Conflict mode) {
+        requireBulkSize(rows);
+        requireConflictTarget(table, conflictCols, mode);
+        String quotedTable = resolveTable(table);
+        List<Map<String, Object>> written = rows.stream().map(row -> writable(table, RlsOp.INSERT, row)).toList();
+        if (keyedWrites()) {
+            return keyedBulkUpsert(table, quotedTable, rows, written, conflictCols, mode);
+        }
+        Map<String, Object> params = new LinkedHashMap<>();
+        String insert = bulkInsertSql(table, quotedTable, written, columnsOf(written), params);
+        Map<String, Object> merged = new LinkedHashMap<>();
+        columnsOf(rows).forEach(column -> merged.put(column, null));
+        String cte = WITH + CTE_INS + AS_OPEN + insert + conflictClause(table, merged, conflictCols, mode, params) + RETURNING_ALL;
+        return new CompiledResult(cte + SPACE + output(table, CTE_INS, true, checksOf(mode), params), params);
+    }
+
+    private static List<RlsOp> checksOf(Conflict mode) {
+        return mode == Conflict.MERGE ? List.of(RlsOp.INSERT, RlsOp.UPDATE) : List.of(RlsOp.INSERT);
+    }
+
+    /** Merging needs the columns that identify a row; ignoring may name none (any conflict is then skipped). */
+    private static void requireConflictTarget(String table, List<String> conflictCols, Conflict mode) {
+        if (mode == Conflict.MERGE && conflictCols.isEmpty()) {
+            throw new IllegalArgumentException("resolution=merge-duplicates needs a primary key on " + table
+                    + " or an on_conflict parameter naming the columns to merge on");
+        }
+    }
+
+    private String conflictClause(String table, Map<String, Object> input, List<String> conflictCols, Conflict mode,
+                                  Map<String, Object> params) {
+        String target = conflictCols.isEmpty() ? ""
+                : parens(String.join(COMMA_SEP, conflictCols.stream().map(dialect::quoteIdentifier).toList()));
+        String onConflict = ON_CONFLICT + target;
+        return mode == Conflict.IGNORE ? onConflict.stripTrailing() + DO_NOTHING
+                : onConflict + doUpdate(table, input, conflictCols, params);
+    }
+
+    /** Each row is its own keyed upsert, run in order inside the caller's transaction; the answer is every row written. */
+    private CompiledResult keyedBulkUpsert(String table, String quotedTable, List<Map<String, Object>> rows,
+                                           List<Map<String, Object>> written, List<String> conflictCols, Conflict mode) {
+        List<String> inputColumns = columnsOf(rows);
+        List<String> writtenColumns = columnsOf(written);
+        List<CompiledResult> upserts = new ArrayList<>();
+        for (int i = 0; i < rows.size(); i++) {
+            upserts.add(keyedUpsert(table, quotedTable, fill(rows.get(i), inputColumns),
+                    fill(written.get(i), writtenColumns), conflictCols, mode));
+        }
+        List<KeyedWrite> writes = upserts.stream().map(CompiledResult::write).toList();
+        return new CompiledResult(upserts.getFirst().sql(), upserts.getFirst().params(), KeyedWrites.all(writes));
+    }
+
+    /** {@code row} with every column of {@code columns}, NULL where it names none. */
+    private static Map<String, Object> fill(Map<String, Object> row, List<String> columns) {
+        Map<String, Object> full = new LinkedHashMap<>();
+        columns.forEach(column -> full.put(column, row.get(column)));
+        return full;
     }
 
     /**
@@ -348,12 +428,13 @@ public class RestQueryCompiler {
      * as it is, as Postgres's {@code DO UPDATE … WHERE} does.
      */
     private CompiledResult keyedUpsert(String table, String quotedTable, Map<String, Object> input,
-                                       Map<String, Object> row, List<String> conflictCols) {
+                                       Map<String, Object> row, List<String> requestedCols, Conflict mode) {
         Map<String, Object> params = new LinkedHashMap<>();
         Map<String, Object> bound = new LinkedHashMap<>();
         String insert = insertSql(table, quotedTable, row, params, bound);
-        var keyed = keyed(table, quotedTable, List.of(RlsOp.INSERT, RlsOp.UPDATE));
+        var keyed = keyed(table, quotedTable, checksOf(mode));
         List<String> keys = rowKey(table);
+        List<String> conflictCols = requestedCols.isEmpty() ? keys : requestedCols;
         boolean onPrimaryKey = new HashSet<>(conflictCols).equals(new HashSet<>(keys));
         List<String> conflict = onPrimaryKey ? keys : conflictCols;
         if (conflict.isEmpty() || !conflict.stream().allMatch(key -> bound.get(key) != null)) {
@@ -361,11 +442,12 @@ public class RestQueryCompiler {
         }
         Map<String, Object> updateParams = new LinkedHashMap<>();
         AtomicInteger sent = new AtomicInteger();
-        List<String> sets = upsertSets(table, input, conflictCols, updateParams, column -> {
-            String name = P_UPDATE + "s" + sent.getAndIncrement();
-            updateParams.put(name, bound.get(column));
-            return PARAM_PREFIX + name;
-        });
+        List<String> sets = mode == Conflict.IGNORE ? List.of()
+                : upsertSets(table, input, conflictCols, updateParams, column -> {
+                    String name = P_UPDATE + "s" + sent.getAndIncrement();
+                    updateParams.put(name, bound.get(column));
+                    return PARAM_PREFIX + name;
+                });
         KeyedWrites.Insert written = new KeyedWrites.Insert(insert, params, bound);
         KeyedWrites.Condition set = null;
         KeyedWrites.Condition updatable = null;

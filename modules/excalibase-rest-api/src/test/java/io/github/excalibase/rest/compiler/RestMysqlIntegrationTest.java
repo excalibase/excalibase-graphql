@@ -401,6 +401,29 @@ class RestMysqlIntegrationTest {
         }
 
         @Test
+        @SuppressWarnings("unchecked")
+        void bulkUpsertMergesExistingRowsAndInsertsTheRest() throws Exception {
+            var upsert = compiler.compileBulkUpsert("test.country", List.of(
+                    Map.of("code", "VN", "name", "Viet Nam"), Map.of("code", "KR", "name", "Korea")),
+                    List.of("code"), RestQueryCompiler.Conflict.MERGE);
+            List<Map<String, Object>> rows = MAPPER.readValue(write(upsert, true), List.class);
+            assertEquals(List.of("VN", "KR"), column(rows, "code"));
+            assertEquals("Viet Nam", jdbc.queryForObject("SELECT name FROM country WHERE code = 'VN'", String.class));
+            assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM country", Integer.class));
+        }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void bulkIgnoreDuplicatesKeepsTheExistingRowAndAnswersOnlyTheNewOnes() throws Exception {
+            var ignore = compiler.compileBulkUpsert("test.country", List.of(
+                    Map.of("code", "VN", "name", "Ignored"), Map.of("code", "DE", "name", "Germany")),
+                    List.of(), RestQueryCompiler.Conflict.IGNORE);
+            List<Map<String, Object>> rows = MAPPER.readValue(write(ignore, true), List.class);
+            assertEquals(List.of("DE"), column(rows, "code"));
+            assertEquals("Vietnam", jdbc.queryForObject("SELECT name FROM country WHERE code = 'VN'", String.class));
+        }
+
+        @Test
         void upsertOfOnlyTheKeyDoesNothingOnConflict() {
             assertNull(write(compiler.compileUpsert("test.country", Map.of("code", "VN"), List.of("code")), true));
         }

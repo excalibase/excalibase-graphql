@@ -244,4 +244,82 @@ class MysqlRestParityTest extends EngineIntegrationTest {
             assertTrue(result.body().contains("MySQL"), result.body());
         }
     }
+
+    private HttpAnswer postRows(String path, Object rows, String prefer) throws Exception {
+        return http.post(REST + path, MAPPER.writeValueAsString(rows), "Content-Type", "application/json", "Prefer", prefer);
+    }
+
+    private String memberName(int id) throws Exception {
+        return rest("member?select=name&id=eq." + id).get(0).get("name").asText();
+    }
+
+    @Test
+    @Order(30)
+    void bulkMergeDuplicatesUpdatesExistingRowsAndInsertsTheRest() throws Exception {
+        HttpAnswer result = postRows("member", List.of(
+                Map.of("id", 1, "email", "a@example.com", "name", "Anna"),
+                Map.of("id", 3, "email", "c@example.com", "name", "Cy")), "return=representation, resolution=merge-duplicates");
+        assertEquals(201, result.status(), result.body());
+        JsonNode rows = MAPPER.readTree(result.body()).get("data");
+        assertEquals(List.of(1, 3), List.of(rows.get(0).get("id").asInt(), rows.get(1).get("id").asInt()));
+        assertEquals("Anna", rows.get(0).get("name").asText());
+        assertParity("member?select=id,email,name&order=id.asc",
+                "{ testMember(orderBy: { id: ASC }) { id email name } }", "testMember");
+        assertEquals("Anna", memberName(1));
+    }
+
+    @Test
+    @Order(31)
+    void bulkIgnoreDuplicatesWritesAndAnswersOnlyTheNewRows() throws Exception {
+        HttpAnswer result = postRows("member", List.of(
+                Map.of("id", 1, "email", "a@example.com", "name", "Ignored"),
+                Map.of("id", 4, "email", "d@example.com", "name", "Dee")), "return=representation, resolution=ignore-duplicates");
+        assertEquals(201, result.status(), result.body());
+        JsonNode rows = MAPPER.readTree(result.body()).get("data");
+        assertEquals(1, rows.size());
+        assertEquals(4, rows.get(0).get("id").asInt());
+        assertEquals("Anna", memberName(1));
+    }
+
+    @Test
+    @Order(32)
+    void bulkMergeOnConflictColumnsFindsTheRowByThem() throws Exception {
+        HttpAnswer result = postRows("member?on_conflict=email", List.of(
+                Map.of("email", "b@example.com", "name", "Bea")), "return=representation, resolution=merge-duplicates");
+        assertEquals(201, result.status(), result.body());
+        assertEquals(2, MAPPER.readTree(result.body()).get("data").get(0).get("id").asInt());
+        assertEquals("Bea", memberName(2));
+    }
+
+    @Test
+    @Order(33)
+    void bulkMergeWithoutRepresentationAnswers201AndNoBody() throws Exception {
+        HttpAnswer result = postRows("member", List.of(Map.of("id", 4, "email", "d@example.com", "name", "Dede")),
+                "resolution=merge-duplicates");
+        assertEquals(201, result.status(), result.body());
+        assertTrue(result.body() == null || result.body().isEmpty(), result.body());
+        assertEquals("Dede", memberName(4));
+    }
+
+    @Test
+    @Order(34)
+    void bulkMergeBindsValuesAndRollsBackWhenARowFails() throws Exception {
+        String hostile = "x'); DROP TABLE member;--";
+        assertEquals(201, postRows("member", List.of(Map.of("id", 1, "email", "a@example.com", "name", hostile)),
+                "return=representation, resolution=merge-duplicates").status());
+        assertEquals(hostile, memberName(1));
+        HttpAnswer failed = postRows("member", List.of(
+                Map.of("id", 1, "email", "a@example.com", "name", "Changed"),
+                Map.of("id", 3, "email", "a@example.com", "name", "Collides")), "return=representation, resolution=merge-duplicates");
+        assertEquals(409, failed.status(), failed.body());
+        assertEquals(hostile, memberName(1));
+    }
+
+    @Test
+    @Order(35)
+    void aPlainArrayWithADuplicateKeyIsStillAConflict() throws Exception {
+        HttpAnswer result = postRows("member", List.of(Map.of("id", 1, "email", "z@example.com", "name", "Z")),
+                "return=representation");
+        assertEquals(409, result.status(), result.body());
+    }
 }

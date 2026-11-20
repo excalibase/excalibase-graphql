@@ -310,6 +310,72 @@ class RestQueryCompilerTest {
       assertTrue(result.sql().contains("DO NOTHING") || result.sql().contains("DO UPDATE"));
     }
 
+    @Test @DisplayName("compileBulkUpsert merges every row in one multi-row INSERT … ON CONFLICT DO UPDATE, values bound")
+    void bulkUpsertMerge() {
+      var rows = List.of(
+          Map.<String, Object>of("id", 1, "name", "Hostile'); DROP TABLE products;--"),
+          Map.<String, Object>of("id", 2, "name", "B"));
+      var result = compiler.compileBulkUpsert("public.products", rows, List.of("id"), RestQueryCompiler.Conflict.MERGE);
+      String sql = result.sql();
+      assertTrue(sql.contains("ON CONFLICT (\"id\") DO UPDATE SET \"name\" = EXCLUDED.\"name\""), sql);
+      assertEquals(2, sql.split("\\), \\(", -1).length, "two value tuples: " + sql);
+      assertFalse(sql.contains("Hostile"), "values are parameters: " + sql);
+      assertTrue(result.params().containsValue("Hostile'); DROP TABLE products;--"));
+    }
+
+    @Test @DisplayName("compileBulkUpsert with ignore-duplicates is ON CONFLICT DO NOTHING, targeted only when columns are named")
+    void bulkUpsertIgnore() {
+      var rows = List.of(Map.<String, Object>of("id", 1, "name", "A"), Map.<String, Object>of("id", 2, "name", "B"));
+      String named = compiler.compileBulkUpsert("public.products", rows, List.of("id"), RestQueryCompiler.Conflict.IGNORE).sql();
+      assertTrue(named.contains("ON CONFLICT (\"id\") DO NOTHING"), named);
+      String any = compiler.compileBulkUpsert("public.products", rows, List.of(), RestQueryCompiler.Conflict.IGNORE).sql();
+      assertTrue(any.contains("ON CONFLICT DO NOTHING"), any);
+      assertFalse(any.contains("DO UPDATE"), any);
+    }
+
+    @Test @DisplayName("compileBulkUpsert refuses to merge on no columns, and an empty or oversized array")
+    void bulkUpsertRefusals() {
+      var rows = List.of(Map.<String, Object>of("id", 1, "name", "A"));
+      var noKey = assertThrows(IllegalArgumentException.class,
+          () -> compiler.compileBulkUpsert("public.products", rows, List.of(), RestQueryCompiler.Conflict.MERGE));
+      assertTrue(noKey.getMessage().contains("on_conflict"), noKey.getMessage());
+      assertThrows(IllegalArgumentException.class,
+          () -> compiler.compileBulkUpsert("public.products", List.of(), List.of("id"), RestQueryCompiler.Conflict.MERGE));
+    }
+
+    @Test @DisplayName("compileBulkUpsert unions the columns of every row; a column a row omits is NULL, as in a bulk insert")
+    void bulkUpsertUnionsColumns() {
+      var rows = List.of(Map.<String, Object>of("id", 1, "name", "A"), Map.<String, Object>of("id", 2, "price", 5.0));
+      String sql = compiler.compileBulkUpsert("public.products", rows, List.of("id"), RestQueryCompiler.Conflict.MERGE).sql();
+      assertTrue(sql.contains("\"name\" = EXCLUDED.\"name\"") && sql.contains("\"price\" = EXCLUDED.\"price\""), sql);
+    }
+
+    @Test @DisplayName("compileBulkUpsert gates DO UPDATE with the RLS UPDATE predicate, as the single-row upsert does")
+    void bulkUpsertHasRlsUsing() {
+      RlsContext.set(new RlsWhereContributor() {
+        @Override public RlsWhereContributor.Contribution contribute(String table, RlsOp op) {
+          return new RlsWhereContributor.Contribution("owner_id = 'me'", Map.of());
+        }
+        @Override public RlsWhereContributor.Contribution contribute(String table, String alias, RlsOp op) {
+          return op == RlsOp.UPDATE ? new RlsWhereContributor.Contribution("owner_id = 'me'", Map.of()) : null;
+        }
+      });
+      try {
+        var rows = List.of(Map.<String, Object>of("id", 1, "name", "A"), Map.<String, Object>of("id", 2, "name", "B"));
+        String sql = compiler.compileBulkUpsert("public.products", rows, List.of("id"), RestQueryCompiler.Conflict.MERGE).sql();
+        assertTrue(sql.contains("DO UPDATE") && sql.contains("owner_id = 'me'"), sql);
+      } finally {
+        RlsContext.clear();
+      }
+    }
+
+    @Test @DisplayName("compileUpsert with ignore-duplicates on a single row is DO NOTHING, not a plain insert")
+    void singleIgnore() {
+      var result = compiler.compileUpsert("public.products", Map.of("id", 1, "name", "A"), List.of("id"),
+          RestQueryCompiler.Conflict.IGNORE);
+      assertTrue(result.sql().contains("ON CONFLICT (\"id\") DO NOTHING"), result.sql());
+    }
+
     @Test @DisplayName("compileUpsert gates DO UPDATE with the RLS UPDATE predicate (audit H6)")
     void upsertDoUpdate_hasRlsUsing() {
       // Without the USING, an upsert on a known PK overwrites another owner's row.
