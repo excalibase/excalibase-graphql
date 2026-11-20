@@ -3,6 +3,7 @@ package io.github.excalibase.http;
 import io.github.excalibase.overload.ConnectionPressure;
 import io.micronaut.context.BeanProvider;
 import io.micronaut.context.annotation.Value;
+import io.micronaut.core.annotation.Nullable;
 import io.micronaut.context.event.BeanCreatedEvent;
 import io.micronaut.context.event.BeanCreatedEventListener;
 import io.micronaut.http.netty.channel.ChannelPipelineCustomizer;
@@ -35,7 +36,7 @@ public class ProtocolCompatibilityCustomizer implements BeanCreatedEventListener
 
     public ProtocolCompatibilityCustomizer(BeanProvider<HttpServerConfiguration> server,
                                            @Value("${app.websocket.close-grace-ms:1000}") long closeGraceMillis,
-                                           ConnectionPressure connections) {
+                                           @Nullable ConnectionPressure connections) {
         this.server = server;
         this.closeGrace = Duration.ofMillis(closeGraceMillis);
         this.connections = connections;
@@ -44,7 +45,7 @@ public class ProtocolCompatibilityCustomizer implements BeanCreatedEventListener
     @Override
     public NettyServerCustomizer.Registry onCreated(BeanCreatedEvent<NettyServerCustomizer.Registry> event) {
         NettyServerCustomizer.Registry registry = event.getBean();
-        registry.register(new Customizer(null, () -> server.get().getMaxRequestSize(), closeGrace, connections::isFull));
+        registry.register(new Customizer(null, () -> server.get().getMaxRequestSize(), closeGrace, () -> connections != null && connections.isFull()));
         return registry;
     }
 
