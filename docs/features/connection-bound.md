@@ -14,6 +14,6 @@ The effective values and the CPU count are logged once at startup. `server.tomca
 
 ## Health and metrics port
 
-Actuator (`/actuator/health`, `/actuator/metrics`) is served on its own port, `management.server.port` (`MANAGEMENT_SERVER_PORT`, default `8081`), which the bound does not apply to. Probes therefore keep answering when the main port is full. This port has no authentication: publish it to the kubelet or loopback only, never through an ingress or a public port mapping.
+Actuator (`/actuator/health`, `/actuator/metrics`) is served on its own port, `management.server.port` (`MANAGEMENT_SERVER_PORT`, default `8081`), which the bound does not apply to. Probes therefore keep answering when the main port is full. This port has no authentication: publish it to the kubelet or loopback only, never through an ingress or a public port mapping. The engine refuses to start when `MANAGEMENT_SERVER_PORT` equals `SERVER_PORT`, since the actuator would then answer on the public listener.
 
 The bound is visible as `tomcat.connections.config.max` and `tomcat.connections.current` on that port.
