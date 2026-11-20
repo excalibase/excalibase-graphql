@@ -1,25 +1,74 @@
 name: Shared Maven cache
 description: >
-  Restores the one ~/.m2/repository cache every Maven job shares. On a miss it
-  warms the cache (dependencies, plugins, annotation processors, surefire
-  provider, native plugins, Sonar plugin), drops partial downloads and saves
-  it, so a normal run never goes back to Maven Central.
-  Bump v1 in the two keys below to throw the cache away.
+  The one ~/.m2/repository cache every Maven job of a workflow run shares.
+  With warm=true (the single maven-warm job of a workflow) it restores, warms on
+  a miss (dependencies, plugins, annotation processors, surefire provider, native
+  plugins, the Sonar plugin and the files `make build` adds), drops partial
+  downloads and saves. Without it (every other Maven job) it only restores, so
+  a run asks Maven Central once instead of once per job (EXC-786).
+  Bump v2 in CACHE_VERSION below to throw the cache away.
+
+inputs:
+  warm:
+    description: "true in the maven-warm job: warm and save on a miss. Anything else only restores."
+    default: 'false'
 
 runs:
   using: composite
   steps:
+    - name: Compute Maven cache key
+      id: key
+      shell: bash
+      env:
+        CACHE_VERSION: v2
+        SOURCES_HASH: ${{ hashFiles('**/pom.xml', '.mvn/maven.config', '.github/actions/maven-cache/action.yml', '.github/workflows/sonar.yml', 'scripts/ci/mvn-retry.sh', 'scripts/ci/central-fallback-settings.xml') }}
+      # computed once: the key must not be re-hashed after the warm step has built into the workspace
+      run: |
+        echo "prefix=maven-$CACHE_VERSION-$RUNNER_OS-" >>"$GITHUB_OUTPUT"
+        echo "key=maven-$CACHE_VERSION-$RUNNER_OS-$SOURCES_HASH" >>"$GITHUB_OUTPUT"
+
     - name: Restore Maven cache
       id: restore
       uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.m2/repository
-        key: maven-v1-${{ runner.os }}-${{ hashFiles('**/pom.xml', '.mvn/maven.config', '.github/actions/maven-cache/action.yml', '.github/workflows/sonar.yml') }}
+        key: ${{ steps.key.outputs.key }}
         restore-keys: |
-          maven-v1-${{ runner.os }}-
+          ${{ steps.key.outputs.prefix }}
+
+    - name: Report Maven cache restore
+      shell: bash
+      env:
+        HIT: ${{ steps.restore.outputs.cache-hit }}
+        MATCHED: ${{ steps.restore.outputs.cache-matched-key }}
+        WARM: ${{ inputs.warm }}
+      run: |
+        case $HIT in
+          true) state="exact hit" ;;
+          false) state="restored from an older key ($MATCHED)" ;;
+          *) state="miss, nothing restored" ;;
+        esac
+        echo "Maven cache: $state (warm job: $WARM)"
+        echo "Maven cache: $state (warm job: $WARM)" >>"$GITHUB_STEP_SUMMARY"
+
+    # the job's own Maven run is compared against this by scripts/ci/m2-files.sh report
+    - name: Record Maven cache contents
+      shell: bash
+      run: scripts/ci/m2-files.sh snapshot
+
+    # A miss here is not repaired by warming again: ten jobs doing that is the burst this
+    # split exists to avoid. Maven fetches what this job needs, with the resolver retries
+    # from .mvn/maven.config, and the report step below shows how much that was.
+    - name: Warn about a cache miss
+      if: inputs.warm != 'true' && steps.restore.outputs.cache-hit != 'true'
+      shell: bash
+      run: echo "::warning title=Maven cache miss::No exact Maven cache for this run (maven-warm failed or its save failed), this job downloads what it needs itself"
 
     - name: Warm Maven cache
-      if: steps.restore.outputs.cache-hit != 'true'
+      id: warm
+      if: inputs.warm == 'true' && steps.restore.outputs.cache-hit != 'true'
+      # A failed warm must not stop the jobs behind it: they restore what there is and download the rest.
+      continue-on-error: true
       shell: bash
       run: |
         source scripts/ci/mvn-retry.sh
@@ -30,6 +79,9 @@ runs:
         [[ -n $graalvm_buildtools ]] || { echo "native-maven-plugin.version not found in pom.xml"; exit 1; }
         mvn_retry -Pnative dependency:go-offline
         mvn_retry verify -DskipTests
+        # what `make build` runs: the clean plugin, and the .meta/prefixes-*.txt files Maven 3.10 fetches
+        # for the apache.snapshots and ow2 repositories the first time a build gets that far
+        mvn_retry clean package -DskipTests
         # the surefire provider is only resolved when a test actually runs
         mvn_retry verify -pl modules/excalibase-rls-core
         # native: the micronaut-graal annotation processor and the reachability metadata
@@ -39,15 +91,15 @@ runs:
         # a half-downloaded file must never be cached
         find ~/.m2/repository \( -name '*.lastUpdated' -o -name '*.part' -o -name '*.part.lock' \) -delete
 
-    # the job's own Maven run is compared against this by scripts/ci/m2-files.sh report
-    - name: Record Maven cache contents
+    - name: Report a failed warm
+      if: steps.warm.outcome == 'failure'
       shell: bash
-      run: scripts/ci/m2-files.sh snapshot
+      run: echo "::warning title=Maven warm failed::Nothing was saved, the other jobs will download what they need themselves"
 
     - name: Save Maven cache
-      if: steps.restore.outputs.cache-hit != 'true'
+      if: inputs.warm == 'true' && steps.restore.outputs.cache-hit != 'true' && steps.warm.outcome == 'success'
       continue-on-error: true
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.m2/repository
-        key: maven-v1-${{ runner.os }}-${{ hashFiles('**/pom.xml', '.mvn/maven.config', '.github/actions/maven-cache/action.yml', '.github/workflows/sonar.yml') }}
+        key: ${{ steps.key.outputs.key }}
