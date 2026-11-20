@@ -95,9 +95,9 @@ public final class RawWebSocket implements AutoCloseable {
         socket.setSoTimeout(millis);
         try {
             return in.read() < 0;
-        } catch (SocketTimeoutException stillOpen) {
+        } catch (SocketTimeoutException _) {
             return false;
-        } catch (SocketException reset) {
+        } catch (SocketException _) {
             return true;
         } finally {
             socket.setSoTimeout(READ_TIMEOUT_MILLIS);

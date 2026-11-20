@@ -56,7 +56,7 @@ class ClosingHandshakeHandlerTest {
     @DisplayName("a client that never answers is cut off after the grace period")
     void silentClientIsCutOff() throws Exception {
         EventLoopGroup group = new DefaultEventLoopGroup(1);
-        try {
+        try (AutoCloseable stop = () -> group.shutdownGracefully(0, 1, TimeUnit.SECONDS).sync()) {
             CompletableFuture<Channel> accepted = new CompletableFuture<>();
             LocalAddress address = new LocalAddress("closing-handshake-" + System.nanoTime());
             new ServerBootstrap().group(group).channel(LocalServerChannel.class)
@@ -77,8 +77,6 @@ class ClosingHandshakeHandlerTest {
             assertThat(server.isOpen()).isTrue();
             server.closeFuture().await(5, TimeUnit.SECONDS);
             assertThat(server.isOpen()).isFalse();
-        } finally {
-            group.shutdownGracefully(0, 1, TimeUnit.SECONDS).sync();
         }
     }
 

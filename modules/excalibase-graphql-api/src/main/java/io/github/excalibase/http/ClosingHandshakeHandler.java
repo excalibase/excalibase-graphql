@@ -18,7 +18,7 @@ import java.util.concurrent.TimeUnit;
  */
 final class ClosingHandshakeHandler extends ChannelDuplexHandler {
 
-    static final Duration GRACE = Duration.ofSeconds(2);
+    static final Duration DEFAULT_GRACE = Duration.ofSeconds(2);
 
     private final Duration grace;
     private boolean closeFrameSent;
@@ -27,7 +27,7 @@ final class ClosingHandshakeHandler extends ChannelDuplexHandler {
     private ScheduledFuture<?> cutOff;
 
     ClosingHandshakeHandler() {
-        this(GRACE);
+        this(DEFAULT_GRACE);
     }
 
     ClosingHandshakeHandler(Duration grace) {
