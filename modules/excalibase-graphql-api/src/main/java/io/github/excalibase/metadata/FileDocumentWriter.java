@@ -45,6 +45,7 @@ final class FileDocumentWriter implements MetadataWriter {
     private final Path path;
     private final BeforeRename beforeRename;
     private final FileVersionHistory history;
+    private final FilePermissions.Copier permissions;
 
     FileDocumentWriter(Path path) {
         this(path, _ -> { });
@@ -55,9 +56,15 @@ final class FileDocumentWriter implements MetadataWriter {
     }
 
     FileDocumentWriter(Path path, BeforeRename beforeRename, FileVersionHistory history) {
+        this(path, beforeRename, history, FilePermissions::copy);
+    }
+
+    FileDocumentWriter(Path path, BeforeRename beforeRename, FileVersionHistory history,
+                       FilePermissions.Copier permissions) {
         this.path = path;
         this.beforeRename = beforeRename;
         this.history = history;
+        this.permissions = permissions;
     }
 
     @Override
@@ -72,7 +79,12 @@ final class FileDocumentWriter implements MetadataWriter {
     }
 
     @Override
-    public synchronized String write(String text, String expectedVersion) throws IOException, WriteConflictException {
+    public String write(String text, String expectedVersion) throws IOException, WriteConflictException {
+        return store(text, expectedVersion).version();
+    }
+
+    @Override
+    public synchronized Written store(String text, String expectedVersion) throws IOException, WriteConflictException {
         ReloadingMetadataSource.Raw current = readCurrent();
         String currentVersion = current == null ? NO_DOCUMENT : current.version();
         if (!currentVersion.equals(expectedVersion)) {
@@ -82,6 +94,7 @@ final class FileDocumentWriter implements MetadataWriter {
         byte[] content = text.getBytes(StandardCharsets.UTF_8);
         Path temporary = target.resolveSibling(target.getFileName() + ".tmp-" + HexFormat.of().formatHex(randomBytes()));
         OptionalLong remembered = OptionalLong.empty();
+        boolean worthRecording = current != null && !current.text().equals(text);
         try {
             flushed(temporary, content, target);
             remembered = remember(current, text);
@@ -92,7 +105,7 @@ final class FileDocumentWriter implements MetadataWriter {
             forget(remembered);
             throw e;
         }
-        return FileMetadataSource.sha256(content);
+        return new Written(FileMetadataSource.sha256(content), !worthRecording || remembered.isPresent());
     }
 
     private ReloadingMetadataSource.Raw readCurrent() throws IOException {
@@ -135,10 +148,10 @@ final class FileDocumentWriter implements MetadataWriter {
         return bytes;
     }
 
-    private static void flushed(Path temporary, byte[] content, Path target) throws IOException {
+    private void flushed(Path temporary, byte[] content, Path target) throws IOException {
         try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE_NEW,
                 StandardOpenOption.WRITE)) {
-            FilePermissions.copy(target, temporary);
+            FilePermissions.copyBestEffort(permissions, target, temporary);
             ByteBuffer buffer = ByteBuffer.wrap(content);
             while (buffer.hasRemaining()) {
                 channel.write(buffer);

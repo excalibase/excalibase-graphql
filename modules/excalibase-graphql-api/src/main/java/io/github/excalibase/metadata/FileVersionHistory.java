@@ -20,6 +20,7 @@ import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
@@ -62,6 +63,10 @@ final class FileVersionHistory implements DocumentHistory {
 
     /** The history of a rules file: {@code permissions.yaml} is kept in {@code permissions.history}. */
     static FileVersionHistory beside(Path rules) {
+        if (fileFor(rules).equals(rules)) {
+            throw new IllegalArgumentException("the rules file " + rules.getFileName()
+                    + " would share its name with its own history: rename it, the history is kept in a .history file");
+        }
         return new FileVersionHistory(fileFor(rules), rules, MAX_ENTRIES, MAX_BYTES, _ -> { });
     }
 
@@ -72,94 +77,133 @@ final class FileVersionHistory implements DocumentHistory {
     }
 
     /**
-     * Adds a text a save is about to replace and trims the oldest.
+     * Adds a text a save is about to replace and trims the oldest. A file that cannot be read is left exactly as it
+     * is; a damaged one is kept beside the history as {@code .corrupt-<time>} before it is rewritten.
      *
      * @return the new entry's id
-     * @throws IOException the text cannot be kept (the history is unchanged), including a text larger than the cap
+     * @throws IOException the text cannot be kept and the history is unchanged: the file cannot be read, the text is
+     *                     larger than the cap, or the write failed
      */
     synchronized long append(String text, Instant at) throws IOException {
-        List<Entry> kept = new ArrayList<>(chronological());
+        Loaded loaded = load();
+        if (loaded.unreadable() != null) {
+            throw loaded.unreadable();
+        }
+        List<Entry> kept = new ArrayList<>(loaded.entries());
         long id = Math.max(at.toEpochMilli(), kept.stream().mapToLong(Entry::id).max().orElse(0) + 1);
         kept.add(new Entry(id, at, hash(text), text));
-        replaceWith(trimmed(kept));
+        List<byte[]> lines = trimmed(kept);
+        if (loaded.damaged()) {
+            keepAside(at, loaded.entries().isEmpty());
+        }
+        replaceWith(lines);
         return id;
     }
 
     /** Takes one entry out again, for a save that did not happen; an id that is not there changes nothing. */
     synchronized void discard(long id) throws IOException {
-        List<Entry> kept = chronological();
+        Loaded loaded = load();
+        if (loaded.unreadable() != null) {
+            throw loaded.unreadable();
+        }
+        List<Entry> kept = new ArrayList<>(loaded.entries());
         if (kept.removeIf(entry -> entry.id() == id)) {
-            replaceWith(kept);
+            replaceWith(lines(kept));
         }
     }
 
     @Override
     public synchronized List<Entry> list() {
-        List<Entry> newestFirst = new ArrayList<>(chronological());
+        List<Entry> newestFirst = new ArrayList<>(load().entries());
         Collections.reverse(newestFirst);
         return newestFirst;
     }
 
     @Override
     public synchronized Optional<Entry> get(long id) {
-        return chronological().stream().filter(entry -> entry.id() == id).findFirst();
+        return load().entries().stream().filter(entry -> entry.id() == id).findFirst();
     }
 
-    private List<Entry> trimmed(List<Entry> chronological) throws IOException {
-        List<Entry> kept = new ArrayList<>(chronological);
-        while (kept.size() > maxEntries) {
-            kept.removeFirst();
+    /** The lines to write: the oldest dropped until the count and the total size fit, each line measured once. */
+    private List<byte[]> trimmed(List<Entry> chronological) throws IOException {
+        List<byte[]> lines = lines(chronological);
+        long total = lines.stream().mapToLong(line -> line.length).sum();
+        int first = 0;
+        while (lines.size() - first > maxEntries || (lines.size() - first > 1 && total > maxBytes)) {
+            total -= lines.get(first++).length;
         }
-        while (kept.size() > 1 && serialized(kept).length > maxBytes) {
-            kept.removeFirst();
-        }
-        if (serialized(kept).length > maxBytes) {
+        if (total > maxBytes) {
             throw new IOException("the text is larger than the history may hold");
         }
-        return kept;
+        return lines.subList(first, lines.size());
     }
 
-    /** What is on disk, oldest first. Anything that cannot be trusted is left out, never thrown. */
-    private List<Entry> chronological() {
+    /**
+     * What is on disk, oldest first. A line that is not valid UTF-8, not JSON or whose hash is not its text's is
+     * dropped on its own; a file too large to be ours counts as damaged whole; a file that cannot be read says so.
+     */
+    private Loaded load() {
         byte[] bytes;
         try (InputStream in = Files.newInputStream(file)) {
             bytes = in.readNBytes((int) Math.min(maxBytes, Integer.MAX_VALUE - 8L) + 1);
         } catch (NoSuchFileException _) {
-            return new ArrayList<>();
+            return new Loaded(List.of(), false, null);
         } catch (IOException e) {
             log.warn("metadata_history_unreadable file={} error={}", file.getFileName(), e.getClass().getSimpleName());
-            return new ArrayList<>();
+            return new Loaded(List.of(), false, e);
         }
         if (bytes.length > maxBytes) {
             log.warn("metadata_history_corrupt file={} reason=too_large", file.getFileName());
-            return new ArrayList<>();
+            return new Loaded(List.of(), true, null);
         }
-        try {
-            return parse(FileMetadataSource.decodeUtf8(bytes));
-        } catch (IOException _) {
-            log.warn("metadata_history_corrupt file={} reason=not_text", file.getFileName());
-            return new ArrayList<>();
-        }
+        return parse(bytes);
     }
 
-    private List<Entry> parse(String content) {
+    private Loaded parse(byte[] bytes) {
         List<Entry> entries = new ArrayList<>();
         int dropped = 0;
-        for (String line : content.split("\n")) {
-            if (line.isBlank()) {
+        int start = 0;
+        for (int end = 0; end <= bytes.length; end++) {
+            if (end < bytes.length && bytes[end] != '\n') {
                 continue;
             }
-            Optional<Entry> entry = entryOf(line);
-            if (entry.isPresent()) {
-                entries.add(entry.get());
-            } else {
-                dropped++;
+            if (end > start) {
+                Optional<Entry> entry = entryOf(bytes, start, end);
+                if (entry.isPresent()) {
+                    entries.add(entry.get());
+                } else {
+                    dropped++;
+                }
             }
+            start = end + 1;
         }
         if (dropped > 0) {
             log.warn("metadata_history_entries_dropped file={} count={}", file.getFileName(), dropped);
         }
-        return entries;
+        return new Loaded(entries, dropped > 0, null);
+    }
+
+    private record Loaded(List<Entry> entries, boolean damaged, IOException unreadable) {
+    }
+
+    /** Keeps what was on disk before it is rewritten: moved when nothing in it could be used, copied otherwise. */
+    private void keepAside(Instant at, boolean nothingUsable) throws IOException {
+        Path aside = file.resolveSibling(file.getFileName() + ".corrupt-" + at.toEpochMilli());
+        if (nothingUsable) {
+            Files.move(file, aside, StandardCopyOption.ATOMIC_MOVE);
+        } else {
+            Files.copy(file, aside, StandardCopyOption.REPLACE_EXISTING);
+        }
+        log.warn("metadata_history_kept_aside file={} aside={}", file.getFileName(), aside.getFileName());
+    }
+
+    private static Optional<Entry> entryOf(byte[] bytes, int start, int end) {
+        try {
+            String line = FileMetadataSource.decodeUtf8(Arrays.copyOfRange(bytes, start, end));
+            return entryOf(line);
+        } catch (IOException _) {
+            return Optional.empty();
+        }
     }
 
     private static Optional<Entry> entryOf(String line) {
@@ -184,21 +228,23 @@ final class FileVersionHistory implements DocumentHistory {
         return FileMetadataSource.sha256(text.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static byte[] serialized(List<Entry> chronological) throws IOException {
-        StringBuilder lines = new StringBuilder();
+    private static List<byte[]> lines(List<Entry> chronological) throws IOException {
+        List<byte[]> lines = new ArrayList<>();
         for (Entry entry : chronological) {
             ObjectNode node = MAPPER.createObjectNode();
             node.put("id", entry.id());
             node.put("at", entry.at().toString());
             node.put("hash", entry.hash());
             node.put("text", entry.text());
-            lines.append(MAPPER.writeValueAsString(node)).append('\n');
+            lines.add((MAPPER.writeValueAsString(node) + "\n").getBytes(StandardCharsets.UTF_8));
         }
-        return lines.toString().getBytes(StandardCharsets.UTF_8);
+        return lines;
     }
 
-    private void replaceWith(List<Entry> chronological) throws IOException {
-        byte[] content = serialized(chronological);
+    private void replaceWith(List<byte[]> lines) throws IOException {
+        java.io.ByteArrayOutputStream joined = new java.io.ByteArrayOutputStream();
+        lines.forEach(joined::writeBytes);
+        byte[] content = joined.toByteArray();
         Path temporary = file.resolveSibling(file.getFileName() + ".tmp-" + randomSuffix());
         try {
             flushed(temporary, content);
@@ -213,7 +259,7 @@ final class FileVersionHistory implements DocumentHistory {
     private void flushed(Path temporary, byte[] content) throws IOException {
         try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.CREATE_NEW,
                 StandardOpenOption.WRITE)) {
-            FilePermissions.copy(rules, temporary);
+            FilePermissions.copyBestEffort(FilePermissions::copy, rules, temporary);
             ByteBuffer buffer = ByteBuffer.wrap(content);
             while (buffer.hasRemaining()) {
                 channel.write(buffer);

@@ -230,4 +230,72 @@ class FileVersionHistoryTest {
         assertThat(FileVersionHistory.fileFor(Path.of("/x/rules.yml"))).isEqualTo(Path.of("/x/rules.history"));
         assertThat(FileVersionHistory.fileFor(Path.of("/x/noextension"))).isEqualTo(Path.of("/x/noextension.history"));
     }
+
+    private List<Path> asides() throws IOException {
+        try (Stream<Path> all = Files.list(dir)) {
+            return all.filter(path -> path.getFileName().toString().startsWith("permissions.history.corrupt-")).toList();
+        }
+    }
+
+    @Test
+    void oneBadByteInOneEntry_dropsThatEntryOnly_andTheNextAppendKeepsTheRest() throws IOException {
+        FileVersionHistory history = open();
+        for (int i = 1; i <= 5; i++) {
+            history.append("entry number " + i + "\n", T0.plusSeconds(i));
+        }
+        byte[] bytes = Files.readAllBytes(history());
+        int at = new String(bytes, StandardCharsets.ISO_8859_1).indexOf("entry number 3");
+        bytes[at] = (byte) 0xff;
+        Files.write(history(), bytes);
+
+        assertThat(history.list()).extracting(DocumentHistory.Entry::text)
+                .containsExactly("entry number 5\n", "entry number 4\n", "entry number 2\n", "entry number 1\n");
+        history.append("entry number 6\n", T0.plusSeconds(6));
+
+        assertThat(history.list()).hasSize(5);
+        assertThat(asides()).singleElement().satisfies(aside -> assertThat(Files.readAllBytes(aside)).isEqualTo(bytes));
+    }
+
+    @Test
+    void anUnreadableHistory_isNeverOverwritten_theAppendFails() throws IOException {
+        FileVersionHistory history = open();
+        history.append("one\n", T0);
+        history.append("two\n", T0.plusSeconds(1));
+        byte[] before = Files.readAllBytes(history());
+        Files.setPosixFilePermissions(history(), PosixFilePermissions.fromString("---------"));
+
+        assertThatThrownBy(() -> history.append("three\n", T0.plusSeconds(2))).isInstanceOf(IOException.class);
+        assertThat(history.list()).isEmpty();
+
+        Files.setPosixFilePermissions(history(), PosixFilePermissions.fromString("rw-------"));
+        assertThat(Files.readAllBytes(history())).isEqualTo(before);
+        assertThat(history.list()).hasSize(2);
+        assertThat(strayFiles()).isEmpty();
+    }
+
+    @Test
+    void aFileWithNothingSalvageable_isMovedAside_notOverwritten() throws IOException {
+        byte[] garbage = "not json at all\n\u0001\u0002".getBytes(StandardCharsets.UTF_8);
+        Files.write(history(), garbage);
+
+        open().append("fresh\n", T0);
+
+        assertThat(asides()).singleElement().satisfies(aside -> assertThat(Files.readAllBytes(aside)).isEqualTo(garbage));
+        assertThat(open().list()).extracting(DocumentHistory.Entry::text).containsExactly("fresh\n");
+    }
+
+    @Test
+    void aCleanFile_leavesNoAsideBehind() throws IOException {
+        FileVersionHistory history = open();
+        history.append("a\n", T0);
+        history.append("b\n", T0);
+
+        assertThat(asides()).isEmpty();
+    }
+
+    @Test
+    void aRulesFileNamedHistory_wouldShareItsFileWithItsHistory_andIsRefused() {
+        assertThatThrownBy(() -> FileVersionHistory.beside(dir.resolve("rules.history")))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(".history");
+    }
 }

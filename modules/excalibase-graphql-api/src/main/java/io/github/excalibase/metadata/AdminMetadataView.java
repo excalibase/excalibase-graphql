@@ -21,7 +21,7 @@ public final class AdminMetadataView {
 
     private final MetadataSource source;
 
-    AdminMetadataView(@Nullable PermissionProvider permissions) {
+    public AdminMetadataView(@Nullable PermissionProvider permissions) {
         this.source = permissions instanceof MetadataSource metadata ? metadata : null;
     }
 

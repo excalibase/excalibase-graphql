@@ -27,6 +27,15 @@ public interface MetadataWriter {
      */
     String write(String text, String expectedVersion) throws IOException, WriteConflictException;
 
+    /** What a write did: the new version, and whether the history took the replaced text (null: no history here). */
+    record Written(String version, Boolean historyRecorded) {
+    }
+
+    /** {@link #write} that also reports on the history; a writer that keeps one overrides it. */
+    default Written store(String text, String expectedVersion) throws IOException, WriteConflictException {
+        return new Written(write(text, expectedVersion), null);
+    }
+
     /** The versions this writer has replaced, for a source that keeps them; none by default. */
     default Optional<DocumentHistory> history() {
         return Optional.empty();

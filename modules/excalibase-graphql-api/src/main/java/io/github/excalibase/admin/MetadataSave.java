@@ -71,10 +71,13 @@ final class MetadataSave {
 
     static HttpResponse<Map<String, Object>> answer(SaveOutcome outcome) {
         return switch (outcome) {
-            case SaveOutcome.Saved(long version, String sourceVersion) -> {
+            case SaveOutcome.Saved(long version, String sourceVersion, Boolean historyRecorded) -> {
                 Map<String, Object> body = new LinkedHashMap<>();
                 body.put("version", version);
                 body.put("sourceVersion", sourceVersion);
+                if (historyRecorded != null) {
+                    body.put("historyRecorded", historyRecorded);
+                }
                 yield HttpResponse.ok(body);
             }
             case SaveOutcome.Conflict(String currentVersion) -> HttpResponse.<Map<String, Object>>status(HttpStatus.CONFLICT)

@@ -303,7 +303,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
             return new SaveOutcome.Failed("validation_failed");
         }
         try {
-            return reloaded(writer.write(text, expectedVersion));
+            return reloaded(writer.store(text, expectedVersion));
         } catch (WriteConflictException e) {
             return new SaveOutcome.Conflict(e.currentVersion());
         } catch (IOException | RuntimeException e) {
@@ -317,7 +317,8 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
      * Takes the saved document up through the ordinary reload: parse, validate, swap. A save is complete when it is
      * written, so the settle read is not waited for; a second read stands in for the poll that would see it again.
      */
-    private synchronized SaveOutcome reloaded(String writtenVersion) {
+    private synchronized SaveOutcome reloaded(MetadataWriter.Written written) {
+        String writtenVersion = written.version();
         refresh();
         Snapshot served = current.get();
         if (served == null || !served.sourceVersion().equals(writtenVersion)) {
@@ -325,7 +326,7 @@ public final class ReloadingMetadataSource implements MetadataSource, AutoClosea
             served = current.get();
         }
         if (served != null && served.sourceVersion().equals(writtenVersion)) {
-            return new SaveOutcome.Saved(served.version(), writtenVersion);
+            return new SaveOutcome.Saved(served.version(), writtenVersion, written.historyRecorded());
         }
         log.error("metadata_saved_not_applied source={} serving={}", name,
                 served == null ? NOTHING_SERVED : "last good version " + counter.get());

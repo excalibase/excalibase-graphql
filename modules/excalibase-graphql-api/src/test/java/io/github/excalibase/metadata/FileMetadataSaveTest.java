@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -20,6 +21,7 @@ import java.util.stream.Stream;
 
 import static io.github.excalibase.metadata.MetadataFixtures.*;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Saving to the {@code file} source: a conditional, atomic replace, then a reload through the ordinary path. */
 class FileMetadataSaveTest {
@@ -328,5 +330,66 @@ class FileMetadataSaveTest {
                 Duration.ofHours(1), new SimpleMeterRegistry());
 
         assertThat(source.history()).isEmpty();
+    }
+
+    @Test
+    void aSaveSaysWhetherTheHistoryTookTheOldText() throws IOException {
+        ReloadingMetadataSource served = open(file());
+
+        SaveOutcome saved = served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion());
+
+        assertThat(saved).isInstanceOfSatisfying(SaveOutcome.Saved.class, outcome ->
+                assertThat(outcome.historyRecorded()).isTrue());
+    }
+
+    @Test
+    void aSaveThatSkippedTheHistory_saysSo_andStillSaves() throws IOException {
+        Path path = file();
+        Files.createDirectory(dir.resolve("permissions.history"));
+        ReloadingMetadataSource served = open(path);
+
+        SaveOutcome saved = served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion());
+
+        assertThat(saved).isInstanceOfSatisfying(SaveOutcome.Saved.class, outcome ->
+                assertThat(outcome.historyRecorded()).isFalse());
+        assertThat(Files.readString(path)).isEqualTo(GOOD_YAML_TWO_RULES);
+    }
+
+    @Test
+    void aSaveKeepsTheRulesFilesPermissions() throws IOException {
+        Path path = file();
+        int round = 0;
+        for (String mode : new String[]{"rw-------", "r--r-----"}) {
+            round++;
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString(mode));
+            ReloadingMetadataSource served = open(path);
+            served.save(GOOD_YAML_TWO_RULES.replace("secrets", "s" + round),
+                    served.current().orElseThrow().sourceVersion());
+            served.close();
+
+            assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(path))).isEqualTo(mode);
+            assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(dir.resolve("permissions.history"))))
+                    .isEqualTo(mode);
+        }
+    }
+
+    @Test
+    void aPermissionCopyThatFails_doesNotFailTheSave() throws IOException {
+        Path path = file();
+        FileDocumentWriter writer = new FileDocumentWriter(path, _ -> { }, FileVersionHistory.beside(path),
+                (model, target) -> { throw new IOException("chmod refused"); });
+        ReloadingMetadataSource served = open(path, writer);
+
+        assertThat(served.save(GOOD_YAML_TWO_RULES, served.current().orElseThrow().sourceVersion()))
+                .isInstanceOf(SaveOutcome.Saved.class);
+        assertThat(Files.readString(path)).isEqualTo(GOOD_YAML_TWO_RULES);
+        assertThat(strayFiles()).isEmpty();
+    }
+
+    @Test
+    void aRulesFileNamedHistory_isRefusedAtStartup() {
+        assertThatThrownBy(() -> FileMetadataSource.create(dir.resolve("rules.history"), Duration.ofHours(1),
+                ReservedSchemas.fromConfig(""), PROJECT, new SimpleMeterRegistry(), false))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(".history");
     }
 }
