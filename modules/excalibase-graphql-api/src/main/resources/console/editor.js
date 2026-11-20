@@ -96,3 +96,17 @@ export function documentView(state, onEdit) {
     state.meta.text == null ? h("p", { class: "error" }, "No valid document is served yet.") : null,
     input);
 }
+
+/** Asks before a grid save rewrites a file that has comments or hand-written layout. Cancel writes nothing. */
+export function rewriteDialog(handlers) {
+  const remember = h("input", { type: "checkbox", id: "rewrite-remember" });
+  const dialog = h("dialog", { id: "rewrite-warning", "aria-label": "Saving rewrites permissions.yaml" },
+    h("p", {}, "Saving from the grid rewrites permissions.yaml. Comments and your own layout will be lost."),
+    h("label", { class: "op", for: "rewrite-remember" }, remember, "Don't ask again this session"),
+    h("div", { class: "actions" },
+      h("button", { type: "button", id: "rewrite-save", class: "danger",
+        onclick: () => { dialog.close(); handlers.onConfirm(remember.checked); } }, "Save"),
+      h("button", { type: "button", id: "rewrite-cancel", class: "secondary", onclick: () => dialog.close() }, "Cancel")));
+  dialog.addEventListener("close", () => dialog.remove());
+  return dialog;
+}

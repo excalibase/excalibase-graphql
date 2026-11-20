@@ -139,6 +139,7 @@ test("the grid writes a rule for a ticked box, keeps hand-written rules, and add
   await page.getByRole("button", { name: "Add", exact: true }).click();
   await expect(page.getByRole("columnheader", { name: "editor" })).toBeVisible();
   await page.locator("#save").click();
+  await page.locator("#rewrite-save").click();
 
   await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
   const saved = JSON.parse((await metadata(request)).document);
@@ -169,6 +170,7 @@ test("a sample token is read in the browser, its claims are picked, and the sett
 
   await expect(page.locator("#draft")).toHaveValue(/"jwt"[\s\S]*"userId": "sub"[\s\S]*"org": "app.org"/);
   await page.locator("#save").click();
+  await page.locator("#rewrite-save").click();
   await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
   const saved = JSON.parse((await metadata(request)).document);
   expect(saved.jwt).toMatchObject({ audience: "my-api", secret: "env:E2E_JWT_SECRET", claims: { role: "role", userId: "sub", extra: { org: "app.org" } } });
@@ -286,4 +288,71 @@ test("a replica that has not caught up is named, and the overwrite uses the vers
 
   await expect.poll(() => puts.length).toBe(2);
   expect(puts[1]).toBe('"newer-than-this-replica"');
+});
+
+const WARNING = "Saving from the grid rewrites permissions.yaml. Comments and your own layout will be lost.";
+
+async function tickAnonSelect(page) {
+  await page.getByRole("tab", { name: "Grid" }).click();
+  await page.locator("#new-role").fill("anon");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByLabel("select public.todos anon").check();
+}
+
+test("a grid save over a file with comments warns first; cancel writes nothing, save rewrites", async ({ page, request }) => {
+  await signIn(page);
+  await tickAnonSelect(page);
+
+  await page.locator("#save").click();
+  await expect(page.locator("#rewrite-warning")).toContainText(WARNING);
+  await page.locator("#rewrite-cancel").click();
+  await expect(page.locator("#rewrite-warning")).toHaveCount(0);
+  expect((await metadata(request)).document).toBe(EXAMPLE);
+
+  await page.locator("#save").click();
+  await page.locator("#rewrite-save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+  const saved = (await metadata(request)).document;
+  expect(saved).not.toContain("#");
+  expect(JSON.parse(saved).tables.some((rule) => rule.role === "anon")).toBe(true);
+});
+
+test("a grid save over a file already in the grid's own form does not warn", async ({ page }) => {
+  await signIn(page);
+  await tickAnonSelect(page);
+  await page.locator("#save").click();
+  await page.locator("#rewrite-save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+
+  await page.getByLabel("insert public.todos anon").check();
+  await page.locator("#save").click();
+
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+  await expect(page.locator("#rewrite-warning")).toHaveCount(0);
+});
+
+test("a plain text edit never shows the grid warning", async ({ page }) => {
+  await signIn(page);
+  await editDraft(page, EXAMPLE + "# typed\n");
+  await page.locator("#save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+  await expect(page.locator("#rewrite-warning")).toHaveCount(0);
+});
+
+test("Don't ask again this session skips the warning on the next grid save", async ({ page, request }) => {
+  await signIn(page);
+  await tickAnonSelect(page);
+  await page.locator("#save").click();
+  await page.getByLabel("Don't ask again this session").check();
+  await page.locator("#rewrite-save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+
+  await replaceDocument(request, EXAMPLE);
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.locator("#secret").fill(SECRET);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("tab", { name: "Grid" }).click();
+  await page.getByLabel("delete public.todos anon").check();
+  await page.locator("#save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
 });

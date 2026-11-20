@@ -125,8 +125,9 @@ written. Each source writes in its own way:
   Two replicas sharing a writable file can overwrite each other. Use `db` or `s3` with more than one replica.
 - **No IRSA or AWS role credentials yet.** The s3 source takes static keys only. On AWS, use an IAM user with a
   narrow policy, or serve the object through a presigned URL with the `url` source.
-- **Saving from the grid writes JSON and drops YAML comments.** If you keep comments in the file, edit the file
-  yourself and let the engine pick it up.
+- **Saving from the grid writes JSON and drops YAML comments.** If the file has comments or your own layout, the
+  console warns before the first such save and you confirm or cancel. To keep comments, edit the file yourself and
+  let the engine pick it up.
 - **The explorer and history views are not built yet.** The console has the rules grid, a sample token and
   export.
 - **A change takes time to apply.** The engine applies a change after the poll that saw it and one more poll that

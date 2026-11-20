@@ -69,6 +69,11 @@ export function serialize(tree) {
   return JSON.stringify(tree, null, 2) + "\n";
 }
 
+/** True when saving the tree as the grid writes it would change the text beyond its content: comments, layout, order. */
+export function rewriteLosesText(text, tree) {
+  return text.trim() !== serialize(tree).trim();
+}
+
 /** The file name and type an export carries: a JSON document stays JSON, anything else is YAML text. */
 export function exportName(text) {
   return text.trimStart().startsWith("{")

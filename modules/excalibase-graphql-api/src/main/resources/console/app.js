@@ -1,8 +1,8 @@
 import { ApiError, getMetadata, getReplicas, getSchema, parseText, putMetadata, signIn, signOut, signedIn,
   validateText } from "/console/api.js";
-import { exportName, serialize, setOperation, withJwt } from "/console/docmodel.js";
+import { exportName, rewriteLosesText, serialize, setOperation, withJwt } from "/console/docmodel.js";
 import { h, mount, rootElement, saveAs } from "/console/dom.js";
-import { classify, documentView, saveBar } from "/console/editor.js";
+import { classify, documentView, rewriteDialog, saveBar } from "/console/editor.js";
 import { gridView, roleProblem, columnRoles } from "/console/grid.js";
 import { jwtView } from "/console/jwt.js";
 import { describe, loginView, metaFields, replicasView, tablesView, validateView } from "/console/views.js";
@@ -19,7 +19,8 @@ const TABS = [
 
 // What the person is working on: the document as served (meta), their edits (draft), the tree the grid edits, and
 // what the last save came to. A tree is read from the draft by the engine, so a YAML document is understood there.
-const state = { meta: null, draft: "", tree: null, roles: [], outcome: null, theirs: null, grid: null };
+const state = { meta: null, draft: "", tree: null, roles: [], outcome: null, theirs: null, grid: null,
+  rewrites: false, skipRewriteWarning: false };
 let active = "document";
 
 function showLogin(error) {
@@ -55,6 +56,7 @@ async function loadMetadata() {
   state.meta = await getMetadata();
   state.draft = state.meta.text == null ? "" : state.meta.text;
   state.tree = null;
+  state.rewrites = false;
 }
 
 async function showTab(id) {
@@ -78,6 +80,7 @@ function handleFailure(failure) {
 function edit(text) {
   state.draft = text;
   state.tree = null;
+  state.rewrites = false;
   state.outcome = null;
   refreshBar();
 }
@@ -117,6 +120,7 @@ async function gridTab(message = null) {
 function toggle(table, role, operation, on) {
   state.tree = setOperation(state.tree, table, role, operation, on);
   state.draft = serialize(state.tree);
+  state.rewrites = true;
   state.outcome = null;
   refreshBar();
 }
@@ -137,12 +141,36 @@ async function tokenTab() {
   return jwtView(tree.jwt, (section) => {
     state.tree = withJwt(state.tree, Object.keys(section).length > 0 ? section : null);
     state.draft = serialize(state.tree);
+    state.rewrites = true;
     state.outcome = null;
     showTab("document");
   });
 }
 
+/** Only a grid or token edit rewrites the file, and only a file that is not already in the grid's own form loses anything. */
+async function wouldLoseText() {
+  if (!state.rewrites || state.skipRewriteWarning || state.meta.text == null) {
+    return false;
+  }
+  const current = await parseText(state.meta.text);
+  return current.valid && rewriteLosesText(state.meta.text, current.tree);
+}
+
 async function save() {
+  try {
+    if (await wouldLoseText()) {
+      root.append(rewriteDialog({ onConfirm: (remember) => { state.skipRewriteWarning ||= remember; commitSave(); } }));
+      root.querySelector("#rewrite-warning").showModal();
+      return;
+    }
+  } catch (failure) {
+    handleFailure(failure);
+    return;
+  }
+  await commitSave();
+}
+
+async function commitSave() {
   try {
     const saved = await putMetadata(state.draft, state.meta.sourceVersion);
     await loadMetadata();
@@ -192,6 +220,7 @@ function exportDocument() {
 function discard() {
   state.draft = state.meta.text == null ? "" : state.meta.text;
   state.tree = null;
+  state.rewrites = false;
   state.outcome = null;
   showTab(active);
 }

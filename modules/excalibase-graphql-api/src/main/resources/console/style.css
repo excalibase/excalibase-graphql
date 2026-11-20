@@ -33,3 +33,5 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .op input { width: auto; margin: 0; }
 .row { display: grid; gap: 4px; margin: 8px 0; max-width: 520px; }
 h2 { font-size: 16px; margin: 20px 0 8px; }
+dialog { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; max-width: 460px; }
+dialog::backdrop { background: rgba(0, 0, 0, .5); }
