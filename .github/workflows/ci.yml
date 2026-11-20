@@ -70,6 +70,7 @@ jobs:
     timeout-minutes: 45
     runs-on: ubuntu-24.04
     needs: maven-warm
+    if: ${{ !cancelled() }}
     permissions:
       pull-requests: write
       statuses: write
@@ -116,6 +117,7 @@ jobs:
     name: Build & Package
     timeout-minutes: 20
     needs: [maven-warm, test]
+    if: ${{ !cancelled() && needs.test.result == 'success' }}
     runs-on: ubuntu-24.04
     
     steps:
@@ -151,7 +153,7 @@ jobs:
     needs: [maven-warm, test]
     runs-on: ubuntu-24.04
     # Only on push to main — native compile takes ~10 min, skip on PRs
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: ${{ !cancelled() && needs.test.result == 'success' && (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
     steps:
     - name: Checkout code

@@ -50,6 +50,7 @@ jobs:
     name: Postgres E2E Tests
     runs-on: ubuntu-24.04
     needs: maven-warm
+    if: ${{ !cancelled() }}
     
     steps:
     - name: Checkout code
@@ -118,6 +119,7 @@ jobs:
     name: Build Native Binary
     runs-on: ubuntu-24.04
     needs: maven-warm
+    if: ${{ !cancelled() }}
 
     steps:
     - name: Checkout code
@@ -359,6 +361,7 @@ jobs:
     name: Multi-Tenant E2E Tests
     runs-on: ubuntu-24.04
     needs: maven-warm
+    if: ${{ !cancelled() }}
 
     steps:
     - name: Checkout code
@@ -403,6 +406,7 @@ jobs:
     name: Study-Cases E2E Tests
     runs-on: ubuntu-24.04
     needs: maven-warm
+    if: ${{ !cancelled() }}
 
     steps:
     - name: Checkout code
@@ -447,6 +451,7 @@ jobs:
     name: MySQL E2E Tests
     runs-on: ubuntu-24.04
     needs: maven-warm
+    if: ${{ !cancelled() }}
 
     steps:
     - name: Checkout code
@@ -497,6 +502,7 @@ jobs:
     name: Engine Contracts
     runs-on: ubuntu-24.04
     needs: maven-warm
+    if: ${{ !cancelled() }}
 
     steps:
     - name: Checkout code

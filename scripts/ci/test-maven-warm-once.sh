@@ -38,6 +38,15 @@ for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.yml"))):
         if name == "maven-warm":
             continue
         print(f"{wf} {name} needs-maven-warm {'maven-warm' in needs(jobs[name])}")
+        cond = str(jobs[name].get("if", ""))
+        # a skipped job counts as passing for a required check, so a failed warm must not skip it
+        print(f"{wf} {name} guarded {'!cancelled()' in cond or 'always()' in cond}")
+        if name == "build":
+            gate = "needs.test.result == 'success'" in cond
+            print(f"{wf} {name} keeps-test-gate {gate}")
+        if name == "build-native":
+            main_only = "refs/heads/main" in cond
+            print(f"{wf} {name} keeps-main-only {main_only}")
 PY
 )
 [[ -n $report ]] || { echo "FAIL no workflow uses the shared Maven cache"; exit 1; }
@@ -47,6 +56,9 @@ while read -r wf rest; do
     "warm-jobs "*) check "$wf: only maven-warm warms" "maven-warm" "${rest#warm-jobs }" ;;
     "warm-job-named-maven-warm "*) check "$wf: exactly one warm job" "True" "${rest#warm-job-named-maven-warm }" ;;
     "warm-job-needs-nothing "*) check "$wf: maven-warm waits for nothing" "True" "${rest#warm-job-needs-nothing }" ;;
+    *" guarded "*) job=${rest%% *}; check "$wf: $job still runs when maven-warm fails" "True" "${rest##* }" ;;
+    *" keeps-test-gate "*) job=${rest%% *}; check "$wf: $job still needs test to succeed" "True" "${rest##* }" ;;
+    *" keeps-main-only "*) job=${rest%% *}; check "$wf: $job stays push-to-main only" "True" "${rest##* }" ;;
     *) job=${rest%% *}; check "$wf: $job needs maven-warm" "True" "${rest##* }" ;;
   esac
 done <<<"$report"
@@ -54,5 +66,11 @@ done <<<"$report"
 # restore-only jobs must not be able to write the cache
 saves=$(grep -rn 'actions/cache/save' "$root/.github/workflows" | wc -l | tr -d ' ')
 check "workflows never save the Maven cache themselves" "0" "$saves"
+
+action="$root/.github/actions/maven-cache/action.yml"
+grep -q 'timeout --kill-after=[0-9a-z]* 25m scripts/ci/warm-maven.sh' "$action"; check "the warm body is bounded below the job timeout" "0" "$?"
+grep -q 'maven-mirror-used' "$action"; check "the action looks for the mirror marker" "0" "$?"
+grep -A3 'name: Save Maven cache' "$action" | grep -q "steps.mirror.outputs.used != 'true'"; check "a cache warmed through the mirror is not saved" "0" "$?"
+grep -q "'Makefile'" "$action"; check "the cache key covers the Makefile" "0" "$?"
 
 exit $((failures > 0))

@@ -52,6 +52,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-24.04
     needs: maven-warm
+    if: ${{ !cancelled() }}
     services:
       postgres:
         image: postgres:16-alpine

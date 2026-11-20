@@ -7,7 +7,7 @@ set -uo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-export M2_REPO="$work/repo" RETRY_UNIT=0
+export M2_REPO="$work/repo" RETRY_UNIT=0 GITHUB_EVENT_NAME=pull_request MVN_MIRROR_MARKER="$work/mirror-used"
 mkdir -p "$work/p/.mvn"
 echo '--strict-checksums' >"$work/p/.mvn/maven.config"
 cat >"$work/p/pom.xml" <<'POM'
@@ -33,4 +33,5 @@ check() { if [[ $2 == "$3" ]]; then echo "ok   $1"; else echo "FAIL $1: expected
 check "without the mirror a dead Central fails" "1" "$plain"
 check "mvn_retry gets through on the mirror" "0" "$retried"
 check "the jar was downloaded and its checksum accepted" "1" "$([[ -n $jar ]] && echo 1 || echo 0)"
+check "and the run left the mirror marker" "yes" "$([[ -f $MVN_MIRROR_MARKER ]] && echo yes || echo no)"
 exit $((failures > 0))

@@ -51,6 +51,7 @@ jobs:
     timeout-minutes: 45
     runs-on: ubuntu-24.04
     needs: maven-warm
+    if: ${{ !cancelled() }}
 
     steps:
       - name: Checkout code
