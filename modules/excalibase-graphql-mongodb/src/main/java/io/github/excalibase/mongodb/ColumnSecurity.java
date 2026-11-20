@@ -31,6 +31,7 @@ final class ColumnSecurity {
     }
 
     private static void validate(Catalog catalog, ColumnPolicy policy) {
+        RowSecurity.requireDeclared(catalog, "Column policy", policy.name(), policy.resource());
         for (CollectionDef def : catalog.all()) {
             if (!ResourceMatcher.matches(policy.resource(), def.name())) {
                 continue;

@@ -28,6 +28,11 @@ abstract class AbstractEngineTest {
 
     abstract Backend backend();
 
+    /** The declared type of {@code _id} in the seeded collection. */
+    String idKind() {
+        return "objectId";
+    }
+
     String database() {
         return "t_" + getClass().getSimpleName().toLowerCase();
     }
@@ -47,11 +52,16 @@ abstract class AbstractEngineTest {
     }
 
     QueryEngine engine(List<Policy> policies, List<ColumnPolicy> columnPolicies, List<String> open) {
-        backend().seed(database(), "orders", orders());
+        return engineOver(orders(), policies, columnPolicies, open);
+    }
+
+    QueryEngine engineOver(List<Document> documents, List<Policy> policies, List<ColumnPolicy> columnPolicies,
+                           List<String> open) {
+        backend().seed(database(), "orders", documents);
         Map<String, Object> settings = new HashMap<>();
         settings.put("uri", backend().uri());
         settings.put("database", database());
-        settings.put("collections", List.of(Map.of("name", "orders", "id", "objectId", "fields", orderFields())));
+        settings.put("collections", List.of(Map.of("name", "orders", "id", idKind(), "fields", orderFields())));
         settings.put("policies", policies);
         settings.put("columnPolicies", columnPolicies);
         settings.put("openCollections", open);

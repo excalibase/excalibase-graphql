@@ -167,7 +167,8 @@ final class MongoQueryEngine implements QueryEngine {
         for (SelectedField field : selection.getImmediateFields()) {
             String name = field.getName();
             if (def.declares(name)) {
-                row.put(name, shown(doc.get(CollectionDef.storedName(name))));
+                Object stored = doc.get(CollectionDef.storedName(name));
+                row.put(name, CollectionDef.ID_FIELD.equals(name) && stored != null ? ValueCodec.formatId(stored) : shown(stored));
             }
         }
         return row;

@@ -12,6 +12,9 @@ import java.util.List;
  */
 final class PipelineCompiler {
 
+    /** Skipping still reads every skipped document, so a deep offset is a cost the caller does not get to set. */
+    static final int MAX_OFFSET = 100_000;
+
     private PipelineCompiler() {}
 
     static List<Document> list(CollectionDef collection, Cond security, Cond user, List<SortKey> order,
@@ -19,8 +22,8 @@ final class PipelineCompiler {
         if (limit < 1 || limit > maxRows) {
             throw new RequestException("limit must be between 1 and " + maxRows);
         }
-        if (offset < 0) {
-            throw new RequestException("offset must not be negative");
+        if (offset < 0 || offset > MAX_OFFSET) {
+            throw new RequestException("offset must be between 0 and " + MAX_OFFSET);
         }
         List<Document> stages = new ArrayList<>();
         stages.add(match(security));

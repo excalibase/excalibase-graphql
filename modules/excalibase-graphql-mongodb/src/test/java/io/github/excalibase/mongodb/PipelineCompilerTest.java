@@ -80,6 +80,9 @@ class PipelineCompilerTest {
                 .isInstanceOf(RequestException.class);
         assertThatThrownBy(() -> PipelineCompiler.list(ORDERS, SECURITY, Cond.ALWAYS, List.of(), 5, -1, PROJECTION, 30))
                 .isInstanceOf(RequestException.class).hasMessageContaining("offset");
+        assertThatThrownBy(() -> PipelineCompiler.list(ORDERS, SECURITY, Cond.ALWAYS, List.of(), 5,
+                PipelineCompiler.MAX_OFFSET + 1, PROJECTION, 30))
+                .isInstanceOf(RequestException.class).hasMessageContaining("offset");
     }
 
     @Test

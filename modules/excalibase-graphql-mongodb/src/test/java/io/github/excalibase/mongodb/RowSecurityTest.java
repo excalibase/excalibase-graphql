@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Set;
 import io.github.excalibase.rls.Assignment;
 import io.github.excalibase.rls.UserContext;
-import org.bson.BsonRegularExpression;
 import org.bson.types.ObjectId;
 
 import static io.github.excalibase.mongodb.Fixtures.caller;
@@ -40,9 +39,9 @@ class RowSecurityTest {
         RowSecurity security = security(policy(PolicyEffect.ALLOW, rule("owner", RuleOperator.EQ, "{{currentUserId}}")));
 
         assertThat(security.filter("orders", caller("u1"), Operation.SELECT).doc())
-                .isEqualTo(new Document("owner", new Document("$eq", "u1")));
+                .isEqualTo(new Document("owner", Fixtures.scalar("$eq", "u1")));
         assertThat(security.filter("orders", caller("u2"), Operation.SELECT).doc())
-                .isEqualTo(new Document("owner", new Document("$eq", "u2")));
+                .isEqualTo(new Document("owner", Fixtures.scalar("$eq", "u2")));
     }
 
     @Test
@@ -106,7 +105,7 @@ class RowSecurityTest {
                         rule("owner", RuleOperator.EQ, "{{currentUserId}}")));
 
         assertThat(security.filter("orders", caller("u1"), Operation.DELETE).doc())
-                .isEqualTo(new Document("status", new Document("$eq", "open")));
+                .isEqualTo(new Document("status", Fixtures.scalar("$eq", "open")));
     }
 
     @Test
@@ -114,7 +113,7 @@ class RowSecurityTest {
         RowSecurity security = security(policy(PolicyEffect.ALLOW, rule("status", RuleOperator.EQ, "$where")));
 
         assertThat(security.filter("orders", caller("u1"), Operation.SELECT).doc())
-                .isEqualTo(new Document("status", new Document("$eq", "$where")));
+                .isEqualTo(new Document("status", Fixtures.scalar("$eq", "$where")));
     }
 
     @Test
@@ -128,7 +127,45 @@ class RowSecurityTest {
         RowSecurity security = security(policy(PolicyEffect.ALLOW, rule("owner", RuleOperator.EQ, "{{currentUserId}}")));
 
         assertThat(security.filter("orders", hostile, Operation.SELECT).doc())
-                .isEqualTo(new Document("owner", new Document("$eq", "{\"$ne\": null}")));
+                .isEqualTo(new Document("owner", Fixtures.scalar("$eq", "{\"$ne\": null}")));
+    }
+
+    @Test
+    void anArrayOrAValueOfTheWrongTypeIsNeverDefinitelyNotDenied() {
+        RowSecurity security = security(
+                policy(PolicyEffect.ALLOW, rule("id", RuleOperator.IS_NOT_NULL, null)),
+                policy(PolicyEffect.DENY, rule("status", RuleOperator.EQ, "banned")));
+
+        Document notDenied = security.filter("orders", caller("u1"), Operation.SELECT).doc();
+
+        // the DENY passes a document only if status is a string, not an array, and differs
+        assertThat(notDenied.toJson()).contains("\"$type\": \"string\"").contains("\"$ne\": \"banned\"")
+                .contains("\"$not\": {\"$type\": \"array\"}");
+    }
+
+    @Test
+    void aPolicyThatTargetsNoDeclaredCollectionIsRefusedBecauseItWouldNeverApply() {
+        Policy typo = policy("ordres", PolicyEffect.DENY, Set.of(Operation.SELECT), LogicOperator.AND,
+                rule("status", RuleOperator.EQ, "x"));
+
+        assertThatThrownBy(() -> security(typo))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("ordres");
+    }
+
+    @Test
+    void aClaimOfTheWrongTypeNamesNoFieldToTheCaller() {
+        Rule rule = new Rule("total", FieldType.INTEGER, RuleOperator.GT, "{{level}}");
+        RowSecurity security = security(policy(PolicyEffect.ALLOW, rule));
+        var wrong = new UserContext() {
+            @Override public String userId() { return "u"; }
+            @Override public String tenantId() { return null; }
+            @Override public Set<String> roles() { return Set.of(); }
+            @Override public Set<String> groupIds() { return Set.of(); }
+            @Override public Object resolveVariable(String name) { return 5L; }
+        };
+
+        assertThatThrownBy(() -> security.filter("orders", wrong, Operation.SELECT))
+                .isNotInstanceOf(RequestException.class).isInstanceOf(IllegalStateException.class);
     }
 
     @Test
@@ -172,8 +209,8 @@ class RowSecurityTest {
     void likeBecomesAnAnchoredEscapedPattern() {
         RowSecurity security = security(policy(PolicyEffect.ALLOW, rule("status", RuleOperator.LIKE, "a.b%")));
 
-        BsonRegularExpression pattern = (BsonRegularExpression)
-                security.filter("orders", caller("u1"), Operation.SELECT).doc().get("status");
-        assertThat(pattern.getPattern()).isEqualTo("\\A\\Qa.b\\E.*\\z");
+        Document pattern = security.filter("orders", caller("u1"), Operation.SELECT).doc().get("status", Document.class);
+        assertThat(pattern.get("$regex")).isEqualTo("\\A\\Qa.b\\E.*\\z");
+        assertThat(pattern.get("$options")).isEqualTo("s");
     }
 }

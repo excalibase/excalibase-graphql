@@ -49,8 +49,8 @@ final class WhereCompiler {
         String path = CollectionDef.storedName(field);
         return switch (op) {
             case IS_NULL -> Predicates.isNull(path, flag(field, value));
-            case IN, NOT_IN -> Predicates.member(path, list(kind, field, value), op == Op.IN);
-            default -> Predicates.compare(path, op, scalar(kind, field, operatorName, value));
+            case IN, NOT_IN -> Predicates.member(path, kind, list(kind, field, value), op == Op.IN);
+            default -> Predicates.compare(path, kind, op, scalar(kind, field, operatorName, value));
         };
     }
 
@@ -80,8 +80,7 @@ final class WhereCompiler {
             throw new RequestException("\"" + operator + "\" on \"" + field + "\" takes a value: use isNull to test for null");
         }
         if (CollectionDef.ID_FIELD.equals(field)) {
-            return value instanceof String text ? ValueCodec.parseId(kind, text)
-                    : ValueCodec.toBson(FieldKind.OBJECT_ID, value, field);
+            return value instanceof String text ? ValueCodec.parseId(kind, text) : ValueCodec.toBson(kind, value, field);
         }
         return ValueCodec.toBson(kind, value, field);
     }

@@ -10,6 +10,8 @@ import io.github.excalibase.rls.Rule;
 import io.github.excalibase.rls.RuleOperator;
 import io.github.excalibase.rls.UserContext;
 
+import org.bson.Document;
+
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,6 +33,11 @@ final class Fixtures {
 
     static Catalog catalog() {
         return Catalog.of(orders());
+    }
+
+    /** The operators of a comparison on a scalar: arrays never match. */
+    static Document scalar(String operator, Object value) {
+        return new Document(operator, value).append("$not", new Document("$type", "array"));
     }
 
     static Rule rule(String field, RuleOperator operator, String value) {

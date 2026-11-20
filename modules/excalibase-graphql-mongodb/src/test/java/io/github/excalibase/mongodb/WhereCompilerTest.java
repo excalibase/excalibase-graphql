@@ -31,27 +31,27 @@ class WhereCompilerTest {
     @Test
     void eqIsAnEqualityOnTheDeclaredField() {
         assertThat(compile(Map.of("status", Map.of("eq", "open"))).doc())
-                .isEqualTo(new Document("status", new Document("$eq", "open")));
+                .isEqualTo(new Document("status", Fixtures.scalar("$eq", "open")));
     }
 
     @Test
     void neqExcludesNullsLikeSql() {
         assertThat(compile(Map.of("status", Map.of("neq", "open"))).doc().toJson())
-                .contains("$ne").contains("null");
+                .contains("$ne").contains("$type");
     }
 
     @Test
     void rangesAndMembership() {
         assertThat(compile(Map.of("total", Map.of("gt", 5))).doc())
-                .isEqualTo(new Document("total", new Document("$gt", 5)));
+                .isEqualTo(new Document("total", Fixtures.scalar("$gt", 5)));
         assertThat(compile(Map.of("status", Map.of("in", List.of("a", "b")))).doc())
-                .isEqualTo(new Document("status", new Document("$in", List.of("a", "b"))));
+                .isEqualTo(new Document("status", Fixtures.scalar("$in", List.of("a", "b"))));
     }
 
     @Test
     void isNullTrueMatchesNullOrMissing() {
         assertThat(compile(Map.of("status", Map.of("isNull", true))).doc())
-                .isEqualTo(new Document("status", (Object) null));
+                .isEqualTo(new Document("status", Fixtures.scalar("$eq", null)));
     }
 
     @Test
@@ -59,6 +59,16 @@ class WhereCompilerTest {
         String hex = "65f0c0ffee0000000000abcd";
         Document doc = compile(Map.of("id", Map.of("eq", hex))).doc();
         assertThat(doc.get("_id", Document.class).get("$eq")).isInstanceOf(ObjectId.class);
+    }
+
+    @Test
+    void aNumericIdIsComparedAsANumber() {
+        CollectionDef numbered = new CollectionDef("n", FieldKind.INT, Map.of());
+
+        assertThat(compiler.compile(numbered, Set.of("id"), Map.of("id", Map.of("eq", 5))).doc())
+                .isEqualTo(new Document("_id", Fixtures.scalar("$eq", 5)));
+        assertThat(compiler.compile(numbered, Set.of("id"), Map.of("id", Map.of("in", List.of("7")))).doc())
+                .isEqualTo(new Document("_id", Fixtures.scalar("$in", List.of(7))));
     }
 
     @Test
@@ -115,15 +125,15 @@ class WhereCompilerTest {
     void operatorLookingStringsAreOnlyEverLiterals() {
         for (String hostile : List.of("$where", "$expr", "$function", "{\"$ne\": null}", "$$ROOT", "this.a == 1")) {
             Document doc = compile(Map.of("status", Map.of("eq", hostile))).doc();
-            assertThat(doc).isEqualTo(new Document("status", new Document("$eq", hostile)));
+            assertThat(doc).isEqualTo(new Document("status", Fixtures.scalar("$eq", hostile)));
             assertThat(compile(Map.of("status", Map.of("in", List.of(hostile)))).doc())
-                    .isEqualTo(new Document("status", new Document("$in", List.of(hostile))));
+                    .isEqualTo(new Document("status", Fixtures.scalar("$in", List.of(hostile))));
         }
     }
 
     @Test
     void theResultNeverContainsAnOperatorTheCompilerDidNotWrite() {
-        Set<String> allowed = Set.of("$eq", "$ne", "$gt", "$gte", "$lt", "$lte", "$in", "$nin", "$and", "$or", "$not");
+        Set<String> allowed = Set.of("$eq", "$ne", "$gt", "$gte", "$lt", "$lte", "$in", "$nin", "$and", "$or", "$not", "$type");
         Document doc = compile(Map.of("status", Map.of("neq", "$where", "in", List.of("$expr")),
                 "total", Map.of("gte", 1, "lt", 9))).doc();
         assertThat(operatorsIn(doc)).isSubsetOf(allowed);

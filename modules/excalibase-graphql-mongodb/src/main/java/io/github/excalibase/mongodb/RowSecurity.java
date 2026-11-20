@@ -37,6 +37,14 @@ final class RowSecurity {
         this.policies.forEach(this::validate);
     }
 
+    /** A policy that names no declared collection would never apply, and a mistyped DENY would fail open. */
+    static void requireDeclared(Catalog catalog, String kind, String policy, String resource) {
+        if (catalog.all().stream().noneMatch(def -> ResourceMatcher.matches(resource, def.name()))) {
+            throw new IllegalStateException(kind + " \"" + policy + "\" targets \"" + resource
+                    + "\", which is not a declared collection");
+        }
+    }
+
     /** True when an enabled ALLOW policy governs reads of the collection. */
     boolean governs(String collection) {
         return rlsOn(collection, Operation.SELECT);
@@ -90,29 +98,42 @@ final class RowSecurity {
         return switch (rule.operator()) {
             case IS_NULL -> Predicates.isNull(path, true);
             case IS_NOT_NULL -> Predicates.isNull(path, false);
-            case EQ -> Predicates.compare(path, Op.EQ, value(kind, field, rule, resolver));
-            case NEQ -> Predicates.compare(path, Op.NEQ, value(kind, field, rule, resolver));
-            case GT -> Predicates.compare(path, Op.GT, value(kind, field, rule, resolver));
-            case GTE -> Predicates.compare(path, Op.GTE, value(kind, field, rule, resolver));
-            case LT -> Predicates.compare(path, Op.LT, value(kind, field, rule, resolver));
-            case LTE -> Predicates.compare(path, Op.LTE, value(kind, field, rule, resolver));
-            case IN -> Predicates.member(path, values(kind, field, rule, resolver), true);
-            case NOT_IN -> Predicates.member(path, values(kind, field, rule, resolver), false);
+            case EQ -> Predicates.compare(path, kind, Op.EQ, value(kind, field, rule, resolver));
+            case NEQ -> Predicates.compare(path, kind, Op.NEQ, value(kind, field, rule, resolver));
+            case GT -> Predicates.compare(path, kind, Op.GT, value(kind, field, rule, resolver));
+            case GTE -> Predicates.compare(path, kind, Op.GTE, value(kind, field, rule, resolver));
+            case LT -> Predicates.compare(path, kind, Op.LT, value(kind, field, rule, resolver));
+            case LTE -> Predicates.compare(path, kind, Op.LTE, value(kind, field, rule, resolver));
+            case IN -> Predicates.member(path, kind, values(kind, field, rule, resolver), true);
+            case NOT_IN -> Predicates.member(path, kind, values(kind, field, rule, resolver), false);
             case LIKE -> Predicates.like(path, (String) resolver.resolve(rule.value(), FieldType.STRING), true);
             case NOT_LIKE -> Predicates.like(path, (String) resolver.resolve(rule.value(), FieldType.STRING), false);
         };
     }
 
     private static Object value(FieldKind kind, String field, Rule rule, VariableResolver resolver) {
-        return ValueCodec.toBson(kind, resolver.resolve(rule.value(), rule.fieldType()), field);
+        return policyValue(kind, field, resolver.resolve(rule.value(), rule.fieldType()));
     }
 
     private static List<Object> values(FieldKind kind, String field, Rule rule, VariableResolver resolver) {
         List<Object> converted = new ArrayList<>();
         for (Object item : resolver.resolveList(rule.value(), rule.fieldType())) {
-            converted.add(ValueCodec.toBson(kind, item, field));
+            converted.add(policyValue(kind, field, item));
         }
         return converted;
+    }
+
+    /**
+     * A caller's claim that cannot be the declared type is the server's problem, not a request the caller can
+     * fix: it must not surface a {@link RequestException}, whose message names the policy's field to the caller.
+     */
+    private static Object policyValue(FieldKind kind, String field, Object resolved) {
+        try {
+            return ValueCodec.toBson(kind, resolved, field);
+        } catch (RequestException e) {
+            throw new IllegalStateException("A claim cannot be applied to the permission on \"" + field + "\": "
+                    + e.getMessage(), e);
+        }
     }
 
     /** {@code _id} and {@code id} are the same field; anything else is taken as written. */
@@ -154,6 +175,7 @@ final class RowSecurity {
     // ---- startup validation ----
 
     private void validate(Policy policy) {
+        requireDeclared(catalog, "Policy", policy.name(), policy.resource());
         for (CollectionDef def : catalog.all()) {
             if (!ResourceMatcher.matches(policy.resource(), def.name())) {
                 continue;

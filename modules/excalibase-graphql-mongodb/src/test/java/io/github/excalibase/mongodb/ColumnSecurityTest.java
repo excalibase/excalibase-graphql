@@ -52,10 +52,11 @@ class ColumnSecurityTest {
     }
 
     @Test
-    void policiesOfOtherCollectionsAreLeftAlone() {
+    void aPolicyOfNoDeclaredCollectionIsRefusedBecauseItWouldNeverApply() {
         ColumnPolicy other = new ColumnPolicy("c", "c", "elsewhere", Set.of("whatever"), Operation.ALL, MaskMode.HIDE,
                 null, null, 0, true, List.of(Assignment.all()));
 
-        assertThat(new ColumnSecurity(Fixtures.catalog(), List.of(other)).plan("orders", caller("u1")).isEmpty()).isTrue();
+        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), List.of(other)))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("elsewhere");
     }
 }
