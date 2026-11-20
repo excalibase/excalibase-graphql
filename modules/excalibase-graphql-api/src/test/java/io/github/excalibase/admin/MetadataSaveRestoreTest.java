@@ -75,6 +75,7 @@ class MetadataSaveRestoreTest {
 
             @Override
             public void evict(String projectId) {
+                // nothing is cached here
             }
 
             @Override

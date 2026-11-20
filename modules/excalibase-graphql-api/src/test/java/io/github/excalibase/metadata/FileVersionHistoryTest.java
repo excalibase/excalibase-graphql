@@ -295,7 +295,8 @@ class FileVersionHistoryTest {
 
     @Test
     void aRulesFileNamedHistory_wouldShareItsFileWithItsHistory_andIsRefused() {
-        assertThatThrownBy(() -> FileVersionHistory.beside(dir.resolve("rules.history")))
+        Path rules = dir.resolve("rules.history");
+        assertThatThrownBy(() -> FileVersionHistory.beside(rules))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining(".history");
     }
 }
