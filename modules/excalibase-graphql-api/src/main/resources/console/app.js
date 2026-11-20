@@ -1,8 +1,8 @@
 import { ApiError, getMetadata, getReplicas, getSchema, parseText, putMetadata, signIn, signOut, signedIn,
   validateText } from "/console/api.js";
-import { exportName, serialize, setOperation, withJwt } from "/console/docmodel.js";
-import { h, mount, rootElement, saveAs } from "/console/dom.js";
-import { classify, documentView, saveBar } from "/console/editor.js";
+import { exportName, rewriteLosesText, serialize, setOperation, withJwt } from "/console/docmodel.js";
+import { h, mount, rootElement, saveAs, showModal } from "/console/dom.js";
+import { classify, documentView, rewriteDialog, saveBar } from "/console/editor.js";
 import { gridView, roleProblem, columnRoles } from "/console/grid.js";
 import { jwtView } from "/console/jwt.js";
 import { describe, loginView, metaFields, replicasView, tablesView, validateView } from "/console/views.js";
@@ -19,10 +19,12 @@ const TABS = [
 
 // What the person is working on: the document as served (meta), their edits (draft), the tree the grid edits, and
 // what the last save came to. A tree is read from the draft by the engine, so a YAML document is understood there.
-const state = { meta: null, draft: "", tree: null, roles: [], outcome: null, theirs: null, grid: null };
+const state = { meta: null, draft: "", tree: null, roles: [], outcome: null, theirs: null, grid: null,
+  rewriteLoses: false, skipRewriteWarning: false, busy: false };
 let active = "document";
 
 function showLogin(error) {
+  state.skipRewriteWarning = false;
   mount(root, loginView(async (secret) => {
     try {
       await signIn(secret);
@@ -55,6 +57,7 @@ async function loadMetadata() {
   state.meta = await getMetadata();
   state.draft = state.meta.text == null ? "" : state.meta.text;
   state.tree = null;
+  state.rewriteLoses = false;
 }
 
 async function showTab(id) {
@@ -114,10 +117,19 @@ async function gridTab(message = null) {
   return gridView(tree, schema.tables, state.roles, { onToggle: toggle, onAddRole: addRole }, message);
 }
 
-function toggle(table, role, operation, on) {
-  state.tree = setOperation(state.tree, table, role, operation, on);
-  state.draft = serialize(state.tree);
+/**
+ * The grid and the token form write the document anew. Each rewrite checks the text it replaces, so a comment typed
+ * between two of them is counted; a tree that cannot be had counts as a loss.
+ */
+function rewriteFrom(tree) {
+  state.rewriteLoses ||= state.tree === null || rewriteLosesText(state.draft, state.tree);
+  state.tree = tree;
+  state.draft = serialize(tree);
   state.outcome = null;
+}
+
+function toggle(table, role, operation, on) {
+  rewriteFrom(setOperation(state.tree, table, role, operation, on));
   refreshBar();
 }
 
@@ -135,14 +147,42 @@ async function tokenTab() {
     return invalidDraft();
   }
   return jwtView(tree.jwt, (section) => {
-    state.tree = withJwt(state.tree, Object.keys(section).length > 0 ? section : null);
-    state.draft = serialize(state.tree);
-    state.outcome = null;
+    rewriteFrom(withJwt(state.tree, Object.keys(section).length > 0 ? section : null));
     showTab("document");
   });
 }
 
+/** One save at a time: a second click while the warning or the write is pending does nothing. */
 async function save() {
+  if (state.busy) {
+    return;
+  }
+  state.busy = true;
+  if (state.rewriteLoses && !state.skipRewriteWarning) {
+    askBeforeRewrite();
+    return;
+  }
+  try {
+    await commitSave();
+  } finally {
+    state.busy = false;
+  }
+}
+
+function askBeforeRewrite() {
+  let confirmed = false;
+  const close = showModal(root, rewriteDialog({
+    onCancel: () => close(),
+    onConfirm: (remember) => {
+      confirmed = true;
+      state.skipRewriteWarning ||= remember;
+      close();
+      commitSave().finally(() => { state.busy = false; });
+    }
+  }), () => { state.busy = confirmed; });
+}
+
+async function commitSave() {
   try {
     const saved = await putMetadata(state.draft, state.meta.sourceVersion);
     await loadMetadata();
@@ -192,6 +232,7 @@ function exportDocument() {
 function discard() {
   state.draft = state.meta.text == null ? "" : state.meta.text;
   state.tree = null;
+  state.rewriteLoses = false;
   state.outcome = null;
   showTab(active);
 }

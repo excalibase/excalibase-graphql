@@ -2,7 +2,7 @@
 
 const ATTRIBUTES = new Set(["class", "type", "id", "for", "rows", "placeholder", "autocomplete", "disabled",
   "role", "aria-selected", "aria-live", "aria-label", "aria-pressed", "spellcheck", "name", "checked", "value",
-  "title", "colspan"]);
+  "title", "colspan", "autofocus", "aria-describedby"]);
 
 export function h(tag, props = {}, ...children) {
   const element = document.createElement(tag);
@@ -28,6 +28,20 @@ function append(parent, children) {
 
 export function rootElement() {
   return document.getElementById("root");
+}
+
+/**
+ * Puts a built <dialog> on the page and opens it as a modal. The dialog leaves the page when it closes, however it
+ * closes (a button, Escape), and onClosed then runs. Returns the function that closes it.
+ */
+export function showModal(root, dialog, onClosed = () => {}) {
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    onClosed();
+  });
+  root.append(dialog);
+  dialog.showModal();
+  return () => dialog.close();
 }
 
 export function mount(root, ...children) {

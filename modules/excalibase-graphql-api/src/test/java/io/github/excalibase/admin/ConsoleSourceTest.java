@@ -56,7 +56,7 @@ class ConsoleSourceTest {
                     .doesNotContainPattern(DOCUMENT_IDENTIFIER.pattern())
                     .doesNotContain("createElement", "createTextNode", "setAttribute", "appendChild",
                             "replaceChildren", "textContent", "addEventListener", ".append(", ".prepend(", ".after(",
-                            ".before(", ".replaceWith(", "Range", "Node")
+                            ".before(", ".replaceWith(", ".remove(", ".close(", ".showModal(", "Range", "Node")
                     .doesNotContainPattern("h\\(\"(script|iframe|object|embed|link|meta|base|style|template)\"");
         }
         String dom = read("dom.js");
