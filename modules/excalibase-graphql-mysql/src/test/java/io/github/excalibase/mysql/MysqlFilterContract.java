@@ -1,5 +1,6 @@
 package io.github.excalibase.mysql;
 
+import graphql.language.Document;
 import graphql.parser.Parser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -197,27 +198,33 @@ abstract class MysqlFilterContract {
     class Mutations {
         @Test
         void onConflictOnAnUnknownConstraintIsRefused() {
-            assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { createDoc(input: { id: 1, title: \"x\" }, "
-                    + "onConflict: { constraint: \"nope\", update_columns: [\"title\"] }) { id } }")))
+            Document unknown = Parser.parse("mutation { createDoc(input: { id: 1, title: \"x\" }, "
+                    + "onConflict: { constraint: \"nope\", update_columns: [\"title\"] }) { id } }");
+            SqlCompiler compiler = compiler();
+            assertThatThrownBy(() -> compiler.compile(unknown))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("Unknown constraint 'nope'");
         }
 
         @Test
         void onConflictWithoutUpdateColumnsIsRefusedRatherThanIgnored() {
-            assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { createDoc(input: { id: 1, title: \"x\" }, "
-                    + "onConflict: { constraint: \"PRIMARY\" }) { id } }")))
+            Document incomplete = Parser.parse("mutation { createDoc(input: { id: 1, title: \"x\" }, "
+                    + "onConflict: { constraint: \"PRIMARY\" }) { id } }");
+            SqlCompiler compiler = compiler();
+            assertThatThrownBy(() -> compiler.compile(incomplete))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("update_columns");
         }
 
         @Test
         void distinctOnAndVectorAreRefusedRatherThanDropped() {
-            assertThatThrownBy(() -> compiler().compile(Parser.parse("{ doc(distinctOn: [\"title\"]) { id } }")))
+            Document distinct = Parser.parse("{ doc(distinctOn: [\"title\"]) { id } }");
+            Document vector = Parser.parse("{ doc(vector: { column: \"title\", near: [1.0] }) { id } }");
+            SqlCompiler compiler = compiler();
+            assertThatThrownBy(() -> compiler.compile(distinct))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("MySQL does not support distinctOn");
-            assertThatThrownBy(() -> compiler().compile(Parser.parse(
-                    "{ doc(vector: { column: \"title\", near: [1.0] }) { id } }")))
+            assertThatThrownBy(() -> compiler.compile(vector))
                     .isInstanceOf(IllegalArgumentException.class)
                     .hasMessageContaining("MySQL does not support the vector argument");
         }

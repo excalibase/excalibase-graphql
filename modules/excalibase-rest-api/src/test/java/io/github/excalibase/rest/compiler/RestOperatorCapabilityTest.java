@@ -81,7 +81,10 @@ class RestOperatorCapabilityTest {
         schema.setTableSchema(TABLE, "public");
         RestQueryCompiler compiler = new RestQueryCompiler(schema, withoutUpsert, "public", 30);
 
-        assertThatThrownBy(() -> compiler.compileUpsert(TABLE, Map.of("id", 1), List.of("id")))
+        Map<String, Object> input = Map.of("id", 1);
+        List<String> conflict = List.of("id");
+
+        assertThatThrownBy(() -> compiler.compileUpsert(TABLE, input, conflict))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Postgres does not support upsert");
     }

@@ -289,8 +289,9 @@ public class MysqlMutationCompiler implements MutationCompiler {
 
     private static Set<String> checkReads(String tableName, List<RlsOp> operations) {
         WriteGuard guard = RlsContext.writeGuard();
+        if (guard == null) return Set.of();
         Set<String> reads = new HashSet<>();
-        for (RlsOp operation : guard == null ? List.<RlsOp>of() : operations) {
+        for (RlsOp operation : operations) {
             reads.addAll(guard.checkReads(tableName, operation));
         }
         return reads;
