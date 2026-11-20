@@ -16,7 +16,9 @@ class ManagementPortGuardTest {
     @Test
     @DisplayName("a management port equal to the public port is refused, naming both settings")
     void equalPortsAreRefused() {
-        assertThatThrownBy(() -> new ManagementPortGuard(8081, 8081).check())
+        ManagementPortGuard guard = new ManagementPortGuard(8081, 8081);
+
+        assertThatThrownBy(guard::check)
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("MANAGEMENT_SERVER_PORT")
                 .hasMessageContaining("SERVER_PORT")
@@ -26,10 +28,10 @@ class ManagementPortGuardTest {
     @Test
     @DisplayName("different ports, or no management port, or a random public port, start")
     void otherCombinationsStart() {
-        assertThatCode(() -> new ManagementPortGuard(10000, 8081).check()).doesNotThrowAnyException();
-        assertThatCode(() -> new ManagementPortGuard(10000, -1).check()).doesNotThrowAnyException();
-        assertThatCode(() -> new ManagementPortGuard(-1, -1).check()).doesNotThrowAnyException();
-        assertThatCode(() -> new ManagementPortGuard(-1, 8081).check()).doesNotThrowAnyException();
+        assertThatCode(new ManagementPortGuard(10000, 8081)::check).doesNotThrowAnyException();
+        assertThatCode(new ManagementPortGuard(10000, -1)::check).doesNotThrowAnyException();
+        assertThatCode(new ManagementPortGuard(-1, -1)::check).doesNotThrowAnyException();
+        assertThatCode(new ManagementPortGuard(-1, 8081)::check).doesNotThrowAnyException();
     }
 
     /** A real context start, so the property names behind the check are pinned too. */
