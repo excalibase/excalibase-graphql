@@ -35,10 +35,17 @@ public final class FailFastPullPolicy implements ImagePullPolicy {
     private static final Pattern REFUSAL = Pattern.compile(
             "toomanyrequests|rate limit|unauthorized|denied|forbidden|manifest unknown|not found|\\b(401|403|404)\\b");
 
-    /** Pulls an image or throws; an interrupt means the pull stopped making progress. */
+    /** Pulls an image or throws. */
     @FunctionalInterface
     interface Puller {
-        void pull(DockerImageName image) throws InterruptedException;
+        void pull(DockerImageName image);
+    }
+
+    /** The library interrupts a pull that stopped making progress; this is that, as an unchecked failure. */
+    static final class PullStalledException extends RuntimeException {
+        PullStalledException(Throwable cause) {
+            super("no progress", cause);
+        }
     }
 
     /** Whether the daemon already holds an image. */
@@ -93,7 +100,7 @@ public final class FailFastPullPolicy implements ImagePullPolicy {
     private void attempt(String name, DockerImageName image) {
         try {
             puller.pull(image);
-        } catch (InterruptedException e) {
+        } catch (PullStalledException e) {
             Thread.interrupted();
             throw new IllegalStateException("Pulling test image " + name + " stalled: no progress, so the pull was "
                     + "abandoned. This is a timeout, not a registry refusal; run the job again.", e);
@@ -135,16 +142,24 @@ public final class FailFastPullPolicy implements ImagePullPolicy {
         }
     }
 
-    private static void pullFromDaemon(DockerImageName image) throws InterruptedException {
-        LOG.info("Pulling test image {}", image.asCanonicalNameString());
+    private static void pullFromDaemon(DockerImageName image) {
+        LOG.info("Pulling test image {}", image);
         PullImageCmd command = DockerClientFactory.lazyClient().pullImageCmd(image.getUnversionedPart())
                 .withTag(image.getVersionPart());
         try {
-            command.exec(new TimeLimitedLoggedPullImageResultCallback(LOG)).awaitCompletion();
-        } catch (NotFoundException | DockerClientException e) {
+            await(command);
+        } catch (NotFoundException | DockerClientException _) {
             // As the library does: an image published for one platform only is asked for as linux/amd64.
-            command.withPlatform("linux/amd64").exec(new TimeLimitedLoggedPullImageResultCallback(LOG))
-                    .awaitCompletion();
+            await(command.withPlatform("linux/amd64"));
+        }
+    }
+
+    private static void await(PullImageCmd command) {
+        try {
+            command.exec(new TimeLimitedLoggedPullImageResultCallback(LOG)).awaitCompletion();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new PullStalledException(e);
         }
     }
 

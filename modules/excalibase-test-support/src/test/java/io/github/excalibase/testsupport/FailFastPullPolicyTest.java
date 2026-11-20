@@ -120,7 +120,7 @@ class FailFastPullPolicyTest {
         FailFastPullPolicy policy = policy(image -> false, image -> {
             calls.incrementAndGet();
             Thread.currentThread().interrupt();
-            throw new InterruptedException("no progress");
+            throw new FailFastPullPolicy.PullStalledException(new InterruptedException());
         });
 
         assertThatThrownBy(() -> policy.shouldPull(MINIO)).isInstanceOf(IllegalStateException.class)
@@ -149,7 +149,7 @@ class FailFastPullPolicyTest {
 
     /** Against the real daemon: an image it holds is never sent to a registry. */
     @Test
-    void anImageTheDaemonHolds_isNotPulled() throws Exception {
+    void anImageTheDaemonHolds_isNotPulled() {
         List<Image> held = DockerClientFactory.lazyClient().listImagesCmd().exec();
         assertThat(held).as("a daemon with at least one image").isNotEmpty();
         var client = DockerClientFactory.lazyClient();
