@@ -1,6 +1,7 @@
 package io.github.excalibase.postgres;
 
 import io.github.excalibase.ArrayColumns;
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
@@ -12,8 +13,10 @@ import org.springframework.jdbc.core.SqlParameterValue;
 import java.sql.SQLException;
 import java.sql.Types;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -37,6 +40,11 @@ public class PostgresDialect implements SqlDialect {
     @Override
     public Optional<DataError> describeError(SQLException failure) {
         return PostgresErrors.describe(failure);
+    }
+
+    @Override
+    public Set<DialectFeature> features() {
+        return EnumSet.allOf(DialectFeature.class);
     }
 
     @Override
