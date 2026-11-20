@@ -77,7 +77,9 @@ class SqlEngineFactoryServedTest {
 
     @Test
     void aBlankTypeIsRefused() {
-        assertThatThrownBy(() -> SqlEngineFactory.requireServed(" ", List.of(provider("postgres"))))
+        List<SqlEngineProvider> carried = List.of(provider("postgres"));
+
+        assertThatThrownBy(() -> SqlEngineFactory.requireServed(" ", carried))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

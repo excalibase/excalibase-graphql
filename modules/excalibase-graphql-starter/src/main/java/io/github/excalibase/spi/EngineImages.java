@@ -14,9 +14,10 @@ final class EngineImages {
     static final String REPOSITORY = "excalibase/excalibase-graphql";
 
     /** Every name a database goes by, to the one its image is tagged with. */
+    private static final String POSTGRES = "postgres";
     private static final Map<String, String> IMAGE_SUFFIX = Map.of(
-            "postgres", "postgres",
-            "postgresql", "postgres",
+            POSTGRES, POSTGRES,
+            "postgresql", POSTGRES,
             "mysql", "mysql");
 
     private EngineImages() {}

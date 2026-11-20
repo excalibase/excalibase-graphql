@@ -49,21 +49,24 @@ class EngineAvailabilityGuardTest {
 
     @Test
     void aPostgresBuildRefusesAMysqlDatabaseAndNamesTheMysqlImage() {
-        assertThatThrownBy(() -> new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS).check(POSTGRES_ONLY))
+        EngineAvailabilityGuard guard = new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS);
+        assertThatThrownBy(() -> guard.check(POSTGRES_ONLY))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("excalibase/excalibase-graphql:<tag>-mysql");
     }
 
     @Test
     void aMysqlBuildRefusesAPostgresDatabaseAndNamesThePostgresImage() {
-        assertThatThrownBy(() -> new EngineAvailabilityGuard("postgres", "jdbc:postgresql://db/app", NO_TENANTS).check(MYSQL_ONLY))
+        EngineAvailabilityGuard guard = new EngineAvailabilityGuard("postgres", "jdbc:postgresql://db/app", NO_TENANTS);
+        assertThatThrownBy(() -> guard.check(MYSQL_ONLY))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("excalibase/excalibase-graphql:<tag>-postgres");
     }
 
     @Test
     void aUrlOfAnotherDatabaseIsRefusedEvenWhenTheTypeIsLeftAtItsDefault() {
-        assertThatThrownBy(() -> new EngineAvailabilityGuard("postgres", "jdbc:mysql://db/app", NO_TENANTS).check(POSTGRES_ONLY))
+        EngineAvailabilityGuard guard = new EngineAvailabilityGuard("postgres", "jdbc:mysql://db/app", NO_TENANTS);
+        assertThatThrownBy(() -> guard.check(POSTGRES_ONLY))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("jdbc:mysql")
                 .hasMessageContaining("<tag>-mysql");
@@ -71,7 +74,8 @@ class EngineAvailabilityGuardTest {
 
     @Test
     void theRefusalSaysWhichSettingItJudged() {
-        assertThatThrownBy(() -> new EngineAvailabilityGuard("mysql", "", NO_TENANTS).check(POSTGRES_ONLY))
+        EngineAvailabilityGuard guard = new EngineAvailabilityGuard("mysql", "", NO_TENANTS);
+        assertThatThrownBy(() -> guard.check(POSTGRES_ONLY))
                 .hasMessageContaining("APP_DATABASE_TYPE=mysql");
     }
 

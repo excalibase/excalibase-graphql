@@ -27,6 +27,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
@@ -139,22 +140,21 @@ class SlimBuildSmokeTest {
             return new EngineProcess(builder.start(), logFile, port);
         }
 
-        void awaitServing() throws Exception {
-            long deadline = System.nanoTime() + START_TIMEOUT.toNanos();
-            while (System.nanoTime() < deadline) {
+        void awaitServing() {
+            await().atMost(START_TIMEOUT).pollInterval(Duration.ofMillis(500)).until(() -> {
                 if (!process.isAlive()) {
                     throw new AssertionError("the engine exited with " + process.exitValue() + ":\n" + log());
                 }
-                try {
-                    if (post("{ __typename }").statusCode() == 200) {
-                        return;
-                    }
-                } catch (IOException notYet) {
-                    // not listening yet
-                }
-                Thread.sleep(500);
+                return answers();
+            });
+        }
+
+        private boolean answers() throws InterruptedException {
+            try {
+                return post("{ __typename }").statusCode() == 200;
+            } catch (IOException _) {
+                return false;
             }
-            throw new AssertionError("the engine did not serve within " + START_TIMEOUT + ":\n" + log());
         }
 
         int awaitExit() throws IOException, InterruptedException {
