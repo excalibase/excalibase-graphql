@@ -58,7 +58,7 @@ class FileVersionHistoryTest {
         FileVersionHistory history = open();
         String text = "# keep me\r\nformat: 1\n\ttables: []   \n\"quoted\" \\ unicode: é中\n";
 
-        long id = history.record(text, T0);
+        long id = history.append(text, T0);
 
         assertThat(history.list()).singleElement().satisfies(entry -> {
             assertThat(entry.id()).isEqualTo(id);
@@ -73,9 +73,9 @@ class FileVersionHistoryTest {
     @Test
     void oneFileHoldsManyVersions_oneLineEach_newestFirst() throws IOException {
         FileVersionHistory history = open();
-        history.record("one\n", T0);
-        history.record("two\nlines\n", T0.plusSeconds(1));
-        history.record("three\n", T0.plusSeconds(2));
+        history.append("one\n", T0);
+        history.append("two\nlines\n", T0.plusSeconds(1));
+        history.append("three\n", T0.plusSeconds(2));
 
         assertThat(history.list()).extracting(DocumentHistory.Entry::text)
                 .containsExactly("three\n", "two\nlines\n", "one\n");
@@ -86,9 +86,9 @@ class FileVersionHistoryTest {
     @Test
     void idsNeverRepeat_evenAfterTheOldestAreTrimmed() throws IOException {
         FileVersionHistory history = open(2, 1 << 20);
-        long first = history.record("a", T0);
-        long second = history.record("b", T0);
-        long third = history.record("c", T0);
+        long first = history.append("a", T0);
+        long second = history.append("b", T0);
+        long third = history.append("c", T0);
 
         assertThat(List.of(first, second, third)).doesNotHaveDuplicates().isSorted();
     }
@@ -97,7 +97,7 @@ class FileVersionHistoryTest {
     void onlyTheLastTwentyVersionsAreKept_theOldestGoFirst() throws IOException {
         FileVersionHistory history = open();
         for (int i = 1; i <= 25; i++) {
-            history.record("version " + i + "\n", T0.plusSeconds(i));
+            history.append("version " + i + "\n", T0.plusSeconds(i));
         }
 
         List<DocumentHistory.Entry> kept = history.list();
@@ -112,7 +112,7 @@ class FileVersionHistoryTest {
         long cap = 1_000;
         FileVersionHistory history = open(20, cap);
         for (int i = 0; i < 10; i++) {
-            history.record(String.valueOf(i).repeat(300), T0.plusSeconds(i));
+            history.append(String.valueOf(i).repeat(300), T0.plusSeconds(i));
         }
 
         assertThat(Files.size(history())).isLessThanOrEqualTo(cap);
@@ -123,9 +123,9 @@ class FileVersionHistoryTest {
     @Test
     void aSingleTextLargerThanTheCap_isNotRecorded_andNothingGrows() throws IOException {
         FileVersionHistory history = open(20, 200);
-        history.record("small\n", T0);
+        history.append("small\n", T0);
 
-        assertThatThrownBy(() -> history.record("x".repeat(500), T0)).isInstanceOf(IOException.class);
+        assertThatThrownBy(() -> history.append("x".repeat(500), T0)).isInstanceOf(IOException.class);
 
         assertThat(history.list()).extracting(DocumentHistory.Entry::text).containsExactly("small\n");
         assertThat(Files.size(history())).isLessThanOrEqualTo(200);
@@ -133,14 +133,14 @@ class FileVersionHistoryTest {
 
     @Test
     void aCrashBetweenTheTemporaryFileAndTheRename_leavesTheHistoryAsItWas() throws IOException {
-        open().record("before\n", T0);
+        open().append("before\n", T0);
         byte[] before = Files.readAllBytes(history());
         FileVersionHistory crashing = new FileVersionHistory(history(), rules(), 20, 1 << 20, temporary -> {
             assertThat(Files.readString(temporary)).contains("after");
             throw new IOException("simulated crash");
         });
 
-        assertThatThrownBy(() -> crashing.record("after\n", T0.plusSeconds(1))).isInstanceOf(IOException.class);
+        assertThatThrownBy(() -> crashing.append("after\n", T0.plusSeconds(1))).isInstanceOf(IOException.class);
 
         assertThat(Files.readAllBytes(history())).isEqualTo(before);
         assertThat(open().list()).extracting(DocumentHistory.Entry::text).containsExactly("before\n");
@@ -153,7 +153,7 @@ class FileVersionHistoryTest {
         FileVersionHistory history = open();
 
         assertThat(history.list()).isEmpty();
-        history.record("fresh\n", T0);
+        history.append("fresh\n", T0);
 
         assertThat(history.list()).extracting(DocumentHistory.Entry::text).containsExactly("fresh\n");
         assertThat(Files.readAllLines(history())).hasSize(1);
@@ -165,13 +165,13 @@ class FileVersionHistoryTest {
         assertThat(open().list()).isEmpty();
         Files.write(history(), new byte[5_000]);
         assertThat(open(20, 1_000).list()).isEmpty();
-        assertThat(open(20, 1_000).record("ok\n", T0)).isPositive();
+        assertThat(open(20, 1_000).append("ok\n", T0)).isPositive();
     }
 
     @Test
     void anEntryWhoseHashDoesNotMatchItsText_isDropped_theGoodOnesStay() throws IOException {
         FileVersionHistory history = open();
-        history.record("good\n", T0);
+        history.append("good\n", T0);
         String tampered = "{\"id\":9999999999999,\"at\":\"2026-11-20T10:00:00Z\",\"hash\":\""
                 + "0".repeat(64) + "\",\"text\":\"edited by hand\"}\n";
         Files.writeString(history(), tampered + Files.readString(history()));
@@ -182,10 +182,10 @@ class FileVersionHistoryTest {
     @Test
     void aReadOnlyFolder_cannotRecord_butStillListsWhatIsThere() throws IOException {
         FileVersionHistory history = open();
-        history.record("kept\n", T0);
+        history.append("kept\n", T0);
         assertThat(dir.toFile().setWritable(false)).isTrue();
 
-        assertThatThrownBy(() -> history.record("new\n", T0)).isInstanceOf(IOException.class);
+        assertThatThrownBy(() -> history.append("new\n", T0)).isInstanceOf(IOException.class);
 
         assertThat(history.list()).extracting(DocumentHistory.Entry::text).containsExactly("kept\n");
     }
@@ -202,8 +202,8 @@ class FileVersionHistoryTest {
     @Test
     void discard_removesOneEntryByItsId_andNoOtherId() throws IOException {
         FileVersionHistory history = open();
-        long first = history.record("a\n", T0);
-        long second = history.record("b\n", T0);
+        long first = history.append("a\n", T0);
+        long second = history.append("b\n", T0);
 
         history.discard(second);
 
@@ -216,11 +216,11 @@ class FileVersionHistoryTest {
     void theHistoryFileHasTheRulesFilesPermissions() throws IOException {
         Path rules = rules();
         Files.setPosixFilePermissions(rules, PosixFilePermissions.fromString("rw-------"));
-        open().record("a\n", T0);
+        open().append("a\n", T0);
         assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(history()))).isEqualTo("rw-------");
 
         Files.setPosixFilePermissions(rules, PosixFilePermissions.fromString("rw-r-----"));
-        open().record("b\n", T0);
+        open().append("b\n", T0);
         assertThat(PosixFilePermissions.toString(Files.getPosixFilePermissions(history()))).isEqualTo("rw-r-----");
     }
 

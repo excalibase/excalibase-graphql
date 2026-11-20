@@ -77,7 +77,7 @@ final class FileVersionHistory implements DocumentHistory {
      * @return the new entry's id
      * @throws IOException the text cannot be kept (the history is unchanged), including a text larger than the cap
      */
-    synchronized long record(String text, Instant at) throws IOException {
+    synchronized long append(String text, Instant at) throws IOException {
         List<Entry> kept = new ArrayList<>(chronological());
         long id = Math.max(at.toEpochMilli(), kept.stream().mapToLong(Entry::id).max().orElse(0) + 1);
         kept.add(new Entry(id, at, hash(text), text));
@@ -123,7 +123,7 @@ final class FileVersionHistory implements DocumentHistory {
     private List<Entry> chronological() {
         byte[] bytes;
         try (InputStream in = Files.newInputStream(file)) {
-            bytes = in.readNBytes((int) Math.min(maxBytes, Integer.MAX_VALUE - 8) + 1);
+            bytes = in.readNBytes((int) Math.min(maxBytes, Integer.MAX_VALUE - 8L) + 1);
         } catch (NoSuchFileException _) {
             return new ArrayList<>();
         } catch (IOException e) {

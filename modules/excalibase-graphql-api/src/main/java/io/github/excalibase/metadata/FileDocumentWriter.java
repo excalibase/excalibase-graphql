@@ -109,7 +109,7 @@ final class FileDocumentWriter implements MetadataWriter {
             return OptionalLong.empty();
         }
         try {
-            return OptionalLong.of(history.record(replaced.text(), Instant.now()));
+            return OptionalLong.of(history.append(replaced.text(), Instant.now()));
         } catch (IOException | RuntimeException e) {
             log.warn("metadata_history_not_written file={} error={}", FileMetadataSource.resolve(path).getFileName(),
                     e.getClass().getSimpleName());
