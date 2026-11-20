@@ -20,10 +20,11 @@ const TABS = [
 // What the person is working on: the document as served (meta), their edits (draft), the tree the grid edits, and
 // what the last save came to. A tree is read from the draft by the engine, so a YAML document is understood there.
 const state = { meta: null, draft: "", tree: null, roles: [], outcome: null, theirs: null, grid: null,
-  rewrites: false, skipRewriteWarning: false };
+  rewriteBase: null, skipRewriteWarning: false, busy: false };
 let active = "document";
 
 function showLogin(error) {
+  state.skipRewriteWarning = false;
   mount(root, loginView(async (secret) => {
     try {
       await signIn(secret);
@@ -56,7 +57,7 @@ async function loadMetadata() {
   state.meta = await getMetadata();
   state.draft = state.meta.text == null ? "" : state.meta.text;
   state.tree = null;
-  state.rewrites = false;
+  state.rewriteBase = null;
 }
 
 async function showTab(id) {
@@ -80,7 +81,6 @@ function handleFailure(failure) {
 function edit(text) {
   state.draft = text;
   state.tree = null;
-  state.rewrites = false;
   state.outcome = null;
   refreshBar();
 }
@@ -117,11 +117,16 @@ async function gridTab(message = null) {
   return gridView(tree, schema.tables, state.roles, { onToggle: toggle, onAddRole: addRole }, message);
 }
 
-function toggle(table, role, operation, on) {
-  state.tree = setOperation(state.tree, table, role, operation, on);
-  state.draft = serialize(state.tree);
-  state.rewrites = true;
+/** The grid and the token form write the document anew; the text they started from is what that loses. */
+function rewriteFrom(tree) {
+  state.rewriteBase ??= state.draft;
+  state.tree = tree;
+  state.draft = serialize(tree);
   state.outcome = null;
+}
+
+function toggle(table, role, operation, on) {
+  rewriteFrom(setOperation(state.tree, table, role, operation, on));
   refreshBar();
 }
 
@@ -139,34 +144,53 @@ async function tokenTab() {
     return invalidDraft();
   }
   return jwtView(tree.jwt, (section) => {
-    state.tree = withJwt(state.tree, Object.keys(section).length > 0 ? section : null);
-    state.draft = serialize(state.tree);
-    state.rewrites = true;
-    state.outcome = null;
+    rewriteFrom(withJwt(state.tree, Object.keys(section).length > 0 ? section : null));
     showTab("document");
   });
 }
 
-/** Only a grid or token edit rewrites the file, and only a file that is not already in the grid's own form loses anything. */
+/** True when the text a grid or token edit started from has comments or layout that the rewrite drops. */
 async function wouldLoseText() {
-  if (!state.rewrites || state.skipRewriteWarning || state.meta.text == null) {
+  const base = state.rewriteBase;
+  if (base === null || base.trim() === "" || state.skipRewriteWarning) {
     return false;
   }
-  const current = await parseText(state.meta.text);
-  return current.valid && rewriteLosesText(state.meta.text, current.tree);
+  const current = await parseText(base);
+  return !current.valid || rewriteLosesText(base, current.tree);
 }
 
+/** One save at a time: a second click while the check or the warning is pending does nothing. */
 async function save() {
+  if (state.busy) {
+    return;
+  }
+  state.busy = true;
+  let asking = false;
   try {
-    if (await wouldLoseText()) {
-      showModal(root, rewriteDialog({ onConfirm: (remember) => { state.skipRewriteWarning ||= remember; commitSave(); } }));
-      return;
+    asking = await wouldLoseText();
+    if (asking) {
+      askBeforeRewrite();
+    } else {
+      await commitSave();
     }
   } catch (failure) {
     handleFailure(failure);
-    return;
+  } finally {
+    state.busy = asking;
   }
-  await commitSave();
+}
+
+function askBeforeRewrite() {
+  let confirmed = false;
+  const close = showModal(root, rewriteDialog({
+    onCancel: () => close(),
+    onConfirm: (remember) => {
+      confirmed = true;
+      state.skipRewriteWarning ||= remember;
+      close();
+      commitSave().finally(() => { state.busy = false; });
+    }
+  }), () => { state.busy = confirmed; });
 }
 
 async function commitSave() {
@@ -219,7 +243,7 @@ function exportDocument() {
 function discard() {
   state.draft = state.meta.text == null ? "" : state.meta.text;
   state.tree = null;
-  state.rewrites = false;
+  state.rewriteBase = null;
   state.outcome = null;
   showTab(active);
 }

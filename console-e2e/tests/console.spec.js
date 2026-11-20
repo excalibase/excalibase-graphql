@@ -339,7 +339,7 @@ test("a plain text edit never shows the grid warning", async ({ page }) => {
   await expect(page.locator("#rewrite-warning")).toHaveCount(0);
 });
 
-test("Don't ask again this session skips the warning on the next grid save", async ({ page, request }) => {
+test("Don't ask again skips the warning for the session, and signing out brings it back", async ({ page }) => {
   await signIn(page);
   await tickAnonSelect(page);
   await page.locator("#save").click();
@@ -347,12 +347,102 @@ test("Don't ask again this session skips the warning on the next grid save", asy
   await page.locator("#rewrite-save").click();
   await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
 
-  await replaceDocument(request, EXAMPLE);
-  await page.getByRole("button", { name: "Sign out" }).click();
-  await page.locator("#secret").fill(SECRET);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByRole("tab", { name: "Document" }).click();
+  await editDraft(page, EXAMPLE);
   await page.getByRole("tab", { name: "Grid" }).click();
   await page.getByLabel("delete public.todos anon").check();
   await page.locator("#save").click();
   await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+  await expect(page.locator("#rewrite-warning")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await page.locator("#secret").fill(SECRET);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.locator("#draft")).toBeVisible();
+  await editDraft(page, EXAMPLE);
+  await page.getByRole("tab", { name: "Grid" }).click();
+  await page.getByLabel("insert public.todos anon").check();
+  await page.locator("#save").click();
+  await expect(page.locator("#rewrite-warning")).toBeVisible();
+});
+
+const touchDraft = async (page) => editDraft(page, (await page.locator("#draft").inputValue()) + " ");
+
+test("typing on the Document tab after a grid edit still warns, and cancel keeps the comments", async ({ page, request }) => {
+  await signIn(page);
+  await tickAnonSelect(page);
+  await page.getByRole("tab", { name: "Document" }).click();
+  await touchDraft(page);
+
+  await page.locator("#save").click();
+
+  await expect(page.locator("#rewrite-warning")).toContainText(WARNING);
+  await page.locator("#rewrite-cancel").click();
+  expect((await metadata(request)).document).toBe(EXAMPLE);
+});
+
+test("typing on the Document tab after a token edit still warns", async ({ page, request }) => {
+  await signIn(page);
+  await page.getByRole("tab", { name: "Sample token" }).click();
+  await page.locator("#jwt-audience").fill("my-api");
+  await page.locator("#apply-jwt").click();
+  await expect(page.locator("#draft")).toBeVisible();
+  await touchDraft(page);
+
+  await page.locator("#save").click();
+
+  await expect(page.locator("#rewrite-warning")).toContainText(WARNING);
+  await page.locator("#rewrite-cancel").click();
+  expect((await metadata(request)).document).toBe(EXAMPLE);
+});
+
+test("comments pasted on the Document tab before a grid edit are warned about too", async ({ page, request }) => {
+  const plain = JSON.stringify({ format: 1, projectId: "my-app", tables: [] }, null, 2) + "\n";
+  await replaceDocument(request, plain);
+  await signIn(page);
+  await editDraft(page, EXAMPLE);
+  await tickAnonSelect(page);
+
+  await page.locator("#save").click();
+
+  await expect(page.locator("#rewrite-warning")).toBeVisible();
+});
+
+test("a grid save whose current text cannot be read is warned about, not saved silently", async ({ page, request }) => {
+  await signIn(page);
+  await tickAnonSelect(page);
+  await page.route("**/_admin/v1/parse", (route) => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ valid: false, errors: ["unreadable"] }) }));
+
+  await page.locator("#save").click();
+
+  await expect(page.locator("#rewrite-warning")).toBeVisible();
+  await page.locator("#rewrite-cancel").click();
+  expect((await metadata(request)).document).toBe(EXAMPLE);
+});
+
+test("a double click on Save opens one warning and makes one save", async ({ page }) => {
+  await signIn(page);
+  await tickAnonSelect(page);
+
+  await page.locator("#save").dblclick();
+
+  await expect(page.locator("dialog")).toHaveCount(1);
+  await page.locator("#rewrite-save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+  await expect(page.getByText("Someone else saved first")).toHaveCount(0);
+});
+
+test("the warning starts on Cancel, is described by its text, and Escape cancels", async ({ page, request }) => {
+  await signIn(page);
+  await tickAnonSelect(page);
+  await page.locator("#save").click();
+
+  await expect(page.locator("#rewrite-cancel")).toBeFocused();
+  await expect(page.locator("#rewrite-warning")).toHaveAttribute("aria-describedby", "rewrite-text");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("dialog")).toHaveCount(0);
+  expect((await metadata(request)).document).toBe(EXAMPLE);
+  await page.locator("#save").click();
+  await expect(page.locator("#rewrite-warning")).toBeVisible();
 });

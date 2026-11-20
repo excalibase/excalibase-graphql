@@ -97,16 +97,16 @@ export function documentView(state, onEdit) {
     input);
 }
 
-/** Asks before a grid save rewrites a file that has comments or hand-written layout. Cancel writes nothing. */
+/** Asks before a save rewrites a file that has comments or hand-written layout. The caller closes it and writes. */
 export function rewriteDialog(handlers) {
   const remember = h("input", { type: "checkbox", id: "rewrite-remember" });
-  const dialog = h("dialog", { id: "rewrite-warning", "aria-label": "Saving rewrites permissions.yaml",
-    onclose: (event) => event.target.remove() },
-    h("p", {}, "Saving from the grid rewrites permissions.yaml. Comments and your own layout will be lost."),
+  return h("dialog", { id: "rewrite-warning", "aria-describedby": "rewrite-text" },
+    h("p", { id: "rewrite-text" },
+      "Saving from the grid rewrites permissions.yaml. Comments and your own layout will be lost."),
     h("label", { class: "op", for: "rewrite-remember" }, remember, "Don't ask again this session"),
     h("div", { class: "actions" },
       h("button", { type: "button", id: "rewrite-save", class: "danger",
-        onclick: () => { dialog.close(); handlers.onConfirm(remember.checked); } }, "Save"),
-      h("button", { type: "button", id: "rewrite-cancel", class: "secondary", onclick: () => dialog.close() }, "Cancel")));
-  return dialog;
+        onclick: () => handlers.onConfirm(remember.checked) }, "Save"),
+      h("button", { type: "button", id: "rewrite-cancel", class: "secondary", autofocus: true,
+        onclick: handlers.onCancel }, "Cancel")));
 }
