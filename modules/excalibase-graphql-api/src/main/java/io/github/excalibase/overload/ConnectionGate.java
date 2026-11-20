@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Counts open connections against the bound. A connection over it waits, in arrival order, and is let in
  * when another closes, so at most the bound is ever served at once.
  */
-final class ConnectionGate {
+final class ConnectionGate implements ConnectionPressure {
 
     /** A connection waiting for a slot. */
     interface Waiter {
@@ -57,7 +57,8 @@ final class ConnectionGate {
         return open;
     }
 
-    synchronized boolean isFull() {
+    @Override
+    public synchronized boolean isFull() {
         return open >= maxConnections;
     }
 
