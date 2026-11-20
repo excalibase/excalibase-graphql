@@ -39,6 +39,7 @@
         <module>modules/excalibase-graphql-starter</module>
         <module>modules/excalibase-graphql-postgres</module>
         <module>modules/excalibase-graphql-mysql</module>
+        <module>modules/excalibase-graphql-mongodb</module>
         <module>modules/excalibase-rest-api</module>
         <!-- rest-api before graphql-api: graphql-api depends on rest-api -->
     </modules>
