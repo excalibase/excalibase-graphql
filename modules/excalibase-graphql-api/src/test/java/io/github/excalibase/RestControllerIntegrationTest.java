@@ -831,7 +831,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(1)
     @DisplayName("merge-duplicates on an array updates the rows that exist, inserts the rest, answers every row")
-    void bulkMergeDuplicates() throws Exception {
+    void bulkMergeDuplicates() {
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Alicia\",\"email\":\"alice@test.com\"},"
               + "{\"id\":50,\"name\":\"Cara\",\"email\":\"cara@test.com\"}]", "Content-Type", "application/json", "Prefer", MERGE)
           .expect(status().isCreated())
@@ -846,7 +846,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(2)
     @DisplayName("merge-duplicates without return=representation answers 201 and no body")
-    void bulkMergeWithoutRepresentation() throws Exception {
+    void bulkMergeWithoutRepresentation() {
       http.post(BASE + "/users", "[{\"id\":50,\"name\":\"Clara\",\"email\":\"cara@test.com\"}]",
               "Content-Type", "application/json", "Prefer", "resolution=merge-duplicates")
           .expect(status().isCreated())
@@ -856,7 +856,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(3)
     @DisplayName("ignore-duplicates on an array inserts only the new rows and answers only those")
-    void bulkIgnoreDuplicates() throws Exception {
+    void bulkIgnoreDuplicates() {
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Ignored\",\"email\":\"alice@test.com\"},"
               + "{\"id\":51,\"name\":\"Dan\",\"email\":\"dan@test.com\"}]", "Content-Type", "application/json", "Prefer", IGNORE)
           .expect(status().isCreated())
@@ -867,7 +867,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(4)
     @DisplayName("on_conflict names the columns the rows merge on")
-    void bulkMergeOnConflictColumns() throws Exception {
+    void bulkMergeOnConflictColumns() {
       http.post(BASE + "/users?on_conflict=email", "[{\"name\":\"Bobby\",\"email\":\"bob@test.com\"},"
               + "{\"name\":\"Eve\",\"email\":\"eve@test.com\"}]", "Content-Type", "application/json", "Prefer", MERGE)
           .expect(status().isCreated())
@@ -880,7 +880,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(5)
     @DisplayName("on_conflict with ignore-duplicates skips a row that matches on those columns")
-    void bulkIgnoreOnConflictColumns() throws Exception {
+    void bulkIgnoreOnConflictColumns() {
       http.post(BASE + "/users?on_conflict=email", "[{\"name\":\"Nobody\",\"email\":\"bob@test.com\"}]",
               "Content-Type", "application/json", "Prefer", IGNORE)
           .expect(status().isCreated())
@@ -890,7 +890,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(6)
     @DisplayName("ignore-duplicates on a single object is honoured too, not run as a plain insert")
-    void singleIgnoreDuplicates() throws Exception {
+    void singleIgnoreDuplicates() {
       http.post(BASE + "/users", "{\"id\":1,\"name\":\"Ignored\",\"email\":\"alice@test.com\"}",
               "Content-Type", "application/json", "Prefer", IGNORE)
           .expect(status().isCreated());
@@ -924,7 +924,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(10)
     @DisplayName("a failing row rolls the whole merge back")
-    void failingRowRollsBack() throws Exception {
+    void failingRowRollsBack() {
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Changed\",\"email\":\"alice@test.com\"},"
               + "{\"id\":60,\"name\":null,\"email\":\"nameless@test.com\"}]", "Content-Type", "application/json", "Prefer", MERGE)
           .expect(status().is4xxClientError());
@@ -934,7 +934,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(12)
     @DisplayName("an array whose objects have different keys is refused, and merges nothing (no NULL overwrite)")
-    void differingKeysAreRefused() throws Exception {
+    void differingKeysAreRefused() {
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Changed\",\"email\":\"alice@test.com\"},{\"id\":2,\"name\":\"Bobby\"}]",
               "Content-Type", "application/json", "Prefer", MERGE)
           .expect(status().isBadRequest())
@@ -947,7 +947,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(13)
     @DisplayName("ignore-duplicates targets the primary key: a clash on another unique key is still a 409")
-    void ignoreDuplicatesDoesNotSwallowOtherUniqueClashes() throws Exception {
+    void ignoreDuplicatesDoesNotSwallowOtherUniqueClashes() {
       http.post(BASE + "/users", "[{\"id\":70,\"name\":\"Dupe\",\"email\":\"alice@test.com\"}]",
               "Content-Type", "application/json", "Prefer", IGNORE)
           .expect(status().isConflict());
@@ -956,7 +956,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(14)
     @DisplayName("Preference-Applied lists the resolution that was honoured")
-    void preferenceAppliedNamesTheResolution() throws Exception {
+    void preferenceAppliedNamesTheResolution() {
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"Alicia\",\"email\":\"alice@test.com\"}]",
               "Content-Type", "application/json", "Prefer", MERGE)
           .expect(status().isCreated())
@@ -969,7 +969,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(15)
     @DisplayName("on_conflict naming a column with no unique constraint is a 400, not a 500")
-    void onConflictWithoutUniqueConstraint() throws Exception {
+    void onConflictWithoutUniqueConstraint() {
       http.post(BASE + "/users?on_conflict=name", "[{\"name\":\"Alicia\",\"email\":\"z@test.com\"}]",
               "Content-Type", "application/json", "Prefer", MERGE)
           .expect(status().isBadRequest())
@@ -978,7 +978,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(16)
     @DisplayName("the same key twice in one merge is a 400, not a 500")
-    void sameKeyTwiceInOneMerge() throws Exception {
+    void sameKeyTwiceInOneMerge() {
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"a\",\"email\":\"alice@test.com\"},"
               + "{\"id\":1,\"name\":\"b\",\"email\":\"alice@test.com\"}]",
               "Content-Type", "application/json", "Prefer", MERGE)

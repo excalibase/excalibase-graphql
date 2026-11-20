@@ -244,7 +244,7 @@ class InsertOnlyIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    void rest_post_bulkUpsert_isForbidden() throws Exception {
+    void rest_post_bulkUpsert_isForbidden() {
         restPost("[{\"id\":1,\"email\":\"r@test.com\",\"body\":\"rest-bulk-upsert\"}]", "resolution=merge-duplicates")
                 .expect(status().isForbidden())
                 .expect(jsonPath("$.code").value("permission_denied"));
