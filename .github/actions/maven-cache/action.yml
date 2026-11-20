@@ -73,7 +73,8 @@ runs:
       shell: bash
       run: timeout --kill-after=30s 25m scripts/ci/warm-maven.sh
 
-    # a cache warmed through the unofficial mirror must never become what main restores
+    # Only pull_request runs can use the mirror, and a PR's caches are scoped to refs/pull/N/merge, so main never
+    # restores one. The save condition still refuses a mirror-warmed cache from any other event.
     - name: Check for the mirror marker
       id: mirror
       if: inputs.warm == 'true'
@@ -81,7 +82,8 @@ runs:
       run: |
         if [[ -f $RUNNER_TEMP/maven-mirror-used ]]; then
           echo "used=true" >>"$GITHUB_OUTPUT"
-          echo "::warning title=Maven cache not saved::This warm went through the Google mirror, so the cache is not saved"
+          echo "::warning title=Maven cache warmed through the mirror::Central failed twice, so part of this cache came from the unofficial Google mirror (pull request runs only)"
+          echo "Maven warm used the Google mirror" >>"$GITHUB_STEP_SUMMARY"
         fi
 
     - name: Report a failed warm
@@ -90,7 +92,7 @@ runs:
       run: echo "::warning title=Maven warm failed::Nothing was saved, the other jobs will download what they need themselves"
 
     - name: Save Maven cache
-      if: inputs.warm == 'true' && steps.restore.outputs.cache-hit != 'true' && steps.warm.outcome == 'success' && steps.mirror.outputs.used != 'true'
+      if: inputs.warm == 'true' && steps.restore.outputs.cache-hit != 'true' && steps.warm.outcome == 'success' && (steps.mirror.outputs.used != 'true' || github.event_name == 'pull_request')
       continue-on-error: true
       uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:

@@ -25,7 +25,7 @@ env:
 jobs:
   maven-warm:
     name: Warm Maven cache
-    timeout-minutes: 30
+    timeout-minutes: 35
     runs-on: ubuntu-24.04
     steps:
     - name: Checkout code

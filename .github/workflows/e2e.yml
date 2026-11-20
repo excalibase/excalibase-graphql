@@ -25,7 +25,7 @@ on:
 jobs:
   maven-warm:
     name: Warm Maven cache
-    timeout-minutes: 30
+    timeout-minutes: 35
     runs-on: ubuntu-24.04
     steps:
     - name: Checkout code
@@ -155,6 +155,7 @@ jobs:
   postgres-e2e-native:
     name: Postgres E2E Tests (Native)
     needs: native-build
+    if: ${{ !cancelled() && needs.native-build.result == 'success' }}
     runs-on: ubuntu-24.04
 
     steps:
@@ -202,7 +203,7 @@ jobs:
     name: Multi-Tenant E2E Tests (Native)
     needs: native-build
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request'
+    if: ${{ !cancelled() && needs.native-build.result == 'success' && github.event_name != 'pull_request' }}
 
     steps:
     - name: Checkout code
@@ -243,7 +244,7 @@ jobs:
     name: Study-Cases E2E Tests (Native)
     needs: native-build
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request'
+    if: ${{ !cancelled() && needs.native-build.result == 'success' && github.event_name != 'pull_request' }}
 
     steps:
     - name: Checkout code
@@ -284,7 +285,7 @@ jobs:
     name: MySQL E2E Tests (Native)
     needs: native-build
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request'
+    if: ${{ !cancelled() && needs.native-build.result == 'success' && github.event_name != 'pull_request' }}
 
     steps:
     - name: Checkout code
@@ -325,7 +326,7 @@ jobs:
     name: Engine Contracts (Native)
     needs: native-build
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request'
+    if: ${{ !cancelled() && needs.native-build.result == 'success' && github.event_name != 'pull_request' }}
 
     steps:
     - name: Checkout code

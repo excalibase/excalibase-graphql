@@ -47,6 +47,17 @@ for path in sorted(glob.glob(os.path.join(sys.argv[1], "*.yml"))):
         if name == "build-native":
             main_only = "refs/heads/main" in cond
             print(f"{wf} {name} keeps-main-only {main_only}")
+    print(f"{wf} maven-warm timeout {jobs.get('maven-warm', {}).get('timeout-minutes')}")
+    for name, job in jobs.items():
+        if "native-build" not in needs(job):
+            continue
+        cond = str(job.get("if", ""))
+        gated = "!cancelled()" in cond and "needs.native-build.result == 'success'" in cond
+        print(f"{wf} {name} native-guarded {gated}")
+        # the jobs that skipped pull requests before still do
+        if name != "postgres-e2e-native":
+            skips = "github.event_name != 'pull_request'" in cond
+            print(f"{wf} {name} native-skips-prs {skips}")
 PY
 )
 [[ -n $report ]] || { echo "FAIL no workflow uses the shared Maven cache"; exit 1; }
@@ -56,6 +67,9 @@ while read -r wf rest; do
     "warm-jobs "*) check "$wf: only maven-warm warms" "maven-warm" "${rest#warm-jobs }" ;;
     "warm-job-named-maven-warm "*) check "$wf: exactly one warm job" "True" "${rest#warm-job-named-maven-warm }" ;;
     "warm-job-needs-nothing "*) check "$wf: maven-warm waits for nothing" "True" "${rest#warm-job-needs-nothing }" ;;
+    *" native-guarded "*) job=${rest%% *}; check "$wf: $job is not skipped by a failed warm, and still needs native-build to succeed" "True" "${rest##* }" ;;
+    *" native-skips-prs "*) job=${rest%% *}; check "$wf: $job still skips pull requests" "True" "${rest##* }" ;;
+    "maven-warm timeout "*) check "$wf: maven-warm has room for a 25 minute warm and the save" "35" "${rest#maven-warm timeout }" ;;
     *" guarded "*) job=${rest%% *}; check "$wf: $job still runs when maven-warm fails" "True" "${rest##* }" ;;
     *" keeps-test-gate "*) job=${rest%% *}; check "$wf: $job still needs test to succeed" "True" "${rest##* }" ;;
     *" keeps-main-only "*) job=${rest%% *}; check "$wf: $job stays push-to-main only" "True" "${rest##* }" ;;
@@ -70,7 +84,10 @@ check "workflows never save the Maven cache themselves" "0" "$saves"
 action="$root/.github/actions/maven-cache/action.yml"
 grep -q 'timeout --kill-after=[0-9a-z]* 25m scripts/ci/warm-maven.sh' "$action"; check "the warm body is bounded below the job timeout" "0" "$?"
 grep -q 'maven-mirror-used' "$action"; check "the action looks for the mirror marker" "0" "$?"
-grep -A3 'name: Save Maven cache' "$action" | grep -q "steps.mirror.outputs.used != 'true'"; check "a cache warmed through the mirror is not saved" "0" "$?"
+save=$(grep -A3 'name: Save Maven cache' "$action")
+grep -q "steps.mirror.outputs.used != 'true' || github.event_name == 'pull_request'" <<<"$save"; check "a mirror-warmed cache is saved only on pull_request runs" "0" "$?"
+grep -q "steps.warm.outcome == 'success'" <<<"$save"; check "the save still needs a successful warm" "0" "$?"
+grep -q 'title=Maven cache warmed through the mirror' "$action"; check "mirror use is reported" "0" "$?"
 grep -q "'Makefile'" "$action"; check "the cache key covers the Makefile" "0" "$?"
 
 exit $((failures > 0))
