@@ -49,6 +49,7 @@ runs:
           *) state="miss, nothing restored" ;;
         esac
         echo "Maven cache: $state (warm job: $WARM)"
+        echo "::notice title=Maven cache::$state (warm job: $WARM)"
         echo "Maven cache: $state (warm job: $WARM)" >>"$GITHUB_STEP_SUMMARY"
 
     # the job's own Maven run is compared against this by scripts/ci/m2-files.sh report

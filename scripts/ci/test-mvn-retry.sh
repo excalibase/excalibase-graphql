@@ -93,6 +93,8 @@ RUNNER_TEMP="$work/no-snapshot" "$root/scripts/ci/m2-files.sh" report >/dev/null
 M2_REPO="$work/cold/repo" RUNNER_TEMP="$work" "$root/scripts/ci/m2-files.sh" snapshot >/dev/null 2>&1; check "snapshot of a missing repository exits 0" "0" "$?"
 mkdir -p "$work/cold/repo/a" && touch "$work/cold/repo/a/x.jar" "$work/cold/repo/a/y.pom"
 check "and the report then counts every file as added" "Maven added 2 file(s) to ~/.m2 during this job" "$(M2_REPO="$work/cold/repo" RUNNER_TEMP="$work" "$root/scripts/ci/m2-files.sh" report | head -1)"
+# the count also goes out as a workflow notice: job logs are too big to fetch, annotations are not
+check "the report emits a notice annotation" "::notice title=Maven downloads::Maven added 2 file(s) to ~/.m2 during this job" "$(M2_REPO="$work/cold/repo" RUNNER_TEMP="$work" "$root/scripts/ci/m2-files.sh" report | grep '^::notice')"
 
 grep -q 'mvn-retry.sh' "$root/.github/actions/maven-cache/action.yml"; check "the cache action uses the tested loop" "0" "$?"
 

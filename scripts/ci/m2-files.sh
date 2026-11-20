@@ -15,7 +15,9 @@ case ${1:-} in
     # the job may have failed before the cache action ran
     [[ -f $before ]] || { echo "No Maven cache snapshot in this job, nothing to report"; exit 0; }
     added=$(comm -13 "$before" <(list))
-    echo "Maven added $(grep -c . <<<"$added" || true) file(s) to ~/.m2 during this job"
+    summary="Maven added $(grep -c . <<<"$added" || true) file(s) to ~/.m2 during this job"
+    echo "$summary"
+    echo "::notice title=Maven downloads::$summary"
     [[ -z $added ]] || head -20 <<<"$added"
     ;;
   *) echo "usage: m2-files.sh snapshot|report" >&2; exit 2 ;;
