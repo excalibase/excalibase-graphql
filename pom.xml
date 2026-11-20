@@ -32,6 +32,7 @@
     <modules>
         <!-- RLS engine modules (vendored): pure library, no runtime deps.
              Listed first as graphql-api depends on them. -->
+        <module>modules/excalibase-test-support</module>
         <module>modules/excalibase-rls-core</module>
         <module>modules/excalibase-rls-jdbc</module>
         <module>modules/excalibase-graphql-api</module>
@@ -103,7 +104,7 @@
             **/model/**
         </sonar.exclusions>
         <!-- The console's browser scripts are not measured by JaCoCo -->
-        <sonar.coverage.exclusions>**/resources/console/**</sonar.coverage.exclusions>
+        <sonar.coverage.exclusions>**/resources/console/**,**/testsupport/**</sonar.coverage.exclusions>
     </properties>
 
     <dependencyManagement>
@@ -220,6 +221,13 @@
                 <groupId>io.github.excalibase</groupId>
                 <artifactId>excalibase-rest-api</artifactId>
                 <version>${excalibase.version}</version>
+            </dependency>
+            <!-- Test-only: how Testcontainers pulls images, for every module that starts containers (EXC-792). -->
+            <dependency>
+                <groupId>io.github.excalibase</groupId>
+                <artifactId>excalibase-test-support</artifactId>
+                <version>${excalibase.version}</version>
+                <scope>test</scope>
             </dependency>
             <!-- Row-level + column-level security engine (vendored reactor modules). -->
             <dependency>

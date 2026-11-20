@@ -52,12 +52,23 @@ jobs:
     runs-on: ubuntu-24.04
     needs: maven-warm
     if: ${{ !cancelled() }}
+    # Testcontainers pulls postgres, mysql, nats and minio; anonymous pulls hit Docker Hub's rate
+    # limit (EXC-792). Fork PRs have no secret and pull anonymously.
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0  # full history for accurate PR analysis
+
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Set up JDK 25
         uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4.9.1
