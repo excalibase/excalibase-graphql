@@ -132,7 +132,10 @@ nav:
       - Run the Engine on Your Own: deploy/standalone.md
       - Docker and Compose: deploy/standalone-docker.md
       - Kubernetes: deploy/standalone-kubernetes.md
-  - Database Compatibility: database-compatibility.md
+  - Databases:
+      - Compatibility Matrix: database-compatibility.md
+      - PostgreSQL: databases/postgresql.md
+      - MySQL: databases/mysql.md
   - SDK (TypeScript): sdk.md
   - Testing: testing.md
   - Contributing: CONTRIBUTING.md

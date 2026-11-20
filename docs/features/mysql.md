@@ -1,6 +1,6 @@
 # MySQL Support
 
-Excalibase GraphQL supports MySQL 8.4+ as a first-class database backend. All core features work out of the box — simply point the application at your MySQL database and get a full GraphQL API automatically.
+Excalibase GraphQL supports MySQL 8.0 and 8.4 as a first-class database backend. All core features work out of the box — simply point the application at your MySQL database and get a full GraphQL API automatically.
 
 ## Quick Start
 
@@ -212,10 +212,10 @@ Forward and reverse FK fields are automatically added to the schema:
 {
   excalibaseOrdersAggregate {
     count
-    sum
-    avg
-    min
-    max
+    sum { total }
+    avg { total }
+    min { total }
+    max { total }
   }
 }
 ```
@@ -262,7 +262,7 @@ SQL, and a differential suite checks every case against native Postgres RLS on i
   check runs on exactly the rows found again by those keys; a written row that cannot be found again
   (an `AUTO_INCREMENT` 0, a rounded key) rolls the write back. A write needs a primary key; an insert
   must supply it or let `AUTO_INCREMENT` generate it; an update that changes it is followed to the new
-  key; `onConflict` is refused.
+  key; an `onConflict` upsert is checked as an insert and as an update.
 - That check runs after the write, so an insert or update check that reads, through a relationship or
   `_exists`, a table the same mutation writes (this field's table or an earlier field's) is refused with
   `400`: Postgres judges it against the database as it was before the write, which MySQL cannot.
@@ -273,20 +273,12 @@ SQL, and a differential suite checks every case against native Postgres RLS on i
 
 ## Filtering Operators
 
-| Operator | Description | Example |
-|----------|-------------|---------|
-| `eq` | Equal | `{ status: { eq: "active" } }` |
-| `neq` | Not equal | `{ status: { neq: "cancelled" } }` |
-| `gt` / `gte` | Greater than / or equal | `{ total: { gte: 50 } }` |
-| `lt` / `lte` | Less than / or equal | `{ price: { lte: 100 } }` |
-| `in` | In list | `{ status: { in: ["pending", "processing"] } }` |
-| `notIn` | Not in list | `{ status: { notIn: ["cancelled"] } }` |
-| `isNull` | Is null | `{ email: { isNull: true } }` |
-| `isNotNull` | Is not null | `{ email: { isNotNull: true } }` |
-| `contains` | Substring match | `{ first_name: { contains: "ali" } }` |
-| `startsWith` | Prefix match | `{ last_name: { startsWith: "Sm" } }` |
-| `endsWith` | Suffix match | `{ email: { endsWith: "@example.com" } }` |
-| `like` | SQL LIKE pattern | `{ email: { like: "%@gmail%" } }` |
+The common operators (`eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, `isNull`, `isNotNull`, `contains`,
+`startsWith`, `endsWith`, `like`, `ilike`) run as on PostgreSQL. MySQL also runs `regex` and `iregex`, JSON
+`contains`, `containedBy`, `hasKey`, `hasKeys` and `hasAnyKeys`, and `search`, `phraseSearch` and `rawSearch` on
+columns with their own `FULLTEXT` index. See [MySQL operators and writes](../databases/mysql.md) and the
+[compatibility matrix](../database-compatibility.md). An operator MySQL cannot run is not in the schema, and is
+refused with an error if sent anyway.
 
 ## Differences from PostgreSQL
 
@@ -294,46 +286,8 @@ SQL, and a differential suite checks every case against native Postgres RLS on i
 |---------|-----------|-------|
 | `orderBy` value | Enum (`ASC` / `DESC`) | String (`"ASC"` / `"DESC"`) |
 | Update mutation | `update{Table}(input: { pk, fields... })` | `update{Table}(id: X, input: { fields... })` |
-| Aggregate result | Nested per-column (`sum { total }`) | Flat scalars (`sum`, `avg`) |
-| Subscriptions / CDC | Supported | Not yet supported |
+| Upsert (`onConflict`) | `ON CONFLICT` | One-row insert-or-update; see [upsert](../databases/mysql.md#upsert) |
+| Nested inserts, `distinctOn`, vector search | Supported | Not available (refused) |
+| Subscriptions / CDC | Supported | The schema offers them; events come from the watcher's binlog stream |
 | Custom composite types | Supported | N/A |
 | Array types | Supported | N/A |
-
-## REST API
-
-The PostgREST-compatible REST API (`/{projectId}/api/v1/{table}`) serves MySQL with the same surface as
-GraphQL: `select` with to-one and to-many embeds, filters, `order` (including `nullsfirst`/`nullslast`),
-`limit`/`offset`, `Prefer: count=exact`, inserts, bulk inserts, updates, deletes and
-`Prefer: resolution=merge-duplicates` upserts.
-
-MySQL has no `RETURNING`, so `Prefer: return=representation` reads the written rows back by primary key:
-
-| Write | How the rows come back |
-|-------|------------------------|
-| Insert | One statement per row; read back by the key sent, or the `AUTO_INCREMENT` key generated (only when the key is that column) |
-| Update | Keys of the matched rows locked (`FOR UPDATE`) before the update, then read back (a changed key is followed) |
-| Delete | Rows read, locked, before they are deleted |
-| Upsert | The sent key is locked (`FOR UPDATE`): an `INSERT` when no row holds it, else an `UPDATE` of that row alone, read back by the key sent; without every key column it is a plain insert. An existing row the update permission's filter hides is left as it is |
-
-Filters run natively where MySQL has the operator: `match`/`imatch` (`REGEXP_LIKE`), `cs`/`cd`/`haskey`
-(`JSON_CONTAINS`, `JSON_CONTAINS_PATH`) and `fts`/`plfts`/`phfts` (`MATCH … AGAINST`, the column needs its own
-`FULLTEXT` index).
-
-An upsert that collides on a unique key other than the primary key fails with `409 unique_violation`, as on
-Postgres, however that key's columns were filled (sent, `DEFAULT`, generated or by a trigger): the upsert never
-uses `ON DUPLICATE KEY UPDATE`, which would update whichever row collides. Under `READ COMMITTED`, which takes no
-gap lock, a concurrent insert of the same key makes the upsert fail as a duplicate rather than write twice.
-
-Refused with `400` and a message naming MySQL, never ignored:
-
-- array, range, JSON path, web-search and vector operators (`ov`, `sl`, `arraylength`, `jsonpath`, `wfts`, `vector`, …)
-- `return=representation` (or `max-affected`), or a permission check, on a table without a primary key, or an insert whose key is neither sent nor generated
-- RPC (`/rpc/{function}`): functions are not tracked on MySQL
-
-A filter on a column the table does not have is a `400` naming the column on every database, also inside
-`or=(…)`: a typo never returns every row.
-
-## Limitations
-
-- **CDC / Subscriptions** — real-time subscriptions via Change Data Capture are PostgreSQL-only for now
-- **Spatial types** — PostGIS equivalents not yet supported
