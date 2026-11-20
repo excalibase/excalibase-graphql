@@ -98,10 +98,34 @@ written. Each source writes in its own way:
 
 | Source | How it saves |
 |---|---|
-| `file` | Writes a temporary file in the same folder, then renames it over `permissions.yaml`. The folder must be writable. |
+| `file` | Writes a temporary file in the same folder, then renames it over `permissions.yaml`. The folder must be writable. Keeps a version history, see below. |
 | `db` | Inserts a new row with version + 1. The primary key makes two racing saves conflict. Old rows stay as history. |
 | `s3` | A conditional `PUT` with `If-Match`. Offered only after a start-up probe shows the store enforces it. |
 | `url` | Not writable. Change the document where it is served. |
+
+## Version history (file source)
+
+Every save through the console or the admin API adds the text it replaces to `permissions.history`, next to
+`permissions.yaml` (for another file name, next to it with `.history`). It is one file with one entry per line
+(JSON Lines): the time of the save, the version hash and the whole previous text, comments included.
+
+- **The last 20 versions are kept.** Older ones are dropped, and the file never grows past 20 times the 1 MiB
+  document limit.
+- **It holds old rules.** Old versions can show tables and roles you removed on purpose, and any literal secret
+  you once put in the file. It gets the same permissions as `permissions.yaml`. Keep the folder private.
+- **Hand edits are not recorded.** Only saves that go through the engine are. A file you edit yourself, or
+  replace with a deploy, leaves no entry. Keep `permissions.yaml` in git; the history is a safety net for console
+  saves, not a replacement for it.
+- **It never blocks a save.** If the history cannot be written, or is damaged, the save still goes ahead and the
+  engine logs `metadata_history_not_written` or `metadata_history_corrupt`. A damaged history starts afresh.
+- **Restore is a normal save.** The History tab shows each version against the current document and puts one
+  back. The restored text is checked like any save (an old version that no longer passes is refused with the
+  reason), it needs the version you started from, and the text it replaces goes into the history, so a restore can
+  be undone. Over the API: `GET /_admin/v1/history`, `GET /_admin/v1/history/{id}` and
+  `POST /_admin/v1/history/{id}/restore` with `If-Match`.
+- **A read-only folder has no history.** A mounted ConfigMap cannot be saved to, so nothing is added.
+- **`db`, `s3` and `url` keep none yet.** The console says history is available for the file source. The `db`
+  source's old rows are the nearest thing today.
 
 ## Security checklist
 
@@ -127,8 +151,10 @@ written. Each source writes in its own way:
   narrow policy, or serve the object through a presigned URL with the `url` source.
 - **Saving from the grid or the sample-token form writes JSON and drops YAML comments and your own layout.** The
   console asks before such a save when the text it started from has comments or layout to lose: you confirm or
-  cancel, and cancel writes nothing. To keep comments, edit the file yourself and let the engine pick it up.
-- **The explorer and history views are not built yet.** The console has the rules grid, a sample token and
-  export.
+  cancel, and cancel writes nothing. The warning lists what the save changes, and a line that gives a role an
+  operation is red. The text you replace stays in the history. To keep comments in the live file, edit it yourself
+  and let the engine pick it up.
+- **The explorer is not built yet.** The console has the rules grid, a sample token, the history of a file source
+  and export.
 - **A change takes time to apply.** The engine applies a change after the poll that saw it and one more poll that
   reads the same content, so about two poll intervals.
