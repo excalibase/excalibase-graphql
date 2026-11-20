@@ -4,6 +4,7 @@ import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.compiler.KeyedWrite;
 import io.github.excalibase.compiler.KeyedWrites;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
@@ -326,6 +327,9 @@ public class RestQueryCompiler {
      * update permission's columns, presets and filter, and every written row must pass both checks.
      */
     public CompiledResult compileUpsert(String table, Map<String, Object> input, List<String> conflictCols) {
+        if (!dialect.supports(DialectFeature.UPSERT)) {
+            throw new IllegalArgumentException(dialect.databaseName() + " does not support upsert (on_conflict)");
+        }
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
         Map<String, Object> row = writable(table, RlsOp.INSERT, input);

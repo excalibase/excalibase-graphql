@@ -13,5 +13,7 @@ public enum DialectFeature {
     /** The {@code distinct_on} argument of list queries. */
     DISTINCT_ON,
     /** A change stream behind the {@code <table>Changes} subscriptions. */
-    SUBSCRIPTIONS
+    SUBSCRIPTIONS,
+    /** The {@code vector} argument of list queries: k-nearest-neighbour ordering by embedding distance. */
+    VECTOR_SEARCH
 }

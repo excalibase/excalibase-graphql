@@ -263,11 +263,64 @@ class MysqlPermissionsIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    void onConflict_isRefusedLoudly_neverIgnored() throws Exception {
+    void onConflict_insertsThenOverwritesTheNamedColumns() throws Exception {
         as(ALICE, "mutation { createTestTags(input: { code: \"dup\", label: \"a\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [label] }) { code label } }")
+                .expect(jsonPath("$.data.createTestTags.label").value("a"));
+        as(ALICE, "mutation { createTestTags(input: { code: \"dup\", label: \"b\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [label] }) { code label } }")
+                .expect(jsonPath("$.data.createTestTags.label").value("b"));
+        assertThat(database().queryForObject("SELECT count(*) FROM tags WHERE code = 'dup'", Integer.class)).isOne();
+        assertThat(database().queryForObject("SELECT label FROM tags WHERE code = 'dup'", String.class)).isEqualTo("b");
+    }
+
+    @Test
+    void onConflict_neverOverwritesARowTheUpdateFilterHides() throws Exception {
+        insertNote(185, BOB, "bobs", "open");
+        insertNote(186, ALICE, "alices", "open");
+
+        as(ALICE, "mutation { createTestNotes(input: { id: 185, title: \"hijacked\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [title] }) { id } }")
+                .expect(status().isOk());
+        as(ALICE, "mutation { createTestNotes(input: { id: 186, title: \"renamed\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [title] }) { id title } }")
+                .expect(jsonPath("$.data.createTestNotes.title").value("renamed"));
+        assertThat(count("id = 185 AND title = 'bobs' AND owner_id = '" + BOB + "'")).isOne();
+        assertThat(count("id = 186 AND title = 'renamed'")).isOne();
+    }
+
+    @Test
+    void onConflict_onANamedUniqueIndex_updatesTheRowHoldingIt_andRefusesAnUnknownConstraint() throws Exception {
+        database().update("INSERT INTO profiles (id, owner_id, org_id, slot, title) VALUES (500, ?, 7, 'main', 'orig')",
+                ALICE);
+        as(ALICE, "mutation { createTestProfiles(input: { id: 999, org_id: 7, slot: \"main\", title: \"merged\" },"
+                + " onConflict: { constraint: \"profiles_org_slot\", update_columns: [title] }) { id title } }")
+                .expect(status().isOk());
+        assertThat(database().queryForObject("SELECT title FROM profiles WHERE id = 500", String.class)).isEqualTo("merged");
+        assertThat(database().queryForObject("SELECT count(*) FROM profiles WHERE id = 999", Integer.class)).isZero();
+
+        as(ALICE, "mutation { createTestProfiles(input: { id: 998, org_id: 7, slot: \"main\", title: \"x\" },"
+                + " onConflict: { constraint: \"profiles_pkey\", update_columns: [title] }) { id } }")
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown constraint 'profiles_pkey'")));
+    }
+
+    @Test
+    void onConflict_namingAColumnNotInTheInput_isRefused() throws Exception {
+        as(ALICE, "mutation { createTestTags(input: { code: \"nc\" },"
                 + " onConflict: { constraint: \"PRIMARY\", update_columns: [label] }) { code } }")
-                .expect(jsonPath("$.errors[0].message", containsString("onConflict")));
-        assertThat(database().queryForObject("SELECT count(*) FROM tags WHERE code = 'dup'", Integer.class)).isZero();
+                .expect(jsonPath("$.errors[0].message", containsString("'label' is not in the input")));
+        assertThat(database().queryForObject("SELECT count(*) FROM tags WHERE code = 'nc'", Integer.class)).isZero();
+    }
+
+    @Test
+    void aUserFilterNeverWidensThePermissionFilter() throws Exception {
+        insertNote(190, ALICE, "mine-regex", "open");
+        insertNote(191, BOB, "theirs-regex", "open");
+
+        as(ALICE, "{ testNotes(where: { title: { regex: \"regex$\" } }) { id } }")
+                .expect(jsonPath("$.data.testNotes[*].id", contains(190)));
+        as(ALICE, "{ testNotes(where: { title: { iregex: \"^THEIRS\" } }) { id } }")
+                .expect(jsonPath("$.data.testNotes", hasSize(0)));
     }
 
     @Test

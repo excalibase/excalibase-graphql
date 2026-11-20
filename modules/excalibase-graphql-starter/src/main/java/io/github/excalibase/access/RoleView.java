@@ -52,6 +52,11 @@ final class RoleView {
         if (reflected.hasPrimaryKey(table) && readable.containsAll(reflected.getPrimaryKeys(table))) {
             reflected.getPrimaryKeys(table).forEach(key -> view.addPrimaryKey(table, key));
         }
+        reflected.getUniqueKeys(table).forEach((name, columns) -> {
+            if (columns.stream().allMatch(column -> view.getColumnType(table, column) != null)) {
+                view.addUniqueKey(table, name, columns);
+            }
+        });
     }
 
     private static Set<String> writeOnly(TableRules rules, Set<String> readable) {

@@ -187,11 +187,30 @@ class MysqlFilterIntegrationTest {
     @Nested
     class Mutations {
         @Test
-        void onConflictIsRefusedRatherThanIgnored() {
-            assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { createDoc(input: { title: \"x\" }, "
-                    + "onConflict: { constraint: \"PRIMARY\", update_columns: [\"title\"] }) { id } }")))
+        void onConflictOnAnUnknownConstraintIsRefused() {
+            assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { createDoc(input: { id: 1, title: \"x\" }, "
+                    + "onConflict: { constraint: \"nope\", update_columns: [\"title\"] }) { id } }")))
                     .isInstanceOf(IllegalArgumentException.class)
-                    .hasMessageContaining("'onConflict'");
+                    .hasMessageContaining("Unknown constraint 'nope'");
+        }
+
+        @Test
+        void onConflictWithoutUpdateColumnsIsRefusedRatherThanIgnored() {
+            assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { createDoc(input: { id: 1, title: \"x\" }, "
+                    + "onConflict: { constraint: \"PRIMARY\" }) { id } }")))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("update_columns");
+        }
+
+        @Test
+        void distinctOnAndVectorAreRefusedRatherThanDropped() {
+            assertThatThrownBy(() -> compiler().compile(Parser.parse("{ doc(distinctOn: [\"title\"]) { id } }")))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("MySQL does not support distinctOn");
+            assertThatThrownBy(() -> compiler().compile(Parser.parse(
+                    "{ doc(vector: { column: \"title\", near: [1.0] }) { id } }")))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("MySQL does not support the vector argument");
         }
 
         @Test
