@@ -84,6 +84,11 @@ public interface SqlDialect {
     /** Encode a value as a cursor. PG: encode(convert_to(expr::text, 'utf-8'), 'base64') */
     String encodeCursor(String expr);
 
+    /** The bytes a cursor {@link #encodeCursor} wrote stand for; IllegalArgumentException when it is no cursor. */
+    default byte[] decodeCursor(String cursor) {
+        return java.util.Base64.getDecoder().decode(cursor);
+    }
+
     /** A JSON array of the given SQL expressions. */
     default String jsonArray(List<String> exprs) {
         return "JSON_ARRAY(" + String.join(", ", exprs) + ")";
@@ -156,6 +161,21 @@ public interface SqlDialect {
     /** Whether this database runs {@code feature}. */
     default boolean supports(DialectFeature feature) {
         return features().contains(feature);
+    }
+
+    /** Appended to a SELECT whose rows a write then changes, so no other writer slips between them. */
+    default String lockRows() {
+        return " FOR UPDATE";
+    }
+
+    /** The row values {@code (a, b) IN <list>} compares against, one parenthesised tuple per entry. */
+    default String rowValueList(List<String> tuples) {
+        return "(" + String.join(", ", tuples) + ")";
+    }
+
+    /** What stands between a table and its alias in an UPDATE target. */
+    default String updateAliasKeyword() {
+        return " ";
     }
 
     /** Parameter cast suffix for non-standard types. PG: ::uuid, ::jsonb, etc. Empty string if no cast needed. */

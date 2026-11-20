@@ -7,7 +7,8 @@ package io.github.excalibase.permissions.compile;
  */
 public enum PermissionDialect {
     POSTGRES(new PostgresSql()),
-    MYSQL(new MysqlSql());
+    MYSQL(new MysqlSql()),
+    SQLITE(new SqliteSql());
 
     private final DialectSql sql;
 
@@ -19,7 +20,7 @@ public enum PermissionDialect {
         return sql;
     }
 
-    /** Postgres functions can return table rows; MySQL functions return scalars, so none can be tracked. */
+    /** Postgres functions can return table rows; MySQL and SQLite have none to track. */
     public boolean tracksFunctions() {
         return sql.tracksFunctions();
     }

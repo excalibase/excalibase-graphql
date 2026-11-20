@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=https://excalibase.io/schemas/metadata-v1.json
+#
+# SQLite has no roles and no row security, so the engine enforces every rule below itself, in the SQL it sends.
+# A table with no rule is not reachable by anyone except the `service` role. The file's one schema is `main`.
+format: 1
+projectId: my-app            # must equal APP_PROJECT_ID of the engine
+
+jwt:
+  secret: env:JWT_SECRET
+  algorithms: [HS256]
+  audience: my-app-api
+  claims:
+    role: role
+    userId: sub
+
+tables:
+  - table: main.todos
+    role: user
+    select:
+      filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}   # a user sees only their own rows
+      columns: "*"
+    insert:
+      check: {}
+      columns: ["title", "done"]
+      set: {"owner_id": "X-Excalibase-User-Id"}               # the owner is always the caller
+    update:
+      filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}
+      check: {}
+      columns: ["title", "done"]
+    delete:
+      filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}

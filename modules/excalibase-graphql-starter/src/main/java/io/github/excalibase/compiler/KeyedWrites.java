@@ -26,7 +26,6 @@ public final class KeyedWrites {
 
     private static final String KEY_PARAM = "rk_";
     private static final String CONFLICT_PARAM = "cf_";
-    private static final String FOR_UPDATE = " FOR UPDATE";
 
     /** How a written row reads: its JSON object over {@code alias}, and the select filter it must pass. */
     public record ReadBack(String objectSql, String readable, Map<String, Object> params, boolean aggregate) {
@@ -180,7 +179,7 @@ public final class KeyedWrites {
     }
 
     private String updateSql(String assignments, List<Object> key, Map<String, Object> params) {
-        return UPDATE + quotedTable + SPACE + alias + SET + assignments + WHERE + keyPredicate(List.of(key), params);
+        return UPDATE + quotedTable + dialect.updateAliasKeyword() + alias + SET + assignments + WHERE + keyPredicate(List.of(key), params);
     }
 
     /** {@code where} selects the rows {@code dml} updates; {@code set} is what it writes, by column. */
@@ -291,17 +290,17 @@ public final class KeyedWrites {
     /** The row keyed {@code key}, locked, when it also meets {@code condition} (when set). */
     private String existsSql(List<Object> key, Map<String, Object> params, String condition) {
         return SELECT + "1" + FROM + quotedTable + SPACE + alias + WHERE + keyPredicate(List.of(key), params)
-                + (condition == null ? "" : AND + parens(condition)) + FOR_UPDATE;
+                + (condition == null ? "" : AND + parens(condition)) + dialect.lockRows();
     }
 
     private String lockedKeysSql(String where) {
         return SELECT + joinCols(keys.stream().map(this::column).toList()) + FROM + quotedTable + SPACE + alias
-                + WHERE + parens(where) + FOR_UPDATE;
+                + WHERE + parens(where) + dialect.lockRows();
     }
 
     private String lockedRowsSql(String where) {
         return SELECT + readBack.objectSql() + FROM + quotedTable + SPACE + alias + WHERE + parens(where) + readable()
-                + FOR_UPDATE;
+                + dialect.lockRows();
     }
 
     private String aggregate(NamedParameterJdbcTemplate jdbc, List<List<Object>> written) {
@@ -333,7 +332,7 @@ public final class KeyedWrites {
         }
         String columns = keys.size() == 1 ? column(keys.getFirst())
                 : parens(String.join(COMMA_SEP, keys.stream().map(this::column).toList()));
-        return columns + IN + parens(String.join(COMMA_SEP, tuples));
+        return columns + IN + (keys.size() == 1 ? parens(String.join(COMMA_SEP, tuples)) : dialect.rowValueList(tuples));
     }
 
     private String readable() {

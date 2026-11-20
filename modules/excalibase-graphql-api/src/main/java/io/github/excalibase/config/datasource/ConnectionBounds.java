@@ -2,6 +2,7 @@ package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariConfig;
 import io.github.excalibase.service.DatabaseEngine;
+import io.github.excalibase.sqlite.SqliteConnectionProperties;
 
 import java.time.Duration;
 
@@ -61,6 +62,11 @@ final class ConnectionBounds {
     requireUsable(readTimeout);
     config.setConnectionTimeout(CONNECT_TIMEOUT_SECONDS * 1000L);
     config.setValidationTimeout(VALIDATION_TIMEOUT_MS);
+    if (engine == DatabaseEngine.SQLITE) {
+      // A file has no server to dial or to stop answering; its waits are the busy timeout of each connection.
+      SqliteConnectionProperties.defaults().forEach(config::addDataSourceProperty);
+      return;
+    }
     if (engine == DatabaseEngine.MYSQL) {
       config.addDataSourceProperty("connectTimeout", String.valueOf(CONNECT_TIMEOUT_SECONDS * 1000));
       config.addDataSourceProperty("socketTimeout", String.valueOf(readTimeout.toMillis()));
