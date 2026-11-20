@@ -823,7 +823,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
     private static final String MERGE = "return=representation, resolution=merge-duplicates";
     private static final String IGNORE = "return=representation, resolution=ignore-duplicates";
 
-    private void assertUser(int id, String name) throws Exception {
+    private void assertUser(int id, String name) {
       http.get(BASE + "/users?id=eq." + id)
           .expect(status().isOk())
           .expect(jsonPath("$.data[0].name", is(name)));
@@ -899,7 +899,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(7)
     @DisplayName("an unknown on_conflict column is a 400")
-    void unknownOnConflictColumn() throws Exception {
+    void unknownOnConflictColumn() {
       http.post(BASE + "/users?on_conflict=nope", "[{\"id\":1,\"name\":\"x\",\"email\":\"alice@test.com\"}]",
               "Content-Type", "application/json", "Prefer", MERGE)
           .expect(status().isBadRequest())
@@ -908,7 +908,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(8)
     @DisplayName("merge-duplicates together with ignore-duplicates is refused, not guessed")
-    void conflictingResolutions() throws Exception {
+    void conflictingResolutions() {
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"x\",\"email\":\"alice@test.com\"}]",
               "Content-Type", "application/json", "Prefer", "resolution=merge-duplicates, resolution=ignore-duplicates")
           .expect(status().isBadRequest());
@@ -916,7 +916,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(9)
     @DisplayName("a plain array with a duplicate key is still a 409")
-    void plainBulkInsertStillConflicts() throws Exception {
+    void plainBulkInsertStillConflicts() {
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"x\",\"email\":\"other@test.com\"}]",
               "Content-Type", "application/json", "Prefer", "return=representation")
           .expect(status().isConflict());
@@ -934,7 +934,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test @Order(11)
     @DisplayName("values are bound, never spliced into the statement")
-    void valuesAreParameters() throws Exception {
+    void valuesAreParameters() {
       String hostile = "x'); DROP TABLE users;--";
       http.post(BASE + "/users", "[{\"id\":1,\"name\":\"" + hostile + "\",\"email\":\"alice@test.com\"}]",
               "Content-Type", "application/json", "Prefer", MERGE)

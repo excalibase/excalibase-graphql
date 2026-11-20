@@ -336,11 +336,14 @@ class RestQueryCompilerTest {
     @Test @DisplayName("compileBulkUpsert refuses to merge on no columns, and an empty or oversized array")
     void bulkUpsertRefusals() {
       var rows = List.of(Map.<String, Object>of("id", 1, "name", "A"));
+      List<String> noColumns = List.of();
+      List<Map<String, Object>> noRows = List.of();
       var noKey = assertThrows(IllegalArgumentException.class,
-          () -> compiler.compileBulkUpsert("public.products", rows, List.of(), RestQueryCompiler.Conflict.MERGE));
+          () -> compiler.compileBulkUpsert("public.products", rows, noColumns, RestQueryCompiler.Conflict.MERGE));
       assertTrue(noKey.getMessage().contains("on_conflict"), noKey.getMessage());
+      List<String> key = List.of("id");
       assertThrows(IllegalArgumentException.class,
-          () -> compiler.compileBulkUpsert("public.products", List.of(), List.of("id"), RestQueryCompiler.Conflict.MERGE));
+          () -> compiler.compileBulkUpsert("public.products", noRows, key, RestQueryCompiler.Conflict.MERGE));
     }
 
     @Test @DisplayName("compileBulkUpsert unions the columns of every row; a column a row omits is NULL, as in a bulk insert")
