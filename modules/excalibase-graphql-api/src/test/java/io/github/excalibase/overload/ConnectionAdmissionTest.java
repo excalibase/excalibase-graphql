@@ -108,11 +108,11 @@ class ConnectionAdmissionTest {
 
     @Test
     @DisplayName("a connection still waiting when its wait runs out is refused, leaves the queue and is never admitted later")
-    void waitRunsOut() throws Exception {
+    void waitRunsOut() {
         ConnectionGate gate = new ConnectionGate(1);
         EmbeddedChannel first = new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 10));
         EmbeddedChannel second = new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 10));
-        Thread.sleep(30);
+        second.advanceTimeBy(30, java.util.concurrent.TimeUnit.MILLISECONDS);
         second.runScheduledPendingTasks();
 
         assertThat(written(second)).startsWith("HTTP/1.1 503");

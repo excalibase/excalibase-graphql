@@ -8,6 +8,7 @@ The engine limits open connections to what the CPUs it has can serve. Past the l
 | `app.overload.max-connections-per-cpu` (`APP_OVERLOAD_MAX_CONNECTIONS_PER_CPU`) | `256` | open connections per CPU, websockets included |
 | `app.overload.accept-count-per-cpu` (`APP_OVERLOAD_ACCEPT_COUNT_PER_CPU`) | `256` | kernel accept backlog per CPU (absorbs a burst; excess connections are accepted and refused) |
 | `app.overload.max-keep-alive-requests` (`APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS`) | `20` | requests before the server closes a keep-alive connection |
+| `app.overload.wait-queue-per-cpu` (`APP_OVERLOAD_WAIT_QUEUE_PER_CPU`) | same as max-connections-per-cpu | connections per CPU over the bound that may wait at once; more are refused immediately |
 | `app.overload.admission-wait-ms` (`APP_OVERLOAD_ADMISSION_WAIT_MS`) | `250` | how long a connection over the bound waits for a slot before the 503; `0` refuses at once |
 | `app.overload.keep-alive-timeout-ms` (`APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS`) | `5000` | idle time before a connection gives its slot back |
 

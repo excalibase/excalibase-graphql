@@ -53,8 +53,12 @@ class SecurityFilterThreadsIntegrationTest extends EngineIntegrationTest {
         properties.put("app.security.auth.require-aud", "false");
         properties.put("app.overload.max-connections-per-cpu", "1");
         properties.put("app.overload.accept-count-per-cpu", "256");
+        // This test is about requests held for a slot: a long wait and a deep queue keep them from being refused.
+        properties.put("app.overload.admission-wait-ms", "60000");
+        properties.put("app.overload.wait-queue-per-cpu", "1000");
         properties.put("app.overload.keep-alive-timeout-ms", "60000");
         properties.put("endpoints.all.port", "-1");
+        properties.put("micronaut.server.port", "-1");
         properties.put("test.record-security-threads", "true");
         return properties;
     }

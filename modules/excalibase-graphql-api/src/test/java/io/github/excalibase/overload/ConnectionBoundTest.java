@@ -44,4 +44,13 @@ class ConnectionBoundTest {
         assertThatThrownBy(() -> new ConnectionBound(64, 256, Integer.MAX_VALUE, 10, 5000))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("accept-count-per-cpu");
     }
+
+    @Test
+    @DisplayName("the wait queue follows the CPUs and defaults to the connection bound")
+    void waitQueue() {
+        assertThat(new ConnectionBound(2, 64, 256, 10, 5000).maxWaiting()).isEqualTo(128);
+        assertThat(new ConnectionBound(2, 64, 256, 10, 5000, 250, 8).maxWaiting()).isEqualTo(16);
+        assertThatThrownBy(() -> new ConnectionBound(2, 64, 256, 10, 5000, 250, -1))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("wait-queue-per-cpu");
+    }
 }

@@ -58,7 +58,7 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
             }
             case QUEUED -> {
                 context.channel().config().setAutoRead(false);
-                deadline = context.executor().schedule(() -> refuse(), waitMillis, TimeUnit.MILLISECONDS);
+                deadline = context.executor().schedule((Runnable) this::refuse, waitMillis, TimeUnit.MILLISECONDS);
             }
             case REFUSED -> context.executor().execute(this::refuse);
         }
@@ -79,7 +79,7 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
             if (context.channel() instanceof DuplexChannel duplex) {
                 duplex.shutdownOutput();
             }
-            context.executor().schedule(() -> context.close(), DRAIN_MILLIS, TimeUnit.MILLISECONDS);
+            context.executor().schedule((Runnable) context::close, DRAIN_MILLIS, TimeUnit.MILLISECONDS);
         });
     }
 

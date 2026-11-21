@@ -11,9 +11,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -55,23 +57,17 @@ class OverloadRefusalIntegrationTest extends EngineIntegrationTest {
     }
 
     /** Slots of earlier sockets free asynchronously; the gate is full once the new ones hold all of them. */
-    private void awaitFull() throws IOException {
-        long giveUp = System.nanoTime() + 5_000_000_000L;
-        while (System.nanoTime() < giveUp) {
-            try {
-                HttpResponse<String> response = client.send(HttpRequest.newBuilder(URI.create("http://localhost:"
-                        + MANAGEMENT_PORT + "/actuator/metrics/tomcat.connections.current")).GET().build(),
-                        HttpResponse.BodyHandlers.ofString());
-                if (MetricValue.of(response.body()) >= BOUND) {
-                    return;
-                }
-                Thread.sleep(20);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-                return;
-            }
-        }
-        throw new IllegalStateException("the gate never filled");
+    private void awaitConnections(java.util.function.IntPredicate open) {
+        Awaitility.await().atMost(Duration.ofSeconds(5)).until(() -> {
+            HttpResponse<String> response = client.send(HttpRequest.newBuilder(URI.create("http://localhost:"
+                    + MANAGEMENT_PORT + "/actuator/metrics/tomcat.connections.current")).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            return open.test((int) MetricValue.of(response.body()));
+        });
+    }
+
+    private void awaitFull() {
+        awaitConnections(open -> open >= BOUND);
     }
 
     private static void closeAll(List<Socket> sockets) throws IOException {
@@ -140,7 +136,7 @@ class OverloadRefusalIntegrationTest extends EngineIntegrationTest {
                 .startsWith("HTTP/1.1 200");
         List<Socket> held = saturate();
         closeAll(held);
-        Thread.sleep(200);
+        awaitConnections(open -> open == 0);
         assertThat(exchange("GET /" + PROJECT + "/slow HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"))
                 .startsWith("HTTP/1.1 200");
     }

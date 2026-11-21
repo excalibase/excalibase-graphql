@@ -30,17 +30,19 @@ public class OverloadConfig {
             @Value("${app.overload.accept-count-per-cpu:256}") int backlogPerCpu,
             @Value("${app.overload.max-keep-alive-requests:20}") int maxKeepAliveRequests,
             @Value("${app.overload.keep-alive-timeout-ms:5000}") int keepAliveTimeoutMillis,
-            @Value("${app.overload.admission-wait-ms:250}") int admissionWaitMillis) {
+            @Value("${app.overload.admission-wait-ms:250}") int admissionWaitMillis,
+            @Value("${app.overload.wait-queue-per-cpu:-1}") int waitQueuePerCpu) {
         int cpus = Runtime.getRuntime().availableProcessors();
         ConnectionBound bound = new ConnectionBound(cpus, connectionsPerCpu, backlogPerCpu,
-                maxKeepAliveRequests, keepAliveTimeoutMillis, admissionWaitMillis);
+                maxKeepAliveRequests, keepAliveTimeoutMillis, admissionWaitMillis,
+                waitQueuePerCpu < 0 ? connectionsPerCpu : waitQueuePerCpu);
         log.info("Connection bound on the main port: cpus={}, {}", cpus, bound);
         return bound;
     }
 
     @Singleton
     ConnectionGate connectionGate(ConnectionBound bound) {
-        return new ConnectionGate(bound.maxConnections());
+        return new ConnectionGate(bound.maxConnections(), bound.maxWaiting());
     }
 
     /** Puts the bound on every connection of the main port. */
