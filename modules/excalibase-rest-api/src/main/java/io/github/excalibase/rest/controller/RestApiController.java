@@ -489,20 +489,25 @@ public class RestApiController {
                 if (dml.rollback()) status.setRollbackOnly();
                 return buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys());
             } catch (Exception e) {
-                Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
                 status.setRollbackOnly();
-                if (failed.isPresent()) {
-                    return checkFailed(failed.get());
-                }
-                if (e instanceof IllegalArgumentException refused) {
-                    return Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
-                }
-                if (!last && WriteRetry.isLockConflict(e)) {
-                    return null;
-                }
-                return RestErrors.of(e, dml.scope().dialect(), dml.scope().filters(), "Mutation execution failed");
+                return dmlFailed(e, dml, last);
             }
         });
+    }
+
+    /** The answer to a failed mutation; null when it lost a lock and may run again. */
+    private HttpResponse<Object> dmlFailed(Exception e, Dml dml, boolean last) {
+        Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
+        if (failed.isPresent()) {
+            return checkFailed(failed.get());
+        }
+        if (e instanceof IllegalArgumentException refused) {
+            return Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
+        }
+        if (!last && WriteRetry.isLockConflict(e)) {
+            return null;
+        }
+        return RestErrors.of(e, dml.scope().dialect(), dml.scope().filters(), "Mutation execution failed");
     }
 
     private String executeDmlQuery(RestQueryCompiler.CompiledResult compiled, boolean represent) {
