@@ -184,6 +184,8 @@
         "application.started.time",
         "disk.free",
         "disk.total",
+        "excalibase.connections.refused",
+        "excalibase.connections.waiting",
         "hikaricp.connections",
         "hikaricp.connections.acquire",
         "hikaricp.connections.active",

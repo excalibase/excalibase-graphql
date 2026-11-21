@@ -165,6 +165,12 @@ fixed    := string | [strings] for _in/_nin | true/false for _is_null
   the expression is the table owner's rule, as in Hasura.
 - Values bind to the column's type. SQL NULL semantics hold: `_eq` against NULL is false,
   `_neq` against NULL is false, only `_is_null` matches NULL.
+- `_like` and `_nlike` follow Postgres LIKE: `%` is any run, `_` is one character, and backslash escapes
+  the next character (`\%`, `\_`, `\\`). Every other character is literal, newlines included. A pattern
+  that ends in a lone backslash is refused on both databases. On MySQL the escape is stated as
+  `ESCAPE CHAR(92)`, so it still works under `NO_BACKSLASH_ESCAPES`. MySQL's default collation is
+  case-insensitive, so `_like` there also ignores case (`a%` matches `Abc`), where Postgres does not;
+  pick a binary or case-sensitive collation on the column when that matters.
 
 A session variable compared with a fixed value (EXC-680) is decided once for the request: it
 compiles to `TRUE` or `FALSE`, so it costs nothing per row and reads the same on Postgres and

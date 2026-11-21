@@ -21,7 +21,7 @@ import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-/** A real server flooded past its connection bound serves everyone, never more than the bound at once. */
+/** A real server holds connections over its bound briefly and serves them, never more than the bound at once. */
 class ConnectionBoundIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "test-proj";
@@ -44,6 +44,9 @@ class ConnectionBoundIntegrationTest extends EngineIntegrationTest {
                 Map.entry("app.websocket.max-per-client-percent", "100"),
                 Map.entry("app.websocket.max-per-project-percent", "100"),
                 Map.entry("app.overload.accept-count-per-cpu", "256"),
+                // These tests are about waiting for a slot; refusal after the wait is OverloadRefusalIntegrationTest.
+                Map.entry("app.overload.admission-wait-ms", "60000"),
+                Map.entry("micronaut.server.port", "-1"),
                 Map.entry("app.overload.max-keep-alive-requests", "2"),
                 Map.entry("app.overload.keep-alive-timeout-ms", "300"),
                 Map.entry("endpoints.all.port", Integer.toString(MANAGEMENT_PORT)),
@@ -61,9 +64,9 @@ class ConnectionBoundIntegrationTest extends EngineIntegrationTest {
     private final HttpClient client = HttpClient.newHttpClient();
 
     @Test
-    @DisplayName("a flood well past the bound is served in full, with at most the bound in flight at once")
+    @DisplayName("a burst past the bound that fits the wait queue is served in full, at most the bound in flight")
     void flood_isQueuedNotDropped() throws Exception {
-        int flood = CPUS * 20;
+        int flood = CPUS * 3;
         List<CompletableFuture<HttpResponse<String>>> responses = new ArrayList<>();
         for (int i = 0; i < flood; i++) {
             HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port() + "/" + PROJECT + "/slow"))
@@ -113,7 +116,7 @@ class ConnectionBoundIntegrationTest extends EngineIntegrationTest {
         try {
             SlowEndpoint.PEAK.set(0);
             List<CompletableFuture<HttpResponse<String>>> responses = new ArrayList<>();
-            for (int i = 0; i < CPUS * 20; i++) {
+            for (int i = 0; i < CPUS * 2; i++) {
                 HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port() + "/" + PROJECT + "/slow"))
                         .timeout(Duration.ofSeconds(60)).GET().build();
                 responses.add(HttpClient.newHttpClient().sendAsync(request, HttpResponse.BodyHandlers.ofString()));
@@ -129,7 +132,7 @@ class ConnectionBoundIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    @DisplayName("websockets past the bound wait in the accept queue and are admitted when one closes")
+    @DisplayName("websockets past the bound wait for a slot and are admitted when one closes")
     void websockets_areBoundedToo() throws Exception {
         List<WebSocket> sockets = openSockets(CPUS * 2);
         try {

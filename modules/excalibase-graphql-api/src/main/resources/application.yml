@@ -95,6 +95,8 @@ app:
     accept-count-per-cpu: ${APP_OVERLOAD_ACCEPT_COUNT_PER_CPU:256}
     max-keep-alive-requests: ${APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS:20}
     keep-alive-timeout-ms: ${APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS:5000}
+    wait-queue-per-cpu: ${APP_OVERLOAD_WAIT_QUEUE_PER_CPU:-1}   # connections over the bound allowed to wait at once; -1 = same as max-connections-per-cpu
+    admission-wait-ms: ${APP_OVERLOAD_ADMISSION_WAIT_MS:250}   # a connection over the bound waits this long for a slot, then gets 503 + Retry-After
   websocket:
     # Socket caps are percent of the connection bound (max-connections-per-cpu x CPUs).
     max-per-project-percent: ${APP_WEBSOCKET_MAX_PER_PROJECT_PERCENT:25}
