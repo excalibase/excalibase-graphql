@@ -6,13 +6,13 @@ const { parseSamples } = require('./lib/prometheus');
 const MAX_CONNECTIONS = 4;
 const base = new URL(stack.overload);
 
-/** A keep-alive connection that has finished one request and now idles, holding its connection slot. */
+/** A connection that holds its slot: half a request line is sent, so it is neither idle between requests nor finished. */
 function holdConnection() {
   return new Promise((resolve, reject) => {
     const socket = net.connect(Number(base.port), base.hostname, () => {
-      socket.write(`GET /${stack.project}/graphql HTTP/1.1\r\nHost: ${base.host}\r\nConnection: keep-alive\r\n\r\n`);
+      socket.write(`GET /${stack.project}/gra`);
+      setTimeout(() => resolve(socket), 200);
     });
-    socket.once('data', () => setTimeout(() => resolve(socket), 200));
     socket.on('error', reject);
   });
 }

@@ -81,4 +81,47 @@ class ConnectionGateTest {
 
         assertThat(gate.refused()).isEqualTo(1);
     }
+
+    @Test
+    @DisplayName("refusals in progress are capped at the size of the bound, so a flood cannot hold unlimited channels")
+    void refusalsAreCapped() {
+        ConnectionGate gate = new ConnectionGate(2, 2);
+
+        assertThat(gate.tryBeginRefusal()).isTrue();
+        assertThat(gate.tryBeginRefusal()).isTrue();
+        assertThat(gate.tryBeginRefusal()).isFalse();
+        gate.endRefusal();
+        assertThat(gate.tryBeginRefusal()).isTrue();
+    }
+
+    @Test
+    @DisplayName("a waiting client closes one idle keep-alive connection, once")
+    void closesOneIdleConnection() {
+        ConnectionGate gate = new ConnectionGate(1, 1);
+        List<String> closed = new ArrayList<>();
+        gate.offerIdle(() -> closed.add("a"));
+        gate.offerIdle(() -> closed.add("b"));
+
+        gate.closeOneIdle();
+
+        assertThat(closed).hasSize(1);
+        gate.closeOneIdle();
+        assertThat(closed).hasSize(2);
+        gate.closeOneIdle();
+        assertThat(closed).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("an idle connection that got busy again is withdrawn and never closed")
+    void withdrawnIdleIsKept() {
+        ConnectionGate gate = new ConnectionGate(1, 1);
+        List<String> closed = new ArrayList<>();
+        ConnectionGate.IdleConnection connection = () -> closed.add("a");
+        gate.offerIdle(connection);
+        gate.withdrawIdle(connection);
+
+        gate.closeOneIdle();
+
+        assertThat(closed).isEmpty();
+    }
 }

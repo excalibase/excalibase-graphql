@@ -38,6 +38,7 @@ data:
   APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS: {{ .Values.overload.maxKeepAliveRequests | int | quote }}
   APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS: {{ .Values.overload.keepAliveTimeoutMs | int | quote }}
   APP_OVERLOAD_ADMISSION_WAIT_MS: {{ .Values.overload.admissionWaitMs | int | quote }}
+  APP_OVERLOAD_WAIT_QUEUE_PER_CPU: {{ .Values.overload.waitQueuePerCpu | int | quote }}
 
   # Actuator port (health probes), outside the connection bound
   MANAGEMENT_SERVER_PORT: {{ .Values.management.port | quote }}

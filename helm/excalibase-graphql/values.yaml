@@ -211,6 +211,7 @@ overload:
   maxKeepAliveRequests: 20
   keepAliveTimeoutMs: 5000
   admissionWaitMs: 250
+  waitQueuePerCpu: -1   # -1 = same as maxConnectionsPerCpu
 
 # JVM flags added through JAVA_TOOL_OPTIONS. Empty (default) = the image's own flags apply
 # (G1, 25-60% of the container memory). Do not set a collector here unless you also override

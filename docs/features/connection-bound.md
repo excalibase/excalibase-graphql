@@ -1,6 +1,6 @@
 # Connection bound
 
-The engine limits open connections to what the CPUs it has can serve. Past the limit a client waits briefly for a slot (at most `app.overload.admission-wait-ms`); if none frees, or the wait queue (as long as the bound itself) is full, it is refused at once with `503 Service Unavailable`, `Retry-After: 1` and a GraphQL-shaped body (`{"errors":[{"message":...,"extensions":{"code":"SERVICE_OVERLOADED"}}]}`). A WebSocket upgrade over the limit gets the same 503. Nothing is left to time out, so the admitted ones keep their speed and memory stays flat.
+The engine limits open connections to what the CPUs it has can serve. Past the limit a client waits briefly for a slot (at most `app.overload.admission-wait-ms`); if none frees, or the wait queue (as long as the bound itself) is full, it is refused at once with `503 Service Unavailable`, `Retry-After` (1 to 3 seconds, spread so refused clients do not return together) and a GraphQL-shaped body (`{"errors":[{"message":...,"extensions":{"code":"SERVICE_OVERLOADED"}}]}`). A WebSocket upgrade over the limit gets the same 503. Nothing is left to time out, so the admitted ones keep their speed and memory stays flat.
 
 | Setting (env) | Default | Meaning |
 |---|---|---|
@@ -20,4 +20,6 @@ Actuator (`/actuator/health`, `/actuator/metrics`) is served on its own port, `m
 
 The bound is visible as `tomcat.connections.config.max` and `tomcat.connections.current` on that port.
 
-Refusals are counted in `excalibase.connections.refused` (Prometheus `excalibase_connections_refused_total`), and `excalibase.connections.waiting` shows the queue.
+Refusals are counted in `excalibase.connections.refused` (Prometheus `excalibase_connections_refused_connections_total`), and `excalibase.connections.waiting` shows the queue.
+
+A keep-alive connection that is idle between requests gives up its slot as soon as a client is waiting, instead of holding it for the keep-alive timeout. At most as many refusals as the bound are in flight at once; past that a connection is dropped without an answer (still counted). A wait above 5 s is logged as a warning at startup, since most clients give up first.

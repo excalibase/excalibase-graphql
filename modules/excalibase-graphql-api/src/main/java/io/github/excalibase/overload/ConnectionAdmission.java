@@ -9,6 +9,7 @@ import io.netty.util.concurrent.ScheduledFuture;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -26,9 +27,15 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
     private static final long DRAIN_MILLIS = 500;
     private static final String BODY = "{\"errors\":[{\"message\":\"The server is at its connection limit, "
             + "retry shortly\",\"extensions\":{\"code\":\"SERVICE_OVERLOADED\"}}]}";
-    private static final String REFUSAL = "HTTP/1.1 503 Service Unavailable\r\n"
-            + "Retry-After: 1\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n"
-            + "Content-Length: " + BODY.length() + "\r\nConnection: close\r\n\r\n" + BODY;
+    private static final int RETRY_AFTER_SPREAD_SECONDS = 3;
+
+    /** Retry-After is spread over a few seconds so the clients refused together do not return together. */
+    private static String refusal() {
+        int retryAfter = 1 + ThreadLocalRandom.current().nextInt(RETRY_AFTER_SPREAD_SECONDS);
+        return "HTTP/1.1 503 Service Unavailable\r\n"
+                + "Retry-After: " + retryAfter + "\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n"
+                + "Content-Length: " + BODY.length() + "\r\nConnection: close\r\n\r\n" + BODY;
+    }
 
     private final List<Object> held = new ArrayList<>();
     private final long waitMillis;
@@ -36,6 +43,7 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
     private ScheduledFuture<?> deadline;
     private boolean admitted;
     private boolean refused;
+    private boolean refusing;
     private boolean finished;
     private boolean autoReadOnArrival;
     private boolean readWaiting;
@@ -58,6 +66,7 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
             }
             case QUEUED -> {
                 context.channel().config().setAutoRead(false);
+                gate.closeOneIdle();
                 deadline = context.executor().schedule((Runnable) this::refuse, waitMillis, TimeUnit.MILLISECONDS);
             }
             case REFUSED -> context.executor().execute(this::refuse);
@@ -74,8 +83,13 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
         gate.recordRefusal();
         held.forEach(ReferenceCountUtil::release);
         held.clear();
+        if (!gate.tryBeginRefusal()) {
+            context.close();   // a flood of refusals is itself bounded: past the cap the connection is just dropped
+            return;
+        }
+        refusing = true;
         context.channel().config().setAutoRead(true);
-        context.writeAndFlush(Unpooled.copiedBuffer(REFUSAL, StandardCharsets.US_ASCII)).addListener(written -> {
+        context.writeAndFlush(Unpooled.copiedBuffer(refusal(), StandardCharsets.US_ASCII)).addListener(written -> {
             if (context.channel() instanceof DuplexChannel duplex) {
                 duplex.shutdownOutput();
             }
@@ -143,6 +157,10 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
     @Override
     public void channelInactive(ChannelHandlerContext context) throws Exception {
         finished = true;
+        if (refusing) {
+            refusing = false;
+            gate.endRefusal();
+        }
         if (deadline != null) {
             deadline.cancel(false);
         }

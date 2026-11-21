@@ -101,7 +101,7 @@ class ConnectionAdmissionTest {
         third.runPendingTasks();
 
         String answer = written(third);
-        assertThat(answer).startsWith("HTTP/1.1 503").contains("Retry-After: 1").contains("\"errors\"");
+        assertThat(answer).startsWith("HTTP/1.1 503").contains("Retry-After: ").contains("\"errors\"");
         assertThat(gate.refused()).isEqualTo(1);
         assertThat(gate.waiting()).isEqualTo(1);
     }
@@ -134,5 +134,55 @@ class ConnectionAdmissionTest {
 
         assertThat(written(second)).isEmpty();
         assertThat(gate.refused()).isZero();
+    }
+
+    @Test
+    @DisplayName("a refused connection that was already handed a slot passes the slot on")
+    void refusedConnectionPassesItsSlotOn() {
+        ConnectionGate gate = new ConnectionGate(1, 10);
+        EmbeddedChannel first = new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 10));
+        EmbeddedChannel second = new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 10));
+        first.close();                       // the gate hands the slot to second; its admit task is still pending
+        second.advanceTimeBy(30, java.util.concurrent.TimeUnit.MILLISECONDS);
+        second.runScheduledPendingTasks();   // its wait runs out first: refused
+        second.runPendingTasks();            // then the pending admit arrives
+
+        assertThat(gate.open()).as("the slot went back to the gate").isZero();
+    }
+
+    @Test
+    @DisplayName("past the cap on refusals in progress a connection is dropped without an answer, and still counted")
+    void refusalFloodIsCapped() {
+        ConnectionGate gate = new ConnectionGate(1, 0);
+        new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 60_000));
+        EmbeddedChannel refusedOne = new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 60_000));
+        refusedOne.runPendingTasks();
+        assertThat(written(refusedOne)).startsWith("HTTP/1.1 503");
+
+        EmbeddedChannel dropped = new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 60_000));
+        dropped.runPendingTasks();
+        assertThat(written(dropped)).isEmpty();
+        assertThat(dropped.isOpen()).isFalse();
+        assertThat(gate.refused()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("a client that has to wait closes a connection idling between requests")
+    void waitingClientClosesAnIdleConnection() {
+        ConnectionGate gate = new ConnectionGate(1, 10);
+        ConnectionBound bound = new ConnectionBound(1, 1, 1, 100, 5_000);
+        KeepAliveRotation idleRotation = new KeepAliveRotation(bound, 5_000, new AtomicInteger(), gate);
+        EmbeddedChannel idle = new EmbeddedChannel(idleRotation, new ConnectionAdmission(gate, idleRotation, 60_000));
+        idle.writeInbound(new io.netty.handler.codec.http.DefaultHttpRequest(
+                io.netty.handler.codec.http.HttpVersion.HTTP_1_1, io.netty.handler.codec.http.HttpMethod.GET, "/"));
+        idle.writeOutbound(new io.netty.handler.codec.http.DefaultFullHttpResponse(
+                io.netty.handler.codec.http.HttpVersion.HTTP_1_1, io.netty.handler.codec.http.HttpResponseStatus.OK));
+        idle.runPendingTasks();
+        assertThat(idle.isOpen()).isTrue();
+
+        new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 60_000));
+        idle.runPendingTasks();
+
+        assertThat(idle.isOpen()).isFalse();
     }
 }

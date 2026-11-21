@@ -154,4 +154,27 @@ class OverloadRefusalIntegrationTest extends EngineIntegrationTest {
             closeAll(held);
         }
     }
+
+    @Test
+    @DisplayName("a client over the bound gets a slot from a connection idling between requests, not a 503")
+    void idleKeepAliveGivesWay() throws Exception {
+        List<Socket> idle = new ArrayList<>();
+        try {
+            for (int i = 0; i < BOUND; i++) {
+                Socket socket = new Socket("localhost", server.getPort());
+                socket.setSoTimeout(3000);
+                socket.getOutputStream().write(("GET /" + PROJECT + "/slow HTTP/1.1\r\nHost: localhost\r\n\r\n")
+                        .getBytes(StandardCharsets.US_ASCII));
+                byte[] answer = new byte[512];
+                int read = socket.getInputStream().read(answer);
+                assertThat(new String(answer, 0, read, StandardCharsets.US_ASCII)).startsWith("HTTP/1.1 200");
+                idle.add(socket);
+            }
+            awaitFull();
+            assertThat(exchange("GET /" + PROJECT + "/slow HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"))
+                    .startsWith("HTTP/1.1 200");
+        } finally {
+            closeAll(idle);
+        }
+    }
 }

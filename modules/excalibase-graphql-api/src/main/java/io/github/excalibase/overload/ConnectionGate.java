@@ -2,6 +2,8 @@ package io.github.excalibase.overload;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -17,6 +19,11 @@ final class ConnectionGate implements ConnectionPressure {
         void admitted();
     }
 
+    /** A keep-alive connection between requests, which can be closed to free its slot. */
+    interface IdleConnection {
+        void closeIfIdle();
+    }
+
     /** What became of a connection that asked for a slot. */
     enum Outcome { ADMITTED, QUEUED, REFUSED }
 
@@ -25,6 +32,9 @@ final class ConnectionGate implements ConnectionPressure {
     private final LongAdder refused = new LongAdder();
     private final Deque<Waiter> waiting = new ArrayDeque<>();
     private final AtomicInteger idleConnections = new AtomicInteger();
+    private final Set<IdleConnection> idle = ConcurrentHashMap.newKeySet();
+    private final int maxRefusing;
+    private int refusing;
     private int open;
 
     /** The queue holds as many connections as the bound itself, so a flood never grows it without limit. */
@@ -35,6 +45,7 @@ final class ConnectionGate implements ConnectionPressure {
     ConnectionGate(int maxConnections, int maxWaiting) {
         this.maxConnections = maxConnections;
         this.maxWaiting = maxWaiting;
+        this.maxRefusing = maxConnections;
     }
 
     /** ADMITTED took a slot; QUEUED fires {@link Waiter#admitted} later; REFUSED was not queued at all. */
@@ -48,6 +59,37 @@ final class ConnectionGate implements ConnectionPressure {
         }
         waiting.addLast(waiter);
         return Outcome.QUEUED;
+    }
+
+    /** True when another refusal may be written; refusals in progress are held to the size of the bound. */
+    synchronized boolean tryBeginRefusal() {
+        if (refusing >= maxRefusing) {
+            return false;
+        }
+        refusing++;
+        return true;
+    }
+
+    synchronized void endRefusal() {
+        refusing--;
+    }
+
+    void offerIdle(IdleConnection connection) {
+        idle.add(connection);
+    }
+
+    void withdrawIdle(IdleConnection connection) {
+        idle.remove(connection);
+    }
+
+    /** A client is waiting for a slot: free one held by a connection that is only idling between requests. */
+    void closeOneIdle() {
+        for (IdleConnection connection : idle) {
+            if (idle.remove(connection)) {
+                connection.closeIfIdle();
+                return;
+            }
+        }
     }
 
     /** Counts a connection answered with a 503 instead of being served. */

@@ -22,6 +22,8 @@ import org.slf4j.LoggerFactory;
 @Requires(property = "app.overload.enabled", notEquals = "false")
 public class OverloadConfig {
 
+    private static final int MAX_SENSIBLE_WAIT_MILLIS = 5_000;
+
     private static final Logger log = LoggerFactory.getLogger(OverloadConfig.class);
 
     @Context
@@ -33,6 +35,10 @@ public class OverloadConfig {
             @Value("${app.overload.admission-wait-ms:250}") int admissionWaitMillis,
             @Value("${app.overload.wait-queue-per-cpu:-1}") int waitQueuePerCpu) {
         int cpus = Runtime.getRuntime().availableProcessors();
+        if (admissionWaitMillis > MAX_SENSIBLE_WAIT_MILLIS) {
+            log.warn("app.overload.admission-wait-ms={} is longer than most clients wait; they would time out "
+                    + "before the 503", admissionWaitMillis);
+        }
         ConnectionBound bound = new ConnectionBound(cpus, connectionsPerCpu, backlogPerCpu,
                 maxKeepAliveRequests, keepAliveTimeoutMillis, admissionWaitMillis,
                 waitQueuePerCpu < 0 ? connectionsPerCpu : waitQueuePerCpu);
