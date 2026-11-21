@@ -1,4 +1,4 @@
-# ENGINE picks the image: "all" (default) carries every database plugin, "postgres" or "mysql" carries one (EXC-799).
+# ENGINE picks the image: "all" (default) carries every database plugin, "postgres", "mysql" or "sqlite" carries one (EXC-799).
 #   docker build -f Dockerfile.native .                          the all-in-one image
 #   docker build -f Dockerfile.native --build-arg ENGINE=mysql . the MySQL-only image
 # The slim binaries come from `mvn -Pnative -Pslim-<engine> package`.
@@ -27,6 +27,12 @@ FROM runtime AS engine-mysql
 COPY modules/excalibase-graphql-api/target/excalibase-graphql-api-mysql /app/excalibase-graphql-api
 ENV APP_DATABASE_TYPE=mysql \
     SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver
+
+# A SQLite database is a file: mount a volume writable by the runtime user and point SPRING_DATASOURCE_URL at it.
+FROM runtime AS engine-sqlite
+COPY modules/excalibase-graphql-api/target/excalibase-graphql-api-sqlite /app/excalibase-graphql-api
+ENV APP_DATABASE_TYPE=sqlite \
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.sqlite.JDBC
 
 FROM engine-${ENGINE}
 

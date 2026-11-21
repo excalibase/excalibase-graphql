@@ -72,6 +72,14 @@ public final class KeyedWrites {
         this.check = check;
     }
 
+    /** {@code write}, after the dialect's own preparation of a write (see {@link SqlDialect#beforeWrite}). */
+    private KeyedWrite locked(KeyedWrite write) {
+        return (jdbc, represent) -> {
+            dialect.beforeWrite(jdbc.getJdbcOperations(), quotedTable);
+            return write.run(jdbc, represent);
+        };
+    }
+
     /** Several writes run in order, their rows answered as one array; a write that answers none adds none. */
     public static KeyedWrite all(List<KeyedWrite> writes) {
         return (jdbc, represent) -> {
@@ -85,7 +93,7 @@ public final class KeyedWrites {
     }
 
     public KeyedWrite insert(List<Insert> inserts, boolean many) {
-        return insert(inserts, many, false);
+        return locked(insert(inserts, many, false));
     }
 
     /** @param upsert an upsert's row counts twice when it updates: it is checked by its key alone */
@@ -126,6 +134,10 @@ public final class KeyedWrites {
      *                  existing row outside it is kept as it is and returns none
      */
     public KeyedWrite upsert(Insert insert, Condition set, Condition updatable) {
+        return locked(upsertOnKey(insert, set, updatable));
+    }
+
+    private KeyedWrite upsertOnKey(Insert insert, Condition set, Condition updatable) {
         KeyedWrite write = insert(List.of(insert), false, true);
         List<Object> key = keys.stream().map(insert.values()::get).toList();
         return (jdbc, represent) -> {
@@ -143,6 +155,10 @@ public final class KeyedWrites {
      * means the columns are not a unique key, and the write is refused.
      */
     public KeyedWrite upsertOn(List<String> conflict, Insert insert, Condition set, Condition updatable) {
+        return locked(upsertOnUnique(conflict, insert, set, updatable));
+    }
+
+    private KeyedWrite upsertOnUnique(List<String> conflict, Insert insert, Condition set, Condition updatable) {
         KeyedWrite write = insert(List.of(insert), false, true);
         return (jdbc, represent) -> {
             requireKeys();
@@ -184,6 +200,10 @@ public final class KeyedWrites {
 
     /** {@code where} selects the rows {@code dml} updates; {@code set} is what it writes, by column. */
     public KeyedWrite update(String dml, String where, Map<String, Object> params, Map<String, Object> set) {
+        return locked(updateRows(dml, where, params, set));
+    }
+
+    private KeyedWrite updateRows(String dml, String where, Map<String, Object> params, Map<String, Object> set) {
         return (jdbc, represent) -> {
             if (!represent && check == null) {
                 jdbc.update(dml, params);
@@ -215,6 +235,10 @@ public final class KeyedWrites {
 
     /** {@code where} selects the rows {@code dml} deletes; they are read, locked, before it runs. */
     public KeyedWrite delete(String dml, String where, Map<String, Object> params) {
+        return locked(deleteRows(dml, where, params));
+    }
+
+    private KeyedWrite deleteRows(String dml, String where, Map<String, Object> params) {
         return (jdbc, represent) -> {
             String rows = null;
             if (represent) {

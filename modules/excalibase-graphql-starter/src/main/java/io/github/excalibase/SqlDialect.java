@@ -4,6 +4,8 @@ import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.permissions.compile.PermissionDialect;
 
+import org.springframework.jdbc.core.JdbcOperations;
+
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
@@ -166,6 +168,30 @@ public interface SqlDialect {
     /** Appended to a SELECT whose rows a write then changes, so no other writer slips between them. */
     default String lockRows() {
         return " FOR UPDATE";
+    }
+
+    /**
+     * What follows the user's own {@code LIKE} pattern: Postgres and MySQL read a backslash there as the escape, a
+     * database with no default escape names it. A pattern the engine builds escapes with its own character instead.
+     */
+    default String userLikeEscape() {
+        return "";
+    }
+
+    /**
+     * A column as a filter compares it. A database that stores one type in more than one text form normalises the
+     * column here, so a bound value compares the same as a row the database wrote itself; the default is the column.
+     */
+    default String comparableColumn(String colRef, String dataType) {
+        return colRef;
+    }
+
+    /**
+     * Runs first in every keyed write, inside its transaction, before any statement reads {@code quotedTable}. A
+     * database whose writers must queue for one lock takes it here, so no write starts as a read it cannot upgrade.
+     */
+    default void beforeWrite(JdbcOperations jdbc, String quotedTable) {
+        // a server database locks the rows a write touches, as it reads them
     }
 
     /** The row values {@code (a, b) IN <list>} compares against, one parenthesised tuple per entry. */

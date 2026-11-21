@@ -23,9 +23,15 @@ import java.security.interfaces.ECPrivateKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static io.github.excalibase.PermissionDocs.OWNED;
 import static io.github.excalibase.support.Expect.jsonPath;
@@ -130,6 +136,63 @@ class SqlitePermissionsIntegrationTest extends EngineIntegrationTest {
     private HttpAnswer rest(String userId, String method, String path, String body) throws Exception {
         return http.send(method, path, body, "Authorization", "Bearer " + jwt(userId),
                 "Prefer", "return=representation", "Content-Type", "application/json");
+    }
+
+    @Test
+    void authenticatedReadsAndWrites_shareTheFile_withoutLockErrors() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        List<Future<Integer>> outcomes = new ArrayList<>();
+        for (int writer = 0; writer < 4; writer++) {
+            int id = writer;
+            outcomes.add(pool.submit(() -> failures(10, n -> as(ALICE, "mutation { createMainNotes(input: { id: "
+                    + (5000 + id * 100 + n) + ", title: \"w" + id + "\" }) { id } }"))));
+        }
+        for (int reader = 0; reader < 4; reader++) {
+            outcomes.add(pool.submit(() -> failures(25, n -> as(BOB, "{ mainNotes { id title } }"))));
+        }
+        int failed = 0;
+        for (Future<Integer> outcome : outcomes) {
+            failed += outcome.get(120, TimeUnit.SECONDS);
+        }
+        pool.shutdown();
+
+        assertThat(failed).as("requests that failed").isZero();
+        assertThat(database().queryForObject("SELECT count(*) FROM notes WHERE id >= 5000", Integer.class)).isEqualTo(40);
+    }
+
+    private interface Request {
+        HttpAnswer send(int n) throws Exception;
+    }
+
+    private static int failures(int count, Request request) {
+        int failed = 0;
+        for (int n = 0; n < count; n++) {
+            try {
+                HttpAnswer answer = request.send(n);
+                if (answer.status() != 200 || answer.json().has("errors")) {
+                    failed++;
+                }
+            } catch (Exception e) {
+                failed++;
+            }
+        }
+        return failed;
+    }
+
+    @Test
+    void onConflict_neverOverwritesARowTheUpdateFilterHides() throws Exception {
+        database().update("INSERT INTO notes (id, owner_id, title, status) VALUES (185, ?, 'bobs', 'open')", BOB);
+        database().update("INSERT INTO notes (id, owner_id, title, status) VALUES (186, ?, 'alices', 'open')", ALICE);
+
+        as(ALICE, "mutation { createMainNotes(input: { id: 185, title: \"hijacked\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [title] }) { id } }").expect(status().isOk());
+        as(ALICE, "mutation { createMainNotes(input: { id: 186, title: \"renamed\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [title] }) { id title } }")
+                .expect(jsonPath("$.data.createMainNotes.title").value("renamed"));
+
+        assertThat(database().queryForObject("SELECT title FROM notes WHERE id = 185", String.class)).isEqualTo("bobs");
+        assertThat(database().queryForObject("SELECT owner_id FROM notes WHERE id = 185", String.class)).isEqualTo(BOB);
+        assertThat(database().queryForObject("SELECT title FROM notes WHERE id = 186", String.class)).isEqualTo("renamed");
     }
 
     @Test

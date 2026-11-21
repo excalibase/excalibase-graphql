@@ -2,13 +2,15 @@ package io.github.excalibase.sqlite;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.FilterCapabilities;
-import io.github.excalibase.DialectFeature;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.permissions.compile.PermissionDialect;
+import io.github.excalibase.permissions.compile.SqliteSql;
+import org.springframework.jdbc.core.JdbcOperations;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
@@ -83,6 +85,33 @@ public class SqliteDialect implements SqlDialect {
         return EnumSet.of(DialectFeature.AGGREGATES, DialectFeature.UPSERT);
     }
 
+    /** SQLite's LIKE has no escape unless one is named; Postgres's is the backslash. */
+    @Override
+    public String userLikeEscape() {
+        return " ESCAPE '\\'";
+    }
+
+    @Override
+    public String comparableColumn(String colRef, String dataType) {
+        if (dataType == null) {
+            return colRef;
+        }
+        return switch (SqliteColumnTypes.engineType(dataType)) {
+            case SqliteColumnTypes.TIMESTAMPTZ -> SqliteSql.storedTimestamp(colRef, true);
+            case SqliteColumnTypes.TIMESTAMP -> SqliteSql.storedTimestamp(colRef, false);
+            default -> colRef;
+        };
+    }
+
+    /**
+     * A DELETE that matches no row still takes SQLite's write lock, waiting out the busy timeout for it. Taking it
+     * before the write's first read means the transaction never has to upgrade from a read, which fails at once.
+     */
+    @Override
+    public void beforeWrite(JdbcOperations jdbc, String quotedTable) {
+        jdbc.execute("DELETE FROM " + quotedTable + " WHERE 0");
+    }
+
     @Override
     public boolean supportsRowToJson() {
         return false;
@@ -153,7 +182,7 @@ public class SqliteDialect implements SqlDialect {
 
     @Override
     public String ilike(String colRef, String paramRef) {
-        return "LOWER(" + colRef + ") LIKE LOWER(" + paramRef + ")";
+        return "LOWER(" + colRef + ") LIKE LOWER(" + paramRef + ")" + userLikeEscape();
     }
 
     @Override

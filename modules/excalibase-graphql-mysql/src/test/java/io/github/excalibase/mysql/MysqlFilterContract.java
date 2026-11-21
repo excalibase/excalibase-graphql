@@ -4,6 +4,7 @@ import graphql.language.Document;
 import graphql.parser.Parser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.compiler.KeyedTableWrite;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.compiler.TwoPhaseWrites;
 import io.github.excalibase.schema.SchemaInfo;
@@ -234,7 +235,7 @@ abstract class MysqlFilterContract {
             Map<String, Object> variables = Map.of("w", Map.of("id", Map.of("eq", 99)));
             SqlCompiler.CompiledQuery compiled = compiler().compile(Parser.parse("mutation($w: DocWhereInput) { deleteDoc(where: $w) { id } }"), variables);
             assertThat(compiled.write()).isInstanceOf(TwoPhaseWrites.class);
-            assertThat(((TwoPhaseWrites) compiled.write()).entries().getFirst().write()).isInstanceOf(MysqlWrite.class);
+            assertThat(((TwoPhaseWrites) compiled.write()).entries().getFirst().write()).isInstanceOf(KeyedTableWrite.class);
             assertThat(compiled.params()).containsValue(99);
         }
     }

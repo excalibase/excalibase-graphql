@@ -27,7 +27,8 @@ final class RestFilterSql {
 
     String sql(FilterSpec filter, String paramName, Map<String, Object> params, String table) {
         requireSupported(filter);
-        String colRef = dialect.quoteIdentifier(filter.column());
+        String colRef = dialect.comparableColumn(dialect.quoteIdentifier(filter.column()),
+                values.columnType(table, filter.column()));
         String neg = filter.negated() ? NOT : "";
         String op = filter.operator();
 
@@ -88,7 +89,8 @@ final class RestFilterSql {
     private String patternSql(String op, FilterSpec filter, String paramName,
                                Map<String, Object> params, String colRef, String neg) {
         return switch (op) {
-            case "like" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value().replace('*', '%'));
+            case "like" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value().replace('*', '%'))
+                    + dialect.userLikeEscape();
             case "ilike" -> {
                 params.put(paramName, filter.value().replace('*', '%'));
                 yield neg + dialect.ilike(colRef, PARAM_PREFIX + paramName);

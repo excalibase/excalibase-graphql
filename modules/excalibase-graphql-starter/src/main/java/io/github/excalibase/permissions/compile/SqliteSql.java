@@ -20,7 +20,7 @@ import java.util.regex.Pattern;
  * compares the instants; a LIKE is a GLOB, which is case sensitive as Postgres's
  * is whatever the connection's {@code case_sensitive_like} says; an image row is a SELECT of named values.
  */
-final class SqliteSql implements DialectSql {
+public final class SqliteSql implements DialectSql {
 
     /** The text a timestamp with time zone is stored and compared as. */
     static final DateTimeFormatter STORED_TIMESTAMPTZ =
@@ -68,8 +68,19 @@ final class SqliteSql implements DialectSql {
             case "timestamptz", "timestamp with time zone" -> Kind.TIMESTAMPTZ;
             case "timestamp", "datetime", "timestamp without time zone" -> Kind.TIMESTAMP;
             case "date" -> Kind.DATE;
-            default -> null;
+            default -> byAffinity(name);
         };
+    }
+
+    /** What SQLite's affinity rules make of a name it does not know: INT is an integer, CHAR, CLOB, TEXT text. */
+    private static Kind byAffinity(String name) {
+        if (name.contains("int")) {
+            return Kind.BIGINT;
+        }
+        if (name.contains("char") || name.contains("clob") || name.contains("text")) {
+            return Kind.TEXT;
+        }
+        return name.contains("real") || name.contains("floa") || name.contains("doub") ? Kind.DOUBLE : null;
     }
 
     @Override
@@ -107,7 +118,23 @@ final class SqliteSql implements DialectSql {
 
     @Override
     public String compared(ColumnType type, String reference, boolean image) {
-        return reference;
+        return switch (type.kind()) {
+            case TIMESTAMPTZ -> storedTimestamp(reference, true);
+            case TIMESTAMP -> storedTimestamp(reference, false);
+            default -> reference;
+        };
+    }
+
+    /**
+     * A timestamp column in the one text form the engine writes, {@code yyyy-MM-ddTHH:mm:ss.SSSSSS[Z]}. SQLite's
+     * own {@code CURRENT_TIMESTAMP} default writes {@code yyyy-MM-dd HH:mm:ss}, and text of the two forms
+     * compares by its separator, not by the instant, so a row written by a default would be filtered wrongly.
+     */
+    public static String storedTimestamp(String reference, boolean withZone) {
+        String zone = withZone ? " || 'Z'" : "";
+        return "(CASE WHEN substr(" + reference + ", 11, 1) = ' ' THEN replace(substr(" + reference
+                + " || CASE WHEN length(" + reference + ") = 19 THEN '.' ELSE '' END || '000000', 1, 26), ' ', 'T')"
+                + zone + " ELSE " + reference + " END)";
     }
 
     /** SQLite names a derived table's columns inside it, not after it. */

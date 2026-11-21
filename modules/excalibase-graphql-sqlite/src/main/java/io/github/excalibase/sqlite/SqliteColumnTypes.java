@@ -21,6 +21,10 @@ final class SqliteColumnTypes {
     static final String TIMESTAMPTZ = "timestamptz";
     static final String DATE = "date";
     static final String UUID = "uuid";
+    static final String INTEGER = "integer";
+    static final String SMALLINT = "smallint";
+    static final String TEXT = "text";
+    static final String DOUBLE = "double precision";
 
     private SqliteColumnTypes() {
     }
@@ -38,25 +42,25 @@ final class SqliteColumnTypes {
             return named;
         }
         if (name.contains("int")) {
-            return "integer";
+            return INTEGER;
         }
         if (name.contains("char") || name.contains("clob") || name.contains("text") || name.isEmpty()) {
-            return "text";
+            return TEXT;
         }
         if (name.contains("blob")) {
             return BYTES;
         }
         if (name.contains("real") || name.contains("floa") || name.contains("doub")) {
-            return "double precision";
+            return DOUBLE;
         }
-        return "text";
+        return TEXT;
     }
 
     private static String byName(String name) {
         return switch (name) {
             case "boolean", "bool" -> BOOLEAN;
             case "bigint", "int8", "unsigned big int" -> BIGINT;
-            case "smallint", "int2", "tinyint" -> "smallint";
+            case "smallint", "int2", "tinyint" -> SMALLINT;
             case "numeric", "decimal", "number" -> NUMERIC;
             case "json", "jsonb" -> JSON;
             case "uuid" -> UUID;

@@ -7,6 +7,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Many writers on one file: every write lands exactly once, none answers SQLITE_BUSY, and none waits for ever.
- * The file is in WAL mode, with a busy timeout and a write lock taken when each transaction begins.
+ * The file is in WAL mode, with a busy timeout; a write takes the write lock before its first statement, a read none.
  */
 class SqliteConcurrencyIntegrationTest extends EngineIntegrationTest {
 
@@ -72,9 +75,34 @@ class SqliteConcurrencyIntegrationTest extends EngineIntegrationTest {
         pool.shutdown();
     }
 
+    @Test
+    void aRead_doesNotWaitForTheWriteLock_butAWriteQueuesForIt() throws Exception {
+        try (Connection holder = DriverManager.getConnection(DATABASE.url()); Statement statement = holder.createStatement()) {
+            statement.execute("BEGIN IMMEDIATE");
+            long started = System.nanoTime();
+            HttpAnswer read = http.graphql("/busy/graphql", "{ mainTotals { value } }");
+            long readMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+            assertThat(read.status()).as(read.body()).isEqualTo(200);
+            assertThat(read.json().path("errors").isMissingNode()).as(read.body()).isTrue();
+            assertThat(readMillis).as("a read behind a held write lock").isLessThan(1_500);
+
+            ExecutorService pool = Executors.newSingleThreadExecutor();
+            Future<Integer> queued = pool.submit(() -> writeAll(98, 1));
+            Thread.sleep(1_000);
+            assertThat(queued.isDone()).as("the write waits for the lock").isFalse();
+            statement.execute("COMMIT");
+            assertThat(queued.get(30, TimeUnit.SECONDS)).isZero();
+            pool.shutdown();
+        }
+    }
+
     private int writeAll(int writer) {
+        return writeAll(writer, WRITES_EACH);
+    }
+
+    private int writeAll(int writer, int writes) {
         int failed = 0;
-        for (int n = 0; n < WRITES_EACH; n++) {
+        for (int n = 0; n < writes; n++) {
             HttpAnswer answer = http.graphql("/busy/graphql", "mutation { createMainCounters(input: { writer: " + writer
                     + ", n: " + n + " }) { id } }");
             if (answer.status() != 200 || answer.json().has("errors")) {

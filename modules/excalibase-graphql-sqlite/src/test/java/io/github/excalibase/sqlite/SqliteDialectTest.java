@@ -47,7 +47,7 @@ class SqliteDialectTest {
 
     @Test
     void ilike_lowerCasesBothSides_andNullsOrderNatively() {
-        assertThat(dialect.ilike("c", ":p")).isEqualTo("LOWER(c) LIKE LOWER(:p)");
+        assertThat(dialect.ilike("c", ":p")).isEqualTo("LOWER(c) LIKE LOWER(:p) ESCAPE '\\'");
         assertThat(dialect.orderByNulls("c", "DESC", "last")).isEqualTo("c DESC NULLS LAST");
     }
 

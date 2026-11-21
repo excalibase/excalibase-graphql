@@ -7,6 +7,7 @@ import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.spi.SchemaLoader;
 
 import java.util.List;
+import java.util.Map;
 
 public class SqliteEngineProvider implements SqlEngineProvider {
     @Override
@@ -32,5 +33,15 @@ public class SqliteEngineProvider implements SqlEngineProvider {
     @Override
     public MutationExecutor createMutationExecutor() {
         return new SqliteMutationExecutor();
+    }
+
+    @Override
+    public Map<String, String> connectionProperties() {
+        return SqliteConnectionProperties.defaults();
+    }
+
+    @Override
+    public List<String> fixedSchemas() {
+        return List.of(SqliteSchemaLoader.MAIN);
     }
 }

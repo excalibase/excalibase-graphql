@@ -186,6 +186,32 @@ class SqliteGraphqlIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @Order(16)
+    void aTimestampWrittenByTheDefault_filtersAsTheInstantItIs() {
+        data("mutation { createMainEvents(input: { id: 3, at: \"2026-01-01T11:00:00Z\", label: \"engine\" }) { id } }");
+
+        JsonNode after = data("{ mainEvents(where: { at: { gt: \"2026-01-01T10:30:00Z\" } }, orderBy: { id: ASC }) { label } }")
+                .path("mainEvents");
+        JsonNode before = data("{ mainEvents(where: { at: { lte: \"2026-01-01T11:00:00Z\" } }, orderBy: { id: ASC }) { label } }")
+                .path("mainEvents");
+
+        assertThat(after.findValuesAsText("label")).containsExactly("late", "engine");
+        assertThat(before.findValuesAsText("label")).containsExactly("early", "engine");
+    }
+
+    @Test
+    @Order(17)
+    void like_readsABackslashAsTheEscape_asPostgresDoes() {
+        data("mutation { createMainCustomers(input: { id: 80, name: \"100%\" }) { id } }");
+        data("mutation { createMainCustomers(input: { id: 81, name: \"1000\" }) { id } }");
+
+        assertThat(data("{ mainCustomers(where: { name: { like: \"100\\\\%\" } }) { id } }").path("mainCustomers")
+                .findValuesAsText("id")).containsExactly("80");
+        assertThat(data("{ mainCustomers(where: { name: { ilike: \"100\\\\%\" } }) { id } }").path("mainCustomers")
+                .findValuesAsText("id")).containsExactly("80");
+    }
+
+    @Test
     @Order(20)
     void unsupportedOperators_areNotInTheSchema() {
         assertThat(error("{ mainCustomers(where: { name: { regex: \"a\" } }) { id } }")).contains("regex");

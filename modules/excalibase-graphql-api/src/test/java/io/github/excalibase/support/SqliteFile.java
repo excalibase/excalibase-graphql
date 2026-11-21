@@ -23,6 +23,8 @@ public final class SqliteFile {
                 total REAL, status TEXT, note TEXT);
             CREATE TABLE tags (order_id INTEGER NOT NULL REFERENCES orders(id), tag TEXT NOT NULL,
                 PRIMARY KEY (order_id, tag));
+            CREATE TABLE events (id INTEGER PRIMARY KEY, at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP, label TEXT);
+            INSERT INTO events (id, at, label) VALUES (1, '2026-01-01 10:00:00', 'early'), (2, '2026-01-01 12:00:00', 'late');
             INSERT INTO customers VALUES
                 (1, 'Alice', 'alice@x.io', 1, 10.5, '2026-01-01T10:00:00.000000Z', '2026-01-15', '{"vip":true}', 5),
                 (2, 'Bob', 'bob@x.io', 0, 0, '2026-02-01T00:00:00.000000Z', '2026-02-01', NULL, 9007199254740993),

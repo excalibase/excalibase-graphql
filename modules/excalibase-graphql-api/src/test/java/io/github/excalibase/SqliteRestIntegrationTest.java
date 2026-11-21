@@ -57,6 +57,12 @@ class SqliteRestIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    void aTimestampWrittenByTheDefault_filtersAsTheInstantItIs() {
+        http.get("/shop/api/v1/events?at=gt.2026-01-01T11:00:00Z").expect(jsonPath("$.data[*].label", contains("late")));
+        http.get("/shop/api/v1/events?at=lt.2026-01-01T11:00:00Z").expect(jsonPath("$.data[*].label", contains("early")));
+    }
+
+    @Test
     void duplicateKey_isAConflict() {
         http.send("POST", "/shop/api/v1/customers", "{\"name\":\"Dup\",\"email\":\"alice@x.io\"}", "Prefer",
                         "return=representation", "Content-Type", "application/json")

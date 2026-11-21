@@ -20,7 +20,6 @@ import io.github.excalibase.security.Principal;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.spi.SchemaLoader;
 import io.github.excalibase.spi.SqlEngine;
-import io.github.excalibase.sqlite.SqliteSchemaLoader;
 import io.github.excalibase.spi.SqlEngineFactory;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
@@ -62,7 +61,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     private static final String MYSQL = "mysql";
     private static final int FINGERPRINT_TIMEOUT_SECONDS = 5;
     private static final int RELOAD_TIMEOUT_SECONDS = 60;
-    private static final String SQLITE = "sqlite";
 
     private final JdbcTemplate jdbcTemplate;
     private final int maxRows;
@@ -613,8 +611,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     private List<String> discoverSchemas(JdbcTemplate jdbc, String type) {
-        if (SQLITE.equalsIgnoreCase(type)) {
-            return List.of(SqliteSchemaLoader.MAIN); // a file is one schema; its tables are never prefixed
+        List<String> fixed = SqlEngineFactory.fixedSchemas(type);
+        if (!fixed.isEmpty()) {
+            return fixed; // a file has no catalogue to list: its plugin names the schemas
         }
         String sql = MYSQL.equalsIgnoreCase(type)
                 ? "SELECT schema_name FROM information_schema.schemata " +

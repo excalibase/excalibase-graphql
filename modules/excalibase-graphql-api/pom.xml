@@ -16,7 +16,7 @@
     
     <properties>
         <exec.mainClass>io.github.excalibase.ExcalibaseGraphqlApplication</exec.mainClass>
-        <!-- The all-in-one build has none; a slim build (profile slim-postgres, slim-mysql) names its database, so its jar and
+        <!-- The all-in-one build has none; a slim build (profile slim-postgres, slim-mysql, slim-sqlite) names its database, so its jar and
              native binary sit beside the all-in-one ones and never replace them (EXC-799). -->
         <engine.suffix></engine.suffix>
     </properties>
@@ -358,6 +358,16 @@
                     <artifactId>mysql-connector-j</artifactId>
                     <scope>test</scope>
                 </dependency>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-sqlite</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.xerial</groupId>
+                    <artifactId>sqlite-jdbc</artifactId>
+                    <scope>test</scope>
+                </dependency>
             </dependencies>
             <build>
                 <plugins>
@@ -380,7 +390,7 @@
                                     <rules>
                                         <bannedDependencies>
                                             <searchTransitive>true</searchTransitive>
-                                            <message>The slim-postgres build must not carry the mysql plugin or its driver outside tests.</message>
+                                            <message>The slim-postgres build must not carry the mysql or sqlite plugin or its driver outside tests.</message>
                                             <excludes>
                                                 <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:compile</exclude>
                                                 <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:runtime</exclude>
@@ -388,6 +398,12 @@
                                                 <exclude>com.mysql:mysql-connector-j:*:*:compile</exclude>
                                                 <exclude>com.mysql:mysql-connector-j:*:*:runtime</exclude>
                                                 <exclude>com.mysql:mysql-connector-j:*:*:provided</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:provided</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:compile</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:runtime</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:provided</exclude>
                                             </excludes>
                                         </bannedDependencies>
                                     </rules>
@@ -443,6 +459,16 @@
                     <artifactId>postgresql</artifactId>
                     <scope>test</scope>
                 </dependency>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-sqlite</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.xerial</groupId>
+                    <artifactId>sqlite-jdbc</artifactId>
+                    <scope>test</scope>
+                </dependency>
             </dependencies>
             <build>
                 <plugins>
@@ -465,7 +491,7 @@
                                     <rules>
                                         <bannedDependencies>
                                             <searchTransitive>true</searchTransitive>
-                                            <message>The slim-mysql build must not carry the postgres plugin or its driver outside tests.</message>
+                                            <message>The slim-mysql build must not carry the postgres or sqlite plugin or its driver outside tests.</message>
                                             <excludes>
                                                 <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:compile</exclude>
                                                 <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:runtime</exclude>
@@ -473,6 +499,113 @@
                                                 <exclude>org.postgresql:postgresql:*:*:compile</exclude>
                                                 <exclude>org.postgresql:postgresql:*:*:runtime</exclude>
                                                 <exclude>org.postgresql:postgresql:*:*:provided</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:provided</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:compile</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:runtime</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:provided</exclude>
+                                            </excludes>
+                                        </bannedDependencies>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- Runs after the jar is packaged, whatever -DskipTests says for the unit tests of the other modules. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>slim-smoke</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                                <configuration>
+                                    <skipTests>false</skipTests>
+                                    <skip>false</skip>
+                                    <test>SlimBuildSmokeTest</test>
+                                    <failIfNoSpecifiedTests>true</failIfNoSpecifiedTests>
+                                    <systemPropertyVariables>
+                                        <slim.command>${slim.command}</slim.command>
+                                        <slim.serves>${slim.serves}</slim.serves>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Slim sqlite build: the app with the sqlite plugin only (EXC-799). The other plugin and its driver drop to test scope,
+             so the shaded jar and the native image carry neither; the enforcer rule fails the build if one comes back. The jar is
+             packaged beside the all-in-one one, and `verify` starts it against a SQLite file (SlimBuildSmokeTest). -->
+        <profile>
+            <id>slim-sqlite</id>
+            <properties>
+                <engine.suffix>-sqlite</engine.suffix>
+                <slim.serves>sqlite</slim.serves>
+                <slim.command>${project.build.directory}/${project.build.finalName}.jar</slim.command>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-postgres</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.postgresql</groupId>
+                    <artifactId>postgresql</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-mysql</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.mysql</groupId>
+                    <artifactId>mysql-connector-j</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <!-- The parent's rule is for the shared modules; this module carries one plugin on purpose. -->
+                            <execution>
+                                <id>no-database-plugins</id>
+                                <phase>none</phase>
+                            </execution>
+                            <execution>
+                                <id>only-sqlite</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <bannedDependencies>
+                                            <searchTransitive>true</searchTransitive>
+                                            <message>The slim-sqlite build must not carry the postgres or mysql plugin or its driver outside tests.</message>
+                                            <excludes>
+                                                <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:provided</exclude>
+                                                <exclude>org.postgresql:postgresql:*:*:compile</exclude>
+                                                <exclude>org.postgresql:postgresql:*:*:runtime</exclude>
+                                                <exclude>org.postgresql:postgresql:*:*:provided</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:provided</exclude>
+                                                <exclude>com.mysql:mysql-connector-j:*:*:compile</exclude>
+                                                <exclude>com.mysql:mysql-connector-j:*:*:runtime</exclude>
+                                                <exclude>com.mysql:mysql-connector-j:*:*:provided</exclude>
                                             </excludes>
                                         </bannedDependencies>
                                     </rules>
