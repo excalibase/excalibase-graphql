@@ -1,5 +1,6 @@
 package io.github.excalibase.overload;
 
+import io.micrometer.core.instrument.FunctionCounter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -19,5 +20,10 @@ final class ConnectionMetrics {
                 .tag("name", CONNECTOR).baseUnit("connections").register(registry);
         Gauge.builder("tomcat.connections.keepalive.current", gate.idleConnections(), AtomicInteger::get)
                 .tag("name", CONNECTOR).baseUnit("connections").register(registry);
+        Gauge.builder("excalibase.connections.waiting", gate, ConnectionGate::waiting)
+                .baseUnit("connections").register(registry);
+        FunctionCounter.builder("excalibase.connections.refused", gate, ConnectionGate::refused)
+                .description("Connections answered with 503 because the server was over its connection bound")
+                .baseUnit("connections").register(registry);
     }
 }

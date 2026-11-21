@@ -173,6 +173,7 @@ Tomcat's connection limit and accept queue are derived from the CPUs the contain
 | `overload.enabled` | Bound open connections by CPU count; `false` keeps Tomcat's own defaults | `true` |
 | `overload.maxConnectionsPerCpu` | Open connections (HTTP and websocket) per CPU | `256` |
 | `overload.acceptCountPerCpu` | Accept queue length per CPU | `256` |
+| `overload.admissionWaitMs` | How long a connection over the limit waits for a slot before a 503 | `250` |
 | `overload.maxKeepAliveRequests` | Requests per keep-alive connection before the server closes it | `20` |
 | `overload.keepAliveTimeoutMs` | Idle keep-alive time before the connection gives its slot back | `5000` |
 | `management.port` | Actuator port used by the probes; outside the bound, not published by the Service | `8081` |

@@ -29,10 +29,11 @@ public class OverloadConfig {
             @Value("${app.overload.max-connections-per-cpu:256}") int connectionsPerCpu,
             @Value("${app.overload.accept-count-per-cpu:256}") int backlogPerCpu,
             @Value("${app.overload.max-keep-alive-requests:20}") int maxKeepAliveRequests,
-            @Value("${app.overload.keep-alive-timeout-ms:5000}") int keepAliveTimeoutMillis) {
+            @Value("${app.overload.keep-alive-timeout-ms:5000}") int keepAliveTimeoutMillis,
+            @Value("${app.overload.admission-wait-ms:250}") int admissionWaitMillis) {
         int cpus = Runtime.getRuntime().availableProcessors();
         ConnectionBound bound = new ConnectionBound(cpus, connectionsPerCpu, backlogPerCpu,
-                maxKeepAliveRequests, keepAliveTimeoutMillis);
+                maxKeepAliveRequests, keepAliveTimeoutMillis, admissionWaitMillis);
         log.info("Connection bound on the main port: cpus={}, {}", cpus, bound);
         return bound;
     }
@@ -70,7 +71,7 @@ public class OverloadConfig {
         return registry -> ConnectionMetrics.register(registry, gate, bound);
     }
 
-    /** The accept backlog follows the CPUs too: excess clients wait in the kernel queue. */
+    /** The accept backlog follows the CPUs too; it only absorbs a burst, since a connection over the bound is accepted and refused. */
     @Singleton
     @Requires(property = "app.overload.enabled", notEquals = "false")
     static class AcceptBacklog implements BeanCreatedEventListener<NettyHttpServerConfiguration> {
