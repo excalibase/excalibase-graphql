@@ -33,17 +33,21 @@ class EngineAvailabilityGuardTest {
 
     @Test
     void aSlimBuildServesItsOwnDatabase() {
-        assertThatCode(() -> new EngineAvailabilityGuard("postgres", "jdbc:postgresql://db/app", NO_TENANTS).check(POSTGRES_ONLY))
+        EngineAvailabilityGuard postgresOnPostgresBuild = new EngineAvailabilityGuard("postgres", "jdbc:postgresql://db/app", NO_TENANTS);
+        assertThatCode(() -> postgresOnPostgresBuild.check(POSTGRES_ONLY))
                 .doesNotThrowAnyException();
-        assertThatCode(() -> new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS).check(MYSQL_ONLY))
+        EngineAvailabilityGuard mysqlOnMysqlBuild = new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS);
+        assertThatCode(() -> mysqlOnMysqlBuild.check(MYSQL_ONLY))
                 .doesNotThrowAnyException();
     }
 
     @Test
     void theAllInOneBuildServesEither() {
-        assertThatCode(() -> new EngineAvailabilityGuard("postgres", "jdbc:postgresql://db/app", NO_TENANTS).check(BOTH))
+        EngineAvailabilityGuard postgresOnAllInOne = new EngineAvailabilityGuard("postgres", "jdbc:postgresql://db/app", NO_TENANTS);
+        assertThatCode(() -> postgresOnAllInOne.check(BOTH))
                 .doesNotThrowAnyException();
-        assertThatCode(() -> new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS).check(BOTH))
+        EngineAvailabilityGuard mysqlOnAllInOne = new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS);
+        assertThatCode(() -> mysqlOnAllInOne.check(BOTH))
                 .doesNotThrowAnyException();
     }
 
@@ -81,13 +85,43 @@ class EngineAvailabilityGuardTest {
 
     @Test
     void aUrlOfADatabaseNoImageKnowsIsLeftToItsOwnPlugin() {
-        assertThatCode(() -> new EngineAvailabilityGuard("sqlite", "jdbc:sqlite:/data/app.db", NO_TENANTS)
-                .check(List.of(provider("sqlite")))).doesNotThrowAnyException();
+        EngineAvailabilityGuard guard = new EngineAvailabilityGuard("sqlite", "jdbc:sqlite:/data/app.db", NO_TENANTS);
+        List<SqlEngineProvider> carried = List.of(provider("sqlite"));
+        assertThatCode(() -> guard.check(carried)).doesNotThrowAnyException();
     }
 
     @Test
     void multiTenantModeHasNoDefaultDatabaseToJudge() {
-        assertThatCode(() -> new EngineAvailabilityGuard("postgres", "", "http://provisioning").check(MYSQL_ONLY))
+        EngineAvailabilityGuard multiTenantOnMysqlBuild = new EngineAvailabilityGuard("postgres", "", "http://provisioning");
+        assertThatCode(() -> multiTenantOnMysqlBuild.check(MYSQL_ONLY))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void theDbRuleSourceIsRefusedOnABuildWithoutPostgres() {
+        EngineAvailabilityGuard guard = new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS, "db");
+        assertThatThrownBy(() -> guard.check(MYSQL_ONLY))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("METADATA_SOURCE=db")
+                .hasMessageContaining("<tag>-postgres");
+    }
+
+    @Test
+    void theDbRuleSourceIsRefusedInMultiTenantModeToo() {
+        EngineAvailabilityGuard guard = new EngineAvailabilityGuard("mysql", "", "http://provisioning", "db");
+        assertThatThrownBy(() -> guard.check(MYSQL_ONLY)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void otherRuleSourcesAndTheDbSourceOnPostgresStart() {
+        EngineAvailabilityGuard fileSourceOnMysqlBuild = new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS, "file");
+        assertThatCode(() -> fileSourceOnMysqlBuild.check(MYSQL_ONLY))
+                .doesNotThrowAnyException();
+        EngineAvailabilityGuard dbSourceOnPostgresBuild = new EngineAvailabilityGuard("postgres", "jdbc:postgresql://db/app", NO_TENANTS, "db");
+        assertThatCode(() -> dbSourceOnPostgresBuild.check(POSTGRES_ONLY))
+                .doesNotThrowAnyException();
+        EngineAvailabilityGuard dbSourceOnAllInOne = new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS, "db");
+        assertThatCode(() -> dbSourceOnAllInOne.check(BOTH))
                 .doesNotThrowAnyException();
     }
 }

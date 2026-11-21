@@ -1,5 +1,6 @@
 package io.github.excalibase.config.datasource;
 
+import io.github.excalibase.schema.TenantEngineNotServedException;
 import io.github.excalibase.service.DatabaseEngine;
 import io.github.excalibase.service.VaultCredentialService;
 import io.github.excalibase.service.VaultCredentials;
@@ -14,6 +15,7 @@ import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.awaitility.Awaitility.await;
 import static org.junit.jupiter.api.Assertions.*;
@@ -204,5 +206,49 @@ class DynamicDataSourceManagerTest {
     assertFalse(retiring.isClosed(), "closed while queries may still be running on it");
     await().atMost(Duration.ofSeconds(5)).until(retiring::isClosed);
     ageing.destroy();
+  }
+
+  @Test
+  @DisplayName("a project on an engine this build does not carry is refused before a pool is built, and the refusal is cached")
+  void getDatabase_unservedEngine_isRefusedBeforeAPoolAndCached() {
+    var pools = new AtomicInteger();
+    var slim = new DynamicDataSourceManager(vaultService, creds -> {
+      pools.incrementAndGet();
+      return mockDataSource;
+    }, Duration.ofMinutes(30), Duration.ofSeconds(90), type -> {
+      if (type.equals("mysql")) {
+        throw new IllegalArgumentException("This engine build serves only postgres, not mysql. Use the mysql image");
+      }
+    });
+    when(vaultService.fetchCredentials("duc-corp", "app-m")).thenReturn(new VaultCredentials(
+        "localhost", "3306", "app_db", "excalibase_app", "secret", null, DatabaseEngine.MYSQL));
+
+    var first = assertThrows(TenantEngineNotServedException.class, () -> slim.getDatabase("duc-corp", "app-m"));
+    assertThrows(TenantEngineNotServedException.class, () -> slim.getDatabase("duc-corp", "app-m"));
+
+    assertEquals(0, pools.get(), "no pool is built for an engine the build cannot serve");
+    verify(vaultService, times(1)).fetchCredentials("duc-corp", "app-m");
+    assertFalse(first.getMessage().contains("image"), "the client message carries no image or internal detail");
+    assertFalse(first.getMessage().contains("jdbc"), "the client message carries no connection detail");
+    slim.destroy();
+  }
+
+  @Test
+  @DisplayName("a project on a served engine still gets its pool when another project was refused")
+  void getDatabase_servedEngine_unaffectedByARefusedProject() {
+    var slim = new DynamicDataSourceManager(vaultService, creds -> mockDataSource, Duration.ofMinutes(30),
+        Duration.ofSeconds(90), type -> {
+          if (type.equals("mysql")) {
+            throw new IllegalArgumentException("not served");
+          }
+        });
+    when(vaultService.fetchCredentials("duc-corp", "app-m")).thenReturn(new VaultCredentials(
+        "localhost", "3306", "app_db", "excalibase_app", "secret", null, DatabaseEngine.MYSQL));
+    when(vaultService.fetchCredentials("duc-corp", "app-a")).thenReturn(CREDS);
+
+    assertThrows(TenantEngineNotServedException.class, () -> slim.getDatabase("duc-corp", "app-m"));
+
+    assertSame(mockDataSource, slim.getDatabase("duc-corp", "app-a").dataSource());
+    slim.destroy();
   }
 }

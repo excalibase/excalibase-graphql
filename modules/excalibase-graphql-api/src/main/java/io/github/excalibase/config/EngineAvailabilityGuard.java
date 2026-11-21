@@ -3,6 +3,7 @@ package io.github.excalibase.config;
 import io.github.excalibase.SqlEngineProvider;
 import io.github.excalibase.spi.SqlEngineFactory;
 import io.micronaut.context.annotation.Value;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 
 import java.util.Map;
@@ -25,13 +26,21 @@ public class EngineAvailabilityGuard {
     private final String databaseType;
     private final String datasourceUrl;
     private final boolean multiTenant;
+    private final String metadataSource;
 
+    EngineAvailabilityGuard(String databaseType, String datasourceUrl, String provisioningUrl) {
+        this(databaseType, datasourceUrl, provisioningUrl, "");
+    }
+
+    @Inject
     public EngineAvailabilityGuard(@Value("${app.database-type:postgres}") String databaseType,
                                    @Value("${spring.datasource.url:}") String datasourceUrl,
-                                   @Value("${app.security.multi-tenant.provisioning-url:}") String provisioningUrl) {
+                                   @Value("${app.security.multi-tenant.provisioning-url:}") String provisioningUrl,
+                                   @Value("${metadata.source:}") String metadataSource) {
         this.databaseType = databaseType;
         this.datasourceUrl = datasourceUrl;
         this.multiTenant = provisioningUrl != null && !provisioningUrl.isBlank();
+        this.metadataSource = metadataSource;
     }
 
     /** Refuses to start, naming the image to use, when the configured database is not one this build carries. */
@@ -40,6 +49,10 @@ public class EngineAvailabilityGuard {
     }
 
     void check(Iterable<SqlEngineProvider> providers) {
+        if ("db".equalsIgnoreCase(metadataSource == null ? "" : metadataSource.strip())) {
+            // The db rule source keeps its document in PostgreSQL, whichever database is served.
+            require("postgres", "METADATA_SOURCE=db (its document is kept in PostgreSQL)", providers);
+        }
         if (multiTenant) {
             return;
         }
