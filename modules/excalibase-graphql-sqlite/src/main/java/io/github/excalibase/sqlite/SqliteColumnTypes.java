@@ -58,16 +58,16 @@ final class SqliteColumnTypes {
 
     private static String byName(String name) {
         return switch (name) {
-            case "boolean", "bool" -> BOOLEAN;
-            case "bigint", "int8", "unsigned big int" -> BIGINT;
-            case "smallint", "int2", "tinyint" -> SMALLINT;
-            case "numeric", "decimal", "number" -> NUMERIC;
+            case BOOLEAN, "bool" -> BOOLEAN;
+            case BIGINT, "int8", "unsigned big int" -> BIGINT;
+            case SMALLINT, "int2", "tinyint" -> SMALLINT;
+            case NUMERIC, "decimal", "number" -> NUMERIC;
             case "json", "jsonb" -> JSON;
             case "uuid" -> UUID;
             case "date" -> DATE;
-            case "datetime", "timestamp", "timestamp without time zone" -> TIMESTAMP;
-            case "timestamptz", "timestamp with time zone" -> TIMESTAMPTZ;
-            case "bytea" -> BYTES;
+            case "datetime", TIMESTAMP, "timestamp without time zone" -> TIMESTAMP;
+            case TIMESTAMPTZ, "timestamp with time zone" -> TIMESTAMPTZ;
+            case BYTES -> BYTES;
             default -> null;
         };
     }

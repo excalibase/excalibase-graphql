@@ -173,18 +173,23 @@ public final class SqliteSql implements DialectSql {
     public Object likePattern(String pattern) {
         StringBuilder glob = new StringBuilder();
         int[] codePoints = pattern.codePoints().toArray();
-        for (int i = 0; i < codePoints.length; i++) {
-            if (codePoints[i] == '\\' && i + 1 < codePoints.length) {
-                glob.append(literal(codePoints[++i]));
-            } else if (codePoints[i] == '%') {
-                glob.append('*');
-            } else if (codePoints[i] == '_') {
-                glob.append('?');
-            } else {
-                glob.append(literal(codePoints[i]));
-            }
+        int i = 0;
+        while (i < codePoints.length) {
+            int current = codePoints[i];
+            boolean escaped = current == '\\' && i + 1 < codePoints.length;
+            int next = escaped ? codePoints[i + 1] : current;
+            glob.append(wildcard(escaped, next));
+            i += escaped ? 2 : 1;
         }
         return glob.toString();
+    }
+
+    /** {@code %} and {@code _} are wildcards unless escaped; anything else, escaped or not, is itself. */
+    private static String wildcard(boolean escaped, int codePoint) {
+        if (!escaped && codePoint == '%') {
+            return "*";
+        }
+        return !escaped && codePoint == '_' ? "?" : literal(codePoint);
     }
 
     private static String literal(int codePoint) {

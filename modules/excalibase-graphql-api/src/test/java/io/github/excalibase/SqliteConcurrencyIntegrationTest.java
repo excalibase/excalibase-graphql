@@ -10,6 +10,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +20,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Many writers on one file: every write lands exactly once, none answers SQLITE_BUSY, and none waits for ever.
@@ -28,10 +30,11 @@ class SqliteConcurrencyIntegrationTest extends EngineIntegrationTest {
 
     private static final int WRITERS = 8;
     private static final int WRITES_EACH = 15;
-    private static final SqliteFile DATABASE = SqliteFile.create(
-            "CREATE TABLE counters (id INTEGER PRIMARY KEY, writer INTEGER NOT NULL, n INTEGER NOT NULL);\n"
-                    + "CREATE TABLE totals (id INTEGER PRIMARY KEY, value INTEGER NOT NULL);\n"
-                    + "INSERT INTO totals VALUES (1, 0);");
+    private static final SqliteFile DATABASE = SqliteFile.create("""
+            CREATE TABLE counters (id INTEGER PRIMARY KEY, writer INTEGER NOT NULL, n INTEGER NOT NULL);
+            CREATE TABLE totals (id INTEGER PRIMARY KEY, value INTEGER NOT NULL);
+            INSERT INTO totals VALUES (1, 0);
+            """);
 
     @Override
     public Map<String, String> getProperties() {
@@ -88,8 +91,7 @@ class SqliteConcurrencyIntegrationTest extends EngineIntegrationTest {
 
             ExecutorService pool = Executors.newSingleThreadExecutor();
             Future<Integer> queued = pool.submit(() -> writeAll(98, 1));
-            Thread.sleep(1_000);
-            assertThat(queued.isDone()).as("the write waits for the lock").isFalse();
+            await().during(Duration.ofSeconds(1)).atMost(Duration.ofSeconds(5)).until(() -> !queued.isDone());
             statement.execute("COMMIT");
             assertThat(queued.get(30, TimeUnit.SECONDS)).isZero();
             pool.shutdown();

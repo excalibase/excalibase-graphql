@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Reflects a SQLite database through its PRAGMA table-valued functions: tables and views from
@@ -82,7 +83,7 @@ public class SqliteSchemaLoader implements SchemaLoader {
             info.setTableSchema(table.name(), schema);
             jdbc.query(COLUMNS, rs -> {
                 SqliteColumnTypes.register(info, table.name(), rs.getString("name"), rs.getString("type"));
-                if (isRowIdAlias(jdbc, schema, table.name(), rs.getString("name"), rs.getString("type"), rs.getInt("pk"))) {
+                if (isRowIdAlias(jdbc, schema, table.name(), rs.getString("type"), rs.getInt("pk"))) {
                     info.addAutoIncrementColumn(table.name(), rs.getString("name"));
                 }
             }, table.name(), schema);
@@ -90,7 +91,7 @@ public class SqliteSchemaLoader implements SchemaLoader {
     }
 
     /** {@code INTEGER PRIMARY KEY} (alone, in a table with rowids) is an alias of the rowid: SQLite fills it in. */
-    private static boolean isRowIdAlias(JdbcTemplate jdbc, String schema, String table, String column, String type, int pk) {
+    private static boolean isRowIdAlias(JdbcTemplate jdbc, String schema, String table, String type, int pk) {
         if (pk != 1 || type == null || !"integer".equalsIgnoreCase(type.trim())) {
             return false;
         }
@@ -142,7 +143,7 @@ public class SqliteSchemaLoader implements SchemaLoader {
         String parent = key.getFirst()[0];
         List<String> from = key.stream().map(part -> part[1]).toList();
         List<String> to = key.stream().map(part -> part[2]).toList();
-        if (to.stream().anyMatch(column -> column == null)) {
+        if (to.stream().anyMatch(Objects::isNull)) {
             to = columnsOf(jdbc, schema, parent).stream().filter(column -> column.primaryKeyPosition() > 0)
                     .sorted((left, right) -> Integer.compare(left.primaryKeyPosition(), right.primaryKeyPosition()))
                     .map(Column::name).toList();

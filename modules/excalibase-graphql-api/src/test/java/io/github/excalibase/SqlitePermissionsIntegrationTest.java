@@ -172,7 +172,7 @@ class SqlitePermissionsIntegrationTest extends EngineIntegrationTest {
                 if (answer.status() != 200 || answer.json().has("errors")) {
                     failed++;
                 }
-            } catch (Exception e) {
+            } catch (Exception _) {
                 failed++;
             }
         }
@@ -213,7 +213,7 @@ class SqlitePermissionsIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    void aRequestWithoutAToken_isRefused() throws Exception {
+    void aRequestWithoutAToken_isRefused() {
         http.post("/" + PROJECT + "/graphql", "{\"query\":\"{ mainNotes { id } }\"}", "Content-Type", "application/json")
                 .expect(jsonPath("$.data").doesNotExist());
         http.get("/" + PROJECT + "/api/v1/notes").expect(status().is4xxClientError());

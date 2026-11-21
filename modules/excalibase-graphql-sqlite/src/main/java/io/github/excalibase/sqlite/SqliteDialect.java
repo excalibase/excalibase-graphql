@@ -109,7 +109,7 @@ public class SqliteDialect implements SqlDialect {
      */
     @Override
     public void beforeWrite(JdbcOperations jdbc, String quotedTable) {
-        jdbc.execute("DELETE FROM " + quotedTable + " WHERE 0");
+        jdbc.execute("DELETE FROM " + quotedTable + " WHERE 0"); // NOSONAR quotedTable is the engine's own quoted identifier
     }
 
     @Override
@@ -258,7 +258,7 @@ public class SqliteDialect implements SqlDialect {
                     ? OffsetDateTime.of(local, ZoneOffset.ofTotalSeconds(parsed.get(ChronoField.OFFSET_SECONDS)))
                     : local.atOffset(ZoneOffset.UTC);
             return STORED_TIMESTAMPTZ.format(at);
-        } catch (DateTimeException e) {
+        } catch (DateTimeException _) {
             throw new DataErrorException(DataError.invalidValue(null, "Invalid timestamp: " + text));
         }
     }
@@ -269,7 +269,7 @@ public class SqliteDialect implements SqlDialect {
         }
         try {
             return LocalDate.parse(text.trim()).toString();
-        } catch (DateTimeException e) {
+        } catch (DateTimeException _) {
             throw new DataErrorException(DataError.invalidValue(null, "Invalid date: " + text));
         }
     }
@@ -278,7 +278,7 @@ public class SqliteDialect implements SqlDialect {
         if (value instanceof String text && text.startsWith("\\x")) {
             try {
                 return HexFormat.of().parseHex(text.substring(2));
-            } catch (IllegalArgumentException e) {
+            } catch (IllegalArgumentException _) {
                 throw new DataErrorException(DataError.invalidValue(null,
                         "Invalid binary value: \\x must be followed by pairs of hex digits"));
             }
@@ -292,7 +292,7 @@ public class SqliteDialect implements SqlDialect {
         }
         try {
             return JSON.writeValueAsString(value);
-        } catch (JsonProcessingException e) {
+        } catch (JsonProcessingException _) {
             throw new DataErrorException(DataError.invalidValue(null, "Invalid JSON value"));
         }
     }
