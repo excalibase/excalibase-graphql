@@ -463,26 +463,28 @@ public class RestApiController {
 
     private HttpResponse<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                                               Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
-        for (int attempt = 1; ; attempt++) {
-            boolean last = attempt >= WriteRetry.ATTEMPTS;
-            HttpResponse<Object> answer = executeDmlOnce(compiled, scope, rollback, maxAffected, prefer, successStatus,
-                    table, last);
-            if (answer != null) return answer;
+        Dml dml = new Dml(compiled, scope, rollback, maxAffected, prefer, successStatus, table);
+        HttpResponse<Object> answer = null;
+        for (int attempt = 1; answer == null && attempt <= WriteRetry.ATTEMPTS; attempt++) {
+            answer = executeDmlOnce(dml, attempt == WriteRetry.ATTEMPTS);
         }
+        return answer;
     }
 
+    /** One mutation as the request made it. */
+    private record Dml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
+                       Integer maxAffected, String prefer, HttpStatus successStatus, String table) {}
+
     /** One transaction; null when it lost a lock to a concurrent request, was rolled back, and may run again. */
-    private HttpResponse<Object> executeDmlOnce(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
-                                                  boolean rollback, Integer maxAffected, String prefer,
-                                                  HttpStatus successStatus, String table, boolean last) {
+    private HttpResponse<Object> executeDmlOnce(Dml dml, boolean last) {
         return txTemplate.execute(status -> {
             try {
-                boolean represent = maxAffected != null || preferContains(prefer, PREFER_REPRESENTATION);
-                String json = executeDmlQuery(compiled, represent);
-                HttpResponse<Object> overflow = checkMaxAffected(json, maxAffected, status);
+                boolean represent = dml.maxAffected() != null || preferContains(dml.prefer(), PREFER_REPRESENTATION);
+                String json = executeDmlQuery(dml.compiled(), represent);
+                HttpResponse<Object> overflow = checkMaxAffected(json, dml.maxAffected(), status);
                 if (overflow != null) return overflow;
-                if (rollback) status.setRollbackOnly();
-                return buildDmlResponse(json, prefer, successStatus, table, rollback, scope.keys());
+                if (dml.rollback()) status.setRollbackOnly();
+                return buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys());
             } catch (Exception e) {
                 Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
                 status.setRollbackOnly();
@@ -495,7 +497,7 @@ public class RestApiController {
                 if (!last && WriteRetry.isLockConflict(e)) {
                     return null;
                 }
-                return RestErrors.of(e, scope.dialect(), scope.filters(), "Mutation execution failed");
+                return RestErrors.of(e, dml.scope().dialect(), dml.scope().filters(), "Mutation execution failed");
             }
         });
     }
