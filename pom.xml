@@ -70,7 +70,7 @@
         <kotlin-stdlib.version>2.3.21</kotlin-stdlib.version>
         <mysql.connector.version>9.3.0</mysql.connector.version>
         <!--java graphql-->
-        <graphql.java.version>24.0</graphql.java.version>
+        <graphql.java.version>26.1</graphql.java.version>
 
         <!--own module-->
         <excalibase.version>0.0.1-SNAPSHOT</excalibase.version>
