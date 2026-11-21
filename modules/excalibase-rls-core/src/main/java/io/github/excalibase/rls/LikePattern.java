@@ -23,17 +23,22 @@ final class LikePattern {
     static Pattern compile(String like) {
         StringBuilder regex = new StringBuilder();
         StringBuilder literal = new StringBuilder();
-        for (int i = 0; i < like.length(); i++) {
+        int i = 0;
+        while (i < like.length()) {
             char c = like.charAt(i);
             if (c == ESCAPE) {
-                if (++i == like.length()) return null;
-                literal.append(like.charAt(i));
-            } else if (c == '%' || c == '_') {
+                if (i + 1 == like.length()) return null;
+                literal.append(like.charAt(i + 1));
+                i += 2;
+                continue;
+            }
+            if (c == '%' || c == '_') {
                 flush(regex, literal);
                 regex.append(c == '%' ? ".*" : ".");
             } else {
                 literal.append(c);
             }
+            i++;
         }
         flush(regex, literal);
         return Pattern.compile(regex.toString(), Pattern.DOTALL);
