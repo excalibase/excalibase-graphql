@@ -15,8 +15,6 @@ VOLUME /tmp
 
 FROM runtime AS engine-all
 ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar /app.jar
-# The SQLite driver loads a native library.
-ENV JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED
 
 # A slim image names its own database, so it needs no APP_DATABASE_TYPE or driver setting.
 FROM runtime AS engine-postgres
@@ -35,14 +33,15 @@ ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT
 RUN mkdir /data && chown app:app /data
 VOLUME /data
 ENV APP_DATABASE_TYPE=sqlite \
-    SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.sqlite.JDBC \
-    JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.sqlite.JDBC
 
 FROM engine-${ENGINE}
 
 USER app
 
-ENV JAVA_OPTS="-XX:+UseG1GC \
+# --enable-native-access: the SQLite driver loads a native library (JAVA_TOOL_OPTIONS would print a line to stderr).
+ENV JAVA_OPTS="--enable-native-access=ALL-UNNAMED \
+               -XX:+UseG1GC \
                -XX:InitialRAMPercentage=25.0 \
                -XX:MaxRAMPercentage=60.0 \
                -XX:MinRAMPercentage=25.0 \
