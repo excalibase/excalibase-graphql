@@ -104,6 +104,20 @@ class PostgresSchemaFingerprintIntegrationTest {
     }
 
     @Test
+    @DisplayName("a default added to a parameter moves it, and nothing else about the function changes")
+    void parameterDefaults() {
+        jdbc.execute("CREATE FUNCTION with_default(x int) RETURNS int LANGUAGE sql AS 'select x'");
+        assertMoves("CREATE OR REPLACE FUNCTION with_default(x int DEFAULT 1) RETURNS int LANGUAGE sql AS 'select x'");
+    }
+
+    @Test
+    @DisplayName("EXECUTE granted on a function moves it")
+    void functionPrivileges() {
+        jdbc.execute("CREATE FUNCTION with_acl(x int) RETURNS int LANGUAGE sql AS 'select x'");
+        assertMoves("GRANT EXECUTE ON FUNCTION with_acl(int) TO fp_reader");
+    }
+
+    @Test
     @DisplayName("GRANT and REVOKE on a table or a column move it")
     void privileges() {
         assertMoves("GRANT SELECT ON kids TO fp_reader");

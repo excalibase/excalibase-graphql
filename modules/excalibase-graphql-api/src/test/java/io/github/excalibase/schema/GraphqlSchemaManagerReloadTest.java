@@ -29,8 +29,8 @@ class GraphqlSchemaManagerReloadTest {
     /** Reflects a table whose columns the test chooses, and fails on demand. */
     private static class ScriptedManager extends GraphqlSchemaManager {
 
-        private List<String> columns = List.of("id");
-        private boolean databaseDown;
+        List<String> columns = List.of("id");
+        boolean databaseDown;
 
         ScriptedManager(PermissionProvider permissions, boolean jwtEnabled) {
             super(null, 30, "postgres", DEFAULT_MAX_QUERY_DEPTH, 30, "", null, null, permissions, jwtEnabled);
