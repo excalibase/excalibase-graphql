@@ -61,7 +61,7 @@ final class ConnectionBoundCustomizer implements NettyServerCustomizer {
         ChannelPipeline pipeline = connection.pipeline();
         boolean admin = ((InetSocketAddress) connection.localAddress()).getPort() == adminPort;
         KeepAliveRotation rotation = new KeepAliveRotation(bound, firstRequestMillis,
-                admin ? new AtomicInteger() : gate.idleConnections(), admin ? null : gate);
+                admin ? new AtomicInteger() : gate.idleConnections());
         if (pipeline.get(ChannelPipelineCustomizer.HANDLER_HTTP_SERVER_CODEC) != null) {
             pipeline.addAfter(ChannelPipelineCustomizer.HANDLER_HTTP_SERVER_CODEC, ROTATION, rotation);
         } else {

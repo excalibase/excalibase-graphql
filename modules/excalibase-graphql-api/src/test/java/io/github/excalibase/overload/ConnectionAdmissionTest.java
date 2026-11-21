@@ -167,22 +167,31 @@ class ConnectionAdmissionTest {
     }
 
     @Test
-    @DisplayName("a client that has to wait closes a connection idling between requests")
-    void waitingClientClosesAnIdleConnection() {
-        ConnectionGate gate = new ConnectionGate(1, 10);
-        ConnectionBound bound = new ConnectionBound(1, 1, 1, 100, 5_000);
-        KeepAliveRotation idleRotation = new KeepAliveRotation(bound, 5_000, new AtomicInteger(), gate);
-        EmbeddedChannel idle = new EmbeddedChannel(idleRotation, new ConnectionAdmission(gate, idleRotation, 60_000));
-        idle.writeInbound(new io.netty.handler.codec.http.DefaultHttpRequest(
-                io.netty.handler.codec.http.HttpVersion.HTTP_1_1, io.netty.handler.codec.http.HttpMethod.GET, "/"));
-        idle.writeOutbound(new io.netty.handler.codec.http.DefaultFullHttpResponse(
-                io.netty.handler.codec.http.HttpVersion.HTTP_1_1, io.netty.handler.codec.http.HttpResponseStatus.OK));
-        idle.runPendingTasks();
-        assertThat(idle.isOpen()).isTrue();
+    @DisplayName("Retry-After is within 1 to 3 seconds and differs between refused clients")
+    void retryAfterIsSpread() {
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < 60; i++) {
+            ConnectionGate gate = new ConnectionGate(1, 0);
+            new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 60_000));
+            EmbeddedChannel refused = new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 60_000));
+            refused.runPendingTasks();
+            String header = java.util.Arrays.stream(written(refused).split("\r\n"))
+                    .filter(line -> line.startsWith("Retry-After: ")).findFirst().orElseThrow();
+            seen.add(header.substring("Retry-After: ".length()));
+        }
+        assertThat(seen).isSubsetOf("1", "2", "3").hasSizeGreaterThan(1);
+    }
 
+    @Test
+    @DisplayName("a refusal that finished frees its place under the cap, so later refusals are still answered")
+    void finishedRefusalsFreeTheirPlace() {
+        ConnectionGate gate = new ConnectionGate(1, 0);
         new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 60_000));
-        idle.runPendingTasks();
-
-        assertThat(idle.isOpen()).isFalse();
+        for (int i = 0; i < 4; i++) {
+            EmbeddedChannel refused = new EmbeddedChannel(new ConnectionAdmission(gate, rotation(), 60_000));
+            refused.runPendingTasks();
+            assertThat(written(refused)).as("refusal %d", i).startsWith("HTTP/1.1 503");
+            refused.close();
+        }
     }
 }

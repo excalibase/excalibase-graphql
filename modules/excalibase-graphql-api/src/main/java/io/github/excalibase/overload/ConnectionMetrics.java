@@ -23,7 +23,7 @@ final class ConnectionMetrics {
         Gauge.builder("excalibase.connections.waiting", gate, ConnectionGate::waiting)
                 .baseUnit("connections").register(registry);
         FunctionCounter.builder("excalibase.connections.refused", gate, ConnectionGate::refused)
-                .description("Connections answered with 503 because the server was over its connection bound")
+                .description("Connections refused because the server was over its connection bound: a 503 answer, or a silent drop past the cap on refusals in flight")
                 .baseUnit("connections").register(registry);
     }
 }

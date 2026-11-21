@@ -9,6 +9,7 @@ import io.netty.util.concurrent.ScheduledFuture;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 
@@ -66,10 +67,9 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
             }
             case QUEUED -> {
                 context.channel().config().setAutoRead(false);
-                gate.closeOneIdle();
                 deadline = context.executor().schedule((Runnable) this::refuse, waitMillis, TimeUnit.MILLISECONDS);
             }
-            case REFUSED -> context.executor().execute(this::refuse);
+            case REFUSED -> refuseOnEventLoop();
         }
     }
 
@@ -128,7 +128,20 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
     /** Called by the gate, from any thread, when a slot is handed to this connection. */
     @Override
     public void admitted() {
-        context.executor().execute(this::admitOnEventLoop);
+        try {
+            context.executor().execute(this::admitOnEventLoop);
+        } catch (RejectedExecutionException shuttingDown) {
+            gate.release();   // the connection's loop is gone: pass the slot on
+        }
+    }
+
+    private void refuseOnEventLoop() {
+        try {
+            context.executor().execute(this::refuse);
+        } catch (RejectedExecutionException shuttingDown) {
+            gate.recordRefusal();
+            context.close();
+        }
     }
 
     private void admitOnEventLoop() {

@@ -22,4 +22,4 @@ The bound is visible as `tomcat.connections.config.max` and `tomcat.connections.
 
 Refusals are counted in `excalibase.connections.refused` (Prometheus `excalibase_connections_refused_connections_total`), and `excalibase.connections.waiting` shows the queue.
 
-A keep-alive connection that is idle between requests gives up its slot as soon as a client is waiting, instead of holding it for the keep-alive timeout. At most as many refusals as the bound are in flight at once; past that a connection is dropped without an answer (still counted). A wait above 5 s is logged as a warning at startup, since most clients give up first.
+A keep-alive connection idling between requests keeps its slot until the keep-alive timeout. At most as many refusals as the bound are in flight at once; past that a connection is dropped without an answer (so no Retry-After) but still counted. A wait above 5 s is logged as a warning at startup, since most clients give up first.

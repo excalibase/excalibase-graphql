@@ -10,8 +10,7 @@ const base = new URL(stack.overload);
 function holdConnection() {
   return new Promise((resolve, reject) => {
     const socket = net.connect(Number(base.port), base.hostname, () => {
-      socket.write(`GET /${stack.project}/gra`);
-      setTimeout(() => resolve(socket), 200);
+      socket.write(`GET /${stack.project}/gra`, () => resolve(socket));
     });
     socket.on('error', reject);
   });
@@ -34,6 +33,17 @@ function timedRequest() {
   });
 }
 
+/** Waits until the server reports the connections as open, so a held socket is known to be accepted. */
+async function awaitOpen(count) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const samples = parseSamples((await request(stack.overloadManagement, '/actuator/prometheus')).text);
+    const open = samples.find((sample) => sample.name === 'tomcat_connections_current_connections');
+    if (open && open.value >= count) return;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`the server never reported ${count} open connections`);
+}
+
 describe('overload bound on a 1 CPU engine', () => {
   let held = [];
   afterEach(() => { held.forEach((socket) => socket.destroy()); held = []; });
@@ -46,6 +56,7 @@ describe('overload bound on a 1 CPU engine', () => {
 
   test('a client beyond the bound is refused at once with 503, Retry-After and a GraphQL error', async () => {
     held = await Promise.all(Array.from({ length: MAX_CONNECTIONS }, holdConnection));
+    await awaitOpen(MAX_CONNECTIONS);
     const queued = await Promise.all(Array.from({ length: MAX_CONNECTIONS }, () => new Promise((resolve) => {
       const socket = net.connect(Number(base.port), base.hostname, () => resolve(socket));
       held.push(socket);
@@ -67,6 +78,7 @@ describe('overload bound on a 1 CPU engine', () => {
 
   test('a connection that finds a slot within the admission wait is served, not refused', async () => {
     held = await Promise.all(Array.from({ length: MAX_CONNECTIONS }, holdConnection));
+    await awaitOpen(MAX_CONNECTIONS);
     const waitingRequest = timedRequest();
     setTimeout(() => held[0].destroy(), 50);
     const answer = await waitingRequest;

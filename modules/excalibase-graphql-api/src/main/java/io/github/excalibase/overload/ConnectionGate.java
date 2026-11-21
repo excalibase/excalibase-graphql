@@ -2,8 +2,6 @@ package io.github.excalibase.overload;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -19,11 +17,6 @@ final class ConnectionGate implements ConnectionPressure {
         void admitted();
     }
 
-    /** A keep-alive connection between requests, which can be closed to free its slot. */
-    interface IdleConnection {
-        void closeIfIdle();
-    }
-
     /** What became of a connection that asked for a slot. */
     enum Outcome { ADMITTED, QUEUED, REFUSED }
 
@@ -32,7 +25,6 @@ final class ConnectionGate implements ConnectionPressure {
     private final LongAdder refused = new LongAdder();
     private final Deque<Waiter> waiting = new ArrayDeque<>();
     private final AtomicInteger idleConnections = new AtomicInteger();
-    private final Set<IdleConnection> idle = ConcurrentHashMap.newKeySet();
     private final int maxRefusing;
     private int refusing;
     private int open;
@@ -72,24 +64,6 @@ final class ConnectionGate implements ConnectionPressure {
 
     synchronized void endRefusal() {
         refusing--;
-    }
-
-    void offerIdle(IdleConnection connection) {
-        idle.add(connection);
-    }
-
-    void withdrawIdle(IdleConnection connection) {
-        idle.remove(connection);
-    }
-
-    /** A client is waiting for a slot: free one held by a connection that is only idling between requests. */
-    void closeOneIdle() {
-        for (IdleConnection connection : idle) {
-            if (idle.remove(connection)) {
-                connection.closeIfIdle();
-                return;
-            }
-        }
     }
 
     /** Counts a connection answered with a 503 instead of being served. */

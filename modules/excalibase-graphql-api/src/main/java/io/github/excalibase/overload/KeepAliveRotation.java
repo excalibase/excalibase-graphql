@@ -13,6 +13,7 @@ import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.ScheduledFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -22,14 +23,12 @@ import java.util.concurrent.atomic.AtomicInteger;
  * requests gives its slot back. A request body that stops arriving closes the connection after the same
  * wait as the first request (Tomcat's connection timeout), counted from the last piece received. A WebSocket, once upgraded, is neither rotated nor timed out.
  */
-final class KeepAliveRotation extends ChannelDuplexHandler implements ConnectionGate.IdleConnection {
+final class KeepAliveRotation extends ChannelDuplexHandler {
 
     private final int maxRequests;
     private final long idleMillis;
     private final long firstRequestMillis;
     private final AtomicInteger idleConnections;
-    private final ConnectionGate gate;
-    private boolean offered;
     private ChannelHandlerContext context;
     private ScheduledFuture<?> timeout;
     private ScheduledFuture<?> bodyTimeout;
@@ -41,13 +40,6 @@ final class KeepAliveRotation extends ChannelDuplexHandler implements Connection
     private int responses;
 
     KeepAliveRotation(ConnectionBound bound, long firstRequestMillis, AtomicInteger idleConnections) {
-        this(bound, firstRequestMillis, idleConnections, null);
-    }
-
-    /** With a gate, a connection idle between requests is offered to it, to be closed when a client waits for a slot. */
-    KeepAliveRotation(ConnectionBound bound, long firstRequestMillis, AtomicInteger idleConnections,
-                      ConnectionGate gate) {
-        this.gate = gate;
         this.maxRequests = bound.maxKeepAliveRequests();
         this.idleMillis = bound.keepAliveTimeoutMillis();
         this.firstRequestMillis = firstRequestMillis;
@@ -62,9 +54,13 @@ final class KeepAliveRotation extends ChannelDuplexHandler implements Connection
     /** Called once the connection holds a slot: the clock for the first request starts now. */
     void start() {
         if (context != null && context.executor().inEventLoop()) {
-            waitForRequest(firstRequestMillis, false);
+            waitForRequest(firstRequestMillis);
         } else if (context != null) {
-            context.executor().execute(() -> waitForRequest(firstRequestMillis, false));
+            try {
+                context.executor().execute(() -> waitForRequest(firstRequestMillis));
+            } catch (RejectedExecutionException shuttingDown) {
+                // the loop is stopping and closes the connection with it
+            }
         }
     }
 
@@ -151,18 +147,14 @@ final class KeepAliveRotation extends ChannelDuplexHandler implements Connection
         if (finalResponse) {
             context.close();
         } else {
-            waitForRequest(idleMillis, true);
+            waitForRequest(idleMillis);
         }
     }
 
-    private void waitForRequest(long millis, boolean betweenRequests) {
+    private void waitForRequest(long millis) {
         stopWaiting();
         if (context.channel().isActive()) {
             idle = true;
-            if (betweenRequests && gate != null) {
-                offered = true;
-                gate.offerIdle(this);
-            }
             idleConnections.incrementAndGet();
             timeout = context.executor().schedule(() -> context.close().addListener(ChannelFutureListener.CLOSE_ON_FAILURE),
                     millis, TimeUnit.MILLISECONDS);
@@ -174,24 +166,10 @@ final class KeepAliveRotation extends ChannelDuplexHandler implements Connection
             timeout.cancel(false);
             timeout = null;
         }
-        if (offered) {
-            offered = false;
-            gate.withdrawIdle(this);
-        }
         if (idle) {
             idle = false;
             idleConnections.decrementAndGet();
         }
-    }
-
-    /** Called from any thread by the gate; the connection closes only if it is still idle on its own thread. */
-    @Override
-    public void closeIfIdle() {
-        context.executor().execute(() -> {
-            if (offered && context.channel().isActive()) {
-                context.close();
-            }
-        });
     }
 
     @Override
