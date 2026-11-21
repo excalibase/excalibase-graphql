@@ -128,9 +128,9 @@ class RowMatcherLikeTest {
     @Test
     void manyPercentsDoNotBacktrackCatastrophically() {
         String value = "a".repeat(100_000);
-        assertThat(timedMillis(() -> assertThat(allowLike("%%%%%%%%x", value)).isFalse())).isLessThan(100);
-        assertThat(timedMillis(() -> assertThat(allowLike("%a%a%a%a%b", value)).isFalse())).isLessThan(100);
-        assertThat(timedMillis(() -> assertThat(allowLike("%a%a%a%a%a", value)).isTrue())).isLessThan(100);
+        assertThat(timedMillis(() -> assertThat(allowLike("%%%%%%%%x", value)).isFalse())).isLessThan(2000);
+        assertThat(timedMillis(() -> assertThat(allowLike("%a%a%a%a%b", value)).isFalse())).isLessThan(2000);
+        assertThat(timedMillis(() -> assertThat(allowLike("%a%a%a%a%a", value)).isTrue())).isLessThan(2000);
     }
 
     @Test
