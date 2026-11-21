@@ -15,10 +15,6 @@ on:
         required: false
         default: ""
 
-permissions:
-  contents: read
-  actions: read
-
 concurrency:
   group: slim-native-${{ inputs.sha || github.sha }}
   cancel-in-progress: false
@@ -33,6 +29,8 @@ jobs:
     name: Warm Maven cache
     timeout-minutes: 35
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
     if: github.repository == 'excalibase/excalibase-graphql' && github.ref == 'refs/heads/main'
     steps:
     - name: Checkout code
@@ -54,6 +52,9 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-24.04
     needs: maven-warm
+    permissions:
+      contents: read
+      actions: read
     if: ${{ !cancelled() && github.repository == 'excalibase/excalibase-graphql' && github.ref == 'refs/heads/main' }}
     strategy:
       fail-fast: false
