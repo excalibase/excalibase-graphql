@@ -15,6 +15,9 @@ final class LikePattern {
     private static final int ANY_RUN = -1;
     private static final int ANY_ONE = -2;
 
+    /** Patterns come from policies and claims; a bound keeps one match's work proportional to a sane size. */
+    static final int MAX_PATTERN_CODE_POINTS = 4096;
+
     private final int[] tokens;
 
     private LikePattern(int[] tokens) {
@@ -23,6 +26,10 @@ final class LikePattern {
 
     static LikePattern compile(String like) {
         int[] codePoints = like.codePoints().toArray();
+        if (codePoints.length > MAX_PATTERN_CODE_POINTS) {
+            throw new PermissionEvaluationException(PermissionEvaluationException.INVALID_LIKE_PATTERN,
+                    "A LIKE pattern is too long (more than " + MAX_PATTERN_CODE_POINTS + " characters)");
+        }
         List<Integer> tokens = new ArrayList<>();
         int i = 0;
         while (i < codePoints.length) {
