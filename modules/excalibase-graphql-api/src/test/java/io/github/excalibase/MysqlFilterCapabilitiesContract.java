@@ -28,6 +28,9 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
         return new MySQLContainer<>(image).withInitScript("init-mysql-filters.sql");
     }
 
+    @jakarta.inject.Inject
+    io.github.excalibase.schema.GraphqlSchemaManager schemaManager;
+
     /** The database under test, not yet started. */
     abstract MySQLContainer<?> database();
 
@@ -167,6 +170,45 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
         } finally {
             pool.shutdownNow();
         }
+    }
+
+    /** REST upserts of the same new key at once both succeed: the REST transaction is retried after a deadlock. */
+    @Test
+    void concurrentRestMergeDuplicatesOfTheSameNewKeyBothSucceed() throws Exception {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            for (int key = 6000; key < 6030; key++) {
+                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+                int id = key;
+                List<java.util.concurrent.Future<?>> requests = new java.util.ArrayList<>();
+                for (String title : List.of("left", "right")) {
+                    requests.add(pool.submit(() -> {
+                        start.await();
+                        http.post("/test-proj/api/v1/article", "{\"id\":" + id + ",\"title\":\"" + title + "\"}",
+                                "Content-Type", "application/json",
+                                "Prefer", "return=representation, resolution=merge-duplicates")
+                                .expect(status().is2xxSuccessful());
+                        return null;
+                    }));
+                }
+                for (java.util.concurrent.Future<?> request : requests) {
+                    request.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                }
+                graphql("{ testArticle(where: { id: { eq: " + id + " } }) { id } }")
+                        .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    /** The real MySQL dialect, not a mock: a subscription on MySQL is refused, naming the database. */
+    @Test
+    void subscriptionsAreRefusedForAMysqlProject() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> schemaManager.realtime(null, "test-proj", null, "testArticle"))
+                .isInstanceOf(io.github.excalibase.schema.SubscriptionsUnsupportedException.class)
+                .hasMessage("MySQL does not support subscriptions");
     }
 
     @Test

@@ -81,10 +81,15 @@ filter decide which existing rows may be overwritten (a row the filter hides is 
 row must pass the insert and update checks.
 
 Two requests upserting the same new key at once both succeed: MySQL may abort one with a deadlock, and the engine
-runs it again once. If it still cannot get its locks the answer is `409` with code `deadlock_detected` or
-`lock_timeout`, and the client may retry.
+runs it again once. If it still cannot get its locks, REST answers `409` with code `deadlock_detected` or
+`lock_timeout`; GraphQL answers HTTP `200` with the code in `errors[].extensions.code`. Either way the client may
+retry.
 
-REST's `on_conflict` and `Prefer: resolution=merge-duplicates` do the same.
+A retried GraphQL mutation (on any database) runs again from the start, so a tracked function it calls can run twice and any
+side effect of that function outside the transaction can fire twice.
+
+REST's `on_conflict` and `Prefer: resolution=merge-duplicates` do the same, and `Prefer: resolution=ignore-duplicates`
+leaves a row that already holds the key as it is instead of updating it.
 
 ## Aggregates
 

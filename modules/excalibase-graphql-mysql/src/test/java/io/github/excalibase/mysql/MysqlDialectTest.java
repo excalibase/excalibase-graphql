@@ -1,5 +1,6 @@
 package io.github.excalibase.mysql;
 
+import io.github.excalibase.DialectFeature;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -55,5 +56,12 @@ class MysqlDialectTest {
     @DisplayName("an ENUM column answers its label as stored")
     void enumAnswersItsLabel() {
         assertThat(dialect.enumToText("a.`size`")).isEqualTo("a.`size`");
+    }
+
+    @Test
+    @DisplayName("MySQL leaves out subscriptions, vector search and DISTINCT ON until each is supported")
+    void featuresLeaveOutWhatIsNotSupported() {
+        assertThat(dialect.features()).containsExactlyInAnyOrder(DialectFeature.AGGREGATES, DialectFeature.UPSERT)
+                .doesNotContain(DialectFeature.SUBSCRIPTIONS, DialectFeature.VECTOR_SEARCH, DialectFeature.DISTINCT_ON);
     }
 }
