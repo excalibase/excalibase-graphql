@@ -89,8 +89,12 @@ final class Backend {
         try {
             SSLContext context = SSLContext.getInstance("TLS");
             context.init(null, new TrustManager[] {new X509TrustManager() {
-                @Override public void checkClientTrusted(X509Certificate[] chain, String authType) { }
-                @Override public void checkServerTrusted(X509Certificate[] chain, String authType) { }
+                @Override public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                    // the local test image presents a self-signed certificate
+                }
+                @Override public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                    // trusted on purpose: this context is only ever built for the throwaway test container
+                }
                 @Override public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
             }}, null);
             return context;

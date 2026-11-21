@@ -26,7 +26,9 @@ class EngineErrorsTest {
                 seen.add(pipeline);
                 return List.of();
             }
-            @Override public void close() { }
+            @Override public void close() {
+                // nothing is held
+            }
         };
     }
 
@@ -36,7 +38,9 @@ class EngineErrorsTest {
             @Override public List<Document> run(String collection, List<Document> pipeline) {
                 throw new MongoException("connect to 10.1.2.3:27017 as admin failed");
             }
-            @Override public void close() { }
+            @Override public void close() {
+                // nothing is held
+            }
         };
 
         Map<String, Object> response = engine(failing).execute("{ orders { id } }", Map.of(), Fixtures.caller("u"));

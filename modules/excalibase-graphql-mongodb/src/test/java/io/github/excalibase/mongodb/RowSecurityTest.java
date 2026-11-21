@@ -180,14 +180,16 @@ class RowSecurityTest {
 
     @Test
     void ruleOnAFieldThatIsNotDeclaredIsRefusedAtStartup() {
-        assertThatThrownBy(() -> security(policy(PolicyEffect.ALLOW, rule("ownr", RuleOperator.EQ, "x"))))
+        Policy misspelt = policy(PolicyEffect.ALLOW, rule("ownr", RuleOperator.EQ, "x"));
+        assertThatThrownBy(() -> security(misspelt))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("ownr");
     }
 
     @Test
     void ruleWhoseTypeDisagreesWithTheDeclaredFieldIsRefusedAtStartup() {
         Rule wrong = new Rule("total", FieldType.STRING, RuleOperator.EQ, "5");
-        assertThatThrownBy(() -> security(policy(PolicyEffect.ALLOW, wrong)))
+        Policy mistyped = policy(PolicyEffect.ALLOW, wrong);
+        assertThatThrownBy(() -> security(mistyped))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("total");
     }
 
@@ -201,7 +203,8 @@ class RowSecurityTest {
 
     @Test
     void anObjectIdRuleThatIsNotAnObjectIdIsRefusedAtStartup() {
-        assertThatThrownBy(() -> security(policy(PolicyEffect.ALLOW, rule("id", RuleOperator.EQ, "nope"))))
+        Policy badId = policy(PolicyEffect.ALLOW, rule("id", RuleOperator.EQ, "nope"));
+        assertThatThrownBy(() -> security(badId))
                 .isInstanceOf(IllegalStateException.class);
     }
 
@@ -210,7 +213,6 @@ class RowSecurityTest {
         RowSecurity security = security(policy(PolicyEffect.ALLOW, rule("status", RuleOperator.LIKE, "a.b%")));
 
         Document pattern = security.filter("orders", caller("u1"), Operation.SELECT).doc().get("status", Document.class);
-        assertThat(pattern.get("$regex")).isEqualTo("\\A\\Qa.b\\E.*\\z");
-        assertThat(pattern.get("$options")).isEqualTo("s");
+        assertThat(pattern).containsEntry("$regex", "\\A\\Qa.b\\E.*\\z").containsEntry("$options", "s");
     }
 }

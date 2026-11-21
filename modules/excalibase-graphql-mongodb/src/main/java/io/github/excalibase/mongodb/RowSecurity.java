@@ -226,7 +226,7 @@ final class RowSecurity {
             } else {
                 ValueCodec.toBson(kind, literal.resolve(rule.value(), rule.fieldType()), field);
             }
-        } catch (RuntimeException e) {
+        } catch (RuntimeException _) {
             throw refuse(policy, "value of the rule on \"" + field + "\" is not a valid " + kind);
         }
     }

@@ -70,7 +70,7 @@ abstract class EnginePermissionTest extends AbstractEngineTest {
                 "{id: {in: [\"" + ID_3 + "\", \"" + ID_4 + "\"]}}", "{status: {eq: \"$where\"}}", "{total: {gt: 30}}")) {
             Map<String, Object> response = as(engine, "u1", "{ orders(where: " + where + ") { id owner } }");
             assertThat(error(response)).as(where).isNull();
-            assertThat(rows(response, "orders")).as(where).allSatisfy(row -> assertThat(row.get("owner")).isEqualTo("u1"));
+            assertThat(rows(response, "orders")).as(where).allSatisfy(row -> assertThat(row).containsEntry("owner", "u1"));
         }
         assertThat(rows(as(engine, "u1", "{ orders(where: {owner: {in: [\"u2\", \"u1\"]}}) { id } }"), "orders")).hasSize(2);
     }

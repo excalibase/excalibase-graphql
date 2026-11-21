@@ -17,8 +17,10 @@ final class PipelineCompiler {
 
     private PipelineCompiler() {}
 
-    static List<Document> list(CollectionDef collection, Cond security, Cond user, List<SortKey> order,
-                               int limit, int offset, Projection projection, int maxRows) {
+    static List<Document> list(CollectionDef collection, Cond security, ListQuery query, Projection projection,
+                               int maxRows) {
+        int limit = query.limit();
+        int offset = query.offset();
         if (limit < 1 || limit > maxRows) {
             throw new RequestException("limit must be between 1 and " + maxRows);
         }
@@ -27,8 +29,8 @@ final class PipelineCompiler {
         }
         List<Document> stages = new ArrayList<>();
         stages.add(match(security));
-        stages.add(match(user));
-        stages.add(new Document("$sort", sort(collection, order)));
+        stages.add(match(query.filter()));
+        stages.add(new Document("$sort", sort(collection, query.order())));
         if (offset > 0) {
             stages.add(new Document("$skip", (long) offset));
         }

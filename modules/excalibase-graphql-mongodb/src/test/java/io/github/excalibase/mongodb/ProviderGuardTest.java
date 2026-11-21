@@ -34,7 +34,9 @@ class ProviderGuardTest {
 
     @Test
     void refusesToServeACollectionNobodyGovernsAndNobodyOpened() {
-        assertThatThrownBy(() -> new MongoQueryEngineProvider().create(settings()))
+        Map<String, Object> declared = settings();
+        MongoQueryEngineProvider provider = new MongoQueryEngineProvider();
+        assertThatThrownBy(() -> provider.create(declared))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("orders")
                 .hasMessageContaining("policies");
     }
@@ -44,7 +46,8 @@ class ProviderGuardTest {
         Map<String, Object> settings = settings();
         settings.put("policies", List.of(Fixtures.policy(PolicyEffect.DENY, Fixtures.rule("owner", RuleOperator.EQ, "x"))));
 
-        assertThatThrownBy(() -> new MongoQueryEngineProvider().create(settings))
+        MongoQueryEngineProvider provider = new MongoQueryEngineProvider();
+        assertThatThrownBy(() -> provider.create(settings))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("orders");
     }
 
@@ -66,7 +69,8 @@ class ProviderGuardTest {
         Map<String, Object> settings = settings();
         settings.put("openCollections", List.of("ordrs"));
 
-        assertThatThrownBy(() -> new MongoQueryEngineProvider().create(settings))
+        MongoQueryEngineProvider provider = new MongoQueryEngineProvider();
+        assertThatThrownBy(() -> provider.create(settings))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("ordrs");
     }
 
@@ -76,7 +80,8 @@ class ProviderGuardTest {
         settings.remove("uri");
         settings.put("openCollections", List.of("*"));
 
-        assertThatThrownBy(() -> new MongoQueryEngineProvider().create(settings))
+        MongoQueryEngineProvider provider = new MongoQueryEngineProvider();
+        assertThatThrownBy(() -> provider.create(settings))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("uri");
     }
 }

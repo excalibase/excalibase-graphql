@@ -12,7 +12,7 @@ import java.util.Set;
 /** The collections the engine serves: exactly the ones declared, nothing is discovered. */
 public final class Catalog {
 
-    private static final Pattern GRAPHQL_NAME = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,62}");
+    private static final Pattern GRAPHQL_NAME = Pattern.compile("[A-Za-z]\\w{0,62}");
 
     private static final Set<FieldKind> ID_KINDS =
             EnumSet.of(FieldKind.OBJECT_ID, FieldKind.STRING, FieldKind.INT, FieldKind.LONG);

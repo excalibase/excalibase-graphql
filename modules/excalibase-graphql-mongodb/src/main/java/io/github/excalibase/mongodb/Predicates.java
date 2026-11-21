@@ -17,14 +17,15 @@ import java.util.Objects;
  */
 final class Predicates {
 
-    private static final Document NOT_AN_ARRAY = new Document("$type", "array");
+    private static final String TYPE = "$type";
+    private static final Document NOT_AN_ARRAY = new Document(TYPE, "array");
 
     private Predicates() {}
 
     static Tri compare(String path, FieldKind kind, Op op, Object value) {
         return switch (op) {
-            case EQ -> equal(path, kind, value);
-            case NEQ -> equal(path, kind, value).not();
+            case EQ -> sameAs(path, kind, value);
+            case NEQ -> sameAs(path, kind, value).not();
             case GT -> range(path, value, "$gt", "$lte");
             case GTE -> range(path, value, "$gte", "$lt");
             case LT -> range(path, value, "$lt", "$gte");
@@ -51,7 +52,7 @@ final class Predicates {
         }
         String regex = likeToRegex(pattern);
         Tri matches = new Tri(field(path, new Document("$regex", regex).append("$options", "s")),
-                Cond.and(List.of(Cond.of(new Document(path, new Document("$type", "string"))),
+                Cond.and(List.of(Cond.of(new Document(path, new Document(TYPE, "string"))),
                         Cond.of(new Document(path, new Document("$not", NOT_AN_ARRAY))),
                         Cond.of(new Document(path, new Document("$not", new BsonRegularExpression(regex, "s")))))));
         return positive ? matches : matches.not();
@@ -60,17 +61,22 @@ final class Predicates {
     static String likeToRegex(String pattern) {
         StringBuilder regex = new StringBuilder("\\A");
         StringBuilder literal = new StringBuilder();
-        for (int i = 0; i < pattern.length(); i++) {
-            char c = pattern.charAt(i);
-            boolean wildcard = c == '%' || c == '_';
-            if (c == '\\' && i + 1 < pattern.length()) {
-                literal.append(pattern.charAt(++i));
-            } else if (wildcard) {
+        boolean escaped = false;
+        for (char c : pattern.toCharArray()) {
+            if (escaped) {
+                literal.append(c);
+                escaped = false;
+            } else if (c == '\\') {
+                escaped = true;
+            } else if (c == '%' || c == '_') {
                 flush(regex, literal);
                 regex.append(c == '%' ? ".*" : ".");
             } else {
                 literal.append(c);
             }
+        }
+        if (escaped) {
+            literal.append('\\');
         }
         flush(regex, literal);
         return regex.append("\\z").toString();
@@ -93,7 +99,7 @@ final class Predicates {
 
     /** Definitely not {@code operators}: the field holds a scalar of the declared type that fails them. */
     private static Cond ofTypeAnd(String path, FieldKind kind, Document operators) {
-        Document typed = new Document("$type", typeName(kind));
+        Document typed = new Document(TYPE, typeName(kind));
         typed.putAll(operators);
         typed.put("$not", NOT_AN_ARRAY);
         return Cond.of(new Document(path, typed));
@@ -109,7 +115,7 @@ final class Predicates {
         };
     }
 
-    private static Tri equal(String path, FieldKind kind, Object value) {
+    private static Tri sameAs(String path, FieldKind kind, Object value) {
         if (value == null) {
             return Tri.UNKNOWN;
         }

@@ -2,7 +2,6 @@ package io.github.excalibase.mongodb;
 
 import org.bson.types.ObjectId;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -29,9 +28,7 @@ final class ValueCodec {
             case INT -> value instanceof Integer ? value : refuse(field, "a whole number");
             case LONG -> value instanceof Integer || value instanceof Long ? ((Number) value).longValue()
                     : refuse(field, "a whole number");
-            case DOUBLE -> value instanceof Number number && !(value instanceof BigInteger)
-                    ? (Object) (value instanceof BigDecimal big ? big.doubleValue() : number.doubleValue())
-                    : refuse(field, "a number");
+            case DOUBLE -> toDouble(value, field);
             case BOOLEAN -> value instanceof Boolean ? value : refuse(field, "true or false");
             case DATETIME -> instant(value, field);
         };
@@ -56,9 +53,16 @@ final class ValueCodec {
     private static Object parseWhole(String text, boolean narrow) {
         try {
             return narrow ? (Object) Integer.parseInt(text) : (Object) Long.parseLong(text);
-        } catch (NumberFormatException e) {
+        } catch (NumberFormatException _) {
             throw new RequestException("The id is not a valid number");
         }
+    }
+
+    private static Object toDouble(Object value, String field) {
+        if (value instanceof BigInteger || !(value instanceof Number number)) {
+            return refuse(field, "a number");
+        }
+        return number.doubleValue();
     }
 
     private static Object text(Object value, String field) {
@@ -75,6 +79,8 @@ final class ValueCodec {
         return refuse(field, "a 24 character hex id");
     }
 
+    // BSON stores a date as java.util.Date, which a stored value may already be
+    @SuppressWarnings("java:S2143")
     private static Object instant(Object value, String field) {
         if (value instanceof Date) {
             return value;
@@ -88,10 +94,10 @@ final class ValueCodec {
         if (value instanceof String text) {
             try {
                 return Date.from(OffsetDateTime.parse(text).toInstant());
-            } catch (DateTimeParseException notOffset) {
+            } catch (DateTimeParseException _) {
                 try {
                     return Date.from(Instant.parse(text));
-                } catch (DateTimeParseException notInstant) {
+                } catch (DateTimeParseException _) {
                     return refuse(field, "an ISO-8601 timestamp");
                 }
             }

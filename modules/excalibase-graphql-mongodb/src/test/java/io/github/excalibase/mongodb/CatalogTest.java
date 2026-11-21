@@ -26,31 +26,36 @@ class CatalogTest {
 
     @Test
     void refusesWhenNothingIsDeclared() {
-        assertThatThrownBy(() -> Catalog.fromSettings(Map.of()))
+        Map<String, Object> settings1 = Map.of();
+        assertThatThrownBy(() -> Catalog.fromSettings(settings1))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("collections");
     }
 
     @Test
     void refusesNamesThatAreNotGraphqlNames() {
-        assertThatThrownBy(() -> Catalog.fromSettings(Map.of("collections", List.of(
-                collection("bad-name", Map.of("a", "string"))))))
+        Map<String, Object> settings2 = Map.of("collections", List.of(
+                collection("bad-name", Map.of("a", "string"))));
+        assertThatThrownBy(() -> Catalog.fromSettings(settings2))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("bad-name");
-        assertThatThrownBy(() -> Catalog.fromSettings(Map.of("collections", List.of(
-                collection("orders", Map.of("$where", "string"))))))
+        Map<String, Object> settings3 = Map.of("collections", List.of(
+                collection("orders", Map.of("$where", "string"))));
+        assertThatThrownBy(() -> Catalog.fromSettings(settings3))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("$where");
     }
 
     @Test
     void refusesFieldsThatCollideWithTheId() {
-        assertThatThrownBy(() -> Catalog.fromSettings(Map.of("collections", List.of(
-                collection("orders", Map.of("id", "string"))))))
+        Map<String, Object> settings4 = Map.of("collections", List.of(
+                collection("orders", Map.of("id", "string"))));
+        assertThatThrownBy(() -> Catalog.fromSettings(settings4))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("id");
     }
 
     @Test
     void refusesAnUnknownType() {
-        assertThatThrownBy(() -> Catalog.fromSettings(Map.of("collections", List.of(
-                collection("orders", Map.of("a", "geometry"))))))
+        Map<String, Object> settings5 = Map.of("collections", List.of(
+                collection("orders", Map.of("a", "geometry"))));
+        assertThatThrownBy(() -> Catalog.fromSettings(settings5))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("geometry");
     }
 }

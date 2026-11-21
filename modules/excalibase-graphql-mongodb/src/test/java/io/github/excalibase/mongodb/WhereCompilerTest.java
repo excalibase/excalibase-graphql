@@ -73,33 +73,39 @@ class WhereCompilerTest {
 
     @Test
     void anInvalidObjectIdIsRefused() {
-        assertThatThrownBy(() -> compile(Map.of("id", Map.of("eq", "not-an-id"))))
+        Map<String, Object> where1 = Map.of("id", Map.of("eq", "not-an-id"));
+        assertThatThrownBy(() -> compile(where1))
                 .isInstanceOf(RequestException.class);
     }
 
     @Test
     void aFieldThatIsNotDeclaredIsRefused() {
-        assertThatThrownBy(() -> compile(Map.of("nope", Map.of("eq", "x"))))
+        Map<String, Object> where2 = Map.of("nope", Map.of("eq", "x"));
+        assertThatThrownBy(() -> compile(where2))
                 .isInstanceOf(RequestException.class).hasMessageContaining("nope");
     }
 
     @Test
     void aFieldTheCallerMayNotSeeIsRefusedLikeAnUnknownOne() {
-        assertThatThrownBy(() -> compiler.compile(ORDERS, Set.of("status"), Map.of("secret", Map.of("eq", "x"))))
+        Map<String, Object> filter1 = Map.of("secret", Map.of("eq", "x"));
+        assertThatThrownBy(() -> compiler.compile(ORDERS, Set.of("status"), filter1))
                 .isInstanceOf(RequestException.class).hasMessageContaining("secret");
     }
 
     @Test
     void anOperatorTheTypeDoesNotSupportFailsLoudly() {
-        assertThatThrownBy(() -> compile(Map.of("paid", Map.of("gt", true))))
+        Map<String, Object> where3 = Map.of("paid", Map.of("gt", true));
+        assertThatThrownBy(() -> compile(where3))
                 .isInstanceOf(RequestException.class).hasMessageContaining("gt");
     }
 
     @Test
     void anUnknownOperatorIsRefused() {
-        assertThatThrownBy(() -> compile(Map.of("status", Map.of("$where", "sleep(1000)"))))
+        Map<String, Object> where4 = Map.of("status", Map.of("$where", "sleep(1000)"));
+        assertThatThrownBy(() -> compile(where4))
                 .isInstanceOf(RequestException.class);
-        assertThatThrownBy(() -> compile(Map.of("status", Map.of("$expr", "1"))))
+        Map<String, Object> where5 = Map.of("status", Map.of("$expr", "1"));
+        assertThatThrownBy(() -> compile(where5))
                 .isInstanceOf(RequestException.class);
     }
 
@@ -107,17 +113,21 @@ class WhereCompilerTest {
     void eqNullIsRefusedInFavourOfIsNull() {
         HashMap<String, Object> ops = new HashMap<>();
         ops.put("eq", null);
-        assertThatThrownBy(() -> compile(Map.of("status", ops)))
+        Map<String, Object> where6 = Map.of("status", ops);
+        assertThatThrownBy(() -> compile(where6))
                 .isInstanceOf(RequestException.class).hasMessageContaining("isNull");
     }
 
     @Test
     void aValueThatIsAnObjectCanNeverCarryAnOperator() {
-        assertThatThrownBy(() -> compile(Map.of("status", Map.of("eq", Map.of("$ne", "x")))))
+        Map<String, Object> where7 = Map.of("status", Map.of("eq", Map.of("$ne", "x")));
+        assertThatThrownBy(() -> compile(where7))
                 .isInstanceOf(RequestException.class);
-        assertThatThrownBy(() -> compile(Map.of("status", Map.of("in", List.of(Map.of("$function", "x"))))))
+        Map<String, Object> where8 = Map.of("status", Map.of("in", List.of(Map.of("$function", "x"))));
+        assertThatThrownBy(() -> compile(where8))
                 .isInstanceOf(RequestException.class);
-        assertThatThrownBy(() -> compile(Map.of("total", Map.of("eq", "5"))))
+        Map<String, Object> where9 = Map.of("total", Map.of("eq", "5"));
+        assertThatThrownBy(() -> compile(where9))
                 .isInstanceOf(RequestException.class);
     }
 

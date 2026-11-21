@@ -34,20 +34,23 @@ class ColumnSecurityTest {
 
     @Test
     void aColumnThatIsNotDeclaredIsRefusedBecauseATypoWouldLeakIt() {
-        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), List.of(mask(MaskMode.HIDE, "secrt"))))
+        List<ColumnPolicy> typo = List.of(mask(MaskMode.HIDE, "secrt"));
+        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), typo))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("secrt");
     }
 
     @Test
     void maskModesThatCannotBeRenderedAreRefusedAtStartup() {
         ColumnPolicy hash = mask(MaskMode.HASH, "secret");
-        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), List.of(hash)))
+        List<ColumnPolicy> hashed = List.of(hash);
+        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), hashed))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("HASH");
     }
 
     @Test
     void theIdCannotBeMasked() {
-        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), List.of(mask(MaskMode.HIDE, "id"))))
+        List<ColumnPolicy> maskedId = List.of(mask(MaskMode.HIDE, "id"));
+        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), maskedId))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("id");
     }
 
@@ -56,7 +59,8 @@ class ColumnSecurityTest {
         ColumnPolicy other = new ColumnPolicy("c", "c", "elsewhere", Set.of("whatever"), Operation.ALL, MaskMode.HIDE,
                 null, null, 0, true, List.of(Assignment.all()));
 
-        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), List.of(other)))
+        List<ColumnPolicy> elsewhere = List.of(other);
+        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), elsewhere))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("elsewhere");
     }
 }

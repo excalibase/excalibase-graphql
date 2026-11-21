@@ -13,7 +13,6 @@ import graphql.execution.instrumentation.ChainedInstrumentation;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingFieldSelectionSet;
 import graphql.schema.SelectedField;
-import io.github.excalibase.rls.MaskingPlan;
 import io.github.excalibase.rls.Operation;
 import io.github.excalibase.rls.UserContext;
 import io.github.excalibase.spi.QueryEngine;
@@ -103,9 +102,9 @@ final class MongoQueryEngine implements QueryEngine {
         UserContext caller = env.getGraphQlContext().get(CALLER);
         MaskView view = env.getGraphQlContext().get(VIEW);
         Cond user = where.compile(def, view.filterable(def), whereArgument(env));
-        List<Document> stages = PipelineCompiler.list(def, rows.filter(def.name(), caller, Operation.SELECT), user,
-                order(orderBy(env)), number(env, "limit", maxRows),
-                number(env, "offset", 0), projection(def, view, env.getSelectionSet()), maxRows);
+        ListQuery query = new ListQuery(user, order(orderBy(env)), number(env, "limit", maxRows), number(env, "offset", 0));
+        List<Document> stages = PipelineCompiler.list(def, rows.filter(def.name(), caller, Operation.SELECT), query,
+                projection(def, view, env.getSelectionSet()), maxRows);
         return runner.run(def.name(), stages).stream().map(doc -> row(def, doc, env.getSelectionSet())).toList();
     }
 
@@ -174,6 +173,8 @@ final class MongoQueryEngine implements QueryEngine {
         return row;
     }
 
+    // BSON hands back a date as java.util.Date; there is no other type to receive it in
+    @SuppressWarnings("java:S2143")
     private static Object shown(Object stored) {
         if (stored instanceof Date date) {
             return Instant.ofEpochMilli(date.getTime()).toString();
