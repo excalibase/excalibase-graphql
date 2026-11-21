@@ -170,9 +170,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * template with no data source of its own is used as it is.
      */
     private JdbcTemplate bounded(int timeoutSeconds) {
-        if (jdbcTemplate == null) {
-            return null;
-        }
         DataSource dataSource = jdbcTemplate.getDataSource();
         if (dataSource == null) {
             return jdbcTemplate;
@@ -540,8 +537,10 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     private String fingerprint(SqlEngine engine) {
-        JdbcTemplate fingerprintJdbc = bounded(FINGERPRINT_TIMEOUT_SECONDS);
-        return fingerprintJdbc == null ? null : engine.schemaLoader().fingerprint(fingerprintJdbc);
+        if (jdbcTemplate == null) {
+            return null;
+        }
+        return engine.schemaLoader().fingerprint(bounded(FINGERPRINT_TIMEOUT_SECONDS));
     }
 
     private String fingerprintOrNull(SqlEngine engine) {
@@ -614,10 +613,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
                   "AND schema_name != 'information_schema' " +
                   "ORDER BY schema_name";
         return reservedSchemas.filter(jdbc.queryForList(sql, String.class));
-    }
-
-    private void loadMultiSchema(SchemaInfo schemaInfo, List<String> schemaList, SchemaLoader loader) {
-        loadMultiSchema(schemaInfo, schemaList, loader, jdbcTemplate);
     }
 
     /**

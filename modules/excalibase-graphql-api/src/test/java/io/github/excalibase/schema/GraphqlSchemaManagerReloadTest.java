@@ -152,9 +152,12 @@ class GraphqlSchemaManagerReloadTest {
             if (stallNext && Thread.currentThread().getName().startsWith("stalled-request")) {
                 inside.countDown();
                 try {
-                    release.await(10, TimeUnit.SECONDS);
+                    if (!release.await(10, TimeUnit.SECONDS)) {
+                        throw new IllegalStateException("the test never released the request");
+                    }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    throw new IllegalStateException(e);
                 }
             }
             return emptyDocument(projectId);
@@ -200,6 +203,7 @@ class GraphqlSchemaManagerReloadTest {
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
             }
         }
     }

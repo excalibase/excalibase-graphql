@@ -8,6 +8,7 @@ import org.springframework.dao.DataAccessResourceFailureException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -85,7 +86,8 @@ class SchemaChangeWatcherTest {
         watcher.poll();
         assertThat(watcher.nextDelaySeconds()).isEqualTo(20);
 
-        org.mockito.Mockito.doReturn(false).when(schemas).reloadIfSchemaChanged();
+        reset(schemas);
+        when(schemas.reloadIfSchemaChanged()).thenReturn(false);
         watcher.poll();
         assertThat(watcher.nextDelaySeconds()).isEqualTo(5);
         watcher.stop();
