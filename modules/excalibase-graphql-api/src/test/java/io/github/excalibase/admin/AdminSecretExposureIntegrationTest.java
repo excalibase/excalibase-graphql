@@ -36,6 +36,7 @@ class AdminSecretExposureIntegrationTest extends EngineIntegrationTest {
     private final EngineClient admin = AdminTestEngine.on(ADMIN_PORT);
     private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
     private final Logger root = (Logger) LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME);
+    private Level levelBefore;
 
     @Override
     public Map<String, String> getProperties() {
@@ -49,11 +50,13 @@ class AdminSecretExposureIntegrationTest extends EngineIntegrationTest {
     void capture() {
         logs.start();
         root.addAppender(logs);
+        levelBefore = root.getLevel();
         root.setLevel(Level.TRACE);
     }
 
     @AfterEach
     void release() {
+        root.setLevel(levelBefore); // TRACE left on slows every later test in the JVM
         root.detachAppender(logs);
         logs.stop();
     }
