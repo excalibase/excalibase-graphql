@@ -8,8 +8,12 @@ import io.github.excalibase.rls.Policy;
 import io.github.excalibase.rls.PolicyEffect;
 import io.github.excalibase.rls.RuleOperator;
 import io.github.excalibase.spi.QueryEngine;
+import org.bson.Document;
+import org.bson.types.ObjectId;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -160,14 +164,16 @@ abstract class EnginePermissionTest extends AbstractEngineTest {
     }
 
     @Test
-    void aWorstCaseLikeRuleOverAMegabyteStringFinishesInBoundedTime() {
+    void aMaxSizeLikeRuleOverALongNearMissStaysWithinASmokeBound() {
+        // A smoke bound only: mongo:7 and documentdb-local optimise this shape even when the regex is not atomic
+        // (tried: swapping the atomic groups for plain ones still passes), so this does not prove the atomic groups.
+        // That is pinned by RowSecurityTest.likeRunsOfPercentCollapseAndMiddleSegmentsAreAtomic.
         Policy worst = policy(PolicyEffect.ALLOW, rule("owner", RuleOperator.LIKE, "%a%a%a%a%a%a%a%ab"));
-        org.bson.Document big = new org.bson.Document("_id", new org.bson.types.ObjectId(ID_1))
-                .append("owner", "a".repeat(1_000_000));
-        QueryEngine engine = engineOver(List.of(big), List.of(worst), List.of(), List.of());
+        Document nearMiss = new Document("_id", new ObjectId(ID_1)).append("owner", "a".repeat(100_000) + "abb");
+        QueryEngine engine = engineOver(List.of(nearMiss), List.of(worst), List.of(), List.of());
 
-        Map<String, Object> response = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
-                java.time.Duration.ofSeconds(20), () -> as(engine, "u1", "{ orders { id } }"));
+        Map<String, Object> response = Assertions.assertTimeoutPreemptively(
+                Duration.ofSeconds(20), () -> as(engine, "u1", "{ orders { id } }"));
 
         assertThat(error(response)).isNull();
         assertThat(rows(response, "orders")).isEmpty();

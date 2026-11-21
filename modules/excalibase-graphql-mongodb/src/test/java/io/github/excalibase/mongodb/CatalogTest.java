@@ -2,6 +2,7 @@ package io.github.excalibase.mongodb;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -60,10 +61,12 @@ class CatalogTest {
     }
 
     @Test
-    void keepsTheOrderCollectionsAndFieldsWereDeclaredIn() {
+    void keepsTheOrderCollectionsWereDeclaredIn() {
         List<String> names = List.of("zeta", "alpha", "mid", "beta", "omega", "chi", "psi", "rho", "tau", "nu");
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("b", "string");
         Catalog catalog = Catalog.fromSettings(Map.of("collections", names.stream()
-                .map(n -> collection(n, new java.util.LinkedHashMap<>(Map.of("b", "string")))).toList()));
+                .map(n -> collection(n, fields)).toList()));
 
         assertThat(catalog.all()).extracting(CollectionDef::name).containsExactlyElementsOf(names);
         assertThat(Catalog.of(new CollectionDef("b", FieldKind.INT, Map.of()), new CollectionDef("a", FieldKind.INT, Map.of()))
