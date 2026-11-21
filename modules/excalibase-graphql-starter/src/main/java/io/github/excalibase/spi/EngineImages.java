@@ -18,7 +18,8 @@ final class EngineImages {
     private static final Map<String, String> IMAGE_SUFFIX = Map.of(
             POSTGRES, POSTGRES,
             "postgresql", POSTGRES,
-            "mysql", "mysql");
+            "mysql", "mysql",
+            "sqlite", "sqlite");
 
     private EngineImages() {}
 

@@ -584,7 +584,7 @@ public class RestQueryCompiler {
     }
 
     private String aliasClause() {
-        return keyedWrites() ? SPACE + ALIAS : "";
+        return keyedWrites() ? dialect.updateAliasKeyword() + ALIAS : "";
     }
 
     /** No RETURNING: the write runs as statements whose rows are read back by key. */

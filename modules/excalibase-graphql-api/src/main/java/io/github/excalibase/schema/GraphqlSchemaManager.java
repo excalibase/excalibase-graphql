@@ -611,6 +611,10 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     private List<String> discoverSchemas(JdbcTemplate jdbc, String type) {
+        List<String> fixed = SqlEngineFactory.fixedSchemas(type);
+        if (!fixed.isEmpty()) {
+            return fixed; // a file has no catalogue to list: its plugin names the schemas
+        }
         String sql = MYSQL.equalsIgnoreCase(type)
                 ? "SELECT schema_name FROM information_schema.schemata " +
                   "WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys') " +

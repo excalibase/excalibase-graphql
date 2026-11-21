@@ -65,8 +65,10 @@ public class DataSourceConfig {
     static HikariDataSource singleDatabasePool(DataSourceSettings properties, Duration readTimeout) {
         HikariDataSource hikari = new HikariDataSource();
         hikari.setJdbcUrl(properties.url());
-        hikari.setUsername(properties.username());
-        hikari.setPassword(properties.password());
+        if (DatabaseEngine.ofJdbcUrl(properties.url()) != DatabaseEngine.SQLITE) {
+            hikari.setUsername(properties.username());
+            hikari.setPassword(properties.password());
+        }
         if (properties.driverClassName() != null && !properties.driverClassName().isBlank()) {
             hikari.setDriverClassName(properties.driverClassName());
         }
@@ -93,6 +95,9 @@ public class DataSourceConfig {
         if (!hasUrl) {
             throw new IllegalStateException("Single-database mode requires spring.datasource.url "
                     + "(SPRING_DATASOURCE_URL) with its username and password; there is no built-in default");
+        }
+        if (DatabaseEngine.ofJdbcUrl(url) == DatabaseEngine.SQLITE) {
+            return true; // a file has no login
         }
         if (username == null || username.isBlank()) {
             throw new IllegalStateException("Single-database mode requires spring.datasource.username "

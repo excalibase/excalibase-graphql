@@ -21,7 +21,8 @@ public class EngineAvailabilityGuard {
     /** The URL prefixes of the databases an image is published for; a URL of any other database is its own plugin's to judge. */
     private static final Map<String, String> URL_PREFIX_TYPES = Map.of(
             "jdbc:postgresql:", "postgres",
-            "jdbc:mysql:", "mysql");
+            "jdbc:mysql:", "mysql",
+            "jdbc:sqlite:", "sqlite");
 
     private final String databaseType;
     private final String datasourceUrl;

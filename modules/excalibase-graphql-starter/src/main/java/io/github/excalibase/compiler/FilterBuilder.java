@@ -249,6 +249,10 @@ public class FilterBuilder {
                                    Map<String, Object> params, List<String> conditions, String tableName) {
         String paramCast = resolveParamCast(col, tableName);
         String colRef = alias + "." + dialect.quoteIdentifier(col);
+        if (schemaInfo != null && tableName != null) {
+            colRef = Objects.requireNonNullElse(
+                    dialect.comparableColumn(colRef, schemaInfo.getColumnType(tableName, col)), colRef);
+        }
 
         for (ObjectField op : filterObj.getObjectFields()) {
             dispatchOperator(op, col, colRef, paramCast, params, conditions, tableName);
@@ -468,7 +472,7 @@ public class FilterBuilder {
         switch (opName) {
             case FILTER_LIKE -> {
                 String paramName = nextParam("p_" + col + "_like", params);
-                conditions.add(colRef + LIKE + PARAM_PREFIX + paramName);
+                conditions.add(colRef + LIKE + PARAM_PREFIX + paramName + Objects.requireNonNullElse(dialect.userLikeEscape(), ""));
                 params.put(paramName, raw);
             }
             case FILTER_ILIKE -> {

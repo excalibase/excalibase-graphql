@@ -3,7 +3,8 @@ package io.github.excalibase.service;
 /** The database a project runs on, as its vault record names it. */
 public enum DatabaseEngine {
   POSTGRES("postgres", "jdbc:postgresql://"),
-  MYSQL("mysql", "jdbc:mysql://");
+  MYSQL("mysql", "jdbc:mysql://"),
+  SQLITE("sqlite", "jdbc:sqlite:");
 
   private final String type;
   private final String jdbcPrefix;
@@ -18,9 +19,12 @@ public enum DatabaseEngine {
     return type;
   }
 
-  /** The engine a JDBC URL's driver speaks; anything not MySQL is Postgres, the default dialect. */
+  /** The engine a JDBC URL's driver speaks; anything neither MySQL nor SQLite is Postgres, the default dialect. */
   public static DatabaseEngine ofJdbcUrl(String url) {
-    return url != null && url.startsWith(MYSQL.jdbcPrefix) ? MYSQL : POSTGRES;
+    if (url != null && url.startsWith(MYSQL.jdbcPrefix)) {
+      return MYSQL;
+    }
+    return url != null && url.startsWith(SQLITE.jdbcPrefix) ? SQLITE : POSTGRES;
   }
 
   String jdbcPrefix() {
