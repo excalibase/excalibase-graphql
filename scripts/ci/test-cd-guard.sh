@@ -36,7 +36,7 @@ for job in docker docker-native docker-slim; do
   condition=$(awk -v job="  $job:" '$0 == job {f=1; next} f && /^    if:/ {sub(/^    if: */, ""); print; exit}' "$cd_yml" | tr -s ' ')
   check "$job if: is exactly the push-to-own-main condition" "$expected" "$condition"
 done
-[[ $(grep -c 'labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}' "$cd_yml") == 3 ]]; check "every metadata step sets the revision label to the tested commit" "0" "$?"
+[[ $(grep -c 'labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}' "$cd_yml") == 4 ]]; check "every metadata step sets the revision label to the tested commit" "0" "$?"
 # The slim images (EXC-799) add tags beside the existing ones; each is guarded like the trunk tag, and none is a release tag.
 grep -qF 'trunk-tag-exists.sh "$DOCKER_IMAGE" "main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}"' "$cd_yml"; check "slim trunk tag is checked before it is pushed" "0" "$?"
 for tag in 'main-${{ matrix.engine }}' 'main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}'; do
