@@ -2,37 +2,78 @@ package io.github.excalibase.permissions.compile;
 
 import io.github.excalibase.permissions.PermissionEvaluationException;
 
-import java.util.regex.Pattern;
+import java.util.ArrayList;
+import java.util.List;
 
-/** Postgres LIKE: {@code %} any run, {@code _} one character, backslash escapes the next character. */
+/**
+ * Postgres LIKE: {@code %} any run, {@code _} one code point, backslash escapes the next character.
+ * Matched by a linear two-pointer scan that backtracks only to the last {@code %}, so a hostile pattern
+ * and value cannot make the match explode the way a regex does.
+ */
 final class LikePattern {
 
-    private LikePattern() {
+    private static final int ANY_RUN = -1;
+    private static final int ANY_ONE = -2;
+
+    private final int[] tokens;
+
+    private LikePattern(int[] tokens) {
+        this.tokens = tokens;
     }
 
-    static Pattern compile(String like) {
-        StringBuilder regex = new StringBuilder();
+    static LikePattern compile(String like) {
         int[] codePoints = like.codePoints().toArray();
-        for (int i = 0; i < codePoints.length; i++) {
-            int codePoint = codePoints[i];
-            if (codePoint == '\\') {
-                if (++i == codePoints.length) {
-                    throw new PermissionEvaluationException(PermissionEvaluationException.INVALID_LIKE_PATTERN,
-                            "A LIKE pattern must not end with the escape character");
-                }
-                regex.append(literal(codePoints[i]));
-            } else if (codePoint == '%') {
-                regex.append(".*");
-            } else if (codePoint == '_') {
-                regex.append('.');
+        List<Integer> tokens = new ArrayList<>();
+        int i = 0;
+        while (i < codePoints.length) {
+            if (codePoints[i] == '\\') {
+                requireEscapedCharacter(codePoints, i);
+                tokens.add(codePoints[i + 1]);
+                i += 2;
             } else {
-                regex.append(literal(codePoint));
+                addWildcardOrLiteral(tokens, codePoints[i]);
+                i++;
             }
         }
-        return Pattern.compile(regex.toString(), Pattern.DOTALL);
+        return new LikePattern(tokens.stream().mapToInt(Integer::intValue).toArray());
     }
 
-    private static String literal(int codePoint) {
-        return Pattern.quote(new String(Character.toChars(codePoint)));
+    private static void requireEscapedCharacter(int[] codePoints, int escapeAt) {
+        if (escapeAt + 1 == codePoints.length) {
+            throw new PermissionEvaluationException(PermissionEvaluationException.INVALID_LIKE_PATTERN,
+                    "A LIKE pattern must not end with the escape character");
+        }
+    }
+
+    private static void addWildcardOrLiteral(List<Integer> tokens, int codePoint) {
+        if (codePoint == '%') {
+            if (tokens.isEmpty() || tokens.getLast() != ANY_RUN) tokens.add(ANY_RUN);
+        } else {
+            tokens.add(codePoint == '_' ? ANY_ONE : codePoint);
+        }
+    }
+
+    boolean matches(String value) {
+        int[] text = value.codePoints().toArray();
+        int t = 0;
+        int p = 0;
+        int starP = -1;
+        int starT = 0;
+        while (t < text.length) {
+            if (p < tokens.length && tokens[p] == ANY_RUN) {
+                starP = p++;
+                starT = t;
+            } else if (p < tokens.length && (tokens[p] == ANY_ONE || tokens[p] == text[t])) {
+                p++;
+                t++;
+            } else if (starP >= 0) {
+                p = starP + 1;
+                t = ++starT;
+            } else {
+                return false;
+            }
+        }
+        while (p < tokens.length && tokens[p] == ANY_RUN) p++;
+        return p == tokens.length;
     }
 }
