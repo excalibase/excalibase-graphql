@@ -73,6 +73,18 @@ public final class KeyedWrites {
         this.check = check;
     }
 
+    /** Several writes run in order, their rows answered as one array; a write that answers none adds none. */
+    public static KeyedWrite all(List<KeyedWrite> writes) {
+        return (jdbc, represent) -> {
+            List<String> rows = new ArrayList<>();
+            for (KeyedWrite write : writes) {
+                String row = write.run(jdbc, represent);
+                if (row != null) rows.add(row);
+            }
+            return represent ? array(rows) : null;
+        };
+    }
+
     public KeyedWrite insert(List<Insert> inserts, boolean many) {
         return insert(inserts, many, false);
     }

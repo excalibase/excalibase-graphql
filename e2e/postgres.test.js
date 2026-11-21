@@ -1282,6 +1282,53 @@ describe('REST API — Mutations', () => {
   });
 });
 
+describe('REST API — bulk resolution=merge-duplicates / ignore-duplicates (EXC-738)', () => {
+  const ids = [];
+  const NEW_ID = 910001;
+
+  afterAll(async () => {
+    for (const id of [...ids, NEW_ID]) {
+      await restDelete(`/customer?customer_id=eq.${id}`);
+    }
+  });
+
+  test('a JSON array merges existing rows, inserts new ones, answers every row', async () => {
+    const created = await restPost('/customer', [
+      { first_name: 'BULK_A', last_name: 'ONE' }, { first_name: 'BULK_B', last_name: 'ONE' },
+    ], { 'Prefer': 'return=representation' });
+    expect(created.status).toBe(201);
+    ids.push(...created.data.data.map(row => row.customer_id));
+
+    const merged = await restPost('/customer', [
+      { customer_id: ids[0], first_name: 'BULK_A_MERGED', last_name: 'TWO' },
+      { customer_id: NEW_ID, first_name: 'BULK_NEW', last_name: 'TWO' },
+    ], { 'Prefer': 'return=representation, resolution=merge-duplicates' });
+    expect(merged.status).toBe(201);
+    expect(merged.data.data.map(row => row.first_name).sort()).toEqual(['BULK_A_MERGED', 'BULK_NEW']);
+
+    const read = await restGet(`/customer?customer_id=eq.${ids[0]}&select=first_name`);
+    expect(read.data.data[0].first_name).toBe('BULK_A_MERGED');
+  });
+
+  test('ignore-duplicates leaves an existing row alone and answers only the new rows', async () => {
+    const ignored = await restPost('/customer', [
+      { customer_id: ids[0], first_name: 'SHOULD_NOT_APPLY', last_name: 'X' },
+      { customer_id: ids[1], first_name: 'SHOULD_NOT_APPLY', last_name: 'X' },
+    ], { 'Prefer': 'return=representation, resolution=ignore-duplicates' });
+    expect(ignored.status).toBe(201);
+    expect(ignored.data.data).toEqual([]);
+
+    const read = await restGet(`/customer?customer_id=eq.${ids[1]}&select=first_name`);
+    expect(read.data.data[0].first_name).toBe('BULK_B');
+  });
+
+  test('without a resolution, a duplicate key in an array is still a conflict', async () => {
+    const res = await restPost('/customer', [{ customer_id: ids[0], first_name: 'X', last_name: 'X' }],
+      { 'Prefer': 'return=representation' });
+    expect(res.status).toBe(409);
+  });
+});
+
 // ─── Insert without select (contact form) ────────────────────────────────────
 // The control-plane mock lets anon insert into hana.contact_messages (check: email contains '@',
 // preset: source = 'contact-form') and gives no role a select on it.
