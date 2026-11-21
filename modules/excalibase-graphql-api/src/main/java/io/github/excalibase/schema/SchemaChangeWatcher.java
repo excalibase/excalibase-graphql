@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Notices DDL on the one database a standalone engine serves. In the platform a DDL event from the watcher
@@ -26,13 +27,14 @@ import java.util.concurrent.TimeUnit;
 @Context
 public class SchemaChangeWatcher {
 
+    private static final long MAX_BACKOFF_SECONDS = 300;
     private static final Logger log = LoggerFactory.getLogger(SchemaChangeWatcher.class);
 
     private final GraphqlSchemaManager schemas;
     private final long pollSeconds;
     private final boolean otherSignalExists;
     private ScheduledExecutorService scheduler;
-    private volatile boolean failing;
+    private final AtomicInteger failures = new AtomicInteger();
 
     @Inject
     public SchemaChangeWatcher(GraphqlSchemaManager schemas,
@@ -58,20 +60,43 @@ public class SchemaChangeWatcher {
             thread.setDaemon(true);
             return thread;
         });
-        scheduler.scheduleWithFixedDelay(this::poll, pollSeconds, pollSeconds, TimeUnit.SECONDS);
+        scheduler.schedule(this::tick, pollSeconds, TimeUnit.SECONDS);
         log.info("schema_poll_started interval={}s", pollSeconds);
     }
 
-    /** One check. Never throws: a database that is down is logged once per outage and asked again next time. */
+    private void tick() {
+        poll();
+        if (running()) {
+            scheduler.schedule(this::tick, nextDelaySeconds(), TimeUnit.SECONDS);
+        }
+    }
+
+    long nextDelaySeconds() {
+        return delayAfter(pollSeconds, failures.get());
+    }
+
+    /** The wait before the next check: the interval, doubled for each failure in a row, up to a ceiling. */
+    static long delayAfter(long intervalSeconds, int failures) {
+        long ceiling = Math.max(intervalSeconds, MAX_BACKOFF_SECONDS);
+        long delay = intervalSeconds;
+        for (int failure = 0; failure < failures && delay < ceiling; failure++) {
+            delay *= 2;
+        }
+        return Math.min(delay, ceiling);
+    }
+
+    /** One check. Never throws: a database that is down is logged once per outage and asked again later. */
     void poll() {
         try {
             schemas.reloadIfSchemaChanged();
-            failing = false;
-        } catch (RuntimeException e) {
-            if (!failing) {
-                log.warn("schema_poll_failed: {}; the schema served is unchanged", e.getMessage());
+            int failed = failures.getAndSet(0);
+            if (failed > 0) {
+                log.info("schema_poll_recovered after {} failed checks", failed);
             }
-            failing = true;
+        } catch (RuntimeException e) {
+            if (failures.getAndIncrement() == 0) {
+                log.warn("schema_poll_failed: {}; the schema served is unchanged and the check backs off", e.getMessage());
+            }
         }
     }
 

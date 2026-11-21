@@ -33,6 +33,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
+import javax.sql.DataSource;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +60,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     private static final String MYSQL = "mysql";
     private static final int FINGERPRINT_TIMEOUT_SECONDS = 5;
+    private static final int RELOAD_TIMEOUT_SECONDS = 60;
 
     private final JdbcTemplate jdbcTemplate;
     private final int maxRows;
@@ -96,7 +98,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     private final AtomicReference<Reflection> defaultReflection = new AtomicReference<>();
     /** The catalog fingerprint taken just before the default database was last reflected; null when unknown. */
     private final AtomicReference<String> reflectedFingerprint = new AtomicReference<>();
-    /** Moves every time the default reflection is replaced; see {@link #publish}. */
+    /** Odd while the default reflection is being replaced, and higher after each replacement; see {@link #publish}. */
     private final AtomicLong generation = new AtomicLong();
     private final TTLCache<String, Reflection> reflections;
     private final TTLCache<EngineKey, EngineState> tenantEngineStates;
@@ -164,15 +166,19 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     /**
-     * The same pool with a bound on the query, so a stuck catalog lock cannot hang the poll. A template with
-     * no data source of its own is used as it is.
+     * The same pool with a bound on each query, so a stuck catalog lock cannot hang the caller for good. A
+     * template with no data source of its own is used as it is.
      */
-    private JdbcTemplate fingerprintJdbc() {
-        if (jdbcTemplate == null || jdbcTemplate.getDataSource() == null) {
+    private JdbcTemplate bounded(int timeoutSeconds) {
+        if (jdbcTemplate == null) {
+            return null;
+        }
+        DataSource dataSource = jdbcTemplate.getDataSource();
+        if (dataSource == null) {
             return jdbcTemplate;
         }
-        JdbcTemplate bounded = new JdbcTemplate(jdbcTemplate.getDataSource());
-        bounded.setQueryTimeout(FINGERPRINT_TIMEOUT_SECONDS);
+        JdbcTemplate bounded = new JdbcTemplate(dataSource);
+        bounded.setQueryTimeout(timeoutSeconds);
         return bounded;
     }
 
@@ -216,8 +222,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     /** The configured database as it is now; throws when it cannot be read. */
     Reflection loadDefault(SqlEngine engine) {
         SchemaInfo schemaInfo = new SchemaInfo();
-        List<String> schemaList = discoverSchemas(jdbcTemplate, databaseType);
-        loadMultiSchema(schemaInfo, schemaList, engine.schemaLoader());
+        JdbcTemplate reading = bounded(RELOAD_TIMEOUT_SECONDS);
+        List<String> schemaList = discoverSchemas(reading, databaseType);
+        loadMultiSchema(schemaInfo, schemaList, engine.schemaLoader(), reading);
         return new Reflection(schemaInfo, resolveDefaultSchema(schemaList, schemaInfo), databaseType, engine,
                 SqlEngineFactory.createMutationExecutor(databaseType), probesOn(jdbcTemplate));
     }
@@ -230,19 +237,20 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     /**
      * Makes {@code reflection} the one served. Requests without a project get the configured database
      * whole: there is no project to hold permissions for. Every project-scoped request is built per role.
-     * The generation moves after the reflection is set and before the caches are emptied, so a request that
-     * began on the old one can tell, when it is done, that what it cached may be stale.
+     * The generation is odd while this runs and moves on when it is done (a sequence lock), so a request that
+     * began before, or during, the publish can tell when it is done that what it cached may be stale.
      */
     void publish(Reflection reflection, String fingerprint) {
         EngineState state = assemble(reflection, AccessPlan.allAccess(
                 reflection.engine().dialect().permissionDialect(), reflection.schema()), NO_DOCUMENT);
+        generation.incrementAndGet();   // odd: a publish is under way
         defaultReflection.set(reflection);
         reflectedFingerprint.set(fingerprint);
         engineState.set(state);
-        generation.incrementAndGet();
         betweenReflectionAndCacheClear();
         reflections.clear();
         tenantEngineStates.clear();
+        generation.incrementAndGet();   // even again: the caches hold nothing of the old reflection
     }
 
     /**
@@ -305,8 +313,8 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         }
         long seen = generation.get();
         EngineState state = engineFor(orgSlug, projectId, principal);
-        if (generation.get() != seen) {
-            // The default reflection was replaced while this request was building on the old one.
+        if ((seen & 1) != 0 || generation.get() != seen) {
+            // The default reflection was replaced while, or just before, this request was building on the old one.
             evict(projectId);
         }
         return state;
@@ -514,6 +522,8 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      *
      * @return whether the schema was reloaded
      * @throws DataAccessException the database could not be asked; the served schema is left as it is
+     * @throws SchemaUnavailableException the change was seen but the database could not be reflected; the
+     *         served schema is left as it is and the next call tries again
      */
     public boolean reloadIfSchemaChanged() {
         Reflection reflection = defaultReflection.get();
@@ -525,13 +535,13 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             return false;
         }
         log.info("schema_changed: reloading the schema of the configured database");
-        reload();
+        reloadOrThrow();
         return true;
     }
 
     private String fingerprint(SqlEngine engine) {
-        JdbcTemplate bounded = fingerprintJdbc();
-        return bounded == null ? null : engine.schemaLoader().fingerprint(bounded);
+        JdbcTemplate fingerprintJdbc = bounded(FINGERPRINT_TIMEOUT_SECONDS);
+        return fingerprintJdbc == null ? null : engine.schemaLoader().fingerprint(fingerprintJdbc);
     }
 
     private String fingerprintOrNull(SqlEngine engine) {
@@ -544,18 +554,27 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     /**
-     * Reflects the configured database again. Called on DDL events from NatsCDCService and when the catalog
-     * fingerprint moves. A database that cannot be read leaves what is served as it is.
+     * Reflects the configured database again. Called on DDL events from NatsCDCService. A database that
+     * cannot be read leaves what is served as it is.
      */
     public void reload() {
+        try {
+            reloadOrThrow();
+        } catch (SchemaUnavailableException e) {
+            log.error("Schema reload failed — retaining previous state", e);
+        }
+    }
+
+    private void reloadOrThrow() {
         SqlEngine engine = SqlEngineFactory.create(databaseType);
         String fingerprintBeforeLoad = fingerprintOrNull(engine);
         try {
             publish(loadDefault(engine), fingerprintBeforeLoad);
             log.info("Schema reloaded");
         } catch (Exception e) {
+            // No fingerprint, so the next poll tries again.
             reflectedFingerprint.set(null);
-            log.error("Schema reload failed — retaining previous state", e);
+            throw new SchemaUnavailableException("The database could not be reflected", e);
         }
     }
 

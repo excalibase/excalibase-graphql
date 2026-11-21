@@ -69,4 +69,25 @@ class SchemaChangeWatcherTest {
         verify(schemas, times(2)).reloadIfSchemaChanged();
         watcher.stop();
     }
+
+    @Test
+    @DisplayName("repeated failures double the wait up to a ceiling, and the interval comes back after a success")
+    void backsOffWhileFailingAndRecovers() {
+        assertThat(SchemaChangeWatcher.delayAfter(5, 0)).isEqualTo(5);
+        assertThat(SchemaChangeWatcher.delayAfter(5, 1)).isEqualTo(10);
+        assertThat(SchemaChangeWatcher.delayAfter(5, 3)).isEqualTo(40);
+        assertThat(SchemaChangeWatcher.delayAfter(5, 50)).isEqualTo(300);
+        assertThat(SchemaChangeWatcher.delayAfter(600, 4)).isEqualTo(600);
+
+        when(schemas.reloadIfSchemaChanged()).thenThrow(new DataAccessResourceFailureException("down"));
+        SchemaChangeWatcher watcher = watcher(5, false, null);
+        watcher.poll();
+        watcher.poll();
+        assertThat(watcher.nextDelaySeconds()).isEqualTo(20);
+
+        org.mockito.Mockito.doReturn(false).when(schemas).reloadIfSchemaChanged();
+        watcher.poll();
+        assertThat(watcher.nextDelaySeconds()).isEqualTo(5);
+        watcher.stop();
+    }
 }
