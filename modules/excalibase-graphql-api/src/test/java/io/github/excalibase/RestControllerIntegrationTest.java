@@ -986,6 +986,15 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
       assertUser(1, "Alicia");
     }
 
+    @Test @Order(17)
+    @DisplayName("an array of non-objects is a 400, not a 500")
+    void arrayOfNonObjects() {
+      http.post(BASE + "/users", "[1,2]", "Content-Type", "application/json")
+          .expect(status().isBadRequest());
+      http.post(BASE + "/users", "[{\"id\":1},\"x\"]", "Content-Type", "application/json", "Prefer", MERGE)
+          .expect(status().isBadRequest());
+    }
+
     @Test @Order(20)
     @DisplayName("values are bound, never spliced into the statement")
     void valuesAreParameters() {
