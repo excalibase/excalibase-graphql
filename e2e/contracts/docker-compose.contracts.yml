@@ -142,6 +142,8 @@ services:
       APP_OVERLOAD_ENABLED: "true"
       APP_OVERLOAD_MAX_CONNECTIONS_PER_CPU: "4"
       APP_OVERLOAD_ACCEPT_COUNT_PER_CPU: "2"
+      # Long enough that a queued request is never refused by the clock while the test frees its slot.
+      APP_OVERLOAD_ADMISSION_WAIT_MS: "30000"
     ports:
       - "127.0.0.1:14100:10000"
       - "127.0.0.1:14181:8081"
