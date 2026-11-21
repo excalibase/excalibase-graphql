@@ -5,7 +5,7 @@ on:
     workflows: ["Continuous Integration"]
     types:
       - completed
-    branches: [ main ]
+    branches: [ main, "release/**" ]
 
 # One deployment per CI-tested commit. The sha a workflow_run exposes by
 # default is the branch tip when the run starts, not the commit CI tested, so everything
@@ -13,6 +13,12 @@ on:
 concurrency:
   group: cd-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
+
+# main: unchanged, main-<sha7> and friends. release/<major>.<minor> (EXC-806): the
+# docker-release job below publishes release-<major>.<minor>-<sha7> plus a floating
+# release-<major>.<minor>, so a patch is built, scanned and AIO-tested as itself.
+# Neither ever gets a version tag or latest: release.yml retags a digest the AIO gate
+# installed, so promotion is never a rebuild. Any other branch publishes nothing.
 
 env:
   DOCKER_IMAGE: excalibase/excalibase-graphql
@@ -107,6 +113,118 @@ jobs:
       run: |
         echo "🚀 Docker image pushed successfully!"
         echo "📦 Tags: ${{ steps.meta.outputs.tags }}"
+
+  # workflow_run runs this file from main, so the commit and branch come from the CI run
+  # that triggered it. Same safety condition as the main jobs: a push to this repo only.
+  release-plan:
+    name: Plan release image tags
+    runs-on: ubuntu-24.04
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && startsWith(github.event.workflow_run.head_branch, 'release/')
+    outputs:
+      prefix: ${{ steps.plan.outputs.prefix }}
+      short: ${{ steps.plan.outputs.short }}
+      floating: ${{ steps.plan.outputs.floating }}
+    steps:
+    - name: Work out the release tags
+      id: plan
+      env:
+        BRANCH: ${{ github.event.workflow_run.head_branch }}
+        REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -eu
+        printf '%s' "$COMMIT_SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::head_sha is not a commit"; exit 1; }
+        if ! printf '%s' "$BRANCH" | grep -Eq '^release/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+          echo "::notice::$BRANCH is not release/<major>.<minor>; nothing to publish"
+          exit 0
+        fi
+        # The floating tag moves only while this commit is still the branch tip, so an
+        # older run that finishes late cannot move it backwards. The <prefix>-<sha7>
+        # tag is always published. If the tip cannot be read, the floating tag stays put.
+        floating=false
+        tip=$(gh api "repos/$REPO/git/ref/heads/$BRANCH" --jq .object.sha) || tip=""
+        if ! printf '%s' "$tip" | grep -Eq '^[0-9a-f]{40}$'; then
+          echo "::warning::could not read the tip of $BRANCH; the floating tag is not moved"
+        elif [ "$tip" = "$COMMIT_SHA" ]; then
+          floating=true
+        else
+          echo "::notice::$COMMIT_SHA is no longer the tip of $BRANCH; the floating tag is not moved"
+        fi
+        {
+          echo "prefix=release-${BRANCH#release/}"
+          echo "short=${COMMIT_SHA::7}"
+          echo "floating=$floating"
+        } >> "$GITHUB_OUTPUT"
+
+  docker-release:
+    name: Build & Push Release Docker Image
+    runs-on: ubuntu-24.04
+    needs: release-plan
+    if: needs.release-plan.outputs.prefix != ''
+    env:
+      RELEASE_TAG: ${{ needs.release-plan.outputs.prefix }}-${{ needs.release-plan.outputs.short }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        ref: ${{ github.event.workflow_run.head_sha }}
+
+    - name: Download JAR artifacts
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: jar-artifacts
+        path: modules/excalibase-graphql-api/target/
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        run-id: ${{ github.event.workflow_run.id }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+    - name: Login to DockerHub
+      uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    # A release-<x.y>-<sha7> tag is written once: a re-run must not replace a tested image.
+    - name: Refuse to overwrite an existing release tag
+      run: scripts/ci/guard-release-tag.sh "$DOCKER_IMAGE" "$RELEASE_TAG"
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+      with:
+        images: ${{ env.DOCKER_IMAGE }}
+        labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}
+        tags: |
+          type=raw,value=${{ env.RELEASE_TAG }}
+          type=raw,value=${{ needs.release-plan.outputs.prefix }},enable=${{ needs.release-plan.outputs.floating == 'true' }}
+
+    - name: Build the candidate image
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      with:
+        context: .
+        load: true
+        push: false
+        tags: graphql-candidate:${{ env.COMMIT_SHA }}
+        cache-from: type=gha,scope=${{ needs.release-plan.outputs.prefix }}
+        cache-to: type=gha,mode=max,scope=${{ needs.release-plan.outputs.prefix }}
+
+    - name: Trivy
+      uses: ./.github/actions/trivy
+      with:
+        image: graphql-candidate:${{ env.COMMIT_SHA }}
+
+    - name: Build and push release image
+      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      with:
+        context: .
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha,scope=${{ needs.release-plan.outputs.prefix }}
+        cache-to: type=gha,mode=max,scope=${{ needs.release-plan.outputs.prefix }}
 
   docker-native:
     name: Build & Push Native Docker Image

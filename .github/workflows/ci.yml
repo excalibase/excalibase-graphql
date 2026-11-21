@@ -1,8 +1,10 @@
 name: Continuous Integration
 
+# release/** runs the same suites as main: a patch is cut on release/<major>.<minor>
+# and CD (cd.yml) publishes release-<major>.<minor>-<sha> from the commit this run passes on.
 on:
   push:
-    branches: [ main ]
+    branches: [ main, "release/**" ]
     paths-ignore:
       - 'docs/**'
       - 'mkdocs.yml'
@@ -10,7 +12,7 @@ on:
       - '*.md'
       - '.github/workflows/docs.yml'
   pull_request:
-    branches: [ main ]
+    branches: [ main, "release/**" ]
     paths-ignore:
       - 'docs/**'
       - 'mkdocs.yml'
@@ -32,6 +34,9 @@ jobs:
 
     - name: Check the trunk tag guard
       run: scripts/ci/test-cd-guard.sh
+
+    - name: Check the release tag guard
+      run: scripts/ci/test-release-tag-guard.sh
 
   test:
     name: Run Tests & Coverage
