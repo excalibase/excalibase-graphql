@@ -124,4 +124,58 @@ class RowMatcherLikeTest {
         assertThat(denyLikeKeepsRow("secret%", "secret\nmore")).isFalse();
         assertThat(denyLikeKeepsRow("secret%", "public")).isTrue();
     }
+
+    @Test
+    void manyPercentsDoNotBacktrackCatastrophically() {
+        String value = "a".repeat(100_000);
+        assertThat(timedMillis(() -> assertThat(allowLike("%%%%%%%%x", value)).isFalse())).isLessThan(2000);
+        assertThat(timedMillis(() -> assertThat(allowLike("%a%a%a%a%b", value)).isFalse())).isLessThan(2000);
+        assertThat(timedMillis(() -> assertThat(allowLike("%a%a%a%a%a", value)).isTrue())).isLessThan(2000);
+    }
+
+    @Test
+    void underscoreMatchesOneCodePointNotOneChar() {
+        String emoji = new String(Character.toChars(0x1F600));
+        assertThat(allowLike("a_b", "a" + emoji + "b")).isTrue();
+        assertThat(allowLike("a__b", "a" + emoji + "b")).isFalse();
+        assertThat(allowLike(emoji + "%", emoji + "x")).isTrue();
+    }
+
+    private static UserContext claim(Object value) {
+        return new UserContext() {
+            @Override public String userId() { return "u"; }
+            @Override public String tenantId() { return null; }
+            @Override public Set<String> roles() { return Set.of(); }
+            @Override public Set<String> groupIds() { return Set.of(); }
+            @Override public Object resolveVariable(String name) { return value; }
+        };
+    }
+
+    // One rule for a pattern that is not text (a numeric JSON claim, a collection): no row passes, no throw.
+    @Test
+    void aNonTextClaimPatternKeepsNoRow_forLikeAndNotLike() {
+        for (Object value : List.of(5, 5.5, true, Set.of("a"), List.of("a"))) {
+            UserContext context = claim(value);
+            for (RuleOperator op : List.of(RuleOperator.LIKE, RuleOperator.NOT_LIKE)) {
+                RowMatcher matcher = matcher(PolicyEffect.ALLOW, op, "{{level}}");
+                assertThat(matcher.matches("t", Map.of("c", "5"), context, Operation.SELECT))
+                    .as("%s with %s", op, value).isFalse();
+            }
+        }
+    }
+
+    @Test
+    void aNonTextClaimPatternInADenyHidesTheRow() {
+        Policy open = new Policy("a", "a", "t", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+            List.of(new Rule("c", FieldType.STRING, RuleOperator.IS_NOT_NULL, null)), List.of(Assignment.all()));
+        Policy deny = policy(PolicyEffect.DENY, RuleOperator.LIKE, "{{level}}");
+        assertThat(new RowMatcher(List.of(open, deny)).matches("t", Map.of("c", "x"), claim(5), Operation.SELECT))
+            .isFalse();
+    }
+
+    private static long timedMillis(Runnable action) {
+        long start = System.nanoTime();
+        action.run();
+        return (System.nanoTime() - start) / 1_000_000;
+    }
 }

@@ -132,4 +132,9 @@ final class PostgresSql implements DialectSql {
     public boolean tracksFunctions() {
         return true;
     }
+
+    @Override
+    public String likeEscape() {
+        return "";
+    }
 }

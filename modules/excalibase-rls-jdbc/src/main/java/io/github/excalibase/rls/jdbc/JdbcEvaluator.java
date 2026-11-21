@@ -4,6 +4,7 @@ import io.github.excalibase.rls.Assignment;
 import io.github.excalibase.rls.ColumnMasker;
 import io.github.excalibase.rls.ColumnPolicy;
 import io.github.excalibase.rls.FieldType;
+import io.github.excalibase.rls.LikePattern;
 import io.github.excalibase.rls.LogicOperator;
 import io.github.excalibase.rls.MaskMode;
 import io.github.excalibase.rls.MaskingPlan;
@@ -288,11 +289,27 @@ public class JdbcEvaluator {
             case GTE -> col + " >= :" + sink.bind(resolver.resolve(rule.value(), rule.fieldType()));
             case LT -> col + " < :" + sink.bind(resolver.resolve(rule.value(), rule.fieldType()));
             case LTE -> col + " <= :" + sink.bind(resolver.resolve(rule.value(), rule.fieldType()));
-            case LIKE -> col + " LIKE :" + sink.bind(resolver.resolve(rule.value(), FieldType.STRING));
-            case NOT_LIKE -> col + " NOT LIKE :" + sink.bind(resolver.resolve(rule.value(), FieldType.STRING));
+            case LIKE -> col + " LIKE :" + sink.bind(likePattern(rule, resolver)) + quoteStyle.likeEscape();
+            case NOT_LIKE -> col + " NOT LIKE :" + sink.bind(likePattern(rule, resolver)) + quoteStyle.likeEscape();
             case IN -> renderInList(col, true, resolver.resolveList(rule.value(), rule.fieldType()), sink);
             case NOT_IN -> renderInList(col, false, resolver.resolveList(rule.value(), rule.fieldType()), sink);
         };
+    }
+
+    /**
+     * A pattern ending in the escape character is an error on Postgres but a literal on MySQL, so it is
+     * refused on both rather than letting the engines disagree about which rows a rule keeps.
+     */
+    private static Object likePattern(Rule rule, VariableResolver resolver) {
+        Object pattern = resolver.resolve(rule.value(), FieldType.STRING);
+        if (pattern == null) return null;
+        if (!(pattern instanceof String text)) {
+            throw new IllegalArgumentException("A LIKE pattern must be text, not " + pattern.getClass().getSimpleName());
+        }
+        if (LikePattern.compile(text) == null) {
+            throw new IllegalArgumentException("A LIKE pattern must not end with the escape character");
+        }
+        return pattern;
     }
 
     /**

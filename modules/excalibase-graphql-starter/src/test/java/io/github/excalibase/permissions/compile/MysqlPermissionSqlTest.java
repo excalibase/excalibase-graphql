@@ -42,6 +42,14 @@ class MysqlPermissionSqlTest {
     }
 
     @Test
+    void like_statesItsEscapeCharacter_soNoBackslashEscapesCannotChangeIt() {
+        assertThat(compile("{\"title\": {\"_like\": \"a\\\\%\"}}").sql())
+                .isEqualTo("n.`title` LIKE :perm_p0 ESCAPE CHAR(92)");
+        assertThat(compile("{\"title\": {\"_nlike\": \"a%\"}}").sql())
+                .isEqualTo("n.`title` NOT LIKE :perm_p0 ESCAPE CHAR(92)");
+    }
+
+    @Test
     void anAliasTheMysqlDialectQuoted_isAccepted_andADoubleQuotedOneIsNot() {
         String json = "{\"id\": {\"_eq\": 1}}";
 

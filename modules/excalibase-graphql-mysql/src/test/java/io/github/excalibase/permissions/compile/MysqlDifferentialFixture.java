@@ -36,7 +36,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -74,7 +74,7 @@ final class MysqlDifferentialFixture {
 
     private static final DateTimeFormatter WITH_OFFSET = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSSSSSxxx");
 
-    private static final Map<Collation, MysqlDifferentialFixture> STARTED = new EnumMap<>(Collation.class);
+    private static final Map<String, MysqlDifferentialFixture> STARTED = new HashMap<>();
 
     private final DriverManagerDataSource dataSource;
     private final SchemaInfo schema;
@@ -84,8 +84,13 @@ final class MysqlDifferentialFixture {
         this.schema = schema;
     }
 
-    static synchronized MysqlDifferentialFixture of(Collation collation) {
-        return STARTED.computeIfAbsent(collation, MysqlDifferentialFixture::start);
+    static MysqlDifferentialFixture of(Collation collation) {
+        return of(collation, false);
+    }
+
+    /** {@code noBackslashEscapes} runs every connection under the sql_mode that makes a backslash an ordinary character. */
+    static synchronized MysqlDifferentialFixture of(Collation collation, boolean noBackslashEscapes) {
+        return STARTED.computeIfAbsent(collation.name() + noBackslashEscapes, key -> start(collation, noBackslashEscapes));
     }
 
     DriverManagerDataSource dataSource() {
@@ -96,12 +101,14 @@ final class MysqlDifferentialFixture {
         return schema;
     }
 
-    private static MysqlDifferentialFixture start(Collation collation) {
+    private static MysqlDifferentialFixture start(Collation collation, boolean noBackslashEscapes) {
         MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withDatabaseName("public");
         mysql.start();
         DriverManagerDataSource started = new DriverManagerDataSource(mysql.getJdbcUrl()
                 + (mysql.getJdbcUrl().contains("?") ? "&" : "?") + "connectionTimeZone=" + SESSION_TIME_ZONE.replace("+", "%2B")
-                + "&forceConnectionTimeZoneToSession=true", mysql.getUsername(), mysql.getPassword());
+                + "&forceConnectionTimeZoneToSession=true"
+                + (noBackslashEscapes ? "&sessionVariables=sql_mode=NO_BACKSLASH_ESCAPES" : ""),
+                mysql.getUsername(), mysql.getPassword());
         JdbcTemplate jdbc = new JdbcTemplate(started);
         String table = " DEFAULT CHARSET=utf8mb4 COLLATE=" + collation.name;
         jdbc.execute("CREATE TABLE public.orgs (id int PRIMARY KEY, name varchar(100))" + table);

@@ -161,7 +161,7 @@ public final class RowPredicate {
 
         private Node like(ColumnCompare compare, String tableKey) {
             ColumnType type = FilterCompiler.likeColumn(dialect, schema, tableKey, compare.column());
-            LikePattern pattern = LikePattern.compile((String) binding.value(compare.operand(), type));
+            PermissionLikePattern pattern = PermissionLikePattern.compile((String) binding.value(compare.operand(), type));
             if (!type.equatableInMemory()) {
                 return NEEDS_DATABASE;
             }
