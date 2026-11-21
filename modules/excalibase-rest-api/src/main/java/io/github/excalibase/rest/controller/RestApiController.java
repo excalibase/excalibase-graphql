@@ -472,8 +472,8 @@ public class RestApiController {
 
     /** Runs the mutation, and again after a pause each time it lost a lock; {@link WriteRetry} bounds the tries. */
     private HttpResponse<Object> executeDml(Dml dml, int attempt) {
-        HttpResponse<Object> answer = executeDmlOnce(dml, attempt);
-        if (answer != null) return answer;
+        Optional<HttpResponse<Object>> answer = executeDmlOnce(dml, attempt);
+        if (answer.isPresent()) return answer.get();
         WriteRetry.pause(attempt);
         return executeDml(dml, attempt + 1);
     }
@@ -482,16 +482,16 @@ public class RestApiController {
     private record Dml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                        Integer maxAffected, String prefer, HttpStatus successStatus, String table) {}
 
-    /** One transaction; null when it lost a lock to a concurrent request, was rolled back, and may run again. */
-    private HttpResponse<Object> executeDmlOnce(Dml dml, int attempt) {
+    /** One transaction; empty when it lost a lock to a concurrent request, was rolled back, and may run again. */
+    private Optional<HttpResponse<Object>> executeDmlOnce(Dml dml, int attempt) {
         return txTemplate.execute(status -> {
             try {
                 boolean represent = dml.maxAffected() != null || preferContains(dml.prefer(), PREFER_REPRESENTATION);
                 String json = executeDmlQuery(dml.compiled(), represent);
                 HttpResponse<Object> overflow = checkMaxAffected(json, dml.maxAffected(), status);
-                if (overflow != null) return overflow;
+                if (overflow != null) return Optional.of(overflow);
                 if (dml.rollback()) status.setRollbackOnly();
-                return buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys());
+                return Optional.of(buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys()));
             } catch (Exception e) {
                 status.setRollbackOnly();
                 return dmlFailed(e, dml, attempt);
@@ -499,19 +499,19 @@ public class RestApiController {
         });
     }
 
-    /** The answer to a failed mutation; null when it lost a lock and may run again. */
-    private HttpResponse<Object> dmlFailed(Exception e, Dml dml, int attempt) {
+    /** The answer to a failed mutation; empty when it lost a lock and may run again. */
+    private Optional<HttpResponse<Object>> dmlFailed(Exception e, Dml dml, int attempt) {
         Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
         if (failed.isPresent()) {
-            return checkFailed(failed.get());
+            return Optional.of(checkFailed(failed.get()));
         }
         if (e instanceof IllegalArgumentException refused) {
-            return Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
+            return Optional.of(Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage())));
         }
         if (WriteRetry.shouldRetry(e, attempt)) {
-            return null;
+            return Optional.empty();
         }
-        return RestErrors.of(e, dml.scope().dialect(), dml.scope().filters(), "Mutation execution failed");
+        return Optional.of(RestErrors.of(e, dml.scope().dialect(), dml.scope().filters(), "Mutation execution failed"));
     }
 
     private String executeDmlQuery(RestQueryCompiler.CompiledResult compiled, boolean represent) {
