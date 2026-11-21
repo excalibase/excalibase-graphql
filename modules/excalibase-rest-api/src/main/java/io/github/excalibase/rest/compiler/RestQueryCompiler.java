@@ -408,6 +408,7 @@ public class RestQueryCompiler {
     /** Each row is its own keyed upsert, run in order inside the caller's transaction; the answer is every row written. */
     private CompiledResult keyedBulkUpsert(String table, String quotedTable, List<Map<String, Object>> rows,
                                            List<Map<String, Object>> written, List<String> conflictCols, Conflict mode) {
+        if (mode == Conflict.MERGE) requireDistinctKeys(table, rows, conflictCols);
         List<String> inputColumns = columnsOf(rows);
         List<String> writtenColumns = columnsOf(written);
         List<CompiledResult> upserts = new ArrayList<>();
@@ -417,6 +418,19 @@ public class RestQueryCompiler {
         }
         List<KeyedWrite> writes = upserts.stream().map(CompiledResult::write).toList();
         return new CompiledResult(upserts.getFirst().sql(), upserts.getFirst().params(), KeyedWrites.all(writes));
+    }
+
+    /** Postgres refuses the same key twice in one merge; the row-by-row MySQL path must not quietly apply both. */
+    private void requireDistinctKeys(String table, List<Map<String, Object>> rows, List<String> conflictCols) {
+        List<String> key = conflictCols.isEmpty() ? rowKey(table) : conflictCols;
+        Set<List<Object>> seen = new HashSet<>();
+        for (Map<String, Object> row : rows) {
+            List<Object> values = key.stream().map(row::get).toList();
+            if (!values.isEmpty() && !values.contains(null) && !seen.add(values)) {
+                throw new IllegalArgumentException("resolution=merge-duplicates cannot affect the same row twice: "
+                        + "the key " + key + " appears twice in the request");
+            }
+        }
     }
 
     /** {@code row} with every column of {@code columns}, NULL where it names none. */
@@ -440,6 +454,10 @@ public class RestQueryCompiler {
         var keyed = keyed(table, quotedTable, checksOf(mode));
         List<String> keys = rowKey(table);
         List<String> conflictCols = requestedCols.isEmpty() ? keys : requestedCols;
+        if (conflictCols.isEmpty()) {
+            throw new IllegalArgumentException("resolution=ignore-duplicates needs a primary key on " + table
+                    + " or an on_conflict parameter naming the columns to ignore on");
+        }
         boolean onPrimaryKey = new HashSet<>(conflictCols).equals(new HashSet<>(keys));
         List<String> conflict = onPrimaryKey ? keys : conflictCols;
         if (conflict.isEmpty() || !conflict.stream().allMatch(key -> bound.get(key) != null)) {

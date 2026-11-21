@@ -216,6 +216,9 @@ public class RestApiController {
         RestQueryCompiler.Conflict resolution = resolution(prefer);
         List<String> conflictColumns = conflictColumns(ctx, onConflict);
 
+        if (body instanceof List<?> items && !items.stream().allMatch(Map.class::isInstance)) {
+            throw new IllegalArgumentException("Body must be a JSON object or an array of objects");
+        }
         RestQueryCompiler.CompiledResult compiled = switch (body) {
             case List<?> list -> resolution == null
                 ? ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list)
