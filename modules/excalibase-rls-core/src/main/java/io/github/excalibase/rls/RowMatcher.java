@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 public class RowMatcher {
 
@@ -260,14 +261,10 @@ public class RowMatcher {
 
     private static Truth matchesLike(Object rowVal, String pattern) {
         if (rowVal == null || pattern == null) return Truth.UNKNOWN;
-        // Simple SQL-LIKE: % → .*, _ → . — sufficient for v1; document escape semantics later.
-        String regex = "^" + pattern
-            .replace("\\", "\\\\")
-            .replace(".", "\\.")
-            .replace("%", ".*")
-            .replace("_", ".")
-            + "$";
-        return Truth.of(rowVal.toString().matches(regex));
+        Pattern regex = LikePattern.compile(pattern);
+        // A trailing escape is an error in Postgres, so no row may pass.
+        if (regex == null) return Truth.UNKNOWN;
+        return Truth.of(regex.matcher(rowVal.toString()).matches());
     }
 
     private static Object coerce(Object value, FieldType fieldType) {
