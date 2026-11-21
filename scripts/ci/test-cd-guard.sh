@@ -32,11 +32,30 @@ grep -q '^concurrency:' "$cd_yml"; check "cd.yml has a concurrency group" "0" "$
 grep -q 'type=sha' "$cd_yml"; check "cd.yml no longer derives tags from the branch head" "1" "$?"
 
 expected="github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'"
-for job in docker docker-native; do
+for job in docker docker-native docker-slim; do
   condition=$(awk -v job="  $job:" '$0 == job {f=1; next} f && /^    if:/ {sub(/^    if: */, ""); print; exit}' "$cd_yml" | tr -s ' ')
   check "$job if: is exactly the push-to-own-main condition" "$expected" "$condition"
 done
-[[ $(grep -c 'labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}' "$cd_yml") == 2 ]]; check "both metadata steps set the revision label to the tested commit" "0" "$?"
+[[ $(grep -c 'labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}' "$cd_yml") == 3 ]]; check "every metadata step sets the revision label to the tested commit" "0" "$?"
+# The slim images (EXC-799) add tags beside the existing ones; each is guarded like the trunk tag, and none is a release tag.
+grep -qF 'trunk-tag-exists.sh "$DOCKER_IMAGE" "main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}"' "$cd_yml"; check "slim trunk tag is checked before it is pushed" "0" "$?"
+for tag in 'main-${{ matrix.engine }}' 'main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}'; do
+  grep -qF "type=raw,value=$tag" "$cd_yml"; check "slim tag $tag is published" "0" "$?"
+done
+grep -q 'slim-native\|-native' <(awk '/^  docker-slim:/{f=1} f' "$cd_yml"); check "the per-push CD builds no slim native image" "1" "$?"
+
+# The slim native images are nightly and on request, never per push, so their failure cannot block CI or CD (EXC-799).
+slim_native="$root/.github/workflows/slim-native.yml"
+grep -qE '^  push:|^  pull_request:|workflow_run' "$slim_native"; check "slim-native.yml has no push, pull_request or workflow_run trigger" "1" "$?"
+grep -q '^  schedule:' "$slim_native"; check "slim-native.yml runs nightly" "0" "$?"
+grep -q '^  workflow_dispatch:' "$slim_native"; check "slim-native.yml runs on request" "0" "$?"
+grep -qF 'trunk-tag-exists.sh "$DOCKER_IMAGE" "main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}-native"' "$slim_native"; check "slim native trunk tag is checked before it is pushed" "0" "$?"
+for tag in 'main-${{ matrix.engine }}-native' 'main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}-native'; do
+  grep -qF "type=raw,value=$tag" "$slim_native"; check "slim native tag $tag is published" "0" "$?"
+done
+grep -qE 'type=raw,value=(latest|[0-9])' "$slim_native"; check "slim-native.yml publishes no latest or version tag" "1" "$?"
+grep -q 'build-native-slim' "$root/.github/workflows/ci.yml"; check "ci.yml builds no slim native image per push" "1" "$?"
+grep -qE 'type=raw,value=(latest|[0-9])' "$cd_yml"; check "cd.yml publishes no latest or version tag" "1" "$?"
 grep -q 'context: git' "$cd_yml"; check "metadata steps do not use the git context (fails on a detached checkout)" "1" "$?"
 
 grep -q 'github\.sha' "$cd_yml"; check "cd.yml never references the branch-tip sha" "1" "$?"

@@ -145,12 +145,29 @@ jobs:
       uses: ./.github/actions/maven-cache
     - name: Build with Make
       run: make build
-      
+
+    # The engine, one database each (EXC-799). `verify` starts each slim jar against its own database in a container
+    # and checks that it refuses the other; the all-in-one jar is started against both.
+    - name: Build and start the slim jars
+      run: |
+        mvn -pl modules/excalibase-graphql-api -am -Pslim-postgres verify -DskipTests ${{ env.MAVEN_CLI_OPTS }}
+        mvn -pl modules/excalibase-graphql-api -am -Pslim-mysql verify -DskipTests ${{ env.MAVEN_CLI_OPTS }}
+
+    - name: Start the all-in-one jar against both databases
+      run: >
+        mvn -pl modules/excalibase-graphql-api -am test ${{ env.MAVEN_CLI_OPTS }}
+        -Dtest=SlimBuildSmokeTest -Dsurefire.failIfNoSpecifiedTests=false
+        -Dslim.command="$PWD/modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar"
+        -Dslim.serves=postgres,mysql
+
     - name: Upload JAR artifacts
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: jar-artifacts
-        path: modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar
+        path: |
+          modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar
+          modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT-postgres.jar
+          modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT-mysql.jar
         if-no-files-found: error
         retention-days: 7
 

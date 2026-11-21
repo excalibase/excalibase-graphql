@@ -1,14 +1,34 @@
+# ENGINE picks the image: "all" (default) carries every database plugin, "postgres" or "mysql" carries one (EXC-799).
+#   docker build -f Dockerfile.native .                          the all-in-one image
+#   docker build -f Dockerfile.native --build-arg ENGINE=mysql . the MySQL-only image
+# The slim binaries come from `mvn -Pnative -Pslim-<engine> package`.
+ARG ENGINE=all
+
 FROM debian:bookworm-slim AS libs
 RUN apt-get update \
  && apt-get install -y --no-install-recommends --only-upgrade zlib1g \
  && rm -rf /var/lib/apt/lists/*
 
-FROM gcr.io/distroless/base-debian12
+FROM gcr.io/distroless/base-debian12 AS runtime
 
 COPY --from=libs /lib/x86_64-linux-gnu/libz.so.1* /lib/x86_64-linux-gnu/
 COPY --from=busybox:stable-glibc /bin/busybox /usr/bin/busybox
 
+FROM runtime AS engine-all
 COPY modules/excalibase-graphql-api/target/excalibase-graphql-api /app/excalibase-graphql-api
+
+# A slim image names its own database, so it needs no APP_DATABASE_TYPE or driver setting.
+FROM runtime AS engine-postgres
+COPY modules/excalibase-graphql-api/target/excalibase-graphql-api-postgres /app/excalibase-graphql-api
+ENV APP_DATABASE_TYPE=postgres \
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+
+FROM runtime AS engine-mysql
+COPY modules/excalibase-graphql-api/target/excalibase-graphql-api-mysql /app/excalibase-graphql-api
+ENV APP_DATABASE_TYPE=mysql \
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver
+
+FROM engine-${ENGINE}
 
 EXPOSE 10000
 
