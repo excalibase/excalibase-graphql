@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import io.github.excalibase.service.DatabaseEngine;
 import io.github.excalibase.support.SqliteFile;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -16,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** The pool the engine builds for a SQLite file bounds each statement by the same read timeout as a server pool. */
+@Timeout(60)
 class SqlitePoolStatementTimeoutTest {
 
     private static void runEndless(Statement statement) throws SQLException {

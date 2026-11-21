@@ -1,11 +1,13 @@
 package io.github.excalibase.sqlite;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -16,7 +18,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class StatementDeadlineTest {
+@Timeout(60)
+class StatementWatchdogTest {
 
     private static final String ENDLESS = "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r)"
             + " SELECT count(*) FROM r";
@@ -29,9 +32,8 @@ class StatementDeadlineTest {
 
     @Test
     void aStatementThatRunsPastTheLimit_isInterrupted_andTheConnectionStaysUsable() throws Exception {
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite::memory:");
+        try (Connection connection = StatementWatchdog.wrap(DriverManager.getConnection("jdbc:sqlite::memory:"), 500);
              Statement statement = connection.createStatement()) {
-            StatementDeadline.install(connection, 500);
             long started = System.nanoTime();
 
             SQLException interrupted = assertThrows(SQLException.class,
@@ -47,10 +49,41 @@ class StatementDeadlineTest {
     }
 
     @Test
-    void shortStatements_neverAddUpToTheLimit_whenTheConnectionRestsBetweenThem() throws Exception {
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite::memory:");
+    void shortStatementsRunBackToBack_pastTheLimit_areNeverInterrupted() throws Exception {
+        try (Connection connection = StatementWatchdog.wrap(DriverManager.getConnection("jdbc:sqlite::memory:"), 400);
              Statement statement = connection.createStatement()) {
-            StatementDeadline.install(connection, 600);
+            long started = System.nanoTime();
+            int run = 0;
+            while (Duration.ofNanos(System.nanoTime() - started).compareTo(Duration.ofMillis(1500)) < 0) {
+                try (ResultSet rows = statement.executeQuery("WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r"
+                        + " WHERE n < 20000) SELECT count(*) FROM r")) {
+                    assertThat(rows.getInt(1)).isEqualTo(20000);
+                }
+                run++;
+            }
+            assertThat(run).isGreaterThan(10);
+        }
+    }
+
+    @Test
+    void aPreparedStatementIsBoundedToo() throws Exception {
+        try (Connection connection = StatementWatchdog.wrap(DriverManager.getConnection("jdbc:sqlite::memory:"), 400);
+             PreparedStatement statement = connection.prepareStatement(ENDLESS)) {
+            SQLException interrupted = assertThrows(SQLException.class, () -> {
+                try (ResultSet rows = statement.executeQuery()) {
+                    rows.next();
+                }
+            });
+
+            assertThat(SqliteErrors.describe(interrupted)).hasValueSatisfying(error ->
+                    assertThat(error.code()).isEqualTo("statement_timeout"));
+        }
+    }
+
+    @Test
+    void shortStatements_neverAddUpToTheLimit_whenTheConnectionRestsBetweenThem() throws Exception {
+        try (Connection connection = StatementWatchdog.wrap(DriverManager.getConnection("jdbc:sqlite::memory:"), 600);
+             Statement statement = connection.createStatement()) {
             for (int i = 0; i < 4; i++) {
                 assertThat(statement.executeQuery("WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r"
                         + " WHERE n < 200000) SELECT count(*) FROM r").getInt(1)).isEqualTo(200000);

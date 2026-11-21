@@ -74,12 +74,11 @@ final class ConnectionBounds {
       public Connection getConnection() throws SQLException {
         Connection connection = super.getConnection();
         try {
-          SqlEngineFactory.prepareConnection(engine.type(), connection, statementTimeoutMillis);
+          return SqlEngineFactory.prepareConnection(engine.type(), connection, statementTimeoutMillis);
         } catch (SQLException | RuntimeException failure) {
           connection.close();
           throw failure;
         }
-        return connection;
       }
     });
   }

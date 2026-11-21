@@ -25,11 +25,12 @@ public interface SqlEngineProvider {
     }
 
     /**
-     * Runs on every new pooled connection, for a database whose connection settings are not SQL a pool can send: the
-     * plugin bounds each statement to {@code statementTimeoutMillis} here. A server database sets it in session SQL.
+     * Runs on every new pooled connection, for a database whose statement bound is not SQL a pool can send: the
+     * plugin returns the connection, wrapped so that each statement stops after {@code statementTimeoutMillis}. A
+     * server database sets the bound in session SQL and returns the connection as it is.
      */
-    default void prepareConnection(Connection connection, long statementTimeoutMillis) throws SQLException {
-        // nothing to prepare
+    default Connection prepareConnection(Connection connection, long statementTimeoutMillis) throws SQLException {
+        return connection;
     }
 
     /** The schemas this database always serves, when it has no catalogue to list them from; empty to discover them. */

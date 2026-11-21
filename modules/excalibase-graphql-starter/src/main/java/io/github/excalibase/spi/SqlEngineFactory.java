@@ -27,9 +27,9 @@ public final class SqlEngineFactory {
     }
 
     /** Lets the plugin of {@code databaseType} bound the statements of a new pooled connection. */
-    public static void prepareConnection(String databaseType, Connection connection, long statementTimeoutMillis)
+    public static Connection prepareConnection(String databaseType, Connection connection, long statementTimeoutMillis)
             throws SQLException {
-        providerFor(databaseType, installed()).prepareConnection(connection, statementTimeoutMillis);
+        return providerFor(databaseType, installed()).prepareConnection(connection, statementTimeoutMillis);
     }
 
     /** The schemas the plugin of {@code databaseType} always serves, or empty when they are discovered. */
