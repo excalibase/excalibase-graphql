@@ -58,4 +58,15 @@ class CatalogTest {
         assertThatThrownBy(() -> Catalog.fromSettings(settings5))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("geometry");
     }
+
+    @Test
+    void keepsTheOrderCollectionsAndFieldsWereDeclaredIn() {
+        List<String> names = List.of("zeta", "alpha", "mid", "beta", "omega", "chi", "psi", "rho", "tau", "nu");
+        Catalog catalog = Catalog.fromSettings(Map.of("collections", names.stream()
+                .map(n -> collection(n, new java.util.LinkedHashMap<>(Map.of("b", "string")))).toList()));
+
+        assertThat(catalog.all()).extracting(CollectionDef::name).containsExactlyElementsOf(names);
+        assertThat(Catalog.of(new CollectionDef("b", FieldKind.INT, Map.of()), new CollectionDef("a", FieldKind.INT, Map.of()))
+                .all()).extracting(CollectionDef::name).containsExactly("b", "a");
+    }
 }

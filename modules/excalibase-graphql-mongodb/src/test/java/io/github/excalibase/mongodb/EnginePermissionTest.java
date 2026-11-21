@@ -158,4 +158,18 @@ abstract class EnginePermissionTest extends AbstractEngineTest {
 
         assertThat(rows(response, "orders")).isEmpty();
     }
+
+    @Test
+    void aWorstCaseLikeRuleOverAMegabyteStringFinishesInBoundedTime() {
+        Policy worst = policy(PolicyEffect.ALLOW, rule("owner", RuleOperator.LIKE, "%a%a%a%a%a%a%a%ab"));
+        org.bson.Document big = new org.bson.Document("_id", new org.bson.types.ObjectId(ID_1))
+                .append("owner", "a".repeat(1_000_000));
+        QueryEngine engine = engineOver(List.of(big), List.of(worst), List.of(), List.of());
+
+        Map<String, Object> response = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                java.time.Duration.ofSeconds(20), () -> as(engine, "u1", "{ orders { id } }"));
+
+        assertThat(error(response)).isNull();
+        assertThat(rows(response, "orders")).isEmpty();
+    }
 }

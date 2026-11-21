@@ -242,4 +242,45 @@ class RowSecurityTest {
         assertThat(Predicates.like("status", "a".repeat(Predicates.MAX_LIKE_LENGTH + 1), true).t().kind())
                 .isEqualTo(Cond.Kind.NEVER);
     }
+
+    @Test
+    void aLikeLiteralOverTheCapsOrEndingInAnEscapeRefusesStartup() {
+        Policy tooMany = policy(PolicyEffect.ALLOW, rule("status", RuleOperator.LIKE, "%a".repeat(Predicates.MAX_LIKE_SEGMENTS + 1)));
+        Policy tooLong = policy(PolicyEffect.ALLOW, rule("status", RuleOperator.NOT_LIKE, "a".repeat(Predicates.MAX_LIKE_LENGTH + 1)));
+        Policy escaped = policy(PolicyEffect.ALLOW, rule("status", RuleOperator.LIKE, "act\\"));
+
+        for (Policy bad : List.of(tooMany, tooLong, escaped)) {
+            assertThatThrownBy(() -> security(bad)).isInstanceOf(IllegalStateException.class)
+                    .hasMessageContaining("LIKE").hasMessageContaining("status");
+        }
+    }
+
+    @Test
+    void aLikeLiteralWithinTheCapsIsAccepted() {
+        assertThat(security(policy(PolicyEffect.ALLOW, rule("status", RuleOperator.LIKE, "%a".repeat(Predicates.MAX_LIKE_SEGMENTS))))
+                .filter("orders", caller("u1"), Operation.SELECT).kind()).isEqualTo(Cond.Kind.EXPR);
+    }
+
+    @Test
+    void aClaimThatIsNotATextIsUnknownNotAnError() {
+        UserContext numeric = new UserContext() {
+            @Override public String userId() { return "u1"; }
+            @Override public String tenantId() { return null; }
+            @Override public Set<String> roles() { return Set.of(); }
+            @Override public Set<String> groupIds() { return Set.of(); }
+            @Override public Object resolveVariable(String name) { return 42; }
+        };
+        RowSecurity security = security(policy(PolicyEffect.ALLOW, rule("status", RuleOperator.LIKE, "{{tier}}")));
+
+        assertThat(security.filter("orders", numeric, Operation.SELECT).kind()).isEqualTo(Cond.Kind.NEVER);
+    }
+
+    @Test
+    void theConstantConditionsCannotBeChangedThroughTheirDocument() {
+        Cond.ALWAYS.doc().put("owner", "x");
+        Cond.NEVER.doc().put("owner", "x");
+
+        assertThat(Cond.ALWAYS.doc()).isEmpty();
+        assertThat(Cond.NEVER.doc()).containsOnlyKeys("_id");
+    }
 }

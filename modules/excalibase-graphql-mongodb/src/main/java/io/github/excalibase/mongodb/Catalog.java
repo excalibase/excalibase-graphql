@@ -20,7 +20,7 @@ public final class Catalog {
     private final Map<String, CollectionDef> collections;
 
     private Catalog(Map<String, CollectionDef> collections) {
-        this.collections = Map.copyOf(collections);
+        this.collections = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(collections));
     }
 
     public static Catalog of(CollectionDef... defs) {
