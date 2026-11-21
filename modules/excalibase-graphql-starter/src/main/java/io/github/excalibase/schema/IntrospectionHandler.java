@@ -9,6 +9,7 @@ import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.schema.introspection.CompositeTypeFactory;
 import io.github.excalibase.schema.introspection.CreateInputFactory;
@@ -25,9 +26,11 @@ import io.github.excalibase.schema.introspection.WhereInputFactory;
 
 import io.github.excalibase.security.RlsOp;
 
+import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static graphql.schema.GraphQLObjectType.newObject;
 import static io.github.excalibase.schema.GraphqlConstants.TYPE_MUTATION;
@@ -67,17 +70,24 @@ public class IntrospectionHandler {
         this(schemaInfo, access, functions, true);
     }
 
-    /** As above; {@code nestedInserts} is false for a store whose mutation compiler cannot nest inserts. */
+    /** As above, for a database that runs everything (Postgres); {@code nestedInserts} is false for a store whose mutation compiler cannot nest inserts. */
     public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
                                 boolean nestedInserts) {
-        this(schemaInfo, access, functions, nestedInserts, FilterCapabilities.ALL);
+        this(schemaInfo, access, functions, nestedInserts, FilterCapabilities.ALL, EnumSet.allOf(DialectFeature.class));
     }
 
-    /** As above; filter inputs offer only the operators {@code filterCapabilities} says the database runs. */
+    /** As above; filter inputs offer only the operators {@code filterCapabilities} says the database runs. No optional feature is offered. */
     public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
                                 boolean nestedInserts, FilterCapabilities filterCapabilities) {
+        this(schemaInfo, access, functions, nestedInserts, filterCapabilities, Set.of());
+    }
+
+    /** As above; aggregates and subscriptions exist only when {@code features} lists them. */
+    public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
+                                boolean nestedInserts, FilterCapabilities filterCapabilities,
+                                Set<DialectFeature> features) {
         this.schema = buildSchema(schemaInfo, access, functions == null ? ExposedFunctions.NONE : functions,
-                nestedInserts, filterCapabilities);
+                nestedInserts, filterCapabilities, features);
         this.graphQL = GraphQL.newGraphQL(this.schema).build();
     }
 
@@ -99,7 +109,8 @@ public class IntrospectionHandler {
     }
 
     private GraphQLSchema buildSchema(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
-                                      boolean nestedInserts, FilterCapabilities filterCapabilities) {
+                                      boolean nestedInserts, FilterCapabilities filterCapabilities,
+                                      Set<DialectFeature> features) {
         // Step 1: build enums, shared filter inputs, per-enum filter inputs.
         Map<String, GraphQLEnumType> enumTypes = new EnumTypeFactory().build(schemaInfo);
         FilterInputCatalog.FilterInputs filters = FilterInputCatalog.inputs(filterCapabilities);
@@ -118,7 +129,8 @@ public class IntrospectionHandler {
 
         // Step 3: assemble Query + Mutation root types.
         GraphQLObjectType.Builder queryBuilder = newObject().name(TYPE_QUERY);
-        new QueryFieldsAssembler().build(schemaInfo, tableTypes, whereTypes, access).forEach(queryBuilder::field);
+        new QueryFieldsAssembler().build(schemaInfo, tableTypes, whereTypes, access,
+                features.contains(DialectFeature.AGGREGATES)).forEach(queryBuilder::field);
         FunctionFieldsAssembler functionFields = new FunctionFieldsAssembler();
         functionFields.build(functions, ExposedFunction.Operation.QUERY, tableTypes, whereTypes)
                 .forEach(queryBuilder::field);
@@ -134,7 +146,8 @@ public class IntrospectionHandler {
         if (!mutationType.getFieldDefinitions().isEmpty()) {
             schemaBuilder.mutation(mutationType);
         }
-        List<GraphQLFieldDefinition> subscriptions = new SubscriptionFieldsAssembler().build(schemaInfo);
+        List<GraphQLFieldDefinition> subscriptions = features.contains(DialectFeature.SUBSCRIPTIONS)
+                ? new SubscriptionFieldsAssembler().build(schemaInfo) : List.of();
         if (!subscriptions.isEmpty()) {
             schemaBuilder.subscription(newObject().name(TYPE_SUBSCRIPTION).fields(subscriptions).build());
         }

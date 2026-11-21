@@ -69,6 +69,14 @@ public final class QueryFieldsAssembler {
                                        Map<String, GraphQLObjectType> tableTypes,
                                        Map<String, GraphQLInputObjectType> whereTypes,
                                        TableAccess access) {
+        return build(schemaInfo, tableTypes, whereTypes, access, true);
+    }
+
+    /** As above; without {@code aggregates} (a database that cannot run them) no aggregate or totalCount exists. */
+    public List<GraphQLFieldDefinition> build(SchemaInfo schemaInfo,
+                                       Map<String, GraphQLObjectType> tableTypes,
+                                       Map<String, GraphQLInputObjectType> whereTypes,
+                                       TableAccess access, boolean aggregates) {
         List<GraphQLFieldDefinition> fields = new ArrayList<>();
         // GraphQL requires at least one field in Query — add placeholder when no tables exist.
         if (schemaInfo.getTableNames().isEmpty()) {
@@ -81,7 +89,7 @@ public final class QueryFieldsAssembler {
             String tName = NamingHelpers.typeName(table);
             GraphQLObjectType type = tableTypes.get(table);
             GraphQLInputObjectType whereType = whereTypes.get(table);
-            boolean aggregations = access.allowsAggregations(table);
+            boolean aggregations = aggregates && access.allowsAggregations(table);
             fields.add(buildListField(fName, type, whereType, !schemaInfo.getColumns(table).isEmpty()
                     ? OrderByInputFactory.typeName(table) : null));
             if (!access.enforced() || schemaInfo.getColumns(table).contains(schemaInfo.getPrimaryKey(table))) {

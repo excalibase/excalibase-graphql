@@ -293,6 +293,11 @@ GET /api/v1/issues\
 For `Content-Range` headers + `Prefer: count=exact` total counts, see
 [Pagination](pagination.md).
 
+## Operators by database
+
+On MySQL, `match`, `imatch`, `fts`, `plfts`, `phfts`, `haskey` and `cs`/`cd` run natively; `wfts`, `jsonpath`, the array,
+range and `vector` operators answer `400` naming MySQL. See the [compatibility matrix](../database-compatibility.md).
+
 ## What's NOT supported in REST
 
 - **GraphQL enum filter narrowing** — REST values are always strings, so

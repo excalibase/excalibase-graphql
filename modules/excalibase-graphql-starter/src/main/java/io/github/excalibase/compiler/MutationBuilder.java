@@ -24,6 +24,9 @@ import static io.github.excalibase.compiler.SqlKeywords.namedParam;
 import static io.github.excalibase.compiler.SqlKeywords.param;
 import static io.github.excalibase.compiler.SqlKeywords.parens;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_INPUTS;
+import static io.github.excalibase.schema.GraphqlConstants.ARG_ON_CONFLICT;
+import static io.github.excalibase.schema.GraphqlConstants.ON_CONFLICT_CONSTRAINT;
+import static io.github.excalibase.schema.GraphqlConstants.ON_CONFLICT_UPDATE_COLUMNS;
 import static io.github.excalibase.schema.GraphqlConstants.CREATE_PREFIX;
 import static io.github.excalibase.schema.GraphqlConstants.COLLECTION_SUFFIX;
 import static io.github.excalibase.schema.GraphqlConstants.CREATE_MANY_PREFIX;
@@ -98,8 +101,11 @@ public class MutationBuilder {
 
     /** Refuses an argument the dialect's compiler would not apply on this mutation. */
     public void requireKnownArguments(Field field) {
-        MutationKind.of(field.getName()).ifPresent(kind ->
-                FieldArguments.requireKnown(field, mutationCompiler.arguments(kind)));
+        MutationKind.of(field.getName()).ifPresent(kind -> {
+            Set<String> accepted = new LinkedHashSet<>(mutationCompiler.arguments(kind));
+            if (!dialect.supports(DialectFeature.UPSERT)) accepted.remove(ARG_ON_CONFLICT);
+            FieldArguments.requireKnown(field, accepted);
+        });
     }
 
     // === Table name resolution ===
@@ -219,6 +225,32 @@ public class MutationBuilder {
      */
     public record BulkInsertParts(String alias, String objectSql, String columns, String valueRows, int rowCount,
                                   List<String> rowValues, List<Map<String, Object>> boundRows) {}
+
+    /** The {@code onConflict} argument of a create: the constraint it names and the columns it overwrites. */
+    public record OnConflict(String constraint, List<String> updateColumns) {}
+
+    /**
+     * The {@code onConflict} argument of {@code field}, or null without one. A dialect that runs upserts
+     * through its own statements reads it here; both parts are required.
+     */
+    public OnConflict onConflict(Field field, Map<String, Object> variables) {
+        Argument argument = findArg(field, ARG_ON_CONFLICT);
+        if (argument == null) return null;
+        Map<String, Object> fields = extractObjectFields(argument.getValue(), variables);
+        Object constraint = fields.get(ON_CONFLICT_CONSTRAINT);
+        Object columns = fields.get(ON_CONFLICT_UPDATE_COLUMNS);
+        if (columns instanceof String json) {
+            try {
+                columns = OBJECT_MAPPER.readValue(json, List.class);
+            } catch (JsonProcessingException e) {
+                throw new IllegalArgumentException("onConflict update_columns takes a list of column names", e);
+            }
+        }
+        if (constraint == null || !(columns instanceof List<?> list) || list.isEmpty()) {
+            throw new IllegalArgumentException("onConflict takes a constraint and a non-empty update_columns");
+        }
+        return new OnConflict(String.valueOf(constraint), list.stream().map(String::valueOf).toList());
+    }
 
     /** A single-table UPDATE's result object and SET clauses. */
     public record UpdateParts(String alias, String objectSql, List<String> setClauses) {}

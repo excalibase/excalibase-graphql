@@ -221,6 +221,9 @@ where: { tax_rate: { eq: 8.25 } }
 
 ## Available Filter Operations
 
+What each database runs is on the [compatibility matrix](../database-compatibility.md); an operator the database
+cannot run is not in its schema and is refused with an error.
+
 ### All Data Types
 - `eq`, `neq`, `isNull`, `isNotNull`, `in`, `notIn`
 

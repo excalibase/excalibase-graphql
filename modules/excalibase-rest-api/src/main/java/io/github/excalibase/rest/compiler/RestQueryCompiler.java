@@ -4,6 +4,7 @@ import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.compiler.KeyedWrite;
 import io.github.excalibase.compiler.KeyedWrites;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
@@ -338,6 +339,12 @@ public class RestQueryCompiler {
         return new CompiledResult(inserts.getFirst().sql(), allParams, keyed.insert(inserts, true));
     }
 
+    private void requireUpsert() {
+        if (!dialect.supports(DialectFeature.UPSERT)) {
+            throw new IllegalArgumentException(dialect.databaseName() + " does not support upsert (on_conflict)");
+        }
+    }
+
     /** What an insert does with a row whose key exists: update it ({@code merge-duplicates}) or leave it ({@code ignore-duplicates}). */
     public enum Conflict { MERGE, IGNORE }
 
@@ -350,6 +357,7 @@ public class RestQueryCompiler {
      * the update half the update permission's columns, presets and filter, and every written row must pass both checks.
      */
     public CompiledResult compileUpsert(String table, Map<String, Object> input, List<String> conflictCols, Conflict mode) {
+        requireUpsert();
         requireConflictTarget(table, conflictCols, mode);
         String quotedTable = resolveTable(table);
         Map<String, Object> params = new LinkedHashMap<>();
@@ -369,6 +377,7 @@ public class RestQueryCompiler {
      */
     public CompiledResult compileBulkUpsert(String table, List<Map<String, Object>> rows, List<String> conflictCols,
                                             Conflict mode) {
+        requireUpsert();
         requireBulkSize(rows);
         requireConflictTarget(table, conflictCols, mode);
         String quotedTable = resolveTable(table);

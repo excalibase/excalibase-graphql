@@ -18,6 +18,7 @@ final class SchemaMerger {
             mergeColumns(target, source, schema, table, key);
             target.setTableSchema(key, schema);
             mergePrimaryKeys(target, source, table, key);
+            source.getUniqueKeys(table).forEach((name, columns) -> target.addUniqueKey(key, name, columns));
             mergeViews(target, source, table, key);
             mergeComputedFields(target, source, table, key);
         }

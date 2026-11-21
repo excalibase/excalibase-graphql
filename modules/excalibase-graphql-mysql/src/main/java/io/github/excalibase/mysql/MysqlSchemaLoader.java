@@ -120,6 +120,27 @@ public class MysqlSchemaLoader implements SchemaLoader {
             }
         }, (RowCallbackHandler) rs -> dispatchMysqlRow(rs.getString(1), perSchema, keyColumns));
         addForeignKeys(keyColumns, perSchema::get);
+        for (String schema : schemas) {
+            SchemaInfo info = perSchema.get(schema);
+            if (info != null) loadUniqueKeys(jdbc, schema, info);
+        }
+    }
+
+    /** Each unique index other than the primary key, by name: what an {@code onConflict} constraint names. */
+    private static void loadUniqueKeys(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+        Map<List<String>, List<String>> keys = new LinkedHashMap<>();
+        jdbc.query("""
+            SELECT table_name, index_name, column_name
+            FROM information_schema.statistics
+            WHERE table_schema = ? AND non_unique = 0 AND index_name <> 'PRIMARY'
+            ORDER BY table_name, index_name, seq_in_index
+            """, (RowCallbackHandler) rs -> keys.computeIfAbsent(
+                        List.of(rs.getString(COL_TABLE_NAME), rs.getString("index_name")), k -> new ArrayList<>())
+                .add(rs.getString(COL_COLUMN_NAME)), schema);
+        // A functional key part has no column: the index cannot be named by columns, so it is not offered.
+        keys.forEach((key, columns) -> {
+            if (!columns.contains(null)) info.addUniqueKey(key.get(0), key.get(1), columns);
+        });
     }
 
     /** One column of a foreign key, at {@code position} within its constraint. */
@@ -212,6 +233,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
             addAutoIncrement(info, table, col, rs.getString("extra"));
             info.setTableSchema(table, schema);
         }, schema);
+        loadUniqueKeys(jdbc, schema, info);
         jdbc.query(FULL_TEXT_COLUMNS + "(?)" + FULL_TEXT_GROUPING, (RowCallbackHandler) rs ->
                 info.addFullTextColumn(rs.getString(COL_TABLE_NAME), rs.getString(COL_COLUMN_NAME)), schema);
     }

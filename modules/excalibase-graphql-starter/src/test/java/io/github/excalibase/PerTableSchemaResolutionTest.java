@@ -182,6 +182,11 @@ class PerTableSchemaResolutionTest {
      * Uses PostgreSQL-like quoting: schema."table"
      */
     private static class TestDialect implements SqlDialect {
+        @Override
+        public java.util.Set<DialectFeature> features() {
+            return java.util.EnumSet.allOf(DialectFeature.class);
+        }
+
         @Override public String buildObject(java.util.List<String> pairs) {
             return "jsonb_build_object(" + String.join(", ", pairs) + ")";
         }

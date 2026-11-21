@@ -13,6 +13,7 @@ import io.github.excalibase.rest.parser.FilterParser;
 import io.github.excalibase.rest.parser.OrderParser;
 import io.github.excalibase.rest.parser.SelectParser;
 import io.github.excalibase.permissions.PermissionEvaluationException;
+import io.github.excalibase.compiler.WriteRetry;
 import io.github.excalibase.compiler.FunctionCall;
 import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.SchemaInfo;
@@ -465,28 +466,48 @@ public class RestApiController {
 
     private HttpResponse<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                                               Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
+        Dml dml = new Dml(compiled, scope, rollback, maxAffected, prefer, successStatus, table);
+        HttpResponse<Object> answer = null;
+        for (int attempt = 1; answer == null && attempt <= WriteRetry.ATTEMPTS; attempt++) {
+            answer = executeDmlOnce(dml, attempt == WriteRetry.ATTEMPTS);
+        }
+        return answer;
+    }
+
+    /** One mutation as the request made it. */
+    private record Dml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
+                       Integer maxAffected, String prefer, HttpStatus successStatus, String table) {}
+
+    /** One transaction; null when it lost a lock to a concurrent request, was rolled back, and may run again. */
+    private HttpResponse<Object> executeDmlOnce(Dml dml, boolean last) {
         return txTemplate.execute(status -> {
             try {
-                boolean represent = maxAffected != null || preferContains(prefer, PREFER_REPRESENTATION);
-                String json = executeDmlQuery(compiled, represent);
-                HttpResponse<Object> overflow = checkMaxAffected(json, maxAffected, status);
+                boolean represent = dml.maxAffected() != null || preferContains(dml.prefer(), PREFER_REPRESENTATION);
+                String json = executeDmlQuery(dml.compiled(), represent);
+                HttpResponse<Object> overflow = checkMaxAffected(json, dml.maxAffected(), status);
                 if (overflow != null) return overflow;
-                if (rollback) status.setRollbackOnly();
-                return buildDmlResponse(json, prefer, successStatus, table, rollback, scope.keys());
+                if (dml.rollback()) status.setRollbackOnly();
+                return buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys());
             } catch (Exception e) {
-                Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
-                if (failed.isPresent()) {
-                    status.setRollbackOnly();
-                    return checkFailed(failed.get());
-                }
-                if (e instanceof IllegalArgumentException refused) {
-                    status.setRollbackOnly();
-                    return Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
-                }
                 status.setRollbackOnly();
-                return RestErrors.of(e, scope.dialect(), scope.filters(), "Mutation execution failed");
+                return dmlFailed(e, dml, last);
             }
         });
+    }
+
+    /** The answer to a failed mutation; null when it lost a lock and may run again. */
+    private HttpResponse<Object> dmlFailed(Exception e, Dml dml, boolean last) {
+        Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
+        if (failed.isPresent()) {
+            return checkFailed(failed.get());
+        }
+        if (e instanceof IllegalArgumentException refused) {
+            return Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
+        }
+        if (!last && WriteRetry.isLockConflict(e)) {
+            return null;
+        }
+        return RestErrors.of(e, dml.scope().dialect(), dml.scope().filters(), "Mutation execution failed");
     }
 
     private String executeDmlQuery(RestQueryCompiler.CompiledResult compiled, boolean represent) {

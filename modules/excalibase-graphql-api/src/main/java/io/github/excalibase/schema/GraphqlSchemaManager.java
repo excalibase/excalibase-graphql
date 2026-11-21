@@ -1,5 +1,6 @@
 package io.github.excalibase.schema;
 
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.cdc.NatsCDCService;
@@ -214,7 +215,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         try {
             handler = new IntrospectionHandler(view, plan.access(), plan.functions(),
                     reflection.engine().mutationCompiler().supportsNestedInserts(),
-                    reflection.engine().dialect().filterCapabilities());
+                    reflection.engine().dialect().filterCapabilities(), reflection.engine().dialect().features());
         } catch (Exception e) {
             log.warn("IntrospectionHandler failed to build schema", e);
         }
@@ -369,6 +370,10 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         EngineState state = resolveEngineState(orgSlug, projectId, principal);
         if (state == null) {
             return Optional.empty();
+        }
+        SqlDialect dialect = state.compiler().dialect();
+        if (!dialect.supports(DialectFeature.SUBSCRIPTIONS)) {
+            throw new SubscriptionsUnsupportedException(dialect.databaseName() + " does not support subscriptions");
         }
         return tableFor(state, subscriptionKey).filter(table -> !reservedSchemas.isReservedObject(table)).flatMap(table ->
                 state.plan().changes(table, sessionVariables(principal, projectId))

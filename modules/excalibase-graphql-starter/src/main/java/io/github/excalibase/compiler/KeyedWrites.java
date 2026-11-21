@@ -117,8 +117,10 @@ public final class KeyedWrites {
      * An upsert of a row whose key is sent: an INSERT when no row holds the key, else an UPDATE of that row
      * alone, so a collision on any other unique key, however its columns were filled, fails as the database's
      * own duplicate error rather than updating a row the caller never addressed. The key is locked first
-     * ({@code FOR UPDATE}); under READ COMMITTED, which takes no gap lock, a concurrent insert of the same key
-     * makes the INSERT fail as a duplicate, never write twice.
+     * ({@code FOR UPDATE}). Under REPEATABLE READ that locks the gap a missing key falls in, so two requests
+     * upserting the same new key can deadlock: one is aborted with error 1213, and the transaction's owner runs it
+     * again once ({@link WriteRetry}). Under READ COMMITTED a concurrent insert of the same key would instead make
+     * the INSERT fail as a duplicate. Either way the key is never written twice.
      *
      * @param set       the UPDATE's assignments, null for DO NOTHING
      * @param updatable which existing rows the update may overwrite, its condition empty when every row: an

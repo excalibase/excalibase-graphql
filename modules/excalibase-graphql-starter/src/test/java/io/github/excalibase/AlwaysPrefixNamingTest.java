@@ -99,6 +99,11 @@ class AlwaysPrefixNamingTest {
     }
 
     private static class TestDialect implements SqlDialect {
+        @Override
+        public java.util.Set<DialectFeature> features() {
+            return java.util.EnumSet.allOf(DialectFeature.class);
+        }
+
         @Override public String buildObject(List<String> pairs) {
             return "jsonb_build_object(" + String.join(", ", pairs) + ")";
         }

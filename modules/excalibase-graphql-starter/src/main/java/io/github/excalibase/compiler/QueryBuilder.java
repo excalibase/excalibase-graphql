@@ -6,6 +6,7 @@ import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.NamingUtils;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.security.RlsOp;
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.SqlDialect;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -89,6 +90,7 @@ public class QueryBuilder {
 
         // Parse distinctOn argument
         List<String> distinctOnCols = parseDistinctOn(field);
+        if (!distinctOnCols.isEmpty()) requireFeature(DialectFeature.DISTINCT_ON, "distinctOn");
         distinctOnCols.forEach(column -> filterBuilder.requireColumn(tableName, column));
 
         // Parse vector argument (k-NN search). When present, it takes precedence
@@ -171,6 +173,7 @@ public class QueryBuilder {
         Argument vectorArg = field.getArguments().stream()
                 .filter(a -> ARG_VECTOR.equals(a.getName()))
                 .findFirst().orElse(null);
+        if (vectorArg != null) requireFeature(DialectFeature.VECTOR_SEARCH, "the vector argument");
         if (vectorArg == null || !(filterBuilder.resolvedValue(vectorArg.getValue()) instanceof ObjectValue ov)) {
             return Optional.empty();
         }
@@ -179,6 +182,13 @@ public class QueryBuilder {
                 .forEach(vectorField -> filterBuilder.requireColumn(tableName,
                         String.valueOf(filterBuilder.extractValue(vectorField.getValue()))));
         return vectorSearchBuilder.build(ov, alias, schemaInfo, params);
+    }
+
+    /** A database that does not run {@code feature} refuses the request that uses it, as it never drops part of it. */
+    private void requireFeature(DialectFeature feature, String what) {
+        if (!dialect.supports(feature)) {
+            throw new IllegalArgumentException(dialect.databaseName() + " does not support " + what);
+        }
     }
 
     private List<String> parseDistinctOn(Field field) {
@@ -207,6 +217,7 @@ public class QueryBuilder {
 
     /** Aggregates exist only for a role allowed them on the table; for anyone else the field is unknown. */
     private void requireAggregations(String fieldName, String tableName) {
+        requireFeature(DialectFeature.AGGREGATES, "aggregate queries");
         if (!filterBuilder.access().allowsAggregations(tableName)) {
             throw unknownField(fieldName);
         }
@@ -384,6 +395,7 @@ public class QueryBuilder {
      */
     private void requireConnectionAllowed(String tableName, String pk, ConnectionSelections sel) {
         filterBuilder.requireColumn(tableName, pk);
+        if (sel.wantsTotalCount) requireFeature(DialectFeature.AGGREGATES, "totalCount");
         if (sel.wantsTotalCount && !filterBuilder.access().allowsAggregations(tableName)) {
             throw new IllegalArgumentException("Unknown field 'totalCount' on " + tableName);
         }

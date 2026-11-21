@@ -647,10 +647,26 @@ describe('Filters MySQL cannot run fail loudly', () => {
       .rejects.toThrow(/takes a list/);
   });
 
-  test('onConflict is an error, not ignored', async () => {
-    await expect(client.request(gql`
-      mutation { createHanaWallets(input: { wallet_id: 1, owner_name: "Alice", balance: 1 },
-        onConflict: { constraint: "PRIMARY", update_columns: ["balance"] }) { wallet_id } }
-    `)).rejects.toThrow(/onConflict/);
+  test('distinctOn and vector are errors, not ignored', async () => {
+    await expect(client.request(gql`{ hanaCustomer(distinctOn: ["first_name"]) { customer_id } }`))
+      .rejects.toThrow(/does not support distinctOn/);
+    await expect(client.request(gql`{ hanaCustomer(vector: { column: "first_name", near: [1.0] }) { customer_id } }`))
+      .rejects.toThrow(/does not support the vector argument/);
+  });
+});
+
+describe('onConflict upsert on MySQL', () => {
+  test('inserts a new key, then overwrites only update_columns of the row holding it', async () => {
+    const upsert = (owner, balance) => client.request(gql`
+      mutation($owner: String, $balance: Float) {
+        createHanaWallets(input: { wallet_id: 9101, owner_name: $owner, balance: $balance },
+          onConflict: { constraint: "PRIMARY", update_columns: ["balance"] }) { wallet_id owner_name balance }
+      }`, { owner, balance });
+    const inserted = await upsert('Upserter', 5);
+    expect(inserted.createHanaWallets.owner_name).toBe('Upserter');
+    const updated = await upsert('Ignored', 7);
+    expect(updated.createHanaWallets.owner_name).toBe('Upserter');
+    expect(Number(updated.createHanaWallets.balance)).toBe(7);
+    await client.request(gql`mutation { deleteHanaWallets(where: { wallet_id: { eq: 9101 } }) { wallet_id } }`);
   });
 });

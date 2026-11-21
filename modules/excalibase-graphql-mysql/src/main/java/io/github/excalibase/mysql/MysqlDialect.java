@@ -1,5 +1,6 @@
 package io.github.excalibase.mysql;
 
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
@@ -10,6 +11,7 @@ import io.github.excalibase.permissions.compile.PermissionDialect;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.sql.SQLException;
+import java.util.EnumSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
@@ -38,6 +40,12 @@ public class MysqlDialect implements SqlDialect {
     @Override
     public Optional<DataError> describeError(SQLException failure) {
         return MysqlErrors.describe(failure);
+    }
+
+    /** No DISTINCT ON, no vector search, and no subscriptions until the watcher's binlog stream is tested. */
+    @Override
+    public Set<DialectFeature> features() {
+        return EnumSet.of(DialectFeature.AGGREGATES, DialectFeature.UPSERT);
     }
 
     @Override

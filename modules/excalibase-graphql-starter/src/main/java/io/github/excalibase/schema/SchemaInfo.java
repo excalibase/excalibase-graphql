@@ -46,6 +46,8 @@ public class SchemaInfo {
     private final Map<String, String> columnEnumType = new HashMap<>();
     // "table.column" of text columns the database can search by full text in place (a MySQL FULLTEXT index on it alone)
     private final Set<String> fullTextColumns = new HashSet<>();
+    // "table" → unique key name → its columns in key order (a MySQL unique index; the primary key is not listed)
+    private final Map<String, Map<String, List<String>>> uniqueKeys = new HashMap<>();
     // "table.column" of columns the database fills from a counter when an insert leaves them out (MySQL AUTO_INCREMENT)
     private final Set<String> autoIncrementColumns = new HashSet<>();
     // table → column → the database's own declaration, where the reported type loses detail (MySQL)
@@ -122,6 +124,7 @@ public class SchemaInfo {
         enumTypes.clear();
         columnEnumType.clear();
         fullTextColumns.clear();
+        uniqueKeys.clear();
         autoIncrementColumns.clear();
         computedFields.clear();
         viewNames.clear();
@@ -183,6 +186,21 @@ public class SchemaInfo {
 
     public void addAutoIncrementColumn(String table, String column) {
         autoIncrementColumns.add(table + "." + column);
+    }
+
+    /** A unique key other than the primary key, by the name the database gives it; {@code columns} in key order. */
+    public void addUniqueKey(String table, String name, List<String> columns) {
+        uniqueKeys.computeIfAbsent(table, k -> new LinkedHashMap<>()).put(name, List.copyOf(columns));
+    }
+
+    /** The columns of {@code table}'s unique key {@code name}, or null when it has none by that name. */
+    public List<String> getUniqueKey(String table, String name) {
+        return uniqueKeys.getOrDefault(table, Map.of()).get(name);
+    }
+
+    /** {@code table}'s unique keys other than its primary key, by name. */
+    public Map<String, List<String>> getUniqueKeys(String table) {
+        return Collections.unmodifiableMap(uniqueKeys.getOrDefault(table, Map.of()));
     }
 
     public void addFullTextColumn(String table, String column) {

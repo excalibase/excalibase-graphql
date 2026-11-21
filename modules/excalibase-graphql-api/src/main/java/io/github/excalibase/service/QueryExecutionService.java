@@ -3,6 +3,7 @@ package io.github.excalibase.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
+import io.github.excalibase.compiler.WriteRetry;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.utils.SqlUtils;
 import io.github.excalibase.http.Reply;
@@ -56,6 +57,19 @@ public class QueryExecutionService {
     public HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
                                                    MapSqlParameterSource params,
                                                    MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return executeOnce(compiled, params, mutationExecutor);
+            } catch (SQLException | JsonProcessingException | RuntimeException e) {
+                if (attempt >= WriteRetry.ATTEMPTS || !WriteRetry.isLockConflict(e)) throw e;
+            }
+        }
+    }
+
+    /** One transaction; a database that lost a lock to a concurrent request rolled it back, so it can run again. */
+    private HttpResponse<Object> executeOnce(SqlCompiler.CompiledQuery compiled, MapSqlParameterSource params,
+                                             MutationExecutor mutationExecutor)
+            throws SQLException, JsonProcessingException {
         try (Connection conn = dataSource.getConnection()) {
             boolean autoCommit = conn.getAutoCommit();
             try {

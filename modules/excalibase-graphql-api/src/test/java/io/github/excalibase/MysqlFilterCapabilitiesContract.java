@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.MySQLContainer;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -18,15 +19,21 @@ import static io.github.excalibase.support.Expect.jsonPath;
 import static io.github.excalibase.support.Expect.status;
 
 /**
- * A MySQL schema offers the filters MySQL runs and no others, and the operators it offers run against MySQL 8.4;
- * one it does not offer is an error naming the operator, never a query that answers every row.
+ * A MySQL schema offers the filters MySQL runs and no others, and the operators it offers run; one it does not offer
+ * is an error naming the operator, never a query that answers every row. Run against each MySQL version we support.
  */
-class MysqlFilterCapabilitiesIntegrationTest extends EngineIntegrationTest {
+abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
 
-    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withInitScript("init-mysql-filters.sql");
+    static MySQLContainer<?> container(String image) {
+        return new MySQLContainer<>(image).withInitScript("init-mysql-filters.sql");
+    }
+
+    /** The database under test, not yet started. */
+    abstract MySQLContainer<?> database();
 
     @Override
     public Map<String, String> getProperties() {
+        MySQLContainer<?> mysql = database();
         mysql.start();
         Map<String, String> properties = EngineProperties.isolated();
         properties.put("spring.datasource.url", mysql.getJdbcUrl());
@@ -108,9 +115,64 @@ class MysqlFilterCapabilitiesIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    void onConflictIsRefusedOnMysql() throws Exception {
-        graphql("mutation { createTestArticle(input: { title: \"x\" }, onConflict: { constraint: \"PRIMARY\", "
-                + "update_columns: [\"title\"] }) { id } }")
-                .expect(jsonPath("$.errors[0].message", containsString("'onConflict'")));
+    void featuresMysqlCannotRunAreAbsentFromTheSchemaAndRefused() throws Exception {
+        graphql("{ __type(name: \"TestArticleWhereInput\") { name } }").expect(jsonPath("$.errors").doesNotExist());
+        graphql("{ testArticle(distinctOn: [\"title\"]) { id } }")
+                .expect(jsonPath("$.errors[0].message", containsString("MySQL does not support distinctOn")));
+        graphql("{ testArticle(vector: { column: \"title\", near: [1.0, 2.0] }) { id } }")
+                .expect(jsonPath("$.errors[0].message", containsString("MySQL does not support the vector argument")));
+        graphql("{ testArticle(where: { title: { nonsense: \"x\" } }) { id } }")
+                .expect(jsonPath("$.data").doesNotExist())
+                .expect(jsonPath("$.errors").exists());
+    }
+
+    @Test
+    void onConflictUpsertsOnMysql() throws Exception {
+        graphql("mutation { createTestArticle(input: { id: 40, title: \"first\" }, onConflict: { constraint: "
+                + "\"PRIMARY\", update_columns: [\"title\"] }) { id title } }")
+                .expect(jsonPath("$.data.createTestArticle.title").value("first"));
+        graphql("mutation { createTestArticle(input: { id: 40, title: \"second\" }, onConflict: { constraint: "
+                + "\"PRIMARY\", update_columns: [\"title\"] }) { id title } }")
+                .expect(jsonPath("$.data.createTestArticle.title").value("second"));
+        graphql("{ testArticle(where: { id: { eq: 40 } }) { title } }")
+                .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));
+    }
+
+    /** Two requests upserting the same new key at once both succeed and write one row: a deadlock is retried. */
+    @Test
+    void concurrentUpsertsOfTheSameNewKeyBothSucceed() throws Exception {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            for (int key = 5000; key < 5030; key++) {
+                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+                int id = key;
+                List<java.util.concurrent.Future<?>> requests = new java.util.ArrayList<>();
+                for (String title : List.of("left", "right")) {
+                    requests.add(pool.submit(() -> {
+                        start.await();
+                        graphql("mutation { createTestArticle(input: { id: " + id + ", title: \"" + title
+                                + "\" }, onConflict: { constraint: \"PRIMARY\", update_columns: [\"title\"] }) "
+                                + "{ id title } }")
+                                .expect(jsonPath("$.errors").doesNotExist())
+                                .expect(jsonPath("$.data.createTestArticle.id").value(id));
+                        return null;
+                    }));
+                }
+                for (java.util.concurrent.Future<?> request : requests) {
+                    request.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                }
+                graphql("{ testArticle(where: { id: { eq: " + id + " } }) { id } }")
+                        .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void aggregatesRunOnMysql() throws Exception {
+        graphql("{ testArticleAggregate { count max { id } } }")
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.testArticleAggregate.count", org.hamcrest.Matchers.notNullValue()));
     }
 }

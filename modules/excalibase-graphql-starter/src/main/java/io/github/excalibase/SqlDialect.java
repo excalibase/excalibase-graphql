@@ -7,10 +7,29 @@ import io.github.excalibase.permissions.compile.PermissionDialect;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Abstraction for database-specific SQL syntax.
- * Implementations: PostgresDialect, MysqlDialect (future).
+ * Implementations: PostgresDialect, MysqlDialect.
+ *
+ * <h2>Declaring what a database can do</h2>
+ * A plugin states its abilities; the engine builds the schema from them and refuses everything else, so a
+ * request is never answered with part of it silently left out.
+ * <ul>
+ *   <li><b>Filter operators</b>: override {@link #filterCapabilities()} with
+ *       {@code FilterCapabilities.of(operatorsByColumnKind, restOperators)}. Start from
+ *       {@link FilterCapabilities#PORTABLE} (comparisons, lists, LIKE, null checks) and add what the database
+ *       runs, e.g. regex. For each operator added, implement its SQL here ({@link #regexSql},
+ *       {@link #fullTextSearchSql}, {@link #jsonPredicateSql}); a method left at its default returns empty and
+ *       the compiler refuses the operator. The where-input types list exactly the declared operators.</li>
+ *   <li><b>Features</b>: override {@link #features()} with the {@link DialectFeature}s the database runs
+ *       (aggregates, upsert, distinct-on, subscriptions). The default is none.</li>
+ *   <li><b>Mutations</b>: {@code MutationCompiler#arguments} names the arguments a create/update/delete
+ *       takes, and {@code MutationCompiler#supportsNestedInserts} the relationship inserts.</li>
+ *   <li><b>Other switches</b>: {@link #supportsFunctions()}, {@link #supportsReturning()},
+ *       {@link #supportsRowToJson()}.</li>
+ * </ul>
  */
 public interface SqlDialect {
     /** Build a JSON object from key-value pairs. PG: jsonb_build_object(k1, v1, ...) */
@@ -127,6 +146,16 @@ public interface SqlDialect {
      */
     default FilterCapabilities filterCapabilities() {
         return FilterCapabilities.PORTABLE;
+    }
+
+    /** The optional features this database runs; the schema offers only these. A new database declares its own. */
+    default Set<DialectFeature> features() {
+        return Set.of();
+    }
+
+    /** Whether this database runs {@code feature}. */
+    default boolean supports(DialectFeature feature) {
+        return features().contains(feature);
     }
 
     /** Parameter cast suffix for non-standard types. PG: ::uuid, ::jsonb, etc. Empty string if no cast needed. */
