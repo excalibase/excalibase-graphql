@@ -61,4 +61,14 @@ public interface SchemaLoader {
     void loadCompositeTypes(JdbcTemplate jdbc, String schema, SchemaInfo info);
 
     void loadComputedFields(JdbcTemplate jdbc, String schema, SchemaInfo info);
+
+    /**
+     * A short text that changes whenever DDL changes something this loader reflects (tables, columns, keys,
+     * views, types, functions) and does not change otherwise: statistics, vacuum and row writes must leave it
+     * alone. One cheap catalog query, so a standalone engine can poll it for changes it has no event for.
+     * {@code null} when the database cannot say, which leaves the schema to be refreshed another way.
+     */
+    default String fingerprint(JdbcTemplate jdbc) {
+        return null;
+    }
 }

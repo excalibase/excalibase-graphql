@@ -37,7 +37,7 @@ abstract class SchemaRefreshContract extends EngineIntegrationTest {
         execute("CREATE TABLE refresh_gadgets (id INT PRIMARY KEY, label VARCHAR(40))");
 
         Awaitility.await().atMost(WITHIN).pollInterval(Duration.ofMillis(250))
-                .untilAsserted(() -> assertThat(introspection()).contains("refresh_gadgets"));
+                .untilAsserted(() -> assertThat(introspection()).contains("RefreshGadgets"));
     }
 
     @Test

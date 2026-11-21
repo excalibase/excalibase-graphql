@@ -57,8 +57,11 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     public static final int DEFAULT_MAX_QUERY_DEPTH = 15;
 
     private static final String MYSQL = "mysql";
+    private static final int FINGERPRINT_TIMEOUT_SECONDS = 5;
 
     private final JdbcTemplate jdbcTemplate;
+    /** Same pool, with a bound on the fingerprint query so a stuck catalog lock cannot hang the poll. */
+    private final JdbcTemplate fingerprintJdbc;
     private final int maxRows;
     private final boolean capNestedLists;
     private final String databaseType;
@@ -92,6 +95,8 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     private final AtomicReference<EngineState> engineState = new AtomicReference<>();
     private final AtomicReference<Reflection> defaultReflection = new AtomicReference<>();
+    /** The catalog fingerprint taken just before the default database was last reflected; null when unknown. */
+    private final AtomicReference<String> reflectedFingerprint = new AtomicReference<>();
     private final TTLCache<String, Reflection> reflections;
     private final TTLCache<EngineKey, EngineState> tenantEngineStates;
 
@@ -142,6 +147,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             boolean capNestedLists) {
         this.capNestedLists = capNestedLists;
         this.jdbcTemplate = jdbcTemplate;
+        this.fingerprintJdbc = withTimeout(jdbcTemplate);
         this.maxRows = maxRows;
         this.databaseType = databaseType;
         this.maxQueryDepth = maxQueryDepth;
@@ -155,6 +161,15 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         if (natsCDCService != null) {
             natsCDCService.setSchemaReloadCallback(this::reload);
         }
+    }
+
+    private static JdbcTemplate withTimeout(JdbcTemplate jdbc) {
+        if (jdbc == null) {
+            return null;
+        }
+        JdbcTemplate bounded = new JdbcTemplate(jdbc.getDataSource());
+        bounded.setQueryTimeout(FINGERPRINT_TIMEOUT_SECONDS);
+        return bounded;
     }
 
     /**
@@ -181,19 +196,25 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     @PostConstruct
     public void init() {
         SqlEngine engine = SqlEngineFactory.create(databaseType);
+        // Taken before the load, so DDL that lands while it runs is seen by the next poll.
+        String fingerprintBeforeLoad = fingerprintOrNull(engine);
         List<String> schemaList = List.of();
 
         SchemaInfo schemaInfo = new SchemaInfo();
+        boolean loaded = true;
         try {
             schemaList = discoverSchemas(jdbcTemplate, databaseType);
             loadMultiSchema(schemaInfo, schemaList, engine.schemaLoader());
         } catch (Exception e) {
+            loaded = false;
             log.warn("Failed to load database schema — starting with empty schema", e);
         }
         String defaultSchema = resolveDefaultSchema(schemaList, schemaInfo);
         Reflection reflection = new Reflection(schemaInfo, defaultSchema, databaseType, engine,
                 SqlEngineFactory.createMutationExecutor(databaseType), probesOn(jdbcTemplate));
         defaultReflection.set(reflection);
+        // A failed load keeps no fingerprint, so the next poll tries again.
+        reflectedFingerprint.set(loaded ? fingerprintBeforeLoad : null);
         // Requests without a project get the configured database whole: there is no project to hold
         // permissions for. Every project-scoped request is built per role below.
         engineState.set(assemble(reflection, AccessPlan.allAccess(engine.dialect().permissionDialect(), schemaInfo),
@@ -455,6 +476,43 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         return requireEngineState(principal).defaultSchema();
     }
 
+    /**
+     * Reflects the configured database again when its catalogs differ from what was last reflected. One
+     * catalog query per call; the reload happens only on a change.
+     *
+     * @return whether the schema was reloaded
+     * @throws DataAccessException the database could not be asked; the served schema is left as it is
+     */
+    public boolean reloadIfSchemaChanged() {
+        Reflection reflection = defaultReflection.get();
+        if (reflection == null) {
+            return false;
+        }
+        String current = fingerprint(reflection.engine());
+        if (current == null || current.equals(reflectedFingerprint.get())) {
+            return false;
+        }
+        log.info("schema_changed: reloading the schema of the configured database");
+        reload();
+        return true;
+    }
+
+    private String fingerprint(SqlEngine engine) {
+        if (fingerprintJdbc == null) {
+            return null;
+        }
+        return engine.schemaLoader().fingerprint(fingerprintJdbc);
+    }
+
+    private String fingerprintOrNull(SqlEngine engine) {
+        try {
+            return fingerprint(engine);
+        } catch (DataAccessException e) {
+            log.debug("schema_fingerprint_unavailable: {}", e.getMessage());
+            return null;
+        }
+    }
+
     /** Reinitialize schema and compiler. Called on DDL events from NatsCDCService. */
     public void reload() {
         EngineState previous = engineState.get();
@@ -463,6 +521,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
             log.info("Schema reloaded");
         } catch (Exception e) {
             engineState.set(previous);
+            reflectedFingerprint.set(null);
             log.error("Schema reload failed — retaining previous state", e);
         }
     }

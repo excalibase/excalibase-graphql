@@ -13,6 +13,31 @@ import java.util.function.Function;
 
 public class MysqlSchemaLoader implements SchemaLoader {
 
+    /**
+     * Count and a sum of row checksums for what the loader reads from {@code information_schema}, over user
+     * schemas. {@code UPDATE_TIME} is not used: InnoDB does not keep it.
+     */
+    static final String FINGERPRINT = """
+            SELECT CONCAT_WS('|',
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', table_schema, table_name, table_type))), 0))
+                 FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', table_schema, table_name, column_name,
+                        ordinal_position, column_type, is_nullable, column_key, extra))), 0))
+                 FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', constraint_schema, table_name, constraint_name,
+                        referenced_table_name))), 0))
+                 FROM information_schema.referential_constraints WHERE constraint_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', routine_schema, routine_name, routine_type,
+                        data_type, is_deterministic, security_type))), 0))
+                 FROM information_schema.routines WHERE routine_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys'))
+            ) AS fingerprint
+            """;
+
+    @Override
+    public String fingerprint(JdbcTemplate jdbc) {
+        return jdbc.queryForObject(FINGERPRINT, String.class);
+    }
+
     private static final String COL_TABLE_NAME = "table_name";
     private static final String COL_COLUMN_NAME = "column_name";
     private static final String COL_TABLE_SCHEMA = "table_schema";

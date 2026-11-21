@@ -47,6 +47,19 @@ One limit to know: a view or function that *you* create can still read `excaliba
 runs requests as its own database role. See "The db source" in the folder README for how to close that with a
 separate read-only role.
 
+## Schema changes
+
+The engine notices DDL on its own. Every 5 seconds it runs one query over the database catalogs, and when a
+table, column, key, view, type or function has changed it reflects the schema again. A table you create with
+SQL shows up in GraphQL and REST a few seconds later, with no restart. Row writes, `ANALYZE` and vacuum change
+nothing the check looks at.
+
+| Setting | Meaning |
+|---|---|
+| `APP_SCHEMA_POLL_SECONDS` | Seconds between checks. Default `5`. `0` turns the check off, and then only a restart picks up DDL. |
+
+The check runs only in this mode. With the platform's watcher and NATS, DDL events do the same job and nothing is polled.
+
 ## Tokens
 
 Put a `jwt:` section in the metadata document to accept tokens from Auth0, Cognito, Keycloak or any OIDC issuer.
