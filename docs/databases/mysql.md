@@ -17,7 +17,7 @@ and permissions; this page lists what the filters and writes do.
 REST: `eq neq gt gte lt lte like ilike match imatch in notin is isdistinct isnotnull startswith endswith fts plfts
 phfts haskey jsoncontains contains cs jsoncontained containedin cd`.
 
-Not available, so absent from the schema and refused when reached: `webSearch` (no MySQL equivalent), JSON `eq` and
+Not available, so absent from the schema and refused when reached: subscriptions (not supported yet), `webSearch` (no MySQL equivalent), JSON `eq` and
 `neq`, JSON `path`, arrays, vector search, network types, `distinctOn`, nested inserts, tracked functions.
 
 ### Regex
@@ -74,11 +74,15 @@ Differences from PostgreSQL's `ON CONFLICT`:
 
 * every `update_columns` column must be in `input` (PostgreSQL would take its default); otherwise the request is refused;
 * every column of the constraint must be sent, else the write is a plain insert;
-* an unknown constraint name is refused, naming the unique indexes it could have been.
+* an unknown constraint name is refused with `Unknown constraint '<name>' on <table>: name PRIMARY or one of its unique indexes`.
 
 With permissions, an upsert needs both insert and update rights, the update permission's columns, presets and row
 filter decide which existing rows may be overwritten (a row the filter hides is left as it is), and every written
 row must pass the insert and update checks.
+
+Two requests upserting the same new key at once both succeed: MySQL may abort one with a deadlock, and the engine
+runs it again once. If it still cannot get its locks the answer is `409` with code `deadlock_detected` or
+`lock_timeout`, and the client may retry.
 
 REST's `on_conflict` and `Prefer: resolution=merge-duplicates` do the same.
 

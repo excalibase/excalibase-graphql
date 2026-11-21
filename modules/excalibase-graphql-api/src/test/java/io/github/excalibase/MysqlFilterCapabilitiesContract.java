@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.MySQLContainer;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
@@ -135,6 +136,37 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
                 .expect(jsonPath("$.data.createTestArticle.title").value("second"));
         graphql("{ testArticle(where: { id: { eq: 40 } }) { title } }")
                 .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));
+    }
+
+    /** Two requests upserting the same new key at once both succeed and write one row: a deadlock is retried. */
+    @Test
+    void concurrentUpsertsOfTheSameNewKeyBothSucceed() throws Exception {
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            for (int key = 5000; key < 5030; key++) {
+                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+                int id = key;
+                List<java.util.concurrent.Future<?>> requests = new java.util.ArrayList<>();
+                for (String title : List.of("left", "right")) {
+                    requests.add(pool.submit(() -> {
+                        start.await();
+                        graphql("mutation { createTestArticle(input: { id: " + id + ", title: \"" + title
+                                + "\" }, onConflict: { constraint: \"PRIMARY\", update_columns: [\"title\"] }) "
+                                + "{ id title } }")
+                                .expect(jsonPath("$.errors").doesNotExist())
+                                .expect(jsonPath("$.data.createTestArticle.id").value(id));
+                        return null;
+                    }));
+                }
+                for (java.util.concurrent.Future<?> request : requests) {
+                    request.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                }
+                graphql("{ testArticle(where: { id: { eq: " + id + " } }) { id } }")
+                        .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

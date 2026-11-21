@@ -57,4 +57,12 @@ class DialectFeatureSchemaTest {
         assertThat(fieldNames(handler, "UsersConnection")).contains("totalCount");
         assertThat(fieldNames(handler, "Subscription")).containsExactly("usersChanges");
     }
+
+    @Test
+    void theConstructorThatTakesOperatorsButNoFeaturesOffersNone() {
+        IntrospectionHandler handler = new IntrospectionHandler(users(), TableAccess.UNRESTRICTED,
+                ExposedFunctions.NONE, false, FilterCapabilities.PORTABLE);
+        assertThat(fieldNames(handler, "Query")).doesNotContain("usersAggregate");
+        assertThat(fieldNames(handler, "Subscription")).isEmpty();
+    }
 }

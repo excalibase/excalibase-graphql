@@ -84,7 +84,6 @@ class MysqlErrorsTest {
 
     @Test
     void aServerFault_isNoClientError() {
-        assertThat(dialect.describeError(new SQLException("Lock wait timeout exceeded", "HY000", 1205))).isEmpty();
         assertThat(dialect.describeError(new SQLException("Table 'x' doesn't exist", "42S02", 1146))).isEmpty();
     }
 
@@ -94,5 +93,23 @@ class MysqlErrorsTest {
 
         assertThat(error.status()).isEqualTo(400);
         assertThat(error.message()).contains("FULLTEXT index");
+    }
+
+    @Test
+    void aDeadlock_isARetryableConflictWithNoInternalDetail() {
+        DataError error = describe(new SQLException("Deadlock found when trying to get lock; try restarting "
+                + "transaction (schema `appdb`)", "40001", 1213));
+
+        assertThat(error.status()).isEqualTo(409);
+        assertThat(error.code()).isEqualTo("deadlock_detected");
+        assertThat(error.message()).doesNotContain("appdb");
+    }
+
+    @Test
+    void aLockWaitTimeout_isARetryableConflict() {
+        DataError error = describe(new SQLException("Lock wait timeout exceeded", "HY000", 1205));
+
+        assertThat(error.status()).isEqualTo(409);
+        assertThat(error.code()).isEqualTo("lock_timeout");
     }
 }

@@ -42,10 +42,10 @@ public class MysqlDialect implements SqlDialect {
         return MysqlErrors.describe(failure);
     }
 
-    /** No DISTINCT ON and no vector search; change events come from the watcher's binlog stream. */
+    /** No DISTINCT ON, no vector search, and no subscriptions until the watcher's binlog stream is tested. */
     @Override
     public Set<DialectFeature> features() {
-        return EnumSet.of(DialectFeature.AGGREGATES, DialectFeature.UPSERT, DialectFeature.SUBSCRIPTIONS);
+        return EnumSet.of(DialectFeature.AGGREGATES, DialectFeature.UPSERT);
     }
 
     @Override

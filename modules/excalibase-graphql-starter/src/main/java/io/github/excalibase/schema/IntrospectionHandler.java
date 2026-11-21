@@ -70,16 +70,16 @@ public class IntrospectionHandler {
         this(schemaInfo, access, functions, true);
     }
 
-    /** As above; {@code nestedInserts} is false for a store whose mutation compiler cannot nest inserts. */
+    /** As above, for a database that runs everything (Postgres); {@code nestedInserts} is false for a store whose mutation compiler cannot nest inserts. */
     public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
                                 boolean nestedInserts) {
-        this(schemaInfo, access, functions, nestedInserts, FilterCapabilities.ALL);
+        this(schemaInfo, access, functions, nestedInserts, FilterCapabilities.ALL, EnumSet.allOf(DialectFeature.class));
     }
 
-    /** As above; filter inputs offer only the operators {@code filterCapabilities} says the database runs. */
+    /** As above; filter inputs offer only the operators {@code filterCapabilities} says the database runs. No optional feature is offered. */
     public IntrospectionHandler(SchemaInfo schemaInfo, TableAccess access, ExposedFunctions functions,
                                 boolean nestedInserts, FilterCapabilities filterCapabilities) {
-        this(schemaInfo, access, functions, nestedInserts, filterCapabilities, EnumSet.allOf(DialectFeature.class));
+        this(schemaInfo, access, functions, nestedInserts, filterCapabilities, Set.of());
     }
 
     /** As above; aggregates and subscriptions exist only when {@code features} lists them. */

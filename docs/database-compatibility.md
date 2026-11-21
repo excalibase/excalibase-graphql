@@ -89,7 +89,7 @@ refused with "needs a FULLTEXT index on this column alone".
 | Enums | `CREATE TYPE ... AS ENUM` | `ENUM` columns | |
 | Arrays, composite types | yes | not available | |
 | Permissions (roles, row filters, checks, presets) | yes, plus database RLS | yes, compiled into every statement | |
-| Realtime subscriptions | yes, from the watcher's logical replication stream | the schema offers them; events come from the watcher's binlog stream, which this repository does not test end to end | |
+| Realtime subscriptions | yes, from the watcher's logical replication stream | not supported yet: not in the schema, refused at the WebSocket | |
 | REST (PostgREST-style) | yes | yes, same operators as above | refused with the database's name |
 
 ## REST parity
@@ -119,6 +119,9 @@ declares what it runs:
 3. **Features**: override `features()` with the `DialectFeature`s it runs (`AGGREGATES`, `UPSERT`, `DISTINCT_ON`,
    `SUBSCRIPTIONS`, `VECTOR_SEARCH`). The default is none.
 4. **Mutations**: a `MutationCompiler` names the arguments each mutation takes and whether inserts may nest.
+
+A dialect that declares no features gets none of them (fail-closed), including aggregates: a third-party
+dialect written before `features()` existed must now list what it runs.
 
 Nothing needs to change in the introspection handler or the filter builder. See `PostgresDialect` and
 `MysqlDialect` for reference implementations.

@@ -13,6 +13,7 @@ import io.github.excalibase.rest.parser.FilterParser;
 import io.github.excalibase.rest.parser.OrderParser;
 import io.github.excalibase.rest.parser.SelectParser;
 import io.github.excalibase.permissions.PermissionEvaluationException;
+import io.github.excalibase.compiler.WriteRetry;
 import io.github.excalibase.compiler.FunctionCall;
 import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.SchemaInfo;
@@ -446,6 +447,18 @@ public class RestApiController {
 
     private HttpResponse<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                                               Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
+        for (int attempt = 1; ; attempt++) {
+            boolean last = attempt >= WriteRetry.ATTEMPTS;
+            HttpResponse<Object> answer = executeDmlOnce(compiled, scope, rollback, maxAffected, prefer, successStatus,
+                    table, last);
+            if (answer != null) return answer;
+        }
+    }
+
+    /** One transaction; null when it lost a lock to a concurrent request, was rolled back, and may run again. */
+    private HttpResponse<Object> executeDmlOnce(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
+                                                  boolean rollback, Integer maxAffected, String prefer,
+                                                  HttpStatus successStatus, String table, boolean last) {
         return txTemplate.execute(status -> {
             try {
                 boolean represent = maxAffected != null || preferContains(prefer, PREFER_REPRESENTATION);
@@ -456,15 +469,16 @@ public class RestApiController {
                 return buildDmlResponse(json, prefer, successStatus, table, rollback, scope.keys());
             } catch (Exception e) {
                 Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
+                status.setRollbackOnly();
                 if (failed.isPresent()) {
-                    status.setRollbackOnly();
                     return checkFailed(failed.get());
                 }
                 if (e instanceof IllegalArgumentException refused) {
-                    status.setRollbackOnly();
                     return Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
                 }
-                status.setRollbackOnly();
+                if (!last && WriteRetry.isLockConflict(e)) {
+                    return null;
+                }
                 return RestErrors.of(e, scope.dialect(), scope.filters(), "Mutation execution failed");
             }
         });

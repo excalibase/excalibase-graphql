@@ -288,6 +288,6 @@ refused with an error if sent anyway.
 | Update mutation | `update{Table}(input: { pk, fields... })` | `update{Table}(id: X, input: { fields... })` |
 | Upsert (`onConflict`) | `ON CONFLICT` | One-row insert-or-update; see [upsert](../databases/mysql.md#upsert) |
 | Nested inserts, `distinctOn`, vector search | Supported | Not available (refused) |
-| Subscriptions / CDC | Supported | The schema offers them; events come from the watcher's binlog stream |
+| Subscriptions / CDC | Supported | Not supported yet |
 | Custom composite types | Supported | N/A |
 | Array types | Supported | N/A |

@@ -1,5 +1,6 @@
 package io.github.excalibase.schema;
 
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.cdc.NatsCDCService;
@@ -369,6 +370,10 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         EngineState state = resolveEngineState(orgSlug, projectId, principal);
         if (state == null) {
             return Optional.empty();
+        }
+        SqlDialect dialect = state.compiler().dialect();
+        if (!dialect.supports(DialectFeature.SUBSCRIPTIONS)) {
+            throw new SubscriptionsUnsupportedException(dialect.databaseName() + " does not support subscriptions");
         }
         return tableFor(state, subscriptionKey).filter(table -> !reservedSchemas.isReservedObject(table)).flatMap(table ->
                 state.plan().changes(table, sessionVariables(principal, projectId))
