@@ -425,8 +425,8 @@ public class RestQueryCompiler {
         List<String> key = conflictCols.isEmpty() ? rowKey(table) : conflictCols;
         Set<List<Object>> seen = new HashSet<>();
         for (Map<String, Object> row : rows) {
-            List<Object> values = key.stream().map(row::get).toList();
-            if (!values.isEmpty() && !values.contains(null) && !seen.add(values)) {
+            List<Object> keyValues = key.stream().map(row::get).toList();
+            if (!keyValues.isEmpty() && !keyValues.contains(null) && !seen.add(keyValues)) {
                 throw new IllegalArgumentException("resolution=merge-duplicates cannot affect the same row twice: "
                         + "the key " + key + " appears twice in the request");
             }

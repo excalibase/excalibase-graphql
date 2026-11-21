@@ -435,11 +435,14 @@ class RestMysqlIntegrationTest {
 
         @Test
         void ignoringDuplicatesOfATableWithNoKeyAndNoOnConflictIsRefused() {
+            List<Map<String, Object>> rows = List.of(Map.of("message", "m"));
+            Map<String, Object> row = Map.of("message", "m");
+            List<String> noColumns = List.of();
             var failure = assertThrows(IllegalArgumentException.class, () -> compiler.compileBulkUpsert(
-                    "test.audit_log", List.of(Map.of("message", "m")), List.of(), RestQueryCompiler.Conflict.IGNORE));
+                    "test.audit_log", rows, noColumns, RestQueryCompiler.Conflict.IGNORE));
             assertTrue(failure.getMessage().contains("on_conflict"), failure.getMessage());
             assertThrows(IllegalArgumentException.class, () -> compiler.compileUpsert(
-                    "test.audit_log", Map.of("message", "m"), List.of(), RestQueryCompiler.Conflict.IGNORE));
+                    "test.audit_log", row, noColumns, RestQueryCompiler.Conflict.IGNORE));
         }
 
         @Test
