@@ -250,7 +250,7 @@ class GraphqlSchemaManagerReloadTest {
 
     @Test
     @DisplayName("a request that finishes after the caches are emptied and before the publish ends caches nothing stale")
-    void requestFinishingBeforeThePublishEndsCachesNothingStale() throws Exception {
+    void requestFinishingBeforeThePublishEndsCachesNothingStale() {
         StallsOneRequest permissions = new StallsOneRequest();
         RequestInTheWindow manager = new RequestInTheWindow(permissions);
         manager.init();
