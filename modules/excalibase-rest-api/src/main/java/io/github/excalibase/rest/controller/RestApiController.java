@@ -467,11 +467,15 @@ public class RestApiController {
     private HttpResponse<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                                               Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         Dml dml = new Dml(compiled, scope, rollback, maxAffected, prefer, successStatus, table);
-        for (int attempt = 1; ; attempt++) {
-            HttpResponse<Object> answer = executeDmlOnce(dml, attempt);
-            if (answer != null) return answer;
-            WriteRetry.pause(attempt);
-        }
+        return executeDml(dml, 1);
+    }
+
+    /** Runs the mutation, and again after a pause each time it lost a lock; {@link WriteRetry} bounds the tries. */
+    private HttpResponse<Object> executeDml(Dml dml, int attempt) {
+        HttpResponse<Object> answer = executeDmlOnce(dml, attempt);
+        if (answer != null) return answer;
+        WriteRetry.pause(attempt);
+        return executeDml(dml, attempt + 1);
     }
 
     /** One mutation as the request made it. */
