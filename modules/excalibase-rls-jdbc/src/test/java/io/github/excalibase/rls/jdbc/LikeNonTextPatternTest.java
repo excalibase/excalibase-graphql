@@ -37,7 +37,7 @@ class LikeNonTextPatternTest {
     void aTextClaim_isStillEmitted(RuleOperator op) {
         SqlFilter filter = new JdbcEvaluator(List.of(policy(op))).compile("t", claim("a%"), Operation.SELECT);
         assertThat(filter.sql()).contains("LIKE");
-        assertThat(filter.params().values()).contains("a%");
+        assertThat(filter.params()).containsValue("a%");
     }
 
     private static Policy policy(RuleOperator op) {
