@@ -22,4 +22,6 @@ The bound is visible as `tomcat.connections.config.max` and `tomcat.connections.
 
 Refusals are counted in `excalibase.connections.refused` (Prometheus `excalibase_connections_refused_connections_total`), and `excalibase.connections.waiting` shows the queue.
 
+A burst above about 2x the bound (the wait queue is as long as the bound by default) gets an immediate 503; on a small pod, raise `app.overload.wait-queue-per-cpu` (or the per-CPU bound) to queue more of it, or lower it to refuse sooner.
+
 A keep-alive connection idling between requests keeps its slot until the keep-alive timeout. At most as many refusals as the bound are in flight at once; past that a connection is dropped without an answer (so no Retry-After) but still counted. A wait above 5 s is logged as a warning at startup, since most clients give up first.
