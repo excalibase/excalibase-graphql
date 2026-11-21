@@ -5,8 +5,15 @@ import java.util.List;
 /** What a save did. Only {@link Saved} changed the source and the served document. */
 public sealed interface SaveOutcome {
 
-    /** Written and reloaded: {@code version} is the engine's counter now, {@code sourceVersion} the source's token. */
-    record Saved(long version, String sourceVersion) implements SaveOutcome {
+    /** Written and reloaded: {@code version} is the engine's counter now, {@code sourceVersion} the source's token;
+     * {@code historyRecorded} is false when the source keeps a history and could not add the replaced text to it,
+     * null when it keeps none. */
+    record Saved(long version, String sourceVersion, Boolean historyRecorded) implements SaveOutcome {
+
+        /** A source that keeps no history says nothing about it. */
+        public Saved(long version, String sourceVersion) {
+            this(version, sourceVersion, null);
+        }
     }
 
     /** The source held another version than the writer started from. */

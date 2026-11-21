@@ -65,6 +65,83 @@ export function withJwt(tree, jwt) {
   return jwt ? { ...omit(tree, "jwt"), jwt } : omit(tree, "jwt");
 }
 
+const OPERATION_MARKS = [["gained", "+"], ["lost", "-"], ["changed", "~"]];
+
+function operationChanges(before, after, table, role) {
+  const gained = OPERATIONS.filter((operation) => !allows(before, table, role, operation) && allows(after, table, role, operation));
+  const lost = OPERATIONS.filter((operation) => allows(before, table, role, operation) && !allows(after, table, role, operation));
+  const changed = OPERATIONS.filter((operation) => allows(before, table, role, operation) && allows(after, table, role, operation)
+    && JSON.stringify(ruleOf(before, table, role)[operation]) !== JSON.stringify(ruleOf(after, table, role)[operation]));
+  return { gained, lost, changed };
+}
+
+const TABLE_KEYS = new Set(["tables", "functions", "functionPermissions", "jwt"]);
+const listOf = (tree, key) => (Array.isArray(tree[key]) ? tree[key] : []);
+const same = (left, right) => JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+const byName = (left, right) => left.table.localeCompare(right.table) || String(left.role).localeCompare(String(right.role));
+
+function tableLines(before, after) {
+  const pairs = new Map();
+  [...rulesOf(before), ...rulesOf(after)].forEach((rule) => pairs.set(rule.table + "\u0000" + rule.role, rule));
+  return [...pairs.values()]
+    .map((rule) => ({ role: rule.role, table: rule.table, ...operationChanges(before, after, rule.table, rule.role) }))
+    .filter((change) => change.gained.length + change.lost.length + change.changed.length > 0)
+    .sort(byName)
+    .map((change) => ({ ...change, text: change.role + " \u00b7 " + change.table + ": "
+      + OPERATION_MARKS.flatMap(([key, mark]) => change[key].map((operation) => mark + " " + operation)).join(", ") }));
+}
+
+/** Per (function, role): a new permission is a gain, a removed one a loss, an edited one a change. */
+function functionPermissionLines(before, after) {
+  const key = (entry) => entry.function + "\u0000" + entry.role;
+  const was = new Map(listOf(before, "functionPermissions").map((entry) => [key(entry), entry]));
+  const now = new Map(listOf(after, "functionPermissions").map((entry) => [key(entry), entry]));
+  return [...new Set([...was.keys(), ...now.keys()])].map((pair) => {
+    const entry = now.get(pair) ?? was.get(pair);
+    const kind = !was.has(pair) ? "gained" : (!now.has(pair) ? "lost" : (same(was.get(pair), now.get(pair)) ? null : "changed"));
+    return kind && { role: entry.role, table: entry.function, gained: [], lost: [], changed: [], [kind]: ["execute"],
+      text: entry.role + " \u00b7 " + entry.function + ": " + { gained: "+", lost: "-", changed: "~" }[kind] + " execute" };
+  }).filter(Boolean).sort(byName);
+}
+
+/** A tracked function added or edited (exposedAs, inferPermissions, sessionArgument) is a changed rule; removing one is not. */
+function functionLines(before, after) {
+  const was = new Map(listOf(before, "functions").map((entry) => [entry.function, entry]));
+  const now = new Map(listOf(after, "functions").map((entry) => [entry.function, entry]));
+  return [...new Set([...was.keys(), ...now.keys()])].sort().map((name) => {
+    if (same(was.get(name), now.get(name))) {
+      return null;
+    }
+    const verb = !was.has(name) ? "added" : (!now.has(name) ? "removed" : "changed");
+    const line = { role: null, table: name, gained: [], lost: [], changed: [], text: "function " + name + ": " + verb };
+    return verb === "removed" ? { ...line, lost: ["function"] } : { ...line, changed: ["function"], other: true };
+  }).filter(Boolean);
+}
+
+/** The token settings and every top-level key this page does not know: a key the grammar adds later still asks. */
+function otherLines(before, after) {
+  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].filter((key) => !TABLE_KEYS.has(key)).sort();
+  const lines = keys.filter((key) => !same(before[key], after[key])).map((key) => ({ role: null, table: null, gained: [], lost: [],
+    changed: [key], other: true, text: key + " changes" }));
+  return same(before.jwt, after.jwt) ? lines
+    : [...lines, { role: null, table: null, gained: [], lost: [], changed: [], other: true, text: "token settings change" }];
+}
+
+/**
+ * What a save changes, as lines a person can read: per role and table the operations gained (+), lost (-) and
+ * rewritten (~); per function its permissions and its entry; and a line for the token settings or any other top-level
+ * key that differs. Only a line with a gain or a change, or an "other" line, widens access.
+ */
+export function describeChanges(before, after) {
+  return [...tableLines(before, after), ...functionPermissionLines(before, after), ...functionLines(before, after),
+    ...otherLines(before, after)];
+}
+
+/** True when a save gives a role more than it had: a gained operation, a rewritten rule or other token settings. */
+export function widens(changes) {
+  return changes.some((change) => change.gained.length > 0 || change.changed.length > 0 || change.other === true);
+}
+
 export function serialize(tree) {
   return JSON.stringify(tree, null, 2) + "\n";
 }
@@ -74,9 +151,10 @@ export function rewriteLosesText(text, tree) {
   return text.trim() !== serialize(tree).trim();
 }
 
-/** The file name and type an export carries: a JSON document stays JSON, anything else is YAML text. */
-export function exportName(text) {
+/** The file name and type an export carries: a JSON text stays JSON, anything else is YAML. A label tells two files apart. */
+export function exportName(text, label = "") {
+  const stem = label === "" ? "permissions" : "permissions-" + label;
   return text.trimStart().startsWith("{")
-    ? { filename: "permissions.json", type: "application/json" }
-    : { filename: "permissions.yaml", type: "text/yaml" };
+    ? { filename: stem + ".json", type: "application/json" }
+    : { filename: stem + ".yaml", type: "text/yaml" };
 }

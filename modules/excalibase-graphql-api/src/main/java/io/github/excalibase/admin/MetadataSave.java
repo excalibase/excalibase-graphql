@@ -1,6 +1,7 @@
 package io.github.excalibase.admin;
 
 import io.github.excalibase.metadata.AdminMetadataView;
+import io.github.excalibase.metadata.DocumentHistory;
 import io.github.excalibase.metadata.DocumentValidation;
 import io.github.excalibase.metadata.SaveOutcome;
 import io.micronaut.http.HttpResponse;
@@ -10,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * The checks and answers of {@code PUT /_admin/v1/metadata}, in the order that keeps a bad request from reaching the
@@ -43,6 +45,23 @@ final class MetadataSave {
         return answer(metadata.save(new String(document, StandardCharsets.UTF_8), version(ifMatch)));
     }
 
+    /**
+     * Puts an earlier version back: an ordinary save of its text, so it is validated again, conditional on the version
+     * the caller started from, and adds the text it replaces to the history, which makes a restore undoable too.
+     */
+    static HttpResponse<Map<String, Object>> restore(AdminMetadataView metadata, AdminConfig.ValidationSettings rules,
+                                                     String ifMatch, String id) {
+        Optional<DocumentHistory> history = metadata.history();
+        if (history.isEmpty()) {
+            return failure(HttpStatus.NOT_FOUND, "history_unavailable");
+        }
+        Optional<DocumentHistory.Entry> entry = HistoryAnswers.find(history.get(), id);
+        if (entry.isEmpty()) {
+            return failure(HttpStatus.NOT_FOUND, "history_entry_not_found");
+        }
+        return respond(metadata, rules, ifMatch, entry.get().text().getBytes(StandardCharsets.UTF_8));
+    }
+
     /** An ETag as a client quotes it: {@code "abc"} names the version {@code abc}. A weak tag names none (RFC 9110). */
     static String version(String ifMatch) {
         String value = ifMatch.strip();
@@ -52,10 +71,13 @@ final class MetadataSave {
 
     static HttpResponse<Map<String, Object>> answer(SaveOutcome outcome) {
         return switch (outcome) {
-            case SaveOutcome.Saved(long version, String sourceVersion) -> {
+            case SaveOutcome.Saved(long version, String sourceVersion, Boolean historyRecorded) -> {
                 Map<String, Object> body = new LinkedHashMap<>();
                 body.put("version", version);
                 body.put("sourceVersion", sourceVersion);
+                if (historyRecorded != null) {
+                    body.put("historyRecorded", historyRecorded);
+                }
                 yield HttpResponse.ok(body);
             }
             case SaveOutcome.Conflict(String currentVersion) -> HttpResponse.<Map<String, Object>>status(HttpStatus.CONFLICT)

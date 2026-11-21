@@ -30,7 +30,8 @@ import java.util.Optional;
 /**
  * The admin API. It is mounted on the admin port only (the framework gives that port its own listener, as it does
  * the management port), and {@code AdminPortFilter} has already checked the secret by the time a request gets here.
- * It reads, except {@code PUT /metadata}, the one call that saves: see {@link MetadataSave}.
+ * It reads, except {@code PUT /metadata} and {@code POST /history/{id}/restore}, the calls that save: see
+ * {@link MetadataSave}.
  */
 @Controller(value = "/_admin/v1", port = "${excalibase.admin.port:10001}")
 @Requires(property = "excalibase.console.enabled", pattern = AdminSettings.ON_PATTERN)
@@ -64,6 +65,25 @@ public class AdminController {
     public HttpResponse<Map<String, Object>> save(@Header(MetadataSave.IF_MATCH) @Nullable String ifMatch,
                                                   @Body byte[] document) {
         return MetadataSave.respond(metadata, validation, ifMatch, document);
+    }
+
+    /** The versions a save replaced, newest first; {@code available} is false for a source that keeps none. */
+    @Get("/history")
+    public Map<String, Object> history() {
+        return HistoryAnswers.list(metadata.history());
+    }
+
+    /** One earlier version with its whole text. */
+    @Get("/history/{id}")
+    public HttpResponse<Map<String, Object>> historyEntry(String id) {
+        return HistoryAnswers.entry(metadata.history(), id);
+    }
+
+    /** Puts an earlier version back as a normal conditional save: same checks, same answers as {@code PUT /metadata}. */
+    @Post("/history/{id}/restore")
+    @Consumes(MediaType.ALL)
+    public HttpResponse<Map<String, Object>> restore(String id, @Header(MetadataSave.IF_MATCH) @Nullable String ifMatch) {
+        return MetadataSave.restore(metadata, validation, ifMatch, id);
     }
 
     /** Checks a posted document and answers what is wrong with it. Nothing is applied. */

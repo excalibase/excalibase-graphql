@@ -79,4 +79,15 @@ class AdminMetadataWriteUrlIntegrationTest extends EngineIntegrationTest {
 
         assertThat(answer.status()).isEqualTo(405);
     }
+
+    @Test
+    void aUrlSourceKeepsNoHistory_andSaysSo() {
+        HttpAnswer list = admin.get("/_admin/v1/history", HEADER, SECRET);
+
+        assertThat(list.status()).isEqualTo(200);
+        assertThat(list.<Boolean>jsonPath("$.available")).isFalse();
+        assertThat(list.json().path("entries")).isEmpty();
+        assertThat(admin.get("/_admin/v1/history/1", HEADER, SECRET).status()).isEqualTo(404);
+        assertThat(admin.get("/_admin/v1/metadata", HEADER, SECRET).<Boolean>jsonPath("$.historyAvailable")).isFalse();
+    }
 }

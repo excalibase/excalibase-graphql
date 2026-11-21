@@ -30,6 +30,11 @@ const TEXTS = {
   failed: (outcome) => "The save failed (" + outcome.code + ")."
 };
 
+/** A save that went ahead without the History taking the old text: said out loud, never silent. */
+export function historyWarning() {
+  return h("p", { class: "warn", role: "alert" }, "Saved, but this version could not be added to History.");
+}
+
 function errorList(errors) {
   return h("ul", {}, errors.map((message) => h("li", {}, message)));
 }
@@ -66,7 +71,8 @@ export function outcomeView(outcome, theirs, handlers) {
       errorList(outcome.errors));
   }
   const text = TEXTS[outcome.kind](outcome);
-  return h("p", { class: outcome.kind === "saved" ? "ok" : "error", role: outcome.kind === "saved" ? "status" : "alert" }, text);
+  const line = h("p", { class: outcome.kind === "saved" ? "ok" : "error", role: outcome.kind === "saved" ? "status" : "alert" }, text);
+  return outcome.historyMissed ? h("div", {}, line, historyWarning()) : line;
 }
 
 /** Save is off on a source that cannot be written; Export is then the way to take the document away. */
@@ -97,16 +103,34 @@ export function documentView(state, onEdit) {
     input);
 }
 
-/** Asks before a save rewrites a file that has comments or hand-written layout. The caller closes it and writes. */
-export function rewriteDialog(handlers) {
-  const remember = h("input", { type: "checkbox", id: "rewrite-remember" });
-  return h("dialog", { id: "rewrite-warning", "aria-describedby": "rewrite-text" },
-    h("p", { id: "rewrite-text" },
-      "This save rewrites permissions.yaml. Comments and your own layout will be lost."),
-    h("label", { class: "op", for: "rewrite-remember" }, remember, "Don't ask again this session"),
+/** What a save or a restore changes. Red: access gained. Amber: a rule or the token settings rewritten. Else plain. */
+export function changeList(changes, id) {
+  if (changes === null) {
+    return h("p", { class: "hint", id }, "The list of changes could not be built.");
+  }
+  if (changes.length === 0) {
+    return h("p", { class: "hint", id }, "No role or table gets or loses an operation.");
+  }
+  return h("ul", { id, "aria-label": "What this changes" }, changes.map((change) =>
+    h("li", { class: "change" + (change.gained.length > 0 ? " gain" : (change.changed.length > 0 || change.other === true ? " modify" : "")) },
+      change.text)));
+}
+
+/**
+ * Asks before a save that loses comments or widens access, and lists what the save changes. The comment notice can be
+ * silenced for the session; the access notice never can. The caller closes it and writes.
+ */
+export function saveDialog(handlers) {
+  const remember = handlers.comment ? h("input", { type: "checkbox", id: "rewrite-remember" }) : null;
+  return h("dialog", { id: handlers.comment ? "rewrite-warning" : "access-confirm", "aria-describedby": "rewrite-text" },
+    h("div", { id: "rewrite-text" },
+      handlers.comment ? h("p", {}, "This save rewrites permissions.yaml. Comments and your own layout will be lost.") : null,
+      handlers.widens ? h("p", {}, "This save changes who can access your data. Check the list before you save.") : null),
+    changeList(handlers.changes, "rewrite-changes"),
+    remember ? h("label", { class: "op", for: "rewrite-remember" }, remember, "Don't ask again about comments this session") : null,
     h("div", { class: "actions" },
       h("button", { type: "button", id: "rewrite-save", class: "danger",
-        onclick: () => handlers.onConfirm(remember.checked) }, "Save"),
+        onclick: () => handlers.onConfirm(remember !== null && remember.checked) }, "Save"),
       h("button", { type: "button", id: "rewrite-cancel", class: "secondary", autofocus: true,
         onclick: handlers.onCancel }, "Cancel")));
 }
