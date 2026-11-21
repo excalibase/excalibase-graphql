@@ -130,7 +130,7 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
     public void admitted() {
         try {
             context.executor().execute(this::admitOnEventLoop);
-        } catch (RejectedExecutionException shuttingDown) {
+        } catch (RejectedExecutionException _) {
             gate.release();   // the connection's loop is gone: pass the slot on
         }
     }
@@ -138,7 +138,7 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
     private void refuseOnEventLoop() {
         try {
             context.executor().execute(this::refuse);
-        } catch (RejectedExecutionException shuttingDown) {
+        } catch (RejectedExecutionException _) {
             gate.recordRefusal();
             context.close();
         }

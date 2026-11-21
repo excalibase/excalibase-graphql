@@ -58,7 +58,7 @@ final class KeepAliveRotation extends ChannelDuplexHandler {
         } else if (context != null) {
             try {
                 context.executor().execute(() -> waitForRequest(firstRequestMillis));
-            } catch (RejectedExecutionException shuttingDown) {
+            } catch (RejectedExecutionException _) {
                 // the loop is stopping and closes the connection with it
             }
         }
