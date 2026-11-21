@@ -88,7 +88,8 @@ class WhereCompilerTest {
     @Test
     void aFieldTheCallerMayNotSeeIsRefusedLikeAnUnknownOne() {
         Map<String, Object> filter1 = Map.of("secret", Map.of("eq", "x"));
-        assertThatThrownBy(() -> compiler.compile(ORDERS, Set.of("status"), filter1))
+        Set<String> visible = Set.of("status");
+        assertThatThrownBy(() -> compiler.compile(ORDERS, visible, filter1))
                 .isInstanceOf(RequestException.class).hasMessageContaining("secret");
     }
 

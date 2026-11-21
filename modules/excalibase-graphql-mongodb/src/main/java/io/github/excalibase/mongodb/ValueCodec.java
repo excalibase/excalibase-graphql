@@ -14,6 +14,8 @@ import java.math.BigInteger;
  * Turns a value into exactly the BSON scalar the declared kind stores. Anything that is not a plain scalar
  * of that kind is refused, so a value can never be a document, an operator or a path: it is only ever data.
  */
+// the BSON driver reads and writes dates as java.util.Date; there is no other type to exchange them in
+@SuppressWarnings("java:S2143")
 final class ValueCodec {
 
     private ValueCodec() {}
@@ -79,8 +81,6 @@ final class ValueCodec {
         return refuse(field, "a 24 character hex id");
     }
 
-    // BSON stores a date as java.util.Date, which a stored value may already be
-    @SuppressWarnings("java:S2143")
     private static Object instant(Object value, String field) {
         if (value instanceof Date) {
             return value;

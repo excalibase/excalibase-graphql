@@ -37,6 +37,8 @@ import org.bson.types.ObjectId;
  * GraphQL over declared MongoDB collections. A request becomes one aggregation pipeline per root field;
  * the caller's row filter is its first stage and their column rules shape both the schema and the projection.
  */
+// the BSON driver reads and writes dates as java.util.Date; there is no other type to exchange them in
+@SuppressWarnings("java:S2143")
 final class MongoQueryEngine implements QueryEngine {
 
     private static final Logger log = LoggerFactory.getLogger(MongoQueryEngine.class);
@@ -173,8 +175,6 @@ final class MongoQueryEngine implements QueryEngine {
         return row;
     }
 
-    // BSON hands back a date as java.util.Date; there is no other type to receive it in
-    @SuppressWarnings("java:S2143")
     private static Object shown(Object stored) {
         if (stored instanceof Date date) {
             return Instant.ofEpochMilli(date.getTime()).toString();

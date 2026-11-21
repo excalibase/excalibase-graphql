@@ -34,33 +34,37 @@ class ColumnSecurityTest {
 
     @Test
     void aColumnThatIsNotDeclaredIsRefusedBecauseATypoWouldLeakIt() {
+        Catalog catalog = Fixtures.catalog();
         List<ColumnPolicy> typo = List.of(mask(MaskMode.HIDE, "secrt"));
-        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), typo))
+        assertThatThrownBy(() -> new ColumnSecurity(catalog, typo))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("secrt");
     }
 
     @Test
     void maskModesThatCannotBeRenderedAreRefusedAtStartup() {
+        Catalog catalog = Fixtures.catalog();
         ColumnPolicy hash = mask(MaskMode.HASH, "secret");
         List<ColumnPolicy> hashed = List.of(hash);
-        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), hashed))
+        assertThatThrownBy(() -> new ColumnSecurity(catalog, hashed))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("HASH");
     }
 
     @Test
     void theIdCannotBeMasked() {
+        Catalog catalog = Fixtures.catalog();
         List<ColumnPolicy> maskedId = List.of(mask(MaskMode.HIDE, "id"));
-        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), maskedId))
+        assertThatThrownBy(() -> new ColumnSecurity(catalog, maskedId))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("id");
     }
 
     @Test
     void aPolicyOfNoDeclaredCollectionIsRefusedBecauseItWouldNeverApply() {
+        Catalog catalog = Fixtures.catalog();
         ColumnPolicy other = new ColumnPolicy("c", "c", "elsewhere", Set.of("whatever"), Operation.ALL, MaskMode.HIDE,
                 null, null, 0, true, List.of(Assignment.all()));
 
         List<ColumnPolicy> elsewhere = List.of(other);
-        assertThatThrownBy(() -> new ColumnSecurity(Fixtures.catalog(), elsewhere))
+        assertThatThrownBy(() -> new ColumnSecurity(catalog, elsewhere))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("elsewhere");
     }
 }

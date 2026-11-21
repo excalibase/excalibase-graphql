@@ -6,6 +6,7 @@ import org.bson.Document;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Builds the true/false expression pair of one comparison. Every value is a bound literal, never parsed.
@@ -72,8 +73,8 @@ final class Predicates {
      * few linear passes and cannot backtrack across segments the way {@code .*a.*a.*b} does.
      */
     static String likeToRegex(String pattern) {
-        List<String> segments = likeSegments(pattern);
-        if (segments == null || segments.size() > MAX_LIKE_SEGMENTS + 1 || pattern.length() > MAX_LIKE_LENGTH) {
+        List<String> segments = likeSegments(pattern).orElse(List.of());
+        if (segments.isEmpty() || segments.size() > MAX_LIKE_SEGMENTS + 1 || pattern.length() > MAX_LIKE_LENGTH) {
             return null;
         }
         StringBuilder regex = new StringBuilder("\\A").append(segments.getFirst());
@@ -87,42 +88,42 @@ final class Predicates {
         return last.isEmpty() ? regex.toString() : regex.append(".*").append(last).append("\\z").toString();
     }
 
-    /** The regex of each run of characters between {@code %}; null when the pattern ends in an escape. */
-    private static List<String> likeSegments(String pattern) {
+    /** The regex of each run of characters between {@code %}; empty when the pattern ends in an escape. */
+    private static Optional<List<String>> likeSegments(String pattern) {
         List<String> segments = new ArrayList<>();
         StringBuilder segment = new StringBuilder();
         StringBuilder literal = new StringBuilder();
-        for (int i = 0; i < pattern.length(); i++) {
-            char c = pattern.charAt(i);
+        int at = 0;
+        while (at < pattern.length()) {
+            char c = pattern.charAt(at);
             if (c == '\\') {
-                if (++i == pattern.length()) {
-                    return null;
+                if (at + 1 == pattern.length()) {
+                    return Optional.empty();
                 }
-                literal.append(pattern.charAt(i));
-            } else if (c == '%' || c == '_') {
-                flush(segment, literal);
-                if (c == '_') {
+                literal.append(pattern.charAt(at + 1));
+                at += 2;
+                continue;
+            }
+            switch (c) {
+                case '_' -> {
+                    flush(segment, literal);
                     segment.append('.');
-                } else {
+                }
+                case '%' -> {
+                    flush(segment, literal);
                     segments.add(segment.toString());
                     segment.setLength(0);
-                    i = skipPercents(pattern, i);
                 }
-            } else {
-                literal.append(c);
+                default -> literal.append(c);
+            }
+            at++;
+            while (c == '%' && at < pattern.length() && pattern.charAt(at) == '%') {
+                at++;
             }
         }
         flush(segment, literal);
         segments.add(segment.toString());
-        return segments;
-    }
-
-    private static int skipPercents(String pattern, int at) {
-        int next = at;
-        while (next + 1 < pattern.length() && pattern.charAt(next + 1) == '%') {
-            next++;
-        }
-        return next;
+        return Optional.of(segments);
     }
 
     private static void flush(StringBuilder segment, StringBuilder literal) {
