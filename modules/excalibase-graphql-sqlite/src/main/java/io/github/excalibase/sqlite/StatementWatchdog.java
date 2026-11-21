@@ -3,6 +3,7 @@ package io.github.excalibase.sqlite;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.lang.reflect.Proxy;
 import java.sql.CallableStatement;
 import java.sql.Connection;
@@ -52,7 +53,7 @@ final class StatementWatchdog {
                 (InvocationHandler) (self, method, args) -> invoke(target, method, args, limitMillis)));
     }
 
-    private static Object invoke(Object target, Method method, Object[] args, long limitMillis) throws Throwable {
+    private static Object invoke(Object target, Method method, Object[] args, long limitMillis) throws SQLException {
         boolean bounded = target instanceof Statement && RUNS.contains(method.getName())
                 || target instanceof ResultSet && "next".equals(method.getName());
         Object result = bounded ? runBounded(target, method, args, limitMillis) : call(target, method, args);
@@ -70,11 +71,13 @@ final class StatementWatchdog {
 
     @SuppressWarnings("unchecked")
     private static <T> Class<T> statementType(Class<?> returned) {
-        return (Class<T>) (CallableStatement.class.isAssignableFrom(returned) ? CallableStatement.class
-                : PreparedStatement.class.isAssignableFrom(returned) ? PreparedStatement.class : Statement.class);
+        if (CallableStatement.class.isAssignableFrom(returned)) {
+            return (Class<T>) CallableStatement.class;
+        }
+        return (Class<T>) (PreparedStatement.class.isAssignableFrom(returned) ? PreparedStatement.class : Statement.class);
     }
 
-    private static Object runBounded(Object target, Method method, Object[] args, long limitMillis) throws Throwable {
+    private static Object runBounded(Object target, Method method, Object[] args, long limitMillis) throws SQLException {
         Statement running = target instanceof Statement statement ? statement : ((ResultSet) target).getStatement();
         ScheduledFuture<?> guard = TIMER.schedule(() -> cancel(running), limitMillis, TimeUnit.MILLISECONDS);
         try {
@@ -92,11 +95,24 @@ final class StatementWatchdog {
         }
     }
 
-    private static Object call(Object target, Method method, Object[] args) throws Throwable {
+    /** Calls through to the real object; what a JDBC method can throw is an SQLException or an unchecked failure. */
+    private static Object call(Object target, Method method, Object[] args) throws SQLException {
         try {
             return method.invoke(target, args);
         } catch (InvocationTargetException failure) {
-            throw failure.getCause();
+            Throwable cause = failure.getCause();
+            if (cause instanceof SQLException sql) {
+                throw sql;
+            }
+            if (cause instanceof RuntimeException unchecked) {
+                throw unchecked;
+            }
+            if (cause instanceof Error error) {
+                throw error;
+            }
+            throw new UndeclaredThrowableException(cause);
+        } catch (IllegalAccessException failure) {
+            throw new UndeclaredThrowableException(failure);
         }
     }
 }

@@ -65,15 +65,17 @@ class StatementWatchdogTest {
         }
     }
 
+    private static void runEndless(PreparedStatement statement) throws SQLException {
+        try (ResultSet rows = statement.executeQuery()) {
+            rows.next();
+        }
+    }
+
     @Test
     void aPreparedStatementIsBoundedToo() throws Exception {
         try (Connection connection = StatementWatchdog.wrap(DriverManager.getConnection("jdbc:sqlite::memory:"), 400);
              PreparedStatement statement = connection.prepareStatement(ENDLESS)) {
-            SQLException interrupted = assertThrows(SQLException.class, () -> {
-                try (ResultSet rows = statement.executeQuery()) {
-                    rows.next();
-                }
-            });
+            SQLException interrupted = assertThrows(SQLException.class, () -> runEndless(statement));
 
             assertThat(SqliteErrors.describe(interrupted)).hasValueSatisfying(error ->
                     assertThat(error.code()).isEqualTo("statement_timeout"));
