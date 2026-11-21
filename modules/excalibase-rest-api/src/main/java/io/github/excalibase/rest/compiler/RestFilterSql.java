@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
@@ -27,8 +28,9 @@ final class RestFilterSql {
 
     String sql(FilterSpec filter, String paramName, Map<String, Object> params, String table) {
         requireSupported(filter);
-        String colRef = dialect.comparableColumn(dialect.quoteIdentifier(filter.column()),
-                values.columnType(table, filter.column()));
+        String quoted = dialect.quoteIdentifier(filter.column());
+        String colRef = Objects.requireNonNullElse(
+                dialect.comparableColumn(quoted, values.columnType(table, filter.column())), quoted);
         String neg = filter.negated() ? NOT : "";
         String op = filter.operator();
 
@@ -90,7 +92,7 @@ final class RestFilterSql {
                                Map<String, Object> params, String colRef, String neg) {
         return switch (op) {
             case "like" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value().replace('*', '%'))
-                    + dialect.userLikeEscape();
+                    + Objects.requireNonNullElse(dialect.userLikeEscape(), "");
             case "ilike" -> {
                 params.put(paramName, filter.value().replace('*', '%'));
                 yield neg + dialect.ilike(colRef, PARAM_PREFIX + paramName);

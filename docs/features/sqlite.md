@@ -18,6 +18,9 @@ app:
 Or with environment variables: `SPRING_DATASOURCE_URL=jdbc:sqlite:/data/app.db`,
 `SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.sqlite.JDBC`, `APP_DATABASE_TYPE=sqlite`.
 
+The slim image `excalibase/excalibase-graphql:<tag>-sqlite` carries only this database; mount the file's directory at
+`/data`.
+
 The file must already exist with its tables; the engine reflects them with `PRAGMA` (tables, views, columns,
 declared types, primary keys, foreign keys and unique indexes). Its one schema is `main`, so a table `todos` is
 `mainTodos` in GraphQL (`createMainTodos`, `mainTodosConnection`) and `/api/v1/todos` in REST.
@@ -44,8 +47,10 @@ The compiled filters are tested against native Postgres row security: the same r
 - A check that reads the table it writes is refused, not judged after the write (the same limit as MySQL).
 - A permission that cannot be compiled for SQLite refuses the request or the start, never serves unfiltered rows.
 
-Declared types decide how a rule compares values. Timestamps and dates must be ISO text (the engine writes
-`yyyy-MM-ddTHH:mm:ss.SSSSSSZ`, in UTC, and compares that text); a column declared with no type, or a type the
+Declared types decide how a rule compares values. Timestamps and dates are ISO text (the engine writes
+`yyyy-MM-ddTHH:mm:ss.SSSSSSZ`, in UTC, and compares that text; a value SQLite wrote itself, such as
+`DEFAULT CURRENT_TIMESTAMP`'s `yyyy-MM-dd HH:mm:ss`, is read in that form too, in rules and in filters, at the cost of
+an index on the column); a column declared with no type, or a type the
 engine does not know (BLOB, for one), can only be tested for NULL in a rule. SQLite has no enum type, so an
 enum-like column is text and orders as text.
 
@@ -67,7 +72,7 @@ enum-like column is text and orders as text.
 
 `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `notIn`, `like`, `ilike`, `startsWith`, `endsWith`, `contains`
 (text), `isNull`, `isNotNull`; REST `eq neq gt gte lt lte like ilike in notin is isnotnull startswith endswith`.
-`like` is case sensitive and `ilike` folds ASCII case (SQLite's own `LOWER`). Nothing else appears in the
+`like` is case sensitive and `ilike` folds ASCII case (SQLite's own `LOWER`); a backslash escapes `%` and `_`, as on Postgres. Nothing else appears in the
 schema: no regular expressions, no full-text search, no JSON or array operators. A REST request for one is
 refused by name.
 
