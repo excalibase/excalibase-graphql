@@ -57,13 +57,18 @@ public class QueryExecutionService {
     public HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
                                                    MapSqlParameterSource params,
                                                    MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
-        for (int attempt = 1; ; attempt++) {
-            try {
-                return executeOnce(compiled, params, mutationExecutor);
-            } catch (SQLException | JsonProcessingException | RuntimeException e) {
-                if (attempt >= WriteRetry.ATTEMPTS || !WriteRetry.isLockConflict(e)) throw e;
-            }
+        return executeInContext(compiled, params, mutationExecutor, new WriteRetry.Run());
+    }
+
+    private HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled, MapSqlParameterSource params,
+                                                    MutationExecutor mutationExecutor, WriteRetry.Run run)
+            throws SQLException, JsonProcessingException {
+        try {
+            return executeOnce(compiled, params, mutationExecutor);
+        } catch (SQLException | JsonProcessingException | RuntimeException e) {
+            if (!run.retry(e)) throw e;
         }
+        return executeInContext(compiled, params, mutationExecutor, run);
     }
 
     /** One transaction; a database that lost a lock to a concurrent request rolled it back, so it can run again. */

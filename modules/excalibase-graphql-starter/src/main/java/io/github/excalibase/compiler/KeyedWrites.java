@@ -119,7 +119,7 @@ public final class KeyedWrites {
      * own duplicate error rather than updating a row the caller never addressed. The key is locked first
      * ({@code FOR UPDATE}). Under REPEATABLE READ that locks the gap a missing key falls in, so two requests
      * upserting the same new key can deadlock: one is aborted with error 1213, and the transaction's owner runs it
-     * again once ({@link WriteRetry}). Under READ COMMITTED a concurrent insert of the same key would instead make
+     * again, a bounded number of times after a random pause ({@link WriteRetry}). Under READ COMMITTED a concurrent insert of the same key would instead make
      * the INSERT fail as a duplicate. Either way the key is never written twice.
      *
      * @param set       the UPDATE's assignments, null for DO NOTHING

@@ -467,46 +467,54 @@ public class RestApiController {
     private HttpResponse<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                                               Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         Dml dml = new Dml(compiled, scope, rollback, maxAffected, prefer, successStatus, table);
-        HttpResponse<Object> answer = null;
-        for (int attempt = 1; answer == null && attempt <= WriteRetry.ATTEMPTS; attempt++) {
-            answer = executeDmlOnce(dml, attempt == WriteRetry.ATTEMPTS);
-        }
-        return answer;
+        return executeDml(dml, new WriteRetry.Run());
+    }
+
+    /** Runs the mutation, and again after a pause each time it lost a lock; {@link WriteRetry} bounds the tries. */
+    private HttpResponse<Object> executeDml(Dml dml, WriteRetry.Run run) {
+        Optional<HttpResponse<Object>> answer = executeDmlOnce(dml, run);
+        if (answer.isPresent()) return answer.get();
+        if (run.pause()) return executeDml(dml, run);
+        return mutationFailed(run.lastFailure(), dml);
     }
 
     /** One mutation as the request made it. */
     private record Dml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                        Integer maxAffected, String prefer, HttpStatus successStatus, String table) {}
 
-    /** One transaction; null when it lost a lock to a concurrent request, was rolled back, and may run again. */
-    private HttpResponse<Object> executeDmlOnce(Dml dml, boolean last) {
+    /** One transaction; empty when it lost a lock to a concurrent request, was rolled back, and may run again. */
+    private Optional<HttpResponse<Object>> executeDmlOnce(Dml dml, WriteRetry.Run run) {
         return txTemplate.execute(status -> {
             try {
                 boolean represent = dml.maxAffected() != null || preferContains(dml.prefer(), PREFER_REPRESENTATION);
                 String json = executeDmlQuery(dml.compiled(), represent);
                 HttpResponse<Object> overflow = checkMaxAffected(json, dml.maxAffected(), status);
-                if (overflow != null) return overflow;
+                if (overflow != null) return Optional.of(overflow);
                 if (dml.rollback()) status.setRollbackOnly();
-                return buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys());
+                return Optional.of(buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys()));
             } catch (Exception e) {
                 status.setRollbackOnly();
-                return dmlFailed(e, dml, last);
+                return dmlFailed(e, dml, run);
             }
         });
     }
 
-    /** The answer to a failed mutation; null when it lost a lock and may run again. */
-    private HttpResponse<Object> dmlFailed(Exception e, Dml dml, boolean last) {
+    /** The answer to a failed mutation; empty when it lost a lock and may run again. */
+    private Optional<HttpResponse<Object>> dmlFailed(Exception e, Dml dml, WriteRetry.Run run) {
         Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
         if (failed.isPresent()) {
-            return checkFailed(failed.get());
+            return Optional.of(checkFailed(failed.get()));
         }
         if (e instanceof IllegalArgumentException refused) {
-            return Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
+            return Optional.of(Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage())));
         }
-        if (!last && WriteRetry.isLockConflict(e)) {
-            return null;
+        if (run.canRetry(e)) {
+            return Optional.empty();
         }
+        return Optional.of(mutationFailed(e, dml));
+    }
+
+    private HttpResponse<Object> mutationFailed(Exception e, Dml dml) {
         return RestErrors.of(e, dml.scope().dialect(), dml.scope().filters(), "Mutation execution failed");
     }
 
