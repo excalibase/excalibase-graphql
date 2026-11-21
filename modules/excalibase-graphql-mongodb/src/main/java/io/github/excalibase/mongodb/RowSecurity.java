@@ -106,9 +106,14 @@ final class RowSecurity {
             case LTE -> Predicates.compare(path, kind, Op.LTE, value(kind, field, rule, resolver));
             case IN -> Predicates.member(path, kind, values(kind, field, rule, resolver), true);
             case NOT_IN -> Predicates.member(path, kind, values(kind, field, rule, resolver), false);
-            case LIKE -> Predicates.like(path, (String) resolver.resolve(rule.value(), FieldType.STRING), true);
-            case NOT_LIKE -> Predicates.like(path, (String) resolver.resolve(rule.value(), FieldType.STRING), false);
+            case LIKE -> Predicates.like(path, likePattern(resolver, rule), true);
+            case NOT_LIKE -> Predicates.like(path, likePattern(resolver, rule), false);
         };
+    }
+
+    /** The pattern, or null (unknown, matches nothing) when a claim resolved to something that is not text. */
+    private static String likePattern(VariableResolver resolver, Rule rule) {
+        return resolver.resolve(rule.value(), FieldType.STRING) instanceof String text ? text : null;
     }
 
     private static Object value(FieldKind kind, String field, Rule rule, VariableResolver resolver) {
@@ -208,9 +213,17 @@ final class RowSecurity {
                 && !kind.accepts(rule.fieldType())) {
             throw refuse(policy, "rule on \"" + field + "\" is declared " + rule.fieldType() + " but the field is " + kind);
         }
-        if (rule.value() != null && !rule.value().startsWith("{{") && !text && !isNullTest(operator)) {
+        if (text && rule.value() != null && !isClaim(rule.value()) && Predicates.likeToRegex(rule.value()) == null) {
+            throw refuse(policy, operator + " pattern on \"" + field + "\" ends in an escape or is over the size limits");
+        }
+        if (rule.value() != null && !isClaim(rule.value()) && !text && !isNullTest(operator)) {
             checkLiteral(policy, kind, field, rule);
         }
+    }
+
+    /** Same test as rls-core's resolver: only {@code {{name}}} is a claim, anything else is a literal. */
+    private static boolean isClaim(String value) {
+        return value.startsWith("{{") && value.endsWith("}}");
     }
 
     private static boolean isNullTest(RuleOperator operator) {

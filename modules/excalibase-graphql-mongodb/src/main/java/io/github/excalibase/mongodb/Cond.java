@@ -12,6 +12,16 @@ import java.util.List;
  */
 public record Cond(Document doc, Kind kind) {
 
+    /** The constants are shared, so their document is handed out as a copy. */
+    @Override
+    public Document doc() {
+        return switch (kind) {
+            case EXPR -> doc;
+            case ALWAYS -> new Document();
+            case NEVER -> new Document("_id", new Document("$in", List.of()));
+        };
+    }
+
     public enum Kind { ALWAYS, NEVER, EXPR }
 
     public static final Cond ALWAYS = new Cond(new Document(), Kind.ALWAYS);
