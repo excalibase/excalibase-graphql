@@ -159,6 +159,33 @@ class SqliteGraphqlIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @Order(14)
+    void onConflict_insertsThenOverwritesTheNamedColumns() {
+        String upsert = "mutation { createMainCustomers(input: { id: 70, name: \"%s\", email: \"u70@x.io\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [name] }) { id name } }";
+
+        assertThat(data(upsert.formatted("first")).path("createMainCustomers").path("name").asText()).isEqualTo("first");
+        assertThat(data(upsert.formatted("second")).path("createMainCustomers").path("name").asText()).isEqualTo("second");
+        assertThat(data("{ mainCustomers(where: { id: { eq: 70 } }) { name } }").path("mainCustomers")).hasSize(1);
+    }
+
+    @Test
+    @Order(15)
+    void onConflict_onAUniqueIndex_updatesTheRowHoldingIt_andRefusesAnUnknownConstraint() {
+        data("mutation { createMainCustomers(input: { id: 71, name: \"keep\", email: \"u71@x.io\" }) { id } }");
+
+        String index = "sqlite_autoindex_customers_1";
+        data("mutation { createMainCustomers(input: { id: 72, name: \"merged\", email: \"u71@x.io\" },"
+                + " onConflict: { constraint: \"" + index + "\", update_columns: [name] }) { id } }");
+
+        assertThat(data("{ mainCustomers(where: { id: { eq: 71 } }) { name } }").path("mainCustomers").get(0)
+                .path("name").asText()).isEqualTo("merged");
+        assertThat(data("{ mainCustomers(where: { id: { eq: 72 } }) { id } }").path("mainCustomers")).isEmpty();
+        assertThat(error("mutation { createMainCustomers(input: { id: 73, name: \"x\" },"
+                + " onConflict: { constraint: \"nope\", update_columns: [name] }) { id } }")).contains("Unknown constraint");
+    }
+
+    @Test
     @Order(20)
     void unsupportedOperators_areNotInTheSchema() {
         assertThat(error("{ mainCustomers(where: { name: { regex: \"a\" } }) { id } }")).contains("regex");

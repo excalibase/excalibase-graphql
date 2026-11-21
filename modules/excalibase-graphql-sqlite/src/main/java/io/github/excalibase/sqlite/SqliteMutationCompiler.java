@@ -11,8 +11,10 @@ import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.security.WriteGuard;
 import io.github.excalibase.spi.MutationCompiler;
+import io.github.excalibase.spi.MutationKind;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,6 +31,7 @@ import static io.github.excalibase.compiler.SqlKeywords.WHERE;
 import static io.github.excalibase.compiler.SqlKeywords.joinCols;
 import static io.github.excalibase.compiler.SqlKeywords.parens;
 import static io.github.excalibase.schema.GraphqlConstants.ARG_INPUT;
+import static io.github.excalibase.schema.GraphqlConstants.ARG_ON_CONFLICT;
 import static io.github.excalibase.schema.GraphqlConstants.CREATE_MANY_PREFIX;
 import static io.github.excalibase.schema.GraphqlConstants.CREATE_PREFIX;
 import static io.github.excalibase.schema.GraphqlConstants.DELETE_PREFIX;
@@ -42,7 +45,13 @@ import static io.github.excalibase.schema.GraphqlConstants.UPDATE_PREFIX;
  */
 public class SqliteMutationCompiler implements MutationCompiler {
 
+    private static final String PRIMARY = "PRIMARY";
     private static final Pattern QUOTED_IDENTIFIER = Pattern.compile("\"(?:[^\"]|\"\")*\"");
+
+    @Override
+    public Set<String> arguments(MutationKind kind) {
+        return kind == MutationKind.CREATE ? Set.of(ARG_INPUT, ARG_ON_CONFLICT) : MutationCompiler.super.arguments(kind);
+    }
 
     @Override
     public SqlCompiler.CompiledQuery compileMutation(Field field, String fieldName,
@@ -81,9 +90,101 @@ public class SqliteMutationCompiler implements MutationCompiler {
         Argument inputArg = shared.findArg(field, ARG_INPUT);
         if (inputArg == null) return null;
         Map<String, Object> inputFields = shared.extractObjectFields(inputArg.getValue(), variables);
+        MutationBuilder.OnConflict conflict = shared.onConflict(field, variables);
+        if (conflict != null) return compileUpsert(field, tableName, inputFields, conflict, params, shared);
         MutationBuilder.BulkInsertParts row = shared.bulkInsertParts(field, tableName, List.of(inputFields),
                 params, false);
         return compileInsert(tableName, row, params, false, shared);
+    }
+
+    /**
+     * {@code create} with {@code onConflict}: an INSERT when no row holds the constraint's values, else an
+     * UPDATE of that row alone with the sent values of {@code update_columns}, the update permission's presets
+     * and its filter as the gate, as Postgres's {@code DO UPDATE ... WHERE}. {@code ON DUPLICATE KEY UPDATE}
+     * is not used: it would update whichever row any unique key collides with.
+     */
+    private SqliteWrite compileUpsert(Field field, String tableName, Map<String, Object> inputFields,
+                                     MutationBuilder.OnConflict conflict, Map<String, Object> params,
+                                     MutationBuilder shared) {
+        if (!shared.permitsUpsert(tableName)) {
+            throw new IllegalArgumentException("Unknown argument 'onConflict' on field '" + field.getName() + "'");
+        }
+        shared.requireSettable(tableName, RlsOp.UPDATE, conflict.updateColumns());
+        MutationBuilder.BulkInsertParts row = shared.bulkInsertParts(field, tableName, List.of(inputFields),
+                params, false);
+        if (row == null) return null;
+        Map<String, Object> bound = row.boundRows().getFirst();
+        List<String> keys = rowKey(tableName, shared);
+        List<String> constraint = constraintColumns(tableName, conflict.constraint(), keys, shared);
+        String table = shared.qualifiedTable(tableName);
+        List<String> columns = QUOTED_IDENTIFIER.matcher(row.columns()).results().map(MatchResult::group).toList();
+        KeyedWrites.Insert insert = new KeyedWrites.Insert(insertRow(table, columns, row.rowValues().getFirst()),
+                params, bound);
+        List<RlsOp> checks = List.of(RlsOp.INSERT, RlsOp.UPDATE);
+        KeyedWrites keyed = keyed(tableName, table, row.alias(), row.objectSql(), checks, params, shared);
+        SqliteWrite write = new SqliteWrite(tableName, checkReads(tableName, checks), null);
+        if (!constraint.stream().allMatch(column -> bound.get(column) != null)) {
+            return write.with(keyed.insert(List.of(insert), false));
+        }
+        KeyedWrites.Condition set = upsertSet(tableName, conflict.updateColumns(), bound, shared);
+        KeyedWrites.Condition updatable = updatable(tableName, row.alias(), shared);
+        boolean onPrimaryKey = new HashSet<>(constraint).equals(new HashSet<>(keys));
+        return write.with(onPrimaryKey ? keyed.upsert(insert, set, updatable)
+                : keyed.upsertOn(constraint, insert, set, updatable));
+    }
+
+    /** The columns {@code constraint} names: the primary key as {@code PRIMARY}, else a unique index by its name. */
+    private static List<String> constraintColumns(String tableName, String constraint, List<String> keys,
+                                                  MutationBuilder shared) {
+        if (PRIMARY.equalsIgnoreCase(constraint)) {
+            if (keys.isEmpty()) {
+                throw new IllegalArgumentException(tableName + " has no primary key to conflict on");
+            }
+            return keys;
+        }
+        List<String> columns = shared.schemaInfo().getUniqueKey(tableName, constraint);
+        if (columns == null) {
+            throw new IllegalArgumentException("Unknown constraint '" + constraint + "' on " + tableName
+                    + ": name PRIMARY or one of its unique indexes");
+        }
+        return columns;
+    }
+
+    /** The UPDATE's assignments: each update column takes the value sent for it, a preset its own value. */
+    private static KeyedWrites.Condition upsertSet(String tableName, List<String> updateColumns,
+                                                   Map<String, Object> bound, MutationBuilder shared) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        for (String column : updateColumns) {
+            if (!bound.containsKey(column)) {
+                throw new IllegalArgumentException("onConflict update_columns '" + column + "' is not in the input");
+            }
+            values.put(column, bound.get(column));
+        }
+        shared.presets(tableName, RlsOp.UPDATE).forEach((column, value) ->
+                values.put(column, shared.bindValue(tableName, column, value)));
+        List<String> assignments = new ArrayList<>();
+        Map<String, Object> setParams = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            String name = "oc_set" + assignments.size();
+            assignments.add(shared.dialect().quoteIdentifier(entry.getKey()) + " = :" + name);
+            setParams.put(name, entry.getValue());
+        }
+        return new KeyedWrites.Condition(String.join(", ", assignments), setParams);
+    }
+
+    /** Which existing rows the update may overwrite: the update permission's filter, empty when every row. */
+    private static KeyedWrites.Condition updatable(String tableName, String alias, MutationBuilder shared) {
+        List<String> conditions = new ArrayList<>();
+        Map<String, Object> filterParams = new LinkedHashMap<>();
+        shared.filterBuilder().appendRlsConditions(conditions, tableName, alias, filterParams, RlsOp.UPDATE);
+        return new KeyedWrites.Condition(String.join(AND, conditions), filterParams);
+    }
+
+    private static List<String> rowKey(String tableName, MutationBuilder shared) {
+        WriteGuard guard = RlsContext.writeGuard();
+        if (guard != null) return guard.rowKey(tableName);
+        SchemaInfo schema = shared.schemaInfo();
+        return schema.hasPrimaryKey(tableName) ? schema.getPrimaryKeys(tableName) : List.of();
     }
 
     private SqliteWrite compileInsert(String tableName, MutationBuilder.BulkInsertParts rows,
@@ -100,26 +201,6 @@ public class SqliteMutationCompiler implements MutationCompiler {
         // A caller who may not read the table gets the affected_rows object, once, as on Postgres.
         return new SqliteWrite(tableName, checkReads(tableName, RlsOp.INSERT),
                 keyed.insert(inserts, many && shared.returnsRows(tableName)));
-    }
-
-    /**
-     * One row's INSERT with the columns it sets. SQLite has no {@code DEFAULT} in a VALUES list, so a column the row
-     * leaves out is left out of the statement and takes its default as it would in a single insert.
-     */
-    private static String insertRow(String table, List<String> columns, String rowValues) {
-        List<String> values = List.of(rowValues.substring(1, rowValues.length() - 1).split(", "));
-        List<String> setColumns = new ArrayList<>();
-        List<String> setValues = new ArrayList<>();
-        for (int i = 0; i < columns.size(); i++) {
-            if (!DEFAULT.equals(values.get(i))) {
-                setColumns.add(columns.get(i));
-                setValues.add(values.get(i));
-            }
-        }
-        if (setColumns.isEmpty()) {
-            return INSERT_INTO + table + " DEFAULT VALUES";
-        }
-        return INSERT_INTO + table + parens(joinCols(setColumns)) + VALUES + parens(joinCols(setValues));
     }
 
     private SqliteWrite compileUpdate(Field field, String tableName,
@@ -158,7 +239,7 @@ public class SqliteMutationCompiler implements MutationCompiler {
 
         String table = shared.qualifiedTable(tableName);
         String dml = shared.dialect().cteDelete(alias, table, whereSql.toString(), objectSql);
-        KeyedWrites keyed = keyed(tableName, table, alias, objectSql, null, params, shared);
+        KeyedWrites keyed = keyed(tableName, table, alias, objectSql, List.<RlsOp>of(), params, shared);
         return new SqliteWrite(tableName, Set.of(), keyed.delete(dml, condition(whereSql), params));
     }
 
@@ -166,9 +247,36 @@ public class SqliteMutationCompiler implements MutationCompiler {
      * Rows are read back by primary key as the caller reads them, passing its select filter; none when the
      * caller may not read the table. Every written row must pass the permission's check for {@code operation}.
      */
+    /**
+     * One row's INSERT with the columns it sets. SQLite has no {@code DEFAULT} in a VALUES list, so a column the row
+     * leaves out is left out of the statement and takes its default as it would in a single insert.
+     */
+    private static String insertRow(String table, List<String> columns, String rowValues) {
+        List<String> values = List.of(rowValues.substring(1, rowValues.length() - 1).split(", "));
+        List<String> setColumns = new ArrayList<>();
+        List<String> setValues = new ArrayList<>();
+        for (int i = 0; i < columns.size(); i++) {
+            if (!DEFAULT.equals(values.get(i))) {
+                setColumns.add(columns.get(i));
+                setValues.add(values.get(i));
+            }
+        }
+        if (setColumns.isEmpty()) {
+            return INSERT_INTO + table + " DEFAULT VALUES";
+        }
+        return INSERT_INTO + table + parens(joinCols(setColumns)) + VALUES + parens(joinCols(setValues));
+    }
+
     private static KeyedWrites keyed(String tableName, String table, String alias, String objectSql, RlsOp operation,
                                      Map<String, Object> params, MutationBuilder shared) {
-        KeyedWrites.ReadBack readBack = operation == RlsOp.INSERT && !shared.returnsRows(tableName)
+        return keyed(tableName, table, alias, objectSql, operation == null ? List.<RlsOp>of() : List.of(operation),
+                params, shared);
+    }
+
+    /** As above, for a write that is more than one operation: an upsert is an insert and an update. */
+    private static KeyedWrites keyed(String tableName, String table, String alias, String objectSql,
+                                     List<RlsOp> operations, Map<String, Object> params, MutationBuilder shared) {
+        KeyedWrites.ReadBack readBack = operations.contains(RlsOp.INSERT) && !shared.returnsRows(tableName)
                 ? KeyedWrites.ReadBack.aggregate(objectSql, params) : null;
         if (shared.returnsRows(tableName)) {
             List<String> readable = new ArrayList<>();
@@ -176,11 +284,17 @@ public class SqliteMutationCompiler implements MutationCompiler {
             readBack = new KeyedWrites.ReadBack(objectSql, String.join(AND, readable), params);
         }
         WriteGuard guard = RlsContext.writeGuard();
-        KeyedWrites.Condition check = null;
-        if (guard != null && operation != null) {
+        List<String> passes = new ArrayList<>();
+        Map<String, Object> checkParams = new LinkedHashMap<>();
+        for (RlsOp operation : guard == null ? List.<RlsOp>of() : operations) {
             RlsWhereContributor.Contribution contribution = guard.check(tableName, alias, operation);
-            check = contribution == null ? null : new KeyedWrites.Condition(contribution.sql(), contribution.params());
+            if (contribution != null) {
+                passes.add(parens(contribution.sql()));
+                checkParams.putAll(contribution.params());
+            }
         }
+        KeyedWrites.Condition check = passes.isEmpty() ? null
+                : new KeyedWrites.Condition(String.join(AND, passes), checkParams);
         return new KeyedWrites(shared.dialect(), target(tableName, table, alias, guard, shared), readBack, check);
     }
 
@@ -197,8 +311,17 @@ public class SqliteMutationCompiler implements MutationCompiler {
     }
 
     private static Set<String> checkReads(String tableName, RlsOp operation) {
+        return checkReads(tableName, List.of(operation));
+    }
+
+    private static Set<String> checkReads(String tableName, List<RlsOp> operations) {
         WriteGuard guard = RlsContext.writeGuard();
-        return guard == null ? Set.of() : guard.checkReads(tableName, operation);
+        if (guard == null) return Set.of();
+        Set<String> reads = new HashSet<>();
+        for (RlsOp operation : operations) {
+            reads.addAll(guard.checkReads(tableName, operation));
+        }
+        return reads;
     }
 
     /** The filter of a {@code WHERE} clause the filter builder wrote, without the keyword. */

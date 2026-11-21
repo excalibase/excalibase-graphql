@@ -27,7 +27,7 @@ public class SqliteSchemaLoader implements SchemaLoader {
     private static final String FOREIGN_KEYS = "SELECT id, seq, \"table\", \"from\", \"to\""
             + " FROM pragma_foreign_key_list(?, ?) ORDER BY id, seq";
     private static final String UNIQUE_INDEXES = "SELECT name FROM pragma_index_list(?, ?) WHERE \"unique\" = 1"
-            + " AND partial = 0 ORDER BY seq";
+            + " AND partial = 0 AND origin <> 'pk' ORDER BY seq";
     private static final String INDEX_COLUMNS = "SELECT name FROM pragma_index_info(?, ?) ORDER BY seqno";
 
     /** The schema name is spliced as an identifier, so it is quoted; only a loaded schema's own name reaches it. */
@@ -47,7 +47,23 @@ public class SqliteSchemaLoader implements SchemaLoader {
             loadColumns(jdbc, schema, info);
             loadPrimaryKeys(jdbc, schema, info);
             loadForeignKeys(jdbc, schema, info);
+            loadUniqueKeys(jdbc, schema, info);
             loadViews(jdbc, schema, info);
+        }
+    }
+
+    /** Each unique index other than the primary key, by name: what an {@code onConflict} constraint names. */
+    private static void loadUniqueKeys(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+        for (Table table : tables(jdbc, schema)) {
+            if (table.view()) {
+                continue;
+            }
+            for (String index : jdbc.queryForList(UNIQUE_INDEXES, String.class, table.name(), schema)) {
+                List<String> columns = jdbc.queryForList(INDEX_COLUMNS, String.class, index, schema);
+                if (!columns.isEmpty() && !columns.contains(null)) {
+                    info.addUniqueKey(table.name(), index, columns);
+                }
+            }
         }
     }
 

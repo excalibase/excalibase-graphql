@@ -71,6 +71,17 @@ class SqliteSchemaLoaderTest {
     }
 
     @Test
+    void uniqueIndexes_areNamedForOnConflict_theKeyIsNot() {
+        SchemaInfo info = reflect(
+                "CREATE TABLE t (id INTEGER PRIMARY KEY, org INTEGER, slot TEXT, mail TEXT UNIQUE)",
+                "CREATE UNIQUE INDEX t_org_slot ON t (org, slot)");
+
+        assertThat(info.getUniqueKey("t", "t_org_slot")).containsExactly("org", "slot");
+        assertThat(info.getUniqueKey("t", "sqlite_autoindex_t_1")).containsExactly("mail");
+        assertThat(info.getUniqueKey("t", "PRIMARY")).isNull();
+    }
+
+    @Test
     void sqliteInternalTables_areNotReflected() {
         SchemaInfo info = reflect("CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT)", "INSERT INTO t DEFAULT VALUES");
 
