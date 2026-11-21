@@ -14,6 +14,11 @@ import java.util.*;
 
 public class PostgresSchemaLoader implements SchemaLoader {
 
+    @Override
+    public String fingerprint(JdbcTemplate jdbc) {
+        return jdbc.queryForObject(FINGERPRINT, String.class);
+    }
+
     private static final String COL_TABLE_NAME = "table_name";
     private static final String COL_COLUMN_NAME = "column_name";
     private static final String COL_DATA_TYPE = "data_type";
@@ -26,6 +31,35 @@ public class PostgresSchemaLoader implements SchemaLoader {
     );
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * Count and a sum of row hashes for each catalog the loader reads, over user schemas, privileges included:
+     * what a GRANT or REVOKE changes is what the loader can see. Hashes are of the
+     * columns that carry meaning, not of {@code xmin}: ANALYZE and autovacuum rewrite {@code pg_class} rows
+     * all day without changing the schema.
+     */
+    static final String FINGERPRINT = """
+            WITH ns AS (SELECT oid FROM pg_namespace WHERE nspname NOT LIKE 'pg\\_%' AND nspname <> 'information_schema')
+            SELECT concat_ws('|',
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', n.oid, n.nspname))::bigint), 0)
+                 FROM pg_namespace n WHERE n.oid IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', c.oid, c.relname, c.relkind, c.relnamespace, c.relacl))::bigint), 0)
+                 FROM pg_class c WHERE c.relnamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', a.attrelid, a.attname, a.attnum, a.atttypid,
+                        a.atttypmod, a.attnotnull, a.attisdropped, a.attacl))::bigint), 0)
+                 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
+                WHERE a.attnum > 0 AND c.relnamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', k.oid, k.conname, k.contype, k.conkey,
+                        k.confkey, k.confrelid))::bigint), 0)
+                 FROM pg_constraint k WHERE k.connamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', p.oid, p.proname, p.prokind, p.provolatile,
+                        p.prosecdef, p.proretset, p.prorettype, p.proargtypes, p.proargmodes, p.proargnames, p.pronargdefaults, p.proacl))::bigint), 0)
+                 FROM pg_proc p WHERE p.pronamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', t.oid, t.typname, t.typtype))::bigint), 0)
+                 FROM pg_type t WHERE t.typnamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', e.oid, e.enumlabel))::bigint), 0) FROM pg_enum e),
+              (SELECT coalesce(string_agg(x.extname || x.extversion, ',' ORDER BY x.extname), '') FROM pg_extension x))
+            """;
 
     /**
      * Every function and procedure of the schemas, with what deciding whether one may be tracked
