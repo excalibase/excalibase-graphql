@@ -317,7 +317,7 @@ public class SqliteDialect implements SqlDialect {
         return false;
     }
 
-    /** The transaction began with BEGIN IMMEDIATE, so it already holds the write lock: nothing to lock per row. */
+    /** {@link #beforeWrite} took the write lock before the write's first statement: nothing to lock per row. */
     @Override
     public String lockRows() {
         return "";

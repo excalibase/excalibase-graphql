@@ -3,6 +3,8 @@ package io.github.excalibase.spi;
 import io.github.excalibase.SqlEngineProvider;
 
 import java.util.ArrayList;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
@@ -22,6 +24,12 @@ public final class SqlEngineFactory {
     /** The driver properties the plugin of {@code databaseType} gives every pooled connection. */
     public static Map<String, String> connectionProperties(String databaseType) {
         return providerFor(databaseType, installed()).connectionProperties();
+    }
+
+    /** Lets the plugin of {@code databaseType} bound the statements of a new pooled connection. */
+    public static void prepareConnection(String databaseType, Connection connection, long statementTimeoutMillis)
+            throws SQLException {
+        providerFor(databaseType, installed()).prepareConnection(connection, statementTimeoutMillis);
     }
 
     /** The schemas the plugin of {@code databaseType} always serves, or empty when they are discovered. */

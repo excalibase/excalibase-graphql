@@ -98,6 +98,22 @@ class SqliteConcurrencyIntegrationTest extends EngineIntegrationTest {
         }
     }
 
+    @Test
+    void aWriteBehindALockHeldPastTheBusyTimeout_answersARetryable503() throws Exception {
+        try (Connection holder = DriverManager.getConnection(DATABASE.url()); Statement statement = holder.createStatement()) {
+            statement.execute("BEGIN IMMEDIATE");
+
+            HttpAnswer rest = http.send("POST", "/busy/api/v1/counters", "{\"writer\":97,\"n\":1}", "Prefer",
+                    "return=representation", "Content-Type", "application/json");
+            HttpAnswer graphql = http.graphql("/busy/graphql", "mutation { createMainCounters(input: { writer: 97, n: 2 }) { id } }");
+
+            assertThat(rest.status()).as(rest.body()).isEqualTo(503);
+            assertThat(rest.body()).contains("database_busy").doesNotContain("SQLITE_BUSY");
+            assertThat(graphql.body()).contains("busy").doesNotContain("SQLITE_BUSY");
+            statement.execute("ROLLBACK");
+        }
+    }
+
     private int writeAll(int writer) {
         return writeAll(writer, WRITES_EACH);
     }

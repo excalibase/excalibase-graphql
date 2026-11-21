@@ -6,6 +6,8 @@ import io.github.excalibase.spi.MutationCompiler;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.spi.SchemaLoader;
 
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
 
@@ -43,5 +45,10 @@ public class SqliteEngineProvider implements SqlEngineProvider {
     @Override
     public List<String> fixedSchemas() {
         return List.of(SqliteSchemaLoader.MAIN);
+    }
+
+    @Override
+    public void prepareConnection(Connection connection, long statementTimeoutMillis) throws SQLException {
+        StatementDeadline.install(connection, statementTimeoutMillis);
     }
 }

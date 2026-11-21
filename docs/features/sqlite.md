@@ -86,8 +86,12 @@ refused by name.
   cost of write speed.
 - **The file must exist.** The engine opens it read and write and never creates it; a wrong path is an error at
   start, not a new empty database.
-- **Native image.** The JDBC driver loads a native library: run Java with `--enable-native-access=ALL-UNNAMED`, and
-  on a host where `/tmp` is mounted `noexec` set `-Dorg.sqlite.tmpdir=<a directory that allows exec>`.
+- **JVM flags.** The JDBC driver loads a native library: start the JVM with `--enable-native-access=ALL-UNNAMED` (the
+  SQLite image sets it), and on a host where `/tmp` is mounted `noexec` set `-Dorg.sqlite.tmpdir=<a directory that
+  allows exec>`.
+- **Statement time limit.** A statement that runs continuously longer than the database read timeout (the same
+  setting as for Postgres and MySQL) is stopped and answers `503 statement_timeout`. A write that waits more than
+  10 seconds for another writer answers `503 database_busy`; retry it.
 - **No realtime.** A file has no change feed. The schema has no `Subscription` type and a subscription on the
   REST or GraphQL websocket is refused with a message saying so. Poll the data instead.
 - **A file on disk.** Put it on a local disk or volume, not a network share; back it up with `sqlite3 .backup`.
@@ -97,4 +101,4 @@ refused by name.
 - **No multi-tenant mode, no functions, no `DISTINCT ON`.**
 - **JVM and native image.** The driver (`org.xerial:sqlite-jdbc`, Apache-2.0) bundles its native libraries and
   ships a GraalVM feature that includes them. The engine's native config registers the SQLite classes, but a
-  native image of the all-in-one app has not been built with it yet: treat SQLite as **JVM only** until it has.
+  native image of the all-in-one app has not been built with it yet: SQLite is **JVM only**: the native image compiles with the driver but is not exercised.

@@ -4,7 +4,13 @@ import com.zaxxer.hikari.HikariConfig;
 import io.github.excalibase.service.DatabaseEngine;
 import io.github.excalibase.spi.SqlEngineFactory;
 
+import org.springframework.jdbc.datasource.DelegatingDataSource;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.time.Duration;
+import java.util.Properties;
 
 /**
  * Time bounds for a database pool (EXC-650). Without a read bound a pooled connection to a server
@@ -57,14 +63,36 @@ final class ConnectionBounds {
     config.setConnectionInitSql(config.getConnectionInitSql() + ", " + assignment);
   }
 
+  /** The file's pool: each connection opened with the plugin's properties and handed to it to bound its statements. */
+  private static void useBoundedFile(HikariConfig config, DatabaseEngine engine, long statementTimeoutMillis) {
+    Properties properties = new Properties();
+    properties.putAll(SqlEngineFactory.connectionProperties(engine.type()));
+    DriverManagerDataSource files = new DriverManagerDataSource(config.getJdbcUrl());
+    files.setConnectionProperties(properties);
+    config.setDataSource(new DelegatingDataSource(files) {
+      @Override
+      public Connection getConnection() throws SQLException {
+        Connection connection = super.getConnection();
+        try {
+          SqlEngineFactory.prepareConnection(engine.type(), connection, statementTimeoutMillis);
+        } catch (SQLException | RuntimeException failure) {
+          connection.close();
+          throw failure;
+        }
+        return connection;
+      }
+    });
+  }
+
   /** Bounds connect, login, the borrow check and every read; pgjdbc counts seconds, Connector/J milliseconds. */
   static void apply(HikariConfig config, DatabaseEngine engine, Duration readTimeout) {
     requireUsable(readTimeout);
     config.setConnectionTimeout(CONNECT_TIMEOUT_SECONDS * 1000L);
     config.setValidationTimeout(VALIDATION_TIMEOUT_MS);
     if (engine == DatabaseEngine.SQLITE) {
-      // A file has no server to dial or to stop answering; its waits are the busy timeout of each connection.
-      SqlEngineFactory.connectionProperties(engine.type()).forEach(config::addDataSourceProperty);
+      // A file has no server to dial or to stop answering; its waits are the busy timeout of each connection, and the
+      // plugin bounds each running statement as session SQL would on a server database.
+      useBoundedFile(config, engine, statementTimeoutMillis(readTimeout));
       return;
     }
     if (engine == DatabaseEngine.MYSQL) {

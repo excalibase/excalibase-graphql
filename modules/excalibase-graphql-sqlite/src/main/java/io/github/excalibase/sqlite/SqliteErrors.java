@@ -21,6 +21,15 @@ final class SqliteErrors {
     private static final String NOT_NULL = "SQLITE_CONSTRAINT_NOTNULL";
     private static final String CHECK = "SQLITE_CONSTRAINT_CHECK";
 
+    private static final String BUSY = "SQLITE_BUSY";
+    private static final String LOCKED = "SQLITE_LOCKED";
+    private static final String INTERRUPT = "SQLITE_INTERRUPT";
+    private static final int UNAVAILABLE = 503;
+    private static final int PRIMARY_CODE_MASK = 0xFF;
+    private static final int CODE_BUSY = 5;
+    private static final int CODE_LOCKED = 6;
+    private static final int CODE_INTERRUPT = 9;
+
     private static final Pattern FAILED = Pattern.compile("constraint failed: ([\\w.,\\s]+)");
     private static final Pattern NAMED_CHECK = Pattern.compile("CHECK constraint failed: (\\w+)");
 
@@ -29,6 +38,15 @@ final class SqliteErrors {
 
     static Optional<DataError> describe(SQLException failure) {
         String message = failure.getMessage() == null ? "" : failure.getMessage();
+        int code = failure.getErrorCode() & PRIMARY_CODE_MASK;
+        if (code == CODE_BUSY || code == CODE_LOCKED || message.contains(BUSY) || message.contains(LOCKED)) {
+            return Optional.of(new DataError(UNAVAILABLE, "database_busy",
+                    "The database is busy with another write; retry the request", null, null));
+        }
+        if (code == CODE_INTERRUPT || message.contains(INTERRUPT)) {
+            return Optional.of(new DataError(UNAVAILABLE, "statement_timeout",
+                    "The statement ran longer than the engine allows and was stopped", null, null));
+        }
         if (message.contains(UNIQUE) || message.contains(PRIMARY_KEY)) {
             String key = group(FAILED, message);
             return Optional.of(DataError.conflict(DataError.UNIQUE_VIOLATION,
