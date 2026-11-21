@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Portability leg of the RLS differential suite: the same policy engine, asked
@@ -38,6 +39,7 @@ class MySqlPortabilityTest {
 
     private static MySQLContainer<?> mysql;
     private static NamedParameterJdbcTemplate jdbc;
+    private static NamedParameterJdbcTemplate noBackslashEscapes;
 
     @BeforeAll
     static void setUp() {
@@ -64,6 +66,19 @@ class MySqlPortabilityTest {
               (3, '2', 't2', 'active', 100, '{"region":"west","level":9}'),
               (4, '2', 't2', 'draft',  200, '{"region":"east"}'),
               (5, NULL, NULL, NULL, NULL, NULL)""");
+        exec("CREATE TABLE like_t (id INT PRIMARY KEY, val VARCHAR(64))");
+        String insert = "INSERT INTO like_t VALUES (:id, :val)";
+        jdbc.update(insert, new MapSqlParameterSource("id", 1).addValue("val", "a%b"));
+        jdbc.update(insert, new MapSqlParameterSource("id", 2).addValue("val", "axb"));
+        jdbc.update(insert, new MapSqlParameterSource("id", 3).addValue("val", "a_b"));
+        jdbc.update(insert, new MapSqlParameterSource("id", 4).addValue("val", "a\\b"));
+        jdbc.update(insert, new MapSqlParameterSource("id", 5).addValue("val", "A%B"));
+        String url = mysql.getJdbcUrl();
+        DriverManagerDataSource strict = new DriverManagerDataSource(
+            url + (url.contains("?") ? "&" : "?") + "sessionVariables=sql_mode=NO_BACKSLASH_ESCAPES",
+            mysql.getUsername(), mysql.getPassword());
+        strict.setDriverClassName(mysql.getDriverClassName());
+        noBackslashEscapes = new NamedParameterJdbcTemplate(strict);
         exec("CREATE TABLE diff_members (member_user VARCHAR(64), member_tenant VARCHAR(64))");
         exec("INSERT INTO diff_members (member_user, member_tenant) VALUES ('1','t1'),('1','t2'),('2','t2')");
     }
@@ -153,6 +168,48 @@ class MySqlPortabilityTest {
         assertThat(engineRowsMysql(List.of(allow(
             new Rule("tenant_txt", FieldType.STRING, RuleOperator.EQ, "{{region}}"))),
             ctx(null, null, "t1"))).containsExactly(1, 2);
+    }
+
+    private static List<Integer> likeRows(NamedParameterJdbcTemplate template, RuleOperator op, String pattern) {
+        Policy policy = new Policy("p", "p", "like_t", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+            List.of(new Rule("val", FieldType.STRING, op, pattern)), List.of(Assignment.all()));
+        SqlFilter f = new JdbcEvaluator(List.of(policy), List.of(), QuoteStyle.BACKTICK)
+            .compile("like_t", ctx(null, null, null), Operation.SELECT);
+        return template.queryForList("SELECT id FROM like_t WHERE " + f.sql() + " ORDER BY id",
+            new MapSqlParameterSource(f.params()), Integer.class);
+    }
+
+    // Default collation is case-insensitive, so 'A%B' also matches; Postgres would keep only id 1.
+    @Test @DisplayName("MySQL: LIKE with an escaped % matches the literal percent")
+    void likeEscapedPercent() {
+        assertThat(likeRows(jdbc, RuleOperator.LIKE, "a\\%b")).containsExactly(1, 5);
+        assertThat(likeRows(jdbc, RuleOperator.NOT_LIKE, "a\\%b")).containsExactly(2, 3, 4);
+    }
+
+    @Test @DisplayName("MySQL: LIKE with an escaped _ and an escaped backslash")
+    void likeEscapedUnderscoreAndBackslash() {
+        assertThat(likeRows(jdbc, RuleOperator.LIKE, "a\\_b")).containsExactly(3);
+        assertThat(likeRows(jdbc, RuleOperator.LIKE, "a\\\\b")).containsExactly(4);
+    }
+
+    @Test @DisplayName("MySQL under NO_BACKSLASH_ESCAPES: the escape still escapes")
+    void likeEscapeSurvivesNoBackslashEscapes() {
+        assertThat(likeRows(noBackslashEscapes, RuleOperator.LIKE, "a\\%b")).containsExactly(1, 5);
+        assertThat(likeRows(noBackslashEscapes, RuleOperator.LIKE, "a\\_b")).containsExactly(3);
+        assertThat(likeRows(noBackslashEscapes, RuleOperator.LIKE, "a\\\\b")).containsExactly(4);
+    }
+
+    @Test @DisplayName("LIKE pattern ending in the escape character is refused on every dialect")
+    void trailingEscapeIsRefused() {
+        for (QuoteStyle style : QuoteStyle.values()) {
+            Policy policy = new Policy("p", "p", "like_t", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0,
+                true, List.of(new Rule("val", FieldType.STRING, RuleOperator.LIKE, "abc\\")),
+                List.of(Assignment.all()));
+            JdbcEvaluator evaluator = new JdbcEvaluator(List.of(policy), List.of(), style);
+            UserContext context = ctx(null, null, null);
+            assertThatThrownBy(() -> evaluator.compile("like_t", context, Operation.SELECT))
+                .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("escape");
+        }
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
