@@ -65,9 +65,13 @@ public class SchemaChangeWatcher {
     }
 
     private void tick() {
-        poll();
-        if (running()) {
-            scheduler.schedule(this::tick, nextDelaySeconds(), TimeUnit.SECONDS);
+        try {
+            poll();
+        } finally {
+            // Even an Error from a check must not end the watching.
+            if (running()) {
+                scheduler.schedule(this::tick, nextDelaySeconds(), TimeUnit.SECONDS);
+            }
         }
     }
 

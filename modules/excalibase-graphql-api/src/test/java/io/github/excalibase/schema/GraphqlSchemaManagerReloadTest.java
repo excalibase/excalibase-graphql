@@ -13,10 +13,12 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -185,6 +187,7 @@ class GraphqlSchemaManagerReloadTest {
                 task -> new Thread(task, "stalled-request"));
         private Future<?> stalled;
         private Principal caller;
+        private boolean finishRequestAfterClear;
 
         RequestInTheWindow(StallsOneRequest permissions) {
             super(permissions, true);
@@ -203,6 +206,22 @@ class GraphqlSchemaManagerReloadTest {
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+
+        @Override
+        void afterCacheClear() {
+            if (!finishRequestAfterClear) {
+                return;
+            }
+            permissions.release.countDown();
+            try {
+                stalled.get(10, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            } catch (ExecutionException | TimeoutException e) {
                 throw new IllegalStateException(e);
             }
         }
@@ -227,5 +246,46 @@ class GraphqlSchemaManagerReloadTest {
 
         var next = manager.resolveEngineState("acme", "proj-1", manager.caller);
         assertThat(next.compiler().schemaInfo().getColumns(ORDERS)).contains("added");
+    }
+
+    @Test
+    @DisplayName("a request that finishes after the caches are emptied and before the publish ends caches nothing stale")
+    void requestFinishingBeforeThePublishEndsCachesNothingStale() throws Exception {
+        StallsOneRequest permissions = new StallsOneRequest();
+        RequestInTheWindow manager = new RequestInTheWindow(permissions);
+        manager.init();
+        JwtClaims claims = new JwtClaims("u-1", "proj-1", "acme", "demo", "", "service", "apikey:1", "service", 1L);
+        manager.caller = new Principal(Principal.SERVICE, true, claims, java.util.Map.of());
+        manager.resolveEngineState("acme", "proj-1", manager.caller);
+
+        manager.columns = List.of("id", "added");
+        permissions.stallNext = true;
+        manager.finishRequestAfterClear = true;
+        manager.reload();
+        manager.requests.shutdown();
+
+        var next = manager.resolveEngineState("acme", "proj-1", manager.caller);
+        assertThat(next.compiler().schemaInfo().getColumns(ORDERS)).contains("added");
+    }
+
+    @Test
+    @DisplayName("engines are cached after the first reflection and after each reload: one request, one engine")
+    void enginesAreCachedAgainAfterAReload() {
+        ScriptedManager manager = new ScriptedManager(new StallsOneRequest(), true);
+        manager.init();
+        JwtClaims claims = new JwtClaims("u-1", "proj-1", "acme", "demo", "", "service", "apikey:1", "service", 1L);
+        Principal service = new Principal(Principal.SERVICE, true, claims, java.util.Map.of());
+
+        assertThat(manager.resolveEngineState("acme", "proj-1", service))
+                .isSameAs(manager.resolveEngineState("acme", "proj-1", service));
+
+        manager.columns = List.of("id", "added");
+        manager.reload();
+        assertThat(manager.resolveEngineState("acme", "proj-1", service))
+                .isSameAs(manager.resolveEngineState("acme", "proj-1", service));
+
+        manager.reload();
+        assertThat(manager.resolveEngineState("acme", "proj-1", service))
+                .isSameAs(manager.resolveEngineState("acme", "proj-1", service));
     }
 }

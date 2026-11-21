@@ -231,13 +231,19 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         // nothing in production
     }
 
+    /** A seam for tests: runs after the caches are emptied and before the generation is even again. */
+    void afterCacheClear() {
+        // nothing in production
+    }
+
     /**
      * Makes {@code reflection} the one served. Requests without a project get the configured database
      * whole: there is no project to hold permissions for. Every project-scoped request is built per role.
      * The generation is odd while this runs and moves on when it is done (a sequence lock), so a request that
-     * began before, or during, the publish can tell when it is done that what it cached may be stale.
+     * began before, or during, the publish can tell when it is done that what it cached may be stale. There is
+     * one writer at a time, which {@code synchronized} keeps true: the sequence lock needs it.
      */
-    void publish(Reflection reflection, String fingerprint) {
+    synchronized void publish(Reflection reflection, String fingerprint) {
         EngineState state = assemble(reflection, AccessPlan.allAccess(
                 reflection.engine().dialect().permissionDialect(), reflection.schema()), NO_DOCUMENT);
         generation.incrementAndGet();   // odd: a publish is under way
@@ -247,6 +253,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         betweenReflectionAndCacheClear();
         reflections.clear();
         tenantEngineStates.clear();
+        afterCacheClear();
         generation.incrementAndGet();   // even again: the caches hold nothing of the old reflection
     }
 
