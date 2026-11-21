@@ -26,11 +26,13 @@
             <version>${project.version}</version>
         </dependency>
 
-        <!-- Postgres schema loader -->
+        <!-- Database plugins reach the engine only through SqlEngineProvider, never from here (EXC-799): the
+             Postgres plugin and driver are for this module's tests, so a slim image carrying another plugin stays free of them. -->
         <dependency>
             <groupId>io.github.excalibase</groupId>
             <artifactId>excalibase-graphql-postgres</artifactId>
             <version>${project.version}</version>
+            <scope>test</scope>
         </dependency>
 
         <!-- Spring JDBC/TX as plain libraries -->
@@ -65,13 +67,6 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- PostgreSQL driver -->
-        <dependency>
-            <groupId>org.postgresql</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
-        </dependency>
-
         <!-- Test -->
         <dependency>
             <groupId>org.assertj</groupId>
@@ -81,6 +76,11 @@
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -123,6 +123,10 @@
     </dependencies>
     <build>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
