@@ -124,4 +124,40 @@ class RowMatcherLikeTest {
         assertThat(denyLikeKeepsRow("secret%", "secret\nmore")).isFalse();
         assertThat(denyLikeKeepsRow("secret%", "public")).isTrue();
     }
+
+    @Test
+    void manyPercentsDoNotBacktrackCatastrophically() {
+        String value = "a".repeat(100_000);
+        assertThat(timedMillis(() -> assertThat(allowLike("%%%%%%%%x", value)).isFalse())).isLessThan(100);
+        assertThat(timedMillis(() -> assertThat(allowLike("%a%a%a%a%b", value)).isFalse())).isLessThan(100);
+        assertThat(timedMillis(() -> assertThat(allowLike("%a%a%a%a%a", value)).isTrue())).isLessThan(100);
+    }
+
+    @Test
+    void underscoreMatchesOneCodePointNotOneChar() {
+        String emoji = new String(Character.toChars(0x1F600));
+        assertThat(allowLike("a_b", "a" + emoji + "b")).isTrue();
+        assertThat(allowLike("a__b", "a" + emoji + "b")).isFalse();
+        assertThat(allowLike(emoji + "%", emoji + "x")).isTrue();
+    }
+
+    @Test
+    void aNumericClaimPatternIsStringifiedNotThrown() {
+        UserContext numeric = new UserContext() {
+            @Override public String userId() { return "u"; }
+            @Override public String tenantId() { return null; }
+            @Override public Set<String> roles() { return Set.of(); }
+            @Override public Set<String> groupIds() { return Set.of(); }
+            @Override public Object resolveVariable(String name) { return 5; }
+        };
+        RowMatcher matcher = matcher(PolicyEffect.ALLOW, RuleOperator.LIKE, "{{level}}");
+        assertThat(matcher.matches("t", Map.of("c", "5"), numeric, Operation.SELECT)).isTrue();
+        assertThat(matcher.matches("t", Map.of("c", "6"), numeric, Operation.SELECT)).isFalse();
+    }
+
+    private static long timedMillis(Runnable action) {
+        long start = System.nanoTime();
+        action.run();
+        return (System.nanoTime() - start) / 1_000_000;
+    }
 }
