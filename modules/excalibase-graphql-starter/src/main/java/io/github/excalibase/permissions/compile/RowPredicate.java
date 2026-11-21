@@ -18,7 +18,6 @@ import java.util.Objects;
 import java.util.function.BinaryOperator;
 import java.util.function.Function;
 import java.util.function.IntPredicate;
-import java.util.regex.Pattern;
 
 /**
  * Decides a permission expression for one row in memory, as the database would decide the compiled
