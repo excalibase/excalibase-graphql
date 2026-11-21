@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** The pool the engine builds for a SQLite file bounds each statement by the same read timeout as a server pool. */
-@Timeout(60)
+@Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class SqlitePoolStatementTimeoutTest {
 
     private static void runEndless(Statement statement) throws SQLException {

@@ -22,6 +22,9 @@ import java.util.concurrent.TimeUnit;
  * rows) arms a timer that {@link Statement#cancel() cancels} it, which interrupts the connection's running statement, and
  * disarms the timer when the call returns. The bound is per call, never per connection: a pooled connection that is
  * busy all day is not cut off, and a pause between statements counts for nothing.
+ *
+ * <p>An interrupted statement that is left open keeps the connection interrupted: close it (or its result set) before
+ * the connection runs another statement, as JdbcTemplate and try-with-resources do.
  */
 final class StatementWatchdog {
 
@@ -29,6 +32,7 @@ final class StatementWatchdog {
             "executeLargeUpdate", "executeLargeBatch");
     private static final Set<String> RESULT_SETS = Set.of("getResultSet", "getGeneratedKeys");
     private static final ScheduledThreadPoolExecutor TIMER = timer();
+    private static final Object NOT_OBJECT_METHOD = new Object();
 
     private StatementWatchdog() {
     }
@@ -50,10 +54,14 @@ final class StatementWatchdog {
 
     private static <T> T proxy(Class<T> type, T target, long limitMillis) {
         return type.cast(Proxy.newProxyInstance(StatementWatchdog.class.getClassLoader(), new Class<?>[] {type},
-                (InvocationHandler) (self, method, args) -> invoke(target, method, args, limitMillis)));
+                new ProxyIdentity(target, limitMillis)));
     }
 
     private static Object invoke(Object target, Method method, Object[] args, long limitMillis) throws SQLException {
+        Object own = objectMethod(target, method, args);
+        if (own != NOT_OBJECT_METHOD) {
+            return own;
+        }
         boolean bounded = target instanceof Statement && RUNS.contains(method.getName())
                 || target instanceof ResultSet && "next".equals(method.getName());
         Object result = bounded ? runBounded(target, method, args, limitMillis) : call(target, method, args);
@@ -67,6 +75,28 @@ final class StatementWatchdog {
         boolean rows = RESULT_SETS.contains(method.getName()) || "executeQuery".equals(method.getName());
         return target instanceof Statement && rows && result instanceof ResultSet set
                 ? proxy(ResultSet.class, set, limitMillis) : result;
+    }
+
+    /** What a proxy is: the real object it stands for and the bound its calls run under. */
+    private record ProxyIdentity(Object target, long limitMillis) implements InvocationHandler {
+        @Override
+        public Object invoke(Object proxy, Method method, Object[] args) throws SQLException {
+            return StatementWatchdog.invoke(target, method, args, limitMillis);
+        }
+    }
+
+    /** equals, hashCode and toString are the proxy's own: a proxy is its own identity, never the real object's. */
+    private static Object objectMethod(Object target, Method method, Object[] args) {
+        if (method.getDeclaringClass() != Object.class) {
+            return NOT_OBJECT_METHOD;
+        }
+        return switch (method.getName()) {
+            case "equals" -> args[0] != null && Proxy.isProxyClass(args[0].getClass())
+                    && Proxy.getInvocationHandler(args[0]) instanceof ProxyIdentity other && other.target() == target;
+            case "hashCode" -> System.identityHashCode(target);
+            case "toString" -> "watched " + target;
+            default -> NOT_OBJECT_METHOD;
+        };
     }
 
     @SuppressWarnings("unchecked")

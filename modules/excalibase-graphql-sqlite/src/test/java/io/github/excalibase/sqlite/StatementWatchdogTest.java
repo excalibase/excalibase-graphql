@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-@Timeout(60)
+@Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class StatementWatchdogTest {
 
     private static final String ENDLESS = "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r)"
@@ -79,6 +79,18 @@ class StatementWatchdogTest {
 
             assertThat(SqliteErrors.describe(interrupted)).hasValueSatisfying(error ->
                     assertThat(error.code()).isEqualTo("statement_timeout"));
+        }
+    }
+
+    @Test
+    void theProxyAnswersEqualsHashCodeAndToStringItself() throws Exception {
+        try (Connection raw = DriverManager.getConnection("jdbc:sqlite::memory:")) {
+            Connection first = StatementWatchdog.wrap(raw, 1000);
+            Connection second = StatementWatchdog.wrap(raw, 1000);
+
+            assertThat(first).isEqualTo(first).isEqualTo(second).isNotEqualTo(raw).isNotEqualTo(null);
+            assertThat(first.hashCode()).isEqualTo(second.hashCode());
+            assertThat(first.toString()).startsWith("watched ");
         }
     }
 

@@ -68,6 +68,17 @@ public class SqliteSchemaLoader implements SchemaLoader {
         }
     }
 
+    /**
+     * The file's schema cookie: SQLite adds one to it whenever a table, view, index, trigger or column is created,
+     * changed or dropped, and never for a row write. A new connection reads it from the file, so a change another
+     * process made is seen.
+     */
+    @Override
+    public String fingerprint(JdbcTemplate jdbc) {
+        Long version = jdbc.queryForObject("PRAGMA schema_version", Long.class);
+        return version == null ? null : String.valueOf(version);
+    }
+
     private static List<Table> tables(JdbcTemplate jdbc, String schema) {
         return jdbc.query(objects(schema), (rs, row) -> new Table(rs.getString("name"), "view".equals(rs.getString("type"))));
     }
