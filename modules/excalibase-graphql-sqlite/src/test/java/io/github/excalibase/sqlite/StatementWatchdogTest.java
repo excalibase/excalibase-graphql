@@ -89,7 +89,7 @@ class StatementWatchdogTest {
             Connection second = StatementWatchdog.wrap(raw, 1000);
 
             assertThat(first).isEqualTo(first).isEqualTo(second).isNotEqualTo(raw).isNotEqualTo(null);
-            assertThat(first.hashCode()).isEqualTo(second.hashCode());
+            assertThat(first).hasSameHashCodeAs(second);
             assertThat(first.toString()).startsWith("watched ");
         }
     }
