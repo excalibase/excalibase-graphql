@@ -200,7 +200,7 @@ public final class FilterCompiler {
         private String like(ColumnCompare compare, TableRef table, String column) {
             ColumnType type = likeColumn(dialect, schema, table.key(), compare.column());
             Object pattern = binding.value(compare.operand(), type);
-            LikePattern.compile((String) pattern);
+            PermissionLikePattern.compile((String) pattern);
             String operator = compare.operator() == ComparisonOperator.LIKE ? " LIKE " : " NOT LIKE ";
             return column + operator + bind(pattern, type) + likeEscape();
         }

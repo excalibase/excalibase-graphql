@@ -146,6 +146,10 @@
             <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>io.github.excalibase</groupId>
+            <artifactId>excalibase-rls-core</artifactId>
+        </dependency>
         <!-- Differential tests: permission expressions pinned to native Postgres RLS,
              and migrated legacy policies pinned to the old JDBC evaluator. -->
         <dependency>

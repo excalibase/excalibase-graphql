@@ -8,10 +8,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class LikePatternTest {
+class PermissionLikePatternTest {
 
     private static boolean matches(String pattern, String value) {
-        return LikePattern.compile(pattern).matches(value);
+        return PermissionLikePattern.compile(pattern).matches(value);
     }
 
     @Test
@@ -49,7 +49,7 @@ class LikePatternTest {
 
     @Test
     void aTrailingEscapeIsRefused() {
-        assertThatThrownBy(() -> LikePattern.compile("abc\\")).isInstanceOf(PermissionEvaluationException.class);
+        assertThatThrownBy(() -> PermissionLikePattern.compile("abc\\")).isInstanceOf(PermissionEvaluationException.class);
         assertThat(matches("abc\\\\", "abc\\")).isTrue();
     }
 
@@ -57,8 +57,8 @@ class LikePatternTest {
     void aPatternOverTheLengthCapIsRefused() {
         String atCap = "a".repeat(4096);
         String overCap = "a".repeat(4097);
-        assertThat(LikePattern.compile(atCap).matches(atCap)).isTrue();
-        assertThatThrownBy(() -> LikePattern.compile(overCap))
+        assertThat(PermissionLikePattern.compile(atCap).matches(atCap)).isTrue();
+        assertThatThrownBy(() -> PermissionLikePattern.compile(overCap))
                 .isInstanceOf(PermissionEvaluationException.class)
                 .hasMessageContaining("too long");
     }

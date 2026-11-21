@@ -61,7 +61,7 @@ public final class ExpressionCheck {
             case LIKE, NLIKE -> {
                 FilterCompiler.likeColumn(dialect, schema, tableKey, compare.column());
                 if (compare.operand() instanceof Literal) {
-                    LikePattern.compile((String) NO_SESSION.value(compare.operand(), type));
+                    PermissionLikePattern.compile((String) NO_SESSION.value(compare.operand(), type));
                 }
             }
             case IN, NIN -> {
