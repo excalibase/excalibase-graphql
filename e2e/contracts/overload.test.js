@@ -4,7 +4,6 @@ const { stack } = require('./lib/stack');
 const { parseSamples } = require('./lib/prometheus');
 
 const MAX_CONNECTIONS = 4;
-const KEEP_ALIVE_TIMEOUT_MS = 5000;
 const base = new URL(stack.overload);
 
 /** A keep-alive connection that has finished one request and now idles, holding its connection slot. */
@@ -25,14 +24,15 @@ function timedRequest() {
     const socket = net.connect(Number(base.port), base.hostname, () => {
       socket.write(`GET /${stack.project}/graphql HTTP/1.1\r\nHost: ${base.host}\r\nConnection: close\r\n\r\n`);
     });
-    const finish = (status) => { socket.destroy(); resolve({ status, firstByteAfterMs: Date.now() - started }); };
-    socket.once('data', (chunk) => finish(Number(chunk.toString('latin1').split(' ')[1])));
+    const finish = (status, text = '') => { socket.destroy(); resolve({ status, text, firstByteAfterMs: Date.now() - started }); };
+    socket.once('data', (chunk) => {
+      const text = chunk.toString('latin1');
+      finish(Number(text.split(' ')[1]), text);
+    });
     socket.on('error', () => finish(null));
     socket.setTimeout(30000, () => finish(null));
   });
 }
-
-const stillPending = (promise) => Promise.race([promise.then(() => false), new Promise((resolve) => setTimeout(() => resolve(true), 1500))]);
 
 describe('overload bound on a 1 CPU engine', () => {
   let held = [];
@@ -44,29 +44,33 @@ describe('overload bound on a 1 CPU engine', () => {
     expect(bound.value).toBe(MAX_CONNECTIONS);
   });
 
-  test('a client beyond the bound connects, waits without an error, and is served when an idle slot frees', async () => {
+  test('a client beyond the bound is refused at once with 503, Retry-After and a GraphQL error', async () => {
     held = await Promise.all(Array.from({ length: MAX_CONNECTIONS }, holdConnection));
-    const waitingRequest = timedRequest();
-    expect(await stillPending(waitingRequest)).toBe(true);
+    const queued = await Promise.all(Array.from({ length: MAX_CONNECTIONS }, () => new Promise((resolve) => {
+      const socket = net.connect(Number(base.port), base.hostname, () => resolve(socket));
+      held.push(socket);
+    })));
+    expect(queued).toHaveLength(MAX_CONNECTIONS);
+
+    const answer = await timedRequest();
+    expect(answer.status).toBe(503);
+    expect(answer.text.toLowerCase()).toContain('retry-after: ');
+    expect(answer.text).toContain('SERVICE_OVERLOADED');
+    expect(answer.firstByteAfterMs).toBeLessThan(1000);
 
     const health = await request(stack.overloadManagement, '/actuator/health');
     expect(health.status).toBe(200);
+    const samples = parseSamples((await request(stack.overloadManagement, '/actuator/prometheus')).text);
+    const refused = samples.find((sample) => sample.name === 'excalibase_connections_refused_connections_total');
+    expect(refused.value).toBeGreaterThanOrEqual(1);
+  }, 30000);
 
-    const answer = await waitingRequest;
-    expect(answer.status).toBe(405);
-    expect(answer.firstByteAfterMs).toBeGreaterThanOrEqual(1500);
-    expect(answer.firstByteAfterMs).toBeLessThan(KEEP_ALIVE_TIMEOUT_MS + 6000);
-  }, 40000);
-
-  test('closing one held connection serves the waiting client at once', async () => {
+  test('a connection that finds a slot within the admission wait is served, not refused', async () => {
     held = await Promise.all(Array.from({ length: MAX_CONNECTIONS }, holdConnection));
     const waitingRequest = timedRequest();
-    expect(await stillPending(waitingRequest)).toBe(true);
-    const freedAt = Date.now();
-    held[0].destroy();
+    setTimeout(() => held[0].destroy(), 50);
     const answer = await waitingRequest;
     expect(answer.status).toBe(405);
-    expect(Date.now() - freedAt).toBeLessThan(2000);
   }, 30000);
 
   test('with fewer connections than the bound a request is answered immediately', async () => {

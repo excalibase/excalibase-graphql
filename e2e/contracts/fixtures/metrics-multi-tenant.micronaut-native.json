@@ -11,6 +11,8 @@
   "disk_total_bytes": [
     "path"
   ],
+  "excalibase_connections_refused_connections_total": [],
+  "excalibase_connections_waiting_connections": [],
   "excalibase_permissions_stale_seconds": [
     "project"
   ],
