@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,8 +36,6 @@ import org.bson.types.ObjectId;
  * GraphQL over declared MongoDB collections. A request becomes one aggregation pipeline per root field;
  * the caller's row filter is its first stage and their column rules shape both the schema and the projection.
  */
-// the BSON driver reads and writes dates as java.util.Date; there is no other type to exchange them in
-@SuppressWarnings("java:S2143")
 final class MongoQueryEngine implements QueryEngine {
 
     private static final Logger log = LoggerFactory.getLogger(MongoQueryEngine.class);
@@ -176,8 +173,8 @@ final class MongoQueryEngine implements QueryEngine {
     }
 
     private static Object shown(Object stored) {
-        if (stored instanceof Date date) {
-            return Instant.ofEpochMilli(date.getTime()).toString();
+        if (stored instanceof Instant instant) {
+            return instant.toString();
         }
         if (stored instanceof ObjectId) {
             return ValueCodec.formatId(stored);

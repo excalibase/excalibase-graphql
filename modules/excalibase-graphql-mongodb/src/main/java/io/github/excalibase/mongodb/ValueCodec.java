@@ -7,15 +7,12 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
-import java.util.Date;
 import java.math.BigInteger;
 
 /**
  * Turns a value into exactly the BSON scalar the declared kind stores. Anything that is not a plain scalar
  * of that kind is refused, so a value can never be a document, an operator or a path: it is only ever data.
  */
-// the BSON driver reads and writes dates as java.util.Date; there is no other type to exchange them in
-@SuppressWarnings("java:S2143")
 final class ValueCodec {
 
     private ValueCodec() {}
@@ -82,21 +79,18 @@ final class ValueCodec {
     }
 
     private static Object instant(Object value, String field) {
-        if (value instanceof Date) {
+        if (value instanceof Instant) {
             return value;
         }
-        if (value instanceof Instant instant) {
-            return Date.from(instant);
-        }
         if (value instanceof LocalDate day) {
-            return Date.from(day.atStartOfDay().toInstant(ZoneOffset.UTC));
+            return day.atStartOfDay().toInstant(ZoneOffset.UTC);
         }
         if (value instanceof String text) {
             try {
-                return Date.from(OffsetDateTime.parse(text).toInstant());
+                return OffsetDateTime.parse(text).toInstant();
             } catch (DateTimeParseException _) {
                 try {
-                    return Date.from(Instant.parse(text));
+                    return Instant.parse(text);
                 } catch (DateTimeParseException _) {
                     return refuse(field, "an ISO-8601 timestamp");
                 }

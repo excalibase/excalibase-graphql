@@ -9,7 +9,6 @@ import org.bson.types.ObjectId;
 import org.junit.jupiter.api.AfterEach;
 
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,7 +47,7 @@ abstract class AbstractEngineTest {
 
     private static Document order(String id, String owner, String status, int total, boolean paid, long placed, String secret) {
         return new Document("_id", new ObjectId(id)).append("owner", owner).append("status", status)
-                .append("total", total).append("paid", paid).append("placedAt", new Date(placed)).append("secret", secret);
+                .append("total", total).append("paid", paid).append("placedAt", java.time.Instant.ofEpochMilli(placed)).append("secret", secret);
     }
 
     QueryEngine engine(List<Policy> policies, List<ColumnPolicy> columnPolicies, List<String> open) {
