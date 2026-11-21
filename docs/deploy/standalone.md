@@ -52,7 +52,8 @@ separate read-only role.
 The engine notices DDL on its own. Every 5 seconds it runs one query over the database catalogs, and when a
 table, column, key, view, type or function has changed it reflects the schema again. A table you create with
 SQL shows up in GraphQL and REST a few seconds later, with no restart. Row writes, `ANALYZE` and vacuum change
-nothing the check looks at.
+nothing the check looks at. A change of privileges (`GRANT`, `REVOKE`) counts, because it changes what the
+engine can see. `REINDEX CONCURRENTLY` on Postgres causes one extra reload; that is harmless.
 
 | Setting | Meaning |
 |---|---|

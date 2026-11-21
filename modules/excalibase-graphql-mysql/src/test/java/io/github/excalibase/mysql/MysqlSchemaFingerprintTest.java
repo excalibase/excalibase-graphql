@@ -83,8 +83,8 @@ class MysqlSchemaFingerprintTest {
     @Test
     @DisplayName("a routine created or dropped moves it")
     void routines() {
-        assertMoves("CREATE FUNCTION answer() RETURNS int DETERMINISTIC RETURN 42");
-        assertMoves("DROP FUNCTION answer");
+        assertMoves("CREATE PROCEDURE answer() SELECT 42");
+        assertMoves("DROP PROCEDURE answer");
     }
 
     @Test

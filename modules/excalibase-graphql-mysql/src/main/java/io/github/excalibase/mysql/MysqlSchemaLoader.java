@@ -24,6 +24,9 @@ public class MysqlSchemaLoader implements SchemaLoader {
               (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', table_schema, table_name, column_name,
                         ordinal_position, column_type, is_nullable, column_key, extra))), 0))
                  FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', table_schema, table_name, index_name,
+                        non_unique, seq_in_index, column_name, index_type))), 0))
+                 FROM information_schema.statistics WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),
               (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', constraint_schema, table_name, constraint_name,
                         referenced_table_name))), 0))
                  FROM information_schema.referential_constraints WHERE constraint_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),

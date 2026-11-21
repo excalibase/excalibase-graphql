@@ -99,6 +99,7 @@ class PostgresSchemaFingerprintIntegrationTest {
         assertMoves("CREATE OR REPLACE FUNCTION answer(x int) RETURNS int LANGUAGE sql IMMUTABLE AS 'select x'");
         assertMoves("CREATE OR REPLACE FUNCTION answer(x int, y int DEFAULT 1) RETURNS int LANGUAGE sql AS 'select x'");
         assertMoves("DROP FUNCTION answer(int, int)");
+        assertMoves("DROP FUNCTION answer(int)");
         assertMoves("CREATE FUNCTION answer(x int) RETURNS bigint LANGUAGE sql AS 'select x::bigint'");
     }
 
@@ -106,7 +107,7 @@ class PostgresSchemaFingerprintIntegrationTest {
     @DisplayName("GRANT and REVOKE on a table or a column move it")
     void privileges() {
         assertMoves("GRANT SELECT ON kids TO fp_reader");
-        assertMoves("GRANT SELECT (label) ON parents TO fp_reader");
+        assertMoves("GRANT UPDATE (label) ON kids TO fp_reader");
         assertMoves("REVOKE SELECT ON kids FROM fp_reader");
     }
 

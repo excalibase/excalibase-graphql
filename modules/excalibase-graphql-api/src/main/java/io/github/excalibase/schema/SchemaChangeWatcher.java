@@ -32,7 +32,7 @@ public class SchemaChangeWatcher {
     private final long pollSeconds;
     private final boolean otherSignalExists;
     private ScheduledExecutorService scheduler;
-    private boolean failing;
+    private volatile boolean failing;
 
     @Inject
     public SchemaChangeWatcher(GraphqlSchemaManager schemas,
