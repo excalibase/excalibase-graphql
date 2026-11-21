@@ -141,18 +141,36 @@ class RowMatcherLikeTest {
         assertThat(allowLike(emoji + "%", emoji + "x")).isTrue();
     }
 
-    @Test
-    void aNumericClaimPatternIsStringifiedNotThrown() {
-        UserContext numeric = new UserContext() {
+    private static UserContext claim(Object value) {
+        return new UserContext() {
             @Override public String userId() { return "u"; }
             @Override public String tenantId() { return null; }
             @Override public Set<String> roles() { return Set.of(); }
             @Override public Set<String> groupIds() { return Set.of(); }
-            @Override public Object resolveVariable(String name) { return 5; }
+            @Override public Object resolveVariable(String name) { return value; }
         };
-        RowMatcher matcher = matcher(PolicyEffect.ALLOW, RuleOperator.LIKE, "{{level}}");
-        assertThat(matcher.matches("t", Map.of("c", "5"), numeric, Operation.SELECT)).isTrue();
-        assertThat(matcher.matches("t", Map.of("c", "6"), numeric, Operation.SELECT)).isFalse();
+    }
+
+    // One rule for a pattern that is not text (a numeric JSON claim, a collection): no row passes, no throw.
+    @Test
+    void aNonTextClaimPatternKeepsNoRow_forLikeAndNotLike() {
+        for (Object value : List.of(5, 5.5, true, Set.of("a"), List.of("a"))) {
+            UserContext context = claim(value);
+            for (RuleOperator op : List.of(RuleOperator.LIKE, RuleOperator.NOT_LIKE)) {
+                RowMatcher matcher = matcher(PolicyEffect.ALLOW, op, "{{level}}");
+                assertThat(matcher.matches("t", Map.of("c", "5"), context, Operation.SELECT))
+                    .as("%s with %s", op, value).isFalse();
+            }
+        }
+    }
+
+    @Test
+    void aNonTextClaimPatternInADenyHidesTheRow() {
+        Policy open = new Policy("a", "a", "t", PolicyEffect.ALLOW, Operation.ALL, LogicOperator.AND, 0, true,
+            List.of(new Rule("c", FieldType.STRING, RuleOperator.IS_NOT_NULL, null)), List.of(Assignment.all()));
+        Policy deny = policy(PolicyEffect.DENY, RuleOperator.LIKE, "{{level}}");
+        assertThat(new RowMatcher(List.of(open, deny)).matches("t", Map.of("c", "x"), claim(5), Operation.SELECT))
+            .isFalse();
     }
 
     private static long timedMillis(Runnable action) {

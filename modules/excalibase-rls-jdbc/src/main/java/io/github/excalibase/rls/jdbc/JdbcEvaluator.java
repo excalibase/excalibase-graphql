@@ -289,8 +289,8 @@ public class JdbcEvaluator {
             case GTE -> col + " >= :" + sink.bind(resolver.resolve(rule.value(), rule.fieldType()));
             case LT -> col + " < :" + sink.bind(resolver.resolve(rule.value(), rule.fieldType()));
             case LTE -> col + " <= :" + sink.bind(resolver.resolve(rule.value(), rule.fieldType()));
-            case LIKE -> col + " LIKE :" + sink.bind(likePattern(rule, resolver)) + likeEscape();
-            case NOT_LIKE -> col + " NOT LIKE :" + sink.bind(likePattern(rule, resolver)) + likeEscape();
+            case LIKE -> col + " LIKE :" + sink.bind(likePattern(rule, resolver)) + quoteStyle.likeEscape();
+            case NOT_LIKE -> col + " NOT LIKE :" + sink.bind(likePattern(rule, resolver)) + quoteStyle.likeEscape();
             case IN -> renderInList(col, true, resolver.resolveList(rule.value(), rule.fieldType()), sink);
             case NOT_IN -> renderInList(col, false, resolver.resolveList(rule.value(), rule.fieldType()), sink);
         };
@@ -302,19 +302,14 @@ public class JdbcEvaluator {
      */
     private static Object likePattern(Rule rule, VariableResolver resolver) {
         Object pattern = resolver.resolve(rule.value(), FieldType.STRING);
-        if (pattern != null && LikePattern.compile(pattern.toString()) == null) {
+        if (pattern == null) return null;
+        if (!(pattern instanceof String text)) {
+            throw new IllegalArgumentException("A LIKE pattern must be text, not " + pattern.getClass().getSimpleName());
+        }
+        if (LikePattern.compile(text) == null) {
             throw new IllegalArgumentException("A LIKE pattern must not end with the escape character");
         }
         return pattern;
-    }
-
-    /**
-     * MySQL honours the default backslash escape only while NO_BACKSLASH_ESCAPES is off, so the escape is
-     * stated. CHAR(92) rather than a quoted backslash, because the quoted form means something else
-     * (or is an error) under that mode.
-     */
-    private String likeEscape() {
-        return quoteStyle == QuoteStyle.BACKTICK ? " ESCAPE CHAR(92)" : "";
     }
 
     /**

@@ -146,6 +146,7 @@
             <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- The permission compiler's LIKE matcher is rls-core's, so the two paths cannot drift apart. -->
         <dependency>
             <groupId>io.github.excalibase</groupId>
             <artifactId>excalibase-rls-core</artifactId>

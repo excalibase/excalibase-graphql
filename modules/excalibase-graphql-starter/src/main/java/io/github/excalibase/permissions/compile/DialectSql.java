@@ -46,4 +46,11 @@ sealed interface DialectSql permits PostgresSql, MysqlSql {
     boolean readsWrittenTableThroughDerivedTable();
 
     boolean tracksFunctions();
+
+    /**
+     * The clause stating LIKE's escape character, or empty where the default already is a backslash. MySQL's
+     * default stops being one under NO_BACKSLASH_ESCAPES, so it states it; CHAR(92) because a quoted backslash
+     * means something else under that mode.
+     */
+    String likeEscape();
 }
