@@ -202,7 +202,15 @@ public final class FilterCompiler {
             Object pattern = binding.value(compare.operand(), type);
             LikePattern.compile((String) pattern);
             String operator = compare.operator() == ComparisonOperator.LIKE ? " LIKE " : " NOT LIKE ";
-            return column + operator + bind(pattern, type);
+            return column + operator + bind(pattern, type) + likeEscape();
+        }
+
+        /**
+         * MySQL honours the default backslash escape only while NO_BACKSLASH_ESCAPES is off, so it states the
+         * escape; CHAR(92) because a quoted backslash means something else under that mode.
+         */
+        private String likeEscape() {
+            return dialect == PermissionDialect.MYSQL ? " ESCAPE CHAR(92)" : "";
         }
 
         private String relationship(Relationship relationship, TableRef table, String alias) {
