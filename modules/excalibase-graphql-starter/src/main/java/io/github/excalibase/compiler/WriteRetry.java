@@ -55,7 +55,7 @@ public final class WriteRetry {
         long bound = Math.min(BACKOFF_CAP_MILLIS, BACKOFF_BASE_MILLIS << Math.min(attempt, 6));
         try {
             Thread.sleep(ThreadLocalRandom.current().nextLong(1, bound + 1));
-        } catch (InterruptedException interrupted) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }

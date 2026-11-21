@@ -467,12 +467,11 @@ public class RestApiController {
     private HttpResponse<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                                               Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         Dml dml = new Dml(compiled, scope, rollback, maxAffected, prefer, successStatus, table);
-        HttpResponse<Object> answer = null;
-        for (int attempt = 1; answer == null; attempt++) {
-            answer = executeDmlOnce(dml, attempt);
-            if (answer == null) WriteRetry.pause(attempt);
+        for (int attempt = 1; ; attempt++) {
+            HttpResponse<Object> answer = executeDmlOnce(dml, attempt);
+            if (answer != null) return answer;
+            WriteRetry.pause(attempt);
         }
-        return answer;
     }
 
     /** One mutation as the request made it. */
