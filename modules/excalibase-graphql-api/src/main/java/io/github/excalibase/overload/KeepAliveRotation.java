@@ -13,6 +13,7 @@ import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.util.ReferenceCountUtil;
 import io.netty.util.concurrent.ScheduledFuture;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -55,7 +56,11 @@ final class KeepAliveRotation extends ChannelDuplexHandler {
         if (context != null && context.executor().inEventLoop()) {
             waitForRequest(firstRequestMillis);
         } else if (context != null) {
-            context.executor().execute(() -> waitForRequest(firstRequestMillis));
+            try {
+                context.executor().execute(() -> waitForRequest(firstRequestMillis));
+            } catch (RejectedExecutionException _) {
+                // the loop is stopping and closes the connection with it
+            }
         }
     }
 

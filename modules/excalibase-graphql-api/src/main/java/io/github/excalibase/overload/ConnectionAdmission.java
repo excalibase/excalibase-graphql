@@ -1,51 +1,108 @@
 package io.github.excalibase.overload;
 
-import io.netty.channel.Channel;
+import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelDuplexHandler;
+import io.netty.channel.socket.DuplexChannel;
 import io.netty.util.ReferenceCountUtil;
+import io.netty.util.concurrent.ScheduledFuture;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 /**
- * First in a connection's pipeline. A connection over the bound is accepted by the kernel but nothing it
- * sends is read by the server until a slot frees, the same wait a client has in the accept queue: reads are
- * switched off while it waits, so what it sends stays in the kernel's buffer instead of piling up here.
+ * First in a connection's pipeline. A connection over the bound is accepted at once and nothing it sends is
+ * read until a slot frees: reads are switched off while it waits, so what it sends stays in the kernel's
+ * buffer instead of piling up here. The wait is short ({@link ConnectionBound#admissionWaitMillis()}); a
+ * connection still without a slot then, or one that finds the queue full, is answered with a 503 and a
+ * Retry-After instead of being left to time out. The answer is written before any request is read, so it
+ * fits a plain HTTP request, a GraphQL POST and a WebSocket upgrade alike.
  */
 final class ConnectionAdmission extends ChannelDuplexHandler implements ConnectionGate.Waiter {
 
     private final ConnectionGate gate;
     private final KeepAliveRotation rotation;
+    private static final long DRAIN_MILLIS = 500;
+    private static final String BODY = "{\"errors\":[{\"message\":\"The server is at its connection limit, "
+            + "retry shortly\",\"extensions\":{\"code\":\"SERVICE_OVERLOADED\"}}]}";
+    private static final int RETRY_AFTER_SPREAD_SECONDS = 3;
+
+    /** Retry-After is spread over a few seconds so the clients refused together do not return together. */
+    private static String refusal() {
+        int retryAfter = 1 + ThreadLocalRandom.current().nextInt(RETRY_AFTER_SPREAD_SECONDS);
+        return "HTTP/1.1 503 Service Unavailable\r\n"
+                + "Retry-After: " + retryAfter + "\r\nContent-Type: application/json\r\nCache-Control: no-store\r\n"
+                + "Content-Length: " + BODY.length() + "\r\nConnection: close\r\n\r\n" + BODY;
+    }
+
     private final List<Object> held = new ArrayList<>();
+    private final long waitMillis;
     private ChannelHandlerContext context;
+    private ScheduledFuture<?> deadline;
     private boolean admitted;
+    private boolean refused;
+    private boolean refusing;
     private boolean finished;
     private boolean autoReadOnArrival;
     private boolean readWaiting;
 
-    ConnectionAdmission(ConnectionGate gate, KeepAliveRotation rotation) {
+    ConnectionAdmission(ConnectionGate gate, KeepAliveRotation rotation, long waitMillis) {
         this.gate = gate;
         this.rotation = rotation;
+        this.waitMillis = waitMillis;
     }
 
     @Override
     public void handlerAdded(ChannelHandlerContext context) {
         this.context = context;
-        admitted = gate.tryAdmit(this);
+        ConnectionGate.Outcome outcome = gate.tryAdmit(this);
         autoReadOnArrival = context.channel().config().isAutoRead();
-        if (!admitted) {
-            context.channel().config().setAutoRead(false);
+        switch (outcome) {
+            case ADMITTED -> {
+                admitted = true;
+                rotation.start();
+            }
+            case QUEUED -> {
+                context.channel().config().setAutoRead(false);
+                deadline = context.executor().schedule((Runnable) this::refuse, waitMillis, TimeUnit.MILLISECONDS);
+            }
+            case REFUSED -> refuseOnEventLoop();
         }
-        updateListener(context.channel());
-        if (admitted) {
-            rotation.start();
+    }
+
+    /** Answers 503 and closes; what the client already sent is drained for a moment so the answer is not lost to a reset. */
+    private void refuse() {
+        if (admitted || refused || finished) {
+            return;
         }
+        refused = true;
+        gate.abandon(this);
+        gate.recordRefusal();
+        held.forEach(ReferenceCountUtil::release);
+        held.clear();
+        if (!gate.tryBeginRefusal()) {
+            context.close();   // a flood of refusals is itself bounded: past the cap the connection is just dropped
+            return;
+        }
+        refusing = true;
+        context.channel().config().setAutoRead(true);
+        context.writeAndFlush(Unpooled.copiedBuffer(refusal(), StandardCharsets.US_ASCII)).addListener(written -> {
+            if (context.channel() instanceof DuplexChannel duplex) {
+                duplex.shutdownOutput();
+            }
+            context.executor().schedule((Runnable) context::close, DRAIN_MILLIS, TimeUnit.MILLISECONDS);
+        });
     }
 
     @Override
     public void channelRead(ChannelHandlerContext context, Object message) {
         if (admitted) {
             context.fireChannelRead(message);
+        } else if (refused) {
+            ReferenceCountUtil.release(message);
         } else {
             held.add(message);
         }
@@ -54,7 +111,7 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
     /** The server reads on demand; a read it asks for while this connection waits is made once it is admitted. */
     @Override
     public void read(ChannelHandlerContext context) {
-        if (admitted) {
+        if (admitted || refused) {
             context.read();
         } else {
             readWaiting = true;
@@ -71,13 +128,29 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
     /** Called by the gate, from any thread, when a slot is handed to this connection. */
     @Override
     public void admitted() {
-        context.executor().execute(this::admitOnEventLoop);
+        try {
+            context.executor().execute(this::admitOnEventLoop);
+        } catch (RejectedExecutionException _) {
+            gate.release();   // the connection's loop is gone: pass the slot on
+        }
+    }
+
+    private void refuseOnEventLoop() {
+        try {
+            context.executor().execute(this::refuse);
+        } catch (RejectedExecutionException _) {
+            gate.recordRefusal();
+            context.close();
+        }
     }
 
     private void admitOnEventLoop() {
-        if (finished) {
+        if (finished || refused) {
             gate.release();
             return;
+        }
+        if (deadline != null) {
+            deadline.cancel(false);
         }
         admitted = true;
         context.channel().config().setAutoRead(autoReadOnArrival);
@@ -85,7 +158,6 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
             readWaiting = false;
             context.read();
         }
-        updateListener(context.channel());
         rotation.start();
         List<Object> replay = new ArrayList<>(held);
         held.clear();
@@ -98,6 +170,13 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
     @Override
     public void channelInactive(ChannelHandlerContext context) throws Exception {
         finished = true;
+        if (refusing) {
+            refusing = false;
+            gate.endRefusal();
+        }
+        if (deadline != null) {
+            deadline.cancel(false);
+        }
         held.forEach(ReferenceCountUtil::release);
         held.clear();
         if (admitted) {
@@ -105,16 +184,6 @@ final class ConnectionAdmission extends ChannelDuplexHandler implements Connecti
         } else {
             gate.abandon(this);
         }
-        updateListener(context.channel());
         super.channelInactive(context);
-    }
-
-    /** A full gate stops the listener accepting; connections then queue in the kernel, as the bound promises. */
-    private void updateListener(Channel connection) {
-        Channel listener = connection.parent();
-        if (listener != null) {
-            // On the listener's own thread, reading the gate then, so a stale answer never overwrites a newer one.
-            listener.eventLoop().execute(() -> listener.config().setAutoRead(!gate.isFull()));
-        }
     }
 }
