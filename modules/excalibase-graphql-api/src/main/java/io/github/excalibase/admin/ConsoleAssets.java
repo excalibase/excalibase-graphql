@@ -21,17 +21,19 @@ public final class ConsoleAssets {
     private static final String HTML = "text/html; charset=utf-8";
     private static final String SCRIPT = "text/javascript; charset=utf-8";
     private static final String STYLE = "text/css; charset=utf-8";
-    private static final Map<String, String> TYPES = Map.of(
-            "index.html", HTML,
-            "app.js", SCRIPT,
-            "api.js", SCRIPT,
-            "dom.js", SCRIPT,
-            "views.js", SCRIPT,
-            "editor.js", SCRIPT,
-            "grid.js", SCRIPT,
-            "jwt.js", SCRIPT,
-            "docmodel.js", SCRIPT,
-            "style.css", STYLE);
+    private static final Map<String, String> TYPES = Map.ofEntries(
+            Map.entry("index.html", HTML),
+            Map.entry("app.js", SCRIPT),
+            Map.entry("api.js", SCRIPT),
+            Map.entry("dom.js", SCRIPT),
+            Map.entry("views.js", SCRIPT),
+            Map.entry("editor.js", SCRIPT),
+            Map.entry("grid.js", SCRIPT),
+            Map.entry("jwt.js", SCRIPT),
+            Map.entry("docmodel.js", SCRIPT),
+            Map.entry("diff.js", SCRIPT),
+            Map.entry("history.js", SCRIPT),
+            Map.entry("style.css", STYLE));
 
     private static final String BASE = "/console";
 

@@ -56,4 +56,11 @@ class MetadataSaveAnswerTest {
         assertThat(MetadataSave.version("abc")).isEqualTo("abc");
         assertThat(MetadataSave.version("W/\"abc\"")).isNotEqualTo("abc");
     }
+
+    @Test
+    void aSaveSaysWhenTheHistoryMissedIt_andSaysNothingWhenThereIsNoHistory() {
+        assertThat(answer(new SaveOutcome.Saved(3, "abc", false)).body()).containsEntry("historyRecorded", false);
+        assertThat(answer(new SaveOutcome.Saved(3, "abc", true)).body()).containsEntry("historyRecorded", true);
+        assertThat(answer(new SaveOutcome.Saved(3, "abc")).body()).doesNotContainKey("historyRecorded");
+    }
 }

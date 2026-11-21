@@ -19,6 +19,11 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>io.github.excalibase</groupId>
+            <artifactId>excalibase-test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
         <!-- Micronaut runtime: Netty server, compile-time DI, Jackson -->
         <dependency>
             <groupId>io.micronaut</groupId>

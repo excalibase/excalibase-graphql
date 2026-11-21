@@ -38,6 +38,11 @@ public interface MetadataSource extends PermissionProvider {
         return new SaveOutcome.ReadOnly();
     }
 
+    /** The versions this source has replaced; empty for a source that keeps none. */
+    default Optional<DocumentHistory> history() {
+        return Optional.empty();
+    }
+
     Status status();
 
     /**

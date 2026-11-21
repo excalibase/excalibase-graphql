@@ -18,6 +18,11 @@
     <dependencies>
         <dependency>
             <groupId>io.github.excalibase</groupId>
+            <artifactId>excalibase-test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.excalibase</groupId>
             <artifactId>excalibase-rls-core</artifactId>
         </dependency>
         <dependency>

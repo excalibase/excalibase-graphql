@@ -78,6 +78,8 @@ public class RestApiController {
     private static final String BAD_REQUEST = "bad_request";
     private static final String PREFER_TX_ROLLBACK = "tx=rollback";
     private static final String PREFER_REPRESENTATION = "return=representation";
+    private static final String PREFER_MERGE_DUPLICATES = "resolution=merge-duplicates";
+    private static final String PREFER_IGNORE_DUPLICATES = "resolution=ignore-duplicates";
     private static final String HDR_PREFERENCE_APPLIED = "Preference-Applied";
 
     private final SchemaProvider schemaProvider;
@@ -212,16 +214,18 @@ public class RestApiController {
         if (resolved.refusal() != null) return resolved.refusal();
         var ctx = resolved.context();
         boolean rollback = preferContains(prefer, PREFER_TX_ROLLBACK);
-        boolean mergeDuplicates = preferContains(prefer, "resolution=merge-duplicates");
+        RestQueryCompiler.Conflict resolution = resolution(prefer);
         List<String> conflictColumns = conflictColumns(ctx, onConflict);
 
         RestQueryCompiler.CompiledResult compiled = switch (body) {
-            case List<?> list -> ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list);
+            case List<?> list -> resolution == null
+                ? ctx.compiler().compileBulkInsert(ctx.tableKey(), (List<Map<String, Object>>) list)
+                : ctx.compiler().compileBulkUpsert(ctx.tableKey(), (List<Map<String, Object>>) list, conflictColumns, resolution);
             case Map<?, ?> map -> {
                 var row = (Map<String, Object>) map;
-                yield mergeDuplicates
-                    ? ctx.compiler().compileUpsert(ctx.tableKey(), row, conflictColumns)
-                    : ctx.compiler().compileInsert(ctx.tableKey(), row);
+                yield resolution == null
+                    ? ctx.compiler().compileInsert(ctx.tableKey(), row)
+                    : ctx.compiler().compileUpsert(ctx.tableKey(), row, conflictColumns, resolution);
             }
             default -> null;
         };
@@ -239,6 +243,18 @@ public class RestApiController {
             throw new IllegalArgumentException("Unknown on_conflict column '" + column + "' on " + ctx.tableKey());
         });
         return columns;
+    }
+
+    /** What the {@code resolution} preference asks of a duplicate key; null when it asks nothing. Both is refused. */
+    private RestQueryCompiler.Conflict resolution(String prefer) {
+        boolean merge = preferContains(prefer, PREFER_MERGE_DUPLICATES);
+        boolean ignore = preferContains(prefer, PREFER_IGNORE_DUPLICATES);
+        if (merge && ignore) {
+            throw new IllegalArgumentException("Prefer asks for both resolution=merge-duplicates and "
+                    + "resolution=ignore-duplicates; send one");
+        }
+        if (merge) return RestQueryCompiler.Conflict.MERGE;
+        return ignore ? RestQueryCompiler.Conflict.IGNORE : null;
     }
 
     /** A query function with its arguments as query parameters; the other parameters read its rows. */
@@ -504,6 +520,10 @@ public class RestApiController {
                                                     String table, boolean rollback, List<String> keys) {
         List<String> applied = new ArrayList<>();
         if (rollback) applied.add(PREFER_TX_ROLLBACK);
+        if (successStatus == HttpStatus.CREATED) {
+            if (preferContains(prefer, PREFER_MERGE_DUPLICATES)) applied.add(PREFER_MERGE_DUPLICATES);
+            if (preferContains(prefer, PREFER_IGNORE_DUPLICATES)) applied.add(PREFER_IGNORE_DUPLICATES);
+        }
         boolean returnRepresentation = preferContains(prefer, PREFER_REPRESENTATION);
         HttpResponse<Object> resp;
         if (returnRepresentation) {
@@ -608,7 +628,7 @@ public class RestApiController {
         String prefer = request.getHeaders().get("Prefer");
         return switch (request.getMethodName()) {
             case "POST" -> access.permits(tableKey, RlsOp.INSERT)
-                    && (!preferContains(prefer, "resolution=merge-duplicates")
+                    && (!preferContains(prefer, PREFER_MERGE_DUPLICATES)
                         || access.permits(tableKey, RlsOp.UPDATE));
             case "PATCH", "PUT" -> access.permits(tableKey, RlsOp.UPDATE);
             case "DELETE" -> access.permits(tableKey, RlsOp.DELETE);

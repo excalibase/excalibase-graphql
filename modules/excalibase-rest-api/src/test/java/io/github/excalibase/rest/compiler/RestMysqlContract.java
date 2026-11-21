@@ -342,7 +342,7 @@ abstract class RestMysqlContract {
         @Test
         void bulkInsertReadsEveryRowBack() throws Exception {
             String json = write(compiler.compileBulkInsert("test.customer",
-                    List.of(Map.of("first_name", "Erin"), Map.of("first_name", "Finn", "score", 5))), true);
+                    List.of(Map.of("first_name", "Erin", "score", 4), Map.of("first_name", "Finn", "score", 5))), true);
             List<Map<String, Object>> rows = MAPPER.readValue(json, new TypeReference<>() {});
             assertEquals(List.of(5, 6), column(rows, "customer_id"));
             assertEquals(List.of("Erin", "Finn"), column(rows, "first_name"));
@@ -405,6 +405,29 @@ abstract class RestMysqlContract {
             Map<String, Object> row = MAPPER.readValue(write(compiler.compileUpsert("test.member",
                     Map.of("id", 1, "email", "a@example.com", "name", "Anna"), List.of("id")), true), Map.class);
             assertEquals("Anna", row.get("name"));
+        }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void bulkUpsertMergesExistingRowsAndInsertsTheRest() throws Exception {
+            var upsert = compiler.compileBulkUpsert("test.country", List.of(
+                    Map.of("code", "VN", "name", "Viet Nam"), Map.of("code", "KR", "name", "Korea")),
+                    List.of("code"), RestQueryCompiler.Conflict.MERGE);
+            List<Map<String, Object>> rows = MAPPER.readValue(write(upsert, true), List.class);
+            assertEquals(List.of("VN", "KR"), column(rows, "code"));
+            assertEquals("Viet Nam", jdbc.queryForObject("SELECT name FROM country WHERE code = 'VN'", String.class));
+            assertEquals(2, jdbc.queryForObject("SELECT COUNT(*) FROM country", Integer.class));
+        }
+
+        @Test
+        @SuppressWarnings("unchecked")
+        void bulkIgnoreDuplicatesKeepsTheExistingRowAndAnswersOnlyTheNewOnes() throws Exception {
+            var ignore = compiler.compileBulkUpsert("test.country", List.of(
+                    Map.of("code", "VN", "name", "Ignored"), Map.of("code", "DE", "name", "Germany")),
+                    List.of(), RestQueryCompiler.Conflict.IGNORE);
+            List<Map<String, Object>> rows = MAPPER.readValue(write(ignore, true), List.class);
+            assertEquals(List.of("DE"), column(rows, "code"));
+            assertEquals("Vietnam", jdbc.queryForObject("SELECT name FROM country WHERE code = 'VN'", String.class));
         }
 
         @Test
