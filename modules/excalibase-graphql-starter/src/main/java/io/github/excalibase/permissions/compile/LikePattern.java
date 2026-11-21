@@ -26,24 +26,31 @@ final class LikePattern {
         List<Integer> tokens = new ArrayList<>();
         int i = 0;
         while (i < codePoints.length) {
-            int codePoint = codePoints[i];
-            if (codePoint == '\\') {
-                if (i + 1 == codePoints.length) {
-                    throw new PermissionEvaluationException(PermissionEvaluationException.INVALID_LIKE_PATTERN,
-                            "A LIKE pattern must not end with the escape character");
-                }
+            if (codePoints[i] == '\\') {
+                requireEscapedCharacter(codePoints, i);
                 tokens.add(codePoints[i + 1]);
                 i += 2;
-                continue;
-            }
-            if (codePoint == '%') {
-                if (tokens.isEmpty() || tokens.getLast() != ANY_RUN) tokens.add(ANY_RUN);
             } else {
-                tokens.add(codePoint == '_' ? ANY_ONE : codePoint);
+                addWildcardOrLiteral(tokens, codePoints[i]);
+                i++;
             }
-            i++;
         }
         return new LikePattern(tokens.stream().mapToInt(Integer::intValue).toArray());
+    }
+
+    private static void requireEscapedCharacter(int[] codePoints, int escapeAt) {
+        if (escapeAt + 1 == codePoints.length) {
+            throw new PermissionEvaluationException(PermissionEvaluationException.INVALID_LIKE_PATTERN,
+                    "A LIKE pattern must not end with the escape character");
+        }
+    }
+
+    private static void addWildcardOrLiteral(List<Integer> tokens, int codePoint) {
+        if (codePoint == '%') {
+            if (tokens.isEmpty() || tokens.getLast() != ANY_RUN) tokens.add(ANY_RUN);
+        } else {
+            tokens.add(codePoint == '_' ? ANY_ONE : codePoint);
+        }
     }
 
     boolean matches(String value) {
