@@ -12,6 +12,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -133,6 +138,90 @@ class GraphqlSchemaManagerReloadTest {
         manager.resolveEngineState("acme", "proj-1", service);
         var next = manager.resolveEngineState("acme", "proj-1", service);
 
+        assertThat(next.compiler().schemaInfo().getColumns(ORDERS)).contains("added");
+    }
+
+    /** Lets one request stall inside the permission read, after it has read the reflection. */
+    private static final class StallsOneRequest implements PermissionProvider {
+        private final CountDownLatch inside = new CountDownLatch(1);
+        private final CountDownLatch release = new CountDownLatch(1);
+        private volatile boolean stallNext;
+
+        @Override
+        public PermissionSet permissionsFor(String projectId) {
+            if (stallNext && Thread.currentThread().getName().startsWith("stalled-request")) {
+                inside.countDown();
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return emptyDocument(projectId);
+        }
+
+        @Override
+        public void evict(String projectId) {
+            // nothing cached
+        }
+    }
+
+    private static PermissionSet emptyDocument(String projectId) {
+        try {
+            return PermissionSetParser.parse(MAPPER.readTree("{\"projectId\":\"" + projectId
+                    + "\",\"version\":1,\"tables\":[],\"functions\":[],\"functionPermissions\":[]}"));
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalArgumentException(e);
+        }
+    }
+
+    /** Starts a request in the window between the new reflection being set and the caches being emptied. */
+    private static final class RequestInTheWindow extends ScriptedManager {
+        private final StallsOneRequest permissions;
+        private final ExecutorService requests = Executors.newSingleThreadExecutor(
+                task -> new Thread(task, "stalled-request"));
+        private Future<?> stalled;
+        private Principal caller;
+
+        RequestInTheWindow(StallsOneRequest permissions) {
+            super(permissions, true);
+            this.permissions = permissions;
+        }
+
+        @Override
+        void betweenReflectionAndCacheClear() {
+            if (!permissions.stallNext) {
+                return;
+            }
+            stalled = requests.submit(() -> resolveEngineState("acme", "proj-1", caller));
+            try {
+                if (!permissions.inside.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("the request never reached the permission read");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    @Test
+    @DisplayName("a request that starts while a reload is publishing does not cache an engine of the old schema")
+    void requestStartedInsideThePublishWindowCachesNothingStale() throws Exception {
+        StallsOneRequest permissions = new StallsOneRequest();
+        RequestInTheWindow manager = new RequestInTheWindow(permissions);
+        manager.init();
+        JwtClaims claims = new JwtClaims("u-1", "proj-1", "acme", "demo", "", "service", "apikey:1", "service", 1L);
+        manager.caller = new Principal(Principal.SERVICE, true, claims, java.util.Map.of());
+        manager.resolveEngineState("acme", "proj-1", manager.caller);   // the old reflection is now cached
+
+        manager.columns = List.of("id", "added");
+        permissions.stallNext = true;
+        manager.reload();
+        permissions.release.countDown();
+        manager.stalled.get(10, TimeUnit.SECONDS);
+        manager.requests.shutdown();
+
+        var next = manager.resolveEngineState("acme", "proj-1", manager.caller);
         assertThat(next.compiler().schemaInfo().getColumns(ORDERS)).contains("added");
     }
 }

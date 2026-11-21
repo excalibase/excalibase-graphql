@@ -222,6 +222,11 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
                 SqlEngineFactory.createMutationExecutor(databaseType), probesOn(jdbcTemplate));
     }
 
+    /** A seam for tests: runs after the new reflection is set and before the caches are emptied. */
+    void betweenReflectionAndCacheClear() {
+        // nothing in production
+    }
+
     /**
      * Makes {@code reflection} the one served. Requests without a project get the configured database
      * whole: there is no project to hold permissions for. Every project-scoped request is built per role.
@@ -235,6 +240,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         reflectedFingerprint.set(fingerprint);
         engineState.set(state);
         generation.incrementAndGet();
+        betweenReflectionAndCacheClear();
         reflections.clear();
         tenantEngineStates.clear();
     }
