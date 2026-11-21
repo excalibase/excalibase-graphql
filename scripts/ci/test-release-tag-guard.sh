@@ -38,4 +38,7 @@ grep -qF '"release/**"' "$ci_yml"; check "ci.yml runs on release branches" "0" "
 grep -qF "'^release/(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\$'" "$cd_yml"; check "cd.yml accepts only release/<major>.<minor>" "0" "$?"
 awk '/^  docker-release:/{f=1; next} /^  [a-z-]+:$/{f=0} f' "$cd_yml" | grep -qE 'type=raw,value=(latest|[0-9]|main)'; check "release builds publish no latest, version or main tag" "1" "$?"
 
+condition=$(awk '/^  docker-release:/{f=1; next} f && /^    if:/ {sub(/^    if: */, ""); print; exit}' "$cd_yml" | tr -s ' ')
+[[ $condition == *"github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository"* ]]; check "docker-release checks out only a successful push to this repository" "0" "$?"
+
 exit "$failures"
