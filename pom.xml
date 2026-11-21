@@ -60,19 +60,19 @@
         <spring.framework.version>7.0.10</spring.framework.version>
         <micronaut.platform.version>4.10.24</micronaut.platform.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
-        <jackson.version>2.21.7</jackson.version>
+        <jackson.version>2.23.0</jackson.version>
         <!-- A test fork that hangs is killed after 40 minutes; the slowest module takes about 15 -->
         <surefire.timeout>2400</surefire.timeout>
         <native-maven-plugin.version>0.10.6</native-maven-plugin.version>
         <!-- databases -->
-        <postgresql.version>42.7.12</postgresql.version>
-        <opentelemetry.version>1.67.0</opentelemetry.version>
+        <postgresql.version>42.7.14</postgresql.version>
+        <opentelemetry.version>1.68.0</opentelemetry.version>
         <assertj.version>3.27.7</assertj.version>
-        <commons-lang3.version>3.18.0</commons-lang3.version>
-        <kotlin-stdlib.version>2.3.21</kotlin-stdlib.version>
+        <commons-lang3.version>3.22.0</commons-lang3.version>
+        <kotlin-stdlib.version>2.4.21</kotlin-stdlib.version>
         <mysql.connector.version>9.3.0</mysql.connector.version>
         <!-- Apache-2.0; bundles its native libraries and a GraalVM feature (META-INF/native-image) -->
-        <sqlite.jdbc.version>3.51.3.0</sqlite.jdbc.version>
+        <sqlite.jdbc.version>3.54.1.0</sqlite.jdbc.version>
         <!--java graphql-->
         <graphql.java.version>24.0</graphql.java.version>
 
@@ -85,7 +85,7 @@
         <groovy-json.version>4.0.24</groovy-json.version>
 
         <!--nats-->
-        <jnats.version>2.22.0</jnats.version>
+        <jnats.version>2.27.0</jnats.version>
         <!-- jnats brings 2.73.8; pinned past CVE-2026-8763 (EXC-642) -->
         <bouncycastle.version>2.73.13</bouncycastle.version>
 
@@ -94,7 +94,7 @@
         <awaitility.version>4.3.0</awaitility.version>
 
         <!--observability-->
-        <opentelemetry-instrumentation.version>2.16.0-alpha</opentelemetry-instrumentation.version>
+        <opentelemetry-instrumentation.version>2.33.1-alpha</opentelemetry-instrumentation.version>
 
         <!-- SonarCloud. Token via SONAR_TOKEN env / -Dsonar.token=<token> at CLI. -->
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
@@ -134,7 +134,7 @@
             <dependency>
                 <groupId>commons-codec</groupId>
                 <artifactId>commons-codec</artifactId>
-                <version>1.18.0</version>
+                <version>1.23.0</version>
             </dependency>
             <dependency>
                 <groupId>org.bouncycastle</groupId>
@@ -447,7 +447,7 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.13</version>
+                <version>0.8.16</version>
                 <configuration>
                     <excludes>
                         <!-- application main class -->
