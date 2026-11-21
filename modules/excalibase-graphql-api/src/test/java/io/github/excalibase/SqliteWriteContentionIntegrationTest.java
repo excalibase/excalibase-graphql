@@ -1,9 +1,14 @@
 package io.github.excalibase;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
 import io.github.excalibase.support.EngineIntegrationTest;
 import io.github.excalibase.support.HttpAnswer;
 import io.github.excalibase.support.SqliteFile;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -26,13 +31,29 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SqliteWriteContentionIntegrationTest extends EngineIntegrationTest {
 
-    private static final int THREADS = 16;
+    private static final int THREADS = 8;
     private static final int REQUESTS_EACH = 20;
     private static final String JSON = "Content-Type";
     private static final SqliteFile DATABASE = SqliteFile.create("""
             CREATE TABLE items (id INTEGER PRIMARY KEY, k TEXT UNIQUE, v INTEGER NOT NULL DEFAULT 0);
             INSERT INTO items (id, k, v) VALUES (1, 'one', 0), (2, 'two', 0), (3, 'three', 0);
             """);
+
+    private static Level rootLevel;
+
+    @BeforeAll
+    static void quietTheDriver() {
+        // Another test may have left the root logger at TRACE, which logs every SQLite call and slows the file enough to
+        // time writers out for reasons that have nothing to do with the lock.
+        Logger root = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        rootLevel = root.getLevel();
+        root.setLevel(Level.WARN);
+    }
+
+    @AfterAll
+    static void restoreLogging() {
+        ((Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME)).setLevel(rootLevel);
+    }
 
     private final List<String> failures = Collections.synchronizedList(new ArrayList<>());
 

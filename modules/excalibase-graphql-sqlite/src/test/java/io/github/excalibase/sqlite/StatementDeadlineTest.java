@@ -6,9 +6,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
+import java.util.concurrent.locks.LockSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -19,6 +21,12 @@ class StatementDeadlineTest {
     private static final String ENDLESS = "WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r)"
             + " SELECT count(*) FROM r";
 
+    private static void runEndless(Statement statement) throws SQLException {
+        try (ResultSet rows = statement.executeQuery(ENDLESS)) {
+            rows.next();
+        }
+    }
+
     @Test
     void aStatementThatRunsPastTheLimit_isInterrupted_andTheConnectionStaysUsable() throws Exception {
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite::memory:");
@@ -27,7 +35,7 @@ class StatementDeadlineTest {
             long started = System.nanoTime();
 
             SQLException interrupted = assertThrows(SQLException.class,
-                    () -> statement.executeQuery(ENDLESS).next());
+                    () -> runEndless(statement));
 
             assertThat(Duration.ofNanos(System.nanoTime() - started)).isBetween(Duration.ofMillis(400), Duration.ofSeconds(10));
             assertThat(SqliteErrors.describe(interrupted)).hasValueSatisfying(error -> {
@@ -46,7 +54,7 @@ class StatementDeadlineTest {
             for (int i = 0; i < 4; i++) {
                 assertThat(statement.executeQuery("WITH RECURSIVE r(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM r"
                         + " WHERE n < 200000) SELECT count(*) FROM r").getInt(1)).isEqualTo(200000);
-                Thread.sleep(300);
+                LockSupport.parkNanos(Duration.ofMillis(300).toNanos());
             }
         }
     }

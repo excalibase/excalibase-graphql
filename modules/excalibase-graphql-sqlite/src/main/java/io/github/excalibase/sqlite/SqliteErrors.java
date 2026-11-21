@@ -38,14 +38,9 @@ final class SqliteErrors {
 
     static Optional<DataError> describe(SQLException failure) {
         String message = failure.getMessage() == null ? "" : failure.getMessage();
-        int code = failure.getErrorCode() & PRIMARY_CODE_MASK;
-        if (code == CODE_BUSY || code == CODE_LOCKED || message.contains(BUSY) || message.contains(LOCKED)) {
-            return Optional.of(new DataError(UNAVAILABLE, "database_busy",
-                    "The database is busy with another write; retry the request", null, null));
-        }
-        if (code == CODE_INTERRUPT || message.contains(INTERRUPT)) {
-            return Optional.of(new DataError(UNAVAILABLE, "statement_timeout",
-                    "The statement ran longer than the engine allows and was stopped", null, null));
+        Optional<DataError> unavailable = unavailable(failure, message);
+        if (unavailable.isPresent()) {
+            return unavailable;
         }
         if (message.contains(UNIQUE) || message.contains(PRIMARY_KEY)) {
             String key = group(FAILED, message);
@@ -67,6 +62,20 @@ final class SqliteErrors {
                     group(NAMED_CHECK, message), null));
         }
         return DataErrors.fromSqlState(failure);
+    }
+
+    /** A busy file or a stopped statement is the engine's to retry or bound, not the client's mistake. */
+    private static Optional<DataError> unavailable(SQLException failure, String message) {
+        int code = failure.getErrorCode() & PRIMARY_CODE_MASK;
+        if (code == CODE_BUSY || code == CODE_LOCKED || message.contains(BUSY) || message.contains(LOCKED)) {
+            return Optional.of(new DataError(UNAVAILABLE, "database_busy",
+                    "The database is busy with another write; retry the request", null, null));
+        }
+        if (code == CODE_INTERRUPT || message.contains(INTERRUPT)) {
+            return Optional.of(new DataError(UNAVAILABLE, "statement_timeout",
+                    "The statement ran longer than the engine allows and was stopped", null, null));
+        }
+        return Optional.empty();
     }
 
     private static String group(Pattern pattern, String message) {
