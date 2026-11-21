@@ -141,16 +141,20 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
                 .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));
     }
 
-    /** Two requests upserting the same new key at once both succeed and write one row: a deadlock is retried. */
+    /** Requests racing for each new key, and rounds of them: enough that a retry which is too short or in lockstep fails. */
+    private static final List<String> CONTENDERS = List.of("one", "two", "three", "four");
+    private static final int STRESS_ROUNDS = 60;
+
+    /** Several requests upserting the same new key at once all succeed and write one row: a deadlock is retried. */
     @Test
     void concurrentUpsertsOfTheSameNewKeyBothSucceed() throws Exception {
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(CONTENDERS.size());
         try {
-            for (int key = 5000; key < 5030; key++) {
-                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+            for (int key = 5000; key < 5000 + STRESS_ROUNDS; key++) {
+                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(CONTENDERS.size());
                 int id = key;
                 List<java.util.concurrent.Future<?>> requests = new java.util.ArrayList<>();
-                for (String title : List.of("left", "right")) {
+                for (String title : CONTENDERS) {
                     requests.add(pool.submit(() -> {
                         start.await();
                         graphql("mutation { createTestArticle(input: { id: " + id + ", title: \"" + title
@@ -175,13 +179,13 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
     /** REST upserts of the same new key at once both succeed: the REST transaction is retried after a deadlock. */
     @Test
     void concurrentRestMergeDuplicatesOfTheSameNewKeyBothSucceed() throws Exception {
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(CONTENDERS.size());
         try {
-            for (int key = 6000; key < 6030; key++) {
-                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+            for (int key = 6000; key < 6000 + STRESS_ROUNDS; key++) {
+                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(CONTENDERS.size());
                 int id = key;
                 List<java.util.concurrent.Future<?>> requests = new java.util.ArrayList<>();
-                for (String title : List.of("left", "right")) {
+                for (String title : CONTENDERS) {
                     requests.add(pool.submit(() -> {
                         start.await();
                         http.post("/test-proj/api/v1/article", "{\"id\":" + id + ",\"title\":\"" + title + "\"}",

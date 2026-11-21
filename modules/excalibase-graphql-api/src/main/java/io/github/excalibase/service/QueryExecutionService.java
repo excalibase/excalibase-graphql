@@ -61,7 +61,8 @@ public class QueryExecutionService {
             try {
                 return executeOnce(compiled, params, mutationExecutor);
             } catch (SQLException | JsonProcessingException | RuntimeException e) {
-                if (attempt >= WriteRetry.ATTEMPTS || !WriteRetry.isLockConflict(e)) throw e;
+                if (!WriteRetry.shouldRetry(e, attempt)) throw e;
+                WriteRetry.pause(attempt);
             }
         }
     }

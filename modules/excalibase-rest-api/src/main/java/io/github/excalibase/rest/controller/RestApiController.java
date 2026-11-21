@@ -468,8 +468,9 @@ public class RestApiController {
                                               Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         Dml dml = new Dml(compiled, scope, rollback, maxAffected, prefer, successStatus, table);
         HttpResponse<Object> answer = null;
-        for (int attempt = 1; answer == null && attempt <= WriteRetry.ATTEMPTS; attempt++) {
-            answer = executeDmlOnce(dml, attempt == WriteRetry.ATTEMPTS);
+        for (int attempt = 1; answer == null; attempt++) {
+            answer = executeDmlOnce(dml, attempt);
+            if (answer == null) WriteRetry.pause(attempt);
         }
         return answer;
     }
@@ -479,7 +480,7 @@ public class RestApiController {
                        Integer maxAffected, String prefer, HttpStatus successStatus, String table) {}
 
     /** One transaction; null when it lost a lock to a concurrent request, was rolled back, and may run again. */
-    private HttpResponse<Object> executeDmlOnce(Dml dml, boolean last) {
+    private HttpResponse<Object> executeDmlOnce(Dml dml, int attempt) {
         return txTemplate.execute(status -> {
             try {
                 boolean represent = dml.maxAffected() != null || preferContains(dml.prefer(), PREFER_REPRESENTATION);
@@ -490,13 +491,13 @@ public class RestApiController {
                 return buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys());
             } catch (Exception e) {
                 status.setRollbackOnly();
-                return dmlFailed(e, dml, last);
+                return dmlFailed(e, dml, attempt);
             }
         });
     }
 
     /** The answer to a failed mutation; null when it lost a lock and may run again. */
-    private HttpResponse<Object> dmlFailed(Exception e, Dml dml, boolean last) {
+    private HttpResponse<Object> dmlFailed(Exception e, Dml dml, int attempt) {
         Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
         if (failed.isPresent()) {
             return checkFailed(failed.get());
@@ -504,7 +505,7 @@ public class RestApiController {
         if (e instanceof IllegalArgumentException refused) {
             return Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
         }
-        if (!last && WriteRetry.isLockConflict(e)) {
+        if (WriteRetry.shouldRetry(e, attempt)) {
             return null;
         }
         return RestErrors.of(e, dml.scope().dialect(), dml.scope().filters(), "Mutation execution failed");

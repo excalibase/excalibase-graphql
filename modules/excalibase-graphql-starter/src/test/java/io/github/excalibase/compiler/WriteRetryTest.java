@@ -28,4 +28,26 @@ class WriteRetryTest {
         assertThat(WriteRetry.isLockConflict(new SQLException("Duplicate entry", "23000", 1062))).isFalse();
         assertThat(WriteRetry.isLockConflict(new IllegalArgumentException("bad"))).isFalse();
     }
+
+    @Test
+    void aMysqlDeadlockIsRetriedUpToTheDeadlockBound() {
+        SQLException deadlock = new SQLException("Deadlock found", "40001", 1213);
+        assertThat(WriteRetry.shouldRetry(deadlock, WriteRetry.DEADLOCK_ATTEMPTS - 1)).isTrue();
+        assertThat(WriteRetry.shouldRetry(deadlock, WriteRetry.DEADLOCK_ATTEMPTS)).isFalse();
+    }
+
+    @Test
+    void otherConflictsKeepTheSingleRetry() {
+        SQLException timeout = new SQLException("Lock wait timeout", "HY000", 1205);
+        SQLException postgres = new SQLException("deadlock detected", "40P01");
+        for (SQLException conflict : new SQLException[] {timeout, postgres}) {
+            assertThat(WriteRetry.shouldRetry(conflict, 1)).isTrue();
+            assertThat(WriteRetry.shouldRetry(conflict, WriteRetry.ATTEMPTS)).isFalse();
+        }
+    }
+
+    @Test
+    void aFailureThatIsNotAConflictIsNeverRetried() {
+        assertThat(WriteRetry.shouldRetry(new SQLException("Duplicate entry", "23000", 1062), 1)).isFalse();
+    }
 }
