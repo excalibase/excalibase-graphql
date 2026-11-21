@@ -202,14 +202,16 @@ management:
   port: 8081
 
 # Connection bound, derived from the CPUs the container has (Tomcat maxConnections and accept
-# queue = per-CPU value x CPUs). Excess clients wait in the kernel accept queue instead of
-# being parsed and parked. These replace the old tomcat.maxConnections / tomcat.acceptCount.
+# queue = per-CPU value x CPUs). Excess clients wait admissionWaitMs for a slot, then get a
+# 503 with Retry-After instead of being parsed and parked. These replace the old tomcat.maxConnections / tomcat.acceptCount.
 overload:
   enabled: true
   maxConnectionsPerCpu: 256
   acceptCountPerCpu: 256
   maxKeepAliveRequests: 20
   keepAliveTimeoutMs: 5000
+  admissionWaitMs: 250
+  waitQueuePerCpu: -1   # -1 = same as maxConnectionsPerCpu
 
 # JVM flags added through JAVA_TOOL_OPTIONS. Empty (default) = the image's own flags apply
 # (G1, 25-60% of the container memory). Do not set a collector here unless you also override

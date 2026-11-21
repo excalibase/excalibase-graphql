@@ -6,6 +6,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -20,7 +21,7 @@ public final class Catalog {
     private final Map<String, CollectionDef> collections;
 
     private Catalog(Map<String, CollectionDef> collections) {
-        this.collections = Map.copyOf(collections);
+        this.collections = Collections.unmodifiableMap(new LinkedHashMap<>(collections));
     }
 
     public static Catalog of(CollectionDef... defs) {

@@ -2,6 +2,7 @@ package io.github.excalibase.mongodb;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -57,5 +58,18 @@ class CatalogTest {
                 collection("orders", Map.of("a", "geometry"))));
         assertThatThrownBy(() -> Catalog.fromSettings(settings5))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("geometry");
+    }
+
+    @Test
+    void keepsTheOrderCollectionsWereDeclaredIn() {
+        List<String> names = List.of("zeta", "alpha", "mid", "beta", "omega", "chi", "psi", "rho", "tau", "nu");
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("b", "string");
+        Catalog catalog = Catalog.fromSettings(Map.of("collections", names.stream()
+                .map(n -> collection(n, fields)).toList()));
+
+        assertThat(catalog.all()).extracting(CollectionDef::name).containsExactlyElementsOf(names);
+        assertThat(Catalog.of(new CollectionDef("b", FieldKind.INT, Map.of()), new CollectionDef("a", FieldKind.INT, Map.of()))
+                .all()).extracting(CollectionDef::name).containsExactly("b", "a");
     }
 }

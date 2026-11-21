@@ -3,6 +3,8 @@
   "application.started.time",
   "disk.free",
   "disk.total",
+  "excalibase.connections.refused",
+  "excalibase.connections.waiting",
   "excalibase.permissions.stale.seconds",
   "graphql.request",
   "graphql.request.active",
