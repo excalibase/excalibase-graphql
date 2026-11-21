@@ -33,20 +33,35 @@ function timedRequest() {
   });
 }
 
-/** Waits until the server reports the connections as open, so a held socket is known to be accepted. */
-async function awaitOpen(count) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const samples = parseSamples((await request(stack.overloadManagement, '/actuator/prometheus')).text);
-    const open = samples.find((sample) => sample.name === 'tomcat_connections_current_connections');
-    if (open && open.value >= count) return;
+async function gauge(name) {
+  const samples = parseSamples((await request(stack.overloadManagement, '/actuator/prometheus')).text);
+  const sample = samples.find((candidate) => candidate.name === name);
+  return sample ? sample.value : 0;
+}
+
+/** Polls a server-side gauge until the condition holds, so a test never acts on a guess about what the server has seen. */
+async function awaitGauge(name, condition, description) {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    if (condition(await gauge(name))) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`the server never reported ${count} open connections`);
+  throw new Error(`the server never reported ${description}`);
 }
+
+const OPEN = 'tomcat_connections_current_connections';
+const WAITING = 'excalibase_connections_waiting_connections';
+const awaitOpen = (count) => awaitGauge(OPEN, (value) => value === count, `${count} open connections`);
+const awaitWaiting = (count) => awaitGauge(WAITING, (value) => value === count, `${count} waiting connections`);
 
 describe('overload bound on a 1 CPU engine', () => {
   let held = [];
-  afterEach(() => { held.forEach((socket) => socket.destroy()); held = []; });
+  // The next test starts from an empty gate: slots of destroyed sockets are freed by the server asynchronously.
+  afterEach(async () => {
+    held.forEach((socket) => socket.destroy());
+    held = [];
+    await awaitOpen(0);
+    await awaitWaiting(0);
+  });
 
   test('the bound is the configured connections per CPU times one CPU', async () => {
     const samples = parseSamples((await request(stack.overloadManagement, '/actuator/prometheus')).text);
@@ -57,11 +72,11 @@ describe('overload bound on a 1 CPU engine', () => {
   test('a client beyond the bound is refused at once with 503, Retry-After and a GraphQL error', async () => {
     held = await Promise.all(Array.from({ length: MAX_CONNECTIONS }, holdConnection));
     await awaitOpen(MAX_CONNECTIONS);
-    const queued = await Promise.all(Array.from({ length: MAX_CONNECTIONS }, () => new Promise((resolve) => {
+    await Promise.all(Array.from({ length: MAX_CONNECTIONS }, () => new Promise((resolve) => {
       const socket = net.connect(Number(base.port), base.hostname, () => resolve(socket));
       held.push(socket);
     })));
-    expect(queued).toHaveLength(MAX_CONNECTIONS);
+    await awaitWaiting(MAX_CONNECTIONS);   // the wait queue is full, so the next connection is refused at once
 
     const answer = await timedRequest();
     expect(answer.status).toBe(503);
@@ -80,7 +95,8 @@ describe('overload bound on a 1 CPU engine', () => {
     held = await Promise.all(Array.from({ length: MAX_CONNECTIONS }, holdConnection));
     await awaitOpen(MAX_CONNECTIONS);
     const waitingRequest = timedRequest();
-    setTimeout(() => held[0].destroy(), 50);
+    await awaitWaiting(1);                 // the request is queued for a slot, inside its admission wait
+    held[0].destroy();
     const answer = await waitingRequest;
     expect(answer.status).toBe(405);
   }, 30000);
