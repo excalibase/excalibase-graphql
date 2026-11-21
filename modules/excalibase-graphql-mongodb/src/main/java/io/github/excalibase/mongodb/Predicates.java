@@ -45,12 +45,20 @@ final class Predicates {
         return wanted ? nullish : nullish.not();
     }
 
-    /** {@code LIKE}: {@code %} any run, {@code _} one character, backslash escapes; anchored, newlines included. */
+    /** More wildcard-separated segments than this, or a longer pattern, is refused: a pattern can come from a claim. */
+    static final int MAX_LIKE_SEGMENTS = 8;
+    static final int MAX_LIKE_LENGTH = 512;
+
+    /**
+     * {@code LIKE}: {@code %} any run, {@code _} one character, backslash escapes; anchored, newlines included.
+     * A pattern Postgres would reject (it ends in an escape) or that is too large to match in bounded time
+     * matches nothing, and neither does its negation.
+     */
     static Tri like(String path, String pattern, boolean positive) {
-        if (pattern == null) {
+        String regex = pattern == null ? null : likeToRegex(pattern);
+        if (regex == null) {
             return Tri.UNKNOWN;
         }
-        String regex = likeToRegex(pattern);
         Tri matches = new Tri(field(path, new Document("$regex", regex).append("$options", "s")),
                 Cond.and(List.of(Cond.of(new Document(path, new Document(TYPE, "string"))),
                         Cond.of(new Document(path, new Document("$not", NOT_AN_ARRAY))),
@@ -58,34 +66,69 @@ final class Predicates {
         return positive ? matches : matches.not();
     }
 
+    /**
+     * The regex of a LIKE pattern, or null when it cannot be matched safely. Runs of {@code %} collapse, and every
+     * segment between two {@code %} is matched by a lazy scan inside an atomic group, so a hostile pattern costs a
+     * few linear passes and cannot backtrack across segments the way {@code .*a.*a.*b} does.
+     */
     static String likeToRegex(String pattern) {
-        StringBuilder regex = new StringBuilder("\\A");
+        List<String> segments = likeSegments(pattern);
+        if (segments == null || segments.size() > MAX_LIKE_SEGMENTS + 1 || pattern.length() > MAX_LIKE_LENGTH) {
+            return null;
+        }
+        StringBuilder regex = new StringBuilder("\\A").append(segments.getFirst());
+        if (segments.size() == 1) {
+            return regex.append("\\z").toString();
+        }
+        for (String middle : segments.subList(1, segments.size() - 1)) {
+            regex.append("(?>.*?").append(middle).append(')');
+        }
+        String last = segments.getLast();
+        return last.isEmpty() ? regex.toString() : regex.append(".*").append(last).append("\\z").toString();
+    }
+
+    /** The regex of each run of characters between {@code %}; null when the pattern ends in an escape. */
+    private static List<String> likeSegments(String pattern) {
+        List<String> segments = new ArrayList<>();
+        StringBuilder segment = new StringBuilder();
         StringBuilder literal = new StringBuilder();
-        boolean escaped = false;
-        for (char c : pattern.toCharArray()) {
-            if (escaped) {
-                literal.append(c);
-                escaped = false;
-            } else if (c == '\\') {
-                escaped = true;
+        for (int i = 0; i < pattern.length(); i++) {
+            char c = pattern.charAt(i);
+            if (c == '\\') {
+                if (++i == pattern.length()) {
+                    return null;
+                }
+                literal.append(pattern.charAt(i));
             } else if (c == '%' || c == '_') {
-                flush(regex, literal);
-                regex.append(c == '%' ? ".*" : ".");
+                flush(segment, literal);
+                if (c == '_') {
+                    segment.append('.');
+                } else {
+                    segments.add(segment.toString());
+                    segment.setLength(0);
+                    i = skipPercents(pattern, i);
+                }
             } else {
                 literal.append(c);
             }
         }
-        if (escaped) {
-            literal.append('\\');
-        }
-        flush(regex, literal);
-        return regex.append("\\z").toString();
+        flush(segment, literal);
+        segments.add(segment.toString());
+        return segments;
     }
 
-    private static void flush(StringBuilder regex, StringBuilder literal) {
+    private static int skipPercents(String pattern, int at) {
+        int next = at;
+        while (next + 1 < pattern.length() && pattern.charAt(next + 1) == '%') {
+            next++;
+        }
+        return next;
+    }
+
+    private static void flush(StringBuilder segment, StringBuilder literal) {
         if (!literal.isEmpty()) {
             // \Q..\E ends at the first \E, so a literal containing one is split around it
-            regex.append("\\Q").append(literal.toString().replace("\\E", "\\E\\\\E\\Q")).append("\\E");
+            segment.append("\\Q").append(literal.toString().replace("\\E", "\\E\\\\E\\Q")).append("\\E");
             literal.setLength(0);
         }
     }

@@ -146,4 +146,16 @@ abstract class EnginePermissionTest extends AbstractEngineTest {
 
         assertThat(response.toString()).contains("owner").doesNotContain("secret");
     }
+
+    @Test
+    void aHostileLikePatternFromAClaimIsRefusedInBoundedTimeNotBacktracked() {
+        Policy byPattern = policy(PolicyEffect.ALLOW, rule("owner", RuleOperator.LIKE, "{{currentUserId}}"));
+        QueryEngine engine = engine(List.of(byPattern), List.of(), List.of());
+        String hostile = "%a".repeat(40) + "b";
+
+        Map<String, Object> response = org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(
+                java.time.Duration.ofSeconds(10), () -> as(engine, hostile, "{ orders { id } }"));
+
+        assertThat(rows(response, "orders")).isEmpty();
+    }
 }

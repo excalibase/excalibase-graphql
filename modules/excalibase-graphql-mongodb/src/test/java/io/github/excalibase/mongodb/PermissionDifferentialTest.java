@@ -82,6 +82,13 @@ abstract class PermissionDifferentialTest {
                 new Object[] {text("status", RuleOperator.LIKE, "a.tive"), "status LIKE 'a.tive'"},
                 new Object[] {text("status", RuleOperator.LIKE, "active"), "status LIKE 'active'"},
                 new Object[] {text("status", RuleOperator.NOT_LIKE, "arch%"), "status NOT LIKE 'arch%'"},
+                new Object[] {text("status", RuleOperator.LIKE, "%"), "status LIKE '%'"},
+                new Object[] {text("status", RuleOperator.LIKE, "%%e%%"), "status LIKE '%%e%%'"},
+                new Object[] {text("status", RuleOperator.LIKE, "a%t%e"), "status LIKE 'a%t%e'"},
+                new Object[] {text("status", RuleOperator.LIKE, "%c%i%e%"), "status LIKE '%c%i%e%'"},
+                new Object[] {text("status", RuleOperator.LIKE, "%e"), "status LIKE '%e'"},
+                new Object[] {text("status", RuleOperator.NOT_LIKE, "a_%e"), "status NOT LIKE 'a_%e'"},
+                new Object[] {text("status", RuleOperator.LIKE, "a%a"), "status LIKE 'a%a'"},
                 new Object[] {text("status", RuleOperator.IS_NULL, null), "status IS NULL"},
                 new Object[] {text("status", RuleOperator.IS_NOT_NULL, null), "status IS NOT NULL"},
                 new Object[] {number(RuleOperator.EQ, "5"), "n = 5"},
@@ -131,10 +138,7 @@ abstract class PermissionDifferentialTest {
         List<Integer> oracle = PostgresOracle.INSTANCE.visibleIds(testCase.permissive(), testCase.restrictive(), uid);
 
         assertThat(mongoIds(testCase.policies(), caller)).as("pipeline vs Postgres").isEqualTo(oracle);
-        // RowMatcher's LIKE turns % into ".*", which does not cross a newline, so rows 7 and 8 are left to the
-        // two SQL-faithful paths (a divergence of rls-core's realtime matcher, noted in the ADR)
-        assertThat(inMemoryIds(testCase.policies(), caller)).as("in-memory matcher vs Postgres")
-                .isEqualTo(oracle.stream().filter(id -> id < 7).toList());
+        assertThat(inMemoryIds(testCase.policies(), caller)).as("in-memory matcher vs Postgres").isEqualTo(oracle);
     }
 
     private List<Integer> mongoIds(List<Policy> policies, UserContext caller) {
@@ -184,9 +188,6 @@ abstract class PermissionDifferentialTest {
         RowMatcher matcher = new RowMatcher(policies);
         List<Integer> kept = new ArrayList<>();
         for (Map<String, Object> row : PostgresOracle.INSTANCE.rows()) {
-            if ((Integer) row.get("id") >= 7) {
-                continue;
-            }
             Map<String, Object> asRule = new LinkedHashMap<>(row);
             if (matcher.matches(COLLECTION, asRule, caller, Operation.SELECT)) {
                 kept.add((Integer) row.get("id"));

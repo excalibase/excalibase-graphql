@@ -213,6 +213,33 @@ class RowSecurityTest {
         RowSecurity security = security(policy(PolicyEffect.ALLOW, rule("status", RuleOperator.LIKE, "a.b%")));
 
         Document pattern = security.filter("orders", caller("u1"), Operation.SELECT).doc().get("status", Document.class);
-        assertThat(pattern).containsEntry("$regex", "\\A\\Qa.b\\E.*\\z").containsEntry("$options", "s");
+        assertThat(pattern).containsEntry("$regex", "\\A\\Qa.b\\E").containsEntry("$options", "s");
+    }
+
+    @Test
+    void likeRunsOfPercentCollapseAndMiddleSegmentsAreAtomic() {
+        assertThat(Predicates.likeToRegex("a%%%b%c%d"))
+                .isEqualTo("\\A\\Qa\\E(?>.*?\\Qb\\E)(?>.*?\\Qc\\E).*\\Qd\\E\\z");
+        assertThat(Predicates.likeToRegex("%")).isEqualTo("\\A");
+        assertThat(Predicates.likeToRegex("a%")).isEqualTo("\\A\\Qa\\E");
+        assertThat(Predicates.likeToRegex("a_c")).isEqualTo("\\A\\Qa\\E.\\Qc\\E\\z");
+    }
+
+    @Test
+    void likeWithATrailingEscapeMatchesNothingAndSoDoesItsNegation() {
+        Tri like = Predicates.like("status", "act\\", true);
+
+        assertThat(like.t().kind()).isEqualTo(Cond.Kind.NEVER);
+        assertThat(like.not().t().kind()).isEqualTo(Cond.Kind.NEVER);
+    }
+
+    @Test
+    void likeWithTooManyWildcardSegmentsOrTooLongMatchesNothing() {
+        String hostile = "%a".repeat(Predicates.MAX_LIKE_SEGMENTS + 1);
+
+        assertThat(Predicates.like("status", hostile, true).t().kind()).isEqualTo(Cond.Kind.NEVER);
+        assertThat(Predicates.like("status", hostile, true).f().kind()).isEqualTo(Cond.Kind.NEVER);
+        assertThat(Predicates.like("status", "a".repeat(Predicates.MAX_LIKE_LENGTH + 1), true).t().kind())
+                .isEqualTo(Cond.Kind.NEVER);
     }
 }
