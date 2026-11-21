@@ -55,8 +55,10 @@ class LikePatternTest {
 
     @Test
     void aPatternOverTheLengthCapIsRefused() {
-        assertThat(LikePattern.compile("a".repeat(4096)).matches("a".repeat(4096))).isTrue();
-        assertThatThrownBy(() -> LikePattern.compile("a".repeat(4097)))
+        String atCap = "a".repeat(4096);
+        String overCap = "a".repeat(4097);
+        assertThat(LikePattern.compile(atCap).matches(atCap)).isTrue();
+        assertThatThrownBy(() -> LikePattern.compile(overCap))
                 .isInstanceOf(PermissionEvaluationException.class)
                 .hasMessageContaining("too long");
     }

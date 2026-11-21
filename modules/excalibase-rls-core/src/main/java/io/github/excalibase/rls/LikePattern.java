@@ -29,21 +29,24 @@ public final class LikePattern {
         List<Integer> tokens = new ArrayList<>();
         int i = 0;
         while (i < codePoints.length) {
-            int codePoint = codePoints[i];
-            if (codePoint == '\\') {
+            if (codePoints[i] == '\\') {
                 if (i + 1 == codePoints.length) return null;
                 tokens.add(codePoints[i + 1]);
                 i += 2;
-                continue;
-            }
-            if (codePoint == '%') {
-                if (tokens.isEmpty() || tokens.getLast() != ANY_RUN) tokens.add(ANY_RUN);
             } else {
-                tokens.add(codePoint == '_' ? ANY_ONE : codePoint);
+                addWildcardOrLiteral(tokens, codePoints[i]);
+                i++;
             }
-            i++;
         }
         return new LikePattern(tokens.stream().mapToInt(Integer::intValue).toArray());
+    }
+
+    private static void addWildcardOrLiteral(List<Integer> tokens, int codePoint) {
+        if (codePoint == '%') {
+            if (tokens.isEmpty() || tokens.getLast() != ANY_RUN) tokens.add(ANY_RUN);
+        } else {
+            tokens.add(codePoint == '_' ? ANY_ONE : codePoint);
+        }
     }
 
     public boolean matches(String value) {
