@@ -76,7 +76,7 @@
         <dependency>
             <groupId>com.google.protobuf</groupId>
             <artifactId>protobuf-java</artifactId>
-            <version>4.29.0</version>
+            <version>4.36.2</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
@@ -201,7 +201,7 @@
         <dependency>
             <groupId>com.tngtech.archunit</groupId>
             <artifactId>archunit-junit5</artifactId>
-            <version>1.4.1</version>
+            <version>1.5.1</version>
             <scope>test</scope>
         </dependency>
         <dependency>
