@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class WriteRetryTest {
 
     private static final SQLException MYSQL_DEADLOCK = new SQLException("Deadlock found", "40001", 1213);
-    private static final SQLException MYSQL_LOCK_TIMEOUT = new SQLException("Lock wait timeout", "HY000", 1205);
+    private static final SQLException MYSQL_LOCK_TIMEOUT = new SQLException("Lock wait timeout exceeded", "40001", 1205);
     private static final SQLException POSTGRES_DEADLOCK = new SQLException("deadlock detected", "40P01");
     private static final SQLException POSTGRES_SERIALIZATION = new SQLException("could not serialize", "40001");
 

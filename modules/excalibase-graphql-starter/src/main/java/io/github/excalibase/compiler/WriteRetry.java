@@ -13,7 +13,7 @@ import java.util.function.LongSupplier;
  * <p>A MySQL deadlock (1213) is the expected loser of two upserts of one new key under REPEATABLE READ, and
  * losing again to the same rival is likely, so it gets {@link #DEADLOCK_ATTEMPTS} attempts, each after a random
  * pause of at most 10, 20, 40, 80 and 160 ms. A Postgres deadlock or serialization failure keeps a single
- * retry, after a pause of 1 to 10 ms. A MySQL lock wait timeout is not retried: the request already waited
+ * retry, after a pause of 1 to 10 ms. A MySQL lock wait timeout (1205, which the driver reports with SQLState 40001) is not retried: the request already waited
  * for the lock, and waiting again would double a slow request. No retry starts once {@link #BUDGET} of the
  * request's time is spent, or after the thread is interrupted.
  */
@@ -30,6 +30,7 @@ public final class WriteRetry {
 
     private static final long BACKOFF_BASE_MILLIS = 5;
 
+    private static final int MYSQL_LOCK_WAIT_TIMEOUT = 1205;
     private static final int MYSQL_DEADLOCK = 1213;
     private static final String SERIALIZATION_FAILURE = "40001";
     private static final String POSTGRES_DEADLOCK = "40P01";
@@ -124,6 +125,9 @@ public final class WriteRetry {
     }
 
     private static boolean isLockConflict(SQLException sql) {
+        if (sql.getErrorCode() == MYSQL_LOCK_WAIT_TIMEOUT) {
+            return false; // Connector/J reports it with SQLState 40001 too
+        }
         return sql.getErrorCode() == MYSQL_DEADLOCK
                 || SERIALIZATION_FAILURE.equals(sql.getSQLState()) || POSTGRES_DEADLOCK.equals(sql.getSQLState());
     }
