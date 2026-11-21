@@ -49,6 +49,9 @@ class MysqlPermissionsIntegrationTest extends EngineIntegrationTest {
     private static final String PROJECT = "proj-mysql";
     private static final String ROLE = "app_authenticated";
     private static final String NOT_LOCKED = "{\"status\":{\"_neq\":\"locked\"}}";
+    /** The update check is stricter than the insert check: a row may be inserted frozen, never updated into it. */
+    private static final String NOT_LOCKED_OR_FROZEN =
+            "{\"_and\":[{\"status\":{\"_neq\":\"locked\"}},{\"status\":{\"_neq\":\"frozen\"}}]}";
 
     static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withInitScript("init-mysql-permissions.sql");
 
@@ -126,7 +129,7 @@ class MysqlPermissionsIntegrationTest extends EngineIntegrationTest {
                 PermissionDocs.entry(table("notes"), ROLE, PermissionDocs.select(readable, "\"*\""),
                         PermissionDocs.insert(NOT_LOCKED, "[\"id\",\"title\",\"status\",\"pinned\"]",
                                 "{\"owner_id\":\"X-Excalibase-User-Id\"}"),
-                        PermissionDocs.update(OWNED, NOT_LOCKED, "[\"id\",\"title\",\"status\"]", "{}"),
+                        PermissionDocs.update(OWNED, NOT_LOCKED_OR_FROZEN, "[\"id\",\"title\",\"status\"]", "{}"),
                         PermissionDocs.delete(OWNED)),
                 PermissionDocs.entry(table("tags"), ROLE, PermissionDocs.everything()),
                 PermissionDocs.entry(table("stamps"), ROLE, PermissionDocs.everything()),
@@ -454,6 +457,27 @@ class MysqlPermissionsIntegrationTest extends EngineIntegrationTest {
                 .expect(status().isForbidden());
         assertThat(count("id = 96 AND title = 'renamed'")).isOne();
         assertThat(count("id = 97")).isZero();
+    }
+
+    @Test
+    void restMerge_whoseResultFailsTheUpdateCheckButPassesTheInsertCheck_isRefused() throws Exception {
+        insertNote(98, ALICE, "mine", "open");
+
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes", "{\"id\":98,\"title\":\"x\",\"status\":\"frozen\"}")
+                .expect(status().isForbidden());
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes", "[{\"id\":98,\"title\":\"x\",\"status\":\"frozen\"}]")
+                .expect(status().isForbidden());
+        assertThat(count("id = 98 AND status = 'open'")).isOne();
+        rest(ALICE, "POST", "/" + PROJECT + "/api/v1/notes", "{\"id\":99,\"title\":\"new\",\"status\":\"frozen\"}")
+                .expect(status().isCreated());
+    }
+
+    @Test
+    void restMerge_theSameKeyTwiceInOneArray_isRefused() throws Exception {
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes",
+                "[{\"id\":100,\"title\":\"a\"},{\"id\":100,\"title\":\"b\"}]")
+                .expect(status().isBadRequest());
+        assertThat(count("id = 100")).isZero();
     }
 
     @Test

@@ -431,6 +431,28 @@ abstract class RestMysqlContract {
         }
 
         @Test
+        void mergingTheSameKeyTwiceInOneArrayIsRefusedAndWritesNothing() {
+            List<Map<String, Object>> rows = List.of(Map.of("code", "DE", "name", "A"), Map.of("code", "DE", "name", "B"));
+            List<String> key = List.of("code");
+            var failure = assertThrows(IllegalArgumentException.class,
+                    () -> compiler.compileBulkUpsert("test.country", rows, key, RestQueryCompiler.Conflict.MERGE));
+            assertTrue(failure.getMessage().contains("twice"), failure.getMessage());
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM country", Integer.class));
+        }
+
+        @Test
+        void ignoringDuplicatesOfATableWithNoKeyAndNoOnConflictIsRefused() {
+            List<Map<String, Object>> rows = List.of(Map.of("message", "m"));
+            Map<String, Object> row = Map.of("message", "m");
+            List<String> noColumns = List.of();
+            var failure = assertThrows(IllegalArgumentException.class, () -> compiler.compileBulkUpsert(
+                    "test.audit_log", rows, noColumns, RestQueryCompiler.Conflict.IGNORE));
+            assertTrue(failure.getMessage().contains("on_conflict"), failure.getMessage());
+            assertThrows(IllegalArgumentException.class, () -> compiler.compileUpsert(
+                    "test.audit_log", row, noColumns, RestQueryCompiler.Conflict.IGNORE));
+        }
+
+        @Test
         void upsertOfOnlyTheKeyDoesNothingOnConflict() {
             assertNull(write(compiler.compileUpsert("test.country", Map.of("code", "VN"), List.of("code")), true));
         }
