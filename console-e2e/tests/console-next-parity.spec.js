@@ -438,8 +438,8 @@ test.describe("History", () => {
     await tab(page, "History");
     await expect(page.locator("#history-list tbody tr")).toHaveCount(2);
     await page.locator("#history-list tbody tr").first().getByRole("button", { name: "View" }).click();
-    await expect(page.locator("#diff .line.del").filter({ hasText: "# note one" })).toHaveCount(1);
-    await expect(page.locator("#diff .line.add").first()).toBeVisible();
+    await expect(page.locator("#diff .line.add").filter({ hasText: "role: anon" })).toHaveCount(1);
+    await expect(page.locator("#diff .line.del")).toHaveCount(0);
 
     await page.locator("#restore").click();
     await expect(page.locator("#restore-confirm")).toContainText("Restore this version");
