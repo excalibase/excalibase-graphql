@@ -163,9 +163,9 @@ public class SqliteSchemaLoader implements SchemaLoader {
             return;
         }
         if (from.size() == 1) {
-            info.addForeignKey(table, from.getFirst(), parent, to.getFirst());
+            info.addForeignKey(table, from.getFirst(), schema, parent, to.getFirst());
         } else {
-            info.addCompositeForeignKey(table, from, parent, to);
+            info.addCompositeForeignKey(table, from, schema, parent, to);
         }
     }
 
