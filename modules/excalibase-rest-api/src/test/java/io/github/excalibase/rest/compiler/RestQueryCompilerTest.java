@@ -732,8 +732,10 @@ class RestQueryCompilerTest {
           "public.orders", new TableAccess.Rights(Set.of(RlsOp.SELECT), Set.of("id", "product_id"), Set.of(), 5, false)));
       RestQueryCompiler role = new RestQueryCompiler(schema, dialect, "public", 30, access);
 
-      var failure = assertThrows(IllegalArgumentException.class, () -> role.compileSelect(new RestQueryCompiler.SelectQuery(
-          "public.products", List.of("id"), List.of(), List.of(), List.of(orders), null, 10, 0, false)));
+      var query = new RestQueryCompiler.SelectQuery(
+          "public.products", List.of("id"), List.of(), List.of(), List.of(orders), null, 10, 0, false);
+
+      var failure = assertThrows(IllegalArgumentException.class, () -> role.compileSelect(query));
       assertTrue(failure.getMessage().contains("Unknown column"), failure.getMessage());
     }
 
