@@ -41,7 +41,11 @@ class SameNameTableForeignKeyMergeTest {
                 "CREATE TABLE shop_a.users (id INT PRIMARY KEY)",
                 "CREATE TABLE shop_b.users (id INT PRIMARY KEY)",
                 "CREATE TABLE shop_b.orders (id INT PRIMARY KEY, user_id INT,"
-                        + " FOREIGN KEY (user_id) REFERENCES shop_a.users (id))")) {
+                        + " FOREIGN KEY (user_id) REFERENCES shop_a.users (id))",
+                "CREATE TABLE shop_a.codes (a INT, b INT, PRIMARY KEY (a, b))",
+                "CREATE TABLE shop_b.codes (a INT, b INT, PRIMARY KEY (a, b))",
+                "CREATE TABLE shop_b.coded (id INT PRIMARY KEY, a INT, b INT,"
+                        + " FOREIGN KEY (a, b) REFERENCES shop_a.codes (a, b))")) {
             asMysqlRoot(statement);
         }
     }
@@ -83,6 +87,30 @@ class SameNameTableForeignKeyMergeTest {
         SchemaInfo info = merged(jdbc, new MysqlSchemaLoader(), List.of("shop_a", "shop_b"));
 
         assertThat(info.getAllForwardFks().values()).extracting(SchemaInfo.FkInfo::refTable)
-                .containsExactly("shop_a.users");
+                .containsExactlyInAnyOrder("shop_a.users", "shop_a.codes");
+    }
+
+    @Test
+    void mysql_compositeKeyFromAnotherDatabase_bindsToTheDatabaseItNames() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(mysql.getJdbcUrl(),
+                mysql.getUsername(), mysql.getPassword()));
+
+        SchemaInfo info = merged(jdbc, new MysqlSchemaLoader(), List.of("shop_a", "shop_b"));
+
+        assertThat(info.getAllForwardFks().values()).filteredOn(SchemaInfo.FkInfo::isComposite)
+                .singleElement().satisfies(fk -> {
+                    assertThat(fk.refTable()).isEqualTo("shop_a.codes");
+                    assertThat(fk.refColumns()).containsExactly("a", "b");
+                });
+    }
+
+    @Test
+    void mysql_keyIntoADatabaseThatIsNotLoaded_isDropped_notBoundToASameNamedTable() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(mysql.getJdbcUrl(),
+                mysql.getUsername(), mysql.getPassword()));
+
+        SchemaInfo info = merged(jdbc, new MysqlSchemaLoader(), List.of("shop_b"));
+
+        assertThat(info.getAllForwardFks()).isEmpty();
     }
 }

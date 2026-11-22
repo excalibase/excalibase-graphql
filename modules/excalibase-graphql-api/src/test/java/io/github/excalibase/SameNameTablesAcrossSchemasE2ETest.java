@@ -83,4 +83,28 @@ class SameNameTablesAcrossSchemasE2ETest extends EngineIntegrationTest {
                 .expect(status().isOk())
                 .expect(jsonPath("$.data[0].users.name", is("from-a")));
     }
+
+    @Test
+    void rest_forwardEmbedNamingTwoSameNamedTargets_isAmbiguous_notTheFirstOne() {
+        http.get(REST + "/audit?select=id,users(name)", "Accept-Profile", "tenant_a")
+                .expect(status().is(300))
+                .expect(jsonPath("$.code", is("ambiguous_relationship")));
+    }
+
+    @Test
+    void rest_forwardEmbedWithAKeyHint_picksThatKeysTarget() {
+        http.get(REST + "/audit?select=id,users!b_user(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].users.name", is("from-b")));
+        http.get(REST + "/audit?select=id,users!a_user(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].users.name", is("from-a")));
+    }
+
+    @Test
+    void rest_reverseEmbedNamingTwoSameNamedChildren_isAmbiguous_notTheFirstOne() {
+        http.get(REST + "/users?select=id,logs(id)", "Accept-Profile", "tenant_a")
+                .expect(status().is(300))
+                .expect(jsonPath("$.code", is("ambiguous_relationship")));
+    }
 }

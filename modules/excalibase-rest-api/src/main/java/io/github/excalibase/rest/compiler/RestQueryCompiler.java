@@ -15,6 +15,8 @@ import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.security.WriteGuard;
 
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.UnaryOperator;
@@ -1040,26 +1042,36 @@ public class RestQueryCompiler {
         return safe.isEmpty() ? SELECT + starFor(table, alias) : SELECT + String.join(COMMA_SEP, safe);
     }
 
+    /** The one relationship an embed names; several leading to different tables are ambiguous, never the first. */
     private SchemaInfo.FkInfo findForwardFk(String table, String relName, String fkHint) {
         String tablePrefix = table + DOT;
+        Map<String, SchemaInfo.FkInfo> byTarget = new LinkedHashMap<>();
         for (var e : schemaInfo.getAllForwardFks().entrySet()) {
             SchemaInfo.FkInfo fk = e.getValue();
             if (matchesFk(e.getKey(), tablePrefix, fk.fkColumn(), fkHint, fk.refTable(), relName)) {
-                return fk;
+                byTarget.putIfAbsent(fk.refTable(), fk);
             }
         }
-        return null;
+        return onlyRelationship(byTarget, relName);
     }
 
     private SchemaInfo.ReverseFkInfo findReverseFk(String table, String relName, String fkHint) {
         String tablePrefix = table + DOT;
+        Map<String, SchemaInfo.ReverseFkInfo> byChild = new LinkedHashMap<>();
         for (var e : schemaInfo.getAllReverseFks().entrySet()) {
             SchemaInfo.ReverseFkInfo rfk = e.getValue();
             if (matchesFk(e.getKey(), tablePrefix, rfk.fkColumn(), fkHint, rfk.childTable(), relName)) {
-                return rfk;
+                byChild.putIfAbsent(rfk.childTable(), rfk);
             }
         }
-        return null;
+        return onlyRelationship(byChild, relName);
+    }
+
+    private static <T> T onlyRelationship(Map<String, T> byTable, String relName) {
+        if (byTable.size() > 1) {
+            throw new DataErrorException(DataError.ambiguousRelationship(relName));
+        }
+        return byTable.isEmpty() ? null : byTable.values().iterator().next();
     }
 
     /** True if the FK entry belongs to {@code tablePrefix}, matches the optional {@code fkHint}, and its target table equals {@code relName}. */
