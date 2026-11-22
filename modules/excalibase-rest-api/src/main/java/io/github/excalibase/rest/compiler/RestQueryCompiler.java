@@ -19,6 +19,7 @@ import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
@@ -1042,44 +1043,61 @@ public class RestQueryCompiler {
         return safe.isEmpty() ? SELECT + starFor(table, alias) : SELECT + String.join(COMMA_SEP, safe);
     }
 
-    /** The one relationship an embed names; several leading to different tables are ambiguous, never the first. */
+    /**
+     * The one relationship an embed names. Several fitting it are ambiguous, never the first; a {@code !hint} that
+     * fits none of a relationship that exists is a mistake, never a silently dropped embed.
+     */
     private SchemaInfo.FkInfo findForwardFk(String table, String relName, String fkHint) {
         String tablePrefix = table + DOT;
-        Map<String, SchemaInfo.FkInfo> byTarget = new LinkedHashMap<>();
+        List<SchemaInfo.FkInfo> fits = new ArrayList<>();
+        boolean fitsWithoutHint = false;
         for (var e : schemaInfo.getAllForwardFks().entrySet()) {
             SchemaInfo.FkInfo fk = e.getValue();
-            if (matchesFk(e.getKey(), tablePrefix, fk.fkColumn(), fkHint, fk.refTable(), relName)) {
-                byTarget.putIfAbsent(fk.refTable(), fk);
-            }
+            if (!matchesFk(e.getKey(), tablePrefix, fk.fkColumn(), null, fk.refTable(), relName)) continue;
+            fitsWithoutHint = true;
+            if (fkHint == null || fk.fkColumn().equals(fkHint)) fits.add(fk);
         }
-        return onlyRelationship(byTarget, relName);
+        return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.FkInfo::refTable, SchemaInfo.FkInfo::fkColumn);
     }
 
     private SchemaInfo.ReverseFkInfo findReverseFk(String table, String relName, String fkHint) {
         String tablePrefix = table + DOT;
-        Map<String, SchemaInfo.ReverseFkInfo> byChild = new LinkedHashMap<>();
+        List<SchemaInfo.ReverseFkInfo> fits = new ArrayList<>();
+        boolean fitsWithoutHint = false;
         for (var e : schemaInfo.getAllReverseFks().entrySet()) {
             SchemaInfo.ReverseFkInfo rfk = e.getValue();
-            if (matchesFk(e.getKey(), tablePrefix, rfk.fkColumn(), fkHint, rfk.childTable(), relName)) {
-                byChild.putIfAbsent(rfk.childTable(), rfk);
+            if (!matchesFk(e.getKey(), tablePrefix, rfk.fkColumn(), null, rfk.childTable(), relName)) continue;
+            fitsWithoutHint = true;
+            if (fkHint == null || rfk.fkColumn().equals(fkHint)) fits.add(rfk);
+        }
+        return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.ReverseFkInfo::childTable,
+                SchemaInfo.ReverseFkInfo::fkColumn);
+    }
+
+    private static <T> T only(List<T> fits, boolean relationExists, String relName, String fkHint,
+                              Function<T, String> table, Function<T, String> column) {
+        if (fits.isEmpty()) {
+            if (relationExists && fkHint != null) {
+                throw new DataErrorException(DataError.unknownRelationshipHint(relName, fkHint));
             }
+            return null;
         }
-        return onlyRelationship(byChild, relName);
+        if (fits.size() > 1) {
+            boolean differentTables = fits.stream().map(table).distinct().count() > 1;
+            List<String> options = fits.stream()
+                    .map(fit -> differentTables ? table.apply(fit) : relName + "!" + column.apply(fit)).toList();
+            throw new DataErrorException(DataError.ambiguousRelationship(relName, options));
+        }
+        return fits.getFirst();
     }
 
-    private static <T> T onlyRelationship(Map<String, T> byTable, String relName) {
-        if (byTable.size() > 1) {
-            throw new DataErrorException(DataError.ambiguousRelationship(relName));
-        }
-        return byTable.isEmpty() ? null : byTable.values().iterator().next();
-    }
-
-    /** True if the FK entry belongs to {@code tablePrefix}, matches the optional {@code fkHint}, and its target table equals {@code relName}. */
+    /** True if the FK entry belongs to {@code tablePrefix}, matches the optional {@code fkHint}, and its target is {@code relName}, bare or schema-qualified. */
     private static boolean matchesFk(String entryKey, String tablePrefix,
                                       String fkColumn, String fkHint,
                                       String targetTable, String relName) {
         if (!entryKey.startsWith(tablePrefix)) return false;
         if (fkHint != null && !fkColumn.equals(fkHint)) return false;
+        if (relName.contains(DOT)) return targetTable.equals(relName);
         String raw = targetTable.contains(DOT) ? targetTable.substring(targetTable.indexOf(DOT) + 1) : targetTable;
         return raw.equals(relName);
     }
