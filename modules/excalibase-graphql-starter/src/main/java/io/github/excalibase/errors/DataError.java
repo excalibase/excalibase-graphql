@@ -59,6 +59,8 @@ public record DataError(int status, String code, String message, String constrai
     public static DataError ambiguousRelationship(String relation) {
         return new DataError(MULTIPLE_CHOICES, AMBIGUOUS_RELATIONSHIP, "More than one relationship fits '"
                 + relation + "'; name the foreign key column with " + relation + "!column", null, null);
+    }
+
     /** The database is not there; says nothing of where it is or what the driver reported. */
     public static DataError projectUnavailable() {
         return new DataError(SERVICE_UNAVAILABLE, PROJECT_UNAVAILABLE, "Project unavailable", null, null);
