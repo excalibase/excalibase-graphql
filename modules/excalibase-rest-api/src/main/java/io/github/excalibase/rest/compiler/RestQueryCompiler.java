@@ -954,11 +954,11 @@ public class RestQueryCompiler {
             String ia = ALIAS_R + counter.getAndIncrement();
             String oa = ALIAS_R + counter.getAndIncrement();
             var fwd = findForwardFk(table, embed.relationName(), embed.fkHint());
-            String key = embedKey(embed, embeds);
-            if (fwd != null) entries.add(buildForwardEmbed(embed, key, fwd, ia, oa, parentAlias, counter, params));
+            var keyed = new EmbedSpec(embedKey(embed, embeds), embed.columns(), embed.fkHint(), embed.children());
+            if (fwd != null) entries.add(buildForwardEmbed(keyed, fwd, ia, oa, parentAlias, counter, params));
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
-                if (rev != null) entries.add(buildReverseEmbed(embed, key, rev, ia, oa, parentAlias, counter, params));
+                if (rev != null) entries.add(buildReverseEmbed(keyed, rev, ia, oa, parentAlias, counter, params));
             }
         }
         return entries;
@@ -976,7 +976,7 @@ public class RestQueryCompiler {
         return taken ? written : bare;
     }
 
-    private String buildForwardEmbed(EmbedSpec embed, String key, SchemaInfo.FkInfo fk, String ia, String oa,
+    private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String refTable = resolveTable(fk.refTable());
         List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter, params);
@@ -988,13 +988,13 @@ public class RestQueryCompiler {
         StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(fk.refColumn())
             + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()));
         appendRls(ew, fk.refTable(), ia, RlsOp.SELECT, params);
-        return sqlString(key) + COMMA_SEP + parens(
+        return sqlString(embed.relationName()) + COMMA_SEP + parens(
             SELECT + rowExpr + FROM
             + parens(innerSel + FROM + refTable + SPACE + ia + WHERE + ew)
             + SPACE + oa);
     }
 
-    private String buildReverseEmbed(EmbedSpec embed, String key, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
+    private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String childTable = resolveTable(rev.childTable());
         List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter, params);
@@ -1008,10 +1008,10 @@ public class RestQueryCompiler {
         String children = parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew + roleLimit(rev.childTable()))
                 + SPACE + oa;
         if (!dialect.supportsRowToJson()) {
-            return sqlString(key) + COMMA_SEP
+            return sqlString(embed.relationName()) + COMMA_SEP
                     + parens(SELECT + dialect.coalesceArray(dialect.aggregateArray(rowExpr)) + FROM + children);
         }
-        return sqlString(key) + COMMA_SEP + COALESCE + parens(
+        return sqlString(embed.relationName()) + COMMA_SEP + COALESCE + parens(
             parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM + children) + COMMA_SEP + EMPTY_JSON_ARRAY);
     }
 
