@@ -1,0 +1,79 @@
+package io.github.excalibase.rest.compiler;
+
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
+import io.github.excalibase.postgres.PostgresDialect;
+import io.github.excalibase.schema.SchemaInfo;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/** Which relationship an embed names: one, a schema-qualified one, or an answer saying it cannot tell. (EXC-776) */
+class RestEmbedResolutionTest {
+
+    private static final String DOCS = "a.docs";
+
+    private static SchemaInfo schema() {
+        SchemaInfo schema = new SchemaInfo();
+        for (String table : List.of(DOCS, "a.users", "b.users", "a.logs", "b.logs")) {
+            schema.addColumn(table, "id", "integer");
+            schema.addColumn(table, "name", "text");
+            schema.setTableSchema(table, table.substring(0, 1));
+            schema.addPrimaryKey(table, "id");
+        }
+        schema.addColumn(DOCS, "created_by", "integer");
+        schema.addColumn(DOCS, "updated_by", "integer");
+        schema.addColumn("a.logs", "user_id", "integer");
+        schema.addColumn("b.logs", "user_id", "integer");
+        schema.addForeignKey(DOCS, "created_by", "a.users", "id");
+        schema.addForeignKey(DOCS, "updated_by", "a.users", "id");
+        schema.addForeignKey("a.logs", "user_id", "a.users", "id");
+        schema.addForeignKey("b.logs", "user_id", "a.users", "id");
+        return schema;
+    }
+
+    private static String sql(String table, String relation, String hint) {
+        var compiler = new RestQueryCompiler(schema(), new PostgresDialect(), "a", 30);
+        return compiler.compileSelect(new RestQueryCompiler.SelectQuery(table, List.of("id"), List.of(), List.of(),
+                List.of(new RestQueryCompiler.EmbedSpec(relation, List.of("id"), hint)), List.of(), 10, 0, false)).sql();
+    }
+
+    private static DataError refusal(String table, String relation, String hint) {
+        return org.assertj.core.api.Assertions.catchThrowableOfType(DataErrorException.class,
+                () -> sql(table, relation, hint)).error();
+    }
+
+    @Test
+    void twoKeysToOneTable_withoutAHint_areAmbiguous_andNameTheColumnHints() {
+        DataError error = refusal(DOCS, "users", null);
+
+        assertThat(error.code()).isEqualTo(DataError.AMBIGUOUS_RELATIONSHIP);
+        assertThat(error.message()).contains("users!created_by", "users!updated_by");
+    }
+
+    @Test
+    void sameNamedChildrenOfTwoSchemas_areAmbiguous_andNameTheQualifiedTables() {
+        DataError error = refusal("a.users", "logs", "user_id");
+
+        assertThat(error.code()).isEqualTo(DataError.AMBIGUOUS_RELATIONSHIP);
+        assertThat(error.message()).contains("a.logs", "b.logs");
+    }
+
+    @Test
+    void aQualifiedNamePicksOneSchemasTable() {
+        assertThat(sql("a.users", "b.logs", null)).contains("\"b\".\"logs\"");
+    }
+
+    @Test
+    void aColumnHintPicksOneKey() {
+        assertThat(sql(DOCS, "users", "updated_by")).contains("updated_by");
+    }
+
+    @Test
+    void aHintNamingNoColumn_isRefused_whileAnUnknownRelationIsStillSkipped() {
+        assertThat(refusal(DOCS, "users", "nope").code()).isEqualTo(DataError.UNKNOWN_RELATIONSHIP_HINT);
+        assertThat(sql(DOCS, "nothing", "nope")).doesNotContain("nothing");
+    }
+}
