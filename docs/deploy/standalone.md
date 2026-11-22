@@ -97,6 +97,14 @@ The console is a page and a small API for editing the document. It is off by def
 - Hosted mode (a policy URL or a provisioning URL is set) refuses to start with the console on.
 - The engine refuses to start if the console is on and the secret is missing, too short, or the port clashes.
 
+### Warnings
+
+`POST /_admin/v1/validate`, `POST /_admin/v1/parse` and a successful save carry a `warnings` list when the document
+names a table or column the database does not have. Each warning has a `code` (`unknown_table`, `unknown_column` or
+`needs_select`), the `role`, the `table`, the `operation` and a `message`. The document is still valid and a save
+still goes through, because a table may be created after the document: but until it exists the engine drops that
+rule, so the role has no access to it. There is no `warnings` key when everything fits or the schema is not loaded yet.
+
 ### Saving
 
 `PUT /_admin/v1/metadata` needs an `If-Match` header with the version you started from. `GET /_admin/v1/metadata`

@@ -1,5 +1,6 @@
 package io.github.excalibase.admin;
 
+import io.github.excalibase.access.RuleProblem;
 import io.github.excalibase.metadata.DocumentValidation;
 import io.github.excalibase.metadata.MetadataDocumentParser;
 import io.github.excalibase.schema.ReservedSchemas;
@@ -14,6 +15,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import io.github.excalibase.permissions.PermissionSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
@@ -185,5 +188,74 @@ class DocumentValidationTest {
         assumeThat(path.strip().length()).isGreaterThanOrEqualTo(32);
 
         assertThat(validate(withSecret("env:PATH"), false).valid()).isTrue();
+    }
+
+    // --- warnings: the schema does not fit a rule; never a refusal ---
+
+    private static DocumentValidation.Result withSchema(String text, Function<PermissionSet, List<RuleProblem>> check) {
+        return DocumentValidation.validate(bytes(text), RESERVED, "demo", false, System::getenv, check);
+    }
+
+    @Test
+    void aRuleTheSchemaDoesNotFitIsAWarningAndTheDocumentStaysValid() {
+        DocumentValidation.Result result = withSchema(GOOD, document -> List.of(
+                new RuleProblem("user", "public.orders", "select", "unknown_column", "Unknown column nope on public.orders")));
+
+        assertThat(result.valid()).isTrue();
+        assertThat(result.warnings()).singleElement().satisfies(warning -> {
+            assertThat(warning.code()).isEqualTo("unknown_column");
+            assertThat(warning.role()).isEqualTo("user");
+            assertThat(warning.table()).isEqualTo("public.orders");
+            assertThat(warning.operation()).isEqualTo("select");
+            assertThat(warning.message()).contains("user", "select", "public.orders", "nope", "until");
+        });
+    }
+
+    @Test
+    void aMissingTableSaysTheRoleHasNoAccessUntilItExists() {
+        DocumentValidation.Result result = withSchema(GOOD, document -> List.of(
+                new RuleProblem("user", "public.orders", "table", "unknown_table", "no such table")));
+
+        assertThat(result.warnings().getFirst().message())
+                .contains("public.orders", "does not exist in the database yet", "user", "no access");
+    }
+
+    @Test
+    void aDocumentThatFitsHasNoWarningsAndTheKeyIsAbsentFromTheAnswer() {
+        DocumentValidation.Result result = withSchema(GOOD, document -> List.of());
+
+        assertThat(result.warnings()).isEmpty();
+        assertThat(result.toMap()).doesNotContainKey("warnings");
+    }
+
+    @Test
+    void warningsAreInTheAnswerOfAValidDocument() {
+        DocumentValidation.Result result = withSchema(GOOD, document -> List.of(
+                new RuleProblem("user", "public.orders", "table", "unknown_table", "no such table")));
+
+        assertThat(result.toMap()).containsKey("warnings");
+        assertThat((List<?>) result.toMap().get("warnings")).hasSize(1);
+    }
+
+    @Test
+    void aCheckThatFailsOrIsAbsentNeverMakesTheDocumentInvalid() {
+        DocumentValidation.Result failing = withSchema(GOOD, document -> {
+            throw new IllegalStateException("schema is reloading");
+        });
+        DocumentValidation.Result absent = withSchema(GOOD, null);
+
+        assertThat(failing.valid()).isTrue();
+        assertThat(failing.warnings()).isEmpty();
+        assertThat(absent.valid()).isTrue();
+        assertThat(absent.warnings()).isEmpty();
+    }
+
+    @Test
+    void aRefusedDocumentIsNotCheckedAgainstTheSchema() {
+        DocumentValidation.Result result = withSchema("format: 1\nprojectId: [unclosed\n", document -> {
+            throw new AssertionError("a refused document has no rules to check");
+        });
+
+        assertThat(result.valid()).isFalse();
     }
 }

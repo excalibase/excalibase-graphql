@@ -35,6 +35,15 @@ export function historyWarning() {
   return h("p", { class: "warn", role: "alert" }, "Saved, but this version could not be added to History.");
 }
 
+/** What the database does not fit in a valid document: the server's own sentences, shown as text. */
+export function warningList(warnings, heading) {
+  if (!Array.isArray(warnings) || warnings.length === 0) {
+    return null;
+  }
+  return h("div", { class: "warn", role: "alert", id: "warnings" }, h("p", {}, heading),
+    h("ul", {}, warnings.map((warning) => h("li", {}, warning.message))));
+}
+
 function errorList(errors) {
   return h("ul", {}, errors.map((message) => h("li", {}, message)));
 }
@@ -72,7 +81,8 @@ export function outcomeView(outcome, theirs, handlers) {
   }
   const text = TEXTS[outcome.kind](outcome);
   const line = h("p", { class: outcome.kind === "saved" ? "ok" : "error", role: outcome.kind === "saved" ? "status" : "alert" }, text);
-  return outcome.historyMissed ? h("div", {}, line, historyWarning()) : line;
+  const warnings = warningList(outcome.warnings, "Saved, but the database does not fit everything in it:");
+  return outcome.historyMissed || warnings ? h("div", {}, line, outcome.historyMissed ? historyWarning() : null, warnings) : line;
 }
 
 /** Save is off on a source that cannot be written; Export is then the way to take the document away. */

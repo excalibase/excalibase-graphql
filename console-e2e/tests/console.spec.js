@@ -107,6 +107,30 @@ test("an invalid document shows the engine's errors and saves nothing", async ({
   await expect(page.getByRole("alert").filter({ hasText: "Not valid:" })).toBeVisible();
 });
 
+test("a rule for a table the database lacks saves and says what the engine will drop", async ({ page, request }) => {
+  await signIn(page);
+  const ghost = EXAMPLE + `  - table: public.ghosts
+    role: user
+    select:
+      filter: {}
+      columns: "*"
+`;
+  await page.getByRole("tab", { name: "Validate" }).click();
+  await page.locator("#candidate").fill(ghost);
+  await page.getByRole("button", { name: "Validate", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Valid:" })).toBeVisible();
+  await expect(page.locator("#warnings")).toContainText("Table `public.ghosts` does not exist in the database yet");
+  await expect(page.locator("#warnings")).toContainText("no access");
+
+  await page.getByRole("tab", { name: "Document" }).click();
+  await editDraft(page, ghost);
+  await page.locator("#save").click();
+  await page.locator("#rewrite-save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+  await expect(page.locator("#warnings")).toContainText("public.ghosts");
+  expect((await metadata(request)).document).toBe(ghost);
+});
+
 test("markup in a served document is shown as text and never runs", async ({ page, request }) => {
   const hostile = EXAMPLE + `# ${MARKUP}\n`;
   await replaceDocument(request, hostile);

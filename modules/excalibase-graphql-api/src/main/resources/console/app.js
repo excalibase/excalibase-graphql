@@ -293,7 +293,8 @@ async function commitSave() {
   try {
     const saved = await putMetadata(state.draft, state.meta.sourceVersion);
     await loadMetadata();
-    state.outcome = { kind: "saved", version: saved.version, historyMissed: saved.historyRecorded === false };
+    state.outcome = { kind: "saved", version: saved.version, historyMissed: saved.historyRecorded === false,
+      warnings: saved.warnings || [] };
     state.theirs = null;
   } catch (failure) {
     if (failure instanceof ApiError && failure.status === 401) {

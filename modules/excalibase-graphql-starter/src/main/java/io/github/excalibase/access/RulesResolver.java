@@ -26,6 +26,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /**
@@ -36,29 +37,38 @@ import java.util.function.Supplier;
 final class RulesResolver {
 
     private static final Logger log = LoggerFactory.getLogger(RulesResolver.class);
+    private static final String NEEDS_SELECT = "needs_select";
 
     private final PermissionDialect dialect;
     private final SchemaInfo reflected;
     private final String role;
+    private final Consumer<RuleProblem> problems;
 
-    private RulesResolver(PermissionDialect dialect, SchemaInfo reflected, String role) {
+    private RulesResolver(PermissionDialect dialect, SchemaInfo reflected, String role, Consumer<RuleProblem> problems) {
         this.dialect = dialect;
         this.reflected = reflected;
         this.role = role;
+        this.problems = problems;
     }
 
     static Map<String, TableRules> resolve(PermissionDialect dialect, SchemaInfo reflected, RolePermissions permissions) {
-        RulesResolver resolver = new RulesResolver(dialect, reflected, permissions.role());
+        RulesResolver resolver = new RulesResolver(dialect, reflected, permissions.role(), problem -> { });
         Map<String, TableRules> rules = new LinkedHashMap<>();
         permissions.tables().values().forEach(entry ->
                 resolver.table(entry).ifPresent(resolved -> rules.put(resolved.table(), resolved)));
         return rules;
     }
 
+    /** Resolves one rule only to hand every part the engine would drop to {@code problems}. */
+    static void inspect(PermissionDialect dialect, SchemaInfo reflected, TablePermissions entry,
+                        Consumer<RuleProblem> problems) {
+        new RulesResolver(dialect, reflected, entry.role(), problems).table(entry);
+    }
+
     private Optional<TableRules> table(TablePermissions entry) {
         String table = entry.table();
         if (!reflected.hasTable(table)) {
-            invalid(table, "table", "no such table");
+            invalid(table, "table", PermissionEvaluationException.UNKNOWN_TABLE, "no such table");
             return Optional.empty();
         }
         Optional<SelectRule> select = entry.select().flatMap(permission -> valid(table, "select",
@@ -67,7 +77,9 @@ final class RulesResolver {
         Optional<InsertRule> insert = entry.insert().filter(ignored -> writable)
                 .flatMap(permission -> valid(table, "insert", () -> insert(table, permission)));
         if (select.isEmpty()) {
-            return insert.map(held -> insertOnly(entry, held));
+            entry.update().ifPresent(ignored -> invalid(entry.table(), "update", NEEDS_SELECT, "needs a select permission"));
+            entry.delete().ifPresent(ignored -> invalid(entry.table(), "delete", NEEDS_SELECT, "needs a select permission"));
+            return insert.map(held -> insertOnly(entry.table(), held));
         }
         return Optional.of(new TableRules(table, select, insert,
                 entry.update().filter(ignored -> writable)
@@ -76,11 +88,9 @@ final class RulesResolver {
                         .flatMap(permission -> valid(table, "delete", () -> delete(table, permission)))));
     }
 
-    /** Insert without select; an update or delete beside it is dropped, as it would reach no row. */
-    private TableRules insertOnly(TablePermissions entry, InsertRule insert) {
-        entry.update().ifPresent(ignored -> invalid(entry.table(), "update", "needs a select permission"));
-        entry.delete().ifPresent(ignored -> invalid(entry.table(), "delete", "needs a select permission"));
-        return new TableRules(entry.table(), Optional.empty(), Optional.of(insert), Optional.empty(), Optional.empty());
+    /** Insert without select: the update or delete beside it was dropped above, as it would reach no row. */
+    private TableRules insertOnly(String table, InsertRule insert) {
+        return new TableRules(table, Optional.empty(), Optional.of(insert), Optional.empty(), Optional.empty());
     }
 
     private SelectRule select(String table, SelectPermission permission) {
@@ -137,13 +147,14 @@ final class RulesResolver {
         try {
             return Optional.of(resolver.get());
         } catch (PermissionEvaluationException e) {
-            invalid(table, operation, e.getMessage());
+            invalid(table, operation, e.code(), e.getMessage());
             return Optional.empty();
         }
     }
 
-    private void invalid(String table, String operation, String reason) {
+    private void invalid(String table, String operation, String code, String reason) {
         log.warn("permission_invalid role={} table={} operation={} reason={}", role, table, operation, reason);
+        problems.accept(new RuleProblem(role, table, operation, code, reason));
     }
 
     static boolean isTrue(BoolExp expression) {

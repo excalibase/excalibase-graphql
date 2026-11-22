@@ -41,12 +41,14 @@ public class AdminController {
     private final AdminMetadataView metadata;
     private final GraphqlSchemaManager schemas;
     private final AdminConfig.ValidationSettings validation;
+    private final AdminSchemaCheck schemaCheck;
 
     public AdminController(AdminMetadataView metadata, GraphqlSchemaManager schemas,
                            AdminConfig.ValidationSettings validation) {
         this.metadata = metadata;
         this.schemas = schemas;
         this.validation = validation;
+        this.schemaCheck = new AdminSchemaCheck(schemas);
     }
 
     /** The served document, with the version this replica holds. */
@@ -64,7 +66,7 @@ public class AdminController {
     @Consumes(MediaType.ALL)
     public HttpResponse<Map<String, Object>> save(@Header(MetadataSave.IF_MATCH) @Nullable String ifMatch,
                                                   @Body byte[] document) {
-        return MetadataSave.respond(metadata, validation, ifMatch, document);
+        return MetadataSave.respond(metadata, validation, ifMatch, document, schemaCheck.current());
     }
 
     /** The versions a save replaced, newest first; {@code available} is false for a source that keeps none. */
@@ -83,7 +85,7 @@ public class AdminController {
     @Post("/history/{id}/restore")
     @Consumes(MediaType.ALL)
     public HttpResponse<Map<String, Object>> restore(String id, @Header(MetadataSave.IF_MATCH) @Nullable String ifMatch) {
-        return MetadataSave.restore(metadata, validation, ifMatch, id);
+        return MetadataSave.restore(metadata, validation, ifMatch, id, schemaCheck.current());
     }
 
     /** Checks a posted document and answers what is wrong with it. Nothing is applied. */
@@ -91,7 +93,7 @@ public class AdminController {
     @Consumes(MediaType.ALL)
     public Map<String, Object> validate(@Body byte[] document) {
         return DocumentValidation.validate(document, validation.reserved(), validation.projectId(),
-                validation.envJwtConfigured()).toMap();
+                validation.envJwtConfigured(), System::getenv, schemaCheck.current()).toMap();
     }
 
     /** The posted document as a tree, for a client that edits it: a YAML document is read here, never in the browser. */
@@ -99,7 +101,7 @@ public class AdminController {
     @Consumes(MediaType.ALL)
     public Map<String, Object> parse(@Body byte[] document) {
         return DocumentValidation.tree(document, validation.reserved(), validation.projectId(),
-                validation.envJwtConfigured());
+                validation.envJwtConfigured(), schemaCheck.current());
     }
 
     /** This replica only: the others are visible through the actuator and the metrics. */
