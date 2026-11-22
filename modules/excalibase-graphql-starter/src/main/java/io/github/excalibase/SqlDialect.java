@@ -47,6 +47,11 @@ public interface SqlDialect {
         return "row_to_json(" + alias + ")";
     }
 
+    /** A SQL string literal for {@code value}; the default doubles quotes. */
+    default String stringLiteral(String value) {
+        return "'" + value.replace("'", "''") + "'";
+    }
+
     /** Whether {@link #rowToJson} exists; without it a row's JSON names every column. MySQL: false */
     default boolean supportsRowToJson() {
         return true;

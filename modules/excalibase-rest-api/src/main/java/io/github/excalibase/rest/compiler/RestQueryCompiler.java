@@ -926,7 +926,7 @@ public class RestQueryCompiler {
     private List<String> jsonEntries(String table, Collection<String> cols, String alias) {
         List<String> entries = new ArrayList<>();
         for (String col : cols) {
-            entries.add(sqlString(col) + COMMA_SEP + jsonValue(table, alias, col));
+            entries.add(dialect.stringLiteral(col) + COMMA_SEP + jsonValue(table, alias, col));
         }
         return entries;
     }
@@ -988,7 +988,7 @@ public class RestQueryCompiler {
         StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(fk.refColumn())
             + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()));
         appendRls(ew, fk.refTable(), ia, RlsOp.SELECT, params);
-        return sqlString(embed.relationName()) + COMMA_SEP + parens(
+        return dialect.stringLiteral(embed.relationName()) + COMMA_SEP + parens(
             SELECT + rowExpr + FROM
             + parens(innerSel + FROM + refTable + SPACE + ia + WHERE + ew)
             + SPACE + oa);
@@ -1008,10 +1008,10 @@ public class RestQueryCompiler {
         String children = parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew + roleLimit(rev.childTable()))
                 + SPACE + oa;
         if (!dialect.supportsRowToJson()) {
-            return sqlString(embed.relationName()) + COMMA_SEP
+            return dialect.stringLiteral(embed.relationName()) + COMMA_SEP
                     + parens(SELECT + dialect.coalesceArray(dialect.aggregateArray(rowExpr)) + FROM + children);
         }
-        return sqlString(embed.relationName()) + COMMA_SEP + COALESCE + parens(
+        return dialect.stringLiteral(embed.relationName()) + COMMA_SEP + COALESCE + parens(
             parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM + children) + COMMA_SEP + EMPTY_JSON_ARRAY);
     }
 
@@ -1028,10 +1028,8 @@ public class RestQueryCompiler {
         if (childEntries.isEmpty()) {
             return dialect.buildObject(jsonEntries(table, embedColumns(embed, table), outerAlias));
         }
-        List<String> cols = embed.columns().isEmpty() || embed.columns().contains(STAR)
-            ? new ArrayList<>(schemaInfo.getColumns(table))
-            : embed.columns();
-        List<String> entries = jsonEntries(table, cols, outerAlias);
+        requireKnownColumns(embed, table);
+        List<String> entries = jsonEntries(table, embedColumns(embed, table), outerAlias);
         entries.addAll(childEntries);
         return dialect.buildObject(entries);
     }
@@ -1044,14 +1042,20 @@ public class RestQueryCompiler {
         return named.isEmpty() ? new ArrayList<>(known) : named;
     }
 
+    /** When access is enforced, a column the table lacks is a mistake to answer, never to drop. */
+    private void requireKnownColumns(EmbedSpec embed, String table) {
+        if (!access.enforced()) return;
+        Set<String> known = schemaInfo.getColumns(table);
+        embed.columns().stream().filter(column -> !STAR.equals(column) && !known.contains(column)).findFirst()
+                .ifPresent(column -> {
+                    throw new IllegalArgumentException("Unknown column '" + column + "' on " + table);
+                });
+    }
+
     private String buildEmbedSelect(EmbedSpec embed, String alias, String table) {
         if (embed.columns().isEmpty() || embed.columns().contains(STAR)) return SELECT + starFor(table, alias);
         Set<String> known = new HashSet<>(schemaInfo.getColumns(table));
-        if (access.enforced()) {
-            embed.columns().stream().filter(column -> !known.contains(column)).findFirst().ifPresent(column -> {
-                throw new IllegalArgumentException("Unknown column '" + column + "' on " + table);
-            });
-        }
+        requireKnownColumns(embed, table);
         List<String> safe = embed.columns().stream().filter(known::contains).map(c -> alias + DOT + dialect.quoteIdentifier(c)).toList();
         return safe.isEmpty() ? SELECT + starFor(table, alias) : SELECT + String.join(COMMA_SEP, safe);
     }
