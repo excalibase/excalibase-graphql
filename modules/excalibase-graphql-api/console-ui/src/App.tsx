@@ -1,16 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { adminApi } from './api/adminApi';
 import { Login } from './components/Login';
 import { Shell } from './components/Shell';
 import { ErrorNote } from './components/ui';
 import { useRoute } from './hooks/useRoute';
 import { messageOf } from './messages';
-import { DataPage } from './pages/DataPage';
-import { ExplorerPage } from './pages/ExplorerPage';
-import { PermissionsPage } from './pages/PermissionsPage';
-import { ReplicasPage } from './pages/ReplicasPage';
-import { SchemaPage } from './pages/SchemaViews';
+const DataPage = lazy(() => import('./pages/DataPage').then((module) => ({ default: module.DataPage })));
+const ExplorerPage = lazy(() => import('./pages/ExplorerPage').then((module) => ({ default: module.ExplorerPage })));
+const PermissionsPage = lazy(() => import('./pages/PermissionsPage').then((module) => ({ default: module.PermissionsPage })));
+const ReplicasPage = lazy(() => import('./pages/ReplicasPage').then((module) => ({ default: module.ReplicasPage })));
+const SchemaPage = lazy(() => import('./pages/SchemaViews').then((module) => ({ default: module.SchemaPage })));
 import type { PermissionTab, Route } from './route';
 import { DocumentProvider, useDocument } from './state/DocumentContext';
 import { DocumentStore } from './state/documentStore';
@@ -33,7 +33,7 @@ function Console({ onEnded, onSignOut }: { readonly onEnded: () => void; readonl
   return (
     <Shell route={route} onSignOut={onSignOut}>
       {state.failure ? <ErrorNote>{state.failure}</ErrorNote> : null}
-      {state.loaded ? <Page route={route} /> : <p className="hint">Loading...</p>}
+      {state.loaded ? <Suspense fallback={<p className="hint">Loading...</p>}><Page route={route} /></Suspense> : <p className="hint">Loading...</p>}
     </Shell>
   );
 }

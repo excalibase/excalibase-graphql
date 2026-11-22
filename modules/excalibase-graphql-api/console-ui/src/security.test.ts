@@ -35,7 +35,6 @@ const BANNED = [
   "setTimeout('",
   'javascript:',
   'XMLHttpRequest',
-  'import(',
   'http://',
   'https://',
   "setAttribute('style'",
@@ -51,6 +50,15 @@ describe('the console source', () => {
     const text = readFileSync(path as string, 'utf8');
 
     BANNED.forEach((token) => expect(text, token).not.toContain(token));
+  });
+
+  test('a dynamic import names a file of this build by a relative string, never anything computed', () => {
+    sources(SRC).forEach((path) => {
+      const text = readFileSync(path, 'utf8');
+      const all = text.match(/import\(/g)?.length ?? 0;
+      const relative = text.match(/import\('\.\.?\/[A-Za-z0-9_/.-]+'\)/g)?.length ?? 0;
+      expect(all, path).toBe(relative);
+    });
   });
 
   test('sessionStorage is touched by one file only: the module that owns the admin secret', () => {

@@ -30,6 +30,10 @@ async function signIn(page, base = NEXT, hash = "#/permissions/document") {
   await expect(page.getByRole("navigation", { name: "Console sections" })).toBeVisible();
 }
 
+/** What the engine itself reads from the served text: a YAML file is never read in the test. */
+const treeOf = async (request, text) => (await (await request.post(NEXT + "/_admin/v1/parse",
+  { headers: { ...HEADER, "Content-Type": "text/plain" }, data: text })).json()).tree;
+
 const editor = (page) => page.locator(".cm-content");
 async function editDraft(page, text) {
   await editor(page).click();
@@ -228,7 +232,6 @@ test.describe("the document", () => {
   });
 });
 
-const WARNING = "This save rewrites permissions.yaml. Comments and your own layout will be lost.";
 async function tickAnonSelect(page) {
   await tab(page, "Grid");
   await page.locator("#new-role").fill("anon");
@@ -257,12 +260,13 @@ test.describe("the grid", () => {
     await expect(page.getByRole("alert")).toContainText("lowercase letters");
   });
 
-  test("a save over a file with comments warns first; cancel writes nothing, save rewrites", async ({ page, request }) => {
+  test("a save keeps the comments: adding access asks about the access, cancel writes nothing, save patches the file", async ({ page, request }) => {
     await signIn(page);
     await tickAnonSelect(page);
 
     await save(page);
-    await expect(page.locator("#rewrite-warning")).toContainText(WARNING);
+    await expect(page.locator("#access-confirm")).toBeVisible();
+    await expect(page.locator("#rewrite-warning")).toHaveCount(0);
     await page.locator("#rewrite-cancel").click();
     await expect(page.locator("dialog")).toHaveCount(0);
     expect((await metadata(request)).document).toBe(EXAMPLE);
@@ -271,17 +275,49 @@ test.describe("the grid", () => {
     await page.locator("#rewrite-save").click();
     await expect(saved(page)).toBeVisible();
     const written = (await metadata(request)).document;
-    expect(written).not.toContain("#");
-    expect(JSON.parse(written).tables.some((rule) => rule.role === "anon")).toBe(true);
+    ["# yaml-language-server", "# must equal APP_PROJECT_ID", "# a user sees only their own rows", "# the owner is always the caller"]
+      .forEach((comment) => expect(written).toContain(comment));
+    expect(written.startsWith("# yaml-language-server")).toBe(true);
+    expect((await treeOf(request, written)).tables.some((rule) => rule.role === "anon" && rule.select)).toBe(true);
+    expect((await treeOf(request, written)).tables.find((rule) => rule.role === "user").select.filter)
+      .toEqual({ owner_id: { _eq: "X-Excalibase-User-Id" } });
   });
 
-  test("the warning starts on Cancel, is described by its text, and Escape cancels", async ({ page, request }) => {
+  test("unticking an operation removes only that operation and keeps the other comments", async ({ page, request }) => {
+    await signIn(page);
+    await tab(page, "Grid");
+
+    await page.getByLabel("delete public.todos user").uncheck();
+    await save(page);
+
+    await expect(saved(page)).toBeVisible();
+    const written = (await metadata(request)).document;
+    expect(written).toContain("# a user sees only their own rows");
+    expect((await treeOf(request, written)).tables[0].delete).toBeUndefined();
+    expect((await treeOf(request, written)).tables[0].update).toBeDefined();
+  });
+
+  test("a role the YAML 1.1 reading would turn into a boolean is still a role", async ({ page, request }) => {
+    await signIn(page);
+    await tab(page, "Grid");
+    await page.locator("#new-role").fill("no");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+
+    await page.getByLabel("select public.todos no").check();
+    await save(page);
+    await page.locator("#rewrite-save").click();
+
+    await expect(saved(page)).toBeVisible();
+    expect((await treeOf(request, (await metadata(request)).document)).tables.map((rule) => rule.role)).toEqual(["user", "no"]);
+  });
+
+  test("the dialog starts on Cancel, is described by its text, and Escape cancels", async ({ page, request }) => {
     await signIn(page);
     await tickAnonSelect(page);
     await save(page);
 
     await expect(page.locator("#rewrite-cancel")).toBeFocused();
-    await expect(page.locator("#rewrite-warning")).toHaveAttribute("aria-describedby", "rewrite-text");
+    await expect(page.locator("dialog")).toHaveAttribute("aria-describedby", "rewrite-text");
     await page.keyboard.press("Escape");
     await expect(page.locator("dialog")).toHaveCount(0);
     expect((await metadata(request)).document).toBe(EXAMPLE);
@@ -297,30 +333,6 @@ test.describe("the grid", () => {
     await page.locator("#rewrite-save").click();
     await expect(saved(page)).toBeVisible();
     await expect(page.getByText("Someone else saved first")).toHaveCount(0);
-  });
-
-  test("Don't ask again skips the comment warning for the session, and signing out brings it back", async ({ page, request }) => {
-    await signIn(page);
-    await tickAnonSelect(page);
-    await save(page);
-    await page.getByLabel("Don't ask again about comments this session").check();
-    await page.locator("#rewrite-save").click();
-    await expect(saved(page)).toBeVisible();
-    await replaceDocument(request, EXAMPLE);
-    await page.reload();
-    await tickAnonSelect(page);
-    await page.getByLabel("delete public.todos anon").check();
-    await save(page);
-    await expect(page.locator("#access-confirm, #rewrite-warning")).toBeVisible();
-    await page.locator("#rewrite-cancel").click();
-
-    await page.getByRole("button", { name: "Sign out" }).click();
-    await page.getByLabel("Admin secret").fill(SECRET);
-    await page.getByRole("button", { name: "Sign in" }).click();
-    await tickAnonSelect(page);
-    await save(page);
-
-    await expect(page.locator("#rewrite-warning")).toBeVisible();
   });
 
   test("a plain file saved from the grid asks only about the access it widens, in red", async ({ page, request }) => {
@@ -390,11 +402,12 @@ test.describe("the sample token", () => {
     await page.locator("#jwt-secret").fill("env:E2E_JWT_SECRET");
     await page.locator("#apply-jwt").click();
 
-    await expect(editor(page)).toContainText('"userId": "sub"');
+    await expect(editor(page)).toContainText("userId: sub");
     await save(page);
     await page.locator("#rewrite-save").click();
     await expect(saved(page)).toBeVisible();
-    const written = JSON.parse((await metadata(request)).document);
+    const written = await treeOf(request, (await metadata(request)).document);
+    expect((await metadata(request)).document).toContain("# a user sees only their own rows");
     expect(written.jwt).toMatchObject({ audience: "my-api", secret: "env:E2E_JWT_SECRET", claims: { role: "role", userId: "sub", extra: { org: "app.org" } } });
     expect(sent.join("\n")).not.toContain(token);
     expect(await page.evaluate(() => JSON.stringify({ ...window.sessionStorage, ...window.localStorage }))).not.toContain("eyJ");

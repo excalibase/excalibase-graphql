@@ -15,6 +15,8 @@ export default defineConfig({
     manifest: true,
     sourcemap: false,
     assetsInlineLimit: 0,
+    // CodeMirror is the one big piece and loads only when the Document tab opens.
+    chunkSizeWarningLimit: 700,
     modulePreload: { polyfill: false },
   },
   test: {
