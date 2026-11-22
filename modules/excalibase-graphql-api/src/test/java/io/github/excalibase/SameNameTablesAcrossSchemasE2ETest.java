@@ -190,4 +190,43 @@ class SameNameTablesAcrossSchemasE2ETest extends EngineIntegrationTest {
                 .expect(jsonPath("$.code", is("embed_key_collision")))
                 .expect(jsonPath("$.message", containsString("alias")));
     }
+
+    @Test
+    void rest_aliasWithAQuoteOrBackslash_is400_beforeAnySqlIsBuilt() {
+        http.get(REST + "/docs?select=id,a%5C:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest());
+        http.get(REST + "/docs?select=id,a%27b:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest());
+        http.get(REST + "/docs?select=id,:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest());
+        http.get(REST + "/docs?select=id,__proto__:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest());
+    }
+
+    @Test
+    void rest_aliasEqualToASelectedColumn_is400_notOneOverwritingTheOther() {
+        http.get(REST + "/docs?select=id,id:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")));
+        http.get(REST + "/docs?select=*,created_by:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")));
+    }
+
+    @Test
+    void rest_anAliasedEmbedBesideASchemaQualifiedOne_keepsBothKeys() {
+        http.get(REST + "/audit?select=id,creator:users!a_user(name),tenant_b.users!b_user(name)",
+                        "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].creator.name", is("from-a")))
+                .expect(jsonPath("$.data[0].users.name", is("from-b")));
+    }
+
+    @Test
+    void rest_anAliasedEmbed_comesBackAfterTheColumns() {
+        org.assertj.core.api.Assertions.assertThat(
+                        http.get(REST + "/docs?select=creator:users!created_by(name),id", "Accept-Profile", "tenant_a")
+                                .expect(status().isOk()).body())
+                .isEqualTo("{\"data\":[{\"id\":1,\"creator\":{\"name\":\"from-a\"}}]}");
+    }
 }

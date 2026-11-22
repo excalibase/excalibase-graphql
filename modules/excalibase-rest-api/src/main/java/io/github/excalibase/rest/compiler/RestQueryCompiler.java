@@ -199,6 +199,7 @@ public class RestQueryCompiler {
 
         StringBuilder inner = buildInnerSelect(query.table(), quotedTable, where, orderBySql, effectiveLimit,
                 query.offset());
+        requireNoAliasOverColumn(query.table(), query.columns(), query.embeds());
         String jsonAgg = buildJsonAgg(query.table(), columns, buildEmbedEntries(query.table(), query.embeds(), params), knownCols);
 
         StringBuilder sql = new StringBuilder();
@@ -946,6 +947,14 @@ public class RestQueryCompiler {
     }
 
 
+    /** An embed's alias must not be one of the columns its select answers, all of the table's when it selects {@code *}. */
+    private void requireNoAliasOverColumn(String table, List<String> selected, List<EmbedSpec> embeds) {
+        if (embeds == null || embeds.isEmpty()) return;
+        boolean all = selected == null || selected.isEmpty() || selected.contains("*");
+        Set<String> answered = all ? new HashSet<>(schemaInfo.getColumns(table)) : new HashSet<>(selected);
+        EmbedKeys.requireNoColumnCollision(embeds, EmbedSpec::alias, answered);
+    }
+
     private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, Map<String, Object> params) {
         return buildEmbedEntries(table, embeds, ALIAS, new AtomicInteger(), params);
     }
@@ -974,6 +983,7 @@ public class RestQueryCompiler {
     private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String refTable = resolveTable(fk.refTable());
+        requireNoAliasOverColumn(fk.refTable(), embed.columns(), embed.children());
         List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, fk.refTable())
                 : SELECT + starFor(fk.refTable(), ia);
@@ -992,6 +1002,7 @@ public class RestQueryCompiler {
     private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String childTable = resolveTable(rev.childTable());
+        requireNoAliasOverColumn(rev.childTable(), embed.columns(), embed.children());
         List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, rev.childTable())
                 : SELECT + starFor(rev.childTable(), ia);

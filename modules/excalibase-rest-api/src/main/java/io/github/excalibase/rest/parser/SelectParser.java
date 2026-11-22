@@ -1,5 +1,9 @@
 package io.github.excalibase.rest.parser;
 
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
+import io.github.excalibase.rest.compiler.EmbedKeys;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -31,8 +35,9 @@ public final class SelectParser {
             String rest = prefix;
             int colon = prefix.indexOf(':');
             int bang = prefix.indexOf('!');
-            if (colon > 0 && (bang < 0 || colon < bang)) {
+            if (colon >= 0 && (bang < 0 || colon < bang)) {
                 alias = prefix.substring(0, colon).trim();
+                EmbedKeys.requireValidAlias(alias);
                 rest = prefix.substring(colon + 1).trim();
             }
             int hintAt = rest.indexOf('!');
@@ -70,6 +75,11 @@ public final class SelectParser {
             }
         }
 
+        for (EmbedSpec embed : embeds) {
+            if (embed.alias() != null && aliases.containsValue(embed.alias())) {
+                throw new DataErrorException(DataError.embedKeyCollision(embed.alias()));
+            }
+        }
         return new SelectResult(columns, embeds, aliases);
     }
 
