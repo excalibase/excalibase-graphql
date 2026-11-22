@@ -980,6 +980,17 @@ public class RestQueryCompiler {
         return entries;
     }
 
+    /** The join of a key: every column of one side equal to its pair on the other, never the first column alone. */
+    private String columnPairs(String childAlias, List<String> childColumns, String parentAlias,
+                               List<String> parentColumns) {
+        List<String> pairs = new ArrayList<>();
+        for (int i = 0; i < childColumns.size(); i++) {
+            pairs.add(childAlias + DOT + dialect.quoteIdentifier(childColumns.get(i))
+                    + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(parentColumns.get(i)));
+        }
+        return String.join(AND, pairs);
+    }
+
     private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String refTable = resolveTable(fk.refTable());
@@ -990,8 +1001,7 @@ public class RestQueryCompiler {
         String rowExpr = buildRowExpr(embed, oa, fk.refTable(), childEntries);
         // RLS on the embedded related table (aliased ia) — without this, an embed
         // (?select=*,fk(*)) would expose related rows the caller may not read.
-        StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(fk.refColumn())
-            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()));
+        StringBuilder ew = new StringBuilder(columnPairs(ia, fk.refColumns(), parentAlias, fk.fkColumns()));
         appendRls(ew, fk.refTable(), ia, RlsOp.SELECT, params);
         return dialect.stringLiteral(embed.relationName()) + COMMA_SEP + parens(
             SELECT + rowExpr + FROM
@@ -1008,8 +1018,7 @@ public class RestQueryCompiler {
                 : SELECT + starFor(rev.childTable(), ia);
         String rowExpr = buildRowExpr(embed, oa, rev.childTable(), childEntries);
         // RLS on the embedded child table (aliased ia) — same leak guard as forward.
-        StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(rev.fkColumn())
-            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(rev.refColumns().get(0)));
+        StringBuilder ew = new StringBuilder(columnPairs(ia, rev.fkColumns(), parentAlias, rev.refColumns()));
         appendRls(ew, rev.childTable(), ia, RlsOp.SELECT, params);
         String children = parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew + roleLimit(rev.childTable()))
                 + SPACE + oa;
@@ -1078,7 +1087,7 @@ public class RestQueryCompiler {
             SchemaInfo.FkInfo fk = e.getValue();
             if (!matchesFk(e.getKey(), tablePrefix, fk.fkColumn(), null, fk.refTable(), relName)) continue;
             fitsWithoutHint = true;
-            if (fkHint == null || fk.fkColumn().equals(fkHint)) fits.add(fk);
+            if (fkHint == null || fk.fkColumns().contains(fkHint)) fits.add(fk);
         }
         return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.FkInfo::refTable, SchemaInfo.FkInfo::fkColumn);
     }
@@ -1091,7 +1100,7 @@ public class RestQueryCompiler {
             SchemaInfo.ReverseFkInfo rfk = e.getValue();
             if (!matchesFk(e.getKey(), tablePrefix, rfk.fkColumn(), null, rfk.childTable(), relName)) continue;
             fitsWithoutHint = true;
-            if (fkHint == null || rfk.fkColumn().equals(fkHint)) fits.add(rfk);
+            if (fkHint == null || rfk.fkColumns().contains(fkHint)) fits.add(rfk);
         }
         return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.ReverseFkInfo::childTable,
                 SchemaInfo.ReverseFkInfo::fkColumn);

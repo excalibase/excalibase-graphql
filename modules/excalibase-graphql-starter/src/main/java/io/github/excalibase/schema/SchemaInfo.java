@@ -32,6 +32,7 @@ public class SchemaInfo {
     private final Map<String, ReverseFkInfo> reverseFks = new HashMap<>();
     // table.childFieldName → every key of that child table pointing at the table, which together decide the names
     private final Map<String, List<ReverseFkInfo>> reverseFkGroups = new HashMap<>();
+    private final Map<String, List<FkInfo>> compositeForwardGroups = new HashMap<>();
     // a role's relationships a nested insert may go through, keyed like the FKs above; unset = every FK
     private Map<String, ReverseFkInfo> arrayInsertRelationships;
     private Map<String, FkInfo> objectInsertRelationships;
@@ -118,6 +119,7 @@ public class SchemaInfo {
         forwardFks.clear();
         reverseFks.clear();
         reverseFkGroups.clear();
+        compositeForwardGroups.clear();
         aliasSource = null;
         arrayInsertRelationships = null;
         objectInsertRelationships = null;
@@ -229,10 +231,32 @@ public class SchemaInfo {
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
                                  String toSchema, String toTable, List<String> toCols) {
         relationshipAliases.set(null);
-        String fwdFieldName = fkFieldName(toTable);
-        forwardFks.put(fromTable + "." + fwdFieldName,
-                new FkInfo(fromCols, toTable, toCols, toSchema));
+        addCompositeForward(fromTable + "." + fkFieldName(toTable), new FkInfo(fromCols, toTable, toCols, toSchema));
         addReverseFk(toTable, new ReverseFkInfo(fromTable, fromCols, toCols));
+    }
+
+    /**
+     * A composite key is named after its target table; when several composite keys of one table point at the same
+     * table, every one of them is also named after its key columns, so none replaces another. The names depend only
+     * on which keys exist, never on the order they are added in.
+     */
+    private void addCompositeForward(String baseKey, FkInfo key) {
+        List<FkInfo> group = compositeForwardGroups.computeIfAbsent(baseKey, k -> new ArrayList<>());
+        if (group.contains(key)) {
+            return;
+        }
+        group.forEach(member -> forwardFks.remove(compositeForwardKey(baseKey, member, group.size() > 1)));
+        group.add(key);
+        group.forEach(member -> forwardFks.put(compositeForwardKey(baseKey, member, group.size() > 1), member));
+    }
+
+    private static String compositeForwardKey(String baseKey, FkInfo key, boolean shared) {
+        if (!shared) {
+            return baseKey;
+        }
+        StringBuilder named = new StringBuilder(baseKey);
+        key.fkColumns().forEach(column -> named.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(column))));
+        return named.toString();
     }
 
     /**
