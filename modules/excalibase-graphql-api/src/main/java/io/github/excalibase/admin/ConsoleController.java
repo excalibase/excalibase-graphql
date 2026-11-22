@@ -12,7 +12,6 @@ import io.micronaut.http.annotation.Header;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.Locale;
 import java.util.Optional;
 
 /**
