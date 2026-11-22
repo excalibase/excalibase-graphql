@@ -16,6 +16,8 @@ mvn_retry -Pnative dependency:go-offline
 mvn_retry clean verify -DskipTests
 # the surefire provider is only resolved when a test actually runs
 mvn_retry verify -pl modules/excalibase-rls-core
+# the new console's build: the frontend plugin, and the Node and npm it installs (kept in the local repository)
+mvn_retry -Pconsole-ui -pl modules/excalibase-graphql-api frontend:install-node-and-npm@install-node-and-npm
 # native: the micronaut-graal annotation processor and the reachability metadata
 mvn_retry -Pnative -pl modules/excalibase-graphql-api -am compile
 mvn_retry dependency:get -Dartifact=org.graalvm.buildtools:graalvm-reachability-metadata:"${graalvm_buildtools}":zip:repository

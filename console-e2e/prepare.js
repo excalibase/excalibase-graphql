@@ -8,4 +8,5 @@ fs.rmSync(work, { recursive: true, force: true });
 fs.mkdirSync(path.join(work, "served"), { recursive: true });
 const example = fs.readFileSync(path.join(__dirname, "..", "deploy", "standalone", "metadata", "permissions.yaml"));
 fs.writeFileSync(path.join(work, "permissions.yaml"), example);
+fs.writeFileSync(path.join(work, "permissions-next.yaml"), example);
 fs.writeFileSync(path.join(work, "served", "permissions.yaml"), example);

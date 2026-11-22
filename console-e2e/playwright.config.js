@@ -1,5 +1,6 @@
 const path = require("node:path");
 const { defineConfig } = require("@playwright/test");
+const ports = require("./ports");
 
 const JAR = process.env.ENGINE_JAR
   || path.join(__dirname, "..", "modules", "excalibase-graphql-api", "target", "excalibase-graphql-api-0.0.1-SNAPSHOT.jar");
@@ -7,8 +8,9 @@ const DATABASE = process.env.E2E_DATABASE_URL || "jdbc:postgresql://localhost:55
 const SECRET = "e2e-admin-secret-0123456789-abcdefghijklmnop";
 const WORK = path.join(__dirname, ".work");
 
-// The same engine twice: one with a writable file source, one with a read-only url source, on their own ports.
-function engine({ name, port, adminPort, managementPort, source }) {
+// The same engine three times: one with a writable file source, one with a read-only url source, and one serving the
+// new console (EXCALIBASE_CONSOLE_UI=next) from its own copy of the document, each on its own ports.
+function engine({ name, port, adminPort, managementPort, source, ui = "legacy" }) {
   return {
     name,
     command: `java -jar ${JAR}`,
@@ -27,6 +29,7 @@ function engine({ name, port, adminPort, managementPort, source }) {
       EXCALIBASE_CONSOLE_ENABLED: "true",
       EXCALIBASE_ADMIN_SECRET: SECRET,
       EXCALIBASE_ADMIN_PORT: String(adminPort),
+      EXCALIBASE_CONSOLE_UI: ui,
       JWT_SECRET: "e2e-token-secret-0123456789-abcdefghijklmnop",
       E2E_JWT_SECRET: "e2e-token-secret-0123456789-abcdefghijklmnop",
       ...source
@@ -40,14 +43,21 @@ module.exports = defineConfig({
   fullyParallel: false,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
-  use: { baseURL: "http://localhost:10001", trace: "retain-on-failure", acceptDownloads: true },
+  use: { baseURL: ports.WRITABLE, trace: "retain-on-failure", acceptDownloads: true },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],
   webServer: [
-    engine({ name: "writable", port: 10000, adminPort: 10001, managementPort: 18081,
+    engine({ name: "writable", port: ports.writable.port, adminPort: ports.writable.admin,
+      managementPort: ports.writable.management,
       source: { METADATA_SOURCE: "file", METADATA_FILE_PATH: path.join(WORK, "permissions.yaml"),
         METADATA_FILE_POLL_INTERVAL_MS: "200" } }),
-    { name: "static", command: "node static-server.js", url: "http://127.0.0.1:9099", reuseExistingServer: false },
-    engine({ name: "read-only", port: 10010, adminPort: 10011, managementPort: 18082,
-      source: { METADATA_SOURCE: "url", METADATA_URL_LOCATION: "http://localhost:9099/permissions.yaml" } })
+    { name: "static", command: "node static-server.js", url: `http://127.0.0.1:${ports.staticPort}`,
+      reuseExistingServer: false },
+    engine({ name: "read-only", port: ports.readOnly.port, adminPort: ports.readOnly.admin,
+      managementPort: ports.readOnly.management,
+      source: { METADATA_SOURCE: "url", METADATA_URL_LOCATION: `http://localhost:${ports.staticPort}/permissions.yaml` } }),
+    engine({ name: "next", port: ports.next.port, adminPort: ports.next.admin, managementPort: ports.next.management,
+      ui: "next",
+      source: { METADATA_SOURCE: "file", METADATA_FILE_PATH: path.join(WORK, "permissions-next.yaml"),
+        METADATA_FILE_POLL_INTERVAL_MS: "200" } })
   ]
 });

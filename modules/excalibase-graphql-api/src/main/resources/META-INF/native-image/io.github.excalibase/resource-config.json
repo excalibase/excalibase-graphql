@@ -17,6 +17,9 @@
         "pattern": "console/.*"
       },
       {
+        "pattern": "console-next/.*"
+      },
+      {
         "pattern": "graphql/.*\\.graphqls"
       },
       {

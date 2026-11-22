@@ -280,6 +280,13 @@
                     <include>app-info.properties</include>
                 </includes>
             </resource>
+            <!-- The built console (console-ui), when the console-ui profile has built it: served under /console when
+                 EXCALIBASE_CONSOLE_UI=next. Absent otherwise, and then only the legacy console is in the jar. -->
+            <resource>
+                <directory>console-ui/dist</directory>
+                <targetPath>console-next</targetPath>
+                <filtering>false</filtering>
+            </resource>
         </resources>
         <plugins>
             <plugin>
@@ -337,6 +344,71 @@
         </plugins>
     </build>
     <profiles>
+        <!-- The new console (console-ui): its own Node is installed under target/, so no runner needs one. Opt in with
+             -Pconsole-ui. -Dconsole.ui.skipTests=true skips the Vitest run (Java -DskipTests does not). -->
+        <profile>
+            <id>console-ui</id>
+            <properties>
+                <console.ui.skipTests>false</console.ui.skipTests>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.github.eirslett</groupId>
+                        <artifactId>frontend-maven-plugin</artifactId>
+                        <version>2.0.2</version>
+                        <configuration>
+                            <workingDirectory>console-ui</workingDirectory>
+                            <installDirectory>${project.build.directory}/console-ui-node</installDirectory>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>install-node-and-npm</id>
+                                <goals><goal>install-node-and-npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <nodeVersion>v22.14.0</nodeVersion>
+                                    <npmVersion>11.21.3</npmVersion>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-ci</id>
+                                <goals><goal>npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>ci --ignore-scripts --no-audit --no-fund</arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-lint</id>
+                                <goals><goal>npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run lint</arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-test</id>
+                                <goals><goal>npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run test</arguments>
+                                    <skip>${console.ui.skipTests}</skip>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-build</id>
+                                <goals><goal>npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run build</arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <!-- Slim postgres build: the app with the postgres plugin only (EXC-799). The other plugin and its driver drop to test scope,
              so the shaded jar and the native image carry neither; the enforcer rule fails the build if one comes back. The jar is
              packaged beside the all-in-one one, and `verify` starts it against a postgres container (SlimBuildSmokeTest). -->

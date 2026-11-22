@@ -85,6 +85,7 @@ The console is a page and a small API for editing the document. It is off by def
 | Setting | Meaning |
 |---|---|
 | `EXCALIBASE_CONSOLE_ENABLED` | `true` or `false`. Anything else refuses the start. Default `false`. |
+| `EXCALIBASE_CONSOLE_UI` | `legacy` or `next`: which console `/console` serves. Default `legacy`. With `next` the old console stays at `/console/legacy`. Anything else refuses the start, and so does `next` in a jar built without the new console (`mvn -Pconsole-ui package`). |
 | `EXCALIBASE_ADMIN_PORT` | The admin listener. Default `10001`. Must differ from the public and management ports. |
 | `EXCALIBASE_ADMIN_SECRET` or `EXCALIBASE_ADMIN_SECRET_FILE` | Required when the console is on. At least 32 printable ASCII characters. Set one, not both. |
 | `EXCALIBASE_ADMIN_MAX_FAILURES` | Wrong or missing secrets allowed per client address. Default `10`. |

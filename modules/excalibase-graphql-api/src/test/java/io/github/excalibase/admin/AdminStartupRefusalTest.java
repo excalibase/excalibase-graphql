@@ -53,4 +53,19 @@ class AdminStartupRefusalTest {
 
         assertThatThrownBy(() -> start(properties)).hasStackTraceContaining("EXCALIBASE_CONSOLE_ENABLED must be true or false");
     }
+
+    @Test
+    void anUnknownConsoleUiRefusesToStart() {
+        Map<String, Object> properties = consoleOn("excalibase.console.ui", "fancy", true);
+
+        assertThatThrownBy(() -> start(properties)).hasStackTraceContaining("EXCALIBASE_CONSOLE_UI must be legacy or next");
+    }
+
+    @Test
+    void aBadConsoleUiIsIgnoredWhileTheConsoleIsOff() {
+        Map<String, Object> properties = new java.util.HashMap<>(consoleOn("excalibase.console.ui", "fancy", true));
+        properties.put("excalibase.console.enabled", "false");
+
+        org.assertj.core.api.Assertions.assertThatCode(() -> start(properties)).doesNotThrowAnyException();
+    }
 }
