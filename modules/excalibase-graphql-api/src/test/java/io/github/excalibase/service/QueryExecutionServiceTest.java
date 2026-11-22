@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -124,8 +125,8 @@ class QueryExecutionServiceTest {
         Connection connection = mock(Connection.class);
         when(dataSource.getConnection()).thenReturn(connection);
         when(connection.getAutoCommit()).thenReturn(true);
-        org.mockito.Mockito.doThrow(new java.sql.SQLException("connection closed", "08006")).when(connection).commit();
-        org.mockito.Mockito.doThrow(new java.sql.SQLException("connection closed", "08003")).when(connection).rollback();
+        doThrow(new java.sql.SQLException("connection closed", "08006")).when(connection).commit();
+        doThrow(new java.sql.SQLException("connection closed", "08003")).when(connection).rollback();
         MutationExecutor exec = (c, p, jdbc) -> "{\"createUser\":{\"id\":7}}";
 
         CompiledQuery write = twoPhase();

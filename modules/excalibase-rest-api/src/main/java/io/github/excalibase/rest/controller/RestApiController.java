@@ -450,7 +450,7 @@ public class RestApiController {
         log.error("rest_transaction_failed", e);
         return DataErrors.describe(e, null).map(RestErrors::response)
                 .orElseGet(() -> Reply.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(Map.of("error", "Mutation execution failed", "code", "internal_error")));
+                        .body(Map.of(KEY_ERROR, "Mutation execution failed", "code", "internal_error")));
     }
 
     /** A request naming a column, operator or shape this caller's schema does not have. */
