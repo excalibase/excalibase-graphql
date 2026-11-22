@@ -76,12 +76,16 @@ public class RestQueryCompiler {
             this(group.allFilters(), group);
         }
     }
-    public record EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children) {
+    public record EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children,
+                            String alias) {
         public EmbedSpec(String relationName, List<String> columns) {
-            this(relationName, columns, null, List.of());
+            this(relationName, columns, null, List.of(), null);
         }
         public EmbedSpec(String relationName, List<String> columns, String fkHint) {
-            this(relationName, columns, fkHint, List.of());
+            this(relationName, columns, fkHint, List.of(), null);
+        }
+        public EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children) {
+            this(relationName, columns, fkHint, children, null);
         }
     }
     public record SelectQuery(
@@ -195,6 +199,7 @@ public class RestQueryCompiler {
 
         StringBuilder inner = buildInnerSelect(query.table(), quotedTable, where, orderBySql, effectiveLimit,
                 query.offset());
+        requireNoAliasOverColumn(query.table(), query.columns(), query.embeds());
         String jsonAgg = buildJsonAgg(query.table(), columns, buildEmbedEntries(query.table(), query.embeds(), params), knownCols);
 
         StringBuilder sql = new StringBuilder();
@@ -942,6 +947,14 @@ public class RestQueryCompiler {
     }
 
 
+    /** An embed's alias must not be one of the columns its select answers, all of the table's when it selects {@code *}. */
+    private void requireNoAliasOverColumn(String table, List<String> selected, List<EmbedSpec> embeds) {
+        if (embeds == null || embeds.isEmpty()) return;
+        boolean all = selected == null || selected.isEmpty() || selected.contains("*");
+        Set<String> answered = all ? new HashSet<>(schemaInfo.getColumns(table)) : new HashSet<>(selected);
+        EmbedKeys.requireNoColumnCollision(embeds, EmbedSpec::alias, answered);
+    }
+
     private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, Map<String, Object> params) {
         return buildEmbedEntries(table, embeds, ALIAS, new AtomicInteger(), params);
     }
@@ -950,11 +963,14 @@ public class RestQueryCompiler {
                                            AtomicInteger counter, Map<String, Object> params) {
         if (embeds == null || embeds.isEmpty()) return List.of();
         List<String> entries = new ArrayList<>();
-        for (EmbedSpec embed : embeds) {
+        List<String> keys = EmbedKeys.of(embeds, EmbedSpec::relationName, EmbedSpec::alias);
+        EmbedKeys.requireDistinct(keys);
+        for (int position = 0; position < embeds.size(); position++) {
+            EmbedSpec embed = embeds.get(position);
             String ia = ALIAS_R + counter.getAndIncrement();
             String oa = ALIAS_R + counter.getAndIncrement();
             var fwd = findForwardFk(table, embed.relationName(), embed.fkHint());
-            var keyed = new EmbedSpec(embedKey(embed, embeds), embed.columns(), embed.fkHint(), embed.children());
+            var keyed = new EmbedSpec(keys.get(position), embed.columns(), embed.fkHint(), embed.children());
             if (fwd != null) entries.add(buildForwardEmbed(keyed, fwd, ia, oa, parentAlias, counter, params));
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
@@ -964,21 +980,10 @@ public class RestQueryCompiler {
         return entries;
     }
 
-    /**
-     * The JSON key an embed comes back under: its table name, even when it was named with its schema, unless another
-     * embed of the same select would then share the key, in which case the name as written.
-     */
-    private static String embedKey(EmbedSpec embed, List<EmbedSpec> siblings) {
-        String written = embed.relationName();
-        String bare = written.substring(written.lastIndexOf('.') + 1);
-        boolean taken = siblings.stream().anyMatch(other -> other != embed
-                && other.relationName().substring(other.relationName().lastIndexOf('.') + 1).equals(bare));
-        return taken ? written : bare;
-    }
-
     private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String refTable = resolveTable(fk.refTable());
+        requireNoAliasOverColumn(fk.refTable(), embed.columns(), embed.children());
         List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, fk.refTable())
                 : SELECT + starFor(fk.refTable(), ia);
@@ -997,6 +1002,7 @@ public class RestQueryCompiler {
     private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String childTable = resolveTable(rev.childTable());
+        requireNoAliasOverColumn(rev.childTable(), embed.columns(), embed.children());
         List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, rev.childTable())
                 : SELECT + starFor(rev.childTable(), ia);

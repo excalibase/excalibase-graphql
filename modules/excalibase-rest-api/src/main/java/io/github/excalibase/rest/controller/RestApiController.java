@@ -9,6 +9,7 @@ import io.github.excalibase.json.JsonFieldOrder;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.errors.DataErrors;
+import io.github.excalibase.rest.compiler.EmbedKeys;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;
@@ -862,13 +863,13 @@ public class RestApiController {
     private static List<String> responseKeys(RequestContext ctx, ParsedParams parsed) {
         List<String> keys = new ArrayList<>(parsed.columns.isEmpty()
                 ? ctx.schemaInfo().getColumns(ctx.tableKey()) : parsed.columns);
-        parsed.embeds.forEach(embed -> keys.add(embed.relationName()));
+        keys.addAll(EmbedKeys.of(parsed.embeds, RestQueryCompiler.EmbedSpec::relationName, RestQueryCompiler.EmbedSpec::alias));
         return keys;
     }
 
     private static RestQueryCompiler.EmbedSpec toCompilerEmbed(SelectParser.EmbedSpec e) {
         List<RestQueryCompiler.EmbedSpec> children = e.children().stream().map(RestApiController::toCompilerEmbed).toList();
-        return new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns(), e.fkHint(), children);
+        return new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns(), e.fkHint(), children, e.alias());
     }
 
     /** A refusal shaped like every other error the data API answers: a code, a message, and the message as error. */

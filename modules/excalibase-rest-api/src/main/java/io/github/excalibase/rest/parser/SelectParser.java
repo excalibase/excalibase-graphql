@@ -1,5 +1,9 @@
 package io.github.excalibase.rest.parser;
 
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
+import io.github.excalibase.rest.compiler.EmbedKeys;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -10,12 +14,37 @@ public final class SelectParser {
     private SelectParser() {}
 
     public record SelectResult(List<String> columns, List<EmbedSpec> embeds, Map<String, String> aliases) {}
-    public record EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children) {
+    /** {@code alias} is the JSON key the caller asked for ({@code creator:users!created_by(...)}), or null. */
+    public record EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children,
+                            String alias) {
         public EmbedSpec(String relationName, List<String> columns) {
-            this(relationName, columns, null, List.of());
+            this(relationName, columns, null, List.of(), null);
         }
         public EmbedSpec(String relationName, List<String> columns, String fkHint) {
-            this(relationName, columns, fkHint, List.of());
+            this(relationName, columns, fkHint, List.of(), null);
+        }
+        public EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children) {
+            this(relationName, columns, fkHint, children, null);
+        }
+    }
+
+    /** An embed's {@code [alias:]name[!hint]} before its parenthesis. */
+    private record Header(String name, String hint, String alias) {
+        static Header of(String prefix) {
+            String alias = null;
+            String rest = prefix;
+            int colon = prefix.indexOf(':');
+            int bang = prefix.indexOf('!');
+            if (colon >= 0 && (bang < 0 || colon < bang)) {
+                alias = prefix.substring(0, colon).trim();
+                EmbedKeys.requireValidAlias(alias);
+                rest = prefix.substring(colon + 1).trim();
+            }
+            int hintAt = rest.indexOf('!');
+            if (hintAt > 0) {
+                return new Header(rest.substring(0, hintAt), rest.substring(hintAt + 1), alias);
+            }
+            return new Header(rest, null, alias);
         }
     }
 
@@ -34,14 +63,7 @@ public final class SelectParser {
             if (parenStart > 0 && part.endsWith(")")) {
                 String prefix = part.substring(0, parenStart).trim();
                 String innerContent = part.substring(parenStart + 1, part.length() - 1);
-                String fkHint = null;
-                String relationName = prefix;
-                int bangIdx = prefix.indexOf('!');
-                if (bangIdx > 0) {
-                    relationName = prefix.substring(0, bangIdx);
-                    fkHint = prefix.substring(bangIdx + 1);
-                }
-                embeds.add(parseEmbedSpec(relationName, innerContent, fkHint));
+                embeds.add(parseEmbedSpec(Header.of(prefix), innerContent));
             } else if (part.contains(":")) {
                 String[] aliasParts = part.split(":", 2);
                 String alias = aliasParts[0].trim();
@@ -53,10 +75,15 @@ public final class SelectParser {
             }
         }
 
+        for (EmbedSpec embed : embeds) {
+            if (embed.alias() != null && aliases.containsValue(embed.alias())) {
+                throw new DataErrorException(DataError.embedAliasCollidesWithColumn(embed.alias()));
+            }
+        }
         return new SelectResult(columns, embeds, aliases);
     }
 
-    private static EmbedSpec parseEmbedSpec(String name, String innerContent, String fkHint) {
+    private static EmbedSpec parseEmbedSpec(Header header, String innerContent) {
         List<String> plainCols = new ArrayList<>();
         List<EmbedSpec> children = new ArrayList<>();
         for (String part : splitRespectingParens(innerContent)) {
@@ -65,19 +92,12 @@ public final class SelectParser {
             if (ip > 0 && part.endsWith(")")) {
                 String childPrefix = part.substring(0, ip).trim();
                 String childInner = part.substring(ip + 1, part.length() - 1);
-                String childFkHint = null;
-                String childName = childPrefix;
-                int cBang = childPrefix.indexOf('!');
-                if (cBang > 0) {
-                    childName = childPrefix.substring(0, cBang);
-                    childFkHint = childPrefix.substring(cBang + 1);
-                }
-                children.add(parseEmbedSpec(childName, childInner, childFkHint));
+                children.add(parseEmbedSpec(Header.of(childPrefix), childInner));
             } else {
                 plainCols.add(part);
             }
         }
-        return new EmbedSpec(name, plainCols, fkHint, children);
+        return new EmbedSpec(header.name(), plainCols, header.hint(), children, header.alias());
     }
 
     private static List<String> splitRespectingParens(String input) {

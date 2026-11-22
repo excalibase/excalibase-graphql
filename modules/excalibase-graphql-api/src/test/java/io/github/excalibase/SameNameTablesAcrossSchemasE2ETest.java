@@ -173,4 +173,83 @@ class SameNameTablesAcrossSchemasE2ETest extends EngineIntegrationTest {
                 .expect(jsonPath("$.data[0]['tenant_a.users'].name", is("from-a")))
                 .expect(jsonPath("$.data[0]['tenant_b.users'].name", is("from-b")));
     }
+
+    @Test
+    void rest_aliasedEmbeds_comeBackUnderTheirAliases() {
+        http.get(REST + "/docs?select=id,creator:users!created_by(name),updater:users!updated_by(name)",
+                        "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].creator.name", is("from-a")))
+                .expect(jsonPath("$.data[0].updater.name", is("from-a")));
+    }
+
+    @Test
+    void rest_twoEmbedsUnderOneKey_are400_notOneSilentlyDropped() {
+        http.get(REST + "/docs?select=id,users!created_by(name),users!updated_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")))
+                .expect(jsonPath("$.message", containsString("alias")));
+    }
+
+    @Test
+    void rest_aliasWithAQuoteOrBackslash_is400_beforeAnySqlIsBuilt() {
+        http.get(REST + "/docs?select=id,a%5C:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest());
+        http.get(REST + "/docs?select=id,a%27b:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest());
+        http.get(REST + "/docs?select=id,:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest());
+        http.get(REST + "/docs?select=id,__proto__:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest());
+    }
+
+    @Test
+    void rest_aliasEqualToASelectedColumn_is400_notOneOverwritingTheOther() {
+        http.get(REST + "/docs?select=id,id:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")));
+        http.get(REST + "/docs?select=*,created_by:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")));
+    }
+
+    @Test
+    void rest_anAliasedEmbedBesideASchemaQualifiedOne_keepsBothKeys() {
+        http.get(REST + "/audit?select=id,creator:users!a_user(name),tenant_b.users!b_user(name)",
+                        "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].creator.name", is("from-a")))
+                .expect(jsonPath("$.data[0].users.name", is("from-b")));
+    }
+
+    @Test
+    void rest_anAliasedEmbed_comesBackAfterTheColumns() {
+        org.assertj.core.api.Assertions.assertThat(
+                        http.get(REST + "/docs?select=creator:users!created_by(name),id", "Accept-Profile", "tenant_a")
+                                .expect(status().isOk()).body())
+                .isEqualTo("{\"data\":[{\"id\":1,\"creator\":{\"name\":\"from-a\"}}]}");
+    }
+
+    @Test
+    void rest_aliasEqualToAColumnOfANestedForwardEmbed_is400_namingTheColumn() {
+        http.get(REST + "/badges?select=id,profiles(id,id:users(name))", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")))
+                .expect(jsonPath("$.message", containsString("collides with column 'id'")));
+    }
+
+    @Test
+    void rest_aliasEqualToAColumnOfANestedReverseEmbed_is400_namingTheColumn() {
+        http.get(REST + "/users?select=id,profiles(id,id:badges(id))", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")))
+                .expect(jsonPath("$.message", containsString("collides with column 'id'")));
+    }
+
+    @Test
+    void rest_aliasEqualToATopLevelColumn_namesTheColumn_notAMissingAlias() {
+        http.get(REST + "/docs?select=id,id:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.message", containsString("collides with column 'id'")));
+    }
 }
