@@ -15,6 +15,8 @@
 
     
     <properties>
+        <!-- Where the built console is read from; a directory that does not exist adds nothing to the jar. -->
+        <console.ui.dist>${project.build.directory}/console-ui-not-built</console.ui.dist>
         <exec.mainClass>io.github.excalibase.ExcalibaseGraphqlApplication</exec.mainClass>
         <!-- The all-in-one build has none; a slim build (profile slim-postgres, slim-mysql, slim-sqlite) names its database, so its jar and
              native binary sit beside the all-in-one ones and never replace them (EXC-799). -->
@@ -280,10 +282,11 @@
                     <include>app-info.properties</include>
                 </includes>
             </resource>
-            <!-- The built console (console-ui), when the console-ui profile has built it: served under /console when
-                 EXCALIBASE_CONSOLE_UI=next. Absent otherwise, and then only the legacy console is in the jar. -->
+            <!-- The built console (console-ui): served under /console when EXCALIBASE_CONSOLE_UI=next. Only the
+                 console-ui profile points this at console-ui/dist, so a stale dist left by an earlier build is never
+                 packed by a plain build; then only the legacy console is in the jar. -->
             <resource>
-                <directory>console-ui/dist</directory>
+                <directory>${console.ui.dist}</directory>
                 <targetPath>console-next</targetPath>
                 <filtering>false</filtering>
             </resource>
@@ -350,6 +353,7 @@
             <id>console-ui</id>
             <properties>
                 <console.ui.skipTests>false</console.ui.skipTests>
+                <console.ui.dist>${project.basedir}/console-ui/dist</console.ui.dist>
             </properties>
             <build>
                 <plugins>

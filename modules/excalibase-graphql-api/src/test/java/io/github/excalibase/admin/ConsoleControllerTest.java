@@ -5,7 +5,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HashSet;
 import java.util.Set;
@@ -74,6 +76,13 @@ class ConsoleControllerTest {
             seen.add(inPolicy.group(1));
         }
         assertThat(seen).hasSize(200);
+    }
+
+    @Test
+    void theNonceComesFromASecureRandomSource() throws ReflectiveOperationException {
+        Field source = ConsoleController.class.getDeclaredField("random");
+
+        assertThat(source.getType()).isEqualTo(SecureRandom.class);
     }
 
     @Test

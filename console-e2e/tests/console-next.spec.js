@@ -1,5 +1,9 @@
 const { test, expect } = require("@playwright/test");
-const { NEXT } = require("../ports");
+const { NEXT, staticPort } = require("../ports");
+
+// Another origin that is really listening (the read-only engine's document server), so a refusal can only be the policy:
+// a closed port would fail the same way with no policy at all. no-cors makes an allowed fetch succeed (an opaque answer).
+const OTHER_ORIGIN = `http://127.0.0.1:${staticPort}/permissions.yaml`;
 
 // The new console under the engine's real policy. A page that mounts is not enough: every browser-reported
 // violation of the policy counts, so a feature that quietly needs an inline style or a string eval fails here.
@@ -50,7 +54,7 @@ test("the policy is really enforced: an inline style, raw markup and another ori
   await watchViolations(page);
   await page.goto(NEXT + "/console");
 
-  const outcome = await page.evaluate(async () => {
+  const outcome = await page.evaluate(async (other) => {
     const result = {};
     const element = document.createElement("div");
     element.setAttribute("style", "color: red");
@@ -62,18 +66,18 @@ test("the policy is really enforced: an inline style, raw markup and another ori
       result.markup = error.name;
     }
     try {
-      await fetch("http://127.0.0.1:9/");
+      await fetch(other, { mode: "no-cors" });
       result.network = "allowed";
     } catch (error) {
       result.network = error.name;
     }
     return result;
-  });
+  }, OTHER_ORIGIN);
 
   expect(outcome.markup).toBe("TypeError");
   expect(outcome.network).toBe("TypeError");
-  expect.poll(() => violations(page)).toEqual(expect.arrayContaining([
-    expect.stringContaining("style-src"), expect.stringContaining("connect-src")]));
+  await expect.poll(() => violations(page)).toEqual(expect.arrayContaining([
+    expect.stringContaining("style-src"), expect.stringContaining(`connect-src ${OTHER_ORIGIN}`)]));
 });
 
 test("every load gets its own nonce, on a style element the script can read", async ({ page }) => {
@@ -105,4 +109,8 @@ test("the old console is still reachable at /console/legacy and signs in the sam
 
   await expect(page.locator("#secret")).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+});
+
+test("the other origin really answers when the page is not under the policy", async ({ request }) => {
+  expect((await request.get(OTHER_ORIGIN)).status()).toBe(200);
 });

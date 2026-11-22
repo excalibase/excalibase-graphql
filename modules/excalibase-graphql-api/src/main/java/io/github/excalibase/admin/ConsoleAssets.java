@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -217,7 +218,7 @@ public final class ConsoleAssets {
     }
 
     private static void requireHead(Asset index) {
-        if (!new String(index.body(), java.nio.charset.StandardCharsets.UTF_8).contains("</head>")) {
+        if (!new String(index.body(), StandardCharsets.UTF_8).contains("</head>")) {
             throw new IllegalStateException("the built console's index.html has no </head> to carry the style nonce");
         }
     }

@@ -5,8 +5,10 @@ import io.github.excalibase.support.FreePort;
 import io.micronaut.context.ApplicationContext;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** A real context start, so the property names behind the checks are pinned too. */
@@ -63,9 +65,9 @@ class AdminStartupRefusalTest {
 
     @Test
     void aBadConsoleUiIsIgnoredWhileTheConsoleIsOff() {
-        Map<String, Object> properties = new java.util.HashMap<>(consoleOn("excalibase.console.ui", "fancy", true));
+        Map<String, Object> properties = new HashMap<>(consoleOn("excalibase.console.ui", "fancy", true));
         properties.put("excalibase.console.enabled", "false");
 
-        org.assertj.core.api.Assertions.assertThatCode(() -> start(properties)).doesNotThrowAnyException();
+        assertThatCode(() -> start(properties)).doesNotThrowAnyException();
     }
 }

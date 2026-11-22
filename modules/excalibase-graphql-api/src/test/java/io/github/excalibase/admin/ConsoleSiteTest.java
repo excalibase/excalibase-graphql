@@ -65,8 +65,8 @@ class ConsoleSiteTest {
 
     @Test
     void nextWithoutABundleRefusesTheStart() {
-        assertThatThrownBy(() -> ConsoleSite.create(ConsoleUi.NEXT, "/console-absent"))
+        assertThatThrownBy(() -> ConsoleAssets.bundle("/console-absent", ConsoleAssets.CLASSPATH))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("console-absent");
-        assertThat(ConsoleSite.create(ConsoleUi.LEGACY, "/console-absent").find("")).isPresent();
+        assertThat(ConsoleSite.legacyOnly().find("")).isPresent();
     }
 }

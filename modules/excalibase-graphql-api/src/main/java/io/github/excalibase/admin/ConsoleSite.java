@@ -40,11 +40,6 @@ public final class ConsoleSite {
         this.bundle = bundle;
     }
 
-    static ConsoleSite create(ConsoleUi ui, String bundlePrefix) {
-        return new ConsoleSite(ui, ConsoleAssets.legacy(),
-                ui == ConsoleUi.NEXT ? ConsoleAssets.bundle(bundlePrefix, ConsoleAssets.CLASSPATH) : null);
-    }
-
     /** A site that serves only the legacy console, as before the flag existed. */
     public static ConsoleSite legacyOnly() {
         return new ConsoleSite(ConsoleUi.LEGACY, ConsoleAssets.legacy(), null);
