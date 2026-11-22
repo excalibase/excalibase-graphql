@@ -623,6 +623,22 @@ test.describe("history", () => {
       expect((await newest.json()).text.trimStart().startsWith("{")).toBe(true);
     });
 
+  test("restoring a version the database does not fit says what the engine will drop", async ({ page, request }) => {
+    const ghost = EXAMPLE + "  - table: public.ghosts\n    role: user\n    select:\n      filter: {}\n      columns: \"*\"\n";
+    await replaceDocument(request, ghost);
+    await replaceDocument(request, EXAMPLE);
+    await signIn(page);
+    await page.getByRole("tab", { name: "History" }).click();
+    await page.locator("#history-list tbody tr").first().getByRole("button", { name: "View" }).click();
+
+    await page.locator("#restore").click();
+    await page.locator("#restore-yes").click();
+
+    await expect(page.getByText(/^Restored\. The engine now serves version/)).toBeVisible();
+    await expect(page.locator("#warnings")).toContainText("public.ghosts");
+    expect((await metadata(request)).document).toBe(ghost);
+  });
+
   test("cancelling the confirm restores nothing", async ({ page, request }) => {
     await signIn(page);
     await editDraft(page, EXAMPLE + "# note one\n");

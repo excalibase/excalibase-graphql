@@ -10,6 +10,9 @@ import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.schema.ReservedSchemas;
 import io.micronaut.http.HttpResponse;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -17,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,6 +32,7 @@ class MetadataSaveWarningsTest {
     private static final byte[] DOCUMENT = AdminTestEngine.DOCUMENT.getBytes(StandardCharsets.UTF_8);
 
     private final AtomicInteger saves = new AtomicInteger();
+    private SaveOutcome outcome = new SaveOutcome.Saved(2, "v2");
 
     private AdminMetadataView source() {
         return new AdminMetadataView(new MetadataSource() {
@@ -49,7 +54,7 @@ class MetadataSaveWarningsTest {
             @Override
             public SaveOutcome save(String text, String expectedVersion) {
                 saves.incrementAndGet();
-                return new SaveOutcome.Saved(2, "v2");
+                return outcome;
             }
 
             @Override
@@ -80,6 +85,25 @@ class MetadataSaveWarningsTest {
         assertThat(saves).hasValue(1);
         assertThat(answer.body()).containsEntry("version", 2L).containsKey("warnings");
         assertThat((List<?>) answer.body().get("warnings")).hasSize(1);
+    }
+
+    @ParameterizedTest
+    @MethodSource("savesThatDidNotHappen")
+    void aSaveThatFailedNeverBecomesASuccessBecauseItHadWarnings(SaveOutcome failed, int status) {
+        outcome = failed;
+
+        HttpResponse<Map<String, Object>> answer = MetadataSave.respond(source(), RULES, "\"v1\"", DOCUMENT, ONE_PROBLEM);
+
+        assertThat(answer.code()).isEqualTo(status);
+        assertThat(answer.body()).doesNotContainKey("warnings");
+    }
+
+    static Stream<Arguments> savesThatDidNotHappen() {
+        return Stream.of(
+                Arguments.of(new SaveOutcome.Conflict("v9"), 409),
+                Arguments.of(new SaveOutcome.Failed("write_failed"), 502),
+                Arguments.of(new SaveOutcome.NotApplied("reload_refused"), 500),
+                Arguments.of(new SaveOutcome.Invalid(List.of("no")), 422));
     }
 
     @Test

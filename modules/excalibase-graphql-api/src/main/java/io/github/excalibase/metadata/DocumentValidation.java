@@ -49,6 +49,8 @@ public final class DocumentValidation {
                 case "needs_select" -> "The " + problem.operation() + " rule on `" + problem.table() + "` needs a "
                         + "readable select rule beside it. The engine drops it, so " + who + " cannot "
                         + problem.operation() + " there until the select rule is fixed.";
+                case "not_writable" -> "The " + problem.operation() + " rule on `" + problem.table() + "` is ignored: "
+                        + "it is a view, and the engine does not write to views.";
                 default -> "The " + problem.operation() + " rule of " + who + " on `" + problem.table() + "` does not "
                         + "fit the database (" + problem.reason() + "). The engine drops it, so " + who + " cannot "
                         + problem.operation() + " there until the column exists or the rule is fixed.";

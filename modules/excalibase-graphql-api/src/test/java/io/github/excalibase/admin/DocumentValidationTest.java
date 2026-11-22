@@ -220,6 +220,15 @@ class DocumentValidationTest {
     }
 
     @Test
+    void aWriteRuleOnAViewSaysTheEngineIgnoresIt() {
+        DocumentValidation.Result result = withSchema(GOOD, document -> List.of(
+                new RuleProblem("user", "public.order_view", "insert", "not_writable", "a view cannot be written to")));
+
+        assertThat(result.warnings().getFirst().message())
+                .contains("insert", "public.order_view", "view", "ignored");
+    }
+
+    @Test
     void aDocumentThatFitsHasNoWarningsAndTheKeyIsAbsentFromTheAnswer() {
         DocumentValidation.Result result = withSchema(GOOD, document -> List.of());
 

@@ -275,7 +275,7 @@ async function restore(entry) {
     const restored = await restoreHistory(entry.id, state.meta.sourceVersion);
     await loadMetadata();
     state.historyNote = { kind: "ok", text: "Restored. The engine now serves version " + restored.version + ".",
-      historyMissed: restored.historyRecorded === false };
+      historyMissed: restored.historyRecorded === false, warnings: restored.warnings || [] };
     state.historySelected = null;
     state.outcome = null;
   } catch (failure) {

@@ -42,17 +42,23 @@ final class RulesResolver {
     private final PermissionDialect dialect;
     private final SchemaInfo reflected;
     private final String role;
-    private final Consumer<RuleProblem> problems;
+    private static final String NOT_WRITABLE = "not_writable";
 
-    private RulesResolver(PermissionDialect dialect, SchemaInfo reflected, String role, Consumer<RuleProblem> problems) {
+    private final Consumer<RuleProblem> problems;
+    /** The engine logs what it drops; a preview that only asks what would be dropped must not. */
+    private final boolean logs;
+
+    private RulesResolver(PermissionDialect dialect, SchemaInfo reflected, String role, Consumer<RuleProblem> problems,
+                          boolean logs) {
         this.dialect = dialect;
         this.reflected = reflected;
         this.role = role;
         this.problems = problems;
+        this.logs = logs;
     }
 
     static Map<String, TableRules> resolve(PermissionDialect dialect, SchemaInfo reflected, RolePermissions permissions) {
-        RulesResolver resolver = new RulesResolver(dialect, reflected, permissions.role(), problem -> { });
+        RulesResolver resolver = new RulesResolver(dialect, reflected, permissions.role(), problem -> { }, true);
         Map<String, TableRules> rules = new LinkedHashMap<>();
         permissions.tables().values().forEach(entry ->
                 resolver.table(entry).ifPresent(resolved -> rules.put(resolved.table(), resolved)));
@@ -62,7 +68,7 @@ final class RulesResolver {
     /** Resolves one rule only to hand every part the engine would drop to {@code problems}. */
     static void inspect(PermissionDialect dialect, SchemaInfo reflected, TablePermissions entry,
                         Consumer<RuleProblem> problems) {
-        new RulesResolver(dialect, reflected, entry.role(), problems).table(entry);
+        new RulesResolver(dialect, reflected, entry.role(), problems, false).table(entry);
     }
 
     private Optional<TableRules> table(TablePermissions entry) {
@@ -74,6 +80,11 @@ final class RulesResolver {
         Optional<SelectRule> select = entry.select().flatMap(permission -> valid(table, "select",
                 () -> select(table, permission)));
         boolean writable = !reflected.isView(table);
+        if (!writable) {
+            entry.insert().ifPresent(ignored -> invalid(table, "insert", NOT_WRITABLE, "a view cannot be written to"));
+            entry.update().ifPresent(ignored -> invalid(table, "update", NOT_WRITABLE, "a view cannot be written to"));
+            entry.delete().ifPresent(ignored -> invalid(table, "delete", NOT_WRITABLE, "a view cannot be written to"));
+        }
         Optional<InsertRule> insert = entry.insert().filter(ignored -> writable)
                 .flatMap(permission -> valid(table, "insert", () -> insert(table, permission)));
         if (select.isEmpty()) {
@@ -153,7 +164,9 @@ final class RulesResolver {
     }
 
     private void invalid(String table, String operation, String code, String reason) {
-        log.warn("permission_invalid role={} table={} operation={} reason={}", role, table, operation, reason);
+        if (logs) {
+            log.warn("permission_invalid role={} table={} operation={} reason={}", role, table, operation, reason);
+        }
         problems.accept(new RuleProblem(role, table, operation, code, reason));
     }
 
