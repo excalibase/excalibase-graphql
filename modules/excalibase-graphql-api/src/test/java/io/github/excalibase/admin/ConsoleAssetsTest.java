@@ -104,9 +104,9 @@ class ConsoleAssetsTest {
 
     @Test
     void aListedFileThatIsMissingRefusesTheStart() {
-        Map<String, byte[]> files = files("{\"index.html\":{\"file\":\"assets/a-1.js\",\"isEntry\":true}}");
+        ConsoleAssets.Source source = source(files("{\"index.html\":{\"file\":\"assets/a-1.js\",\"isEntry\":true}}"));
 
-        assertThatThrownBy(() -> ConsoleAssets.bundle(PREFIX, source(files)))
+        assertThatThrownBy(() -> ConsoleAssets.bundle(PREFIX, source))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("assets/a-1.js");
     }
 
@@ -117,16 +117,18 @@ class ConsoleAssetsTest {
             Map<String, byte[]> files = files("{\"index.html\":{\"file\":\"" + bad + "\",\"isEntry\":true}}");
             files.put(PREFIX + "/" + bad, new byte[] {1});
 
-            assertThatThrownBy(() -> ConsoleAssets.bundle(PREFIX, source(files))).as(bad)
+            ConsoleAssets.Source source = source(files);
+
+            assertThatThrownBy(() -> ConsoleAssets.bundle(PREFIX, source)).as(bad)
                     .isInstanceOf(IllegalStateException.class);
         }
     }
 
     @Test
     void anUnknownFileTypeRefusesTheStart() {
-        Map<String, byte[]> files = files("{\"index.html\":{\"file\":\"assets/a-1.exe\",\"isEntry\":true}}", "assets/a-1.exe");
+        ConsoleAssets.Source source = source(files("{\"index.html\":{\"file\":\"assets/a-1.exe\",\"isEntry\":true}}", "assets/a-1.exe"));
 
-        assertThatThrownBy(() -> ConsoleAssets.bundle(PREFIX, source(files)))
+        assertThatThrownBy(() -> ConsoleAssets.bundle(PREFIX, source))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("a-1.exe");
     }
 
@@ -135,7 +137,9 @@ class ConsoleAssetsTest {
         Map<String, byte[]> files = files("{\"index.html\":{\"file\":\"assets/a-1.js\",\"isEntry\":true}}", "assets/a-1.js");
         files.put(PREFIX + "/index.html", "<html></html>".getBytes(StandardCharsets.UTF_8));
 
-        assertThatThrownBy(() -> ConsoleAssets.bundle(PREFIX, source(files)))
+        ConsoleAssets.Source source = source(files);
+
+        assertThatThrownBy(() -> ConsoleAssets.bundle(PREFIX, source))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("</head>");
     }
 

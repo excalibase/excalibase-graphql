@@ -17,7 +17,7 @@ import java.util.Optional;
 public final class ConsoleSite {
 
     private static final String BASE = "/console";
-    private static final String BUNDLE = "/console-next";
+    private static final String BUNDLE_ROOT = "/console-next";
     private static final String LEGACY_ALIAS = "legacy";
     private static final String INDEX = "index.html";
 
@@ -31,7 +31,7 @@ public final class ConsoleSite {
     }
 
     private ConsoleSite(ConsoleUi ui) {
-        this(ui, ConsoleAssets.legacy(), ui == ConsoleUi.NEXT ? ConsoleAssets.bundle(BUNDLE, ConsoleAssets.CLASSPATH) : null);
+        this(ui, ConsoleAssets.legacy(), ui == ConsoleUi.NEXT ? ConsoleAssets.bundle(BUNDLE_ROOT, ConsoleAssets.CLASSPATH) : null);
     }
 
     ConsoleSite(ConsoleUi ui, ConsoleAssets legacy, ConsoleAssets bundle) {

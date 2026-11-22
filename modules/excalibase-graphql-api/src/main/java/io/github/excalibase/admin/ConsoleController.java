@@ -14,8 +14,6 @@ import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * The console's page and assets, mounted on the admin port only, like the admin API. They carry no secret and no
@@ -35,7 +33,6 @@ public class ConsoleController {
     private static final int NONCE_BYTES = 16;
     private static final String HEAD_END = "</head>";
     private static final String IMMUTABLE = "public, max-age=31536000, immutable";
-    private static final Pattern GZIP_TOKEN = Pattern.compile("(?i)^\\s*gzip\\s*(?:;\\s*q\\s*=\\s*([0-9.]+))?\\s*$");
 
     private final ConsoleSite site;
     private final SecureRandom random = new SecureRandom();
@@ -105,18 +102,23 @@ public class ConsoleController {
         if (header == null) {
             return false;
         }
-        for (String token : header.toLowerCase(Locale.ROOT).split(",")) {
-            Matcher gzip = GZIP_TOKEN.matcher(token);
-            if (gzip.matches()) {
-                return gzip.group(1) == null || quality(gzip.group(1)) > 0;
+        for (String token : header.split(",")) {
+            String[] parts = token.split(";");
+            if ("gzip".equalsIgnoreCase(parts[0].strip())) {
+                return parts.length < 2 || quality(parts[1]) > 0;
             }
         }
         return false;
     }
 
-    private static double quality(String text) {
+    /** The value of {@code q=}; anything else counts as no quality given (accepted), a malformed value as refused. */
+    private static double quality(String parameter) {
+        String text = parameter.strip();
+        if (!text.regionMatches(true, 0, "q=", 0, 2)) {
+            return 1;
+        }
         try {
-            return Double.parseDouble(text);
+            return Double.parseDouble(text.substring(2).strip());
         } catch (NumberFormatException _) {
             return 0;
         }

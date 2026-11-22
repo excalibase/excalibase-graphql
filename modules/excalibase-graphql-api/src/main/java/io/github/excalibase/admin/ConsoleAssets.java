@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 /**
@@ -58,8 +59,8 @@ public final class ConsoleAssets {
         private final boolean immutable;
         private final Policy policy;
         private final boolean hasGzip;
-        private volatile byte[] body;
-        private volatile byte[] gzip;
+        private final AtomicReference<byte[]> body = new AtomicReference<>();
+        private final AtomicReference<byte[]> gzip = new AtomicReference<>();
 
         private Asset(Source source, String resource, String contentType, boolean immutable, Policy policy,
                       boolean hasGzip) {
@@ -85,32 +86,23 @@ public final class ConsoleAssets {
         }
 
         public byte[] body() {
-            byte[] read = body;
-            if (read == null) {
-                read = source.read(resource);
-                body = read;
-            }
-            return read;
+            return body.updateAndGet(held -> held != null ? held : source.read(resource));
         }
 
         public Optional<byte[]> gzip() {
             if (!hasGzip) {
                 return Optional.empty();
             }
-            byte[] read = gzip;
-            if (read == null) {
-                read = source.read(resource + ".gz");
-                gzip = read;
-            }
-            return Optional.of(read);
+            return Optional.of(gzip.updateAndGet(held -> held != null ? held : source.read(resource + ".gz")));
         }
     }
 
+    private static final String INDEX = "index.html";
     private static final String HTML = "text/html; charset=utf-8";
     private static final String SCRIPT = "text/javascript; charset=utf-8";
     private static final String STYLE = "text/css; charset=utf-8";
     private static final Map<String, String> LEGACY_TYPES = Map.ofEntries(
-            Map.entry("index.html", HTML),
+            Map.entry(INDEX, HTML),
             Map.entry("app.js", SCRIPT),
             Map.entry("api.js", SCRIPT),
             Map.entry("dom.js", SCRIPT),
@@ -130,10 +122,9 @@ public final class ConsoleAssets {
             "svg", "image/svg+xml",
             "png", "image/png",
             "woff2", "font/woff2");
-    /** A name is segments of letters, digits, dots, dashes and underscores; none starts with a dot, so none is {@code ..} or hidden. */
-    private static final Pattern SAFE_NAME = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*");
+    /** A segment is letters, digits, dots, dashes and underscores and does not start with a dot, so it is never {@code ..} or hidden. */
+    private static final Pattern SAFE_SEGMENT = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._-]*");
     private static final String MANIFEST = "/.vite/manifest.json";
-    private static final String INDEX = "index.html";
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private final Map<String, Asset> assets;
@@ -200,7 +191,7 @@ public final class ConsoleAssets {
     }
 
     private static Asset bundleAsset(String prefix, Source source, String name) {
-        if (!SAFE_NAME.matcher(name).matches()) {
+        if (!safe(name)) {
             throw new IllegalStateException("the built console lists a name it will not serve: '" + name + "'");
         }
         String type = BUNDLE_TYPES.get(name.substring(name.lastIndexOf('.') + 1));
@@ -213,6 +204,16 @@ public final class ConsoleAssets {
         }
         boolean hashed = name.startsWith("assets/");
         return new Asset(source, resource, type, hashed, Policy.BUNDLE, source.exists(resource + ".gz"));
+    }
+
+    /** Names are segments joined by single slashes; each segment must be safe. */
+    private static boolean safe(String name) {
+        for (String segment : name.split("/", -1)) {
+            if (!SAFE_SEGMENT.matcher(segment).matches()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static void requireHead(Asset index) {
