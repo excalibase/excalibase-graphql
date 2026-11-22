@@ -71,14 +71,14 @@ class SameNameTablesAcrossSchemasE2ETest extends EngineIntegrationTest {
     }
 
     @Test
-    void rest_embedOfKeyInsideSchemaA_resolvesToSchemaAUsers() throws Exception {
+    void rest_embedOfKeyInsideSchemaA_resolvesToSchemaAUsers() {
         http.get(REST + "/posts?select=id,users(name)", "Accept-Profile", "tenant_a")
                 .expect(status().isOk())
                 .expect(jsonPath("$.data[0].users.name", is("from-a")));
     }
 
     @Test
-    void rest_embedOfKeyFromSchemaBIntoSchemaA_resolvesToSchemaAUsers() throws Exception {
+    void rest_embedOfKeyFromSchemaBIntoSchemaA_resolvesToSchemaAUsers() {
         http.get(REST + "/orders?select=id,users(name)", "Accept-Profile", "tenant_b")
                 .expect(status().isOk())
                 .expect(jsonPath("$.data[0].users.name", is("from-a")));
