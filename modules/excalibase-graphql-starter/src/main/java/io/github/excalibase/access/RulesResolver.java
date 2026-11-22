@@ -43,6 +43,10 @@ final class RulesResolver {
     private final SchemaInfo reflected;
     private final String role;
     private static final String NOT_WRITABLE = "not_writable";
+    private static final String VIEW_REASON = "a view cannot be written to";
+    private static final String INSERT = "insert";
+    private static final String UPDATE = "update";
+    private static final String DELETE = "delete";
 
     private final Consumer<RuleProblem> problems;
     /** The engine logs what it drops; a preview that only asks what would be dropped must not. */
@@ -81,22 +85,22 @@ final class RulesResolver {
                 () -> select(table, permission)));
         boolean writable = !reflected.isView(table);
         if (!writable) {
-            entry.insert().ifPresent(ignored -> invalid(table, "insert", NOT_WRITABLE, "a view cannot be written to"));
-            entry.update().ifPresent(ignored -> invalid(table, "update", NOT_WRITABLE, "a view cannot be written to"));
-            entry.delete().ifPresent(ignored -> invalid(table, "delete", NOT_WRITABLE, "a view cannot be written to"));
+            entry.insert().ifPresent(ignored -> invalid(table, INSERT, NOT_WRITABLE, VIEW_REASON));
+            entry.update().ifPresent(ignored -> invalid(table, UPDATE, NOT_WRITABLE, VIEW_REASON));
+            entry.delete().ifPresent(ignored -> invalid(table, DELETE, NOT_WRITABLE, VIEW_REASON));
         }
         Optional<InsertRule> insert = entry.insert().filter(ignored -> writable)
-                .flatMap(permission -> valid(table, "insert", () -> insert(table, permission)));
+                .flatMap(permission -> valid(table, INSERT, () -> insert(table, permission)));
         if (select.isEmpty()) {
-            entry.update().ifPresent(ignored -> invalid(entry.table(), "update", NEEDS_SELECT, "needs a select permission"));
-            entry.delete().ifPresent(ignored -> invalid(entry.table(), "delete", NEEDS_SELECT, "needs a select permission"));
+            entry.update().ifPresent(ignored -> invalid(entry.table(), UPDATE, NEEDS_SELECT, "needs a select permission"));
+            entry.delete().ifPresent(ignored -> invalid(entry.table(), DELETE, NEEDS_SELECT, "needs a select permission"));
             return insert.map(held -> insertOnly(entry.table(), held));
         }
         return Optional.of(new TableRules(table, select, insert,
                 entry.update().filter(ignored -> writable)
-                        .flatMap(permission -> valid(table, "update", () -> update(table, permission))),
+                        .flatMap(permission -> valid(table, UPDATE, () -> update(table, permission))),
                 entry.delete().filter(ignored -> writable)
-                        .flatMap(permission -> valid(table, "delete", () -> delete(table, permission)))));
+                        .flatMap(permission -> valid(table, DELETE, () -> delete(table, permission)))));
     }
 
     /** Insert without select: the update or delete beside it was dropped above, as it would reach no row. */
