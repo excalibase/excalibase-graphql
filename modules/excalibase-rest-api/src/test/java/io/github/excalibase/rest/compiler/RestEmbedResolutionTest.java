@@ -95,4 +95,29 @@ class RestEmbedResolutionTest {
         assertThat(refusal(DOCS, "users", "nope").code()).isEqualTo(DataError.UNKNOWN_RELATIONSHIP_HINT);
         assertThat(sql(DOCS, "nothing", "nope")).doesNotContain("nothing");
     }
+
+    @Test
+    void anAlias_isTheKeyTheEmbedComesBackUnder() {
+        var compiler = new RestQueryCompiler(schema(), new PostgresDialect(), "a", 30);
+        String sql = compiler.compileSelect(new RestQueryCompiler.SelectQuery(DOCS, List.of("id"), List.of(), List.of(),
+                List.of(new RestQueryCompiler.EmbedSpec("users", List.of("id"), "created_by", List.of(), "creator"),
+                        new RestQueryCompiler.EmbedSpec("users", List.of("id"), "updated_by", List.of(), "updater")),
+                List.of(), 10, 0, false)).sql();
+
+        assertThat(sql).contains("'creator'", "'updater'");
+    }
+
+    @Test
+    void twoEmbedsUnderOneKey_areRefused() {
+        var compiler = new RestQueryCompiler(schema(), new PostgresDialect(), "a", 30);
+        var query = new RestQueryCompiler.SelectQuery(DOCS, List.of("id"), List.of(), List.of(),
+                List.of(new RestQueryCompiler.EmbedSpec("users", List.of("id"), "created_by"),
+                        new RestQueryCompiler.EmbedSpec("users", List.of("id"), "updated_by")),
+                List.of(), 10, 0, false);
+
+        DataErrorException refused = org.assertj.core.api.Assertions.catchThrowableOfType(DataErrorException.class,
+                () -> compiler.compileSelect(query));
+
+        assertThat(refused.error().code()).isEqualTo(DataError.EMBED_KEY_COLLISION);
+    }
 }

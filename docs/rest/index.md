@@ -98,6 +98,9 @@ pick one:
 - `tenant_b.users` names the table with its schema, for same-named tables in two schemas;
   `tenant_a.users!created_by` does both when one table has several keys.
 
+An alias gives an embed its own key (`creator:users!created_by(name)` returns under `creator`), which is how two embeds of
+the same table sit in one select; two embeds that would share a key are `400 embed_key_collision`.
+
 A `!column` that names no key of an existing relationship is `400 unknown_relationship_hint`. An embed named with
 its schema comes back under the table name (`users`), unless another embed of the same select has that name, when it
 keeps the name as written (`tenant_b.users`).

@@ -173,4 +173,21 @@ class SameNameTablesAcrossSchemasE2ETest extends EngineIntegrationTest {
                 .expect(jsonPath("$.data[0]['tenant_a.users'].name", is("from-a")))
                 .expect(jsonPath("$.data[0]['tenant_b.users'].name", is("from-b")));
     }
+
+    @Test
+    void rest_aliasedEmbeds_comeBackUnderTheirAliases() {
+        http.get(REST + "/docs?select=id,creator:users!created_by(name),updater:users!updated_by(name)",
+                        "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].creator.name", is("from-a")))
+                .expect(jsonPath("$.data[0].updater.name", is("from-a")));
+    }
+
+    @Test
+    void rest_twoEmbedsUnderOneKey_are400_notOneSilentlyDropped() {
+        http.get(REST + "/docs?select=id,users!created_by(name),users!updated_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")))
+                .expect(jsonPath("$.message", containsString("alias")));
+    }
 }

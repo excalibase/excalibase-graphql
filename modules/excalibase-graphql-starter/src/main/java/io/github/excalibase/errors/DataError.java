@@ -32,6 +32,7 @@ public record DataError(int status, String code, String message, String constrai
     public static final String PROJECT_PAUSED = "project_paused";
     /** The connection was lost while committing: the write may or may not have been applied. Never retry blindly. */
     public static final String COMMIT_UNKNOWN = "commit_unknown";
+    public static final String EMBED_KEY_COLLISION = "embed_key_collision";
 
     private static final int BAD_REQUEST = 400;
     private static final int FORBIDDEN = 403;
@@ -65,6 +66,12 @@ public record DataError(int status, String code, String message, String constrai
     public static DataError ambiguousRelationship(String relation, java.util.List<String> options) {
         return new DataError(MULTIPLE_CHOICES, AMBIGUOUS_RELATIONSHIP, "More than one relationship fits '"
                 + relation + "'; use one of: " + String.join(", ", options), null, null);
+    }
+
+    /** Two embeds of one select would answer under {@code key}; an alias ({@code alias:name(...)}) tells them apart. */
+    public static DataError embedKeyCollision(String key) {
+        return badRequest(EMBED_KEY_COLLISION, "More than one embed would be returned as '" + key
+                + "'; give each its own key with an alias, as in creator:" + key + "!column(...)");
     }
 
     /** An embed's {@code !hint} names no foreign key column of the relationship it is on. */
