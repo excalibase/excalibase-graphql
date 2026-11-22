@@ -33,7 +33,7 @@ public final class EmbedKeys {
         for (T embed : embeds) {
             String key = alias.apply(embed);
             if (key != null && selectedColumns.contains(key)) {
-                throw new DataErrorException(DataError.embedKeyCollision(key));
+                throw new DataErrorException(DataError.embedAliasCollidesWithColumn(key));
             }
         }
     }

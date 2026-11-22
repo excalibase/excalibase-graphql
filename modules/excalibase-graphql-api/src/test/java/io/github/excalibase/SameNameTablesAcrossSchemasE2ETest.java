@@ -229,4 +229,27 @@ class SameNameTablesAcrossSchemasE2ETest extends EngineIntegrationTest {
                                 .expect(status().isOk()).body())
                 .isEqualTo("{\"data\":[{\"id\":1,\"creator\":{\"name\":\"from-a\"}}]}");
     }
+
+    @Test
+    void rest_aliasEqualToAColumnOfANestedForwardEmbed_is400_namingTheColumn() {
+        http.get(REST + "/badges?select=id,profiles(id,id:users(name))", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")))
+                .expect(jsonPath("$.message", containsString("collides with column 'id'")));
+    }
+
+    @Test
+    void rest_aliasEqualToAColumnOfANestedReverseEmbed_is400_namingTheColumn() {
+        http.get(REST + "/users?select=id,profiles(id,id:badges(id))", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("embed_key_collision")))
+                .expect(jsonPath("$.message", containsString("collides with column 'id'")));
+    }
+
+    @Test
+    void rest_aliasEqualToATopLevelColumn_namesTheColumn_notAMissingAlias() {
+        http.get(REST + "/docs?select=id,id:users!created_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.message", containsString("collides with column 'id'")));
+    }
 }

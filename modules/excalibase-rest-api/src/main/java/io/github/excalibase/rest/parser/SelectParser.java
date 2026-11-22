@@ -77,7 +77,7 @@ public final class SelectParser {
 
         for (EmbedSpec embed : embeds) {
             if (embed.alias() != null && aliases.containsValue(embed.alias())) {
-                throw new DataErrorException(DataError.embedKeyCollision(embed.alias()));
+                throw new DataErrorException(DataError.embedAliasCollidesWithColumn(embed.alias()));
             }
         }
         return new SelectResult(columns, embeds, aliases);

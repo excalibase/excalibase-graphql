@@ -28,6 +28,10 @@ CREATE TABLE tenant_a.mixed (id INT PRIMARY KEY, a_user INT REFERENCES tenant_a.
                              created_by INT REFERENCES tenant_a.users (id),
                              b_user INT REFERENCES tenant_b.users (id));
 
+-- two levels under users, for collisions inside a nested embed
+CREATE TABLE tenant_a.profiles (id INT PRIMARY KEY, user_id INT REFERENCES tenant_a.users (id));
+CREATE TABLE tenant_a.badges (id INT PRIMARY KEY, profile_id INT REFERENCES tenant_a.profiles (id));
+
 INSERT INTO tenant_a.users VALUES (1, 'from-a');
 INSERT INTO tenant_b.users VALUES (1, 'from-b');
 INSERT INTO tenant_a.posts VALUES (1, 1);
@@ -38,3 +42,5 @@ INSERT INTO tenant_a.logs VALUES (1, 1);
 INSERT INTO tenant_b.logs VALUES (1, 1);
 INSERT INTO tenant_a.docs VALUES (1, 1, 1);
 INSERT INTO tenant_a.mixed VALUES (1, 1, 1, 1);
+INSERT INTO tenant_a.profiles VALUES (1, 1);
+INSERT INTO tenant_a.badges VALUES (1, 1);

@@ -74,6 +74,12 @@ public record DataError(int status, String code, String message, String constrai
                 + "'; give each its own key with an alias, as in creator:" + key + "!column(...)");
     }
 
+    /** An embed's alias is also a column the select answers, and would overwrite its value. */
+    public static DataError embedAliasCollidesWithColumn(String alias) {
+        return badRequest(EMBED_KEY_COLLISION, "The embed alias '" + alias + "' collides with column '" + alias
+                + "'; choose another alias");
+    }
+
     /** An embed's {@code !hint} names no foreign key column of the relationship it is on. */
     public static DataError unknownRelationshipHint(String relation, String hint) {
         return badRequest(UNKNOWN_RELATIONSHIP_HINT,
